@@ -11,7 +11,7 @@
 
 "AetherLink Companion" = "AetherLink Companion";
 "Bridge trusted Android devices to this Mac runtime." = "신뢰된 Android 기기를 이 Mac 런타임에 연결합니다.";
-"Bridge trusted Android devices to local models on this Mac." = "신뢰된 Android 기기를 이 Mac의 로컬 모델에 연결합니다.";
+"Bridge trusted Android devices through this Mac runtime to local models." = "신뢰된 Android 기기를 이 Mac 런타임을 통해 로컬 모델에 연결합니다.";
 "Runtime" = "런타임";
 "Ollama" = "Ollama";
 "LM Studio" = "LM Studio";

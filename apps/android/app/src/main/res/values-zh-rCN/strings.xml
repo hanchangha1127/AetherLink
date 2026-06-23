@@ -81,6 +81,9 @@
 
     <string name="chat_title">聊天</string>
     <string name="chat_subtitle">消息通过 Mac companion 运行时流式传输。</string>
+    <string name="chat_via_mac_companion">通过 Mac companion</string>
+    <string name="chat_select_model_from_mac">请选择 Mac companion 公开的模型。</string>
+    <string name="chat_composer_placeholder">通过 Mac companion 提问</string>
     <string name="model_value">模型：%1$s</string>
     <string name="model_none">无</string>
     <string name="model_provider_value">提供方：%1$s</string>

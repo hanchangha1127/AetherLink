@@ -12,7 +12,7 @@ struct StatusView: View {
             VStack(alignment: .leading, spacing: 18) {
                 CompanionPageHeader(
                     title: "AetherLink Companion",
-                    subtitle: "Bridge trusted Android devices to local models on this Mac.",
+                    subtitle: "Bridge trusted Android devices through this Mac runtime to local models.",
                     systemImage: "bolt.horizontal.circle.fill"
                 )
 

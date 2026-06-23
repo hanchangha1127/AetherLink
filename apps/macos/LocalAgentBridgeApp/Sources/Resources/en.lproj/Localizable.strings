@@ -11,7 +11,7 @@
 
 "AetherLink Companion" = "AetherLink Companion";
 "Bridge trusted Android devices to this Mac runtime." = "Bridge trusted Android devices to this Mac runtime.";
-"Bridge trusted Android devices to local models on this Mac." = "Bridge trusted Android devices to local models on this Mac.";
+"Bridge trusted Android devices through this Mac runtime to local models." = "Bridge trusted Android devices through this Mac runtime to local models.";
 "Runtime" = "Runtime";
 "Ollama" = "Ollama";
 "LM Studio" = "LM Studio";

@@ -81,6 +81,9 @@
 
     <string name="chat_title">채팅</string>
     <string name="chat_subtitle">메시지는 Mac companion 런타임을 통해 스트리밍됩니다.</string>
+    <string name="chat_via_mac_companion">Mac companion 경유</string>
+    <string name="chat_select_model_from_mac">Mac companion이 제공하는 모델을 선택하세요.</string>
+    <string name="chat_composer_placeholder">Mac companion을 통해 묻기</string>
     <string name="model_value">모델: %1$s</string>
     <string name="model_none">없음</string>
     <string name="model_provider_value">제공자: %1$s</string>

@@ -81,6 +81,9 @@
 
     <string name="chat_title">Chat</string>
     <string name="chat_subtitle">Messages stream through the Mac companion runtime.</string>
+    <string name="chat_via_mac_companion">Via Mac companion</string>
+    <string name="chat_select_model_from_mac">Select a model exposed by the Mac companion.</string>
+    <string name="chat_composer_placeholder">Ask through the Mac companion</string>
     <string name="model_value">Model: %1$s</string>
     <string name="model_none">none</string>
     <string name="model_provider_value">Provider: %1$s</string>
