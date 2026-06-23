@@ -65,6 +65,7 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -152,6 +153,12 @@ private fun LocalAgentBridgeApp() {
             }
             val hasChatSearchResults =
                 filteredChatSessions.isNotEmpty() || filteredArchivedChatSessions.isNotEmpty()
+
+            LaunchedEffect(state.trustedMac?.deviceId) {
+                if (state.trustedMac != null && destination == AppDestination.Pairing) {
+                    destination = AppDestination.Chat
+                }
+            }
 
             ModalNavigationDrawer(
                 drawerState = drawerState,
@@ -350,16 +357,14 @@ private fun LocalAgentBridgeApp() {
                             onInputChange = viewModel::updateChatInput,
                             onSend = viewModel::sendChatMessage,
                             onCancel = viewModel::cancelGeneration,
+                            onConnect = viewModel::connectToTrustedRuntime,
+                            onRequestModels = viewModel::requestModels,
                             modifier = Modifier
                                 .fillMaxSize()
                                 .padding(padding),
                         )
                         AppDestination.Pairing -> PairingScreen(
                             state = state,
-                            onHostChange = viewModel::updateHost,
-                            onPortChange = viewModel::updatePort,
-                            onUseUsbReverse = viewModel::useUsbReverseEndpoint,
-                            onUseEmulator = viewModel::useEmulatorEndpoint,
                             onStartDiscovery = viewModel::startDiscovery,
                             onStopDiscovery = viewModel::stopDiscovery,
                             onUseDiscoveredMac = viewModel::useDiscoveredMac,
@@ -535,9 +540,17 @@ private fun ChatModelTopBarMenu(
     onSelectModel: (String) -> Unit,
 ) {
     var isExpanded by rememberSaveable { mutableStateOf(false) }
+    var modelSearchQuery by rememberSaveable { mutableStateOf("") }
     val hapticFeedback = LocalHapticFeedback.current
     val selectedModel = state.models.firstOrNull { it.id == state.selectedModelId }
     val selectedLabel = selectedModel?.name ?: stringResource(R.string.models_title)
+    val trimmedModelSearchQuery = modelSearchQuery.trim()
+    val hasModelSearchQuery = trimmedModelSearchQuery.isNotEmpty()
+    val visibleModels = if (hasModelSearchQuery) {
+        state.models.filter { model -> model.matchesModelQuery(trimmedModelSearchQuery) }
+    } else {
+        state.models
+    }
 
     Box {
         TextButton(
@@ -604,7 +617,57 @@ private fun ChatModelTopBarMenu(
                     onClick = {},
                 )
             } else {
-                state.models.forEach { model ->
+                OutlinedTextField(
+                    value = modelSearchQuery,
+                    onValueChange = { modelSearchQuery = it },
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodyMedium,
+                    label = {
+                        Text(
+                            text = stringResource(R.string.model_search_label),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    },
+                    leadingIcon = {
+                        Icon(
+                            imageVector = Icons.Filled.Search,
+                            contentDescription = null,
+                        )
+                    },
+                    trailingIcon = {
+                        if (modelSearchQuery.isNotEmpty()) {
+                            IconButton(
+                                onClick = {
+                                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    modelSearchQuery = ""
+                                },
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Close,
+                                    contentDescription = stringResource(R.string.clear_model_search),
+                                )
+                            }
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                )
+                if (visibleModels.isEmpty()) {
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                text = stringResource(R.string.no_model_search_results),
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        },
+                        enabled = false,
+                        onClick = {},
+                    )
+                }
+                visibleModels.forEach { model ->
                     ChatModelMenuItem(
                         model = model,
                         selected = model.id == state.selectedModelId,
@@ -667,6 +730,18 @@ private fun modelMenuStatusLine(model: RuntimeModel, installing: Boolean): Strin
         else -> stringResource(R.string.model_installed)
     }
     return "${model.provider} - $availability"
+}
+
+private fun RuntimeModel.matchesModelQuery(query: String): Boolean {
+    return listOfNotNull(
+        id,
+        name,
+        backend,
+        provider,
+        providerModelId,
+        source,
+        description,
+    ).any { value -> value.contains(query, ignoreCase = true) }
 }
 
 @Composable

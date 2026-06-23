@@ -36,7 +36,6 @@ import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -79,17 +78,12 @@ import com.localagentbridge.android.runtime.RuntimeAppLanguage
 import com.localagentbridge.android.runtime.RuntimeChatMessage
 import com.localagentbridge.android.runtime.RuntimeDiscoveredMac
 import com.localagentbridge.android.runtime.RuntimeMemoryEntry
-import com.localagentbridge.android.runtime.RuntimeModel
 import com.localagentbridge.android.runtime.RuntimeUiError
 import com.localagentbridge.android.runtime.RuntimeUiState
 
 @Composable
 fun PairingScreen(
     state: RuntimeUiState,
-    onHostChange: (String) -> Unit,
-    onPortChange: (String) -> Unit,
-    onUseUsbReverse: () -> Unit,
-    onUseEmulator: () -> Unit,
     onStartDiscovery: () -> Unit,
     onStopDiscovery: () -> Unit,
     onUseDiscoveredMac: (RuntimeDiscoveredMac) -> Unit,
@@ -136,15 +130,6 @@ fun PairingScreen(
                 onStartDiscovery = onStartDiscovery,
                 onStopDiscovery = onStopDiscovery,
                 onUseDiscoveredMac = onUseDiscoveredMac,
-            )
-        }
-        item {
-            EndpointPanel(
-                state = state,
-                onHostChange = onHostChange,
-                onPortChange = onPortChange,
-                onUseUsbReverse = onUseUsbReverse,
-                onUseEmulator = onUseEmulator,
             )
         }
         item { ErrorText(state.error) }
@@ -281,7 +266,8 @@ private fun ConnectionStatusPanel(state: RuntimeUiState) {
             )
             StatusLine(
                 label = stringResource(R.string.endpoint),
-                value = "${state.macHost}:${state.macPort}",
+                value = state.trustedMac?.let { trusted -> "${trusted.host}:${trusted.port}" }
+                    ?: "${state.macHost}:${state.macPort}",
             )
             StatusLine(
                 label = stringResource(R.string.connected),
@@ -334,165 +320,13 @@ private fun ConnectionStatusActions(
 }
 
 @Composable
-fun ModelPickerScreen(
-    state: RuntimeUiState,
-    onRequestModels: () -> Unit,
-    onSelectModel: (String) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val hapticFeedback = LocalHapticFeedback.current
-    val modelSearchQuery = rememberSaveable { mutableStateOf("") }
-    val trimmedModelSearchQuery = modelSearchQuery.value.trim()
-    val hasModelSearchQuery = trimmedModelSearchQuery.isNotEmpty()
-    val visibleModels = if (hasModelSearchQuery) {
-        state.models.filter { model -> model.matchesModelQuery(trimmedModelSearchQuery) }
-    } else {
-        state.models
-    }
-
-    ScreenList(modifier) {
-        item {
-            ScreenHeader(
-                title = R.string.models_title,
-                subtitle = R.string.models_subtitle,
-            )
-        }
-        item {
-            SelectedModelPanel(state = state)
-        }
-        item {
-            Button(
-                onClick = {
-                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                    onRequestModels()
-                },
-                enabled = state.isConnected && !state.isLoadingModels,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Icon(
-                    Icons.Filled.Refresh,
-                    contentDescription = null,
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = if (state.isLoadingModels) {
-                        stringResource(R.string.loading_models)
-                    } else {
-                        stringResource(R.string.load_models)
-                    },
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
-        if (state.isLoadingModels) {
-            item {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                    Text(
-                        text = stringResource(R.string.loading_models),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.secondary,
-                    )
-                }
-            }
-        }
-        if (state.models.isEmpty() && !state.isLoadingModels) {
-            item {
-                EmptyStateCard(
-                    title = if (state.isConnected) {
-                        stringResource(R.string.no_models_connected_title)
-                    } else {
-                        stringResource(R.string.no_models_disconnected_title)
-                    },
-                    text = if (state.isConnected) {
-                        stringResource(R.string.no_models_connected)
-                    } else {
-                        stringResource(R.string.no_models_disconnected)
-                    },
-                )
-            }
-        }
-        if (state.models.isNotEmpty()) {
-            item {
-                ModelSearchField(
-                    query = modelSearchQuery.value,
-                    onQueryChange = { modelSearchQuery.value = it },
-                    onClear = { modelSearchQuery.value = "" },
-                )
-            }
-        }
-        if (hasModelSearchQuery && visibleModels.isEmpty()) {
-            item {
-                EmptyStateCard(
-                    title = stringResource(R.string.no_model_search_results_title),
-                    text = stringResource(R.string.no_model_search_results),
-                )
-            }
-        }
-        items(visibleModels) { model ->
-            ModelRow(
-                model = model,
-                selected = model.id == state.selectedModelId,
-                isInstalling = model.id == state.installingModelId,
-                onSelect = onSelectModel,
-            )
-        }
-        item { ErrorText(state.error) }
-    }
-}
-
-@Composable
-private fun ModelSearchField(
-    query: String,
-    onQueryChange: (String) -> Unit,
-    onClear: () -> Unit,
-) {
-    val hapticFeedback = LocalHapticFeedback.current
-
-    OutlinedTextField(
-        value = query,
-        onValueChange = onQueryChange,
-        singleLine = true,
-        textStyle = MaterialTheme.typography.bodyMedium,
-        label = {
-            Text(
-                text = stringResource(R.string.model_search_label),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        },
-        leadingIcon = {
-            Icon(
-                imageVector = Icons.Filled.Search,
-                contentDescription = null,
-            )
-        },
-        trailingIcon = {
-            if (query.isNotEmpty()) {
-                IconButton(
-                    onClick = {
-                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                        onClear()
-                    },
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.Close,
-                        contentDescription = stringResource(R.string.clear_model_search),
-                    )
-                }
-            }
-        },
-        modifier = Modifier.fillMaxWidth(),
-    )
-}
-
-@Composable
 fun ChatScreen(
     state: RuntimeUiState,
     onInputChange: (String) -> Unit,
     onSend: () -> Unit,
     onCancel: () -> Unit,
+    onConnect: () -> Unit,
+    onRequestModels: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val listState = rememberLazyListState()
@@ -520,7 +354,12 @@ fun ChatScreen(
                     .weight(1f),
                 contentAlignment = Alignment.Center,
             ) {
-                ChatEmptyState(state)
+                ChatEmptyState(
+                    state = state,
+                    onInputChange = onInputChange,
+                    onConnect = onConnect,
+                    onRequestModels = onRequestModels,
+                )
             }
         } else {
             LazyColumn(
@@ -635,6 +474,16 @@ fun SettingsScreen(
                 state = state,
                 onRefreshHealth = onRefreshHealth,
                 onDisconnect = onDisconnect,
+            )
+        }
+        item {
+            EndpointPanel(
+                state = state,
+                onHostChange = onHostChange,
+                onPortChange = onPortChange,
+                onUseUsbReverse = onUseUsbReverse,
+                onUseEmulator = onUseEmulator,
+                title = R.string.runtime_endpoint,
             )
         }
         item {
@@ -994,209 +843,25 @@ private fun DiscoveredMacRow(peer: RuntimeDiscoveredMac, onUse: (RuntimeDiscover
 }
 
 @Composable
-private fun SelectedModelPanel(state: RuntimeUiState) {
-    OutlinedCard(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Text(
-                text = stringResource(R.string.selected_model),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.secondary,
-            )
-            Text(
-                text = selectedModelName(state),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = if (state.isConnected) {
-                    stringResource(R.string.models_from_mac_runtime)
-                } else {
-                    stringResource(R.string.models_need_connection)
-                },
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.secondary,
-            )
-        }
-    }
-}
-
-@Composable
-private fun ModelRow(
-    model: RuntimeModel,
-    selected: Boolean,
-    isInstalling: Boolean,
-    onSelect: (String) -> Unit,
+private fun ChatEmptyState(
+    state: RuntimeUiState,
+    onInputChange: (String) -> Unit,
+    onConnect: () -> Unit,
+    onRequestModels: () -> Unit,
 ) {
     val hapticFeedback = LocalHapticFeedback.current
-    val cardModifier = if (model.installed) {
-        Modifier
-            .fillMaxWidth()
-            .clickable {
-                hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                onSelect(model.id)
-            }
-    } else {
-        Modifier.fillMaxWidth()
-    }
-    OutlinedCard(
-        modifier = cardModifier,
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = model.name,
-                        style = MaterialTheme.typography.titleMedium,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        text = modelStatusLine(model),
-                        color = MaterialTheme.colorScheme.secondary,
-                        style = MaterialTheme.typography.bodySmall,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                if (model.installed) {
-                    RadioButton(
-                        selected = selected,
-                        onClick = {
-                            hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                            onSelect(model.id)
-                        },
-                    )
-                }
-            }
-            model.description?.takeIf { it.isNotBlank() }?.let { description ->
-                Text(
-                    text = description,
-                    color = MaterialTheme.colorScheme.secondary,
-                    style = MaterialTheme.typography.bodySmall,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            if (!model.installed) {
-                Button(
-                    onClick = {
-                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                        onSelect(model.id)
-                    },
-                    enabled = !isInstalling,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Icon(Icons.Filled.Refresh, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = if (isInstalling) {
-                            stringResource(R.string.installing_model)
-                        } else {
-                            stringResource(R.string.install_model)
-                        },
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                if (isInstalling) {
-                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                }
-            }
-        }
-    }
-}
+    val showStarterPrompts = state.isConnected &&
+        !state.isConnecting &&
+        !state.isLoadingModels &&
+        !state.isStreaming &&
+        selectedModelIsUsable(state)
+    val starterPrompts = listOf(
+        stringResource(R.string.chat_starter_prompt_explain_project),
+        stringResource(R.string.chat_starter_prompt_summarize_plan),
+        stringResource(R.string.chat_starter_prompt_debug_issue),
+        stringResource(R.string.chat_starter_prompt_compare_options),
+    )
 
-@Composable
-private fun ChatContextChips(
-    state: RuntimeUiState,
-    selectedModel: RuntimeModel?,
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        ChatModelChip(
-            state = state,
-            selectedModel = selectedModel,
-            modifier = Modifier.weight(1f),
-        )
-        ChatStatusPill(state)
-    }
-}
-
-@Composable
-private fun ChatModelChip(
-    state: RuntimeUiState,
-    selectedModel: RuntimeModel?,
-    modifier: Modifier = Modifier,
-) {
-    val supportingText = selectedModel?.let { model ->
-        listOf(
-            providerDisplayName(model.provider),
-            modelSourceDisplayName(model.source),
-        ).joinToString(" | ")
-    } ?: if (state.isConnected) {
-        stringResource(R.string.chat_select_model_from_mac)
-    } else {
-        stringResource(R.string.chat_needs_runtime)
-    }
-
-    Surface(
-        modifier = modifier,
-        shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant,
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                imageVector = Icons.Filled.Link,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.secondary,
-                modifier = Modifier.size(18.dp),
-            )
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(1.dp),
-            ) {
-                Text(
-                    text = selectedModel?.name ?: stringResource(R.string.model_none),
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = supportingText,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.secondary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun ChatEmptyState(state: RuntimeUiState) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -1242,6 +907,75 @@ private fun ChatEmptyState(state: RuntimeUiState) {
         }
         if (state.isStreaming) {
             LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        }
+        if (showStarterPrompts) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                starterPrompts.forEach { prompt ->
+                    OutlinedButton(
+                        onClick = {
+                            hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                            onInputChange(prompt)
+                        },
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                    ) {
+                        Text(
+                            text = prompt,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+        }
+        if (!state.isConnected && state.trustedMac != null) {
+            Button(
+                onClick = {
+                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onConnect()
+                },
+                enabled = !state.isConnecting,
+            ) {
+                Icon(Icons.Filled.Link, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = if (state.isConnecting) {
+                        stringResource(R.string.connecting)
+                    } else {
+                        stringResource(R.string.connect_runtime)
+                    },
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        if (state.isConnected && state.models.isEmpty()) {
+            Button(
+                onClick = {
+                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onRequestModels()
+                },
+                enabled = !state.isLoadingModels,
+            ) {
+                Icon(Icons.Filled.Refresh, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = if (state.isLoadingModels) {
+                        stringResource(R.string.loading_models)
+                    } else {
+                        stringResource(R.string.load_models)
+                    },
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            if (state.isLoadingModels) {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            }
         }
     }
 }
@@ -1582,36 +1316,6 @@ private fun AssistantAvatar() {
 }
 
 @Composable
-private fun ChatStatusPill(state: RuntimeUiState) {
-    val text = when {
-        state.isStreaming -> stringResource(R.string.chat_status_streaming)
-        state.isConnected -> stringResource(R.string.chat_status_connected)
-        else -> stringResource(R.string.chat_status_disconnected)
-    }
-    Surface(
-        shape = RoundedCornerShape(999.dp),
-        color = if (state.isConnected) {
-            MaterialTheme.colorScheme.primaryContainer
-        } else {
-            MaterialTheme.colorScheme.errorContainer
-        },
-    ) {
-        Text(
-            text = text,
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-            style = MaterialTheme.typography.labelSmall,
-            color = if (state.isConnected) {
-                MaterialTheme.colorScheme.onPrimaryContainer
-            } else {
-                MaterialTheme.colorScheme.onErrorContainer
-            },
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
-}
-
-@Composable
 private fun ChatComposer(
     value: String,
     enabled: Boolean,
@@ -1751,10 +1455,17 @@ private fun AppPreferencesPanel(
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
             )
-            StatusLine(
-                label = stringResource(R.string.appearance_title),
-                value = stringResource(R.string.appearance_system),
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                StatusLine(
+                    label = stringResource(R.string.appearance_title),
+                    value = stringResource(R.string.appearance_system),
+                )
+                Text(
+                    text = stringResource(R.string.appearance_system_detail),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.secondary,
+                )
+            }
             LanguagePreferenceSelector(
                 selectedLanguageTag = selectedLanguageTag,
                 onSetLanguageTag = onSetLanguageTag,
@@ -2020,31 +1731,6 @@ private fun EmptyState(text: String) {
 }
 
 @Composable
-private fun EmptyStateCard(title: String, text: String) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(8.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant,
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Medium,
-            )
-            Text(
-                text = text,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.secondary,
-            )
-        }
-    }
-}
-
-@Composable
 private fun ErrorText(error: RuntimeUiError?) {
     if (error != null) {
         Surface(
@@ -2085,33 +1771,9 @@ private fun ErrorText(error: RuntimeUiError?) {
     }
 }
 
-@Composable
-private fun selectedModelName(state: RuntimeUiState): String {
-    return selectedModel(state)?.name
-        ?: state.selectedModelId
-        ?: stringResource(R.string.model_none)
-}
-
-private fun selectedModel(state: RuntimeUiState): RuntimeModel? {
-    val selectedId = state.selectedModelId ?: return null
-    return state.models.firstOrNull { it.id == selectedId }
-}
-
 private fun selectedModelIsUsable(state: RuntimeUiState): Boolean {
     val selectedId = state.selectedModelId ?: return false
-    return state.models.firstOrNull { it.id == selectedId }?.installed != false
-}
-
-private fun RuntimeModel.matchesModelQuery(query: String): Boolean {
-    return listOfNotNull(
-        id,
-        name,
-        backend,
-        provider,
-        providerModelId,
-        source,
-        description,
-    ).any { value -> value.contains(query, ignoreCase = true) }
+    return state.models.firstOrNull { it.id == selectedId }?.installed == true
 }
 
 @Composable
@@ -2180,19 +1842,6 @@ private fun runtimeErrorLabel(error: RuntimeUiError): String {
 }
 
 @Composable
-private fun modelStatusLine(model: RuntimeModel): String {
-    val installState = when {
-        model.running -> stringResource(R.string.model_running)
-        model.installed -> stringResource(R.string.model_installed)
-        else -> stringResource(R.string.model_available_to_install)
-    }
-    val providerText = stringResource(R.string.model_provider_value, providerDisplayName(model.provider))
-    val sourceText = stringResource(R.string.model_source_value, modelSourceDisplayName(model.source))
-    val sizeText = model.sizeBytes?.let { stringResource(R.string.model_size_value, formatSizeBytes(it)) }
-    return listOfNotNull(installState, providerText, sourceText, sizeText).joinToString(" | ")
-}
-
-@Composable
 private fun providerStatusSummary(state: RuntimeUiState): String {
     if (state.providerStatuses.isEmpty()) {
         return backendStatusLabel(state.backendAvailable)
@@ -2202,42 +1851,6 @@ private fun providerStatusSummary(state: RuntimeUiState): String {
     return state.providerStatuses.joinToString(" | ") { provider ->
         val status = if (provider.available) available else unavailable
         "${provider.name}: $status"
-    }
-}
-
-@Composable
-private fun providerDisplayName(provider: String?): String {
-    return when (provider?.lowercase()) {
-        "lm_studio" -> "LM Studio"
-        "ollama" -> "Ollama"
-        "aggregate" -> stringResource(R.string.provider_local_runtime)
-        null, "" -> stringResource(R.string.status_unknown)
-        else -> provider.orEmpty()
-    }
-}
-
-@Composable
-private fun modelSourceDisplayName(source: String?): String {
-    return when (source?.lowercase()) {
-        "local" -> stringResource(R.string.model_source_local)
-        "cloud" -> stringResource(R.string.model_source_cloud)
-        null, "" -> stringResource(R.string.status_unknown)
-        else -> source.orEmpty()
-    }
-}
-
-private fun formatSizeBytes(sizeBytes: Long): String {
-    val units = listOf("B", "KB", "MB", "GB", "TB")
-    var value = sizeBytes.toDouble()
-    var unitIndex = 0
-    while (value >= 1024 && unitIndex < units.lastIndex) {
-        value /= 1024
-        unitIndex += 1
-    }
-    return if (unitIndex == 0) {
-        "${sizeBytes} ${units[unitIndex]}"
-    } else {
-        "%.1f %s".format(value, units[unitIndex])
     }
 }
 

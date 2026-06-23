@@ -4,9 +4,10 @@
 "Pairing" = "Jumelage";
 "Trusted Devices" = "Appareils approuvés";
 "Logs" = "Journaux";
-"Refresh Ollama Status" = "Actualiser l’état d’Ollama";
 "Open AetherLink" = "Ouvrir AetherLink";
-"Refresh Ollama" = "Actualiser Ollama";
+"Refresh" = "Actualiser";
+"Companion: %@" = "Companion : %@";
+"Backend: %@" = "Backend : %@";
 "Quit" = "Quitter";
 
 "AetherLink Companion" = "Compagnon AetherLink";
@@ -17,13 +18,23 @@
 "LM Studio" = "LM Studio";
 "Local Backends" = "Backends locaux";
 "Quick Actions" = "Actions rapides";
-"Check Ollama" = "Vérifier Ollama";
 "Refresh Backend Status" = "Actualiser l’état des backends";
 "Load Model List" = "Charger la liste des modèles";
 "Load Local Models" = "Charger les modèles locaux";
-"Ollama Models" = "Modèles Ollama";
 "Local Models" = "Modèles locaux";
-"No Ollama models loaded" = "Aucun modèle Ollama chargé";
+"Readiness" = "Préparation";
+"Runtime listener" = "Écouteur du runtime";
+"Listening for authenticated runtime sessions." = "En écoute des sessions de runtime authentifiées.";
+"Start the companion runtime listener." = "Démarrez l’écouteur du runtime Companion.";
+"Local backend availability" = "Disponibilité du backend local";
+"Trusted device pairing" = "Jumelage d’appareil approuvé";
+"Model list loaded" = "Liste des modèles chargée";
+"Load models to show what this Mac runtime can offer." = "Chargez les modèles pour afficher ce que ce runtime Mac peut proposer.";
+"%d model(s) loaded" = "%d modèle(s) chargé(s)";
+"Ready" = "Prêt";
+"Needs attention" = "Attention requise";
+"Not ready" = "Pas prêt";
+"Pending" = "En attente";
 "No local models loaded" = "Aucun modèle local chargé";
 "Load models to confirm what Android can request through this Mac." = "Chargez les modèles pour confirmer ce qu’Android peut demander via ce Mac.";
 "Load models to confirm what Android can request through this Mac runtime." = "Chargez les modèles pour confirmer ce qu’Android peut demander via ce runtime Mac.";
@@ -58,8 +69,8 @@
 "Local" = "Local";
 "Cloud" = "Cloud";
 "Running" = "En cours";
-"Run a check to verify Ollama before connecting a phone." = "Lancez une vérification d’Ollama avant de connecter un téléphone.";
-"Open Ollama on this Mac, then check again." = "Ouvrez Ollama sur ce Mac, puis vérifiez à nouveau.";
+"Run a check to verify local backends before connecting a phone." = "Lancez une vérification des backends locaux avant de connecter un téléphone.";
+"Open a local model provider on this Mac, then check again." = "Ouvrez un fournisseur de modèles local sur ce Mac, puis vérifiez à nouveau.";
 "%d trusted device(s)" = "%d appareil(s) approuvé(s)";
 "Pair a phone before allowing runtime requests." = "Jumelez un téléphone avant d’autoriser les requêtes du runtime.";
 "Authenticated devices can request runtime sessions." = "Les appareils authentifiés peuvent demander des sessions de runtime.";
@@ -104,8 +115,7 @@
 "Removed %@" = "%@ retiré";
 "Received Android runtime request" = "Requête runtime Android reçue";
 "Loaded %@ local model(s)" = "%@ modèle(s) local(aux) chargé(s)";
-"Loaded %@ Ollama model(s)" = "%@ modèle(s) Ollama chargé(s)";
-"Could not load Ollama models: %@" = "Impossible de charger les modèles Ollama : %@";
+"Could not load local models: %@" = "Impossible de charger les modèles locaux : %@";
 "Could not remove trusted device: %@" = "Impossible de retirer l’appareil approuvé : %@";
 "Could not load trusted devices: %@" = "Impossible de charger les appareils approuvés : %@";
 

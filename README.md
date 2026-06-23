@@ -149,7 +149,7 @@ Use this checklist when deciding whether a change belongs in v0.1:
 - Android stores a trusted Mac record after accepted pairing.
 - Android connects to the Mac runtime, not to Ollama or LM Studio.
 - Android can request runtime health, list installed local models, request Mac-mediated Ollama model pulls, send chat with an installed model, render streamed answer deltas, show preserved reasoning/think deltas as muted collapsible UI, and cancel an active generation.
-- If no Ollama models are installed, Android shows an empty model list until the user pulls a model through the Mac runtime or Ollama reports one through `/api/tags`.
+- If no local backend models are available, Android shows an empty model list until the user pulls an Ollama model through the Mac runtime or Ollama/LM Studio reports an installed model.
 - Untrusted or unauthenticated clients cannot run `runtime.health`, `models.list`, `models.pull`, `chat.send`, or `chat.cancel`.
 - Docs and UI do not imply MCP, skills, web search, advanced memory, direct Android backend access, or iOS are part of the local chat backend path.
 

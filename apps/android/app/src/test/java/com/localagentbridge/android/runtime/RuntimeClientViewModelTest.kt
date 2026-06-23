@@ -22,7 +22,7 @@ class RuntimeClientViewModelTest {
     fun trustedRuntimeConnectionTargetUsesTrustedMacInsteadOfManualHostFields() {
         val state = RuntimeUiState(
             macHost = "127.0.0.1",
-            macPort = "11434",
+            macPort = "43169",
             trustedMac = RuntimeTrustedMac(
                 deviceId = "mac-1",
                 name = "AetherLink Mac",
@@ -507,6 +507,27 @@ class RuntimeClientViewModelTest {
         assertTrue(runtimeChatSessions(data).isEmpty())
         assertTrue(activeSessionMessages(data).isEmpty())
         assertEquals("Keep memory", data.memoryEntries.single().content)
+    }
+
+    @Test
+    fun persistedRuntimeDataDefaultsToEnglishAppLanguage() {
+        val data = PersistedRuntimeData()
+
+        assertEquals(RuntimeAppLanguage.English.languageTag, data.appLanguageTag)
+        assertEquals(RuntimeAppLanguage.English.languageTag, data.sanitized().appLanguageTag)
+    }
+
+    @Test
+    fun appLanguageTagHelperNormalizesSupportedAndInvalidTags() {
+        val korean = PersistedRuntimeData().withAppLanguageTag(" KO ")
+        val simplifiedChinese = korean.withAppLanguageTag("zh-cn")
+        val invalid = simplifiedChinese.withAppLanguageTag("unknown")
+        val system = invalid.withAppLanguageTag(RuntimeAppLanguage.System.languageTag)
+
+        assertEquals(RuntimeAppLanguage.Korean.languageTag, korean.appLanguageTag)
+        assertEquals(RuntimeAppLanguage.SimplifiedChinese.languageTag, simplifiedChinese.appLanguageTag)
+        assertEquals(RuntimeAppLanguage.System.languageTag, invalid.appLanguageTag)
+        assertEquals(RuntimeAppLanguage.System.languageTag, system.appLanguageTag)
     }
 
     @Test

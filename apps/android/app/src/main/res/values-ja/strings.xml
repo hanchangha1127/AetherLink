@@ -133,6 +133,10 @@
     <string name="empty_chat_no_model">送信する前に、Mac companion が公開しているモデルを選択してください。</string>
     <string name="empty_chat_ready_title">プロンプトを入力できます</string>
     <string name="empty_chat_ready">メッセージは Mac companion を通じてストリーミングされます。</string>
+    <string name="chat_starter_prompt_explain_project">このプロジェクトを説明して</string>
+    <string name="chat_starter_prompt_summarize_plan">計画を要約して</string>
+    <string name="chat_starter_prompt_debug_issue">問題のデバッグを手伝って</string>
+    <string name="chat_starter_prompt_compare_options">選択肢を比較して</string>
     <string name="empty_chat_streaming_title">応答中</string>
     <string name="empty_chat_streaming">Mac companion からストリーミング応答を受信しています。</string>
     <string name="streaming">ストリーミング中</string>
@@ -165,6 +169,7 @@
     <string name="preferences_title">環境設定</string>
     <string name="appearance_title">外観</string>
     <string name="appearance_system">システム</string>
+    <string name="appearance_system_detail">Android システムのライトまたはダーク外観に従います。</string>
     <string name="language_title">言語</string>
     <string name="language_system">デバイスの言語</string>
     <string name="language_english">英語</string>

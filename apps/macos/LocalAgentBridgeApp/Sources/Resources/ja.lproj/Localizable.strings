@@ -4,9 +4,10 @@
 "Pairing" = "ペアリング";
 "Trusted Devices" = "信頼済みデバイス";
 "Logs" = "ログ";
-"Refresh Ollama Status" = "Ollama のステータスを更新";
 "Open AetherLink" = "AetherLink を開く";
-"Refresh Ollama" = "Ollama を更新";
+"Refresh" = "更新";
+"Companion: %@" = "Companion: %@";
+"Backend: %@" = "バックエンド: %@";
 "Quit" = "終了";
 
 "AetherLink Companion" = "AetherLink Companion";
@@ -17,13 +18,23 @@
 "LM Studio" = "LM Studio";
 "Local Backends" = "ローカルバックエンド";
 "Quick Actions" = "クイックアクション";
-"Check Ollama" = "Ollama を確認";
 "Refresh Backend Status" = "バックエンドのステータスを更新";
 "Load Model List" = "モデル一覧を読み込む";
 "Load Local Models" = "ローカルモデルを読み込む";
-"Ollama Models" = "Ollama モデル";
 "Local Models" = "ローカルモデル";
-"No Ollama models loaded" = "読み込まれた Ollama モデルはありません";
+"Readiness" = "準備状況";
+"Runtime listener" = "ランタイムリスナー";
+"Listening for authenticated runtime sessions." = "認証済みランタイムセッションを待機しています。";
+"Start the companion runtime listener." = "Companion ランタイムリスナーを開始してください。";
+"Local backend availability" = "ローカルバックエンドの可用性";
+"Trusted device pairing" = "信頼済みデバイスのペアリング";
+"Model list loaded" = "モデル一覧を読み込み済み";
+"Load models to show what this Mac runtime can offer." = "この Mac ランタイムが提供できるモデルを表示するには、モデルを読み込んでください。";
+"%d model(s) loaded" = "%d 個のモデルを読み込み済み";
+"Ready" = "準備完了";
+"Needs attention" = "確認が必要";
+"Not ready" = "未準備";
+"Pending" = "保留中";
 "No local models loaded" = "読み込まれたローカルモデルはありません";
 "Load models to confirm what Android can request through this Mac." = "Android がこの Mac 経由でリクエストできるモデルを確認するには、モデルを読み込んでください。";
 "Load models to confirm what Android can request through this Mac runtime." = "Android がこの Mac ランタイム経由でリクエストできるモデルを確認するには、モデルを読み込んでください。";
@@ -58,8 +69,8 @@
 "Local" = "ローカル";
 "Cloud" = "クラウド";
 "Running" = "実行中";
-"Run a check to verify Ollama before connecting a phone." = "電話を接続する前に、Ollama を確認してください。";
-"Open Ollama on this Mac, then check again." = "この Mac で Ollama を開いてから、もう一度確認してください。";
+"Run a check to verify local backends before connecting a phone." = "電話を接続する前に、ローカルバックエンドを確認してください。";
+"Open a local model provider on this Mac, then check again." = "この Mac でローカルモデルプロバイダーを開いてから、もう一度確認してください。";
 "%d trusted device(s)" = "信頼済みデバイス %d 台";
 "Pair a phone before allowing runtime requests." = "ランタイムリクエストを許可する前に、電話をペアリングしてください。";
 "Authenticated devices can request runtime sessions." = "認証済みデバイスはランタイムセッションをリクエストできます。";
@@ -104,8 +115,7 @@
 "Removed %@" = "%@ を削除しました";
 "Received Android runtime request" = "Android ランタイムリクエストを受信しました";
 "Loaded %@ local model(s)" = "%@ 個のローカルモデルを読み込みました";
-"Loaded %@ Ollama model(s)" = "%@ 個の Ollama モデルを読み込みました";
-"Could not load Ollama models: %@" = "Ollama モデルを読み込めませんでした: %@";
+"Could not load local models: %@" = "ローカルモデルを読み込めませんでした: %@";
 "Could not remove trusted device: %@" = "信頼済みデバイスを削除できませんでした: %@";
 "Could not load trusted devices: %@" = "信頼済みデバイスを読み込めませんでした: %@";
 

@@ -1,17 +1,19 @@
 # Android App
 
-Placeholder module for the Android client/controller.
+Android client/controller for paired AetherLink chat through the Mac companion.
 
 v0.1 responsibilities:
 
-- Pair/connect to the Mac companion.
+- Pair/connect to the Mac companion with a QR-based first-run flow.
 - Show connection status.
-- List Mac-side Ollama models.
-- Send chat messages.
-- Render streamed responses.
+- List Mac-mediated local backend models from Ollama and LM Studio.
+- Send chat messages through the Mac companion.
+- Render streamed responses, including preserved reasoning when available.
 - Cancel generation.
+- Provide a ChatGPT-like sidebar for chat history and settings.
+- Support localized UI strings, starter prompts, and haptic feedback.
 
-The Android app must not ask the user to manually enter an Ollama or LM Studio URL.
+The Android app must not ask the user to manually enter backend URLs. It never calls Ollama or LM Studio directly; all model, chat, and generation control traffic goes through the paired Mac companion.
 
 ## Physical Device Development
 

@@ -46,6 +46,32 @@ struct ContentView: View {
                 LogsView(model: model)
             }
         }
+        .toolbar {
+            ToolbarItemGroup(placement: .primaryAction) {
+                Button {
+                    Task { await model.refreshBackendStatus() }
+                } label: {
+                    Label("Refresh Backend Status", systemImage: "arrow.clockwise")
+                }
+
+                Button {
+                    Task { await model.loadModels() }
+                } label: {
+                    Label("Load Local Models", systemImage: "shippingbox")
+                }
+
+                Button {
+                    model.beginPairing()
+                    selectedSection = .pairing
+                } label: {
+                    if model.pairingSession == nil {
+                        Label("Start Pairing", systemImage: "qrcode")
+                    } else {
+                        Label("Generate New Code", systemImage: "arrow.triangle.2.circlepath")
+                    }
+                }
+            }
+        }
     }
 }
 

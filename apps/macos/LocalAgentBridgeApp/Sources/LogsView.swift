@@ -104,13 +104,13 @@ private func localizedLogLine(_ line: String) -> String {
         if line.hasPrefix("Loaded "), line.hasSuffix(" Ollama model(s)") {
             let count = String(line.dropFirst("Loaded ".count).dropLast(" Ollama model(s)".count))
             return String(
-                format: NSLocalizedString("Loaded %@ Ollama model(s)", comment: ""),
+                format: NSLocalizedString("Loaded %@ local model(s)", comment: ""),
                 count
             )
         }
         if line.hasPrefix("Model list failed: ") {
             return String(
-                format: NSLocalizedString("Could not load Ollama models: %@", comment: ""),
+                format: NSLocalizedString("Could not load local models: %@", comment: ""),
                 String(line.dropFirst("Model list failed: ".count))
             )
         }

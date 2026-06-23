@@ -138,7 +138,7 @@ public final class CompanionAppModel: ObservableObject {
         log("Companion started")
         Task {
             await refreshTrustedDevices()
-            await refreshOllamaStatus()
+            await refreshBackendStatus()
         }
     }
 
@@ -150,7 +150,7 @@ public final class CompanionAppModel: ObservableObject {
         log("Companion stopped")
     }
 
-    public func refreshOllamaStatus() async {
+    public func refreshBackendStatus() async {
         if let aggregate = backend as? AggregatingLlmBackend {
             let statuses = await aggregate.providerHealth()
             let sortedStatuses = statuses.sorted { $0.key.rawValue < $1.key.rawValue }

@@ -40,10 +40,21 @@ struct StatusView: View {
                     )
                 }
 
+                CompanionPanel(title: "Readiness", systemImage: "checklist") {
+                    VStack(spacing: 0) {
+                        ForEach(readinessItems) { item in
+                            ReadinessRow(item: item)
+                            if item.id != readinessItems.last?.id {
+                                Divider()
+                            }
+                        }
+                    }
+                }
+
                 CompanionPanel(title: "Quick Actions", systemImage: "bolt.horizontal") {
                     HStack(spacing: 10) {
                         Button {
-                            Task { await model.refreshOllamaStatus() }
+                            Task { await model.refreshBackendStatus() }
                         } label: {
                             Label("Refresh Backend Status", systemImage: "arrow.clockwise")
                         }
@@ -143,6 +154,39 @@ struct StatusView: View {
         model.trustedDevices.isEmpty
             ? NSLocalizedString("Pair a phone before allowing runtime requests.", comment: "")
             : NSLocalizedString("Authenticated devices can request runtime sessions.", comment: "")
+    }
+
+    private var readinessItems: [ReadinessItem] {
+        [
+            ReadinessItem(
+                id: "runtime-listener",
+                title: NSLocalizedString("Runtime listener", comment: ""),
+                detail: model.transportState.state == .advertising
+                    ? NSLocalizedString("Listening for authenticated runtime sessions.", comment: "")
+                    : NSLocalizedString("Start the companion runtime listener.", comment: ""),
+                tone: transportTone(for: model.transportState)
+            ),
+            ReadinessItem(
+                id: "backend-availability",
+                title: NSLocalizedString("Local backend availability", comment: ""),
+                detail: backendSummary.detail,
+                tone: backendSummary.tone
+            ),
+            ReadinessItem(
+                id: "trusted-device-pairing",
+                title: NSLocalizedString("Trusted device pairing", comment: ""),
+                detail: trustedDeviceDetail,
+                tone: model.trustedDevices.isEmpty ? .inactive : .ready
+            ),
+            ReadinessItem(
+                id: "model-list-loaded",
+                title: NSLocalizedString("Model list loaded", comment: ""),
+                detail: model.models.isEmpty
+                    ? NSLocalizedString("Load models to show what this Mac runtime can offer.", comment: "")
+                    : String(format: NSLocalizedString("%d model(s) loaded", comment: ""), model.models.count),
+                tone: model.models.isEmpty ? .inactive : .ready
+            )
+        ]
     }
 }
 
@@ -258,6 +302,53 @@ private struct ModelBadge: View {
             .padding(.horizontal, 6)
             .padding(.vertical, 3)
             .background(.quaternary, in: Capsule())
+    }
+}
+
+private struct ReadinessRow: View {
+    let item: ReadinessItem
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Image(systemName: item.tone.systemImage)
+                .font(.body)
+                .foregroundStyle(item.tone.color)
+                .frame(width: 22)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(item.title)
+                    .font(.headline)
+                Text(item.detail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 12)
+
+            StatusPill(text: item.statusText, tone: item.tone)
+        }
+        .padding(.vertical, 10)
+    }
+}
+
+private struct ReadinessItem: Identifiable {
+    let id: String
+    let title: String
+    let detail: String
+    let tone: StatusTone
+
+    var statusText: String {
+        switch tone {
+        case .ready:
+            return NSLocalizedString("Ready", comment: "")
+        case .warning:
+            return NSLocalizedString("Needs attention", comment: "")
+        case .inactive:
+            return NSLocalizedString("Not ready", comment: "")
+        case .neutral:
+            return NSLocalizedString("Pending", comment: "")
+        }
     }
 }
 

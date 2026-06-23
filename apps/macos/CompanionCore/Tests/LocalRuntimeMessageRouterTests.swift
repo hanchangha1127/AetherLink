@@ -758,7 +758,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
             advertiser: FakeRuntimeAdvertiser()
         )
 
-        await model.refreshOllamaStatus()
+        await model.refreshBackendStatus()
 
         let statusesByProvider = Dictionary(uniqueKeysWithValues: model.providerStatuses.map { ($0.provider, $0) })
         XCTAssertEqual(statusesByProvider[.ollama]?.availability, .available)

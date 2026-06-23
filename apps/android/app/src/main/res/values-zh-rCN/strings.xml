@@ -133,6 +133,10 @@
     <string name="empty_chat_no_model">发送前请选择 Mac companion 公开的模型。</string>
     <string name="empty_chat_ready_title">可以输入提示词</string>
     <string name="empty_chat_ready">消息将通过 Mac companion 流式传输。</string>
+    <string name="chat_starter_prompt_explain_project">解释这个项目</string>
+    <string name="chat_starter_prompt_summarize_plan">总结一个计划</string>
+    <string name="chat_starter_prompt_debug_issue">帮我调试问题</string>
+    <string name="chat_starter_prompt_compare_options">比较这些选项</string>
     <string name="empty_chat_streaming_title">正在响应</string>
     <string name="empty_chat_streaming">正在从 Mac companion 接收流式回答。</string>
     <string name="streaming">流式传输中</string>
@@ -165,6 +169,7 @@
     <string name="preferences_title">偏好设置</string>
     <string name="appearance_title">外观</string>
     <string name="appearance_system">系统</string>
+    <string name="appearance_system_detail">跟随 Android 系统的浅色或深色外观。</string>
     <string name="language_title">语言</string>
     <string name="language_system">设备语言</string>
     <string name="language_english">英语</string>

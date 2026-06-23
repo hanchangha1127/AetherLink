@@ -133,6 +133,10 @@
     <string name="empty_chat_no_model">Sélectionnez un modèle exposé par le Mac companion avant l’envoi.</string>
     <string name="empty_chat_ready_title">Prêt pour un prompt</string>
     <string name="empty_chat_ready">Les messages seront diffusés via le Mac companion.</string>
+    <string name="chat_starter_prompt_explain_project">Explique ce projet</string>
+    <string name="chat_starter_prompt_summarize_plan">Résume un plan</string>
+    <string name="chat_starter_prompt_debug_issue">Aide à déboguer un problème</string>
+    <string name="chat_starter_prompt_compare_options">Compare les options</string>
     <string name="empty_chat_streaming_title">Réponse en cours</string>
     <string name="empty_chat_streaming">Réception d’une réponse diffusée depuis le Mac companion.</string>
     <string name="streaming">Diffusion</string>
@@ -165,6 +169,7 @@
     <string name="preferences_title">Préférences</string>
     <string name="appearance_title">Apparence</string>
     <string name="appearance_system">Système</string>
+    <string name="appearance_system_detail">Suit l’apparence claire ou sombre du système Android.</string>
     <string name="language_title">Langue</string>
     <string name="language_system">Langue de l’appareil</string>
     <string name="language_english">Anglais</string>

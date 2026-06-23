@@ -4,9 +4,10 @@
 "Pairing" = "配对";
 "Trusted Devices" = "受信任设备";
 "Logs" = "日志";
-"Refresh Ollama Status" = "刷新 Ollama 状态";
 "Open AetherLink" = "打开 AetherLink";
-"Refresh Ollama" = "刷新 Ollama";
+"Refresh" = "刷新";
+"Companion: %@" = "Companion：%@";
+"Backend: %@" = "后端：%@";
 "Quit" = "退出";
 
 "AetherLink Companion" = "AetherLink Companion";
@@ -17,13 +18,23 @@
 "LM Studio" = "LM Studio";
 "Local Backends" = "本地后端";
 "Quick Actions" = "快速操作";
-"Check Ollama" = "检查 Ollama";
 "Refresh Backend Status" = "刷新后端状态";
 "Load Model List" = "加载模型列表";
 "Load Local Models" = "加载本地模型";
-"Ollama Models" = "Ollama 模型";
 "Local Models" = "本地模型";
-"No Ollama models loaded" = "尚未加载 Ollama 模型";
+"Readiness" = "就绪情况";
+"Runtime listener" = "运行时监听器";
+"Listening for authenticated runtime sessions." = "正在监听已认证的运行时会话。";
+"Start the companion runtime listener." = "启动 Companion 运行时监听器。";
+"Local backend availability" = "本地后端可用性";
+"Trusted device pairing" = "受信任设备配对";
+"Model list loaded" = "模型列表已加载";
+"Load models to show what this Mac runtime can offer." = "加载模型以显示这台 Mac 运行时可提供的内容。";
+"%d model(s) loaded" = "已加载 %d 个模型";
+"Ready" = "就绪";
+"Needs attention" = "需要注意";
+"Not ready" = "未就绪";
+"Pending" = "待处理";
 "No local models loaded" = "尚未加载本地模型";
 "Load models to confirm what Android can request through this Mac." = "加载模型，以确认 Android 可通过这台 Mac 请求哪些模型。";
 "Load models to confirm what Android can request through this Mac runtime." = "加载模型，以确认 Android 可通过这台 Mac 运行时请求哪些模型。";
@@ -58,8 +69,8 @@
 "Local" = "本地";
 "Cloud" = "云端";
 "Running" = "运行中";
-"Run a check to verify Ollama before connecting a phone." = "连接手机前，请先检查 Ollama。";
-"Open Ollama on this Mac, then check again." = "在这台 Mac 上打开 Ollama，然后再次检查。";
+"Run a check to verify local backends before connecting a phone." = "连接手机前，请先检查本地后端。";
+"Open a local model provider on this Mac, then check again." = "在这台 Mac 上打开本地模型提供方，然后再次检查。";
 "%d trusted device(s)" = "%d 台受信任设备";
 "Pair a phone before allowing runtime requests." = "允许运行时请求前，请先配对手机。";
 "Authenticated devices can request runtime sessions." = "已认证设备可以请求运行时会话。";
@@ -104,8 +115,7 @@
 "Removed %@" = "已移除 %@";
 "Received Android runtime request" = "已收到 Android 运行时请求";
 "Loaded %@ local model(s)" = "已加载 %@ 个本地模型";
-"Loaded %@ Ollama model(s)" = "已加载 %@ 个 Ollama 模型";
-"Could not load Ollama models: %@" = "无法加载 Ollama 模型：%@";
+"Could not load local models: %@" = "无法加载本地模型：%@";
 "Could not remove trusted device: %@" = "无法移除受信任设备：%@";
 "Could not load trusted devices: %@" = "无法加载受信任设备：%@";
 

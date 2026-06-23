@@ -133,6 +133,10 @@
     <string name="empty_chat_no_model">전송하기 전에 Mac companion이 제공하는 모델을 선택하세요.</string>
     <string name="empty_chat_ready_title">프롬프트 입력 가능</string>
     <string name="empty_chat_ready">메시지는 Mac companion을 통해 스트리밍됩니다.</string>
+    <string name="chat_starter_prompt_explain_project">이 프로젝트 설명해 줘</string>
+    <string name="chat_starter_prompt_summarize_plan">계획을 요약해 줘</string>
+    <string name="chat_starter_prompt_debug_issue">문제 디버깅 도와줘</string>
+    <string name="chat_starter_prompt_compare_options">옵션을 비교해 줘</string>
     <string name="empty_chat_streaming_title">응답 진행 중</string>
     <string name="empty_chat_streaming">Mac companion에서 스트리밍 응답을 받는 중입니다.</string>
     <string name="streaming">응답 수신 중</string>
@@ -165,6 +169,7 @@
     <string name="preferences_title">환경설정</string>
     <string name="appearance_title">화면 모드</string>
     <string name="appearance_system">시스템</string>
+    <string name="appearance_system_detail">Android 시스템의 라이트 또는 다크 화면 모드를 따릅니다.</string>
     <string name="language_title">언어</string>
     <string name="language_system">기기 언어</string>
     <string name="language_english">영어</string>
