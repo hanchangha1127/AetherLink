@@ -121,6 +121,23 @@ backend aggregate. It fails by default if Ollama is unavailable; add
 
 The Android project is rooted at `apps/android` but is also included from the repository root Gradle settings.
 
+## Verification
+
+Run these lightweight checks from the repository root before handing off changes
+that touch localization, protocol schema, or platform runtime behavior:
+
+```bash
+python3 script/check_macos_localization.py
+python3 script/check_protocol_schema.py
+python3 script/check_android_string_parity.py
+swift test
+```
+
+The macOS localization check validates the five `Localizable.strings` files for
+English, Korean, Japanese, Simplified Chinese, and French. It confirms the files
+exist, can be linted as Apple strings property lists when `plutil` is available,
+and keep the same key set and order as English without duplicate keys.
+
 ## v0.1 Acceptance Check
 
 Use this checklist when deciding whether a change belongs in v0.1:

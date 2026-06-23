@@ -22,9 +22,7 @@
         "chat.delta",
         "chat.done",
         "chat.cancel",
-        "error",
-        "tool.approval_required",
-        "tool.approval_response"
+        "error"
       ]
     },
     "request_id": { "type": "string", "format": "uuid" },

@@ -62,6 +62,7 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
     private var pendingModelPullRequestId: String? = null
     private var modelIdToSelectAfterRefresh: String? = null
     private var isSessionAuthenticated = false
+    private val chatSessionId = UUID.randomUUID().toString()
 
     private val mutableState = MutableStateFlow(RuntimeUiState())
     val state: StateFlow<RuntimeUiState> = mutableState.asStateFlow()
@@ -127,19 +128,13 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
 
     fun connectToTrustedRuntime() {
         viewModelScope.launch {
-            val current = state.value
-            val port = current.macPort.toIntOrNull()
-            if (current.macHost.isBlank() || port == null) {
-                showError("invalid_endpoint")
-                return@launch
-            }
-
-            if (current.trustedMac == null) {
+            val trustedMac = state.value.trustedMac
+            if (trustedMac == null) {
                 showError("pairing_required")
                 return@launch
             }
 
-            connectToRuntime(current.macHost, port)
+            connectToRuntime(trustedMac.host, trustedMac.port)
         }
     }
 
@@ -377,7 +372,7 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
                 requestId = requestId,
                 serializer = ChatSendPayload.serializer(),
                 payload = ChatSendPayload(
-                    sessionId = "default",
+                    sessionId = chatSessionId,
                     model = model,
                     messages = (current.messages + userMessage)
                         .filter { it.role == "user" || it.role == "assistant" }
@@ -706,6 +701,7 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
     }
 
     private fun handleChatDelta(envelope: ProtocolEnvelope) {
+        if (!isActiveChatEnvelope(envelope)) return
         val payload = decodePayload(ChatDeltaPayload.serializer(), envelope.payload) ?: return
         if (payload.content.isEmpty()) return
         mutableState.update { current ->
@@ -720,6 +716,7 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
     }
 
     private fun handleChatDone(envelope: ProtocolEnvelope) {
+        if (!isActiveChatEnvelope(envelope)) return
         val payload = decodePayload(ChatDonePayload.serializer(), envelope.payload)
         mutableState.update {
             it.copy(
@@ -731,6 +728,12 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
     }
 
     private fun handleCancelAck(envelope: ProtocolEnvelope) {
+        val activeRequestId = state.value.activeRequestId ?: return
+        if (envelope.requestId != activeRequestId) {
+            if (envelope.payload.isEmpty()) return
+            val payload = decodePayload(ChatCancelPayload.serializer(), envelope.payload) ?: return
+            if (payload.targetRequestId != activeRequestId) return
+        }
         mutableState.update {
             it.copy(
                 isStreaming = false,
@@ -742,20 +745,22 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
 
     private fun handleError(envelope: ProtocolEnvelope) {
         val payload = decodePayload(ErrorPayload.serializer(), envelope.payload)
-        if (pendingModelPullRequestId == envelope.requestId) {
+        val isModelPullError = pendingModelPullRequestId == envelope.requestId
+        val isActiveChatError = state.value.activeRequestId == envelope.requestId
+        if (isModelPullError) {
             modelIdToSelectAfterRefresh = null
         }
         mutableState.update {
             it.copy(
-                isStreaming = false,
-                activeRequestId = null,
+                isStreaming = if (isActiveChatError) false else it.isStreaming,
+                activeRequestId = if (isActiveChatError) null else it.activeRequestId,
                 isLoadingModels = false,
-                installingModelId = if (pendingModelPullRequestId == envelope.requestId) null else it.installingModelId,
+                installingModelId = if (isModelPullError) null else it.installingModelId,
                 error = payload?.let { error -> RuntimeUiError(error.code, error.message) }
                     ?: RuntimeUiError("runtime_error")
             )
         }
-        if (pendingModelPullRequestId == envelope.requestId) {
+        if (isModelPullError) {
             pendingModelPullRequestId = null
         }
     }
@@ -809,6 +814,10 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
 
     private fun showError(code: String, detail: String? = null) {
         mutableState.update { it.copy(error = RuntimeUiError(code, detail)) }
+    }
+
+    private fun isActiveChatEnvelope(envelope: ProtocolEnvelope): Boolean {
+        return state.value.activeRequestId == envelope.requestId
     }
 
     override fun onCleared() {
