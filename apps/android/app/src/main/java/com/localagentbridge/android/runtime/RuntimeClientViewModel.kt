@@ -128,13 +128,13 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
 
     fun connectToTrustedRuntime() {
         viewModelScope.launch {
-            val trustedMac = state.value.trustedMac
-            if (trustedMac == null) {
+            val target = trustedRuntimeConnectionTarget(state.value)
+            if (target == null) {
                 showError("pairing_required")
                 return@launch
             }
 
-            connectToRuntime(trustedMac.host, trustedMac.port)
+            connectToRuntime(target.host, target.port)
         }
     }
 
@@ -703,63 +703,33 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
     private fun handleChatDelta(envelope: ProtocolEnvelope) {
         if (!isActiveChatEnvelope(envelope)) return
         val payload = decodePayload(ChatDeltaPayload.serializer(), envelope.payload) ?: return
-        if (payload.content.isEmpty()) return
-        mutableState.update { current ->
-            val updated = current.messages.toMutableList()
-            val index = updated.indexOfLast { it.role == "assistant" }
-            if (index >= 0) {
-                val item = updated[index]
-                updated[index] = item.copy(content = item.content + payload.content)
-            }
-            current.copy(messages = updated)
-        }
+        mutableState.update { it.withChatDelta(envelope, payload) }
     }
 
     private fun handleChatDone(envelope: ProtocolEnvelope) {
         if (!isActiveChatEnvelope(envelope)) return
         val payload = decodePayload(ChatDonePayload.serializer(), envelope.payload)
-        mutableState.update {
-            it.copy(
-                isStreaming = false,
-                activeRequestId = null,
-                error = if (payload?.finishReason == "cancelled") RuntimeUiError("generation_cancelled") else it.error
-            )
-        }
+        mutableState.update { it.withChatDone(envelope, payload) }
     }
 
     private fun handleCancelAck(envelope: ProtocolEnvelope) {
         val activeRequestId = state.value.activeRequestId ?: return
-        if (envelope.requestId != activeRequestId) {
+        val payload = if (envelope.requestId != activeRequestId) {
             if (envelope.payload.isEmpty()) return
-            val payload = decodePayload(ChatCancelPayload.serializer(), envelope.payload) ?: return
-            if (payload.targetRequestId != activeRequestId) return
+            decodePayload(ChatCancelPayload.serializer(), envelope.payload) ?: return
+        } else {
+            null
         }
-        mutableState.update {
-            it.copy(
-                isStreaming = false,
-                activeRequestId = null,
-                error = null
-            )
-        }
+        mutableState.update { it.withChatCancelAck(envelope, payload) }
     }
 
     private fun handleError(envelope: ProtocolEnvelope) {
         val payload = decodePayload(ErrorPayload.serializer(), envelope.payload)
         val isModelPullError = pendingModelPullRequestId == envelope.requestId
-        val isActiveChatError = state.value.activeRequestId == envelope.requestId
         if (isModelPullError) {
             modelIdToSelectAfterRefresh = null
         }
-        mutableState.update {
-            it.copy(
-                isStreaming = if (isActiveChatError) false else it.isStreaming,
-                activeRequestId = if (isActiveChatError) null else it.activeRequestId,
-                isLoadingModels = false,
-                installingModelId = if (isModelPullError) null else it.installingModelId,
-                error = payload?.let { error -> RuntimeUiError(error.code, error.message) }
-                    ?: RuntimeUiError("runtime_error")
-            )
-        }
+        mutableState.update { it.withRuntimeError(envelope, payload, pendingModelPullRequestId) }
         if (isModelPullError) {
             pendingModelPullRequestId = null
         }
@@ -858,4 +828,76 @@ private fun providerModelIdFromQualifiedId(qualifiedId: String?, provider: Strin
 
 private fun qualifyModelId(provider: String, modelId: String): String {
     return if (modelId.startsWith("$provider:")) modelId else "$provider:$modelId"
+}
+
+internal data class RuntimeConnectionTarget(
+    val host: String,
+    val port: Int,
+)
+
+internal fun trustedRuntimeConnectionTarget(state: RuntimeUiState): RuntimeConnectionTarget? {
+    val trustedMac = state.trustedMac ?: return null
+    return RuntimeConnectionTarget(
+        host = trustedMac.host,
+        port = trustedMac.port,
+    )
+}
+
+internal fun RuntimeUiState.withChatDelta(
+    envelope: ProtocolEnvelope,
+    payload: ChatDeltaPayload,
+): RuntimeUiState {
+    if (activeRequestId != envelope.requestId || payload.content.isEmpty()) return this
+
+    val updated = messages.toMutableList()
+    val index = updated.indexOfLast { it.role == "assistant" }
+    if (index >= 0) {
+        val item = updated[index]
+        updated[index] = item.copy(content = item.content + payload.content)
+    }
+    return copy(messages = updated)
+}
+
+internal fun RuntimeUiState.withChatDone(
+    envelope: ProtocolEnvelope,
+    payload: ChatDonePayload?,
+): RuntimeUiState {
+    if (activeRequestId != envelope.requestId) return this
+    return copy(
+        isStreaming = false,
+        activeRequestId = null,
+        error = if (payload?.finishReason == "cancelled") RuntimeUiError("generation_cancelled") else error,
+    )
+}
+
+internal fun RuntimeUiState.withChatCancelAck(
+    envelope: ProtocolEnvelope,
+    payload: ChatCancelPayload?,
+): RuntimeUiState {
+    val activeRequestId = activeRequestId ?: return this
+    if (envelope.requestId != activeRequestId && payload?.targetRequestId != activeRequestId) {
+        return this
+    }
+    return copy(
+        isStreaming = false,
+        activeRequestId = null,
+        error = null,
+    )
+}
+
+internal fun RuntimeUiState.withRuntimeError(
+    envelope: ProtocolEnvelope,
+    payload: ErrorPayload?,
+    pendingModelPullRequestId: String?,
+): RuntimeUiState {
+    val isActiveChatError = activeRequestId == envelope.requestId
+    val isModelPullError = pendingModelPullRequestId == envelope.requestId
+    return copy(
+        isStreaming = if (isActiveChatError) false else isStreaming,
+        activeRequestId = if (isActiveChatError) null else activeRequestId,
+        isLoadingModels = false,
+        installingModelId = if (isModelPullError) null else installingModelId,
+        error = payload?.let { error -> RuntimeUiError(error.code, error.message) }
+            ?: RuntimeUiError("runtime_error"),
+    )
 }

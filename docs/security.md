@@ -46,6 +46,8 @@ Target pairing flow:
 
 v0.1 persists the scanned trusted Mac record on Android only after the Mac accepts `pairing.request` and stores the Android device as trusted. Android connects to the Mac runtime, not to Ollama or LM Studio directly.
 
+An active pairing session allows only a bounded number of invalid nonce/code submissions. After the limit is reached, the Mac invalidates that pairing session and returns structured `pairing.result` rejection details while preserving the existing `accepted: false` response shape.
+
 Implementation note: QR pairing and discovery can be simple in v0.1, but the docs must remain clear that the trusted-device gate is required before runtime commands execute.
 
 Development note: `AETHERLINK_DEV_PAIRING=1` is only for local automated smoke tests with RuntimeDevServer. It opens and prints a temporary pairing session for scripts, but runtime commands still require the normal pairing/trusted-device and challenge-response path. Do not enable this flag for production or normal trusted-device use.

@@ -1,7 +1,9 @@
 .DS_Store
 .gradle/
+.gradle-user-home/
 .idea/
 .kotlin/
+.swiftpm-home/
 .build/
 build/
 dist/

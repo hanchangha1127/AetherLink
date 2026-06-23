@@ -25,7 +25,7 @@
         "error"
       ]
     },
-    "request_id": { "type": "string", "format": "uuid" },
+    "request_id": { "type": "string", "minLength": 1 },
     "timestamp": { "type": "string", "format": "date-time" },
     "payload": { "type": "object" }
   },

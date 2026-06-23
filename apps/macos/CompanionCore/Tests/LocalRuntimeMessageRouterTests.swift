@@ -448,11 +448,120 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(devices.map(\.id), ["android-1"])
         XCTAssertEqual(devices.first?.name, "Android Phone")
 
+        router.handle(pairingEnvelope(
+            requestID: "pair-reuse",
+            session: session,
+            deviceID: "android-2",
+            deviceName: "Second Android"
+        ), sink: sink)
+
+        let reuseMessage = try await sink.waitForMessages(count: 2).last
+        XCTAssertEqual(reuseMessage?.type, MessageType.pairingResult)
+        XCTAssertEqual(reuseMessage?.requestID, "pair-reuse")
+        XCTAssertEqual(reuseMessage?.payload["accepted"], .bool(false))
+        XCTAssertEqual(reuseMessage?.payload["code"], .string(PairingRejectionReason.noActiveSession.rawValue))
+
         router.handle(ProtocolEnvelope(type: MessageType.runtimeHealth, requestID: "health-after-pairing"), sink: sink)
 
-        let authenticatedMessages = try await sink.waitForMessages(count: 2)
+        let authenticatedMessages = try await sink.waitForMessages(count: 3)
         XCTAssertEqual(authenticatedMessages.last?.type, MessageType.runtimeHealth)
         XCTAssertEqual(authenticatedMessages.last?.payload["status"], .string("ok"))
+    }
+
+    func testRepeatedInvalidPairingAttemptsInvalidateActiveSession() async throws {
+        let sink = RecordingSink()
+        let coordinator = PairingCoordinator(maxFailedAttempts: 2)
+        let session = coordinator.beginPairing(
+            macDeviceID: "mac-1",
+            fingerprint: "fp-1",
+            host: "192.168.1.10",
+            port: 43170
+        )
+        let store = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+        let router = LocalRuntimeMessageRouter(
+            backend: MockBackend(),
+            pairingCoordinator: coordinator,
+            trustedDeviceStore: store
+        )
+
+        router.handle(pairingEnvelope(
+            requestID: "pair-bad-1",
+            session: session,
+            pairingCode: "000000"
+        ), sink: sink)
+
+        let firstRejection = try await sink.waitForMessages(count: 1).last
+        XCTAssertEqual(firstRejection?.type, MessageType.pairingResult)
+        XCTAssertEqual(firstRejection?.payload["accepted"], .bool(false))
+        XCTAssertEqual(firstRejection?.payload["code"], .string(PairingRejectionReason.invalidCredentials.rawValue))
+        XCTAssertEqual(firstRejection?.payload["retryable"], .bool(true))
+        XCTAssertEqual(firstRejection?.payload["failed_attempts"], .number(1))
+        XCTAssertEqual(firstRejection?.payload["remaining_attempts"], .number(1))
+
+        router.handle(pairingEnvelope(
+            requestID: "pair-bad-2",
+            session: session,
+            pairingNonce: "wrong-nonce"
+        ), sink: sink)
+
+        let lockout = try await sink.waitForMessages(count: 2).last
+        XCTAssertEqual(lockout?.type, MessageType.pairingResult)
+        XCTAssertEqual(lockout?.payload["accepted"], .bool(false))
+        XCTAssertEqual(lockout?.payload["code"], .string(PairingRejectionReason.attemptsExceeded.rawValue))
+        XCTAssertEqual(lockout?.payload["retryable"], .bool(false))
+        XCTAssertEqual(lockout?.payload["failed_attempts"], .number(2))
+        XCTAssertEqual(lockout?.payload["remaining_attempts"], .number(0))
+
+        router.handle(pairingEnvelope(
+            requestID: "pair-after-lockout",
+            session: session
+        ), sink: sink)
+
+        let validAfterLockout = try await sink.waitForMessages(count: 3).last
+        XCTAssertEqual(validAfterLockout?.type, MessageType.pairingResult)
+        XCTAssertEqual(validAfterLockout?.payload["accepted"], .bool(false))
+        XCTAssertEqual(validAfterLockout?.payload["code"], .string(PairingRejectionReason.noActiveSession.rawValue))
+        let trustedDevices = try await store.load()
+        XCTAssertEqual(trustedDevices, [])
+    }
+
+    func testExpiredAndNoActivePairingRequestsReturnStructuredRejections() async throws {
+        let sink = RecordingSink()
+        let coordinator = PairingCoordinator()
+        let expiredSession = coordinator.beginPairing(
+            validFor: -1,
+            macDeviceID: "mac-1",
+            fingerprint: "fp-1",
+            host: "192.168.1.10",
+            port: 43170
+        )
+        let router = LocalRuntimeMessageRouter(
+            backend: MockBackend(),
+            pairingCoordinator: coordinator,
+            trustedDeviceStore: TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+        )
+
+        router.handle(pairingEnvelope(
+            requestID: "pair-expired",
+            session: expiredSession
+        ), sink: sink)
+
+        let expired = try await sink.waitForMessages(count: 1).last
+        XCTAssertEqual(expired?.type, MessageType.pairingResult)
+        XCTAssertEqual(expired?.payload["accepted"], .bool(false))
+        XCTAssertEqual(expired?.payload["code"], .string(PairingRejectionReason.expired.rawValue))
+        XCTAssertEqual(expired?.payload["retryable"], .bool(false))
+
+        router.handle(pairingEnvelope(
+            requestID: "pair-no-active",
+            session: expiredSession
+        ), sink: sink)
+
+        let noActive = try await sink.waitForMessages(count: 2).last
+        XCTAssertEqual(noActive?.type, MessageType.pairingResult)
+        XCTAssertEqual(noActive?.payload["accepted"], .bool(false))
+        XCTAssertEqual(noActive?.payload["code"], .string(PairingRejectionReason.noActiveSession.rawValue))
+        XCTAssertEqual(noActive?.payload["retryable"], .bool(false))
     }
 
     func testRuntimeCommandRequiresAuthenticatedConnectionByDefault() async throws {
@@ -606,6 +715,34 @@ private func makeRouter(
         backend: backend,
         requiresAuthentication: requiresAuthentication,
         trustedDeviceStore: trustedDeviceStore
+    )
+}
+
+private func trustedDeviceStoreURL() -> URL {
+    FileManager.default.temporaryDirectory
+        .appendingPathComponent(UUID().uuidString)
+        .appendingPathComponent("trusted-devices.json")
+}
+
+private func pairingEnvelope(
+    requestID: String,
+    session: PairingSession,
+    pairingNonce: String? = nil,
+    pairingCode: String? = nil,
+    deviceID: String = "android-1",
+    deviceName: String = "Android Phone",
+    publicKey: String = "public-key"
+) -> ProtocolEnvelope {
+    ProtocolEnvelope(
+        type: MessageType.pairingRequest,
+        requestID: requestID,
+        payload: [
+            "pairing_nonce": .string(pairingNonce ?? session.nonce),
+            "pairing_code": .string(pairingCode ?? session.code),
+            "device_id": .string(deviceID),
+            "device_name": .string(deviceName),
+            "public_key": .string(publicKey)
+        ]
     )
 }
 

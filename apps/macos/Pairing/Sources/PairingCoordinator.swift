@@ -60,11 +60,41 @@ public struct PairingValidationResult: Equatable, Sendable {
     public var macName: String
 }
 
-public final class PairingCoordinator: @unchecked Sendable {
-    private let lock = NSLock()
-    private var activeSession: PairingSession?
+public enum PairingRejectionReason: String, Equatable, Sendable {
+    case noActiveSession = "pairing_not_active"
+    case expired = "pairing_expired"
+    case invalidCredentials = "pairing_invalid"
+    case attemptsExceeded = "pairing_attempts_exceeded"
+}
 
-    public init() {}
+public struct PairingRejection: Equatable, Sendable {
+    public var reason: PairingRejectionReason
+    public var message: String
+    public var retryable: Bool
+    public var failedAttempts: Int
+    public var maxFailedAttempts: Int
+    public var remainingAttempts: Int
+
+    public var code: String { reason.rawValue }
+}
+
+public enum PairingValidationOutcome: Equatable, Sendable {
+    case accepted(PairingValidationResult)
+    case rejected(PairingRejection)
+}
+
+public final class PairingCoordinator: @unchecked Sendable {
+    public static let defaultMaxFailedAttempts = 3
+
+    private let lock = NSLock()
+    public let maxFailedAttempts: Int
+    private var activeSession: PairingSession?
+    private var failedAttempts = 0
+
+    public init(maxFailedAttempts: Int = PairingCoordinator.defaultMaxFailedAttempts) {
+        precondition(maxFailedAttempts > 0, "maxFailedAttempts must be greater than zero")
+        self.maxFailedAttempts = maxFailedAttempts
+    }
 
     public func beginPairing(
         validFor seconds: TimeInterval = 300,
@@ -88,22 +118,61 @@ public final class PairingCoordinator: @unchecked Sendable {
             port: port,
             serviceType: serviceType
         )
-        lock.withLock { activeSession = session }
+        lock.withLock {
+            activeSession = session
+            failedAttempts = 0
+        }
         return session
     }
 
-    public func validate(_ request: PairingRequest) -> PairingValidationResult? {
+    public func validate(_ request: PairingRequest) -> PairingValidationOutcome {
         lock.withLock {
-            guard let session = activeSession else { return nil }
+            guard let session = activeSession else {
+                return .rejected(rejection(
+                    reason: .noActiveSession,
+                    message: "No active pairing session is available.",
+                    retryable: false,
+                    failedAttempts: 0,
+                    remainingAttempts: 0
+                ))
+            }
             guard session.expiresAt > Date() else {
                 activeSession = nil
-                return nil
+                failedAttempts = 0
+                return .rejected(rejection(
+                    reason: .expired,
+                    message: "Pairing session expired. Start pairing again on the Mac.",
+                    retryable: false,
+                    failedAttempts: 0,
+                    remainingAttempts: 0
+                ))
             }
             guard request.pairingNonce == session.nonce, request.pairingCode == session.code else {
-                return nil
+                failedAttempts += 1
+                let remainingAttempts = max(0, maxFailedAttempts - failedAttempts)
+                guard failedAttempts < maxFailedAttempts else {
+                    let rejection = rejection(
+                        reason: .attemptsExceeded,
+                        message: "Too many invalid pairing attempts. Start pairing again on the Mac.",
+                        retryable: false,
+                        failedAttempts: failedAttempts,
+                        remainingAttempts: remainingAttempts
+                    )
+                    activeSession = nil
+                    failedAttempts = 0
+                    return .rejected(rejection)
+                }
+                return .rejected(rejection(
+                    reason: .invalidCredentials,
+                    message: "Pairing code or nonce was rejected.",
+                    retryable: true,
+                    failedAttempts: failedAttempts,
+                    remainingAttempts: remainingAttempts
+                ))
             }
             activeSession = nil
-            return PairingValidationResult(
+            failedAttempts = 0
+            return .accepted(PairingValidationResult(
                 trustedDevice: TrustedDevice(
                     id: request.deviceID,
                     name: request.deviceName,
@@ -111,8 +180,25 @@ public final class PairingCoordinator: @unchecked Sendable {
                 ),
                 macDeviceID: session.macDeviceID,
                 macName: session.macName
-            )
+            ))
         }
+    }
+
+    private func rejection(
+        reason: PairingRejectionReason,
+        message: String,
+        retryable: Bool,
+        failedAttempts: Int,
+        remainingAttempts: Int
+    ) -> PairingRejection {
+        PairingRejection(
+            reason: reason,
+            message: message,
+            retryable: retryable,
+            failedAttempts: failedAttempts,
+            maxFailedAttempts: maxFailedAttempts,
+            remainingAttempts: remainingAttempts
+        )
     }
 }
 

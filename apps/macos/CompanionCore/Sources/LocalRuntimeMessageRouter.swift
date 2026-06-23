@@ -95,32 +95,37 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                 deviceName: try requiredString("device_name", in: envelope.payload),
                 publicKeyBase64: try requiredString("public_key", in: envelope.payload)
             )
-            guard let validation = pairingCoordinator.validate(request) else {
+            switch pairingCoordinator.validate(request) {
+            case .accepted(let validation):
+                try await trustedDeviceStore.trust(validation.trustedDevice)
+                markAuthenticated(connectionID: sink.connectionID, deviceID: validation.trustedDevice.id)
+                onPairingAccepted?(validation.trustedDevice)
+
+                sink.send(ProtocolEnvelope(
+                    type: MessageType.pairingResult,
+                    requestID: envelope.requestID,
+                    payload: [
+                        "accepted": .bool(true),
+                        "mac_device_id": .string(validation.macDeviceID),
+                        "trusted_device_id": .string(validation.trustedDevice.id),
+                        "message": .string("\(validation.trustedDevice.name) is now trusted by \(validation.macName).")
+                    ]
+                ))
+            case .rejected(let rejection):
                 sink.send(ProtocolEnvelope(
                     type: MessageType.pairingResult,
                     requestID: envelope.requestID,
                     payload: [
                         "accepted": .bool(false),
-                        "message": .string("Pairing code was rejected or expired.")
+                        "code": .string(rejection.code),
+                        "message": .string(rejection.message),
+                        "retryable": .bool(rejection.retryable),
+                        "failed_attempts": .number(Double(rejection.failedAttempts)),
+                        "max_failed_attempts": .number(Double(rejection.maxFailedAttempts)),
+                        "remaining_attempts": .number(Double(rejection.remainingAttempts))
                     ]
                 ))
-                return
             }
-
-            try await trustedDeviceStore.trust(validation.trustedDevice)
-            markAuthenticated(connectionID: sink.connectionID, deviceID: validation.trustedDevice.id)
-            onPairingAccepted?(validation.trustedDevice)
-
-            sink.send(ProtocolEnvelope(
-                type: MessageType.pairingResult,
-                requestID: envelope.requestID,
-                payload: [
-                    "accepted": .bool(true),
-                    "mac_device_id": .string(validation.macDeviceID),
-                    "trusted_device_id": .string(validation.trustedDevice.id),
-                    "message": .string("\(validation.trustedDevice.name) is now trusted by \(validation.macName).")
-                ]
-            ))
         } catch {
             sink.send(errorEnvelope(requestID: envelope.requestID, error: error))
         }

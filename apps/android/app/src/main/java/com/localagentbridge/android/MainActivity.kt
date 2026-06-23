@@ -8,6 +8,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.annotation.StringRes
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -46,6 +47,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -53,6 +55,7 @@ import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
 import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
 import com.localagentbridge.android.runtime.RuntimeClientViewModel
+import com.localagentbridge.android.runtime.RuntimeUiState
 import com.localagentbridge.android.ui.ChatScreen
 import com.localagentbridge.android.ui.ConnectionStatusScreen
 import com.localagentbridge.android.ui.ModelPickerScreen
@@ -118,7 +121,13 @@ private fun LocalAgentBridgeApp() {
                 Scaffold(
                     topBar = {
                         TopAppBar(
-                            title = { Text(destinationTitle) },
+                            title = {
+                                if (destination == AppDestination.Chat) {
+                                    ChatTopAppBarTitle(state)
+                                } else {
+                                    Text(destinationTitle)
+                                }
+                            },
                             navigationIcon = {
                                 IconButton(onClick = { scope.launch { drawerState.open() } }) {
                                     Icon(
@@ -193,6 +202,35 @@ private fun LocalAgentBridgeApp() {
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun ChatTopAppBarTitle(state: RuntimeUiState) {
+    val statusText = when {
+        state.isStreaming -> stringResource(R.string.chat_status_streaming)
+        state.isConnected -> stringResource(R.string.chat_status_connected)
+        else -> stringResource(R.string.chat_status_disconnected)
+    }
+    val selectedModelName = state.models
+        .firstOrNull { it.id == state.selectedModelId }
+        ?.name
+        ?: state.selectedModelId
+    val subtitle = selectedModelName?.let { "$statusText - $it" } ?: statusText
+
+    Column {
+        Text(
+            text = stringResource(R.string.app_name),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            text = subtitle,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 

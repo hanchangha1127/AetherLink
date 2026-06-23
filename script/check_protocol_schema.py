@@ -66,6 +66,17 @@ def main() -> int:
                 f"as active v0.1 {unsupported_tool_types}"
             )
 
+    request_id_schema = schema.get("properties", {}).get("request_id", {})
+    if not isinstance(request_id_schema, dict):
+        failures.append("properties.request_id must be an object schema")
+    else:
+        if request_id_schema.get("type") != "string":
+            failures.append("properties.request_id must be a string")
+        if request_id_schema.get("format") == "uuid":
+            failures.append("properties.request_id must not require UUID format")
+        if request_id_schema.get("minLength") != 1:
+            failures.append("properties.request_id must require minLength 1")
+
     if failures:
         print("Protocol schema check failed:", file=sys.stderr)
         for failure in failures:
