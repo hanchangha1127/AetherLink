@@ -2,8 +2,10 @@ package com.localagentbridge.android
 
 import android.content.Context
 import android.os.Bundle
+import androidx.activity.SystemBarStyle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -25,12 +27,14 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -148,15 +152,42 @@ private fun LocalAgentBridgeApp() {
 
 @Composable
 private fun AetherLinkTheme(content: @Composable () -> Unit) {
-    val colorScheme = if (isSystemInDarkTheme()) {
+    val darkTheme = isSystemInDarkTheme()
+    val colorScheme = if (darkTheme) {
         AetherLinkDarkColors
     } else {
         AetherLinkLightColors
     }
+    ApplySystemBars(colorScheme = colorScheme, darkTheme = darkTheme)
     MaterialTheme(
         colorScheme = colorScheme,
         content = content,
     )
+}
+
+@Composable
+private fun ApplySystemBars(colorScheme: ColorScheme, darkTheme: Boolean) {
+    val activity = LocalContext.current as? ComponentActivity ?: return
+    val statusBarColor = colorScheme.background.toArgb()
+    val navigationBarColor = colorScheme.surface.toArgb()
+
+    SideEffect {
+        val statusBarStyle = if (darkTheme) {
+            SystemBarStyle.dark(statusBarColor)
+        } else {
+            SystemBarStyle.light(statusBarColor, statusBarColor)
+        }
+        val navigationBarStyle = if (darkTheme) {
+            SystemBarStyle.dark(navigationBarColor)
+        } else {
+            SystemBarStyle.light(navigationBarColor, navigationBarColor)
+        }
+
+        activity.enableEdgeToEdge(
+            statusBarStyle = statusBarStyle,
+            navigationBarStyle = navigationBarStyle,
+        )
+    }
 }
 
 private val AetherLinkLightColors: ColorScheme = lightColorScheme(
