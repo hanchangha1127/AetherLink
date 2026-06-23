@@ -9,6 +9,9 @@
     <string name="new_chat">新しいチャット</string>
     <string name="previous_chats">以前のチャット</string>
     <string name="no_previous_chats">以前のチャットはまだありません。</string>
+    <string name="chat_search_label">チャットを検索</string>
+    <string name="clear_chat_search">チャット検索をクリア</string>
+    <string name="no_chat_search_results">一致するチャットはありません。</string>
     <string name="untitled_chat">無題のチャット</string>
     <string name="chat_message_count">メッセージ %1$d 件</string>
     <string name="chat_session_more">チャットオプション</string>
@@ -103,6 +106,10 @@
     <string name="no_models_disconnected_title">Mac companion が必要です</string>
     <string name="no_models_disconnected">モデルを読み込む前に、信頼済みの Mac companion に接続してください。</string>
     <string name="loading_models">モデルを読み込み中...</string>
+    <string name="model_search_label">モデルを検索</string>
+    <string name="clear_model_search">モデル検索をクリア</string>
+    <string name="no_model_search_results_title">一致するモデルはありません</string>
+    <string name="no_model_search_results">別のモデル名、バックエンド、プロバイダー、またはソースで検索してください。</string>
 
     <string name="chat_title">チャット</string>
     <string name="chat_subtitle">メッセージは Mac companion ランタイムを通じてストリーミングされます。</string>
@@ -149,11 +156,22 @@
     <string name="assistant_reasoning_show">表示</string>
     <string name="assistant_reasoning_hide">非表示</string>
     <string name="copy_message">メッセージをコピー</string>
+    <string name="message_copied">コピーしました</string>
 
     <string name="settings_title">設定</string>
     <string name="settings_subtitle">スマートフォンは Mac companion ランタイムに接続します。Ollama や LM Studio に直接接続することはありません。</string>
     <string name="companion_only_title">Mac companion のみ</string>
     <string name="companion_only_detail">AetherLink はローカルモデルへのアクセスを Mac に留めます。Android は信頼済み companion セッションを制御し、ストリーミング結果を受信します。</string>
+    <string name="preferences_title">環境設定</string>
+    <string name="appearance_title">外観</string>
+    <string name="appearance_system">システム</string>
+    <string name="language_title">言語</string>
+    <string name="language_system">デバイスの言語</string>
+    <string name="language_english">英語</string>
+    <string name="language_korean">韓国語</string>
+    <string name="language_japanese">日本語</string>
+    <string name="language_simplified_chinese">簡体字中国語</string>
+    <string name="language_french">フランス語</string>
     <string name="runtime_endpoint">手動ランタイムエンドポイント</string>
     <string name="memory_title">メモリ</string>
     <string name="memory_subtitle">このスマートフォンの今後のチャットでアシスタントが使用できるローカルメモです。</string>
@@ -162,6 +180,8 @@
     <string name="memory_add">メモリを追加</string>
     <string name="memory_empty">保存済みのローカルメモはまだありません。</string>
     <string name="memory_remove">メモリを削除</string>
+    <string name="memory_remove_confirm_title">メモリを削除しますか？</string>
+    <string name="memory_remove_confirm_message">この端末からこのローカルメモを削除しますか？</string>
     <string name="memory_enabled">有効</string>
     <string name="memory_paused">一時停止</string>
 

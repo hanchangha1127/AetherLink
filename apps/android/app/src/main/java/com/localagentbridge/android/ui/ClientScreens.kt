@@ -1,7 +1,9 @@
 package com.localagentbridge.android.ui
 
+import android.widget.Toast
 import androidx.annotation.StringRes
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,6 +20,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -33,7 +36,9 @@ import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -41,6 +46,7 @@ import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -59,14 +65,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.localagentbridge.android.R
+import com.localagentbridge.android.runtime.RuntimeAppLanguage
 import com.localagentbridge.android.runtime.RuntimeChatMessage
 import com.localagentbridge.android.runtime.RuntimeDiscoveredMac
 import com.localagentbridge.android.runtime.RuntimeMemoryEntry
@@ -89,6 +98,8 @@ fun PairingScreen(
     onConnect: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val hapticFeedback = LocalHapticFeedback.current
+
     ScreenList(modifier) {
         item {
             ScreenHeader(
@@ -109,18 +120,10 @@ fun PairingScreen(
             )
         }
         item {
-            Button(
-                onClick = onConnect,
-                enabled = state.trustedMac != null && !state.isConnecting,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Icon(
-                    Icons.Filled.Link,
-                    contentDescription = null,
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(if (state.isConnecting) stringResource(R.string.connecting) else stringResource(R.string.connect_runtime))
-            }
+            PairingConnectButton(
+                state = state,
+                onConnect = onConnect,
+            )
         }
         if (state.trustedMac == null) {
             item {
@@ -153,6 +156,8 @@ private fun QrPairingPanel(
     isConnecting: Boolean,
     onScanPairingQr: () -> Unit,
 ) {
+    val hapticFeedback = LocalHapticFeedback.current
+
     OutlinedCard(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -169,7 +174,10 @@ private fun QrPairingPanel(
                 color = MaterialTheme.colorScheme.secondary,
             )
             Button(
-                onClick = onScanPairingQr,
+                onClick = {
+                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onScanPairingQr()
+                },
                 enabled = !isConnecting,
                 modifier = Modifier.fillMaxWidth(),
             ) {
@@ -190,6 +198,30 @@ private fun QrPairingPanel(
 }
 
 @Composable
+private fun PairingConnectButton(
+    state: RuntimeUiState,
+    onConnect: () -> Unit,
+) {
+    val hapticFeedback = LocalHapticFeedback.current
+
+    Button(
+        onClick = {
+            hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+            onConnect()
+        },
+        enabled = state.trustedMac != null && !state.isConnecting,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Icon(
+            Icons.Filled.Link,
+            contentDescription = null,
+        )
+        Spacer(Modifier.width(8.dp))
+        Text(if (state.isConnecting) stringResource(R.string.connecting) else stringResource(R.string.connect_runtime))
+    }
+}
+
+@Composable
 fun ConnectionStatusScreen(
     state: RuntimeUiState,
     onRefreshHealth: () -> Unit,
@@ -206,78 +238,98 @@ fun ConnectionStatusScreen(
             )
         }
         item {
-            OutlinedCard(modifier = Modifier.fillMaxWidth()) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Text(
-                        text = if (state.isConnected) {
-                            stringResource(R.string.status_connected_summary)
-                        } else {
-                            stringResource(R.string.status_disconnected_summary)
-                        },
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    StatusLine(
-                        label = stringResource(R.string.runtime),
-                        value = runtimeStatusLabel(state.runtimeStatus),
-                    )
-                    StatusLine(
-                        label = stringResource(R.string.backend),
-                        value = backendStatusLabel(state.backendAvailable),
-                    )
-                    StatusLine(
-                        label = stringResource(R.string.providers),
-                        value = providerStatusSummary(state),
-                    )
-                    StatusLine(
-                        label = stringResource(R.string.endpoint),
-                        value = "${state.macHost}:${state.macPort}",
-                    )
-                    StatusLine(
-                        label = stringResource(R.string.connected),
-                        value = if (state.isConnected) stringResource(R.string.yes) else stringResource(R.string.no),
-                    )
-                }
-            }
+            ConnectionStatusPanel(state = state)
         }
         item {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(
-                    onClick = {
-                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                        onRefreshHealth()
-                    },
-                    enabled = state.isConnected,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Icon(
-                        Icons.Filled.Refresh,
-                        contentDescription = null,
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.health))
-                }
-                OutlinedButton(
-                    onClick = {
-                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                        onDisconnect()
-                    },
-                    enabled = state.isConnected,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Icon(
-                        Icons.Filled.Close,
-                        contentDescription = null,
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.disconnect))
-                }
-            }
+            ConnectionStatusActions(
+                state = state,
+                onRefreshHealth = onRefreshHealth,
+                onDisconnect = onDisconnect,
+            )
         }
         item { ErrorText(state.error) }
+    }
+}
+
+@Composable
+private fun ConnectionStatusPanel(state: RuntimeUiState) {
+    OutlinedCard(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                text = if (state.isConnected) {
+                    stringResource(R.string.status_connected_summary)
+                } else {
+                    stringResource(R.string.status_disconnected_summary)
+                },
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            StatusLine(
+                label = stringResource(R.string.runtime),
+                value = runtimeStatusLabel(state.runtimeStatus),
+            )
+            StatusLine(
+                label = stringResource(R.string.backend),
+                value = backendStatusLabel(state.backendAvailable),
+            )
+            StatusLine(
+                label = stringResource(R.string.providers),
+                value = providerStatusSummary(state),
+            )
+            StatusLine(
+                label = stringResource(R.string.endpoint),
+                value = "${state.macHost}:${state.macPort}",
+            )
+            StatusLine(
+                label = stringResource(R.string.connected),
+                value = if (state.isConnected) stringResource(R.string.yes) else stringResource(R.string.no),
+            )
+        }
+    }
+}
+
+@Composable
+private fun ConnectionStatusActions(
+    state: RuntimeUiState,
+    onRefreshHealth: () -> Unit,
+    onDisconnect: () -> Unit,
+) {
+    val hapticFeedback = LocalHapticFeedback.current
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Button(
+            onClick = {
+                hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                onRefreshHealth()
+            },
+            enabled = state.isConnected,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Icon(
+                Icons.Filled.Refresh,
+                contentDescription = null,
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(stringResource(R.string.health))
+        }
+        OutlinedButton(
+            onClick = {
+                hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                onDisconnect()
+            },
+            enabled = state.isConnected,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Icon(
+                Icons.Filled.Close,
+                contentDescription = null,
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(stringResource(R.string.disconnect))
+        }
     }
 }
 
@@ -289,6 +341,14 @@ fun ModelPickerScreen(
     modifier: Modifier = Modifier,
 ) {
     val hapticFeedback = LocalHapticFeedback.current
+    val modelSearchQuery = rememberSaveable { mutableStateOf("") }
+    val trimmedModelSearchQuery = modelSearchQuery.value.trim()
+    val hasModelSearchQuery = trimmedModelSearchQuery.isNotEmpty()
+    val visibleModels = if (hasModelSearchQuery) {
+        state.models.filter { model -> model.matchesModelQuery(trimmedModelSearchQuery) }
+    } else {
+        state.models
+    }
 
     ScreenList(modifier) {
         item {
@@ -353,7 +413,24 @@ fun ModelPickerScreen(
                 )
             }
         }
-        items(state.models) { model ->
+        if (state.models.isNotEmpty()) {
+            item {
+                ModelSearchField(
+                    query = modelSearchQuery.value,
+                    onQueryChange = { modelSearchQuery.value = it },
+                    onClear = { modelSearchQuery.value = "" },
+                )
+            }
+        }
+        if (hasModelSearchQuery && visibleModels.isEmpty()) {
+            item {
+                EmptyStateCard(
+                    title = stringResource(R.string.no_model_search_results_title),
+                    text = stringResource(R.string.no_model_search_results),
+                )
+            }
+        }
+        items(visibleModels) { model ->
             ModelRow(
                 model = model,
                 selected = model.id == state.selectedModelId,
@@ -366,6 +443,51 @@ fun ModelPickerScreen(
 }
 
 @Composable
+private fun ModelSearchField(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    onClear: () -> Unit,
+) {
+    val hapticFeedback = LocalHapticFeedback.current
+
+    OutlinedTextField(
+        value = query,
+        onValueChange = onQueryChange,
+        singleLine = true,
+        textStyle = MaterialTheme.typography.bodyMedium,
+        label = {
+            Text(
+                text = stringResource(R.string.model_search_label),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        },
+        leadingIcon = {
+            Icon(
+                imageVector = Icons.Filled.Search,
+                contentDescription = null,
+            )
+        },
+        trailingIcon = {
+            if (query.isNotEmpty()) {
+                IconButton(
+                    onClick = {
+                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onClear()
+                    },
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Close,
+                        contentDescription = stringResource(R.string.clear_model_search),
+                    )
+                }
+            }
+        },
+        modifier = Modifier.fillMaxWidth(),
+    )
+}
+
+@Composable
 fun ChatScreen(
     state: RuntimeUiState,
     onInputChange: (String) -> Unit,
@@ -373,7 +495,6 @@ fun ChatScreen(
     onCancel: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val selectedModel = selectedModel(state)
     val listState = rememberLazyListState()
     val canSend = state.isConnected &&
         !state.isStreaming &&
@@ -392,10 +513,6 @@ fun ChatScreen(
             .padding(horizontal = 14.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        ChatContextChips(
-            state = state,
-            selectedModel = selectedModel,
-        )
         if (state.messages.isEmpty()) {
             Box(
                 modifier = Modifier
@@ -443,7 +560,15 @@ fun SettingsScreen(
     onPortChange: (String) -> Unit,
     onUseUsbReverse: () -> Unit,
     onUseEmulator: () -> Unit,
+    onStartDiscovery: () -> Unit,
+    onStopDiscovery: () -> Unit,
+    onUseDiscoveredMac: (RuntimeDiscoveredMac) -> Unit,
     onForgetTrustedMac: () -> Unit,
+    onScanPairingQr: () -> Unit,
+    onConnect: () -> Unit,
+    onRefreshHealth: () -> Unit,
+    onDisconnect: () -> Unit,
+    onSetLanguageTag: (String) -> Unit,
     onAddMemoryEntry: (String) -> Unit,
     onRemoveMemoryEntry: (String) -> Unit,
     onSetMemoryEntryEnabled: (String, Boolean) -> Unit,
@@ -460,11 +585,15 @@ fun SettingsScreen(
             CompanionOnlyPanel()
         }
         item {
-            MemoryPanel(
-                entries = state.memoryEntries,
-                onAddMemoryEntry = onAddMemoryEntry,
-                onRemoveMemoryEntry = onRemoveMemoryEntry,
-                onSetMemoryEntryEnabled = onSetMemoryEntryEnabled,
+            ScreenHeader(
+                title = R.string.pairing_title,
+                subtitle = R.string.pairing_subtitle,
+            )
+        }
+        item {
+            QrPairingPanel(
+                isConnecting = state.isConnecting,
+                onScanPairingQr = onScanPairingQr,
             )
         }
         item {
@@ -474,12 +603,52 @@ fun SettingsScreen(
             )
         }
         item {
-            EndpointPanel(
+            PairingConnectButton(
                 state = state,
-                onHostChange = onHostChange,
-                onPortChange = onPortChange,
-                onUseUsbReverse = onUseUsbReverse,
-                onUseEmulator = onUseEmulator,
+                onConnect = onConnect,
+            )
+        }
+        if (state.trustedMac == null) {
+            item {
+                EmptyState(text = stringResource(R.string.connect_requires_pairing))
+            }
+        }
+        item {
+            DiscoveryPanel(
+                state = state,
+                onStartDiscovery = onStartDiscovery,
+                onStopDiscovery = onStopDiscovery,
+                onUseDiscoveredMac = onUseDiscoveredMac,
+            )
+        }
+        item {
+            ScreenHeader(
+                title = R.string.status_title,
+                subtitle = R.string.status_subtitle,
+            )
+        }
+        item {
+            ConnectionStatusPanel(state = state)
+        }
+        item {
+            ConnectionStatusActions(
+                state = state,
+                onRefreshHealth = onRefreshHealth,
+                onDisconnect = onDisconnect,
+            )
+        }
+        item {
+            AppPreferencesPanel(
+                selectedLanguageTag = state.selectedLanguageTag,
+                onSetLanguageTag = onSetLanguageTag,
+            )
+        }
+        item {
+            MemoryPanel(
+                entries = state.memoryEntries,
+                onAddMemoryEntry = onAddMemoryEntry,
+                onRemoveMemoryEntry = onRemoveMemoryEntry,
+                onSetMemoryEntryEnabled = onSetMemoryEntryEnabled,
             )
         }
         item { ErrorText(state.error) }
@@ -601,6 +770,10 @@ private fun EndpointPanel(
 ) {
     val isExpanded = rememberSaveable { mutableStateOf(false) }
     val hapticFeedback = LocalHapticFeedback.current
+    val toggleExpanded = {
+        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+        isExpanded.value = !isExpanded.value
+    }
 
     OutlinedCard(modifier = Modifier.fillMaxWidth()) {
         Column(
@@ -612,7 +785,7 @@ private fun EndpointPanel(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { isExpanded.value = !isExpanded.value },
+                    .clickable { toggleExpanded() },
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -633,7 +806,7 @@ private fun EndpointPanel(
                 }
                 Spacer(Modifier.width(12.dp))
                 FilledTonalIconButton(
-                    onClick = { isExpanded.value = !isExpanded.value },
+                    onClick = { toggleExpanded() },
                 ) {
                     Icon(
                         imageVector = if (isExpanded.value) {
@@ -1095,11 +1268,10 @@ private fun ChatMessageRow(message: RuntimeChatMessage) {
                     ),
                     color = MaterialTheme.colorScheme.primaryContainer,
                 ) {
-                    Text(
-                        text = message.content,
+                    MessageContent(
+                        content = message.content,
+                        textColor = MaterialTheme.colorScheme.onPrimaryContainer,
                         modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
                     )
                 }
                 MessageCopyButton(textToCopy = message.content)
@@ -1142,10 +1314,9 @@ private fun AssistantMessage(message: RuntimeChatMessage) {
                         onExpandedChange = { isReasoningExpanded.value = it },
                     )
                 }
-                Text(
-                    text = message.content.ifBlank { stringResource(R.string.assistant_typing) },
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurface,
+                MessageContent(
+                    content = message.content.ifBlank { stringResource(R.string.assistant_typing) },
+                    textColor = MaterialTheme.colorScheme.onSurface,
                 )
                 if (message.content.isBlank()) {
                     LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
@@ -1157,14 +1328,97 @@ private fun AssistantMessage(message: RuntimeChatMessage) {
 }
 
 @Composable
+private fun MessageContent(
+    content: String,
+    textColor: androidx.compose.ui.graphics.Color,
+    modifier: Modifier = Modifier,
+) {
+    val parts = parseMessageContent(content)
+
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        parts.forEach { part ->
+            when (part) {
+                is MessageContentPart.Text -> {
+                    Text(
+                        text = part.text,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = textColor,
+                    )
+                }
+                is MessageContentPart.Code -> {
+                    CodeBlock(
+                        code = part.code,
+                        language = part.language,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CodeBlock(
+    code: String,
+    language: String?,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(10.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
+        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (language != null) {
+                    Text(
+                        text = language,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.secondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                } else {
+                    Spacer(modifier = Modifier.weight(1f))
+                }
+                MessageCopyButton(textToCopy = code)
+            }
+            Text(
+                text = code,
+                style = MaterialTheme.typography.bodySmall,
+                fontFamily = FontFamily.Monospace,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                softWrap = false,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+            )
+        }
+    }
+}
+
+@Composable
 private fun MessageCopyButton(textToCopy: String) {
     val clipboardManager = LocalClipboardManager.current
+    val context = LocalContext.current
     val hapticFeedback = LocalHapticFeedback.current
+    val copiedMessage = stringResource(R.string.message_copied)
 
     TextButton(
         onClick = {
             hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
             clipboardManager.setText(AnnotatedString(textToCopy))
+            Toast.makeText(context, copiedMessage, Toast.LENGTH_SHORT).show()
         },
         enabled = textToCopy.isNotBlank(),
         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
@@ -1177,12 +1431,77 @@ private fun MessageCopyButton(textToCopy: String) {
     }
 }
 
+private sealed interface MessageContentPart {
+    data class Text(val text: String) : MessageContentPart
+    data class Code(val language: String?, val code: String) : MessageContentPart
+}
+
+private fun parseMessageContent(content: String): List<MessageContentPart> {
+    val parts = mutableListOf<MessageContentPart>()
+    var cursor = 0
+
+    while (cursor < content.length) {
+        val fenceStart = content.indexOf("```", startIndex = cursor)
+        if (fenceStart == -1) {
+            addTextPart(parts, content.substring(cursor))
+            break
+        }
+
+        addTextPart(parts, content.substring(cursor, fenceStart))
+
+        val languageStart = fenceStart + 3
+        val languageEnd = content.indexOf('\n', startIndex = languageStart)
+        if (languageEnd == -1) {
+            addTextPart(parts, content.substring(fenceStart))
+            break
+        }
+
+        val language = content
+            .substring(languageStart, languageEnd)
+            .trim()
+            .takeIf { it.isNotEmpty() }
+        val codeStart = languageEnd + 1
+        val fenceEnd = content.indexOf("```", startIndex = codeStart)
+
+        if (fenceEnd == -1) {
+            parts += MessageContentPart.Code(
+                language = language,
+                code = content.substring(codeStart).trimEnd('\n'),
+            )
+            break
+        }
+
+        parts += MessageContentPart.Code(
+            language = language,
+            code = content.substring(codeStart, fenceEnd).trimEnd('\n'),
+        )
+        cursor = fenceEnd + 3
+        if (cursor < content.length && content[cursor] == '\n') {
+            cursor += 1
+        }
+    }
+
+    return parts.ifEmpty { listOf(MessageContentPart.Text(content)) }
+}
+
+private fun addTextPart(
+    parts: MutableList<MessageContentPart>,
+    text: String,
+) {
+    val trimmed = text.trim('\n')
+    if (trimmed.isNotBlank()) {
+        parts += MessageContentPart.Text(trimmed)
+    }
+}
+
 @Composable
 private fun AssistantReasoning(
     reasoning: String,
     expanded: Boolean,
     onExpandedChange: (Boolean) -> Unit,
 ) {
+    val hapticFeedback = LocalHapticFeedback.current
+
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(8.dp),
@@ -1205,7 +1524,10 @@ private fun AssistantReasoning(
                     color = MaterialTheme.colorScheme.secondary,
                 )
                 TextButton(
-                    onClick = { onExpandedChange(!expanded) },
+                    onClick = {
+                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onExpandedChange(!expanded)
+                    },
                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
                 ) {
                     Icon(
@@ -1415,6 +1737,85 @@ private fun CompanionOnlyPanel() {
 }
 
 @Composable
+private fun AppPreferencesPanel(
+    selectedLanguageTag: String,
+    onSetLanguageTag: (String) -> Unit,
+) {
+    OutlinedCard(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.preferences_title),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            StatusLine(
+                label = stringResource(R.string.appearance_title),
+                value = stringResource(R.string.appearance_system),
+            )
+            LanguagePreferenceSelector(
+                selectedLanguageTag = selectedLanguageTag,
+                onSetLanguageTag = onSetLanguageTag,
+            )
+        }
+    }
+}
+
+@Composable
+private fun LanguagePreferenceSelector(
+    selectedLanguageTag: String,
+    onSetLanguageTag: (String) -> Unit,
+) {
+    val hapticFeedback = LocalHapticFeedback.current
+    val options = listOf(
+        RuntimeAppLanguage.System to R.string.language_system,
+        RuntimeAppLanguage.English to R.string.language_english,
+        RuntimeAppLanguage.Korean to R.string.language_korean,
+        RuntimeAppLanguage.Japanese to R.string.language_japanese,
+        RuntimeAppLanguage.SimplifiedChinese to R.string.language_simplified_chinese,
+        RuntimeAppLanguage.French to R.string.language_french,
+    )
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = stringResource(R.string.language_title),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.secondary,
+        )
+        options.forEach { (language, labelRes) ->
+            val selected = language.languageTag == selectedLanguageTag
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onSetLanguageTag(language.languageTag)
+                    }
+                    .padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                RadioButton(
+                    selected = selected,
+                    onClick = {
+                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onSetLanguageTag(language.languageTag)
+                    },
+                )
+                Text(
+                    text = stringResource(labelRes),
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun MemoryPanel(
     entries: List<RuntimeMemoryEntry>,
     onAddMemoryEntry: (String) -> Unit,
@@ -1488,6 +1889,42 @@ private fun MemoryEntryRow(
     onSetMemoryEntryEnabled: (String, Boolean) -> Unit,
 ) {
     val hapticFeedback = LocalHapticFeedback.current
+    val showDeleteConfirmation = rememberSaveable(entry.id) { mutableStateOf(false) }
+
+    if (showDeleteConfirmation.value) {
+        AlertDialog(
+            onDismissRequest = {
+                showDeleteConfirmation.value = false
+            },
+            title = {
+                Text(stringResource(R.string.memory_remove_confirm_title))
+            },
+            text = {
+                Text(stringResource(R.string.memory_remove_confirm_message))
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                        showDeleteConfirmation.value = false
+                        onRemoveMemoryEntry(entry.id)
+                    },
+                ) {
+                    Text(stringResource(R.string.delete))
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                        showDeleteConfirmation.value = false
+                    },
+                ) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
+        )
+    }
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
@@ -1534,7 +1971,7 @@ private fun MemoryEntryRow(
             FilledTonalIconButton(
                 onClick = {
                     hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                    onRemoveMemoryEntry(entry.id)
+                    showDeleteConfirmation.value = true
                 },
                 modifier = Modifier.size(40.dp),
             ) {
@@ -1663,6 +2100,18 @@ private fun selectedModel(state: RuntimeUiState): RuntimeModel? {
 private fun selectedModelIsUsable(state: RuntimeUiState): Boolean {
     val selectedId = state.selectedModelId ?: return false
     return state.models.firstOrNull { it.id == selectedId }?.installed != false
+}
+
+private fun RuntimeModel.matchesModelQuery(query: String): Boolean {
+    return listOfNotNull(
+        id,
+        name,
+        backend,
+        provider,
+        providerModelId,
+        source,
+        description,
+    ).any { value -> value.contains(query, ignoreCase = true) }
 }
 
 @Composable

@@ -9,6 +9,9 @@
     <string name="new_chat">新聊天</string>
     <string name="previous_chats">历史聊天</string>
     <string name="no_previous_chats">还没有历史聊天。</string>
+    <string name="chat_search_label">搜索聊天</string>
+    <string name="clear_chat_search">清除聊天搜索</string>
+    <string name="no_chat_search_results">没有匹配的聊天。</string>
     <string name="untitled_chat">未命名聊天</string>
     <string name="chat_message_count">%1$d 条消息</string>
     <string name="chat_session_more">聊天选项</string>
@@ -103,6 +106,10 @@
     <string name="no_models_disconnected_title">需要 Mac companion</string>
     <string name="no_models_disconnected">加载模型前，请连接到受信任的 Mac companion。</string>
     <string name="loading_models">正在加载模型...</string>
+    <string name="model_search_label">搜索模型</string>
+    <string name="clear_model_search">清除模型搜索</string>
+    <string name="no_model_search_results_title">没有匹配的模型</string>
+    <string name="no_model_search_results">请尝试其他模型名称、后端、提供方或来源。</string>
 
     <string name="chat_title">聊天</string>
     <string name="chat_subtitle">消息通过 Mac companion 运行时流式传输。</string>
@@ -149,11 +156,22 @@
     <string name="assistant_reasoning_show">展开</string>
     <string name="assistant_reasoning_hide">收起</string>
     <string name="copy_message">复制消息</string>
+    <string name="message_copied">已复制</string>
 
     <string name="settings_title">设置</string>
     <string name="settings_subtitle">手机连接到 Mac companion 运行时。它不会直接连接 Ollama 或 LM Studio。</string>
     <string name="companion_only_title">仅限 Mac companion</string>
     <string name="companion_only_detail">AetherLink 将本地模型访问保留在 Mac 上。Android 控制受信任的 companion 会话并接收流式结果。</string>
+    <string name="preferences_title">偏好设置</string>
+    <string name="appearance_title">外观</string>
+    <string name="appearance_system">系统</string>
+    <string name="language_title">语言</string>
+    <string name="language_system">设备语言</string>
+    <string name="language_english">英语</string>
+    <string name="language_korean">韩语</string>
+    <string name="language_japanese">日语</string>
+    <string name="language_simplified_chinese">简体中文</string>
+    <string name="language_french">法语</string>
     <string name="runtime_endpoint">手动运行时端点</string>
     <string name="memory_title">记忆</string>
     <string name="memory_subtitle">助手可在这部手机上的后续聊天中使用的本地备注。</string>
@@ -162,6 +180,8 @@
     <string name="memory_add">添加记忆</string>
     <string name="memory_empty">还没有保存的本地记忆。</string>
     <string name="memory_remove">删除记忆</string>
+    <string name="memory_remove_confirm_title">删除记忆？</string>
+    <string name="memory_remove_confirm_message">要从这部手机删除这条本地记忆吗？</string>
     <string name="memory_enabled">已启用</string>
     <string name="memory_paused">已暂停</string>
 

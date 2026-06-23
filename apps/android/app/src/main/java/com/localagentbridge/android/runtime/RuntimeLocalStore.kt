@@ -42,6 +42,7 @@ data class PersistedRuntimeData(
     val activeSessionId: String? = null,
     val sessions: List<PersistedChatSession> = emptyList(),
     val memoryEntries: List<PersistedMemoryEntry> = emptyList(),
+    val appLanguageTag: String = RuntimeAppLanguage.English.languageTag,
 )
 
 @Serializable
@@ -92,7 +93,12 @@ internal fun PersistedRuntimeData.sanitized(): PersistedRuntimeData {
         },
         sessions = cleanSessions.sortedByDescending { it.updatedAtMillis },
         memoryEntries = cleanMemory.sortedByDescending { it.updatedAtMillis },
+        appLanguageTag = RuntimeAppLanguage.normalizeLanguageTag(appLanguageTag),
     )
+}
+
+internal fun PersistedRuntimeData.withAppLanguageTag(languageTag: String): PersistedRuntimeData {
+    return copy(appLanguageTag = RuntimeAppLanguage.normalizeLanguageTag(languageTag)).sanitized()
 }
 
 internal fun PersistedRuntimeData.withActiveSession(sessionId: String): PersistedRuntimeData {

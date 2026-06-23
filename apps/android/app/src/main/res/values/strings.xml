@@ -9,6 +9,9 @@
     <string name="new_chat">New Chat</string>
     <string name="previous_chats">Previous chats</string>
     <string name="no_previous_chats">No previous chats yet.</string>
+    <string name="chat_search_label">Search chats</string>
+    <string name="clear_chat_search">Clear chat search</string>
+    <string name="no_chat_search_results">No matching chats.</string>
     <string name="untitled_chat">Untitled chat</string>
     <string name="chat_message_count">%1$d messages</string>
     <string name="chat_session_more">Chat options</string>
@@ -103,6 +106,10 @@
     <string name="no_models_disconnected_title">Mac companion required</string>
     <string name="no_models_disconnected">Connect to the trusted Mac companion before loading models.</string>
     <string name="loading_models">Loading models...</string>
+    <string name="model_search_label">Search models</string>
+    <string name="clear_model_search">Clear model search</string>
+    <string name="no_model_search_results_title">No matching models</string>
+    <string name="no_model_search_results">Try another model name, backend, provider, or source.</string>
 
     <string name="chat_title">Chat</string>
     <string name="chat_subtitle">Messages stream through the Mac companion runtime.</string>
@@ -149,11 +156,22 @@
     <string name="assistant_reasoning_show">Show</string>
     <string name="assistant_reasoning_hide">Hide</string>
     <string name="copy_message">Copy message</string>
+    <string name="message_copied">Copied</string>
 
     <string name="settings_title">Settings</string>
     <string name="settings_subtitle">The phone connects to the Mac companion runtime. It never connects directly to Ollama or LM Studio.</string>
     <string name="companion_only_title">Mac companion only</string>
     <string name="companion_only_detail">AetherLink keeps local-model access on the Mac. Android controls the trusted companion session and receives streamed results.</string>
+    <string name="preferences_title">Preferences</string>
+    <string name="appearance_title">Appearance</string>
+    <string name="appearance_system">System</string>
+    <string name="language_title">Language</string>
+    <string name="language_system">Device language</string>
+    <string name="language_english">English</string>
+    <string name="language_korean">Korean</string>
+    <string name="language_japanese">Japanese</string>
+    <string name="language_simplified_chinese">Simplified Chinese</string>
+    <string name="language_french">French</string>
     <string name="runtime_endpoint">Manual runtime endpoint</string>
     <string name="memory_title">Memory</string>
     <string name="memory_subtitle">Local notes the assistant can use in future chats on this phone.</string>
@@ -162,6 +180,8 @@
     <string name="memory_add">Add Memory</string>
     <string name="memory_empty">No local memories saved yet.</string>
     <string name="memory_remove">Remove memory</string>
+    <string name="memory_remove_confirm_title">Remove memory?</string>
+    <string name="memory_remove_confirm_message">Delete this local memory from this phone?</string>
     <string name="memory_enabled">Enabled</string>
     <string name="memory_paused">Paused</string>
 

@@ -17,7 +17,7 @@ struct LocalAgentBridgeApp: App {
         }
         .commands {
             CommandGroup(after: .appInfo) {
-                Button("Refresh Ollama Status") {
+                Button("Refresh Backend Status") {
                     Task { await model.refreshOllamaStatus() }
                 }
                 .keyboardShortcut("r", modifiers: [.command])
@@ -29,7 +29,7 @@ struct LocalAgentBridgeApp: App {
             Button("Open AetherLink") {
                 NSApp.activate(ignoringOtherApps: true)
             }
-            Button("Refresh Ollama") {
+            Button("Refresh Backend Status") {
                 Task { await model.refreshOllamaStatus() }
             }
             Divider()

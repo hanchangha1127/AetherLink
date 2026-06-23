@@ -127,6 +127,13 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
         mutableState.update { it.copy(chatInput = value) }
     }
 
+    fun setAppLanguageTag(languageTag: String) {
+        publishPersistedRuntimeData(
+            persistedRuntimeData.withAppLanguageTag(languageTag),
+            save = true,
+        )
+    }
+
     fun startNewChat() {
         if (state.value.isStreaming) {
             showError("generation_in_progress")
@@ -980,6 +987,7 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
                 activeChatSessionId = cleanData.activeSessionId,
                 messages = activeSessionMessages(cleanData),
                 memoryEntries = runtimeMemoryEntries(cleanData),
+                selectedLanguageTag = cleanData.appLanguageTag,
                 error = null,
             )
         }

@@ -9,6 +9,9 @@
     <string name="new_chat">새 채팅</string>
     <string name="previous_chats">이전 채팅</string>
     <string name="no_previous_chats">아직 이전 채팅이 없습니다.</string>
+    <string name="chat_search_label">채팅 검색</string>
+    <string name="clear_chat_search">채팅 검색 지우기</string>
+    <string name="no_chat_search_results">일치하는 채팅이 없습니다.</string>
     <string name="untitled_chat">제목 없는 채팅</string>
     <string name="chat_message_count">메시지 %1$d개</string>
     <string name="chat_session_more">채팅 옵션</string>
@@ -103,6 +106,10 @@
     <string name="no_models_disconnected_title">Mac companion 필요</string>
     <string name="no_models_disconnected">모델을 불러오려면 먼저 신뢰된 Mac companion에 연결하세요.</string>
     <string name="loading_models">모델 불러오는 중...</string>
+    <string name="model_search_label">모델 검색</string>
+    <string name="clear_model_search">모델 검색 지우기</string>
+    <string name="no_model_search_results_title">일치하는 모델 없음</string>
+    <string name="no_model_search_results">다른 모델 이름, 백엔드, 제공자 또는 소스로 검색해보세요.</string>
 
     <string name="chat_title">채팅</string>
     <string name="chat_subtitle">메시지는 Mac companion 런타임을 통해 스트리밍됩니다.</string>
@@ -149,11 +156,22 @@
     <string name="assistant_reasoning_show">보기</string>
     <string name="assistant_reasoning_hide">숨기기</string>
     <string name="copy_message">메시지 복사</string>
+    <string name="message_copied">복사됨</string>
 
     <string name="settings_title">설정</string>
     <string name="settings_subtitle">휴대폰은 Mac companion 런타임에 연결됩니다. Ollama 또는 LM Studio에 직접 연결하지 않습니다.</string>
     <string name="companion_only_title">Mac companion 전용</string>
     <string name="companion_only_detail">AetherLink는 로컬 모델 접근을 Mac에 둡니다. Android는 신뢰된 Mac companion 세션을 제어하고 스트리밍 결과를 받습니다.</string>
+    <string name="preferences_title">환경설정</string>
+    <string name="appearance_title">화면 모드</string>
+    <string name="appearance_system">시스템</string>
+    <string name="language_title">언어</string>
+    <string name="language_system">기기 언어</string>
+    <string name="language_english">영어</string>
+    <string name="language_korean">한국어</string>
+    <string name="language_japanese">일본어</string>
+    <string name="language_simplified_chinese">중국어 간체</string>
+    <string name="language_french">프랑스어</string>
     <string name="runtime_endpoint">수동 런타임 엔드포인트</string>
     <string name="memory_title">메모리</string>
     <string name="memory_subtitle">이 휴대폰의 향후 채팅에서 어시스턴트가 사용할 수 있는 로컬 메모입니다.</string>
@@ -162,6 +180,8 @@
     <string name="memory_add">메모리 추가</string>
     <string name="memory_empty">저장된 로컬 메모리가 아직 없습니다.</string>
     <string name="memory_remove">메모리 삭제</string>
+    <string name="memory_remove_confirm_title">메모리를 삭제할까요?</string>
+    <string name="memory_remove_confirm_message">이 휴대폰에서 이 로컬 메모리를 삭제할까요?</string>
     <string name="memory_enabled">사용 중</string>
     <string name="memory_paused">일시 중지</string>
 

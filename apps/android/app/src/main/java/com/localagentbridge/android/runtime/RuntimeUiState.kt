@@ -27,8 +27,28 @@ data class RuntimeUiState(
     val isStreaming: Boolean = false,
     val activeRequestId: String? = null,
     val memoryEntries: List<RuntimeMemoryEntry> = emptyList(),
+    val selectedLanguageTag: String = RuntimeAppLanguage.English.languageTag,
     val error: RuntimeUiError? = null,
 )
+
+enum class RuntimeAppLanguage(val languageTag: String) {
+    System(""),
+    English("en"),
+    Korean("ko"),
+    Japanese("ja"),
+    SimplifiedChinese("zh-CN"),
+    French("fr");
+
+    companion object {
+        val supportedLanguageTags: Set<String> = entries.map { it.languageTag }.toSet()
+
+        fun normalizeLanguageTag(languageTag: String): String {
+            val trimmed = languageTag.trim()
+            return supportedLanguageTags.firstOrNull { it.equals(trimmed, ignoreCase = true) }
+                ?: System.languageTag
+        }
+    }
+}
 
 data class RuntimeTrustedMac(
     val deviceId: String,

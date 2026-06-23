@@ -1,7 +1,9 @@
 package com.localagentbridge.android
 
 import android.content.Context
+import android.content.res.Configuration
 import android.os.Bundle
+import android.os.LocaleList
 import androidx.activity.SystemBarStyle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -11,26 +13,31 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Archive
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Storage
-import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Unarchive
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -57,9 +64,11 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -68,6 +77,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
@@ -80,13 +90,13 @@ import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
 import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
 import com.localagentbridge.android.runtime.RuntimeClientViewModel
 import com.localagentbridge.android.runtime.RuntimeChatSession
+import com.localagentbridge.android.runtime.RuntimeModel
 import com.localagentbridge.android.runtime.RuntimeUiState
 import com.localagentbridge.android.ui.ChatScreen
-import com.localagentbridge.android.ui.ConnectionStatusScreen
-import com.localagentbridge.android.ui.ModelPickerScreen
 import com.localagentbridge.android.ui.PairingScreen
 import com.localagentbridge.android.ui.SettingsScreen
 import kotlinx.coroutines.launch
+import java.util.Locale
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -107,17 +117,41 @@ private fun LocalAgentBridgeApp() {
         ) {
             val viewModel: RuntimeClientViewModel = viewModel()
             val state by viewModel.state.collectAsStateWithLifecycle()
+            LocalizedContent(languageTag = state.selectedLanguageTag) {
             val context = LocalContext.current
             val hapticFeedback = LocalHapticFeedback.current
             val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
             val scope = rememberCoroutineScope()
-            var destination by rememberSaveable { mutableStateOf(AppDestination.Chat) }
+            var destination by rememberSaveable { mutableStateOf(AppDestination.Pairing) }
             var renamingSessionId by rememberSaveable { mutableStateOf<String?>(null) }
             var renameDraft by rememberSaveable { mutableStateOf("") }
             var deletingSessionId by rememberSaveable { mutableStateOf<String?>(null) }
             var isArchiveHistoryDialogVisible by rememberSaveable { mutableStateOf(false) }
             var isDeleteHistoryDialogVisible by rememberSaveable { mutableStateOf(false) }
+            var chatSearchQuery by rememberSaveable { mutableStateOf("") }
             val destinationTitle = stringResource(destination.labelRes)
+            val untitledChatTitle = stringResource(R.string.untitled_chat)
+            val trimmedChatSearchQuery = chatSearchQuery.trim()
+            val hasChatSearchQuery = trimmedChatSearchQuery.isNotEmpty()
+            val hasAnyChatSessions = state.chatSessions.isNotEmpty() || state.archivedChatSessions.isNotEmpty()
+            val filteredChatSessions = if (hasChatSearchQuery) {
+                state.chatSessions.filter { session ->
+                    session.title.ifBlank { untitledChatTitle }
+                        .contains(trimmedChatSearchQuery, ignoreCase = true)
+                }
+            } else {
+                state.chatSessions
+            }
+            val filteredArchivedChatSessions = if (hasChatSearchQuery) {
+                state.archivedChatSessions.filter { session ->
+                    session.title.ifBlank { untitledChatTitle }
+                        .contains(trimmedChatSearchQuery, ignoreCase = true)
+                }
+            } else {
+                state.archivedChatSessions
+            }
+            val hasChatSearchResults =
+                filteredChatSessions.isNotEmpty() || filteredArchivedChatSessions.isNotEmpty()
 
             ModalNavigationDrawer(
                 drawerState = drawerState,
@@ -155,7 +189,21 @@ private fun LocalAgentBridgeApp() {
                                     .verticalScroll(rememberScrollState()),
                             ) {
                                 DrawerSectionLabel(text = stringResource(R.string.previous_chats))
-                                if (state.chatSessions.isEmpty()) {
+                                if (hasAnyChatSessions) {
+                                    ChatHistorySearchField(
+                                        query = chatSearchQuery,
+                                        onQueryChange = { chatSearchQuery = it },
+                                        onClear = { chatSearchQuery = "" },
+                                    )
+                                }
+                                if (hasChatSearchQuery && !hasChatSearchResults) {
+                                    Text(
+                                        text = stringResource(R.string.no_chat_search_results),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(horizontal = 28.dp, vertical = 8.dp),
+                                    )
+                                } else if (!hasChatSearchQuery && state.chatSessions.isEmpty()) {
                                     Text(
                                         text = stringResource(R.string.no_previous_chats),
                                         style = MaterialTheme.typography.bodyMedium,
@@ -163,7 +211,7 @@ private fun LocalAgentBridgeApp() {
                                         modifier = Modifier.padding(horizontal = 28.dp, vertical = 8.dp),
                                     )
                                 } else {
-                                    state.chatSessions.forEach { session ->
+                                    filteredChatSessions.forEach { session ->
                                         ChatSessionDrawerItem(
                                             session = session,
                                             selected = destination == AppDestination.Chat &&
@@ -176,6 +224,7 @@ private fun LocalAgentBridgeApp() {
                                                 scope.launch { drawerState.close() }
                                             },
                                             onRename = {
+                                                hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
                                                 renamingSessionId = session.id
                                                 renameDraft = session.title
                                             },
@@ -190,24 +239,26 @@ private fun LocalAgentBridgeApp() {
                                             },
                                         )
                                     }
-                                    OutlinedButton(
-                                        onClick = {
-                                            hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                                            isArchiveHistoryDialogVisible = true
-                                        },
-                                        enabled = !state.isStreaming,
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(horizontal = 12.dp, vertical = 8.dp),
-                                    ) {
-                                        Icon(Icons.Filled.Archive, contentDescription = null)
-                                        Spacer(Modifier.size(8.dp))
-                                        Text(stringResource(R.string.archive_all_chats))
+                                    if (filteredChatSessions.isNotEmpty()) {
+                                        OutlinedButton(
+                                            onClick = {
+                                                hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                isArchiveHistoryDialogVisible = true
+                                            },
+                                            enabled = !state.isStreaming,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                                        ) {
+                                            Icon(Icons.Filled.Archive, contentDescription = null)
+                                            Spacer(Modifier.size(8.dp))
+                                            Text(stringResource(R.string.archive_all_chats))
+                                        }
                                     }
                                 }
-                                if (state.archivedChatSessions.isNotEmpty()) {
+                                if (filteredArchivedChatSessions.isNotEmpty()) {
                                     DrawerSectionLabel(text = stringResource(R.string.archived_chats))
-                                    state.archivedChatSessions.forEach { session ->
+                                    filteredArchivedChatSessions.forEach { session ->
                                         ChatSessionDrawerItem(
                                             session = session,
                                             selected = false,
@@ -248,34 +299,6 @@ private fun LocalAgentBridgeApp() {
                                         Text(stringResource(R.string.delete_all_chats))
                                     }
                                 }
-                                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-                                DrawerDestinationItem(
-                                    destination = AppDestination.Pairing,
-                                    selected = destination == AppDestination.Pairing,
-                                    onClick = {
-                                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        destination = AppDestination.Pairing
-                                        scope.launch { drawerState.close() }
-                                    },
-                                )
-                                DrawerDestinationItem(
-                                    destination = AppDestination.Status,
-                                    selected = destination == AppDestination.Status,
-                                    onClick = {
-                                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        destination = AppDestination.Status
-                                        scope.launch { drawerState.close() }
-                                    },
-                                )
-                                DrawerDestinationItem(
-                                    destination = AppDestination.Models,
-                                    selected = destination == AppDestination.Models,
-                                    onClick = {
-                                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        destination = AppDestination.Models
-                                        scope.launch { drawerState.close() }
-                                    },
-                                )
                             }
                             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                             DrawerDestinationItem(
@@ -296,7 +319,11 @@ private fun LocalAgentBridgeApp() {
                         TopAppBar(
                             title = {
                                 if (destination == AppDestination.Chat) {
-                                    ChatTopAppBarTitle(state)
+                                    ChatTopAppBarTitle(
+                                        state = state,
+                                        onRequestModels = viewModel::requestModels,
+                                        onSelectModel = viewModel::selectModel,
+                                    )
                                 } else {
                                     Text(destinationTitle)
                                 }
@@ -338,33 +365,13 @@ private fun LocalAgentBridgeApp() {
                             onUseDiscoveredMac = viewModel::useDiscoveredMac,
                             onForgetTrustedMac = viewModel::forgetTrustedMac,
                             onScanPairingQr = {
-                                hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
                                 startPairingQrScanner(
                                     context = context,
                                     onResult = viewModel::trustMacFromPairingQr,
                                     onFailure = viewModel::showQrScanFailed,
                                 )
                             },
-                            onConnect = {
-                                hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                                viewModel.connectToTrustedRuntime()
-                            },
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(padding),
-                        )
-                        AppDestination.Status -> ConnectionStatusScreen(
-                            state = state,
-                            onRefreshHealth = viewModel::requestRuntimeHealth,
-                            onDisconnect = viewModel::disconnect,
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(padding),
-                        )
-                        AppDestination.Models -> ModelPickerScreen(
-                            state = state,
-                            onRequestModels = viewModel::requestModels,
-                            onSelectModel = viewModel::selectModel,
+                            onConnect = viewModel::connectToTrustedRuntime,
                             modifier = Modifier
                                 .fillMaxSize()
                                 .padding(padding),
@@ -375,7 +382,21 @@ private fun LocalAgentBridgeApp() {
                             onPortChange = viewModel::updatePort,
                             onUseUsbReverse = viewModel::useUsbReverseEndpoint,
                             onUseEmulator = viewModel::useEmulatorEndpoint,
+                            onStartDiscovery = viewModel::startDiscovery,
+                            onStopDiscovery = viewModel::stopDiscovery,
+                            onUseDiscoveredMac = viewModel::useDiscoveredMac,
                             onForgetTrustedMac = viewModel::forgetTrustedMac,
+                            onScanPairingQr = {
+                                startPairingQrScanner(
+                                    context = context,
+                                    onResult = viewModel::trustMacFromPairingQr,
+                                    onFailure = viewModel::showQrScanFailed,
+                                )
+                            },
+                            onConnect = viewModel::connectToTrustedRuntime,
+                            onRefreshHealth = viewModel::requestRuntimeHealth,
+                            onDisconnect = viewModel::disconnect,
+                            onSetLanguageTag = viewModel::setAppLanguageTag,
                             onAddMemoryEntry = viewModel::addMemoryEntry,
                             onRemoveMemoryEntry = viewModel::removeMemoryEntry,
                             onSetMemoryEntryEnabled = viewModel::setMemoryEntryEnabled,
@@ -439,37 +460,260 @@ private fun LocalAgentBridgeApp() {
                     },
                 )
             }
+            }
         }
     }
 }
 
 @Composable
-private fun ChatTopAppBarTitle(state: RuntimeUiState) {
+private fun LocalizedContent(
+    languageTag: String,
+    content: @Composable () -> Unit,
+) {
+    val baseContext = LocalContext.current
+    val configuration = LocalConfiguration.current
+    val localizedContext = remember(baseContext, configuration, languageTag) {
+        val cleanLanguageTag = languageTag.trim()
+        if (cleanLanguageTag.isBlank()) {
+            baseContext
+        } else {
+            val locale = Locale.forLanguageTag(cleanLanguageTag)
+            val localizedConfiguration = Configuration(configuration)
+            localizedConfiguration.setLocale(locale)
+            localizedConfiguration.setLocales(LocaleList(locale))
+            baseContext.createConfigurationContext(localizedConfiguration)
+        }
+    }
+
+    CompositionLocalProvider(LocalContext provides localizedContext) {
+        content()
+    }
+}
+
+@Composable
+private fun ChatTopAppBarTitle(
+    state: RuntimeUiState,
+    onRequestModels: () -> Unit,
+    onSelectModel: (String) -> Unit,
+) {
     val statusText = when {
         state.isStreaming -> stringResource(R.string.chat_status_streaming)
         state.isConnected -> stringResource(R.string.chat_status_connected)
         else -> stringResource(R.string.chat_status_disconnected)
     }
-    val selectedModelName = state.models
-        .firstOrNull { it.id == state.selectedModelId }
-        ?.name
-        ?: state.selectedModelId
-    val subtitle = selectedModelName?.let { "$statusText - $it" } ?: statusText
 
-    Column {
-        Text(
-            text = stringResource(R.string.app_name),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+    ) {
+        ChatModelTopBarMenu(
+            state = state,
+            onRequestModels = onRequestModels,
+            onSelectModel = onSelectModel,
         )
-        Text(
-            text = subtitle,
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+        Column {
+            Text(
+                text = stringResource(R.string.app_name),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = statusText,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
+}
+
+@Composable
+private fun ChatModelTopBarMenu(
+    state: RuntimeUiState,
+    onRequestModels: () -> Unit,
+    onSelectModel: (String) -> Unit,
+) {
+    var isExpanded by rememberSaveable { mutableStateOf(false) }
+    val hapticFeedback = LocalHapticFeedback.current
+    val selectedModel = state.models.firstOrNull { it.id == state.selectedModelId }
+    val selectedLabel = selectedModel?.name ?: stringResource(R.string.models_title)
+
+    Box {
+        TextButton(
+            onClick = {
+                hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                isExpanded = true
+                if (state.isConnected && state.models.isEmpty() && !state.isLoadingModels) {
+                    onRequestModels()
+                }
+            },
+            enabled = !state.isStreaming,
+            modifier = Modifier.widthIn(max = 176.dp),
+        ) {
+            Text(
+                text = selectedLabel,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Icon(
+                imageVector = Icons.Filled.KeyboardArrowDown,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+        DropdownMenu(
+            expanded = isExpanded,
+            onDismissRequest = { isExpanded = false },
+            modifier = Modifier
+                .widthIn(min = 260.dp, max = 360.dp)
+                .heightIn(max = 420.dp),
+        ) {
+            DropdownMenuItem(
+                text = {
+                    Text(
+                        text = if (state.isLoadingModels) {
+                            stringResource(R.string.loading_models)
+                        } else {
+                            stringResource(R.string.load_models)
+                        },
+                    )
+                },
+                leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                enabled = state.isConnected && !state.isLoadingModels,
+                onClick = {
+                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onRequestModels()
+                },
+            )
+            HorizontalDivider()
+            if (state.models.isEmpty()) {
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            text = if (state.isConnected) {
+                                stringResource(R.string.no_models_connected)
+                            } else {
+                                stringResource(R.string.no_models_disconnected)
+                            },
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    },
+                    enabled = false,
+                    onClick = {},
+                )
+            } else {
+                state.models.forEach { model ->
+                    ChatModelMenuItem(
+                        model = model,
+                        selected = model.id == state.selectedModelId,
+                        installing = model.id == state.installingModelId,
+                        onSelect = {
+                            hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                            onSelectModel(model.id)
+                            isExpanded = false
+                        },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChatModelMenuItem(
+    model: RuntimeModel,
+    selected: Boolean,
+    installing: Boolean,
+    onSelect: () -> Unit,
+) {
+    DropdownMenuItem(
+        text = {
+            Column {
+                Text(
+                    text = model.name,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = modelMenuStatusLine(model = model, installing = installing),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        },
+        trailingIcon = {
+            if (selected) {
+                Icon(
+                    imageVector = Icons.Filled.CheckCircle,
+                    contentDescription = null,
+                )
+            }
+        },
+        enabled = !installing,
+        onClick = onSelect,
+    )
+}
+
+@Composable
+private fun modelMenuStatusLine(model: RuntimeModel, installing: Boolean): String {
+    val availability = when {
+        installing -> stringResource(R.string.installing_model)
+        !model.installed -> stringResource(R.string.install_model)
+        model.running -> stringResource(R.string.model_running)
+        else -> stringResource(R.string.model_installed)
+    }
+    return "${model.provider} - $availability"
+}
+
+@Composable
+private fun ChatHistorySearchField(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    onClear: () -> Unit,
+) {
+    val hapticFeedback = LocalHapticFeedback.current
+
+    OutlinedTextField(
+        value = query,
+        onValueChange = onQueryChange,
+        singleLine = true,
+        textStyle = MaterialTheme.typography.bodyMedium,
+        label = {
+            Text(
+                text = stringResource(R.string.chat_search_label),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        },
+        leadingIcon = {
+            Icon(
+                imageVector = Icons.Filled.Search,
+                contentDescription = null,
+            )
+        },
+        trailingIcon = {
+            if (query.isNotEmpty()) {
+                IconButton(
+                    onClick = {
+                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onClear()
+                    },
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Close,
+                        contentDescription = stringResource(R.string.clear_chat_search),
+                    )
+                }
+            }
+        },
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 4.dp),
+    )
 }
 
 @Composable
@@ -494,6 +738,7 @@ private fun ChatSessionDrawerItem(
     onDelete: () -> Unit,
 ) {
     var isMenuExpanded by rememberSaveable(session.id) { mutableStateOf(false) }
+    val hapticFeedback = LocalHapticFeedback.current
     val title = session.title.ifBlank { stringResource(R.string.untitled_chat) }
     val subtitle = when {
         session.archivedAtMillis != null -> stringResource(R.string.archived_chat)
@@ -536,7 +781,10 @@ private fun ChatSessionDrawerItem(
                     }
                 }
                 IconButton(
-                    onClick = { isMenuExpanded = true },
+                    onClick = {
+                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                        isMenuExpanded = true
+                    },
                     enabled = enabled,
                     modifier = Modifier.size(32.dp),
                 ) {
@@ -601,6 +849,8 @@ private fun RenameChatSessionDialog(
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
 ) {
+    val hapticFeedback = LocalHapticFeedback.current
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.rename_chat)) },
@@ -615,14 +865,22 @@ private fun RenameChatSessionDialog(
         },
         confirmButton = {
             TextButton(
-                onClick = onConfirm,
+                onClick = {
+                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onConfirm()
+                },
                 enabled = title.isNotBlank(),
             ) {
                 Text(stringResource(R.string.save))
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(
+                onClick = {
+                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onDismiss()
+                },
+            ) {
                 Text(stringResource(R.string.cancel))
             }
         },
@@ -635,6 +893,8 @@ private fun DeleteChatSessionDialog(
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
 ) {
+    val hapticFeedback = LocalHapticFeedback.current
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.delete_chat)) },
@@ -652,7 +912,12 @@ private fun DeleteChatSessionDialog(
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(
+                onClick = {
+                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onDismiss()
+                },
+            ) {
                 Text(stringResource(R.string.cancel))
             }
         },
@@ -664,6 +929,8 @@ private fun ArchiveChatHistoryDialog(
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
 ) {
+    val hapticFeedback = LocalHapticFeedback.current
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.archive_all_chats)) },
@@ -674,7 +941,12 @@ private fun ArchiveChatHistoryDialog(
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(
+                onClick = {
+                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onDismiss()
+                },
+            ) {
                 Text(stringResource(R.string.cancel))
             }
         },
@@ -686,6 +958,8 @@ private fun DeleteChatHistoryDialog(
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
 ) {
+    val hapticFeedback = LocalHapticFeedback.current
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.delete_all_chats)) },
@@ -696,7 +970,12 @@ private fun DeleteChatHistoryDialog(
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(
+                onClick = {
+                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onDismiss()
+                },
+            ) {
                 Text(stringResource(R.string.cancel))
             }
         },
@@ -841,7 +1120,5 @@ private enum class AppDestination(
 ) {
     Chat(R.string.tab_chat, Icons.AutoMirrored.Filled.Chat),
     Pairing(R.string.tab_pairing, Icons.Filled.Link),
-    Status(R.string.tab_status, Icons.Filled.Sync),
-    Models(R.string.tab_models, Icons.Filled.Storage),
     Settings(R.string.tab_settings, Icons.Filled.Settings),
 }
