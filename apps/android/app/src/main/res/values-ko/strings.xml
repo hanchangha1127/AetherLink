@@ -15,8 +15,10 @@
     <string name="trusted_mac">신뢰된 Mac</string>
     <string name="no_trusted_mac">신뢰된 Mac 없음</string>
     <string name="trusted_mac_detail">신뢰된 Mac 정보는 이 기기에 저장되며 언제든지 삭제할 수 있습니다.</string>
-    <string name="development_endpoint">개발용 엔드포인트</string>
-    <string name="development_endpoint_detail">QR로 Mac companion 신뢰를 먼저 설정한 뒤 USB 리버스, 에뮬레이터, 실험실 네트워크에서만 쓰는 고급 대체 경로입니다.</string>
+    <string name="advanced_connection">고급 연결</string>
+    <string name="advanced_connection_detail">USB 리버스, 에뮬레이터 또는 실험실 네트워크용 수동 런타임 엔드포인트 설정입니다. QR 페어링 또는 검색 후에만 사용하세요.</string>
+    <string name="show_advanced_connection">고급 연결 표시</string>
+    <string name="hide_advanced_connection">고급 연결 숨기기</string>
     <string name="discover_macs">Mac 검색</string>
     <string name="discovering_macs">Mac 검색 중</string>
     <string name="discovery_detail">로컬 네트워크에서 Mac companion을 찾은 뒤 QR 코드를 스캔해 신뢰를 설정합니다.</string>
@@ -120,7 +122,7 @@
     <string name="settings_subtitle">휴대폰은 Mac companion 런타임에 연결됩니다. Ollama 또는 LM Studio에 직접 연결하지 않습니다.</string>
     <string name="companion_only_title">Mac companion 전용</string>
     <string name="companion_only_detail">AetherLink는 로컬 모델 접근을 Mac에 둡니다. Android는 신뢰된 Mac companion 세션을 제어하고 스트리밍 결과를 받습니다.</string>
-    <string name="runtime_endpoint">런타임 엔드포인트</string>
+    <string name="runtime_endpoint">수동 런타임 엔드포인트</string>
 
     <string name="error_title">오류</string>
     <string name="error_invalid_endpoint">올바른 Mac 런타임 호스트와 포트를 입력하세요.</string>

@@ -1,5 +1,0 @@
-<resources>
-    <string name="feature_models_title">モデル</string>
-    <string name="feature_models_load_models">モデルを読み込む</string>
-    <string name="feature_models_error">モデルエラー: %1$s</string>
-</resources>

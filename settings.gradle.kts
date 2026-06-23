@@ -28,13 +28,3 @@ project(":core:transport").projectDir = file("apps/android/core/transport")
 
 include(":core:pairing")
 project(":core:pairing").projectDir = file("apps/android/core/pairing")
-
-include(":feature:connection")
-project(":feature").projectDir = file("apps/android/feature")
-project(":feature:connection").projectDir = file("apps/android/feature/connection")
-
-include(":feature:models")
-project(":feature:models").projectDir = file("apps/android/feature/models")
-
-include(":feature:chat")
-project(":feature:chat").projectDir = file("apps/android/feature/chat")

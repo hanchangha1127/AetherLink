@@ -15,8 +15,10 @@
     <string name="trusted_mac">受信任的 Mac</string>
     <string name="no_trusted_mac">未保存受信任的 Mac</string>
     <string name="trusted_mac_detail">受信任的 Mac 详情保存在此设备上，可随时移除。</string>
-    <string name="development_endpoint">开发端点</string>
-    <string name="development_endpoint_detail">在通过 QR 与 Mac companion 建立信任后，用于 USB 反向连接、模拟器或实验室网络的高级备用方式。</string>
+    <string name="advanced_connection">高级连接</string>
+    <string name="advanced_connection_detail">用于 USB 反向连接、模拟器或实验室网络的手动运行时端点控件。请仅在 QR 配对或发现后使用。</string>
+    <string name="show_advanced_connection">显示高级连接</string>
+    <string name="hide_advanced_connection">隐藏高级连接</string>
     <string name="discover_macs">发现 Mac</string>
     <string name="discovering_macs">正在发现 Mac</string>
     <string name="discovery_detail">使用发现功能在本地网络中找到 Mac companion，然后扫描其 QR 码来建立信任。</string>
@@ -120,7 +122,7 @@
     <string name="settings_subtitle">手机连接到 Mac companion 运行时。它不会直接连接 Ollama 或 LM Studio。</string>
     <string name="companion_only_title">仅限 Mac companion</string>
     <string name="companion_only_detail">AetherLink 将本地模型访问保留在 Mac 上。Android 控制受信任的 companion 会话并接收流式结果。</string>
-    <string name="runtime_endpoint">运行时端点</string>
+    <string name="runtime_endpoint">手动运行时端点</string>
 
     <string name="error_title">错误</string>
     <string name="error_invalid_endpoint">请输入有效的 Mac 运行时主机和端口。</string>

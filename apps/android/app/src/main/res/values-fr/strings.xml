@@ -15,8 +15,10 @@
     <string name="trusted_mac">Mac de confiance</string>
     <string name="no_trusted_mac">Aucun Mac de confiance enregistré</string>
     <string name="trusted_mac_detail">Les détails du Mac de confiance sont enregistrés sur cet appareil et peuvent être supprimés à tout moment.</string>
-    <string name="development_endpoint">Point de terminaison de développement</string>
-    <string name="development_endpoint_detail">Solution de secours avancée pour USB reverse, émulateur ou réseaux de test après l’établissement de la confiance QR avec le Mac companion.</string>
+    <string name="advanced_connection">Connexion avancée</string>
+    <string name="advanced_connection_detail">Contrôles manuels du point de terminaison du runtime pour USB reverse, émulateur ou réseaux de test. À utiliser seulement après le jumelage QR ou la découverte.</string>
+    <string name="show_advanced_connection">Afficher la connexion avancée</string>
+    <string name="hide_advanced_connection">Masquer la connexion avancée</string>
     <string name="discover_macs">Découvrir les Mac</string>
     <string name="discovering_macs">Découverte des Mac</string>
     <string name="discovery_detail">Utilisez la découverte pour trouver le Mac companion sur le réseau local, puis scannez son code QR pour établir la confiance.</string>
@@ -120,7 +122,7 @@
     <string name="settings_subtitle">Le téléphone se connecte au runtime Mac companion. Il ne se connecte jamais directement à Ollama ou LM Studio.</string>
     <string name="companion_only_title">Mac companion uniquement</string>
     <string name="companion_only_detail">AetherLink garde l’accès aux modèles locaux sur le Mac. Android contrôle la session companion de confiance et reçoit les résultats diffusés.</string>
-    <string name="runtime_endpoint">Point de terminaison du runtime</string>
+    <string name="runtime_endpoint">Point de terminaison manuel du runtime</string>
 
     <string name="error_title">Erreur</string>
     <string name="error_invalid_endpoint">Saisissez un hôte et un port de runtime Mac valides.</string>

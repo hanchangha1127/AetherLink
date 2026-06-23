@@ -25,9 +25,12 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -46,6 +49,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -436,7 +441,6 @@ fun SettingsScreen(
                 onPortChange = onPortChange,
                 onUseUsbReverse = onUseUsbReverse,
                 onUseEmulator = onUseEmulator,
-                title = R.string.runtime_endpoint,
             )
         }
         item { ErrorText(state.error) }
@@ -549,57 +553,98 @@ private fun EndpointPanel(
     onPortChange: (String) -> Unit,
     onUseUsbReverse: () -> Unit,
     onUseEmulator: () -> Unit,
-    @StringRes title: Int = R.string.development_endpoint,
+    @StringRes title: Int = R.string.advanced_connection,
 ) {
+    val isExpanded = rememberSaveable { mutableStateOf(false) }
+
     OutlinedCard(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text(
-                text = stringResource(title),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Medium,
-            )
-            Text(
-                text = stringResource(R.string.development_endpoint_detail),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.secondary,
-            )
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(
-                    onClick = onUseUsbReverse,
-                    modifier = Modifier.fillMaxWidth(),
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { isExpanded.value = !isExpanded.value },
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text(
+                        text = stringResource(title),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Medium,
+                    )
+                    Text(
+                        text = stringResource(R.string.advanced_connection_detail),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.secondary,
+                    )
+                }
+                Spacer(Modifier.width(12.dp))
+                FilledTonalIconButton(
+                    onClick = { isExpanded.value = !isExpanded.value },
                 ) {
                     Icon(
-                        Icons.Filled.PhoneAndroid,
-                        contentDescription = null,
+                        imageVector = if (isExpanded.value) {
+                            Icons.Filled.KeyboardArrowUp
+                        } else {
+                            Icons.Filled.KeyboardArrowDown
+                        },
+                        contentDescription = stringResource(
+                            if (isExpanded.value) {
+                                R.string.hide_advanced_connection
+                            } else {
+                                R.string.show_advanced_connection
+                            },
+                        ),
                     )
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.usb_reverse))
-                }
-                OutlinedButton(
-                    onClick = onUseEmulator,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(stringResource(R.string.emulator))
                 }
             }
-            OutlinedTextField(
-                value = state.macHost,
-                onValueChange = onHostChange,
-                label = { Text(stringResource(R.string.mac_runtime_host)) },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            OutlinedTextField(
-                value = state.macPort,
-                onValueChange = onPortChange,
-                label = { Text(stringResource(R.string.mac_runtime_port)) },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
+            if (isExpanded.value) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = onUseUsbReverse,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Icon(
+                            Icons.Filled.PhoneAndroid,
+                            contentDescription = null,
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(stringResource(R.string.usb_reverse))
+                    }
+                    OutlinedButton(
+                        onClick = onUseEmulator,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Icon(
+                            Icons.Filled.Settings,
+                            contentDescription = null,
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(stringResource(R.string.emulator))
+                    }
+                }
+                OutlinedTextField(
+                    value = state.macHost,
+                    onValueChange = onHostChange,
+                    label = { Text(stringResource(R.string.mac_runtime_host)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = state.macPort,
+                    onValueChange = onPortChange,
+                    label = { Text(stringResource(R.string.mac_runtime_port)) },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
         }
     }
 }

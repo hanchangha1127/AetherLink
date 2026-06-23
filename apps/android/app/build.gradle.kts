@@ -20,9 +20,6 @@ dependencies {
     implementation(project(":core:protocol"))
     implementation(project(":core:transport"))
     implementation(project(":core:pairing"))
-    implementation(project(":feature:connection"))
-    implementation(project(":feature:models"))
-    implementation(project(":feature:chat"))
 
     implementation(libs.androidx.activity.compose)
     implementation(platform(libs.androidx.compose.bom))

@@ -15,8 +15,10 @@
     <string name="trusted_mac">Trusted Mac</string>
     <string name="no_trusted_mac">No trusted Mac saved</string>
     <string name="trusted_mac_detail">Trusted Mac details are saved on this device and can be removed at any time.</string>
-    <string name="development_endpoint">Development Endpoint</string>
-    <string name="development_endpoint_detail">Advanced fallback for USB reverse, emulator, or lab networks after QR trust is established with the Mac companion.</string>
+    <string name="advanced_connection">Advanced Connection</string>
+    <string name="advanced_connection_detail">Manual runtime endpoint controls for USB reverse, emulator, or lab networks. Use this only after QR pairing or discovery.</string>
+    <string name="show_advanced_connection">Show advanced connection</string>
+    <string name="hide_advanced_connection">Hide advanced connection</string>
     <string name="discover_macs">Discover Macs</string>
     <string name="discovering_macs">Discovering Macs</string>
     <string name="discovery_detail">Use discovery to find the Mac companion on the local network, then scan its QR code to establish trust.</string>
@@ -120,7 +122,7 @@
     <string name="settings_subtitle">The phone connects to the Mac companion runtime. It never connects directly to Ollama or LM Studio.</string>
     <string name="companion_only_title">Mac companion only</string>
     <string name="companion_only_detail">AetherLink keeps local-model access on the Mac. Android controls the trusted companion session and receives streamed results.</string>
-    <string name="runtime_endpoint">Runtime Endpoint</string>
+    <string name="runtime_endpoint">Manual runtime endpoint</string>
 
     <string name="error_title">Error</string>
     <string name="error_invalid_endpoint">Enter a valid Mac runtime host and port.</string>

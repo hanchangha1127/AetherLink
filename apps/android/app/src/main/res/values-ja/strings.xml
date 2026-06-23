@@ -15,8 +15,10 @@
     <string name="trusted_mac">信頼済みの Mac</string>
     <string name="no_trusted_mac">信頼済みの Mac は保存されていません</string>
     <string name="trusted_mac_detail">信頼済みの Mac の詳細はこのデバイスに保存され、いつでも削除できます。</string>
-    <string name="development_endpoint">開発用エンドポイント</string>
-    <string name="development_endpoint_detail">Mac companion との QR 信頼設定が完了した後に使う、USB リバース、エミュレーター、ラボネットワーク向けの高度な代替手段です。</string>
+    <string name="advanced_connection">高度な接続</string>
+    <string name="advanced_connection_detail">USB リバース、エミュレーター、ラボネットワーク向けの手動ランタイムエンドポイント設定です。QR ペアリングまたは検出の後にのみ使用してください。</string>
+    <string name="show_advanced_connection">高度な接続を表示</string>
+    <string name="hide_advanced_connection">高度な接続を非表示</string>
     <string name="discover_macs">Mac を検出</string>
     <string name="discovering_macs">Mac を検出中</string>
     <string name="discovery_detail">ローカルネットワーク上の Mac companion を検出し、その QR コードをスキャンして信頼を確立します。</string>
@@ -120,7 +122,7 @@
     <string name="settings_subtitle">スマートフォンは Mac companion ランタイムに接続します。Ollama や LM Studio に直接接続することはありません。</string>
     <string name="companion_only_title">Mac companion のみ</string>
     <string name="companion_only_detail">AetherLink はローカルモデルへのアクセスを Mac に留めます。Android は信頼済み companion セッションを制御し、ストリーミング結果を受信します。</string>
-    <string name="runtime_endpoint">ランタイムエンドポイント</string>
+    <string name="runtime_endpoint">手動ランタイムエンドポイント</string>
 
     <string name="error_title">エラー</string>
     <string name="error_invalid_endpoint">有効な Mac ランタイムホストとポートを入力してください。</string>
