@@ -87,6 +87,9 @@
 "Pair an Android device before allowing runtime commands." = "允许运行时命令前，请先配对 Android 设备。";
 "Paired %@ · ID ending %@" = "已配对 %@ · ID 结尾 %@";
 "Remove Trust" = "移除信任";
+"Remove trusted device?" = "移除受信任设备？";
+"%@ will need to pair again before it can use this Mac runtime." = "%@ 需要重新配对后才能使用此 Mac 运行时。";
+"Cancel" = "取消";
 
 "Runtime Logs" = "运行时日志";
 "Recent companion activity from this Mac session." = "此 Mac 会话中的近期 Companion 活动。";

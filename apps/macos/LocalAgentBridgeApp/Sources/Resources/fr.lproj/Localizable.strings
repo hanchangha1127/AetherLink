@@ -87,6 +87,9 @@
 "Pair an Android device before allowing runtime commands." = "Jumelez un appareil Android avant d’autoriser les commandes du runtime.";
 "Paired %@ · ID ending %@" = "Jumelé %@ · ID finissant par %@";
 "Remove Trust" = "Retirer l’approbation";
+"Remove trusted device?" = "Retirer l’appareil approuvé ?";
+"%@ will need to pair again before it can use this Mac runtime." = "%@ devra être jumelé à nouveau avant de pouvoir utiliser ce runtime Mac.";
+"Cancel" = "Annuler";
 
 "Runtime Logs" = "Journaux du runtime";
 "Recent companion activity from this Mac session." = "Activité récente du compagnon pour cette session Mac.";

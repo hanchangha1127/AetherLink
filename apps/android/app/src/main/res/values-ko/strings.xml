@@ -148,6 +148,7 @@
     <string name="assistant_reasoning_label">생각 중</string>
     <string name="assistant_reasoning_show">보기</string>
     <string name="assistant_reasoning_hide">숨기기</string>
+    <string name="copy_message">메시지 복사</string>
 
     <string name="settings_title">설정</string>
     <string name="settings_subtitle">휴대폰은 Mac companion 런타임에 연결됩니다. Ollama 또는 LM Studio에 직접 연결하지 않습니다.</string>

@@ -1,8 +1,10 @@
 import CompanionCore
 import SwiftUI
+import TrustedDevices
 
 struct TrustedDevicesView: View {
     @ObservedObject var model: CompanionAppModel
+    @State private var pendingRemovalDevice: TrustedDevice?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -40,7 +42,7 @@ struct TrustedDevicesView: View {
                             id: device.id,
                             pairedAt: device.pairedAt
                         ) {
-                            Task { await model.removeTrustedDevice(device) }
+                            pendingRemovalDevice = device
                         }
                         .padding(.vertical, 6)
                     }
@@ -54,6 +56,33 @@ struct TrustedDevicesView: View {
         .padding(24)
         .task {
             await model.refreshTrustedDevices()
+        }
+        .confirmationDialog(
+            NSLocalizedString("Remove trusted device?", comment: ""),
+            isPresented: Binding(
+                get: { pendingRemovalDevice != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        pendingRemovalDevice = nil
+                    }
+                }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button(NSLocalizedString("Remove Trust", comment: ""), role: .destructive) {
+                if let device = pendingRemovalDevice {
+                    pendingRemovalDevice = nil
+                    Task { await model.removeTrustedDevice(device) }
+                }
+            }
+            Button(NSLocalizedString("Cancel", comment: ""), role: .cancel) {}
+        } message: {
+            Text(
+                String(
+                    format: NSLocalizedString("%@ will need to pair again before it can use this Mac runtime.", comment: ""),
+                    pendingRemovalDevice?.name ?? ""
+                )
+            )
         }
     }
 

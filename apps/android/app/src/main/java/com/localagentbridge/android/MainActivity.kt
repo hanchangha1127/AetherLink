@@ -67,7 +67,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -106,6 +108,7 @@ private fun LocalAgentBridgeApp() {
             val viewModel: RuntimeClientViewModel = viewModel()
             val state by viewModel.state.collectAsStateWithLifecycle()
             val context = LocalContext.current
+            val hapticFeedback = LocalHapticFeedback.current
             val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
             val scope = rememberCoroutineScope()
             var destination by rememberSaveable { mutableStateOf(AppDestination.Chat) }
@@ -132,6 +135,7 @@ private fun LocalAgentBridgeApp() {
                             )
                             Button(
                                 onClick = {
+                                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
                                     viewModel.startNewChat()
                                     destination = AppDestination.Chat
                                     scope.launch { drawerState.close() }
@@ -166,6 +170,7 @@ private fun LocalAgentBridgeApp() {
                                                 session.id == state.activeChatSessionId,
                                             enabled = !state.isStreaming,
                                             onClick = {
+                                                hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
                                                 viewModel.selectChatSession(session.id)
                                                 destination = AppDestination.Chat
                                                 scope.launch { drawerState.close() }
@@ -175,16 +180,21 @@ private fun LocalAgentBridgeApp() {
                                                 renameDraft = session.title
                                             },
                                             onArchive = {
+                                                hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
                                                 viewModel.archiveChatSession(session.id)
                                             },
                                             onRestore = null,
                                             onDelete = {
+                                                hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
                                                 deletingSessionId = session.id
                                             },
                                         )
                                     }
                                     OutlinedButton(
-                                        onClick = { isArchiveHistoryDialogVisible = true },
+                                        onClick = {
+                                            hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            isArchiveHistoryDialogVisible = true
+                                        },
                                         enabled = !state.isStreaming,
                                         modifier = Modifier
                                             .fillMaxWidth()
@@ -203,6 +213,7 @@ private fun LocalAgentBridgeApp() {
                                             selected = false,
                                             enabled = !state.isStreaming,
                                             onClick = {
+                                                hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
                                                 viewModel.unarchiveChatSession(session.id)
                                                 viewModel.selectChatSession(session.id)
                                                 destination = AppDestination.Chat
@@ -211,9 +222,11 @@ private fun LocalAgentBridgeApp() {
                                             onRename = null,
                                             onArchive = null,
                                             onRestore = {
+                                                hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
                                                 viewModel.unarchiveChatSession(session.id)
                                             },
                                             onDelete = {
+                                                hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
                                                 deletingSessionId = session.id
                                             },
                                         )
@@ -221,7 +234,10 @@ private fun LocalAgentBridgeApp() {
                                 }
                                 if (state.chatSessions.isNotEmpty() || state.archivedChatSessions.isNotEmpty()) {
                                     OutlinedButton(
-                                        onClick = { isDeleteHistoryDialogVisible = true },
+                                        onClick = {
+                                            hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            isDeleteHistoryDialogVisible = true
+                                        },
                                         enabled = !state.isStreaming,
                                         modifier = Modifier
                                             .fillMaxWidth()
@@ -237,6 +253,7 @@ private fun LocalAgentBridgeApp() {
                                     destination = AppDestination.Pairing,
                                     selected = destination == AppDestination.Pairing,
                                     onClick = {
+                                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
                                         destination = AppDestination.Pairing
                                         scope.launch { drawerState.close() }
                                     },
@@ -245,6 +262,7 @@ private fun LocalAgentBridgeApp() {
                                     destination = AppDestination.Status,
                                     selected = destination == AppDestination.Status,
                                     onClick = {
+                                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
                                         destination = AppDestination.Status
                                         scope.launch { drawerState.close() }
                                     },
@@ -253,6 +271,7 @@ private fun LocalAgentBridgeApp() {
                                     destination = AppDestination.Models,
                                     selected = destination == AppDestination.Models,
                                     onClick = {
+                                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
                                         destination = AppDestination.Models
                                         scope.launch { drawerState.close() }
                                     },
@@ -263,6 +282,7 @@ private fun LocalAgentBridgeApp() {
                                 destination = AppDestination.Settings,
                                 selected = destination == AppDestination.Settings,
                                 onClick = {
+                                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
                                     destination = AppDestination.Settings
                                     scope.launch { drawerState.close() }
                                 },
@@ -282,7 +302,12 @@ private fun LocalAgentBridgeApp() {
                                 }
                             },
                             navigationIcon = {
-                                IconButton(onClick = { scope.launch { drawerState.open() } }) {
+                                IconButton(
+                                    onClick = {
+                                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        scope.launch { drawerState.open() }
+                                    },
+                                ) {
                                     Icon(
                                         imageVector = Icons.Filled.Menu,
                                         contentDescription = stringResource(R.string.content_desc_open_navigation),
@@ -313,13 +338,17 @@ private fun LocalAgentBridgeApp() {
                             onUseDiscoveredMac = viewModel::useDiscoveredMac,
                             onForgetTrustedMac = viewModel::forgetTrustedMac,
                             onScanPairingQr = {
+                                hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
                                 startPairingQrScanner(
                                     context = context,
                                     onResult = viewModel::trustMacFromPairingQr,
                                     onFailure = viewModel::showQrScanFailed,
                                 )
                             },
-                            onConnect = viewModel::connectToTrustedRuntime,
+                            onConnect = {
+                                hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                                viewModel.connectToTrustedRuntime()
+                            },
                             modifier = Modifier
                                 .fillMaxSize()
                                 .padding(padding),
@@ -382,6 +411,7 @@ private fun LocalAgentBridgeApp() {
                     sessionTitle = sessionBeingDeleted.title,
                     onDismiss = { deletingSessionId = null },
                     onConfirm = {
+                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
                         viewModel.deleteChatSession(sessionBeingDeleted.id)
                         deletingSessionId = null
                     },
@@ -392,6 +422,7 @@ private fun LocalAgentBridgeApp() {
                 ArchiveChatHistoryDialog(
                     onDismiss = { isArchiveHistoryDialogVisible = false },
                     onConfirm = {
+                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
                         viewModel.archiveChatSessions()
                         isArchiveHistoryDialogVisible = false
                     },
@@ -402,6 +433,7 @@ private fun LocalAgentBridgeApp() {
                 DeleteChatHistoryDialog(
                     onDismiss = { isDeleteHistoryDialogVisible = false },
                     onConfirm = {
+                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
                         viewModel.clearChatSessions()
                         isDeleteHistoryDialogVisible = false
                     },

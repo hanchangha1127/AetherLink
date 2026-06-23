@@ -148,6 +148,7 @@
     <string name="assistant_reasoning_label">Thinking</string>
     <string name="assistant_reasoning_show">Show</string>
     <string name="assistant_reasoning_hide">Hide</string>
+    <string name="copy_message">Copy message</string>
 
     <string name="settings_title">Settings</string>
     <string name="settings_subtitle">The phone connects to the Mac companion runtime. It never connects directly to Ollama or LM Studio.</string>

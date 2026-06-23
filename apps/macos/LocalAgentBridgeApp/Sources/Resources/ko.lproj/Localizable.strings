@@ -87,6 +87,9 @@
 "Pair an Android device before allowing runtime commands." = "런타임 명령을 허용하기 전에 Android 기기를 페어링하세요.";
 "Paired %@ · ID ending %@" = "%@ 페어링됨 · ID 끝자리 %@";
 "Remove Trust" = "신뢰 해제";
+"Remove trusted device?" = "신뢰 기기를 해제할까요?";
+"%@ will need to pair again before it can use this Mac runtime." = "%@ 기기는 이 Mac 런타임을 다시 사용하려면 다시 페어링해야 합니다.";
+"Cancel" = "취소";
 
 "Runtime Logs" = "런타임 로그";
 "Recent companion activity from this Mac session." = "이 Mac 세션의 최근 Companion 활동입니다.";

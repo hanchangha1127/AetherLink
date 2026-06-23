@@ -87,6 +87,9 @@
 "Pair an Android device before allowing runtime commands." = "Pair an Android device before allowing runtime commands.";
 "Paired %@ · ID ending %@" = "Paired %@ · ID ending %@";
 "Remove Trust" = "Remove Trust";
+"Remove trusted device?" = "Remove trusted device?";
+"%@ will need to pair again before it can use this Mac runtime." = "%@ will need to pair again before it can use this Mac runtime.";
+"Cancel" = "Cancel";
 
 "Runtime Logs" = "Runtime Logs";
 "Recent companion activity from this Mac session." = "Recent companion activity from this Mac session.";
