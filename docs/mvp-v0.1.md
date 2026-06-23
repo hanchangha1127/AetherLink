@@ -10,10 +10,10 @@ AetherLink v0.1 proves the smallest useful local loop: Android pairs with the Ma
 - Ollama and LM Studio are Mac-mediated local model backends.
 - Pairing uses a Mac-displayed QR code in v0.1; the accepted trusted Mac record persists on Android.
 - Discovery remains scoped to pairing setup, while runtime access requires a trusted-device model and authenticated runtime session.
-- Android can request runtime health, list models, select a model, send chat, receive streamed answer deltas, render preserved reasoning/think deltas separately as muted collapsible UI, reopen previous local chats, manage user-entered local memory notes, and cancel generation.
+- Android can request runtime health, list models, select a chat model, separately select one embedding model for future retrieval features, send chat, receive streamed answer deltas, render preserved reasoning/think deltas separately as muted collapsible UI, reopen previous local chats, manage user-entered local memory notes, and cancel generation.
 - If archive is exposed in v0.1 local chat UX, archive is distinct from delete: archived chats are retained but excluded from memory/reflection/research/compaction inputs unless restored or explicitly selected later.
 - Model listing includes installed Ollama models from Mac `/api/tags` and optional running state from Mac `/api/ps`; local models are the main path.
-- Model listing includes LM Studio local LLMs from Mac-side LM Studio REST API responses; no LM Studio defaults are invented.
+- Model listing includes LM Studio local LLM and embedding models from Mac-side LM Studio REST API responses; chat and embedding selection surfaces stay separate, and no LM Studio defaults are invented.
 - Ollama cloud models are not default recommendations or generic suggestions. They remain installed/selectable only after the user-side Ollama pull/sign-in flow makes them appear in the local Mac `/api/tags` response.
 - Pulling a model is Mac-mediated through `models.pull` and Ollama `/api/pull`; LM Studio downloads remain Mac-side user actions through LM Studio or `lms`. Android never calls Ollama or LM Studio URLs directly.
 - Local development transport may use length-prefixed JSON over TCP. It must remain replaceable by encrypted P2P/pairing transport later, and it must not turn same-network access into a trust model.

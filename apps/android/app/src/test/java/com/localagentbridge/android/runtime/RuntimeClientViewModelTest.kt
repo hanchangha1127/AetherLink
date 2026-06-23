@@ -6,6 +6,8 @@ import com.localagentbridge.android.core.protocol.ChatDonePayload
 import com.localagentbridge.android.core.protocol.ErrorPayload
 import com.localagentbridge.android.core.protocol.MessageType
 import com.localagentbridge.android.core.protocol.ProtocolEnvelope
+import com.localagentbridge.android.core.protocol.RuntimeBackendStatusPayload
+import com.localagentbridge.android.core.protocol.RuntimeHealthPayload
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.encodeToJsonElement
@@ -35,6 +37,39 @@ class RuntimeClientViewModelTest {
 
         assertEquals("192.168.1.20", target?.host)
         assertEquals(43170, target?.port)
+    }
+
+    @Test
+    fun runtimeProviderStatusesPreserveBackendDetails() {
+        val payload = RuntimeHealthPayload(
+            status = "ok",
+            ollama = RuntimeBackendStatusPayload(
+                available = true,
+                message = "Ollama is reachable from the Mac runtime",
+            ),
+            lmStudio = RuntimeBackendStatusPayload(
+                available = false,
+                message = "LM Studio is not reachable from the Mac runtime",
+                code = "backend_unavailable",
+                retryable = true,
+            ),
+        )
+
+        val statuses = runtimeProviderStatuses(payload)
+
+        assertEquals(2, statuses.size)
+        assertEquals(RuntimeProviderStatus("ollama", "Ollama", true, "Ollama is reachable from the Mac runtime"), statuses[0])
+        assertEquals(
+            RuntimeProviderStatus(
+                id = "lm_studio",
+                name = "LM Studio",
+                available = false,
+                message = "LM Studio is not reachable from the Mac runtime",
+                code = "backend_unavailable",
+                retryable = true,
+            ),
+            statuses[1],
+        )
     }
 
     @Test
@@ -75,6 +110,57 @@ class RuntimeClientViewModelTest {
         assertEquals(SelectedModelSendState.NotInstalled, notInstalled.selectedModelSendState())
         assertEquals(SelectedModelSendState.Missing, stale.selectedModelSendState())
         assertEquals(SelectedModelSendState.Missing, missing.selectedModelSendState())
+    }
+
+    @Test
+    fun selectedModelSendStateRejectsEmbeddingModelAsChatModel() {
+        val state = RuntimeUiState(
+            selectedModelId = "ollama:nomic-embed-text",
+            models = listOf(
+                RuntimeModel(
+                    id = "ollama:nomic-embed-text",
+                    name = "nomic-embed-text",
+                    modelKind = MODEL_KIND_EMBEDDING,
+                    capabilities = listOf("embedding"),
+                    installed = true,
+                ),
+            ),
+        )
+
+        assertEquals(SelectedModelSendState.Missing, state.selectedModelSendState())
+        assertTrue(state.models.single().isEmbeddingModel())
+        assertFalse(state.models.single().isChatModel())
+    }
+
+    @Test
+    fun modelKindNormalizationSeparatesChatAndEmbeddingModels() {
+        assertEquals(
+            MODEL_KIND_EMBEDDING,
+            normalizeModelKind(
+                kind = "embedding",
+                capabilities = emptyList(),
+                id = "lm_studio:text-embedding-nomic",
+                name = "Nomic Embed",
+            ),
+        )
+        assertEquals(
+            MODEL_KIND_EMBEDDING,
+            normalizeModelKind(
+                kind = null,
+                capabilities = listOf("embedding"),
+                id = "ollama:mxbai-embed-large",
+                name = "mxbai-embed-large",
+            ),
+        )
+        assertEquals(
+            MODEL_KIND_CHAT,
+            normalizeModelKind(
+                kind = "llm",
+                capabilities = emptyList(),
+                id = "lm_studio:qwen-local",
+                name = "Qwen Local",
+            ),
+        )
     }
 
     @Test
@@ -660,6 +746,16 @@ class RuntimeClientViewModelTest {
         assertEquals(RuntimeAppLanguage.SimplifiedChinese.languageTag, simplifiedChinese.appLanguageTag)
         assertEquals(RuntimeAppLanguage.System.languageTag, invalid.appLanguageTag)
         assertEquals(RuntimeAppLanguage.System.languageTag, system.appLanguageTag)
+    }
+
+    @Test
+    fun persistedRuntimeDataStoresSelectedChatAndEmbeddingModelsSeparately() {
+        val data = PersistedRuntimeData()
+            .withSelectedModelId("  ollama:qwen3:8b  ")
+            .withSelectedEmbeddingModelId("  ollama:nomic-embed-text  ")
+
+        assertEquals("ollama:qwen3:8b", data.selectedModelId)
+        assertEquals("ollama:nomic-embed-text", data.selectedEmbeddingModelId)
     }
 
     @Test

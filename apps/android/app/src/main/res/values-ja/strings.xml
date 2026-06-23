@@ -86,6 +86,15 @@
     <string name="backend_available">利用可能</string>
     <string name="backend_unavailable">利用不可</string>
     <string name="providers">プロバイダー</string>
+    <string name="provider_status_ready">準備完了</string>
+    <string name="provider_status_unavailable">利用不可</string>
+    <string name="provider_status_ready_detail">%1$s は Mac companion 経由で応答しています。</string>
+    <string name="provider_ollama_unavailable_hint">Ollama に Mac から到達できません。Mac で Ollama を開いてからヘルスを更新してください。</string>
+    <string name="provider_lm_studio_unavailable_hint">LM Studio に Mac から到達できません。Mac で LM Studio のローカルサーバーを起動してからヘルスを更新してください。</string>
+    <string name="provider_unavailable_hint">%1$s に Mac から到達できません。Mac で起動してからヘルスを更新してください。</string>
+    <string name="provider_mac_detail">Mac の詳細: %1$s</string>
+    <string name="provider_error_code">コード: %1$s</string>
+    <string name="provider_retryable_hint">Mac でプロバイダーを起動すれば再試行できます。</string>
 
     <string name="models_title">モデル</string>
     <string name="models_subtitle">Mac companion ランタイムが公開しているモデルを選択します。</string>
@@ -148,6 +157,9 @@
     <string name="chat_status_streaming">応答中</string>
     <string name="chat_uses_mac_runtime">チャットリクエストは Mac companion 経由で中継されます。</string>
     <string name="chat_needs_runtime">チャットする前に、信頼済みの Mac companion に接続してください。</string>
+    <string name="chat_backend_unavailable_title">Mac バックエンドの確認が必要です</string>
+    <string name="chat_backend_unavailable_detail">Mac で Ollama または LM Studio を開いてからヘルスを更新してください。</string>
+    <string name="refresh_health">ヘルスを更新</string>
     <string name="chat_hint_connect">先に信頼済みの Mac companion に接続してください。</string>
     <string name="chat_hint_select_model">送信する前にモデルを選択してください。</string>
     <string name="chat_hint_model_unavailable">送信する前にモデルを更新するか、別のモデルを選択してください。</string>
@@ -181,6 +193,11 @@
     <string name="language_simplified_chinese">簡体字中国語</string>
     <string name="language_french">フランス語</string>
     <string name="runtime_endpoint">手動ランタイムエンドポイント</string>
+    <string name="embedding_model_title">埋め込みモデル</string>
+    <string name="embedding_model_subtitle">今後の検索、メモリ検索、リサーチ機能用に、チャットモデルとは別に埋め込みモデルを 1 つ選択します。</string>
+    <string name="selected_embedding_model">選択中の埋め込みモデル</string>
+    <string name="embedding_model_empty">Mac ランタイムから利用できる埋め込みモデルはありません。</string>
+    <string name="embedding_model_connect_first">埋め込みモデルを選ぶ前に、信頼済み Mac companion に接続してください。</string>
     <string name="memory_title">メモリ</string>
     <string name="memory_subtitle">このスマートフォンの今後のチャットでアシスタントが使用できるローカルメモです。</string>
     <string name="memory_add_label">メモリを追加</string>
@@ -216,6 +233,8 @@
     <string name="error_invalid_payload">Mac companion ランタイムが無効なデータを送信しました。</string>
     <string name="error_install_model_first">チャットする前に、このモデルを Mac にインストールしてください。</string>
     <string name="error_model_install_failed">Mac companion はモデルをインストールできませんでした。</string>
+    <string name="error_select_chat_model">会話にはチャットモデルを選択してください。</string>
+    <string name="error_select_embedding_model">設定で埋め込みモデルを選択してください。</string>
     <string name="error_qr_empty_detail">QR コードが空です</string>
     <string name="error_backend_unavailable">Mac のモデルバックエンドは利用できません。</string>
     <string name="error_generation_not_found">アクティブな生成が見つかりませんでした。</string>

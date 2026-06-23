@@ -7,6 +7,13 @@ JAVA_HOME="${JAVA_HOME:-/Applications/Android Studio.app/Contents/jbr/Contents/H
 ADB="${ADB:-$ANDROID_HOME/platform-tools/adb}"
 PACKAGE_NAME="com.localagentbridge.android"
 PORT="${LOCAL_AGENT_BRIDGE_PORT:-43170}"
+GRADLE_USER_HOME="${GRADLE_USER_HOME:-$ROOT_DIR/.gradle}"
+APK_PATH="$ROOT_DIR/apps/android/app/build/outputs/apk/debug/app-debug.apk"
+
+export ANDROID_HOME
+export JAVA_HOME
+export GRADLE_USER_HOME
+export PATH="$ANDROID_HOME/platform-tools:$JAVA_HOME/bin:$PATH"
 
 if [[ ! -x "$ADB" ]]; then
   echo "adb not found at $ADB" >&2
@@ -14,7 +21,17 @@ if [[ ! -x "$ADB" ]]; then
   exit 2
 fi
 
+if [[ ! -x "$JAVA_HOME/bin/java" ]]; then
+  echo "Java runtime not found at $JAVA_HOME/bin/java" >&2
+  echo "Set JAVA_HOME to a JDK path. Android Studio's bundled JBR usually works." >&2
+  exit 2
+fi
+
 cd "$ROOT_DIR"
+
+echo "Android devices visible to adb:"
+"$ADB" devices -l
+echo
 
 DEVICE_LINES="$("$ADB" devices | awk 'NR > 1 && NF >= 2 { print $1 " " $2 }')"
 if [[ -z "$DEVICE_LINES" ]]; then
@@ -41,7 +58,11 @@ echo "Forwarding Android 127.0.0.1:$PORT to Mac runtime port $PORT"
 "$ADB" -s "$SERIAL" reverse "tcp:$PORT" "tcp:$PORT"
 
 echo "Building and installing debug APK"
-JAVA_HOME="$JAVA_HOME" ANDROID_HOME="$ANDROID_HOME" ./gradlew :app:installDebug --console=plain
+./gradlew --no-daemon :app:installDebug --console=plain
+
+if [[ -f "$APK_PATH" ]]; then
+  echo "Installed APK built at: $(stat -f '%Sm' -t '%Y-%m-%d %H:%M:%S' "$APK_PATH")"
+fi
 
 ACTIVITY="$("$ADB" -s "$SERIAL" shell cmd package resolve-activity --brief "$PACKAGE_NAME" | tail -n 1 | tr -d '\r')"
 if [[ -z "$ACTIVITY" || "$ACTIVITY" == "No activity found" ]]; then
@@ -54,4 +75,3 @@ echo "Launching $ACTIVITY"
 
 echo "Android app launched."
 echo "In the app, use the USB reverse endpoint preset: 127.0.0.1:$PORT"
-

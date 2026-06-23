@@ -447,11 +447,24 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
 
     fun selectModel(modelId: String) {
         val model = state.value.models.firstOrNull { it.id == modelId }
+        if (model != null && !model.isChatModel()) {
+            showError("select_chat_model")
+            return
+        }
         if (model != null && !model.installed) {
             requestModelInstall(modelId)
             return
         }
-        mutableState.update { it.copy(selectedModelId = modelId) }
+        persistSelectedModel(modelId)
+    }
+
+    fun selectEmbeddingModel(modelId: String) {
+        val model = state.value.models.firstOrNull { it.id == modelId }
+        if (model == null || !model.isEmbeddingModel()) {
+            showError("select_embedding_model")
+            return
+        }
+        persistSelectedEmbeddingModel(modelId)
     }
 
     fun requestModelInstall(modelId: String) {
@@ -461,8 +474,12 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
         }
 
         val model = state.value.models.firstOrNull { it.id == modelId }
+        if (model != null && !model.isChatModel()) {
+            showError("select_chat_model")
+            return
+        }
         if (model?.installed == true) {
-            mutableState.update { it.copy(selectedModelId = modelId) }
+            persistSelectedModel(modelId)
             return
         }
 
@@ -752,10 +769,7 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
 
     private fun handleRuntimeHealth(envelope: ProtocolEnvelope) {
         val payload = decodePayload(RuntimeHealthPayload.serializer(), envelope.payload) ?: return
-        val providerStatuses = listOfNotNull(
-            payload.ollama?.let { RuntimeProviderStatus("ollama", "Ollama", it.available) },
-            payload.lmStudio?.let { RuntimeProviderStatus("lm_studio", "LM Studio", it.available) },
-        )
+        val providerStatuses = runtimeProviderStatuses(payload)
         mutableState.update {
             it.copy(
                 runtimeStatus = payload.status,
@@ -781,11 +795,22 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
             val modelId = it.qualifiedId?.takeIf(String::isNotBlank)
                 ?: providerModelId?.let { id -> qualifyModelId(provider, id) }
                 ?: it.id
+            val capabilities = it.capabilities.mapNotNull { capability ->
+                capability.trim().lowercase().takeIf(String::isNotBlank)
+            }.distinct()
+            val modelKind = normalizeModelKind(
+                kind = it.modelKind ?: it.kind,
+                capabilities = capabilities,
+                id = modelId,
+                name = it.name ?: it.id,
+            )
             RuntimeModel(
                 id = modelId,
                 name = it.name?.takeIf(String::isNotBlank) ?: it.id,
                 backend = it.backend ?: provider,
                 provider = provider,
+                modelKind = modelKind,
+                capabilities = capabilities.ifEmpty { defaultCapabilitiesForModelKind(modelKind) },
                 providerModelId = providerModelId,
                 installed = it.installed ?: true,
                 running = it.running ?: false,
@@ -794,30 +819,41 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
                 sizeBytes = it.sizeBytes,
             )
         }
-        mutableState.update { current ->
-            val installTarget = modelIdToSelectAfterRefresh
-            val installedTarget = installTarget?.let { target ->
-                models.firstOrNull { it.id == target && it.installed }
-            }
-            val selectedModelId = when {
-                installedTarget != null -> installedTarget.id
-                current.selectedModelId != null && models.any { it.id == current.selectedModelId && it.installed } -> current.selectedModelId
-                else -> models.firstOrNull { it.installed }?.id
-            }
-            if (installedTarget != null) {
-                modelIdToSelectAfterRefresh = null
-            }
-            val stillInstalling = current.installingModelId?.takeIf { installingId ->
-                models.none { it.id == installingId && it.installed }
-            }
+        val current = state.value
+        val chatModels = models.filter { it.isChatModel() }
+        val embeddingModels = models.filter { it.isEmbeddingModel() }
+        val installTarget = modelIdToSelectAfterRefresh
+        val installedTarget = installTarget?.let { target ->
+            chatModels.firstOrNull { it.id == target && it.installed }
+        }
+        val selectedModelId = when {
+            installedTarget != null -> installedTarget.id
+            current.selectedModelId != null && chatModels.any { it.id == current.selectedModelId && it.installed } -> current.selectedModelId
+            else -> chatModels.firstOrNull { it.installed }?.id
+        }
+        val selectedEmbeddingModelId = when {
+            current.selectedEmbeddingModelId != null &&
+                embeddingModels.any { it.id == current.selectedEmbeddingModelId && it.installed } -> current.selectedEmbeddingModelId
+            else -> embeddingModels.firstOrNull { it.installed }?.id
+        }
+        if (installedTarget != null) {
+            modelIdToSelectAfterRefresh = null
+        }
+        val stillInstalling = current.installingModelId?.takeIf { installingId ->
+            models.none { it.id == installingId && it.installed }
+        }
+        mutableState.update {
             current.copy(
                 models = models,
                 isLoadingModels = false,
                 installingModelId = stillInstalling,
                 selectedModelId = selectedModelId,
+                selectedEmbeddingModelId = selectedEmbeddingModelId,
                 error = null
             )
         }
+        persistSelectedModel(selectedModelId, publish = false)
+        persistSelectedEmbeddingModel(selectedEmbeddingModelId, publish = false)
     }
 
     private fun handleModelPull(envelope: ProtocolEnvelope) {
@@ -1015,11 +1051,41 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
                 chatSessions = runtimeChatSessions(cleanData),
                 archivedChatSessions = archivedRuntimeChatSessions(cleanData),
                 activeChatSessionId = cleanData.activeSessionId,
+                selectedModelId = cleanData.selectedModelId,
+                selectedEmbeddingModelId = cleanData.selectedEmbeddingModelId,
                 messages = activeSessionMessages(cleanData),
                 memoryEntries = runtimeMemoryEntries(cleanData),
                 selectedLanguageTag = cleanData.appLanguageTag,
                 error = if (clearError) null else it.error,
             )
+        }
+    }
+
+    private fun persistSelectedModel(modelId: String?, publish: Boolean = true) {
+        val cleanData = persistedRuntimeData.withSelectedModelId(modelId)
+        persistedRuntimeData = cleanData
+        localStore.save(cleanData)
+        if (publish) {
+            mutableState.update {
+                it.copy(
+                    selectedModelId = cleanData.selectedModelId,
+                    error = null,
+                )
+            }
+        }
+    }
+
+    private fun persistSelectedEmbeddingModel(modelId: String?, publish: Boolean = true) {
+        val cleanData = persistedRuntimeData.withSelectedEmbeddingModelId(modelId)
+        persistedRuntimeData = cleanData
+        localStore.save(cleanData)
+        if (publish) {
+            mutableState.update {
+                it.copy(
+                    selectedEmbeddingModelId = cleanData.selectedEmbeddingModelId,
+                    error = null,
+                )
+            }
         }
     }
 
@@ -1049,6 +1115,23 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
         val FAILED_PULL_STATUSES = setOf("failed", "failure", "error", "cancelled", "canceled")
     }
 }
+
+private val EMBEDDING_MODEL_NAME_HINTS = setOf(
+    "embed",
+    "embedding",
+    "nomic-embed",
+    "mxbai",
+    "all-minilm",
+    "bge-",
+    "bge:",
+    "e5-",
+    "e5:",
+    "gte-",
+    "gte:",
+    "snowflake-arctic-embed",
+    "qwen3-embedding",
+    "embeddinggemma",
+)
 
 private fun providerFromQualifiedId(qualifiedId: String?): String? {
     val value = qualifiedId?.takeIf(String::isNotBlank) ?: return null
@@ -1080,6 +1163,31 @@ internal enum class SelectedModelSendState {
     NotInstalled,
 }
 
+internal fun runtimeProviderStatuses(payload: RuntimeHealthPayload): List<RuntimeProviderStatus> {
+    return listOfNotNull(
+        payload.ollama?.let { status ->
+            RuntimeProviderStatus(
+                id = "ollama",
+                name = "Ollama",
+                available = status.available,
+                message = status.message,
+                code = status.code,
+                retryable = status.retryable,
+            )
+        },
+        payload.lmStudio?.let { status ->
+            RuntimeProviderStatus(
+                id = "lm_studio",
+                name = "LM Studio",
+                available = status.available,
+                message = status.message,
+                code = status.code,
+                retryable = status.retryable,
+            )
+        },
+    )
+}
+
 internal fun trustedRuntimeConnectionTarget(state: RuntimeUiState): RuntimeConnectionTarget? {
     val trustedMac = state.trustedMac ?: return null
     return RuntimeConnectionTarget(
@@ -1092,11 +1200,56 @@ internal fun RuntimeUiState.selectedModelSendState(): SelectedModelSendState {
     val selectedId = selectedModelId ?: return SelectedModelSendState.Missing
     val selectedModel = models.firstOrNull { it.id == selectedId }
         ?: return SelectedModelSendState.Missing
-    return if (selectedModel.installed) {
+    return if (!selectedModel.isChatModel()) {
+        SelectedModelSendState.Missing
+    } else if (selectedModel.installed) {
         SelectedModelSendState.Ready
     } else {
         SelectedModelSendState.NotInstalled
     }
+}
+
+internal fun RuntimeModel.isChatModel(): Boolean {
+    return modelKind == MODEL_KIND_CHAT || capabilities.any { it == "chat" || it == "completion" }
+}
+
+internal fun RuntimeModel.isEmbeddingModel(): Boolean {
+    return modelKind == MODEL_KIND_EMBEDDING || capabilities.any { it == "embedding" || it == "embed" }
+}
+
+internal fun normalizeModelKind(
+    kind: String?,
+    capabilities: List<String>,
+    id: String,
+    name: String,
+): String {
+    val normalizedKind = kind?.trim()?.lowercase()
+    if (normalizedKind == MODEL_KIND_EMBEDDING || normalizedKind == "embed" || normalizedKind == "embeddings") {
+        return MODEL_KIND_EMBEDDING
+    }
+    if (normalizedKind == MODEL_KIND_CHAT || normalizedKind == "llm" || normalizedKind == "completion" || normalizedKind == "text") {
+        return MODEL_KIND_CHAT
+    }
+    if (capabilities.any { it == "embedding" || it == "embed" }) {
+        return MODEL_KIND_EMBEDDING
+    }
+    if (capabilities.any { it == "chat" || it == "completion" }) {
+        return MODEL_KIND_CHAT
+    }
+    return if (looksLikeEmbeddingModel(id) || looksLikeEmbeddingModel(name)) {
+        MODEL_KIND_EMBEDDING
+    } else {
+        MODEL_KIND_CHAT
+    }
+}
+
+internal fun defaultCapabilitiesForModelKind(modelKind: String): List<String> {
+    return if (modelKind == MODEL_KIND_EMBEDDING) listOf("embedding") else listOf("chat")
+}
+
+private fun looksLikeEmbeddingModel(value: String): Boolean {
+    val lower = value.lowercase()
+    return EMBEDDING_MODEL_NAME_HINTS.any { hint -> lower.contains(hint) }
 }
 
 internal fun RuntimeUiState.withChatDelta(

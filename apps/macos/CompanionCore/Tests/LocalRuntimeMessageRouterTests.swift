@@ -115,6 +115,8 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(model["source"], .string("local"))
         XCTAssertEqual(model["backend"], .string("ollama"))
         XCTAssertEqual(model["provider"], .string("ollama"))
+        XCTAssertEqual(model["model_kind"], .string("chat"))
+        XCTAssertEqual(model["capabilities"], .array([.string("chat")]))
         XCTAssertEqual(model["provider_model_id"], .string("llama3.1:8b"))
         XCTAssertEqual(model["qualified_id"], .string("ollama:llama3.1:8b"))
         XCTAssertFalse(String(describing: message?.payload).contains("11434"))

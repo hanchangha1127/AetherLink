@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -24,6 +25,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
@@ -38,6 +40,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -84,8 +87,11 @@ import com.localagentbridge.android.runtime.RuntimeChatMessage
 import com.localagentbridge.android.runtime.RuntimeDiscoveredMac
 import com.localagentbridge.android.runtime.RuntimeMemoryEntry
 import com.localagentbridge.android.runtime.RuntimeModel
+import com.localagentbridge.android.runtime.RuntimeProviderStatus
 import com.localagentbridge.android.runtime.RuntimeUiError
 import com.localagentbridge.android.runtime.RuntimeUiState
+import com.localagentbridge.android.runtime.isChatModel
+import com.localagentbridge.android.runtime.isEmbeddingModel
 
 @Composable
 fun PairingScreen(
@@ -266,6 +272,7 @@ private fun ConnectionStatusPanel(state: RuntimeUiState) {
                 label = stringResource(R.string.providers),
                 value = providerStatusSummary(state),
             )
+            ProviderStatusRows(providers = state.providerStatuses)
             StatusLine(
                 label = stringResource(R.string.endpoint),
                 value = state.trustedMac?.let { trusted -> "${trusted.host}:${trusted.port}" }
@@ -322,12 +329,108 @@ private fun ConnectionStatusActions(
 }
 
 @Composable
+private fun ProviderStatusRows(providers: List<RuntimeProviderStatus>) {
+    if (providers.isEmpty()) return
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        providers.forEachIndexed { index, provider ->
+            ProviderStatusRow(provider = provider)
+            if (index != providers.lastIndex) {
+                HorizontalDivider()
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProviderStatusRow(provider: RuntimeProviderStatus) {
+    val statusText = if (provider.available) {
+        stringResource(R.string.provider_status_ready)
+    } else {
+        stringResource(R.string.provider_status_unavailable)
+    }
+    val icon = if (provider.available) Icons.Filled.CheckCircle else Icons.Filled.Error
+    val tint = if (provider.available) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        MaterialTheme.colorScheme.error
+    }
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = statusText,
+            tint = tint,
+            modifier = Modifier.size(20.dp),
+        )
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = provider.name,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    text = statusText,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = tint,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Text(
+                text = providerStatusDetail(provider),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.secondary,
+            )
+            provider.message.takeIf { it.isNotBlank() }?.let { message ->
+                Text(
+                    text = stringResource(R.string.provider_mac_detail, message),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.secondary,
+                )
+            }
+            provider.code?.takeIf { it.isNotBlank() }?.let { code ->
+                Text(
+                    text = stringResource(R.string.provider_error_code, code),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.secondary,
+                )
+            }
+            if (provider.retryable == true) {
+                Text(
+                    text = stringResource(R.string.provider_retryable_hint),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.secondary,
+                )
+            }
+        }
+    }
+}
+
+@Composable
 fun ChatScreen(
     state: RuntimeUiState,
     onInputChange: (String) -> Unit,
     onSend: () -> Unit,
     onCancel: () -> Unit,
     onConnect: () -> Unit,
+    onRefreshHealth: () -> Unit,
     onRequestModels: () -> Unit,
     onSelectModel: (String) -> Unit,
     modifier: Modifier = Modifier,
@@ -337,6 +440,12 @@ fun ChatScreen(
         !state.isStreaming &&
         selectedModelIsUsable(state) &&
         state.chatInput.isNotBlank()
+    val selectedChatModel = state.models.firstOrNull { model ->
+        model.id == state.selectedModelId && model.isChatModel()
+    }
+    val composerModelLabel = selectedChatModel
+        ?.let { model -> "${model.provider} - ${model.name}" }
+        ?: stringResource(R.string.model_none)
 
     LaunchedEffect(state.messages.size, state.messages.lastOrNull()?.content) {
         if (state.messages.isNotEmpty()) {
@@ -387,17 +496,95 @@ fun ChatScreen(
                 }
             }
         }
-        ErrorText(state.error)
-        ChatComposer(
-            value = state.chatInput,
-            enabled = !state.isStreaming,
-            canSend = canSend,
-            isStreaming = state.isStreaming,
-            hint = chatInputHint(state),
-            onInputChange = onInputChange,
-            onSend = onSend,
-            onCancel = onCancel,
-        )
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding(),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            BackendReadinessBanner(
+                state = state,
+                onRefreshHealth = onRefreshHealth,
+            )
+            ErrorText(state.error)
+            ChatComposer(
+                value = state.chatInput,
+                enabled = !state.isStreaming,
+                canSend = canSend,
+                isStreaming = state.isStreaming,
+                hint = chatInputHint(state),
+                modelProviderLabel = composerModelLabel,
+                onInputChange = onInputChange,
+                onSend = onSend,
+                onCancel = onCancel,
+            )
+        }
+    }
+}
+
+@Composable
+private fun BackendReadinessBanner(
+    state: RuntimeUiState,
+    onRefreshHealth: () -> Unit,
+) {
+    if (!state.isConnected || state.backendAvailable != false) return
+
+    val hapticFeedback = LocalHapticFeedback.current
+    val unavailableProviders = state.providerStatuses.filter { provider -> !provider.available }
+    val detail = unavailableProviders
+        .firstOrNull()
+        ?.let { provider -> providerStatusDetail(provider) }
+        ?: stringResource(R.string.chat_backend_unavailable_detail)
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.errorContainer,
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.Top,
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Error,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onErrorContainer,
+                )
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text(
+                        text = stringResource(R.string.chat_backend_unavailable_title),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                    )
+                    Text(
+                        text = detail,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                    )
+                }
+            }
+            TextButton(
+                onClick = {
+                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onRefreshHealth()
+                },
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Refresh,
+                    contentDescription = null,
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(stringResource(R.string.refresh_health))
+            }
+        }
     }
 }
 
@@ -415,8 +602,10 @@ fun SettingsScreen(
     onScanPairingQr: () -> Unit,
     onConnect: () -> Unit,
     onRefreshHealth: () -> Unit,
+    onRequestModels: () -> Unit,
     onDisconnect: () -> Unit,
     onSetLanguageTag: (String) -> Unit,
+    onSelectEmbeddingModel: (String) -> Unit,
     onAddMemoryEntry: (String) -> Unit,
     onRemoveMemoryEntry: (String) -> Unit,
     onSetMemoryEntryEnabled: (String, Boolean) -> Unit,
@@ -436,6 +625,13 @@ fun SettingsScreen(
             AppPreferencesPanel(
                 selectedLanguageTag = state.selectedLanguageTag,
                 onSetLanguageTag = onSetLanguageTag,
+            )
+        }
+        item {
+            EmbeddingModelPanel(
+                state = state,
+                onRequestModels = onRequestModels,
+                onSelectEmbeddingModel = onSelectEmbeddingModel,
             )
         }
         item {
@@ -940,7 +1136,8 @@ private fun ChatEmptyState(
                 }
             }
         }
-        if (state.isConnected && !selectedModelIsUsable(state) && state.models.isNotEmpty()) {
+        val chatModels = state.models.filter { it.isChatModel() }
+        if (state.isConnected && !selectedModelIsUsable(state) && chatModels.isNotEmpty()) {
             Column(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -954,7 +1151,7 @@ private fun ChatEmptyState(
                     overflow = TextOverflow.Ellipsis,
                 )
                 QuickModelPicker(
-                    models = state.models,
+                    models = chatModels,
                     installingModelId = state.installingModelId,
                     onSelectModel = onSelectModel,
                 )
@@ -1428,39 +1625,96 @@ private fun ChatComposer(
     canSend: Boolean,
     isStreaming: Boolean,
     hint: String,
+    modelProviderLabel: String,
     onInputChange: (String) -> Unit,
     onSend: () -> Unit,
     onCancel: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val hapticFeedback = LocalHapticFeedback.current
     Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(28.dp),
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
         tonalElevation = 2.dp,
         color = MaterialTheme.colorScheme.surface,
     ) {
         Column(
-            modifier = Modifier.padding(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             if (isStreaming) {
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
             }
+            BasicTextField(
+                value = value,
+                onValueChange = onInputChange,
+                enabled = enabled,
+                singleLine = false,
+                minLines = 1,
+                maxLines = 5,
+                textStyle = MaterialTheme.typography.bodyLarge.copy(
+                    color = MaterialTheme.colorScheme.onSurface,
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 38.dp, max = 150.dp),
+                decorationBox = { innerTextField ->
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 2.dp, vertical = 8.dp),
+                        contentAlignment = Alignment.TopStart,
+                    ) {
+                        if (value.isBlank()) {
+                            Text(
+                                text = stringResource(R.string.chat_composer_placeholder),
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.secondary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        innerTextField()
+                    }
+                },
+            )
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.Bottom,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                OutlinedTextField(
-                    value = value,
-                    onValueChange = onInputChange,
-                    placeholder = { Text(stringResource(R.string.chat_composer_placeholder)) },
-                    singleLine = false,
-                    minLines = 1,
-                    maxLines = 6,
+                Row(
                     modifier = Modifier.weight(1f),
-                    enabled = enabled,
-                    shape = RoundedCornerShape(22.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Add,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.secondary,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Icon(
+                        imageVector = Icons.Filled.Search,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.secondary,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Text(
+                        text = modelProviderLabel,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.secondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                Text(
+                    text = hint,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.secondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.widthIn(max = 128.dp),
                 )
                 if (isStreaming) {
                     FilledIconButton(
@@ -1469,7 +1723,7 @@ private fun ChatComposer(
                             onCancel()
                         },
                         enabled = true,
-                        modifier = Modifier.size(48.dp),
+                        modifier = Modifier.size(40.dp),
                     ) {
                         Icon(
                             Icons.Filled.Close,
@@ -1484,7 +1738,7 @@ private fun ChatComposer(
                         },
                         enabled = canSend,
                         modifier = Modifier
-                            .size(48.dp)
+                            .size(40.dp)
                             .semantics {
                                 stateDescription = hint
                             },
@@ -1493,30 +1747,6 @@ private fun ChatComposer(
                             Icons.AutoMirrored.Filled.Send,
                             contentDescription = stringResource(R.string.content_desc_send),
                         )
-                    }
-                }
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = hint,
-                    modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.secondary,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                if (isStreaming) {
-                    TextButton(
-                        onClick = {
-                            hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                            onCancel()
-                        },
-                    ) {
-                        Text(stringResource(R.string.cancel))
                     }
                 }
             }
@@ -1580,6 +1810,122 @@ private fun AppPreferencesPanel(
                 selectedLanguageTag = selectedLanguageTag,
                 onSetLanguageTag = onSetLanguageTag,
             )
+        }
+    }
+}
+
+@Composable
+private fun EmbeddingModelPanel(
+    state: RuntimeUiState,
+    onRequestModels: () -> Unit,
+    onSelectEmbeddingModel: (String) -> Unit,
+) {
+    val hapticFeedback = LocalHapticFeedback.current
+    val embeddingModels = state.models
+        .filter { it.isEmbeddingModel() }
+        .sortedWith(compareBy<RuntimeModel> { !it.installed }.thenBy { it.name.lowercase() })
+    val selectedEmbeddingModel = embeddingModels.firstOrNull { it.id == state.selectedEmbeddingModelId }
+
+    OutlinedCard(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    text = stringResource(R.string.embedding_model_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = stringResource(R.string.embedding_model_subtitle),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.secondary,
+                )
+            }
+            StatusLine(
+                label = stringResource(R.string.selected_embedding_model),
+                value = selectedEmbeddingModel?.name ?: stringResource(R.string.model_none),
+            )
+            Button(
+                onClick = {
+                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onRequestModels()
+                },
+                enabled = state.isConnected && !state.isLoadingModels,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Icon(Icons.Filled.Refresh, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = if (state.isLoadingModels) {
+                        stringResource(R.string.loading_models)
+                    } else {
+                        stringResource(R.string.load_models)
+                    },
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            when {
+                !state.isConnected -> EmptyState(text = stringResource(R.string.embedding_model_connect_first))
+                embeddingModels.isEmpty() -> EmptyState(text = stringResource(R.string.embedding_model_empty))
+                else -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    embeddingModels.forEach { model ->
+                        EmbeddingModelRow(
+                            model = model,
+                            selected = model.id == state.selectedEmbeddingModelId,
+                            onSelectEmbeddingModel = onSelectEmbeddingModel,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun EmbeddingModelRow(
+    model: RuntimeModel,
+    selected: Boolean,
+    onSelectEmbeddingModel: (String) -> Unit,
+) {
+    val hapticFeedback = LocalHapticFeedback.current
+    OutlinedButton(
+        onClick = {
+            hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+            onSelectEmbeddingModel(model.id)
+        },
+        enabled = model.installed,
+        modifier = Modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = if (selected) Icons.Filled.CheckCircle else Icons.Filled.Search,
+                contentDescription = null,
+            )
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Text(
+                    text = model.name,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = "${model.provider} - ${quickModelStatus(model = model, installing = false)}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.secondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }
@@ -1888,12 +2234,13 @@ private fun ErrorText(error: RuntimeUiError?) {
 
 private fun selectedModelIsUsable(state: RuntimeUiState): Boolean {
     val selectedId = state.selectedModelId ?: return false
-    return state.models.firstOrNull { it.id == selectedId }?.installed == true
+    val selectedModel = state.models.firstOrNull { it.id == selectedId && it.isChatModel() }
+    return selectedModel?.installed == true
 }
 
 private fun selectedModelIsMissingFromRuntime(state: RuntimeUiState): Boolean {
     val selectedId = state.selectedModelId ?: return false
-    return state.models.none { it.id == selectedId }
+    return state.models.none { it.id == selectedId && it.isChatModel() }
 }
 
 @Composable
@@ -1945,6 +2292,8 @@ private fun runtimeErrorLabel(error: RuntimeUiError): String {
         "authentication_failed" -> stringResource(R.string.error_authentication_failed)
         "device_identity_failed" -> stringResource(R.string.error_device_identity_failed)
         "select_model" -> stringResource(R.string.error_select_model)
+        "select_chat_model" -> stringResource(R.string.error_select_chat_model)
+        "select_embedding_model" -> stringResource(R.string.error_select_embedding_model)
         "connect_first" -> stringResource(R.string.error_connect_first)
         "receive_failed" -> stringResource(R.string.error_receive_failed)
         "generation_cancelled" -> stringResource(R.string.error_generation_cancelled)
@@ -1973,6 +2322,18 @@ private fun providerStatusSummary(state: RuntimeUiState): String {
     return state.providerStatuses.joinToString(" | ") { provider ->
         val status = if (provider.available) available else unavailable
         "${provider.name}: $status"
+    }
+}
+
+@Composable
+private fun providerStatusDetail(provider: RuntimeProviderStatus): String {
+    if (provider.available) {
+        return stringResource(R.string.provider_status_ready_detail, provider.name)
+    }
+    return when (provider.id) {
+        "ollama" -> stringResource(R.string.provider_ollama_unavailable_hint)
+        "lm_studio" -> stringResource(R.string.provider_lm_studio_unavailable_hint)
+        else -> stringResource(R.string.provider_unavailable_hint, provider.name)
     }
 }
 

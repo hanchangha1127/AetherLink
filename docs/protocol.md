@@ -248,6 +248,8 @@ The Mac runtime responds with the same `type` in v0.1:
         "provider": "ollama",
         "provider_model_id": "llama3.1:8b",
         "qualified_id": "ollama:llama3.1:8b",
+        "model_kind": "chat",
+        "capabilities": ["chat"],
         "size_bytes": 4660000000,
         "modified_at": "2026-06-23T09:00:00Z",
         "installed": true,
@@ -261,13 +263,15 @@ The Mac runtime responds with the same `type` in v0.1:
         "provider": "ollama",
         "provider_model_id": "deepseek-v4-pro:cloud",
         "qualified_id": "ollama:deepseek-v4-pro:cloud",
+        "model_kind": "chat",
+        "capabilities": ["chat"],
         "size_bytes": 344,
         "remote_model": "deepseek-v4-pro",
         "remote_host": "https://ollama.com:443",
         "installed": true,
         "running": false,
         "source": "cloud"
-      }
+      },
       {
         "id": "google/gemma-4-26b-a4b",
         "name": "Gemma 4 26B A4B",
@@ -275,9 +279,24 @@ The Mac runtime responds with the same `type` in v0.1:
         "provider": "lm_studio",
         "provider_model_id": "google/gemma-4-26b-a4b",
         "qualified_id": "lm_studio:google/gemma-4-26b-a4b",
+        "model_kind": "chat",
+        "capabilities": ["chat"],
         "size_bytes": 17990911801,
         "installed": true,
         "running": true,
+        "source": "local"
+      },
+      {
+        "id": "nomic-embed-text",
+        "name": "nomic-embed-text",
+        "backend": "ollama",
+        "provider": "ollama",
+        "provider_model_id": "nomic-embed-text",
+        "qualified_id": "ollama:nomic-embed-text",
+        "model_kind": "embedding",
+        "capabilities": ["embedding"],
+        "installed": true,
+        "running": false,
         "source": "local"
       }
     ]
@@ -285,9 +304,9 @@ The Mac runtime responds with the same `type` in v0.1:
 }
 ```
 
-Installed Ollama models are derived from the Mac runtime calling Ollama `/api/tags`. Installed LM Studio local models are derived from the Mac runtime calling LM Studio native `GET /api/v1/models`, with fallback to OpenAI-compatible `GET /v1/models` if native response shape differs. Local models are the main path. Ollama cloud models are not default recommendations or generic suggestions; they appear only after the user-side Ollama pull/sign-in flow causes the local Mac `/api/tags` response to include them. Running status may be derived from backend metadata when available. The runtime does not invent recommended/default model cards when backend model lists are empty.
+Installed Ollama models are derived from the Mac runtime calling Ollama `/api/tags`, with optional `/api/show` capability checks to classify chat vs embedding models. Installed LM Studio local models are derived from the Mac runtime calling LM Studio native `GET /api/v1/models`, with fallback to OpenAI-compatible `GET /v1/models` if native response shape differs. Local models are the main path. Ollama cloud models are not default recommendations or generic suggestions; they appear only after the user-side Ollama pull/sign-in flow causes the local Mac `/api/tags` response to include them. Running status may be derived from backend metadata when available. The runtime does not invent recommended/default model cards when backend model lists are empty.
 
-This v0.1 `models.list` response is for general chat/text-generation model selection. Future embedding models must use a separate listing and selection surface so retrieval/ranking choices are not mixed with chat model choices.
+Android must not show embedding models in the chat model picker. Models with `model_kind = "embedding"` or `capabilities` containing `"embedding"` are selected only from the embedding-model setting for future retrieval/ranking/research features.
 
 Model fields:
 
@@ -297,6 +316,8 @@ Model fields:
 - `provider`: same provider id as `backend`; added for clients that use provider terminology.
 - `provider_model_id`: raw model id to send to the provider adapter after routing.
 - `qualified_id`: provider-prefixed model id, such as `ollama:llama3.1:8b` or `lm_studio:google/gemma-4-26b-a4b`, recommended for `chat.send` when more than one provider is enabled.
+- `model_kind`: `chat` for conversational/text-generation models, `embedding` for embedding models.
+- `capabilities`: capability tags such as `chat` or `embedding`; clients should prefer these over name heuristics when present.
 - `installed`: `true` only when the Mac sees the model in a local backend model list.
 - `running`: `true` when the Mac detects the model as loaded or running.
 - `source`: `local` for Mac-local Ollama models, `cloud` for Ollama cloud models returned by `/api/tags` or named with a cloud suffix such as `:cloud` or `-cloud`.

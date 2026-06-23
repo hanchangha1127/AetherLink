@@ -86,6 +86,15 @@
     <string name="backend_available">Available</string>
     <string name="backend_unavailable">Unavailable</string>
     <string name="providers">Providers</string>
+    <string name="provider_status_ready">Ready</string>
+    <string name="provider_status_unavailable">Unavailable</string>
+    <string name="provider_status_ready_detail">%1$s is responding through the Mac companion.</string>
+    <string name="provider_ollama_unavailable_hint">Ollama is not reachable on the Mac. Open Ollama on the Mac, then refresh health.</string>
+    <string name="provider_lm_studio_unavailable_hint">LM Studio is not reachable on the Mac. Start the LM Studio local server on the Mac, then refresh health.</string>
+    <string name="provider_unavailable_hint">%1$s is not reachable on the Mac. Open it on the Mac, then refresh health.</string>
+    <string name="provider_mac_detail">Mac detail: %1$s</string>
+    <string name="provider_error_code">Code: %1$s</string>
+    <string name="provider_retryable_hint">This looks retryable after the provider is running on the Mac.</string>
 
     <string name="models_title">Models</string>
     <string name="models_subtitle">Choose a model exposed by the Mac companion runtime.</string>
@@ -148,6 +157,9 @@
     <string name="chat_status_streaming">Streaming</string>
     <string name="chat_uses_mac_runtime">Chat requests are relayed through the Mac companion.</string>
     <string name="chat_needs_runtime">Connect to the trusted Mac companion before chatting.</string>
+    <string name="chat_backend_unavailable_title">Mac backend needs attention</string>
+    <string name="chat_backend_unavailable_detail">Open Ollama or LM Studio on the Mac, then refresh health.</string>
+    <string name="refresh_health">Refresh health</string>
     <string name="chat_hint_connect">Connect to the trusted Mac companion first.</string>
     <string name="chat_hint_select_model">Select a model before sending.</string>
     <string name="chat_hint_model_unavailable">Refresh models or choose another model before sending.</string>
@@ -181,6 +193,11 @@
     <string name="language_simplified_chinese">Simplified Chinese</string>
     <string name="language_french">French</string>
     <string name="runtime_endpoint">Manual runtime endpoint</string>
+    <string name="embedding_model_title">Embedding model</string>
+    <string name="embedding_model_subtitle">Choose one embedding model separately for future retrieval, memory search, and research features.</string>
+    <string name="selected_embedding_model">Selected embedding model</string>
+    <string name="embedding_model_empty">No embedding models are available from the Mac runtime.</string>
+    <string name="embedding_model_connect_first">Connect to the trusted Mac companion before choosing an embedding model.</string>
     <string name="memory_title">Memory</string>
     <string name="memory_subtitle">Local notes the assistant can use in future chats on this phone.</string>
     <string name="memory_add_label">Add memory</string>
@@ -216,6 +233,8 @@
     <string name="error_invalid_payload">The Mac companion runtime sent invalid data.</string>
     <string name="error_install_model_first">Install this model on the Mac before chatting.</string>
     <string name="error_model_install_failed">The Mac companion could not install the model.</string>
+    <string name="error_select_chat_model">Choose a chat model for conversation.</string>
+    <string name="error_select_embedding_model">Choose an embedding model from Settings.</string>
     <string name="error_qr_empty_detail">QR code was empty</string>
     <string name="error_backend_unavailable">The model backend is unavailable on the Mac.</string>
     <string name="error_generation_not_found">No active generation was found.</string>

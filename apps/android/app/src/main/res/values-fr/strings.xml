@@ -86,6 +86,15 @@
     <string name="backend_available">Disponible</string>
     <string name="backend_unavailable">Indisponible</string>
     <string name="providers">Fournisseurs</string>
+    <string name="provider_status_ready">Prêt</string>
+    <string name="provider_status_unavailable">Indisponible</string>
+    <string name="provider_status_ready_detail">%1$s répond via le Mac companion.</string>
+    <string name="provider_ollama_unavailable_hint">Ollama n’est pas joignable sur le Mac. Ouvrez Ollama sur le Mac, puis actualisez l’état.</string>
+    <string name="provider_lm_studio_unavailable_hint">LM Studio n’est pas joignable sur le Mac. Démarrez le serveur local LM Studio sur le Mac, puis actualisez l’état.</string>
+    <string name="provider_unavailable_hint">%1$s n’est pas joignable sur le Mac. Lancez-le sur le Mac, puis actualisez l’état.</string>
+    <string name="provider_mac_detail">Détail Mac : %1$s</string>
+    <string name="provider_error_code">Code : %1$s</string>
+    <string name="provider_retryable_hint">Cela devrait pouvoir être réessayé une fois le fournisseur lancé sur le Mac.</string>
 
     <string name="models_title">Modèles</string>
     <string name="models_subtitle">Choisissez un modèle exposé par le runtime Mac companion.</string>
@@ -148,6 +157,9 @@
     <string name="chat_status_streaming">Réponse en cours</string>
     <string name="chat_uses_mac_runtime">Les requêtes de chat sont relayées via le Mac companion.</string>
     <string name="chat_needs_runtime">Connectez-vous au Mac companion de confiance avant de discuter.</string>
+    <string name="chat_backend_unavailable_title">Le backend Mac demande une vérification</string>
+    <string name="chat_backend_unavailable_detail">Ouvrez Ollama ou LM Studio sur le Mac, puis actualisez l’état.</string>
+    <string name="refresh_health">Actualiser l’état</string>
     <string name="chat_hint_connect">Connectez-vous d’abord au Mac companion de confiance.</string>
     <string name="chat_hint_select_model">Sélectionnez un modèle avant l’envoi.</string>
     <string name="chat_hint_model_unavailable">Actualisez les modèles ou choisissez-en un autre avant l’envoi.</string>
@@ -181,6 +193,11 @@
     <string name="language_simplified_chinese">Chinois simplifié</string>
     <string name="language_french">Français</string>
     <string name="runtime_endpoint">Point de terminaison manuel du runtime</string>
+    <string name="embedding_model_title">Modèle d’embedding</string>
+    <string name="embedding_model_subtitle">Choisissez un modèle d’embedding séparé pour les futures fonctions de recherche, mémoire et recherche approfondie.</string>
+    <string name="selected_embedding_model">Modèle d’embedding sélectionné</string>
+    <string name="embedding_model_empty">Aucun modèle d’embedding n’est disponible depuis le runtime Mac.</string>
+    <string name="embedding_model_connect_first">Connectez-vous au Mac companion de confiance avant de choisir un modèle d’embedding.</string>
     <string name="memory_title">Mémoire</string>
     <string name="memory_subtitle">Notes locales que l’assistant peut utiliser dans les futurs chats sur ce téléphone.</string>
     <string name="memory_add_label">Ajouter une mémoire</string>
@@ -216,6 +233,8 @@
     <string name="error_invalid_payload">Le runtime Mac companion a envoyé des données non valides.</string>
     <string name="error_install_model_first">Installez ce modèle sur le Mac avant de discuter.</string>
     <string name="error_model_install_failed">Le Mac companion n’a pas pu installer le modèle.</string>
+    <string name="error_select_chat_model">Choisissez un modèle de chat pour la conversation.</string>
+    <string name="error_select_embedding_model">Choisissez un modèle d’embedding dans les réglages.</string>
     <string name="error_qr_empty_detail">Le code QR était vide</string>
     <string name="error_backend_unavailable">Le backend de modèle est indisponible sur le Mac.</string>
     <string name="error_generation_not_found">Aucune génération active n’a été trouvée.</string>

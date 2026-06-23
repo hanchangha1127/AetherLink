@@ -67,6 +67,8 @@ public struct ModelInfo: Identifiable, Equatable, Sendable {
     public var id: String
     public var name: String
     public var provider: ModelProvider
+    public var kind: ModelKind
+    public var capabilities: [String]
     public var providerModelID: String
     public var sizeBytes: Int64?
     public var modifiedAt: Date?
@@ -80,6 +82,8 @@ public struct ModelInfo: Identifiable, Equatable, Sendable {
         id: String,
         name: String,
         provider: ModelProvider = .ollama,
+        kind: ModelKind = .chat,
+        capabilities: [String]? = nil,
         providerModelID: String? = nil,
         sizeBytes: Int64? = nil,
         modifiedAt: Date? = nil,
@@ -92,6 +96,8 @@ public struct ModelInfo: Identifiable, Equatable, Sendable {
         self.id = id
         self.name = name
         self.provider = provider
+        self.kind = kind
+        self.capabilities = capabilities ?? kind.defaultCapabilities
         self.providerModelID = providerModelID ?? id
         self.sizeBytes = sizeBytes
         self.modifiedAt = modifiedAt
@@ -103,9 +109,56 @@ public struct ModelInfo: Identifiable, Equatable, Sendable {
     }
 }
 
+public enum ModelKind: String, Equatable, Sendable {
+    case chat
+    case embedding
+
+    public var defaultCapabilities: [String] {
+        switch self {
+        case .chat:
+            return ["chat"]
+        case .embedding:
+            return ["embedding"]
+        }
+    }
+
+    public static func from(capabilities: [String], fallbackName: String) -> ModelKind {
+        let normalizedCapabilities = capabilities.map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+        if normalizedCapabilities.contains(where: { $0 == "embedding" || $0 == "embed" }) {
+            return .embedding
+        }
+        if normalizedCapabilities.contains(where: { $0 == "chat" || $0 == "completion" }) {
+            return .chat
+        }
+        return fallbackName.looksLikeEmbeddingModelName ? .embedding : .chat
+    }
+}
+
 public enum ModelSource: String, Equatable, Sendable {
     case local
     case cloud
+}
+
+private extension String {
+    var looksLikeEmbeddingModelName: Bool {
+        let lowercasedValue = lowercased()
+        return [
+            "embed",
+            "embedding",
+            "nomic-embed",
+            "mxbai",
+            "all-minilm",
+            "bge-",
+            "bge:",
+            "e5-",
+            "e5:",
+            "gte-",
+            "gte:",
+            "snowflake-arctic-embed",
+            "qwen3-embedding",
+            "embeddinggemma",
+        ].contains { lowercasedValue.contains($0) }
+    }
 }
 
 public struct ModelPullResult: Equatable, Sendable {

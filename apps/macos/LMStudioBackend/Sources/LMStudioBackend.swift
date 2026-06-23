@@ -39,12 +39,17 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
         }
         do {
             let response = try decoder.decode(LMStudioNativeModelsResponse.self, from: data)
-            return response.models.compactMap { model in
-                guard model.type == nil || model.type == "llm" else { return nil }
+            return response.models.map { model in
+                let kind = ModelKind.from(
+                    capabilities: model.capabilities,
+                    fallbackName: model.displayName ?? model.key
+                )
                 return ModelInfo(
                     id: model.key,
                     name: model.displayName ?? model.key,
                     provider: .lmStudio,
+                    kind: kind,
+                    capabilities: model.capabilities.isEmpty ? nil : model.capabilities,
                     providerModelID: model.key,
                     sizeBytes: model.sizeBytes,
                     installed: true,
@@ -148,6 +153,7 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
                     id: model.id,
                     name: model.id,
                     provider: .lmStudio,
+                    kind: .chat,
                     providerModelID: model.id,
                     installed: true,
                     running: false,
@@ -385,6 +391,17 @@ private struct LMStudioNativeModel: Decodable {
     var displayName: String?
     var sizeBytes: Int64?
     var loadedInstances: [LMStudioLoadedInstance]
+    var capabilities: [String] {
+        let normalizedType = type?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        switch normalizedType {
+        case "embedding", "embeddings", "embed":
+            return ["embedding"]
+        case "llm", "chat", "completion", nil:
+            return ["chat"]
+        default:
+            return normalizedType.map { [$0] } ?? ["chat"]
+        }
+    }
 
     enum CodingKeys: String, CodingKey {
         case type

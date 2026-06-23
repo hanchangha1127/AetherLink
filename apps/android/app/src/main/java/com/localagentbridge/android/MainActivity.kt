@@ -60,6 +60,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.material3.rememberDrawerState
@@ -95,6 +96,7 @@ import com.localagentbridge.android.runtime.RuntimeClientViewModel
 import com.localagentbridge.android.runtime.RuntimeChatSession
 import com.localagentbridge.android.runtime.RuntimeModel
 import com.localagentbridge.android.runtime.RuntimeUiState
+import com.localagentbridge.android.runtime.isChatModel
 import com.localagentbridge.android.ui.ChatScreen
 import com.localagentbridge.android.ui.PairingScreen
 import com.localagentbridge.android.ui.SettingsScreen
@@ -323,6 +325,10 @@ private fun LocalAgentBridgeApp() {
                 Scaffold(
                     topBar = {
                         TopAppBar(
+                            colors = TopAppBarDefaults.topAppBarColors(
+                                containerColor = MaterialTheme.colorScheme.background,
+                                scrolledContainerColor = MaterialTheme.colorScheme.background,
+                            ),
                             title = {
                                 if (destination == AppDestination.Chat) {
                                     ChatTopAppBarTitle(
@@ -346,6 +352,23 @@ private fun LocalAgentBridgeApp() {
                                     )
                                 }
                             },
+                            actions = {
+                                if (destination == AppDestination.Chat) {
+                                    IconButton(
+                                        onClick = {
+                                            hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                                            viewModel.startNewChat()
+                                            destination = AppDestination.Chat
+                                        },
+                                        enabled = !state.isStreaming,
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Filled.Edit,
+                                            contentDescription = stringResource(R.string.new_chat),
+                                        )
+                                    }
+                                }
+                            },
                         )
                     },
                 ) { padding ->
@@ -356,6 +379,7 @@ private fun LocalAgentBridgeApp() {
                             onSend = viewModel::sendChatMessage,
                             onCancel = viewModel::cancelGeneration,
                             onConnect = viewModel::connectToTrustedRuntime,
+                            onRefreshHealth = viewModel::requestRuntimeHealth,
                             onRequestModels = viewModel::requestModels,
                             onSelectModel = viewModel::selectModel,
                             modifier = Modifier
@@ -399,8 +423,10 @@ private fun LocalAgentBridgeApp() {
                             },
                             onConnect = viewModel::connectToTrustedRuntime,
                             onRefreshHealth = viewModel::requestRuntimeHealth,
+                            onRequestModels = viewModel::requestModels,
                             onDisconnect = viewModel::disconnect,
                             onSetLanguageTag = viewModel::setAppLanguageTag,
+                            onSelectEmbeddingModel = viewModel::selectEmbeddingModel,
                             onAddMemoryEntry = viewModel::addMemoryEntry,
                             onRemoveMemoryEntry = viewModel::removeMemoryEntry,
                             onSetMemoryEntryEnabled = viewModel::setMemoryEntryEnabled,
@@ -497,14 +523,8 @@ private fun ChatTopAppBarTitle(
     onRequestModels: () -> Unit,
     onSelectModel: (String) -> Unit,
 ) {
-    val statusText = when {
-        state.isStreaming -> stringResource(R.string.chat_status_streaming)
-        state.isConnected -> stringResource(R.string.chat_status_connected)
-        else -> stringResource(R.string.chat_status_disconnected)
-    }
-
     Row(
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
     ) {
         ChatModelTopBarMenu(
@@ -512,20 +532,6 @@ private fun ChatTopAppBarTitle(
             onRequestModels = onRequestModels,
             onSelectModel = onSelectModel,
         )
-        Column {
-            Text(
-                text = stringResource(R.string.app_name),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = statusText,
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
     }
 }
 
@@ -538,7 +544,8 @@ private fun ChatModelTopBarMenu(
     var isExpanded by rememberSaveable { mutableStateOf(false) }
     var modelSearchQuery by rememberSaveable { mutableStateOf("") }
     val hapticFeedback = LocalHapticFeedback.current
-    val selectedModel = state.models.firstOrNull { it.id == state.selectedModelId }
+    val chatModels = state.models.filter { it.isChatModel() }
+    val selectedModel = chatModels.firstOrNull { it.id == state.selectedModelId }
     val selectedModelUnavailable = state.isConnected && state.selectedModelId != null && selectedModel == null
     val selectedLabel = when {
         state.isConnected && selectedModel != null -> selectedModel.name
@@ -556,16 +563,16 @@ private fun ChatModelTopBarMenu(
     val trimmedModelSearchQuery = modelSearchQuery.trim()
     val hasModelSearchQuery = trimmedModelSearchQuery.isNotEmpty()
     val visibleModels = if (hasModelSearchQuery) {
-        state.models.filter { model -> model.matchesModelQuery(trimmedModelSearchQuery) }
+        chatModels.filter { model -> model.matchesModelQuery(trimmedModelSearchQuery) }
     } else {
-        state.models
+        chatModels
     }
 
     Box {
         TextButton(
             onClick = {
                 isExpanded = true
-                if (state.isConnected && state.models.isEmpty() && !state.isLoadingModels) {
+                if (state.isConnected && chatModels.isEmpty() && !state.isLoadingModels) {
                     onRequestModels()
                 }
             },
@@ -626,7 +633,7 @@ private fun ChatModelTopBarMenu(
                 )
                 HorizontalDivider()
             }
-            if (state.models.isEmpty()) {
+            if (chatModels.isEmpty()) {
                 DropdownMenuItem(
                     text = {
                         Text(
@@ -845,8 +852,11 @@ private fun ChatSessionDrawerItem(
 
     NavigationDrawerItem(
         selected = selected,
-        onClick = onClick,
-        enabled = enabled,
+        onClick = {
+            if (enabled) {
+                onClick()
+            }
+        },
         icon = {
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.Chat,

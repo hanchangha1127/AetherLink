@@ -263,6 +263,8 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                             "name": .string(model.name),
                             "backend": .string(model.provider.rawValue),
                             "provider": .string(model.provider.rawValue),
+                            "model_kind": .string(model.kind.rawValue),
+                            "capabilities": .array(model.capabilities.map { .string($0) }),
                             "provider_model_id": .string(model.providerModelID),
                             "qualified_id": .string(model.provider.qualifiedModelID(model.providerModelID)),
                             "installed": .bool(model.installed),

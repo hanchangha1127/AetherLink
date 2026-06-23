@@ -22,7 +22,7 @@ final class LMStudioBackendTests: XCTestCase {
         XCTAssertEqual(status, .available)
     }
 
-    func testListModelsParsesNativeLocalLLMModelsOnly() async throws {
+    func testListModelsParsesNativeLocalLLMAndEmbeddingModelsSeparately() async throws {
         let backend = makeBackend { request in
             XCTAssertEqual(request.url?.path, "/api/v1/models")
             return self.response(
@@ -52,15 +52,21 @@ final class LMStudioBackendTests: XCTestCase {
 
         let models = try await backend.listModels()
 
-        XCTAssertEqual(models.count, 1)
+        XCTAssertEqual(models.count, 2)
         XCTAssertEqual(models.first?.id, "google/gemma-4-26b-a4b")
         XCTAssertEqual(models.first?.name, "Gemma 4 26B A4B")
         XCTAssertEqual(models.first?.provider, .lmStudio)
+        XCTAssertEqual(models.first?.kind, .chat)
+        XCTAssertEqual(models.first?.capabilities, ["chat"])
         XCTAssertEqual(models.first?.providerModelID, "google/gemma-4-26b-a4b")
         XCTAssertEqual(models.first?.sizeBytes, 17990911801)
         XCTAssertEqual(models.first?.source, .local)
         XCTAssertTrue(models.first?.installed == true)
         XCTAssertTrue(models.first?.running == true)
+        XCTAssertEqual(models.last?.id, "text-embedding-nomic")
+        XCTAssertEqual(models.last?.name, "Nomic Embed")
+        XCTAssertEqual(models.last?.kind, .embedding)
+        XCTAssertEqual(models.last?.capabilities, ["embedding"])
     }
 
     func testListModelsFallsBackToOpenAICompatibleModels() async throws {

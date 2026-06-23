@@ -19,6 +19,7 @@ data class RuntimeUiState(
     val isLoadingModels: Boolean = false,
     val installingModelId: String? = null,
     val selectedModelId: String? = null,
+    val selectedEmbeddingModelId: String? = null,
     val chatSessions: List<RuntimeChatSession> = emptyList(),
     val archivedChatSessions: List<RuntimeChatSession> = emptyList(),
     val activeChatSessionId: String? = null,
@@ -68,6 +69,8 @@ data class RuntimeModel(
     val name: String,
     val backend: String = "ollama",
     val provider: String = "ollama",
+    val modelKind: String = MODEL_KIND_CHAT,
+    val capabilities: List<String> = emptyList(),
     val providerModelId: String? = null,
     val installed: Boolean = true,
     val running: Boolean = false,
@@ -76,10 +79,16 @@ data class RuntimeModel(
     val sizeBytes: Long? = null,
 )
 
+const val MODEL_KIND_CHAT = "chat"
+const val MODEL_KIND_EMBEDDING = "embedding"
+
 data class RuntimeProviderStatus(
     val id: String,
     val name: String,
     val available: Boolean,
+    val message: String = "",
+    val code: String? = null,
+    val retryable: Boolean? = null,
 )
 
 data class RuntimeChatMessage(

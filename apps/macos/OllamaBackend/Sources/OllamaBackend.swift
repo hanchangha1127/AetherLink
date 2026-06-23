@@ -37,9 +37,13 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
         do {
             let tags = try decoder.decode(OllamaTagsResponse.self, from: tagsData)
             let running = try decoder.decode(OllamaRunningModelsResponse.self, from: psData)
+            let capabilities = await modelCapabilitiesByName(
+                names: Self.uniqueModelNames(tags.models.map(\.name) + running.models.map(\.name))
+            )
             return Self.mergeModels(
                 installedModels: tags.models,
-                runningModels: running.models
+                runningModels: running.models,
+                capabilitiesByName: capabilities
             )
         } catch let error as DecodingError {
             throw OllamaBackendError.responseDecoding(endpoint: "\(tagsEndpoint), \(psEndpoint)", reason: error.localizedDescription)
@@ -70,7 +74,8 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
 
     private static func mergeModels(
         installedModels: [OllamaModel],
-        runningModels: [OllamaRunningModel]
+        runningModels: [OllamaRunningModel],
+        capabilitiesByName: [String: [String]] = [:]
     ) -> [ModelInfo] {
         var result: [ModelInfo] = []
         var indexesByID: [String: Int] = [:]
@@ -83,10 +88,14 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
         }
 
         for model in installedModels {
+            let capabilities = capabilitiesByName[model.name] ?? capabilitiesByName[canonicalModelName(model.name)] ?? []
+            let kind = ModelKind.from(capabilities: capabilities, fallbackName: model.name)
             remember(ModelInfo(
                 id: model.name,
                 name: model.name,
                 provider: .ollama,
+                kind: kind,
+                capabilities: capabilities.isEmpty ? nil : capabilities,
                 sizeBytes: model.size,
                 modifiedAt: model.modifiedAt,
                 installed: true,
@@ -107,10 +116,14 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
                 if model.source == .cloud {
                     continue
                 }
+                let capabilities = capabilitiesByName[model.name] ?? capabilitiesByName[canonicalModelName(model.name)] ?? []
+                let kind = ModelKind.from(capabilities: capabilities, fallbackName: model.name)
                 remember(ModelInfo(
                     id: model.name,
                     name: model.name,
                     provider: .ollama,
+                    kind: kind,
+                    capabilities: capabilities.isEmpty ? nil : capabilities,
                     sizeBytes: model.size,
                     installed: true,
                     running: true,
@@ -122,11 +135,49 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
         return result
     }
 
+    private func modelCapabilitiesByName(names: [String]) async -> [String: [String]] {
+        var result: [String: [String]] = [:]
+        for name in names where !name.isEmpty {
+            do {
+                let capabilities = try await fetchModelCapabilities(name: name)
+                if !capabilities.isEmpty {
+                    result[name] = capabilities
+                    result[Self.canonicalModelName(name)] = capabilities
+                }
+            } catch {
+                continue
+            }
+        }
+        return result
+    }
+
+    private func fetchModelCapabilities(name: String) async throws -> [String] {
+        let endpoint = "POST /api/show"
+        var urlRequest = URLRequest(url: baseURL.appending(path: "api/show"))
+        urlRequest.httpMethod = "POST"
+        urlRequest.addValue("application/json", forHTTPHeaderField: "Content-Type")
+        urlRequest.httpBody = try encoder.encode(OllamaShowRequest(model: name))
+        let data = try await performDataRequest(endpoint: endpoint, request: urlRequest)
+        let response = try decoder.decode(OllamaShowResponse.self, from: data)
+        return response.capabilities.map {
+            $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        }.filter { !$0.isEmpty }
+    }
+
     private static func canonicalModelName(_ name: String) -> String {
         if name.hasSuffix(":latest") {
             return String(name.dropLast(":latest".count))
         }
         return name
+    }
+
+    private static func uniqueModelNames(_ names: [String]) -> [String] {
+        var seen: Set<String> = []
+        return names.filter { name in
+            guard !seen.contains(name) else { return false }
+            seen.insert(name)
+            return true
+        }
     }
 
     private func performDataRequest(endpoint: String, request: URLRequest) async throws -> Data {
@@ -393,6 +444,14 @@ private struct OllamaPullRequest: Encodable {
 
 private struct OllamaPullResponse: Decodable {
     var status: String?
+}
+
+private struct OllamaShowRequest: Encodable {
+    var model: String
+}
+
+private struct OllamaShowResponse: Decodable {
+    var capabilities: [String]
 }
 
 private struct OllamaChatRequest: Encodable {

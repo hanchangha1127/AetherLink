@@ -72,6 +72,8 @@ final class OllamaBackendTests: XCTestCase {
                     }
                     """
                 )
+            case "/api/show":
+                return self.response(statusCode: 200, body: #"{"capabilities":["completion"]}"#)
             default:
                 XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
                 return self.response(statusCode: 404, body: "{}")
@@ -103,6 +105,35 @@ final class OllamaBackendTests: XCTestCase {
         XCTAssertTrue(models[3].installed)
         XCTAssertTrue(models[3].running)
         XCTAssertEqual(models[3].sizeBytes, 2048)
+        XCTAssertEqual(models.map(\.kind), [.chat, .chat, .chat, .chat])
+        XCTAssertEqual(models[0].capabilities, ["completion"])
+    }
+
+    func testListModelsUsesShowCapabilitiesToSeparateEmbeddingModels() async throws {
+        var showRequestCount = 0
+        let backend = makeBackend { request in
+            switch request.url?.path {
+            case "/api/tags":
+                return self.response(statusCode: 200, body: #"{"models":[{"name":"nomic-embed-text","size":10},{"name":"qwen3:8b","size":20}]}"#)
+            case "/api/ps":
+                return self.response(statusCode: 200, body: #"{"models":[]}"#)
+            case "/api/show":
+                showRequestCount += 1
+                if showRequestCount == 1 {
+                    return self.response(statusCode: 200, body: #"{"capabilities":["embedding"]}"#)
+                }
+                return self.response(statusCode: 200, body: #"{"capabilities":["completion"]}"#)
+            default:
+                XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
+                return self.response(statusCode: 404, body: "{}")
+            }
+        }
+
+        let models = try await backend.listModels()
+
+        XCTAssertEqual(models.first { $0.id == "nomic-embed-text" }?.kind, .embedding)
+        XCTAssertEqual(models.first { $0.id == "nomic-embed-text" }?.capabilities, ["embedding"])
+        XCTAssertEqual(models.first { $0.id == "qwen3:8b" }?.kind, .chat)
     }
 
     func testListModelsDoesNotInventRecommendedDefaultsWhenTagsAreEmpty() async throws {
