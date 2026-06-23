@@ -6,6 +6,30 @@
     <string name="tab_chat">Chat</string>
     <string name="tab_settings">Réglages</string>
     <string name="content_desc_open_navigation">Ouvrir le menu de navigation</string>
+    <string name="new_chat">Nouveau chat</string>
+    <string name="previous_chats">Chats précédents</string>
+    <string name="no_previous_chats">Aucun chat précédent pour le moment.</string>
+    <string name="untitled_chat">Chat sans titre</string>
+    <string name="chat_message_count">%1$d messages</string>
+    <string name="chat_session_more">Options du chat</string>
+    <string name="rename_chat">Renommer le chat</string>
+    <string name="archive">Archiver</string>
+    <string name="archive_chat">Archiver le chat</string>
+    <string name="archived_chat">Chat archivé</string>
+    <string name="archived_chats">Chats archivés</string>
+    <string name="restore_chat">Restaurer le chat</string>
+    <string name="archive_all_chats">Archiver tous les chats</string>
+    <string name="archive_all_chats_confirm">Archiver tous les chats locaux de ce téléphone ? Les chats archivés restent enregistrés localement, mais sont masqués des chats précédents et des entrées de mémoire.</string>
+    <string name="delete_all_chats">Supprimer tous les chats</string>
+    <string name="delete_all_chats_confirm">Supprimer définitivement tous les chats locaux de ce téléphone ?</string>
+    <string name="chat_title_label">Titre du chat</string>
+    <string name="save">Enregistrer</string>
+    <string name="delete">Supprimer</string>
+    <string name="delete_chat">Supprimer le chat</string>
+    <string name="delete_chat_confirm">Supprimer « %1$s » de ce téléphone ?</string>
+    <string name="clear">Effacer</string>
+    <string name="clear_chat_history">Effacer l’historique</string>
+    <string name="clear_chat_history_confirm">Supprimer toutes les sessions de chat locales de ce téléphone ? Les notes de mémoire restent enregistrées.</string>
 
     <string name="pairing_title">Jumeler le runtime Mac</string>
     <string name="pairing_subtitle">Connectez ce téléphone au Mac companion de confiance avant de charger des modèles ou de discuter.</string>
@@ -130,6 +154,15 @@
     <string name="companion_only_title">Mac companion uniquement</string>
     <string name="companion_only_detail">AetherLink garde l’accès aux modèles locaux sur le Mac. Android contrôle la session companion de confiance et reçoit les résultats diffusés.</string>
     <string name="runtime_endpoint">Point de terminaison manuel du runtime</string>
+    <string name="memory_title">Mémoire</string>
+    <string name="memory_subtitle">Notes locales que l’assistant peut utiliser dans les futurs chats sur ce téléphone.</string>
+    <string name="memory_add_label">Ajouter une mémoire</string>
+    <string name="memory_add_placeholder">Préférence, détail de projet ou instruction à mémoriser</string>
+    <string name="memory_add">Ajouter la mémoire</string>
+    <string name="memory_empty">Aucune mémoire locale enregistrée pour le moment.</string>
+    <string name="memory_remove">Supprimer la mémoire</string>
+    <string name="memory_enabled">Activée</string>
+    <string name="memory_paused">En pause</string>
 
     <string name="error_title">Erreur</string>
     <string name="error_invalid_endpoint">Saisissez un hôte et un port de runtime Mac valides.</string>
@@ -147,6 +180,8 @@
     <string name="error_connect_first">Connectez-vous d’abord au runtime Mac companion.</string>
     <string name="error_receive_failed">La connexion au runtime Mac companion a été fermée.</string>
     <string name="error_generation_cancelled">Génération annulée.</string>
+    <string name="error_generation_in_progress">Attendez la réponse en cours ou annulez-la avant de changer de chat.</string>
+    <string name="error_chat_session_not_found">Ce chat est introuvable.</string>
     <string name="error_runtime_error">Erreur du runtime.</string>
     <string name="error_send_failed">Impossible d’envoyer le message au runtime Mac companion.</string>
     <string name="error_invalid_payload">Le runtime Mac companion a envoyé des données non valides.</string>

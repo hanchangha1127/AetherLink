@@ -22,8 +22,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -45,6 +47,7 @@ import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -61,6 +64,7 @@ import androidx.compose.ui.unit.dp
 import com.localagentbridge.android.R
 import com.localagentbridge.android.runtime.RuntimeChatMessage
 import com.localagentbridge.android.runtime.RuntimeDiscoveredMac
+import com.localagentbridge.android.runtime.RuntimeMemoryEntry
 import com.localagentbridge.android.runtime.RuntimeModel
 import com.localagentbridge.android.runtime.RuntimeUiError
 import com.localagentbridge.android.runtime.RuntimeUiState
@@ -422,6 +426,9 @@ fun SettingsScreen(
     onUseUsbReverse: () -> Unit,
     onUseEmulator: () -> Unit,
     onForgetTrustedMac: () -> Unit,
+    onAddMemoryEntry: (String) -> Unit,
+    onRemoveMemoryEntry: (String) -> Unit,
+    onSetMemoryEntryEnabled: (String, Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     ScreenList(modifier) {
@@ -433,6 +440,14 @@ fun SettingsScreen(
         }
         item {
             CompanionOnlyPanel()
+        }
+        item {
+            MemoryPanel(
+                entries = state.memoryEntries,
+                onAddMemoryEntry = onAddMemoryEntry,
+                onRemoveMemoryEntry = onRemoveMemoryEntry,
+                onSetMemoryEntryEnabled = onSetMemoryEntryEnabled,
+            )
         }
         item {
             TrustedMacPanel(
@@ -1301,6 +1316,129 @@ private fun CompanionOnlyPanel() {
 }
 
 @Composable
+private fun MemoryPanel(
+    entries: List<RuntimeMemoryEntry>,
+    onAddMemoryEntry: (String) -> Unit,
+    onRemoveMemoryEntry: (String) -> Unit,
+    onSetMemoryEntryEnabled: (String, Boolean) -> Unit,
+) {
+    val draft = rememberSaveable { mutableStateOf("") }
+    val canAdd = draft.value.isNotBlank()
+
+    OutlinedCard(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    text = stringResource(R.string.memory_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = stringResource(R.string.memory_subtitle),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.secondary,
+                )
+            }
+            OutlinedTextField(
+                value = draft.value,
+                onValueChange = { draft.value = it },
+                label = { Text(stringResource(R.string.memory_add_label)) },
+                placeholder = { Text(stringResource(R.string.memory_add_placeholder)) },
+                minLines = 2,
+                maxLines = 4,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Button(
+                onClick = {
+                    onAddMemoryEntry(draft.value)
+                    draft.value = ""
+                },
+                enabled = canAdd,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Icon(Icons.Filled.Add, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text(stringResource(R.string.memory_add))
+            }
+            if (entries.isEmpty()) {
+                EmptyState(text = stringResource(R.string.memory_empty))
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    entries.forEach { entry ->
+                        MemoryEntryRow(
+                            entry = entry,
+                            onRemoveMemoryEntry = onRemoveMemoryEntry,
+                            onSetMemoryEntryEnabled = onSetMemoryEntryEnabled,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MemoryEntryRow(
+    entry: RuntimeMemoryEntry,
+    onRemoveMemoryEntry: (String) -> Unit,
+    onSetMemoryEntryEnabled: (String, Boolean) -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = entry.content,
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (entry.enabled) {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.58f)
+                },
+            )
+            Text(
+                text = stringResource(
+                    if (entry.enabled) {
+                        R.string.memory_enabled
+                    } else {
+                        R.string.memory_paused
+                    },
+                ),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.secondary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Switch(
+                checked = entry.enabled,
+                onCheckedChange = { enabled -> onSetMemoryEntryEnabled(entry.id, enabled) },
+            )
+            FilledTonalIconButton(
+                onClick = { onRemoveMemoryEntry(entry.id) },
+                modifier = Modifier.size(40.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Delete,
+                    contentDescription = stringResource(R.string.memory_remove),
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun StatusLine(label: String, value: String) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(
@@ -1468,6 +1606,8 @@ private fun runtimeErrorLabel(error: RuntimeUiError): String {
         "connect_first" -> stringResource(R.string.error_connect_first)
         "receive_failed" -> stringResource(R.string.error_receive_failed)
         "generation_cancelled" -> stringResource(R.string.error_generation_cancelled)
+        "generation_in_progress" -> stringResource(R.string.error_generation_in_progress)
+        "chat_session_not_found" -> stringResource(R.string.error_chat_session_not_found)
         "runtime_error" -> stringResource(R.string.error_runtime_error)
         "send_failed" -> stringResource(R.string.error_send_failed)
         "invalid_payload" -> stringResource(R.string.error_invalid_payload)

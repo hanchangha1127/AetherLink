@@ -6,6 +6,30 @@
     <string name="tab_chat">聊天</string>
     <string name="tab_settings">设置</string>
     <string name="content_desc_open_navigation">打开导航菜单</string>
+    <string name="new_chat">新聊天</string>
+    <string name="previous_chats">历史聊天</string>
+    <string name="no_previous_chats">还没有历史聊天。</string>
+    <string name="untitled_chat">未命名聊天</string>
+    <string name="chat_message_count">%1$d 条消息</string>
+    <string name="chat_session_more">聊天选项</string>
+    <string name="rename_chat">重命名聊天</string>
+    <string name="archive">归档</string>
+    <string name="archive_chat">归档聊天</string>
+    <string name="archived_chat">已归档聊天</string>
+    <string name="archived_chats">已归档聊天</string>
+    <string name="restore_chat">恢复聊天</string>
+    <string name="archive_all_chats">归档所有聊天</string>
+    <string name="archive_all_chats_confirm">要归档这部手机上的所有本地聊天吗？已归档聊天会保留在本地，但会从历史聊天和记忆输入中隐藏。</string>
+    <string name="delete_all_chats">删除所有聊天</string>
+    <string name="delete_all_chats_confirm">要从这部手机永久删除所有本地聊天吗？</string>
+    <string name="chat_title_label">聊天标题</string>
+    <string name="save">保存</string>
+    <string name="delete">删除</string>
+    <string name="delete_chat">删除聊天</string>
+    <string name="delete_chat_confirm">要从这部手机删除“%1$s”吗？</string>
+    <string name="clear">清除</string>
+    <string name="clear_chat_history">清除聊天记录</string>
+    <string name="clear_chat_history_confirm">要删除这部手机上的所有本地聊天会话吗？记忆备注会保留。</string>
 
     <string name="pairing_title">配对 Mac 运行时</string>
     <string name="pairing_subtitle">加载模型或聊天前，将这部手机连接到受信任的 Mac companion。</string>
@@ -130,6 +154,15 @@
     <string name="companion_only_title">仅限 Mac companion</string>
     <string name="companion_only_detail">AetherLink 将本地模型访问保留在 Mac 上。Android 控制受信任的 companion 会话并接收流式结果。</string>
     <string name="runtime_endpoint">手动运行时端点</string>
+    <string name="memory_title">记忆</string>
+    <string name="memory_subtitle">助手可在这部手机上的后续聊天中使用的本地备注。</string>
+    <string name="memory_add_label">添加记忆</string>
+    <string name="memory_add_placeholder">要记住的偏好、项目信息或指令</string>
+    <string name="memory_add">添加记忆</string>
+    <string name="memory_empty">还没有保存的本地记忆。</string>
+    <string name="memory_remove">删除记忆</string>
+    <string name="memory_enabled">已启用</string>
+    <string name="memory_paused">已暂停</string>
 
     <string name="error_title">错误</string>
     <string name="error_invalid_endpoint">请输入有效的 Mac 运行时主机和端口。</string>
@@ -147,6 +180,8 @@
     <string name="error_connect_first">请先连接到 Mac companion 运行时。</string>
     <string name="error_receive_failed">Mac companion 运行时连接已关闭。</string>
     <string name="error_generation_cancelled">生成已取消。</string>
+    <string name="error_generation_in_progress">切换聊天前，请等待当前响应完成或取消它。</string>
+    <string name="error_chat_session_not_found">找不到此聊天。</string>
     <string name="error_runtime_error">运行时错误。</string>
     <string name="error_send_failed">无法向 Mac companion 运行时发送消息。</string>
     <string name="error_invalid_payload">Mac companion 运行时发送了无效数据。</string>

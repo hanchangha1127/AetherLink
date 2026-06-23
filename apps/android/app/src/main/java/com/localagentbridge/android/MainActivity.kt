@@ -8,28 +8,50 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.annotation.StringRes
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Archive
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.Unarchive
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.NavigationDrawerItem
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
@@ -55,6 +77,7 @@ import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
 import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
 import com.localagentbridge.android.runtime.RuntimeClientViewModel
+import com.localagentbridge.android.runtime.RuntimeChatSession
 import com.localagentbridge.android.runtime.RuntimeUiState
 import com.localagentbridge.android.ui.ChatScreen
 import com.localagentbridge.android.ui.ConnectionStatusScreen
@@ -86,33 +109,163 @@ private fun LocalAgentBridgeApp() {
             val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
             val scope = rememberCoroutineScope()
             var destination by rememberSaveable { mutableStateOf(AppDestination.Chat) }
+            var renamingSessionId by rememberSaveable { mutableStateOf<String?>(null) }
+            var renameDraft by rememberSaveable { mutableStateOf("") }
+            var deletingSessionId by rememberSaveable { mutableStateOf<String?>(null) }
+            var isArchiveHistoryDialogVisible by rememberSaveable { mutableStateOf(false) }
+            var isDeleteHistoryDialogVisible by rememberSaveable { mutableStateOf(false) }
             val destinationTitle = stringResource(destination.labelRes)
 
             ModalNavigationDrawer(
                 drawerState = drawerState,
                 drawerContent = {
                     ModalDrawerSheet {
-                        Text(
-                            text = stringResource(R.string.app_name),
-                            style = MaterialTheme.typography.titleLarge,
-                            modifier = Modifier.padding(horizontal = 28.dp, vertical = 24.dp),
-                        )
-                        AppDestination.entries.forEach { item ->
-                            val label = stringResource(item.labelRes)
-                            NavigationDrawerItem(
-                                selected = destination == item,
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(vertical = 12.dp),
+                        ) {
+                            Text(
+                                text = stringResource(R.string.app_name),
+                                style = MaterialTheme.typography.titleLarge,
+                                modifier = Modifier.padding(horizontal = 28.dp, vertical = 12.dp),
+                            )
+                            Button(
                                 onClick = {
-                                    destination = item
+                                    viewModel.startNewChat()
+                                    destination = AppDestination.Chat
                                     scope.launch { drawerState.close() }
                                 },
-                                icon = {
-                                    Icon(
-                                        imageVector = item.icon,
-                                        contentDescription = null,
+                                enabled = !state.isStreaming,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                            ) {
+                                Icon(Icons.Filled.Add, contentDescription = null)
+                                Spacer(Modifier.size(8.dp))
+                                Text(stringResource(R.string.new_chat))
+                            }
+                            Column(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .verticalScroll(rememberScrollState()),
+                            ) {
+                                DrawerSectionLabel(text = stringResource(R.string.previous_chats))
+                                if (state.chatSessions.isEmpty()) {
+                                    Text(
+                                        text = stringResource(R.string.no_previous_chats),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.padding(horizontal = 28.dp, vertical = 8.dp),
                                     )
+                                } else {
+                                    state.chatSessions.forEach { session ->
+                                        ChatSessionDrawerItem(
+                                            session = session,
+                                            selected = destination == AppDestination.Chat &&
+                                                session.id == state.activeChatSessionId,
+                                            enabled = !state.isStreaming,
+                                            onClick = {
+                                                viewModel.selectChatSession(session.id)
+                                                destination = AppDestination.Chat
+                                                scope.launch { drawerState.close() }
+                                            },
+                                            onRename = {
+                                                renamingSessionId = session.id
+                                                renameDraft = session.title
+                                            },
+                                            onArchive = {
+                                                viewModel.archiveChatSession(session.id)
+                                            },
+                                            onRestore = null,
+                                            onDelete = {
+                                                deletingSessionId = session.id
+                                            },
+                                        )
+                                    }
+                                    OutlinedButton(
+                                        onClick = { isArchiveHistoryDialogVisible = true },
+                                        enabled = !state.isStreaming,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                                    ) {
+                                        Icon(Icons.Filled.Archive, contentDescription = null)
+                                        Spacer(Modifier.size(8.dp))
+                                        Text(stringResource(R.string.archive_all_chats))
+                                    }
+                                }
+                                if (state.archivedChatSessions.isNotEmpty()) {
+                                    DrawerSectionLabel(text = stringResource(R.string.archived_chats))
+                                    state.archivedChatSessions.forEach { session ->
+                                        ChatSessionDrawerItem(
+                                            session = session,
+                                            selected = false,
+                                            enabled = !state.isStreaming,
+                                            onClick = {
+                                                viewModel.unarchiveChatSession(session.id)
+                                                viewModel.selectChatSession(session.id)
+                                                destination = AppDestination.Chat
+                                                scope.launch { drawerState.close() }
+                                            },
+                                            onRename = null,
+                                            onArchive = null,
+                                            onRestore = {
+                                                viewModel.unarchiveChatSession(session.id)
+                                            },
+                                            onDelete = {
+                                                deletingSessionId = session.id
+                                            },
+                                        )
+                                    }
+                                }
+                                if (state.chatSessions.isNotEmpty() || state.archivedChatSessions.isNotEmpty()) {
+                                    OutlinedButton(
+                                        onClick = { isDeleteHistoryDialogVisible = true },
+                                        enabled = !state.isStreaming,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                                    ) {
+                                        Icon(Icons.Filled.DeleteSweep, contentDescription = null)
+                                        Spacer(Modifier.size(8.dp))
+                                        Text(stringResource(R.string.delete_all_chats))
+                                    }
+                                }
+                                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                                DrawerDestinationItem(
+                                    destination = AppDestination.Pairing,
+                                    selected = destination == AppDestination.Pairing,
+                                    onClick = {
+                                        destination = AppDestination.Pairing
+                                        scope.launch { drawerState.close() }
+                                    },
+                                )
+                                DrawerDestinationItem(
+                                    destination = AppDestination.Status,
+                                    selected = destination == AppDestination.Status,
+                                    onClick = {
+                                        destination = AppDestination.Status
+                                        scope.launch { drawerState.close() }
+                                    },
+                                )
+                                DrawerDestinationItem(
+                                    destination = AppDestination.Models,
+                                    selected = destination == AppDestination.Models,
+                                    onClick = {
+                                        destination = AppDestination.Models
+                                        scope.launch { drawerState.close() }
+                                    },
+                                )
+                            }
+                            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                            DrawerDestinationItem(
+                                destination = AppDestination.Settings,
+                                selected = destination == AppDestination.Settings,
+                                onClick = {
+                                    destination = AppDestination.Settings
+                                    scope.launch { drawerState.close() }
                                 },
-                                label = { Text(label) },
-                                modifier = Modifier.padding(horizontal = 12.dp),
                             )
                         }
                     }
@@ -194,12 +347,65 @@ private fun LocalAgentBridgeApp() {
                             onUseUsbReverse = viewModel::useUsbReverseEndpoint,
                             onUseEmulator = viewModel::useEmulatorEndpoint,
                             onForgetTrustedMac = viewModel::forgetTrustedMac,
+                            onAddMemoryEntry = viewModel::addMemoryEntry,
+                            onRemoveMemoryEntry = viewModel::removeMemoryEntry,
+                            onSetMemoryEntryEnabled = viewModel::setMemoryEntryEnabled,
                             modifier = Modifier
                                 .fillMaxSize()
                                 .padding(padding),
                         )
                     }
                 }
+            }
+
+            val sessionBeingRenamed = state.chatSessions.firstOrNull { it.id == renamingSessionId }
+            if (sessionBeingRenamed != null) {
+                RenameChatSessionDialog(
+                    title = renameDraft,
+                    onTitleChange = { renameDraft = it },
+                    onDismiss = {
+                        renamingSessionId = null
+                        renameDraft = ""
+                    },
+                    onConfirm = {
+                        viewModel.renameChatSession(sessionBeingRenamed.id, renameDraft)
+                        renamingSessionId = null
+                        renameDraft = ""
+                    },
+                )
+            }
+
+            val sessionBeingDeleted = (state.chatSessions + state.archivedChatSessions)
+                .firstOrNull { it.id == deletingSessionId }
+            if (sessionBeingDeleted != null) {
+                DeleteChatSessionDialog(
+                    sessionTitle = sessionBeingDeleted.title,
+                    onDismiss = { deletingSessionId = null },
+                    onConfirm = {
+                        viewModel.deleteChatSession(sessionBeingDeleted.id)
+                        deletingSessionId = null
+                    },
+                )
+            }
+
+            if (isArchiveHistoryDialogVisible) {
+                ArchiveChatHistoryDialog(
+                    onDismiss = { isArchiveHistoryDialogVisible = false },
+                    onConfirm = {
+                        viewModel.archiveChatSessions()
+                        isArchiveHistoryDialogVisible = false
+                    },
+                )
+            }
+
+            if (isDeleteHistoryDialogVisible) {
+                DeleteChatHistoryDialog(
+                    onDismiss = { isDeleteHistoryDialogVisible = false },
+                    onConfirm = {
+                        viewModel.clearChatSessions()
+                        isDeleteHistoryDialogVisible = false
+                    },
+                )
             }
         }
     }
@@ -232,6 +438,258 @@ private fun ChatTopAppBarTitle(state: RuntimeUiState) {
             overflow = TextOverflow.Ellipsis,
         )
     }
+}
+
+@Composable
+private fun DrawerSectionLabel(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(horizontal = 28.dp, vertical = 8.dp),
+    )
+}
+
+@Composable
+private fun ChatSessionDrawerItem(
+    session: RuntimeChatSession,
+    selected: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    onRename: (() -> Unit)?,
+    onArchive: (() -> Unit)?,
+    onRestore: (() -> Unit)?,
+    onDelete: () -> Unit,
+) {
+    var isMenuExpanded by rememberSaveable(session.id) { mutableStateOf(false) }
+    val title = session.title.ifBlank { stringResource(R.string.untitled_chat) }
+    val subtitle = when {
+        session.archivedAtMillis != null -> stringResource(R.string.archived_chat)
+        session.messageCount > 0 -> stringResource(R.string.chat_message_count, session.messageCount)
+        session.updatedAtMillis > 0L -> stringResource(R.string.new_chat)
+        else -> ""
+    }
+
+    NavigationDrawerItem(
+        selected = selected,
+        onClick = onClick,
+        enabled = enabled,
+        icon = {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.Chat,
+                contentDescription = null,
+            )
+        },
+        label = {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    Text(
+                        text = title,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    if (subtitle.isNotBlank()) {
+                        Text(
+                            text = subtitle,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+                IconButton(
+                    onClick = { isMenuExpanded = true },
+                    enabled = enabled,
+                    modifier = Modifier.size(32.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.MoreVert,
+                        contentDescription = stringResource(R.string.chat_session_more),
+                    )
+                }
+                DropdownMenu(
+                    expanded = isMenuExpanded,
+                    onDismissRequest = { isMenuExpanded = false },
+                ) {
+                    if (onRename != null) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.rename_chat)) },
+                            leadingIcon = { Icon(Icons.Filled.Edit, contentDescription = null) },
+                            onClick = {
+                                isMenuExpanded = false
+                                onRename()
+                            },
+                        )
+                    }
+                    if (onArchive != null) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.archive_chat)) },
+                            leadingIcon = { Icon(Icons.Filled.Archive, contentDescription = null) },
+                            onClick = {
+                                isMenuExpanded = false
+                                onArchive()
+                            },
+                        )
+                    }
+                    if (onRestore != null) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.restore_chat)) },
+                            leadingIcon = { Icon(Icons.Filled.Unarchive, contentDescription = null) },
+                            onClick = {
+                                isMenuExpanded = false
+                                onRestore()
+                            },
+                        )
+                    }
+                    DropdownMenuItem(
+                        text = { Text(stringResource(R.string.delete_chat)) },
+                        leadingIcon = { Icon(Icons.Filled.Delete, contentDescription = null) },
+                        onClick = {
+                            isMenuExpanded = false
+                            onDelete()
+                        },
+                    )
+                }
+            }
+        },
+        modifier = Modifier.padding(horizontal = 12.dp),
+    )
+}
+
+@Composable
+private fun RenameChatSessionDialog(
+    title: String,
+    onTitleChange: (String) -> Unit,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.rename_chat)) },
+        text = {
+            OutlinedTextField(
+                value = title,
+                onValueChange = onTitleChange,
+                label = { Text(stringResource(R.string.chat_title_label)) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = onConfirm,
+                enabled = title.isNotBlank(),
+            ) {
+                Text(stringResource(R.string.save))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.cancel))
+            }
+        },
+    )
+}
+
+@Composable
+private fun DeleteChatSessionDialog(
+    sessionTitle: String,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.delete_chat)) },
+        text = {
+            Text(
+                text = stringResource(
+                    R.string.delete_chat_confirm,
+                    sessionTitle.ifBlank { stringResource(R.string.untitled_chat) },
+                ),
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text(stringResource(R.string.delete))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.cancel))
+            }
+        },
+    )
+}
+
+@Composable
+private fun ArchiveChatHistoryDialog(
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.archive_all_chats)) },
+        text = { Text(stringResource(R.string.archive_all_chats_confirm)) },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text(stringResource(R.string.archive))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.cancel))
+            }
+        },
+    )
+}
+
+@Composable
+private fun DeleteChatHistoryDialog(
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.delete_all_chats)) },
+        text = { Text(stringResource(R.string.delete_all_chats_confirm)) },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text(stringResource(R.string.delete))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.cancel))
+            }
+        },
+    )
+}
+
+@Composable
+private fun DrawerDestinationItem(
+    destination: AppDestination,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val label = stringResource(destination.labelRes)
+    NavigationDrawerItem(
+        selected = selected,
+        onClick = onClick,
+        icon = {
+            Icon(
+                imageVector = destination.icon,
+                contentDescription = null,
+            )
+        },
+        label = { Text(label) },
+        modifier = Modifier.padding(horizontal = 12.dp),
+    )
 }
 
 @Composable

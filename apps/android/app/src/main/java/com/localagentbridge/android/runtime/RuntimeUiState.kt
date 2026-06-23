@@ -19,10 +19,14 @@ data class RuntimeUiState(
     val isLoadingModels: Boolean = false,
     val installingModelId: String? = null,
     val selectedModelId: String? = null,
+    val chatSessions: List<RuntimeChatSession> = emptyList(),
+    val archivedChatSessions: List<RuntimeChatSession> = emptyList(),
+    val activeChatSessionId: String? = null,
     val messages: List<RuntimeChatMessage> = emptyList(),
     val chatInput: String = "",
     val isStreaming: Boolean = false,
     val activeRequestId: String? = null,
+    val memoryEntries: List<RuntimeMemoryEntry> = emptyList(),
     val error: RuntimeUiError? = null,
 )
 
@@ -63,6 +67,22 @@ data class RuntimeChatMessage(
     val role: String,
     val content: String,
     val reasoning: String = "",
+)
+
+data class RuntimeChatSession(
+    val id: String,
+    val title: String,
+    val updatedAtMillis: Long,
+    val messageCount: Int,
+    val archivedAtMillis: Long? = null,
+)
+
+data class RuntimeMemoryEntry(
+    val id: String,
+    val content: String,
+    val enabled: Boolean,
+    val createdAtMillis: Long,
+    val updatedAtMillis: Long,
 )
 
 data class RuntimeUiError(

@@ -287,6 +287,8 @@ The Mac runtime responds with the same `type` in v0.1:
 
 Installed Ollama models are derived from the Mac runtime calling Ollama `/api/tags`. Installed LM Studio local models are derived from the Mac runtime calling LM Studio native `GET /api/v1/models`, with fallback to OpenAI-compatible `GET /v1/models` if native response shape differs. Local models are the main path. Ollama cloud models are not default recommendations or generic suggestions; they appear only after the user-side Ollama pull/sign-in flow causes the local Mac `/api/tags` response to include them. Running status may be derived from backend metadata when available. The runtime does not invent recommended/default model cards when backend model lists are empty.
 
+This v0.1 `models.list` response is for general chat/text-generation model selection. Future embedding models must use a separate listing and selection surface so retrieval/ranking choices are not mixed with chat model choices.
+
 Model fields:
 
 - `id`: backend model id retained for backwards compatibility.
@@ -357,6 +359,10 @@ Direction: Android -> Mac.
     "model": "ollama:llama3.1:8b",
     "messages": [
       {
+        "role": "system",
+        "content": "Local user memory:\n- Prefers concise answers"
+      },
+      {
         "role": "user",
         "content": "Hello"
       }
@@ -366,6 +372,8 @@ Direction: Android -> Mac.
 ```
 
 The Mac runtime routes provider-prefixed model ids to the selected Mac-side backend. Unprefixed model ids remain accepted for backwards compatibility, with Ollama treated as the default when the id is ambiguous. Ollama chat uses `/api/chat` with `stream = true`. LM Studio chat prefers native `/api/v1/chat` with `stream = true` and falls back to OpenAI-compatible `/v1/chat/completions` if native endpoint shape differs.
+
+Android may prepend user-managed local memory as a `system` message in `chat.send.messages`. This does not create a direct Android-to-backend path; the entire message list still goes only to the Mac runtime, and only the Mac runtime calls Ollama or LM Studio. Future Mac-side memory APIs should not be inferred from this Android-local context injection.
 
 If the requested model is not installed on the Mac runtime, Mac returns `error` with `code = "model_not_installed"`. Clients should call `models.pull` through the Mac runtime first.
 
@@ -499,11 +507,17 @@ Common v0.1 error codes:
 
 ## Future Extension Points
 
-These namespaces are reserved but not implemented in v0.1.
+These namespaces are reserved but not implemented in v0.1. Android-local chat history and user-entered memory notes do not use these namespaces; they are local UI state unless included as `chat.send` context.
 
-- Memory: `memory.sessions.list`, `memory.messages.list`, `memory.search`, `memory.update`.
+- Memory: `memory.sessions.list`, `memory.messages.list`, `memory.search`, `memory.update`. Archived sessions are retained but excluded from memory, reflection, research, and compaction inputs unless restored or explicitly selected by the user.
+- Session compaction: future messages may expose compacted session summaries, context-window budgets, transcript source pointers, and longer-inactivity compact memory summaries. This is separate from model lifecycle messages such as unload-after-10-minutes-inactive.
+- Embeddings/research: future Mac-side semantic search, clustering, research notebook, source citation, and deep-research-like brief messages are reserved but not named yet. Embedding models must be listed and selected separately from chat/text-generation models, and retrieval/ranking/knowledge indexing must use the selected embedding model.
+- Projects/workspaces: reserve the `projects.` namespace for future project-scoped chats, files, instructions, memory, indexes, model/backend preferences, trusted-source controls, and project-level search/research. Do not add active message names until the product shape is ready.
+- Scheduling/automation: reserve the `automation.` namespace for future scheduled tasks, reminders, monitors, recurring automations, runtime-triggered jobs, permission prompts, audit logs, and mobile approval/status surfaces. Do not add active message names until the scheduler and permission model are designed.
+- Files/images: future file and image input messages are reserved but not named yet. Input ingestion, parsing, indexing, and backend calls must run through the Mac runtime, never direct Android-to-backend access.
+- Internal Python tools: future deterministic Python execution messages are reserved but not named yet. Python execution must run in the Mac runtime with runtime-owned permissions, scoping, and audit logs.
 - Skills: `skills.list`, `skills.run`, `skills.result`.
 - MCP: `mcp.servers.list`, `mcp.tools.list`, `mcp.tool.call`, `mcp.tool.result`.
 - Web search: `web_search.query`, `web_search.results`, `web_search.open_result`.
 
-Future tool execution, memory, skills, MCP, and web search must execute on the Mac runtime and flow through permission checks. Android remains the controller UI.
+Future tool execution, project/workspace handling, scheduling/automation, memory, file/image handling, skills, MCP, and web search must execute on the Mac runtime and flow through permission checks. Android remains the controller UI. Project files and scheduled jobs are sensitive runtime actions, even when a mobile client provides the approval or status UI.

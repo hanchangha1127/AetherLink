@@ -6,6 +6,30 @@
     <string name="tab_chat">채팅</string>
     <string name="tab_settings">설정</string>
     <string name="content_desc_open_navigation">탐색 메뉴 열기</string>
+    <string name="new_chat">새 채팅</string>
+    <string name="previous_chats">이전 채팅</string>
+    <string name="no_previous_chats">아직 이전 채팅이 없습니다.</string>
+    <string name="untitled_chat">제목 없는 채팅</string>
+    <string name="chat_message_count">메시지 %1$d개</string>
+    <string name="chat_session_more">채팅 옵션</string>
+    <string name="rename_chat">채팅 이름 변경</string>
+    <string name="archive">보관</string>
+    <string name="archive_chat">채팅 보관</string>
+    <string name="archived_chat">보관된 채팅</string>
+    <string name="archived_chats">보관된 채팅</string>
+    <string name="restore_chat">채팅 복원</string>
+    <string name="archive_all_chats">모든 채팅 보관</string>
+    <string name="archive_all_chats_confirm">이 휴대폰의 모든 로컬 채팅을 보관할까요? 보관된 채팅은 로컬에 유지되지만 이전 채팅과 메모리 입력에서는 숨겨집니다.</string>
+    <string name="delete_all_chats">모든 채팅 삭제</string>
+    <string name="delete_all_chats_confirm">이 휴대폰에서 모든 로컬 채팅을 영구 삭제할까요?</string>
+    <string name="chat_title_label">채팅 제목</string>
+    <string name="save">저장</string>
+    <string name="delete">삭제</string>
+    <string name="delete_chat">채팅 삭제</string>
+    <string name="delete_chat_confirm">이 휴대폰에서 "%1$s" 채팅을 삭제할까요?</string>
+    <string name="clear">지우기</string>
+    <string name="clear_chat_history">채팅 기록 지우기</string>
+    <string name="clear_chat_history_confirm">이 휴대폰의 모든 로컬 채팅 세션을 삭제할까요? 메모리 메모는 유지됩니다.</string>
 
     <string name="pairing_title">Mac 런타임 페어링</string>
     <string name="pairing_subtitle">모델을 불러오거나 채팅하기 전에 이 휴대폰을 신뢰된 Mac companion에 연결합니다.</string>
@@ -130,6 +154,15 @@
     <string name="companion_only_title">Mac companion 전용</string>
     <string name="companion_only_detail">AetherLink는 로컬 모델 접근을 Mac에 둡니다. Android는 신뢰된 Mac companion 세션을 제어하고 스트리밍 결과를 받습니다.</string>
     <string name="runtime_endpoint">수동 런타임 엔드포인트</string>
+    <string name="memory_title">메모리</string>
+    <string name="memory_subtitle">이 휴대폰의 향후 채팅에서 어시스턴트가 사용할 수 있는 로컬 메모입니다.</string>
+    <string name="memory_add_label">메모리 추가</string>
+    <string name="memory_add_placeholder">기억할 선호도, 프로젝트 정보 또는 지시사항</string>
+    <string name="memory_add">메모리 추가</string>
+    <string name="memory_empty">저장된 로컬 메모리가 아직 없습니다.</string>
+    <string name="memory_remove">메모리 삭제</string>
+    <string name="memory_enabled">사용 중</string>
+    <string name="memory_paused">일시 중지</string>
 
     <string name="error_title">오류</string>
     <string name="error_invalid_endpoint">올바른 Mac 런타임 호스트와 포트를 입력하세요.</string>
@@ -147,6 +180,8 @@
     <string name="error_connect_first">먼저 Mac companion 런타임에 연결하세요.</string>
     <string name="error_receive_failed">Mac companion 런타임 연결이 종료되었습니다.</string>
     <string name="error_generation_cancelled">생성이 취소되었습니다.</string>
+    <string name="error_generation_in_progress">채팅을 전환하기 전에 현재 응답을 기다리거나 취소하세요.</string>
+    <string name="error_chat_session_not_found">이 채팅을 찾을 수 없습니다.</string>
     <string name="error_runtime_error">런타임 오류가 발생했습니다.</string>
     <string name="error_send_failed">Mac companion 런타임으로 메시지를 보낼 수 없습니다.</string>
     <string name="error_invalid_payload">Mac companion 런타임이 올바르지 않은 데이터를 보냈습니다.</string>

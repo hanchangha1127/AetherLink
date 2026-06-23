@@ -9,7 +9,6 @@ import com.localagentbridge.android.core.protocol.AuthResponsePayload
 import com.localagentbridge.android.core.protocol.ChatCancelPayload
 import com.localagentbridge.android.core.protocol.ChatDeltaPayload
 import com.localagentbridge.android.core.protocol.ChatDonePayload
-import com.localagentbridge.android.core.protocol.ChatMessagePayload
 import com.localagentbridge.android.core.protocol.ChatSendPayload
 import com.localagentbridge.android.core.protocol.ErrorPayload
 import com.localagentbridge.android.core.protocol.HelloPayload
@@ -56,18 +55,20 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
     private val discovery = BonjourDiscovery(application)
     private val pairingStore = PairingStore(application)
     private val deviceIdentityStore = DeviceIdentityStore(application)
+    private val localStore = RuntimeLocalStore(application, json)
     private var readJob: Job? = null
     private var discoveryJob: Job? = null
     private var pendingPairingPayload: MacPairingPayload? = null
     private var pendingModelPullRequestId: String? = null
     private var modelIdToSelectAfterRefresh: String? = null
     private var isSessionAuthenticated = false
-    private val chatSessionId = UUID.randomUUID().toString()
+    private var persistedRuntimeData = PersistedRuntimeData()
 
     private val mutableState = MutableStateFlow(RuntimeUiState())
     val state: StateFlow<RuntimeUiState> = mutableState.asStateFlow()
 
     init {
+        publishPersistedRuntimeData(localStore.load(), save = false)
         viewModelScope.launch {
             pairingStore.trustedMac.collect { trusted ->
                 mutableState.update {
@@ -124,6 +125,152 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
 
     fun updateChatInput(value: String) {
         mutableState.update { it.copy(chatInput = value) }
+    }
+
+    fun startNewChat() {
+        if (state.value.isStreaming) {
+            showError("generation_in_progress")
+            return
+        }
+        publishPersistedRuntimeData(
+            persistedRuntimeData.withNoActiveSession(),
+            save = true,
+        )
+        mutableState.update { it.copy(chatInput = "") }
+    }
+
+    fun openPreviousChat(sessionId: String) {
+        if (state.value.isStreaming) {
+            showError("generation_in_progress")
+            return
+        }
+        if (persistedRuntimeData.sessions.none { it.id == sessionId && it.archivedAtMillis == null }) {
+            showError("chat_session_not_found")
+            return
+        }
+        publishPersistedRuntimeData(
+            persistedRuntimeData.withActiveSession(sessionId),
+            save = true,
+        )
+    }
+
+    fun selectChatSession(sessionId: String) {
+        openPreviousChat(sessionId)
+    }
+
+    fun renameChatSession(sessionId: String, title: String) {
+        if (state.value.isStreaming) {
+            showError("generation_in_progress")
+            return
+        }
+        if (persistedRuntimeData.sessions.none { it.id == sessionId }) {
+            showError("chat_session_not_found")
+            return
+        }
+        publishPersistedRuntimeData(
+            persistedRuntimeData.withRenamedChatSession(sessionId, title, nowMillis()),
+            save = true,
+        )
+    }
+
+    fun deleteChatSession(sessionId: String) {
+        if (state.value.isStreaming) {
+            showError("generation_in_progress")
+            return
+        }
+        if (persistedRuntimeData.sessions.none { it.id == sessionId }) {
+            showError("chat_session_not_found")
+            return
+        }
+        publishPersistedRuntimeData(
+            persistedRuntimeData.withoutChatSession(sessionId),
+            save = true,
+        )
+        if (state.value.activeChatSessionId == null) {
+            mutableState.update { it.copy(chatInput = "") }
+        }
+    }
+
+    fun archiveChatSession(sessionId: String) {
+        if (state.value.isStreaming) {
+            showError("generation_in_progress")
+            return
+        }
+        if (persistedRuntimeData.sessions.none { it.id == sessionId }) {
+            showError("chat_session_not_found")
+            return
+        }
+        publishPersistedRuntimeData(
+            persistedRuntimeData.withArchivedChatSession(sessionId, nowMillis()),
+            save = true,
+        )
+        if (state.value.activeChatSessionId == null) {
+            mutableState.update { it.copy(chatInput = "") }
+        }
+    }
+
+    fun archiveChatSessions() {
+        if (state.value.isStreaming) {
+            showError("generation_in_progress")
+            return
+        }
+        publishPersistedRuntimeData(
+            persistedRuntimeData.withArchivedChatSessions(nowMillis()),
+            save = true,
+        )
+        mutableState.update { it.copy(chatInput = "") }
+    }
+
+    fun unarchiveChatSession(sessionId: String) {
+        if (state.value.isStreaming) {
+            showError("generation_in_progress")
+            return
+        }
+        if (persistedRuntimeData.sessions.none { it.id == sessionId }) {
+            showError("chat_session_not_found")
+            return
+        }
+        publishPersistedRuntimeData(
+            persistedRuntimeData.withUnarchivedChatSession(sessionId, nowMillis()),
+            save = true,
+        )
+    }
+
+    fun clearChatSessions() {
+        if (state.value.isStreaming) {
+            showError("generation_in_progress")
+            return
+        }
+        publishPersistedRuntimeData(
+            persistedRuntimeData.withoutChatSessions(),
+            save = true,
+        )
+        mutableState.update { it.copy(chatInput = "") }
+    }
+
+    fun storeMemoryEntry(content: String) {
+        publishPersistedRuntimeData(
+            persistedRuntimeData.withMemoryEntry(content, nowMillis()),
+            save = true,
+        )
+    }
+
+    fun addMemoryEntry(content: String) {
+        storeMemoryEntry(content)
+    }
+
+    fun removeMemoryEntry(entryId: String) {
+        publishPersistedRuntimeData(
+            persistedRuntimeData.withoutMemoryEntry(entryId),
+            save = true,
+        )
+    }
+
+    fun setMemoryEntryEnabled(entryId: String, enabled: Boolean) {
+        publishPersistedRuntimeData(
+            persistedRuntimeData.withMemoryEntryEnabled(entryId, enabled, nowMillis()),
+            save = true,
+        )
     }
 
     fun connectToTrustedRuntime() {
@@ -217,11 +364,11 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
                     }
             } catch (error: CancellationException) {
                 throw error
-	            } catch (error: Exception) {
-	                mutableState.update {
-	                    it.copy(error = RuntimeUiError("discovery_failed", error.message))
-	                }
-	            } finally {
+            } catch (error: Exception) {
+                mutableState.update {
+                    it.copy(error = RuntimeUiError("discovery_failed", error.message))
+                }
+            } finally {
                 mutableState.update { it.copy(isDiscovering = false) }
             }
         }
@@ -353,18 +500,22 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
             return
         }
 
+        val sessionId = ensureActiveChatSession()
         val requestId = UUID.randomUUID().toString()
         val userMessage = RuntimeChatMessage(role = "user", content = text)
         val assistantMessage = RuntimeChatMessage(role = "assistant", content = "")
+        val updatedMessages = current.messages + userMessage + assistantMessage
         mutableState.update {
             it.copy(
+                activeChatSessionId = sessionId,
                 chatInput = "",
-                messages = it.messages + userMessage + assistantMessage,
+                messages = updatedMessages,
                 activeRequestId = requestId,
                 isStreaming = true,
                 error = null
             )
         }
+        persistMessages(sessionId, updatedMessages)
 
         sendEnvelope(
             envelope(
@@ -372,12 +523,12 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
                 requestId = requestId,
                 serializer = ChatSendPayload.serializer(),
                 payload = ChatSendPayload(
-                    sessionId = chatSessionId,
+                    sessionId = sessionId,
                     model = model,
-                    messages = (current.messages + userMessage)
-                        .filter { it.role == "user" || it.role == "assistant" }
-                        .filter { it.content.isNotBlank() }
-                        .map { ChatMessagePayload(role = it.role, content = it.content) }
+                    messages = chatSendMessages(
+                        messages = current.messages + userMessage,
+                        memoryEntries = current.memoryEntries,
+                    )
                 )
             )
         )
@@ -703,13 +854,17 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
     private fun handleChatDelta(envelope: ProtocolEnvelope) {
         if (!isActiveChatEnvelope(envelope)) return
         val payload = decodePayload(ChatDeltaPayload.serializer(), envelope.payload) ?: return
-        mutableState.update { it.withChatDelta(envelope, payload) }
+        val updatedState = state.value.withChatDelta(envelope, payload)
+        mutableState.value = updatedState
+        persistActiveMessages(updatedState.messages)
     }
 
     private fun handleChatDone(envelope: ProtocolEnvelope) {
         if (!isActiveChatEnvelope(envelope)) return
         val payload = decodePayload(ChatDonePayload.serializer(), envelope.payload)
-        mutableState.update { it.withChatDone(envelope, payload) }
+        val updatedState = state.value.withChatDone(envelope, payload)
+        mutableState.value = updatedState
+        persistActiveMessages(updatedState.messages)
     }
 
     private fun handleCancelAck(envelope: ProtocolEnvelope) {
@@ -720,7 +875,9 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
         } else {
             null
         }
-        mutableState.update { it.withChatCancelAck(envelope, payload) }
+        val updatedState = state.value.withChatCancelAck(envelope, payload)
+        mutableState.value = updatedState
+        persistActiveMessages(updatedState.messages)
     }
 
     private fun handleError(envelope: ProtocolEnvelope) {
@@ -785,6 +942,50 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
     private fun showError(code: String, detail: String? = null) {
         mutableState.update { it.copy(error = RuntimeUiError(code, detail)) }
     }
+
+    private fun ensureActiveChatSession(): String {
+        val currentSessionId = state.value.activeChatSessionId
+        if (currentSessionId != null) return currentSessionId
+        val data = persistedRuntimeData.withNewChatSession(nowMillis())
+        publishPersistedRuntimeData(data, save = true)
+        return data.activeSessionId ?: error("new chat session was not created")
+    }
+
+    private fun persistActiveMessages(messages: List<RuntimeChatMessage>) {
+        val sessionId = state.value.activeChatSessionId ?: return
+        persistMessages(sessionId, messages)
+    }
+
+    private fun persistMessages(sessionId: String, messages: List<RuntimeChatMessage>) {
+        publishPersistedRuntimeData(
+            persistedRuntimeData.withPersistedMessages(
+                sessionId = sessionId,
+                messages = messages,
+                nowMillis = nowMillis(),
+            ),
+            save = true,
+        )
+    }
+
+    private fun publishPersistedRuntimeData(data: PersistedRuntimeData, save: Boolean) {
+        val cleanData = data.sanitized()
+        persistedRuntimeData = cleanData
+        if (save) {
+            localStore.save(cleanData)
+        }
+        mutableState.update {
+            it.copy(
+                chatSessions = runtimeChatSessions(cleanData),
+                archivedChatSessions = archivedRuntimeChatSessions(cleanData),
+                activeChatSessionId = cleanData.activeSessionId,
+                messages = activeSessionMessages(cleanData),
+                memoryEntries = runtimeMemoryEntries(cleanData),
+                error = null,
+            )
+        }
+    }
+
+    private fun nowMillis(): Long = System.currentTimeMillis()
 
     private fun isActiveChatEnvelope(envelope: ProtocolEnvelope): Boolean {
         return state.value.activeRequestId == envelope.requestId

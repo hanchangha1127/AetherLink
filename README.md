@@ -11,6 +11,7 @@ v0.1 is intentionally narrow. It proves one product loop:
 5. Send chat messages from Android.
 6. Stream responses back from the Mac.
 7. Cancel an in-flight generation.
+8. Reopen previous local chats and optionally attach user-entered local memory.
 
 There is no cloud backend, account server, relay server, Android-side local model execution, or direct Android-to-Ollama/LM Studio connection in v0.1.
 
@@ -28,7 +29,7 @@ script/           Project-local macOS build/run entrypoint
 
 ## v0.1 Scope
 
-- Android client UI: QR pairing, connection status, model picker, chat, streaming, cancel.
+- Android client UI: QR pairing, connection status, model picker, chat, local chat history, user-managed local memory, streaming, cancel.
 - macOS companion UI: runtime status, QR pairing, trusted devices, local backend status, basic logs.
 - Bonjour/mDNS service name: `_aetherlink._tcp.local.`
 - Length-prefixed JSON protocol over a local authenticated socket.
@@ -51,7 +52,7 @@ script/           Project-local macOS build/run entrypoint
 
 ## Non-Goals
 
-MCP, full memory, skills, web search, file indexing, terminal execution, iOS, Windows, cloud sync, user accounts, and remote relays are roadmap features, not the local chat backend path.
+MCP, embedding-based research, advanced memory/RAG, skills, web search, file indexing, terminal execution, iOS, Windows/DGX OS runtime targets, additional serving backends, cloud sync, user accounts, and remote relays are roadmap features, not the v0.1 local chat backend path.
 
 한국어 메모: v0.1에서 Android는 Ollama나 LM Studio 주소를 직접 입력하거나 호출하지 않습니다. 항상 Mac companion을 통해 모델 목록, 채팅 스트리밍, 취소 요청을 보냅니다.
 

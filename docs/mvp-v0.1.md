@@ -10,7 +10,8 @@ AetherLink v0.1 proves the smallest useful local loop: Android pairs with the Ma
 - Ollama and LM Studio are Mac-mediated local model backends.
 - Pairing uses a Mac-displayed QR code in v0.1; the accepted trusted Mac record persists on Android.
 - Discovery remains scoped to pairing setup, while runtime access requires a trusted-device model and authenticated runtime session.
-- Android can request runtime health, list models, select a model, send chat, receive streamed answer deltas, render preserved reasoning/think deltas separately as muted collapsible UI, and cancel generation.
+- Android can request runtime health, list models, select a model, send chat, receive streamed answer deltas, render preserved reasoning/think deltas separately as muted collapsible UI, reopen previous local chats, manage user-entered local memory notes, and cancel generation.
+- If archive is exposed in v0.1 local chat UX, archive is distinct from delete: archived chats are retained but excluded from memory/reflection/research/compaction inputs unless restored or explicitly selected later.
 - Model listing includes installed Ollama models from Mac `/api/tags` and optional running state from Mac `/api/ps`; local models are the main path.
 - Model listing includes LM Studio local LLMs from Mac-side LM Studio REST API responses; no LM Studio defaults are invented.
 - Ollama cloud models are not default recommendations or generic suggestions. They remain installed/selectable only after the user-side Ollama pull/sign-in flow makes them appear in the local Mac `/api/tags` response.
@@ -22,11 +23,20 @@ AetherLink v0.1 proves the smallest useful local loop: Android pairs with the Ma
 - MCP.
 - Skills.
 - Web search.
-- Advanced memory, session search, RAG, or file indexing.
+- Advanced memory, embedding search, RAG, session search, or file indexing.
+- Project/workspace features such as project-scoped chats, files, instructions, memory, indexes, model/backend preferences, trusted-source controls, or project-level search/research.
+- Scheduling and automation features such as scheduled tasks, reminders, monitors, recurring automations, runtime-triggered jobs, mobile approval queues, or automation audit logs.
+- Context-window-aware session compaction.
+- Embedding model selection separate from chat/text-generation model selection.
+- Deep-research-like retrieval, ranking, or knowledge indexing.
+- Image input, file input, or direct file indexing workflows.
 - Terminal execution or file tool execution.
+- Internal Python tool execution.
+- Automatic model residency/resource policy beyond current backend behavior, including unload-after-inactivity.
 - Cloud backend, remote relay, account server, cloud sync, or multi-user collaboration.
 - Android-side local model execution.
-- iOS, Windows, or Linux companion targets.
+- iOS client, Windows runtime/server, DGX OS-class runtime/server, or other companion targets.
+- Additional AI serving backend adapters beyond Ollama and LM Studio.
 - Production encryption UX beyond the architecture needed to add it safely.
 
 ## Acceptance Criteria
@@ -44,6 +54,8 @@ AetherLink v0.1 proves the smallest useful local loop: Android pairs with the Ma
 - After a successful pull, the model appears as installed in `models.list`.
 - Android can send chat using the newly installed model.
 - Android can send `chat.send`; Mac forwards the request to the selected local backend.
+- Android can reopen local chat history from the drawer.
+- Android can add, disable, and remove user-managed local memory notes; enabled notes are included only through the Mac-mediated `chat.send` path.
 - Mac streams backend answer chunks back as `chat.delta`; Ollama reasoning/think chunks are preserved separately as reasoning deltas rather than mixed into final answer text.
 - Mac sends `chat.done` when generation completes.
 - Android can send `chat.cancel`; Mac cancels the active generation abstraction.
