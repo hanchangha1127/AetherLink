@@ -10,7 +10,7 @@ AetherLink v0.1 proves the smallest useful local loop: Android pairs with the Ma
 - Ollama and LM Studio are Mac-mediated local model backends.
 - Pairing uses a Mac-displayed QR code in v0.1; the accepted trusted Mac record persists on Android.
 - Discovery remains scoped to pairing setup, while runtime access requires a trusted-device model and authenticated runtime session.
-- Android can request runtime health, list models, select a model, send chat, receive streamed deltas, and cancel generation.
+- Android can request runtime health, list models, select a model, send chat, receive streamed answer deltas, render preserved reasoning/think deltas separately as muted collapsible UI, and cancel generation.
 - Model listing includes installed Ollama models from Mac `/api/tags` and optional running state from Mac `/api/ps`; local models are the main path.
 - Model listing includes LM Studio local LLMs from Mac-side LM Studio REST API responses; no LM Studio defaults are invented.
 - Ollama cloud models are not default recommendations or generic suggestions. They remain installed/selectable only after the user-side Ollama pull/sign-in flow makes them appear in the local Mac `/api/tags` response.
@@ -44,7 +44,7 @@ AetherLink v0.1 proves the smallest useful local loop: Android pairs with the Ma
 - After a successful pull, the model appears as installed in `models.list`.
 - Android can send chat using the newly installed model.
 - Android can send `chat.send`; Mac forwards the request to the selected local backend.
-- Mac streams backend chunks back as `chat.delta`.
+- Mac streams backend answer chunks back as `chat.delta`; Ollama reasoning/think chunks are preserved separately as reasoning deltas rather than mixed into final answer text.
 - Mac sends `chat.done` when generation completes.
 - Android can send `chat.cancel`; Mac cancels the active generation abstraction.
 - Runtime errors are returned as structured `error` messages and shown in Android UI.

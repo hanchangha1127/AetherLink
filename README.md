@@ -33,6 +33,7 @@ script/           Project-local macOS build/run entrypoint
 - Bonjour/mDNS service name: `_aetherlink._tcp.local.`
 - Length-prefixed JSON protocol over a local authenticated socket.
 - Ollama support through the Mac companion's local adapter.
+- Ollama reasoning/think stream chunks are preserved separately from final answer text and forwarded through the Mac runtime as reasoning deltas.
 - LM Studio support through the Mac companion's local adapter. Start LM Studio's server from the Developer tab or `lms server start`; Android still never sees or calls the LM Studio URL.
 - Pairing and discovery may be simple in v0.1, but runtime commands still require a trusted-device boundary. Same-network unauthenticated access is not an acceptable architecture.
 
@@ -146,7 +147,7 @@ Use this checklist when deciding whether a change belongs in v0.1:
 - Mac companion presents pairing state and a QR code for Android.
 - Android stores a trusted Mac record after accepted pairing.
 - Android connects to the Mac runtime, not to Ollama or LM Studio.
-- Android can request runtime health, list installed local models, request Mac-mediated Ollama model pulls, send chat with an installed model, render streamed deltas, and cancel an active generation.
+- Android can request runtime health, list installed local models, request Mac-mediated Ollama model pulls, send chat with an installed model, render streamed answer deltas, show preserved reasoning/think deltas as muted collapsible UI, and cancel an active generation.
 - If no Ollama models are installed, Android shows an empty model list until the user pulls a model through the Mac runtime or Ollama reports one through `/api/tags`.
 - Untrusted or unauthenticated clients cannot run `runtime.health`, `models.list`, `models.pull`, `chat.send`, or `chat.cancel`.
 - Docs and UI do not imply MCP, skills, web search, advanced memory, direct Android backend access, or iOS are part of the local chat backend path.
