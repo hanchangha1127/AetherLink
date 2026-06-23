@@ -91,6 +91,8 @@
     <string name="models_subtitle">选择 Mac companion 运行时公开的模型。</string>
     <string name="load_models">加载模型</string>
     <string name="selected_model">已选模型</string>
+    <string name="model_unavailable">模型不可用</string>
+    <string name="selected_model_unavailable">所选模型已不在当前 Mac companion 列表中。请刷新模型或选择其他模型。</string>
     <string name="models_from_mac_runtime">模型通过 Mac companion 加载，而不是直接从 Android 加载。</string>
     <string name="models_need_connection">加载模型前，请连接到受信任的 Mac companion。</string>
     <string name="model_backend_value">后端：%1$s</string>
@@ -148,6 +150,7 @@
     <string name="chat_needs_runtime">聊天前，请连接到受信任的 Mac companion。</string>
     <string name="chat_hint_connect">请先连接到受信任的 Mac companion。</string>
     <string name="chat_hint_select_model">发送前请选择模型。</string>
+    <string name="chat_hint_model_unavailable">发送前请刷新模型或选择其他模型。</string>
     <string name="chat_hint_install_model">发送前请先在 Mac 上安装此模型。</string>
     <string name="chat_hint_wait_for_stream">请等待当前响应完成或取消它。</string>
     <string name="chat_hint_enter_message">输入要发送的消息。</string>
@@ -155,7 +158,7 @@
     <string name="role_user">你</string>
     <string name="role_assistant">助手</string>
     <string name="role_assistant_initial">A</string>
-    <string name="assistant_typing">...</string>
+    <string name="assistant_typing">正在生成回答...</string>
     <string name="assistant_reasoning_label">思考中</string>
     <string name="assistant_reasoning_show">展开</string>
     <string name="assistant_reasoning_hide">收起</string>

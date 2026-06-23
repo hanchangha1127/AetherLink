@@ -24,6 +24,8 @@
 "Local Models" = "Modèles locaux";
 "Readiness" = "Préparation";
 "Runtime listener" = "Écouteur du runtime";
+"Runtime listener failed" = "Échec de l’écouteur du runtime";
+"Runtime listener could not start." = "Impossible de démarrer l’écouteur du runtime.";
 "Listening for authenticated runtime sessions." = "En écoute des sessions de runtime authentifiées.";
 "Start the companion runtime listener." = "Démarrez l’écouteur du runtime Companion.";
 "Local backend availability" = "Disponibilité du backend local";
@@ -85,11 +87,15 @@
 "Pairing QR code" = "QR code de jumelage";
 "Pairing QR code unavailable" = "QR code de jumelage indisponible";
 "One-Time Code" = "Code à usage unique";
+"Copy Code" = "Copier le code";
+"Code Copied" = "Code copié";
 "Scan the QR code or enter the code in AetherLink for Android." = "Scannez le QR code ou saisissez le code dans AetherLink pour Android.";
 "If macOS asks for Local Network access, allow it so Android can discover and pair with this Mac." = "Si macOS demande l’accès au réseau local, autorisez-le afin qu’Android puisse découvrir ce Mac et s’y jumeler.";
 "Keep this Mac awake until pairing completes." = "Gardez ce Mac actif jusqu’à la fin du jumelage.";
 "Android connects to this Mac runtime, not directly to Ollama or LM Studio." = "Android se connecte à ce runtime Mac, pas directement à Ollama ni à LM Studio.";
-"Expires %@" = "Expire %@";
+"Expires in %d min %02d sec" = "Expire dans %d min %02d s";
+"Expires in %d sec" = "Expire dans %d s";
+"Pairing code expired. Generate a new code." = "Le code de jumelage a expiré. Générez un nouveau code.";
 
 "Manage Android devices allowed to use this Mac runtime." = "Gérez les appareils Android autorisés à utiliser ce runtime Mac.";
 "Refresh Devices" = "Actualiser les appareils";

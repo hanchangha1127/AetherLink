@@ -24,6 +24,8 @@
 "Local Models" = "Local Models";
 "Readiness" = "Readiness";
 "Runtime listener" = "Runtime listener";
+"Runtime listener failed" = "Runtime listener failed";
+"Runtime listener could not start." = "Runtime listener could not start.";
 "Listening for authenticated runtime sessions." = "Listening for authenticated runtime sessions.";
 "Start the companion runtime listener." = "Start the companion runtime listener.";
 "Local backend availability" = "Local backend availability";
@@ -85,11 +87,15 @@
 "Pairing QR code" = "Pairing QR code";
 "Pairing QR code unavailable" = "Pairing QR code unavailable";
 "One-Time Code" = "One-Time Code";
+"Copy Code" = "Copy Code";
+"Code Copied" = "Code Copied";
 "Scan the QR code or enter the code in AetherLink for Android." = "Scan the QR code or enter the code in AetherLink for Android.";
 "If macOS asks for Local Network access, allow it so Android can discover and pair with this Mac." = "If macOS asks for Local Network access, allow it so Android can discover and pair with this Mac.";
 "Keep this Mac awake until pairing completes." = "Keep this Mac awake until pairing completes.";
 "Android connects to this Mac runtime, not directly to Ollama or LM Studio." = "Android connects to this Mac runtime, not directly to Ollama or LM Studio.";
-"Expires %@" = "Expires %@";
+"Expires in %d min %02d sec" = "Expires in %d min %02d sec";
+"Expires in %d sec" = "Expires in %d sec";
+"Pairing code expired. Generate a new code." = "Pairing code expired. Generate a new code.";
 
 "Manage Android devices allowed to use this Mac runtime." = "Manage Android devices allowed to use this Mac runtime.";
 "Refresh Devices" = "Refresh Devices";

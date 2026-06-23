@@ -742,6 +742,26 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
     }
 
     @MainActor
+    func testCompanionAppModelReportsFailedTransportWithoutAdvertising() async throws {
+        let transport = FakeRuntimeTransport(statusAfterStart: .failed("Port is already in use."))
+        let advertiser = FakeRuntimeAdvertiser()
+        let model = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: transport,
+            advertiser: advertiser
+        )
+
+        model.start(port: 43210)
+
+        XCTAssertEqual(transport.startedPort, 43210)
+        XCTAssertNil(advertiser.startedPort)
+        XCTAssertTrue(advertiser.didStop)
+        XCTAssertEqual(model.transportState.state, .failed)
+        XCTAssertEqual(model.transportState.failureMessage, "Port is already in use.")
+        XCTAssertTrue(model.transportStatus.contains("Port is already in use."))
+    }
+
+    @MainActor
     func testCompanionAppModelPublishesStructuredBackendProviderStatuses() async throws {
         let backend = AggregatingLlmBackend([
             MockBackend(provider: .ollama, status: .available),
@@ -923,16 +943,21 @@ private final class RecordingSink: RuntimeMessageSink, @unchecked Sendable {
 }
 
 private final class FakeRuntimeTransport: RuntimeTransport {
+    private let statusAfterStart: PeerServerStatus?
     private(set) var status = PeerServerStatus.stopped
     private(set) var startedPort: UInt16?
     private(set) var didStop = false
     private(set) var onMessage: LocalPeerMessageHandler?
 
+    init(statusAfterStart: PeerServerStatus? = nil) {
+        self.statusAfterStart = statusAfterStart
+    }
+
     func start(port: UInt16, onMessage: @escaping LocalPeerMessageHandler) {
         startedPort = port
         self.onMessage = onMessage
         didStop = false
-        status = .listening(port: port)
+        status = statusAfterStart ?? .listening(port: port)
     }
 
     func stop() {

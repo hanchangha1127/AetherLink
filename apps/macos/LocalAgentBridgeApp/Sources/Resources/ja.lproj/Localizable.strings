@@ -24,6 +24,8 @@
 "Local Models" = "ローカルモデル";
 "Readiness" = "準備状況";
 "Runtime listener" = "ランタイムリスナー";
+"Runtime listener failed" = "ランタイムリスナーが失敗しました";
+"Runtime listener could not start." = "ランタイムリスナーを開始できませんでした。";
 "Listening for authenticated runtime sessions." = "認証済みランタイムセッションを待機しています。";
 "Start the companion runtime listener." = "Companion ランタイムリスナーを開始してください。";
 "Local backend availability" = "ローカルバックエンドの可用性";
@@ -85,11 +87,15 @@
 "Pairing QR code" = "ペアリング QR コード";
 "Pairing QR code unavailable" = "ペアリング QR コードを利用できません";
 "One-Time Code" = "ワンタイムコード";
+"Copy Code" = "コードをコピー";
+"Code Copied" = "コードをコピーしました";
 "Scan the QR code or enter the code in AetherLink for Android." = "Android 版 AetherLink で QR コードをスキャンするか、コードを入力してください。";
 "If macOS asks for Local Network access, allow it so Android can discover and pair with this Mac." = "macOS がローカルネットワークアクセスを求めた場合は、Android がこの Mac を検出してペアリングできるよう許可してください。";
 "Keep this Mac awake until pairing completes." = "ペアリングが完了するまで、この Mac をスリープさせないでください。";
 "Android connects to this Mac runtime, not directly to Ollama or LM Studio." = "Android は Ollama や LM Studio へ直接ではなく、この Mac ランタイムに接続します。";
-"Expires %@" = "%@ に期限切れ";
+"Expires in %d min %02d sec" = "あと%d分%02d秒で期限切れ";
+"Expires in %d sec" = "あと%d秒で期限切れ";
+"Pairing code expired. Generate a new code." = "ペアリングコードの有効期限が切れました。新しいコードを生成してください。";
 
 "Manage Android devices allowed to use this Mac runtime." = "この Mac ランタイムの使用を許可した Android デバイスを管理します。";
 "Refresh Devices" = "デバイスを更新";

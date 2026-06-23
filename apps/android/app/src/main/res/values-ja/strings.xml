@@ -91,6 +91,8 @@
     <string name="models_subtitle">Mac companion ランタイムが公開しているモデルを選択します。</string>
     <string name="load_models">モデルを読み込む</string>
     <string name="selected_model">選択中のモデル</string>
+    <string name="model_unavailable">モデルは利用できません</string>
+    <string name="selected_model_unavailable">選択中のモデルは現在の Mac companion の一覧にありません。モデルを更新するか、別のモデルを選択してください。</string>
     <string name="models_from_mac_runtime">モデルは Android から直接ではなく、Mac companion を通じて読み込まれます。</string>
     <string name="models_need_connection">モデルを読み込む前に、信頼済みの Mac companion に接続してください。</string>
     <string name="model_backend_value">バックエンド: %1$s</string>
@@ -148,6 +150,7 @@
     <string name="chat_needs_runtime">チャットする前に、信頼済みの Mac companion に接続してください。</string>
     <string name="chat_hint_connect">先に信頼済みの Mac companion に接続してください。</string>
     <string name="chat_hint_select_model">送信する前にモデルを選択してください。</string>
+    <string name="chat_hint_model_unavailable">送信する前にモデルを更新するか、別のモデルを選択してください。</string>
     <string name="chat_hint_install_model">送信する前に、このモデルを Mac にインストールしてください。</string>
     <string name="chat_hint_wait_for_stream">現在の応答を待つか、キャンセルしてください。</string>
     <string name="chat_hint_enter_message">送信するメッセージを入力してください。</string>
@@ -155,7 +158,7 @@
     <string name="role_user">あなた</string>
     <string name="role_assistant">アシスタント</string>
     <string name="role_assistant_initial">A</string>
-    <string name="assistant_typing">...</string>
+    <string name="assistant_typing">回答を生成中...</string>
     <string name="assistant_reasoning_label">思考中</string>
     <string name="assistant_reasoning_show">表示</string>
     <string name="assistant_reasoning_hide">非表示</string>

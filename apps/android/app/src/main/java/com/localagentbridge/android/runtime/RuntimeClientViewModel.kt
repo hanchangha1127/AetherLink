@@ -488,16 +488,19 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
     fun sendChatMessage() {
         val current = state.value
         val text = current.chatInput.trim()
-        val model = current.selectedModelId
         if (text.isEmpty()) return
-        if (model == null) {
-            showError("select_model")
-            return
+        when (current.selectedModelSendState()) {
+            SelectedModelSendState.Ready -> Unit
+            SelectedModelSendState.Missing -> {
+                showError("select_model")
+                return
+            }
+            SelectedModelSendState.NotInstalled -> {
+                showError("install_model_first")
+                return
+            }
         }
-        if (current.models.any { it.id == model && !it.installed }) {
-            showError("install_model_first")
-            return
-        }
+        val model = current.selectedModelId ?: return
         if (!current.isConnected) {
             showError("connect_first")
             return
@@ -871,7 +874,7 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
         val payload = decodePayload(ChatDonePayload.serializer(), envelope.payload)
         val updatedState = state.value.withChatDone(envelope, payload)
         mutableState.value = updatedState
-        persistActiveMessages(updatedState.messages)
+        persistActiveMessages(updatedState.messages, clearError = false)
     }
 
     private fun handleCancelAck(envelope: ProtocolEnvelope) {
@@ -884,16 +887,21 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
         }
         val updatedState = state.value.withChatCancelAck(envelope, payload)
         mutableState.value = updatedState
-        persistActiveMessages(updatedState.messages)
+        persistActiveMessages(updatedState.messages, clearError = false)
     }
 
     private fun handleError(envelope: ProtocolEnvelope) {
         val payload = decodePayload(ErrorPayload.serializer(), envelope.payload)
         val isModelPullError = pendingModelPullRequestId == envelope.requestId
+        val isActiveChatError = state.value.activeRequestId == envelope.requestId
         if (isModelPullError) {
             modelIdToSelectAfterRefresh = null
         }
-        mutableState.update { it.withRuntimeError(envelope, payload, pendingModelPullRequestId) }
+        val updatedState = state.value.withRuntimeError(envelope, payload, pendingModelPullRequestId)
+        mutableState.value = updatedState
+        if (isActiveChatError) {
+            persistActiveMessages(updatedState.messages, clearError = false)
+        }
         if (isModelPullError) {
             pendingModelPullRequestId = null
         }
@@ -907,15 +915,25 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
             }
                 .onFailure { error ->
                     Log.e(TAG, "Mac runtime send failed", error)
-                    mutableState.update {
-                        it.copy(
-                            isConnected = client.isConnected,
-                            isStreaming = false,
-                            isLoadingModels = false,
-                            installingModelId = null,
-                            activeRequestId = null,
-                            error = RuntimeUiError("send_failed", error.message)
-                        )
+                    val current = state.value
+                    val isActiveChatSend = envelope.type == MessageType.ChatSend &&
+                        current.activeRequestId == envelope.requestId
+                    val cleanedMessages = if (isActiveChatSend) {
+                        current.messages.withoutTrailingBlankAssistantPlaceholder()
+                    } else {
+                        current.messages
+                    }
+                    mutableState.value = current.copy(
+                        isConnected = client.isConnected,
+                        isStreaming = false,
+                        isLoadingModels = false,
+                        installingModelId = null,
+                        activeRequestId = null,
+                        messages = cleanedMessages,
+                        error = RuntimeUiError("send_failed", error.message)
+                    )
+                    if (isActiveChatSend) {
+                        persistActiveMessages(cleanedMessages, clearError = false)
                     }
                 }
         }
@@ -958,12 +976,19 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
         return data.activeSessionId ?: error("new chat session was not created")
     }
 
-    private fun persistActiveMessages(messages: List<RuntimeChatMessage>) {
+    private fun persistActiveMessages(
+        messages: List<RuntimeChatMessage>,
+        clearError: Boolean = true,
+    ) {
         val sessionId = state.value.activeChatSessionId ?: return
-        persistMessages(sessionId, messages)
+        persistMessages(sessionId, messages, clearError = clearError)
     }
 
-    private fun persistMessages(sessionId: String, messages: List<RuntimeChatMessage>) {
+    private fun persistMessages(
+        sessionId: String,
+        messages: List<RuntimeChatMessage>,
+        clearError: Boolean = true,
+    ) {
         publishPersistedRuntimeData(
             persistedRuntimeData.withPersistedMessages(
                 sessionId = sessionId,
@@ -971,10 +996,15 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
                 nowMillis = nowMillis(),
             ),
             save = true,
+            clearError = clearError,
         )
     }
 
-    private fun publishPersistedRuntimeData(data: PersistedRuntimeData, save: Boolean) {
+    private fun publishPersistedRuntimeData(
+        data: PersistedRuntimeData,
+        save: Boolean,
+        clearError: Boolean = true,
+    ) {
         val cleanData = data.sanitized()
         persistedRuntimeData = cleanData
         if (save) {
@@ -988,7 +1018,7 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
                 messages = activeSessionMessages(cleanData),
                 memoryEntries = runtimeMemoryEntries(cleanData),
                 selectedLanguageTag = cleanData.appLanguageTag,
-                error = null,
+                error = if (clearError) null else it.error,
             )
         }
     }
@@ -1044,12 +1074,29 @@ internal data class RuntimeConnectionTarget(
     val port: Int,
 )
 
+internal enum class SelectedModelSendState {
+    Ready,
+    Missing,
+    NotInstalled,
+}
+
 internal fun trustedRuntimeConnectionTarget(state: RuntimeUiState): RuntimeConnectionTarget? {
     val trustedMac = state.trustedMac ?: return null
     return RuntimeConnectionTarget(
         host = trustedMac.host,
         port = trustedMac.port,
     )
+}
+
+internal fun RuntimeUiState.selectedModelSendState(): SelectedModelSendState {
+    val selectedId = selectedModelId ?: return SelectedModelSendState.Missing
+    val selectedModel = models.firstOrNull { it.id == selectedId }
+        ?: return SelectedModelSendState.Missing
+    return if (selectedModel.installed) {
+        SelectedModelSendState.Ready
+    } else {
+        SelectedModelSendState.NotInstalled
+    }
 }
 
 internal fun RuntimeUiState.withChatDelta(
@@ -1077,6 +1124,7 @@ internal fun RuntimeUiState.withChatDone(
 ): RuntimeUiState {
     if (activeRequestId != envelope.requestId) return this
     return copy(
+        messages = messages.withoutTrailingBlankAssistantPlaceholder(),
         isStreaming = false,
         activeRequestId = null,
         error = if (payload?.finishReason == "cancelled") RuntimeUiError("generation_cancelled") else error,
@@ -1092,6 +1140,7 @@ internal fun RuntimeUiState.withChatCancelAck(
         return this
     }
     return copy(
+        messages = messages.withoutTrailingBlankAssistantPlaceholder(),
         isStreaming = false,
         activeRequestId = null,
         error = null,
@@ -1106,6 +1155,11 @@ internal fun RuntimeUiState.withRuntimeError(
     val isActiveChatError = activeRequestId == envelope.requestId
     val isModelPullError = pendingModelPullRequestId == envelope.requestId
     return copy(
+        messages = if (isActiveChatError) {
+            messages.withoutTrailingBlankAssistantPlaceholder()
+        } else {
+            messages
+        },
         isStreaming = if (isActiveChatError) false else isStreaming,
         activeRequestId = if (isActiveChatError) null else activeRequestId,
         isLoadingModels = false,
@@ -1113,4 +1167,17 @@ internal fun RuntimeUiState.withRuntimeError(
         error = payload?.let { error -> RuntimeUiError(error.code, error.message) }
             ?: RuntimeUiError("runtime_error"),
     )
+}
+
+private fun List<RuntimeChatMessage>.withoutTrailingBlankAssistantPlaceholder(): List<RuntimeChatMessage> {
+    val trailingMessage = lastOrNull()
+    return if (
+        trailingMessage?.role == "assistant" &&
+        trailingMessage.content.isBlank() &&
+        trailingMessage.reasoning.isBlank()
+    ) {
+        dropLast(1)
+    } else {
+        this
+    }
 }

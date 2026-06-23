@@ -9,22 +9,34 @@ public struct CompanionTransportStatus: Equatable, Sendable {
     public enum State: Equatable, Sendable {
         case stopped
         case advertising
+        case failed
     }
 
     public var state: State
     public var serviceName: String?
     public var port: UInt16?
+    public var failureMessage: String?
 
-    public init(state: State, serviceName: String? = nil, port: UInt16? = nil) {
+    public init(
+        state: State,
+        serviceName: String? = nil,
+        port: UInt16? = nil,
+        failureMessage: String? = nil
+    ) {
         self.state = state
         self.serviceName = serviceName
         self.port = port
+        self.failureMessage = failureMessage
     }
 
     public static let stopped = CompanionTransportStatus(state: .stopped)
 
     public static func advertising(serviceName: String, port: UInt16) -> CompanionTransportStatus {
         CompanionTransportStatus(state: .advertising, serviceName: serviceName, port: port)
+    }
+
+    public static func failed(_ message: String) -> CompanionTransportStatus {
+        CompanionTransportStatus(state: .failed, failureMessage: message)
     }
 }
 
@@ -132,10 +144,22 @@ public final class CompanionAppModel: ObservableObject {
             }
             router.handle(envelope, sink: sink)
         }
-        advertiser.start(port: Int32(port))
-        transportState = .advertising(serviceName: "_aetherlink._tcp.local.", port: port)
-        transportStatus = "Advertising _aetherlink._tcp.local. on port \(port)"
-        log("Companion started")
+        transportState = Self.transportStatus(from: peerServer.status)
+        switch transportState.state {
+        case .advertising:
+            advertiser.start(port: Int32(port))
+            transportStatus = "Advertising _aetherlink._tcp.local. on port \(port)"
+            log("Companion started")
+        case .failed:
+            advertiser.stop()
+            let message = transportState.failureMessage ?? "Runtime listener failed"
+            transportStatus = "Runtime listener failed: \(message)"
+            log(transportStatus)
+        case .stopped:
+            advertiser.stop()
+            transportStatus = "Stopped"
+            log("Companion stopped")
+        }
         Task {
             await refreshTrustedDevices()
             await refreshBackendStatus()
@@ -237,6 +261,17 @@ public final class CompanionAppModel: ObservableObject {
                 }
             }
             .joined(separator: " | ")
+    }
+
+    private static func transportStatus(from status: PeerServerStatus) -> CompanionTransportStatus {
+        switch status {
+        case .stopped:
+            return .stopped
+        case .listening(let port):
+            return .advertising(serviceName: "_aetherlink._tcp.local.", port: port)
+        case .failed(let message):
+            return .failed(message)
+        }
     }
 
     private static func loadOrCreateMacDeviceID() -> String {

@@ -91,6 +91,8 @@
     <string name="models_subtitle">Choose a model exposed by the Mac companion runtime.</string>
     <string name="load_models">Load Models</string>
     <string name="selected_model">Selected model</string>
+    <string name="model_unavailable">Model unavailable</string>
+    <string name="selected_model_unavailable">The selected model is no longer in the Mac companion list. Refresh models or choose another model.</string>
     <string name="models_from_mac_runtime">Models are loaded through the Mac companion, not directly from Android.</string>
     <string name="models_need_connection">Connect to the trusted Mac companion before loading models.</string>
     <string name="model_backend_value">Backend: %1$s</string>
@@ -148,6 +150,7 @@
     <string name="chat_needs_runtime">Connect to the trusted Mac companion before chatting.</string>
     <string name="chat_hint_connect">Connect to the trusted Mac companion first.</string>
     <string name="chat_hint_select_model">Select a model before sending.</string>
+    <string name="chat_hint_model_unavailable">Refresh models or choose another model before sending.</string>
     <string name="chat_hint_install_model">Install this model on the Mac before sending.</string>
     <string name="chat_hint_wait_for_stream">Wait for the current response or cancel it.</string>
     <string name="chat_hint_enter_message">Enter a message to send.</string>
@@ -155,7 +158,7 @@
     <string name="role_user">You</string>
     <string name="role_assistant">Assistant</string>
     <string name="role_assistant_initial">A</string>
-    <string name="assistant_typing">...</string>
+    <string name="assistant_typing">Generating...</string>
     <string name="assistant_reasoning_label">Thinking</string>
     <string name="assistant_reasoning_show">Show</string>
     <string name="assistant_reasoning_hide">Hide</string>

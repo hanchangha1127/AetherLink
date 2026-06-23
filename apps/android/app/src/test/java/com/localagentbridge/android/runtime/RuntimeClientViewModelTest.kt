@@ -38,6 +38,46 @@ class RuntimeClientViewModelTest {
     }
 
     @Test
+    fun selectedModelSendStateRequiresInstalledModelInCurrentList() {
+        val ready = RuntimeUiState(
+            selectedModelId = "ollama:llama3",
+            models = listOf(
+                RuntimeModel(
+                    id = "ollama:llama3",
+                    name = "Llama 3",
+                    installed = true,
+                ),
+            ),
+        )
+        val notInstalled = RuntimeUiState(
+            selectedModelId = "lm_studio:cloud/model",
+            models = listOf(
+                RuntimeModel(
+                    id = "lm_studio:cloud/model",
+                    name = "Cloud model",
+                    installed = false,
+                ),
+            ),
+        )
+        val stale = RuntimeUiState(
+            selectedModelId = "ollama:missing",
+            models = listOf(
+                RuntimeModel(
+                    id = "ollama:llama3",
+                    name = "Llama 3",
+                    installed = true,
+                ),
+            ),
+        )
+        val missing = RuntimeUiState()
+
+        assertEquals(SelectedModelSendState.Ready, ready.selectedModelSendState())
+        assertEquals(SelectedModelSendState.NotInstalled, notInstalled.selectedModelSendState())
+        assertEquals(SelectedModelSendState.Missing, stale.selectedModelSendState())
+        assertEquals(SelectedModelSendState.Missing, missing.selectedModelSendState())
+    }
+
+    @Test
     fun staleChatDeltaAndDoneForDifferentRequestIdAreIgnored() {
         val state = RuntimeUiState(
             messages = listOf(
@@ -236,6 +276,98 @@ class RuntimeClientViewModelTest {
         assertFalse(afterCancel.isStreaming)
         assertNull(afterCancel.activeRequestId)
         assertNull(afterCancel.error)
+    }
+
+    @Test
+    fun activeCompletionCancellationAndErrorRemoveOnlyBlankAssistantPlaceholder() {
+        val userMessage = RuntimeChatMessage(id = "user", role = "user", content = "Question")
+        val blankAssistant = RuntimeChatMessage(id = "assistant", role = "assistant", content = "")
+        val blankState = RuntimeUiState(
+            messages = listOf(userMessage, blankAssistant),
+            isStreaming = true,
+            activeRequestId = "active-request",
+        )
+
+        val afterDone = blankState.withChatDone(
+            envelope(
+                type = MessageType.ChatDone,
+                requestId = "active-request",
+                serializer = ChatDonePayload.serializer(),
+                payload = ChatDonePayload(),
+            ),
+            ChatDonePayload(),
+        )
+        val afterCancel = blankState.withChatCancelAck(
+            envelope(
+                type = MessageType.ChatCancel,
+                requestId = "cancel-request",
+                serializer = ChatCancelPayload.serializer(),
+                payload = ChatCancelPayload(targetRequestId = "active-request"),
+            ),
+            ChatCancelPayload(targetRequestId = "active-request"),
+        )
+        val afterError = blankState.withRuntimeError(
+            envelope(
+                type = MessageType.Error,
+                requestId = "active-request",
+                serializer = ErrorPayload.serializer(),
+                payload = ErrorPayload(
+                    code = "backend_failed",
+                    message = "Backend failed",
+                    retryable = false,
+                ),
+            ),
+            ErrorPayload(
+                code = "backend_failed",
+                message = "Backend failed",
+                retryable = false,
+            ),
+            pendingModelPullRequestId = null,
+        )
+
+        assertEquals(listOf(userMessage), afterDone.messages)
+        assertEquals(listOf(userMessage), afterCancel.messages)
+        assertEquals(listOf(userMessage), afterError.messages)
+        assertFalse(afterDone.isStreaming)
+        assertFalse(afterCancel.isStreaming)
+        assertFalse(afterError.isStreaming)
+        assertEquals("backend_failed", afterError.error?.code)
+        assertEquals("Backend failed", afterError.error?.detail)
+
+        val partialAssistant = blankAssistant.copy(content = "Partial")
+        val reasoningAssistant = blankAssistant.copy(reasoning = "Thinking")
+        val afterPartialError = blankState.copy(messages = listOf(userMessage, partialAssistant))
+            .withRuntimeError(
+                envelope(
+                    type = MessageType.Error,
+                    requestId = "active-request",
+                    serializer = ErrorPayload.serializer(),
+                    payload = ErrorPayload(
+                        code = "backend_failed",
+                        message = "Backend failed",
+                        retryable = false,
+                    ),
+                ),
+                ErrorPayload(
+                    code = "backend_failed",
+                    message = "Backend failed",
+                    retryable = false,
+                ),
+                pendingModelPullRequestId = null,
+            )
+        val afterReasoningDone = blankState.copy(messages = listOf(userMessage, reasoningAssistant))
+            .withChatDone(
+                envelope(
+                    type = MessageType.ChatDone,
+                    requestId = "active-request",
+                    serializer = ChatDonePayload.serializer(),
+                    payload = ChatDonePayload(),
+                ),
+                ChatDonePayload(),
+            )
+
+        assertEquals(partialAssistant, afterPartialError.messages.last())
+        assertEquals(reasoningAssistant, afterReasoningDone.messages.last())
     }
 
     @Test

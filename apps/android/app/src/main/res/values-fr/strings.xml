@@ -91,6 +91,8 @@
     <string name="models_subtitle">Choisissez un modèle exposé par le runtime Mac companion.</string>
     <string name="load_models">Charger les modèles</string>
     <string name="selected_model">Modèle sélectionné</string>
+    <string name="model_unavailable">Modèle indisponible</string>
+    <string name="selected_model_unavailable">Le modèle sélectionné n’est plus dans la liste du Mac companion. Actualisez les modèles ou choisissez-en un autre.</string>
     <string name="models_from_mac_runtime">Les modèles sont chargés via le Mac companion, pas directement depuis Android.</string>
     <string name="models_need_connection">Connectez-vous au Mac companion de confiance avant de charger les modèles.</string>
     <string name="model_backend_value">Backend : %1$s</string>
@@ -148,6 +150,7 @@
     <string name="chat_needs_runtime">Connectez-vous au Mac companion de confiance avant de discuter.</string>
     <string name="chat_hint_connect">Connectez-vous d’abord au Mac companion de confiance.</string>
     <string name="chat_hint_select_model">Sélectionnez un modèle avant l’envoi.</string>
+    <string name="chat_hint_model_unavailable">Actualisez les modèles ou choisissez-en un autre avant l’envoi.</string>
     <string name="chat_hint_install_model">Installez ce modèle sur le Mac avant l’envoi.</string>
     <string name="chat_hint_wait_for_stream">Attendez la réponse en cours ou annulez-la.</string>
     <string name="chat_hint_enter_message">Saisissez un message à envoyer.</string>
@@ -155,7 +158,7 @@
     <string name="role_user">Vous</string>
     <string name="role_assistant">Assistant</string>
     <string name="role_assistant_initial">A</string>
-    <string name="assistant_typing">...</string>
+    <string name="assistant_typing">Génération...</string>
     <string name="assistant_reasoning_label">Réflexion</string>
     <string name="assistant_reasoning_show">Afficher</string>
     <string name="assistant_reasoning_hide">Masquer</string>

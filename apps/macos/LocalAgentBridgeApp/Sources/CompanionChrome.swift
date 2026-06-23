@@ -134,6 +134,8 @@ func localizedTransportStatus(_ status: CompanionTransportStatus) -> String {
             return String(format: NSLocalizedString("Listening on port %@", comment: ""), "\(port)")
         }
         return NSLocalizedString("Ready for trusted Android clients.", comment: "")
+    case .failed:
+        return NSLocalizedString("Runtime listener failed", comment: "")
     }
 }
 
@@ -141,6 +143,8 @@ func transportTone(for status: CompanionTransportStatus) -> StatusTone {
     switch status.state {
     case .advertising:
         return .ready
+    case .failed:
+        return .warning
     case .stopped:
         return .inactive
     }

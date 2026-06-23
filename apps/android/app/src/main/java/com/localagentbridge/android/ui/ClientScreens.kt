@@ -21,6 +21,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -67,6 +69,9 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -78,6 +83,7 @@ import com.localagentbridge.android.runtime.RuntimeAppLanguage
 import com.localagentbridge.android.runtime.RuntimeChatMessage
 import com.localagentbridge.android.runtime.RuntimeDiscoveredMac
 import com.localagentbridge.android.runtime.RuntimeMemoryEntry
+import com.localagentbridge.android.runtime.RuntimeModel
 import com.localagentbridge.android.runtime.RuntimeUiError
 import com.localagentbridge.android.runtime.RuntimeUiState
 
@@ -92,8 +98,6 @@ fun PairingScreen(
     onConnect: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val hapticFeedback = LocalHapticFeedback.current
-
     ScreenList(modifier) {
         item {
             ScreenHeader(
@@ -213,8 +217,6 @@ fun ConnectionStatusScreen(
     onDisconnect: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val hapticFeedback = LocalHapticFeedback.current
-
     ScreenList(modifier) {
         item {
             ScreenHeader(
@@ -327,6 +329,7 @@ fun ChatScreen(
     onCancel: () -> Unit,
     onConnect: () -> Unit,
     onRequestModels: () -> Unit,
+    onSelectModel: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val listState = rememberLazyListState()
@@ -359,6 +362,7 @@ fun ChatScreen(
                     onInputChange = onInputChange,
                     onConnect = onConnect,
                     onRequestModels = onRequestModels,
+                    onSelectModel = onSelectModel,
                 )
             }
         } else {
@@ -374,7 +378,12 @@ fun ChatScreen(
                     items = state.messages,
                     key = { message -> message.id },
                 ) { message ->
-                    ChatMessageRow(message)
+                    ChatMessageRow(
+                        message = message,
+                        isStreaming = state.isStreaming &&
+                            message.role == "assistant" &&
+                            message.id == state.messages.lastOrNull()?.id,
+                    )
                 }
             }
         }
@@ -422,6 +431,12 @@ fun SettingsScreen(
         }
         item {
             CompanionOnlyPanel()
+        }
+        item {
+            AppPreferencesPanel(
+                selectedLanguageTag = state.selectedLanguageTag,
+                onSetLanguageTag = onSetLanguageTag,
+            )
         }
         item {
             ScreenHeader(
@@ -484,12 +499,6 @@ fun SettingsScreen(
                 onUseUsbReverse = onUseUsbReverse,
                 onUseEmulator = onUseEmulator,
                 title = R.string.runtime_endpoint,
-            )
-        }
-        item {
-            AppPreferencesPanel(
-                selectedLanguageTag = state.selectedLanguageTag,
-                onSetLanguageTag = onSetLanguageTag,
             )
         }
         item {
@@ -620,7 +629,6 @@ private fun EndpointPanel(
     val isExpanded = rememberSaveable { mutableStateOf(false) }
     val hapticFeedback = LocalHapticFeedback.current
     val toggleExpanded = {
-        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
         isExpanded.value = !isExpanded.value
     }
 
@@ -848,6 +856,7 @@ private fun ChatEmptyState(
     onInputChange: (String) -> Unit,
     onConnect: () -> Unit,
     onRequestModels: () -> Unit,
+    onSelectModel: (String) -> Unit,
 ) {
     val hapticFeedback = LocalHapticFeedback.current
     val showStarterPrompts = state.isConnected &&
@@ -918,7 +927,6 @@ private fun ChatEmptyState(
                 starterPrompts.forEach { prompt ->
                     OutlinedButton(
                         onClick = {
-                            hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
                             onInputChange(prompt)
                         },
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
@@ -930,6 +938,26 @@ private fun ChatEmptyState(
                         )
                     }
                 }
+            }
+        }
+        if (state.isConnected && !selectedModelIsUsable(state) && state.models.isNotEmpty()) {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalAlignment = Alignment.Start,
+            ) {
+                Text(
+                    text = stringResource(R.string.chat_select_model_from_mac),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.secondary,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                QuickModelPicker(
+                    models = state.models,
+                    installingModelId = state.installingModelId,
+                    onSelectModel = onSelectModel,
+                )
             }
         }
         if (!state.isConnected && state.trustedMac != null) {
@@ -953,7 +981,7 @@ private fun ChatEmptyState(
                 )
             }
         }
-        if (state.isConnected && state.models.isEmpty()) {
+        if (state.isConnected && !selectedModelIsUsable(state)) {
             Button(
                 onClick = {
                     hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -981,7 +1009,73 @@ private fun ChatEmptyState(
 }
 
 @Composable
-private fun ChatMessageRow(message: RuntimeChatMessage) {
+private fun QuickModelPicker(
+    models: List<RuntimeModel>,
+    installingModelId: String?,
+    onSelectModel: (String) -> Unit,
+) {
+    val hapticFeedback = LocalHapticFeedback.current
+    val visibleModels = models.sortedWith(
+        compareBy<RuntimeModel> { !it.installed }
+            .thenBy { it.name.lowercase() }
+    ).take(8)
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        visibleModels.forEach { model ->
+            val isInstalling = model.id == installingModelId
+            val status = quickModelStatus(model = model, installing = isInstalling)
+            OutlinedButton(
+                onClick = {
+                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onSelectModel(model.id)
+                },
+                enabled = !isInstalling,
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                modifier = Modifier
+                    .widthIn(max = 220.dp)
+                    .semantics {
+                        stateDescription = status
+                    },
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        text = model.name,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = status,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.secondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun quickModelStatus(model: RuntimeModel, installing: Boolean): String {
+    return when {
+        installing -> stringResource(R.string.installing_model)
+        !model.installed -> stringResource(R.string.install_model)
+        model.running -> stringResource(R.string.model_running)
+        else -> stringResource(R.string.model_installed)
+    }
+}
+
+@Composable
+private fun ChatMessageRow(
+    message: RuntimeChatMessage,
+    isStreaming: Boolean,
+) {
     val isUser = message.role == "user"
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -989,7 +1083,7 @@ private fun ChatMessageRow(message: RuntimeChatMessage) {
     ) {
         if (isUser) {
             Column(
-                modifier = Modifier.widthIn(max = 320.dp),
+                modifier = Modifier.widthIn(max = 560.dp),
                 horizontalAlignment = Alignment.End,
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
@@ -1008,19 +1102,28 @@ private fun ChatMessageRow(message: RuntimeChatMessage) {
                         modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
                     )
                 }
-                MessageCopyButton(textToCopy = message.content)
+                if (message.content.isNotBlank()) {
+                    MessageCopyButton(textToCopy = message.content)
+                }
             }
         } else {
-            AssistantMessage(message)
+            AssistantMessage(
+                message = message,
+                isStreaming = isStreaming,
+            )
         }
     }
 }
 
 @Composable
-private fun AssistantMessage(message: RuntimeChatMessage) {
+private fun AssistantMessage(
+    message: RuntimeChatMessage,
+    isStreaming: Boolean,
+) {
     val hasReasoning = message.reasoning.isNotBlank()
     val isReasoningExpanded = rememberSaveable(message.id) { mutableStateOf(false) }
     val textToCopy = message.content.ifBlank { message.reasoning }
+    val showTyping = isStreaming && message.content.isBlank()
 
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -1048,15 +1151,19 @@ private fun AssistantMessage(message: RuntimeChatMessage) {
                         onExpandedChange = { isReasoningExpanded.value = it },
                     )
                 }
-                MessageContent(
-                    content = message.content.ifBlank { stringResource(R.string.assistant_typing) },
-                    textColor = MaterialTheme.colorScheme.onSurface,
-                )
-                if (message.content.isBlank()) {
+                if (message.content.isNotBlank() || showTyping) {
+                    MessageContent(
+                        content = message.content.ifBlank { stringResource(R.string.assistant_typing) },
+                        textColor = MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+                if (showTyping) {
                     LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                 }
             }
-            MessageCopyButton(textToCopy = textToCopy)
+            if (textToCopy.isNotBlank()) {
+                MessageCopyButton(textToCopy = textToCopy)
+            }
         }
     }
 }
@@ -1125,7 +1232,9 @@ private fun CodeBlock(
                 } else {
                     Spacer(modifier = Modifier.weight(1f))
                 }
-                MessageCopyButton(textToCopy = code)
+                if (code.isNotBlank()) {
+                    MessageCopyButton(textToCopy = code)
+                }
             }
             Text(
                 text = code,
@@ -1234,8 +1343,6 @@ private fun AssistantReasoning(
     expanded: Boolean,
     onExpandedChange: (Boolean) -> Unit,
 ) {
-    val hapticFeedback = LocalHapticFeedback.current
-
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(8.dp),
@@ -1259,7 +1366,6 @@ private fun AssistantReasoning(
                 )
                 TextButton(
                     onClick = {
-                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
                         onExpandedChange(!expanded)
                     },
                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
@@ -1289,7 +1395,7 @@ private fun AssistantReasoning(
             Text(
                 text = reasoning,
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
                 maxLines = if (expanded) Int.MAX_VALUE else 2,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -1377,7 +1483,11 @@ private fun ChatComposer(
                             onSend()
                         },
                         enabled = canSend,
-                        modifier = Modifier.size(48.dp),
+                        modifier = Modifier
+                            .size(48.dp)
+                            .semantics {
+                                stateDescription = hint
+                            },
                     ) {
                         Icon(
                             Icons.AutoMirrored.Filled.Send,
@@ -1489,7 +1599,10 @@ private fun LanguagePreferenceSelector(
         RuntimeAppLanguage.French to R.string.language_french,
     )
 
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(
+        modifier = Modifier.selectableGroup(),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
         Text(
             text = stringResource(R.string.language_title),
             style = MaterialTheme.typography.labelMedium,
@@ -1500,8 +1613,13 @@ private fun LanguagePreferenceSelector(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable {
-                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                    .selectable(
+                        selected = selected,
+                        role = Role.RadioButton,
+                    ) {
+                        if (!selected) {
+                            hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                        }
                         onSetLanguageTag(language.languageTag)
                     }
                     .padding(vertical = 4.dp),
@@ -1510,10 +1628,7 @@ private fun LanguagePreferenceSelector(
             ) {
                 RadioButton(
                     selected = selected,
-                    onClick = {
-                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                        onSetLanguageTag(language.languageTag)
-                    },
+                    onClick = null,
                 )
                 Text(
                     text = stringResource(labelRes),
@@ -1776,11 +1891,17 @@ private fun selectedModelIsUsable(state: RuntimeUiState): Boolean {
     return state.models.firstOrNull { it.id == selectedId }?.installed == true
 }
 
+private fun selectedModelIsMissingFromRuntime(state: RuntimeUiState): Boolean {
+    val selectedId = state.selectedModelId ?: return false
+    return state.models.none { it.id == selectedId }
+}
+
 @Composable
 private fun chatInputHint(state: RuntimeUiState): String {
     return when {
         !state.isConnected -> stringResource(R.string.chat_hint_connect)
         state.selectedModelId == null -> stringResource(R.string.chat_hint_select_model)
+        selectedModelIsMissingFromRuntime(state) -> stringResource(R.string.chat_hint_model_unavailable)
         !selectedModelIsUsable(state) -> stringResource(R.string.chat_hint_install_model)
         state.isStreaming -> stringResource(R.string.chat_hint_wait_for_stream)
         state.chatInput.isBlank() -> stringResource(R.string.chat_hint_enter_message)
@@ -1792,8 +1913,8 @@ private fun chatInputHint(state: RuntimeUiState): String {
 private fun chatEmptyTitle(state: RuntimeUiState): String {
     return when {
         !state.isConnected -> stringResource(R.string.empty_chat_disconnected_title)
-        state.selectedModelId == null -> stringResource(R.string.empty_chat_no_model_title)
         state.isStreaming -> stringResource(R.string.empty_chat_streaming_title)
+        !selectedModelIsUsable(state) -> stringResource(R.string.empty_chat_no_model_title)
         else -> stringResource(R.string.empty_chat_ready_title)
     }
 }
@@ -1802,8 +1923,9 @@ private fun chatEmptyTitle(state: RuntimeUiState): String {
 private fun chatEmptyText(state: RuntimeUiState): String {
     return when {
         !state.isConnected -> stringResource(R.string.empty_chat_disconnected)
-        state.selectedModelId == null -> stringResource(R.string.empty_chat_no_model)
         state.isStreaming -> stringResource(R.string.empty_chat_streaming)
+        selectedModelIsMissingFromRuntime(state) -> stringResource(R.string.selected_model_unavailable)
+        !selectedModelIsUsable(state) -> stringResource(R.string.empty_chat_no_model)
         else -> stringResource(R.string.empty_chat_ready)
     }
 }

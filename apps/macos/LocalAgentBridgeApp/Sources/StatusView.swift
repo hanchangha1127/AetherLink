@@ -107,10 +107,15 @@ struct StatusView: View {
     }
 
     private var runtimeDetail: String {
-        if model.transportState.state == .advertising {
+        switch model.transportState.state {
+        case .advertising:
             return NSLocalizedString("Ready for trusted Android clients.", comment: "")
+        case .failed:
+            return model.transportState.failureMessage
+                ?? NSLocalizedString("Runtime listener could not start.", comment: "")
+        case .stopped:
+            return NSLocalizedString("The local runtime listener is not active.", comment: "")
         }
-        return NSLocalizedString("The local runtime listener is not active.", comment: "")
     }
 
     private var backendSummary: BackendSummary {
@@ -161,9 +166,7 @@ struct StatusView: View {
             ReadinessItem(
                 id: "runtime-listener",
                 title: NSLocalizedString("Runtime listener", comment: ""),
-                detail: model.transportState.state == .advertising
-                    ? NSLocalizedString("Listening for authenticated runtime sessions.", comment: "")
-                    : NSLocalizedString("Start the companion runtime listener.", comment: ""),
+                detail: runtimeReadinessDetail,
                 tone: transportTone(for: model.transportState)
             ),
             ReadinessItem(
@@ -187,6 +190,18 @@ struct StatusView: View {
                 tone: model.models.isEmpty ? .inactive : .ready
             )
         ]
+    }
+
+    private var runtimeReadinessDetail: String {
+        switch model.transportState.state {
+        case .advertising:
+            return NSLocalizedString("Listening for authenticated runtime sessions.", comment: "")
+        case .failed:
+            return model.transportState.failureMessage
+                ?? NSLocalizedString("Runtime listener could not start.", comment: "")
+        case .stopped:
+            return NSLocalizedString("Start the companion runtime listener.", comment: "")
+        }
     }
 }
 
@@ -368,7 +383,7 @@ private struct ProviderStatusRow: View {
                 Text(status.detail)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .lineLimit(2)
+                    .lineLimit(status.rawStatus == .unavailable ? nil : 2)
             }
 
             Spacer(minLength: 12)
@@ -408,10 +423,7 @@ private struct ProviderStatus: Identifiable {
         case .available:
             detail = NSLocalizedString("Local backend is responding.", comment: "")
         case .unavailable:
-            detail = String(
-                format: NSLocalizedString("%@ is not responding from this Mac.", comment: ""),
-                Self.localizedProviderName(status.provider)
-            )
+            detail = Self.unavailableDetail(for: status)
         }
     }
 
@@ -457,6 +469,29 @@ private struct ProviderStatus: Identifiable {
         case .aggregate:
             return NSLocalizedString("Local runtime", comment: "")
         }
+    }
+
+    private static func unavailableDetail(for status: CompanionProviderStatus) -> String {
+        let providerName = localizedProviderName(status.provider)
+        let message = status.message?.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        let baseDetail: String
+        if let message, !message.isEmpty {
+            baseDetail = message
+        } else {
+            baseDetail = String(
+                format: NSLocalizedString("%@ is not responding from this Mac.", comment: ""),
+                providerName
+            )
+        }
+
+        guard status.retryable == true else {
+            return baseDetail
+        }
+        return [
+            baseDetail,
+            NSLocalizedString("Open a local model provider on this Mac, then check again.", comment: "")
+        ].joined(separator: "\n")
     }
 }
 

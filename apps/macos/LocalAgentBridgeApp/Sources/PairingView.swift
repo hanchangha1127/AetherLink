@@ -22,6 +22,7 @@ struct PairingView: View {
                             code: session.code,
                             expiresAt: session.expiresAt
                         )
+                        .id(session.code)
                     } else {
                         ContentUnavailableView(
                             "No active pairing code",
@@ -60,6 +61,7 @@ private struct ActivePairingCard: View {
     let qrPayload: String
     let code: String
     let expiresAt: Date
+    @State private var didCopyCode = false
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
@@ -110,12 +112,31 @@ private struct ActivePairingCard: View {
                     .minimumScaleFactor(0.65)
                     .lineLimit(1)
                     .textSelection(.enabled)
+                HStack(spacing: 8) {
+                    Button {
+                        copyPairingCode()
+                    } label: {
+                        Label("Copy Code", systemImage: "doc.on.doc")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+
+                    if didCopyCode {
+                        Label("Code Copied", systemImage: "checkmark.circle.fill")
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.green)
+                            .transition(.opacity)
+                    }
+                }
             }
 
             VStack(alignment: .leading, spacing: 7) {
                 Label("Scan the QR code or enter the code in AetherLink for Android.", systemImage: "iphone")
                 Label("If macOS asks for Local Network access, allow it so Android can discover and pair with this Mac.", systemImage: "network")
-                Label(expirationText, systemImage: "timer")
+                TimelineView(.periodic(from: Date(), by: 1)) { timeline in
+                    Label(expirationText(at: timeline.date), systemImage: expirationSystemImage(at: timeline.date))
+                        .foregroundStyle(expiresAt <= timeline.date ? .orange : .secondary)
+                }
                 Label("Keep this Mac awake until pairing completes.", systemImage: "display")
             }
             .font(.callout)
@@ -125,11 +146,36 @@ private struct ActivePairingCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var expirationText: String {
-        String(
-            format: NSLocalizedString("Expires %@", comment: ""),
-            companionDateFormatter.string(from: expiresAt)
+    private func expirationText(at date: Date) -> String {
+        if expiresAt <= date {
+            return NSLocalizedString("Pairing code expired. Generate a new code.", comment: "")
+        }
+        let remainingSeconds = max(1, Int(ceil(expiresAt.timeIntervalSince(date))))
+        let minutes = remainingSeconds / 60
+        let seconds = remainingSeconds % 60
+        if minutes > 0 {
+            return String(
+                format: NSLocalizedString("Expires in %d min %02d sec", comment: ""),
+                minutes,
+                seconds
+            )
+        }
+        return String(
+            format: NSLocalizedString("Expires in %d sec", comment: ""),
+            seconds
         )
+    }
+
+    private func expirationSystemImage(at date: Date) -> String {
+        expiresAt <= date ? "exclamationmark.triangle.fill" : "timer"
+    }
+
+    private func copyPairingCode() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(code, forType: .string)
+        withAnimation(.easeInOut(duration: 0.16)) {
+            didCopyCode = true
+        }
     }
 }
 

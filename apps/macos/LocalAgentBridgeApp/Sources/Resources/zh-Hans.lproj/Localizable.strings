@@ -24,6 +24,8 @@
 "Local Models" = "本地模型";
 "Readiness" = "就绪情况";
 "Runtime listener" = "运行时监听器";
+"Runtime listener failed" = "运行时监听器失败";
+"Runtime listener could not start." = "无法启动运行时监听器。";
 "Listening for authenticated runtime sessions." = "正在监听已认证的运行时会话。";
 "Start the companion runtime listener." = "启动 Companion 运行时监听器。";
 "Local backend availability" = "本地后端可用性";
@@ -85,11 +87,15 @@
 "Pairing QR code" = "配对 QR 码";
 "Pairing QR code unavailable" = "配对 QR 码不可用";
 "One-Time Code" = "一次性代码";
+"Copy Code" = "复制代码";
+"Code Copied" = "代码已复制";
 "Scan the QR code or enter the code in AetherLink for Android." = "在 Android 版 AetherLink 中扫描 QR 码或输入代码。";
 "If macOS asks for Local Network access, allow it so Android can discover and pair with this Mac." = "如果 macOS 请求本地网络访问权限，请允许，以便 Android 能发现并配对这台 Mac。";
 "Keep this Mac awake until pairing completes." = "配对完成前，请保持这台 Mac 唤醒。";
 "Android connects to this Mac runtime, not directly to Ollama or LM Studio." = "Android 连接到这台 Mac 运行时，而不是直接连接 Ollama 或 LM Studio。";
-"Expires %@" = "%@ 过期";
+"Expires in %d min %02d sec" = "%d 分 %02d 秒后过期";
+"Expires in %d sec" = "%d 秒后过期";
+"Pairing code expired. Generate a new code." = "配对码已过期。请生成新代码。";
 
 "Manage Android devices allowed to use this Mac runtime." = "管理允许使用这台 Mac 运行时的 Android 设备。";
 "Refresh Devices" = "刷新设备";

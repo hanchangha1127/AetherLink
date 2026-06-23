@@ -82,6 +82,8 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -225,7 +227,6 @@ private fun LocalAgentBridgeApp() {
                                                 session.id == state.activeChatSessionId,
                                             enabled = !state.isStreaming,
                                             onClick = {
-                                                hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
                                                 viewModel.selectChatSession(session.id)
                                                 destination = AppDestination.Chat
                                                 scope.launch { drawerState.close() }
@@ -271,7 +272,6 @@ private fun LocalAgentBridgeApp() {
                                             selected = false,
                                             enabled = !state.isStreaming,
                                             onClick = {
-                                                hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
                                                 viewModel.unarchiveChatSession(session.id)
                                                 viewModel.selectChatSession(session.id)
                                                 destination = AppDestination.Chat
@@ -312,7 +312,6 @@ private fun LocalAgentBridgeApp() {
                                 destination = AppDestination.Settings,
                                 selected = destination == AppDestination.Settings,
                                 onClick = {
-                                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
                                     destination = AppDestination.Settings
                                     scope.launch { drawerState.close() }
                                 },
@@ -338,7 +337,6 @@ private fun LocalAgentBridgeApp() {
                             navigationIcon = {
                                 IconButton(
                                     onClick = {
-                                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
                                         scope.launch { drawerState.open() }
                                     },
                                 ) {
@@ -359,6 +357,7 @@ private fun LocalAgentBridgeApp() {
                             onCancel = viewModel::cancelGeneration,
                             onConnect = viewModel::connectToTrustedRuntime,
                             onRequestModels = viewModel::requestModels,
+                            onSelectModel = viewModel::selectModel,
                             modifier = Modifier
                                 .fillMaxSize()
                                 .padding(padding),
@@ -434,35 +433,32 @@ private fun LocalAgentBridgeApp() {
                 .firstOrNull { it.id == deletingSessionId }
             if (sessionBeingDeleted != null) {
                 DeleteChatSessionDialog(
-                    sessionTitle = sessionBeingDeleted.title,
-                    onDismiss = { deletingSessionId = null },
-                    onConfirm = {
-                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                        viewModel.deleteChatSession(sessionBeingDeleted.id)
-                        deletingSessionId = null
-                    },
+                            sessionTitle = sessionBeingDeleted.title,
+                            onDismiss = { deletingSessionId = null },
+                            onConfirm = {
+                                viewModel.deleteChatSession(sessionBeingDeleted.id)
+                                deletingSessionId = null
+                            },
                 )
             }
 
             if (isArchiveHistoryDialogVisible) {
                 ArchiveChatHistoryDialog(
-                    onDismiss = { isArchiveHistoryDialogVisible = false },
-                    onConfirm = {
-                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                        viewModel.archiveChatSessions()
-                        isArchiveHistoryDialogVisible = false
-                    },
+                        onDismiss = { isArchiveHistoryDialogVisible = false },
+                        onConfirm = {
+                            viewModel.archiveChatSessions()
+                            isArchiveHistoryDialogVisible = false
+                        },
                 )
             }
 
             if (isDeleteHistoryDialogVisible) {
                 DeleteChatHistoryDialog(
-                    onDismiss = { isDeleteHistoryDialogVisible = false },
-                    onConfirm = {
-                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                        viewModel.clearChatSessions()
-                        isDeleteHistoryDialogVisible = false
-                    },
+                        onDismiss = { isDeleteHistoryDialogVisible = false },
+                        onConfirm = {
+                            viewModel.clearChatSessions()
+                            isDeleteHistoryDialogVisible = false
+                        },
                 )
             }
             }
@@ -543,7 +539,20 @@ private fun ChatModelTopBarMenu(
     var modelSearchQuery by rememberSaveable { mutableStateOf("") }
     val hapticFeedback = LocalHapticFeedback.current
     val selectedModel = state.models.firstOrNull { it.id == state.selectedModelId }
-    val selectedLabel = selectedModel?.name ?: stringResource(R.string.models_title)
+    val selectedModelUnavailable = state.isConnected && state.selectedModelId != null && selectedModel == null
+    val selectedLabel = when {
+        state.isConnected && selectedModel != null -> selectedModel.name
+        state.isLoadingModels -> stringResource(R.string.loading_models)
+        selectedModelUnavailable -> stringResource(R.string.model_unavailable)
+        else -> stringResource(R.string.models_title)
+    }
+    val modelPickerStateDescription = when {
+        state.isLoadingModels -> stringResource(R.string.loading_models)
+        !state.isConnected -> stringResource(R.string.chat_status_disconnected)
+        selectedModelUnavailable -> stringResource(R.string.selected_model_unavailable)
+        selectedModel != null -> selectedModel.name
+        else -> stringResource(R.string.chat_hint_select_model)
+    }
     val trimmedModelSearchQuery = modelSearchQuery.trim()
     val hasModelSearchQuery = trimmedModelSearchQuery.isNotEmpty()
     val visibleModels = if (hasModelSearchQuery) {
@@ -555,14 +564,17 @@ private fun ChatModelTopBarMenu(
     Box {
         TextButton(
             onClick = {
-                hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
                 isExpanded = true
                 if (state.isConnected && state.models.isEmpty() && !state.isLoadingModels) {
                     onRequestModels()
                 }
             },
             enabled = !state.isStreaming,
-            modifier = Modifier.widthIn(max = 176.dp),
+            modifier = Modifier
+                .widthIn(max = 176.dp)
+                .semantics {
+                    stateDescription = modelPickerStateDescription
+                },
         ) {
             Text(
                 text = selectedLabel,
@@ -600,6 +612,20 @@ private fun ChatModelTopBarMenu(
                 },
             )
             HorizontalDivider()
+            if (selectedModelUnavailable) {
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            text = stringResource(R.string.selected_model_unavailable),
+                            maxLines = 3,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    },
+                    enabled = false,
+                    onClick = {},
+                )
+                HorizontalDivider()
+            }
             if (state.models.isEmpty()) {
                 DropdownMenuItem(
                     text = {
@@ -639,7 +665,6 @@ private fun ChatModelTopBarMenu(
                         if (modelSearchQuery.isNotEmpty()) {
                             IconButton(
                                 onClick = {
-                                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
                                     modelSearchQuery = ""
                                 },
                             ) {
@@ -750,8 +775,6 @@ private fun ChatHistorySearchField(
     onQueryChange: (String) -> Unit,
     onClear: () -> Unit,
 ) {
-    val hapticFeedback = LocalHapticFeedback.current
-
     OutlinedTextField(
         value = query,
         onValueChange = onQueryChange,
@@ -774,7 +797,6 @@ private fun ChatHistorySearchField(
             if (query.isNotEmpty()) {
                 IconButton(
                     onClick = {
-                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
                         onClear()
                     },
                 ) {
@@ -813,7 +835,6 @@ private fun ChatSessionDrawerItem(
     onDelete: () -> Unit,
 ) {
     var isMenuExpanded by rememberSaveable(session.id) { mutableStateOf(false) }
-    val hapticFeedback = LocalHapticFeedback.current
     val title = session.title.ifBlank { stringResource(R.string.untitled_chat) }
     val subtitle = when {
         session.archivedAtMillis != null -> stringResource(R.string.archived_chat)
@@ -857,7 +878,6 @@ private fun ChatSessionDrawerItem(
                 }
                 IconButton(
                     onClick = {
-                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
                         isMenuExpanded = true
                     },
                     enabled = enabled,
@@ -982,7 +1002,12 @@ private fun DeleteChatSessionDialog(
             )
         },
         confirmButton = {
-            TextButton(onClick = onConfirm) {
+            TextButton(
+                onClick = {
+                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onConfirm()
+                },
+            ) {
                 Text(stringResource(R.string.delete))
             }
         },
@@ -1011,7 +1036,12 @@ private fun ArchiveChatHistoryDialog(
         title = { Text(stringResource(R.string.archive_all_chats)) },
         text = { Text(stringResource(R.string.archive_all_chats_confirm)) },
         confirmButton = {
-            TextButton(onClick = onConfirm) {
+            TextButton(
+                onClick = {
+                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onConfirm()
+                },
+            ) {
                 Text(stringResource(R.string.archive))
             }
         },
@@ -1040,7 +1070,12 @@ private fun DeleteChatHistoryDialog(
         title = { Text(stringResource(R.string.delete_all_chats)) },
         text = { Text(stringResource(R.string.delete_all_chats_confirm)) },
         confirmButton = {
-            TextButton(onClick = onConfirm) {
+            TextButton(
+                onClick = {
+                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onConfirm()
+                },
+            ) {
                 Text(stringResource(R.string.delete))
             }
         },
