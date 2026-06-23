@@ -1,0 +1,15 @@
+.DS_Store
+.gradle/
+.idea/
+.kotlin/
+.build/
+build/
+dist/
+out/
+local.properties
+DerivedData/
+*.xcuserdata/
+*.xcodeproj/
+*.xcworkspace/
+apps/android/**/build/
+apps/macos/**/.build/

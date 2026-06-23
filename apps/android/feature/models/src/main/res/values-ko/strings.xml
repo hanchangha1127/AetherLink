@@ -1,0 +1,5 @@
+<resources>
+    <string name="feature_models_title">모델</string>
+    <string name="feature_models_load_models">모델 불러오기</string>
+    <string name="feature_models_error">모델 오류: %1$s</string>
+</resources>

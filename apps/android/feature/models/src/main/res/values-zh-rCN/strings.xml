@@ -1,0 +1,5 @@
+<resources>
+    <string name="feature_models_title">模型</string>
+    <string name="feature_models_load_models">加载模型</string>
+    <string name="feature_models_error">模型错误：%1$s</string>
+</resources>

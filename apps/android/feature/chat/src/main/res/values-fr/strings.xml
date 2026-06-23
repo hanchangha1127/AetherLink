@@ -1,0 +1,11 @@
+<resources>
+    <string name="feature_chat_title">Chat</string>
+    <string name="feature_chat_model_value">Modèle : %1$s</string>
+    <string name="feature_chat_model_none">aucun</string>
+    <string name="feature_chat_message">Message</string>
+    <string name="feature_chat_send">Envoyer</string>
+    <string name="feature_chat_cancel">Annuler</string>
+    <string name="feature_chat_error_select_model">Sélectionnez un modèle avant de discuter.</string>
+    <string name="feature_chat_error_generation_cancelled">Génération annulée.</string>
+    <string name="feature_chat_error_unknown">Erreur de chat.</string>
+</resources>

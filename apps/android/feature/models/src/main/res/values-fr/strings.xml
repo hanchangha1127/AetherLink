@@ -1,0 +1,5 @@
+<resources>
+    <string name="feature_models_title">Modèles</string>
+    <string name="feature_models_load_models">Charger les modèles</string>
+    <string name="feature_models_error">Erreur de modèle : %1$s</string>
+</resources>

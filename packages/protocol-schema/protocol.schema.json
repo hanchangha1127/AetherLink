@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aetherlink.dev/schema/protocol.v1.json",
+  "title": "AetherLink Protocol v1",
+  "type": "object",
+  "required": ["version", "type", "request_id", "timestamp", "payload"],
+  "properties": {
+    "version": { "const": 1 },
+    "type": {
+      "type": "string",
+      "enum": [
+        "hello",
+        "auth.challenge",
+        "auth.response",
+        "pairing.request",
+        "pairing.result",
+        "runtime.health",
+        "models.list",
+        "models.pull",
+        "models.result",
+        "chat.send",
+        "chat.delta",
+        "chat.done",
+        "chat.cancel",
+        "error",
+        "tool.approval_required",
+        "tool.approval_response"
+      ]
+    },
+    "request_id": { "type": "string", "format": "uuid" },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "payload": { "type": "object" }
+  },
+  "additionalProperties": false
+}

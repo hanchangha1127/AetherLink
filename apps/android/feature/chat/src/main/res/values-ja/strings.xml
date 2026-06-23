@@ -1,0 +1,11 @@
+<resources>
+    <string name="feature_chat_title">チャット</string>
+    <string name="feature_chat_model_value">モデル: %1$s</string>
+    <string name="feature_chat_model_none">なし</string>
+    <string name="feature_chat_message">メッセージ</string>
+    <string name="feature_chat_send">送信</string>
+    <string name="feature_chat_cancel">キャンセル</string>
+    <string name="feature_chat_error_select_model">チャットする前にモデルを選択してください。</string>
+    <string name="feature_chat_error_generation_cancelled">生成はキャンセルされました。</string>
+    <string name="feature_chat_error_unknown">チャットエラーです。</string>
+</resources>
