@@ -5,6 +5,7 @@
     <string name="tab_models">모델</string>
     <string name="tab_chat">채팅</string>
     <string name="tab_settings">설정</string>
+    <string name="content_desc_open_navigation">탐색 메뉴 열기</string>
 
     <string name="pairing_title">Mac 런타임 페어링</string>
     <string name="pairing_subtitle">모델을 불러오거나 채팅하기 전에 이 휴대폰을 신뢰된 Mac companion에 연결합니다.</string>

@@ -5,6 +5,7 @@
     <string name="tab_models">Models</string>
     <string name="tab_chat">Chat</string>
     <string name="tab_settings">Settings</string>
+    <string name="content_desc_open_navigation">Open navigation menu</string>
 
     <string name="pairing_title">Pair Mac Runtime</string>
     <string name="pairing_subtitle">Connect this phone to the trusted Mac companion before loading models or chatting.</string>

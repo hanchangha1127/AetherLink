@@ -5,6 +5,7 @@
     <string name="tab_models">模型</string>
     <string name="tab_chat">聊天</string>
     <string name="tab_settings">设置</string>
+    <string name="content_desc_open_navigation">打开导航菜单</string>
 
     <string name="pairing_title">配对 Mac 运行时</string>
     <string name="pairing_subtitle">加载模型或聊天前，将这部手机连接到受信任的 Mac companion。</string>

@@ -5,6 +5,7 @@
     <string name="tab_models">Modèles</string>
     <string name="tab_chat">Chat</string>
     <string name="tab_settings">Réglages</string>
+    <string name="content_desc_open_navigation">Ouvrir le menu de navigation</string>
 
     <string name="pairing_title">Jumeler le runtime Mac</string>
     <string name="pairing_subtitle">Connectez ce téléphone au Mac companion de confiance avant de charger des modèles ou de discuter.</string>

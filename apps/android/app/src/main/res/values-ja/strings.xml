@@ -5,6 +5,7 @@
     <string name="tab_models">モデル</string>
     <string name="tab_chat">チャット</string>
     <string name="tab_settings">設定</string>
+    <string name="content_desc_open_navigation">ナビゲーションメニューを開く</string>
 
     <string name="pairing_title">Mac ランタイムをペアリング</string>
     <string name="pairing_subtitle">モデルの読み込みやチャットを始める前に、このスマートフォンを信頼済みの Mac companion に接続します。</string>

@@ -6,37 +6,47 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.annotation.StringRes
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Sync
-import androidx.annotation.StringRes
 import androidx.compose.material3.ColorScheme
+import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.google.mlkit.vision.barcode.common.Barcode
@@ -48,6 +58,7 @@ import com.localagentbridge.android.ui.ConnectionStatusScreen
 import com.localagentbridge.android.ui.ModelPickerScreen
 import com.localagentbridge.android.ui.PairingScreen
 import com.localagentbridge.android.ui.SettingsScreen
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -59,6 +70,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
+@OptIn(ExperimentalMaterial3Api::class)
 private fun LocalAgentBridgeApp() {
     AetherLinkTheme {
         Surface(
@@ -68,82 +80,116 @@ private fun LocalAgentBridgeApp() {
             val viewModel: RuntimeClientViewModel = viewModel()
             val state by viewModel.state.collectAsStateWithLifecycle()
             val context = LocalContext.current
-            var tab by rememberSaveable { mutableStateOf(AppTab.Pairing) }
+            val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+            val scope = rememberCoroutineScope()
+            var destination by rememberSaveable { mutableStateOf(AppDestination.Chat) }
+            val destinationTitle = stringResource(destination.labelRes)
 
-            Scaffold(
-                bottomBar = {
-                    NavigationBar {
-                        AppTab.entries.forEach { item ->
+            ModalNavigationDrawer(
+                drawerState = drawerState,
+                drawerContent = {
+                    ModalDrawerSheet {
+                        Text(
+                            text = stringResource(R.string.app_name),
+                            style = MaterialTheme.typography.titleLarge,
+                            modifier = Modifier.padding(horizontal = 28.dp, vertical = 24.dp),
+                        )
+                        AppDestination.entries.forEach { item ->
                             val label = stringResource(item.labelRes)
-                            NavigationBarItem(
-                                selected = tab == item,
-                                onClick = { tab = item },
+                            NavigationDrawerItem(
+                                selected = destination == item,
+                                onClick = {
+                                    destination = item
+                                    scope.launch { drawerState.close() }
+                                },
+                                icon = {
+                                    Icon(
+                                        imageVector = item.icon,
+                                        contentDescription = null,
+                                    )
+                                },
                                 label = { Text(label) },
-                                icon = { Icon(item.icon(), contentDescription = label) },
+                                modifier = Modifier.padding(horizontal = 12.dp),
                             )
                         }
                     }
                 },
-            ) { padding ->
-                when (tab) {
-                    AppTab.Pairing -> PairingScreen(
-                        state = state,
-                        onHostChange = viewModel::updateHost,
-                        onPortChange = viewModel::updatePort,
-                        onUseUsbReverse = viewModel::useUsbReverseEndpoint,
-                        onUseEmulator = viewModel::useEmulatorEndpoint,
-                        onStartDiscovery = viewModel::startDiscovery,
-                        onStopDiscovery = viewModel::stopDiscovery,
-                        onUseDiscoveredMac = viewModel::useDiscoveredMac,
-                        onForgetTrustedMac = viewModel::forgetTrustedMac,
-                        onScanPairingQr = {
-                            startPairingQrScanner(
-                                context = context,
-                                onResult = viewModel::trustMacFromPairingQr,
-                                onFailure = viewModel::showQrScanFailed,
-                            )
-                        },
-                        onConnect = viewModel::connectToTrustedRuntime,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(padding),
-                    )
-                    AppTab.Status -> ConnectionStatusScreen(
-                        state = state,
-                        onRefreshHealth = viewModel::requestRuntimeHealth,
-                        onDisconnect = viewModel::disconnect,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(padding),
-                    )
-                    AppTab.Models -> ModelPickerScreen(
-                        state = state,
-                        onRequestModels = viewModel::requestModels,
-                        onSelectModel = viewModel::selectModel,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(padding),
-                    )
-                    AppTab.Chat -> ChatScreen(
-                        state = state,
-                        onInputChange = viewModel::updateChatInput,
-                        onSend = viewModel::sendChatMessage,
-                        onCancel = viewModel::cancelGeneration,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(padding),
-                    )
-                    AppTab.Settings -> SettingsScreen(
-                        state = state,
-                        onHostChange = viewModel::updateHost,
-                        onPortChange = viewModel::updatePort,
-                        onUseUsbReverse = viewModel::useUsbReverseEndpoint,
-                        onUseEmulator = viewModel::useEmulatorEndpoint,
-                        onForgetTrustedMac = viewModel::forgetTrustedMac,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(padding),
-                    )
+            ) {
+                Scaffold(
+                    topBar = {
+                        TopAppBar(
+                            title = { Text(destinationTitle) },
+                            navigationIcon = {
+                                IconButton(onClick = { scope.launch { drawerState.open() } }) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Menu,
+                                        contentDescription = stringResource(R.string.content_desc_open_navigation),
+                                    )
+                                }
+                            },
+                        )
+                    },
+                ) { padding ->
+                    when (destination) {
+                        AppDestination.Chat -> ChatScreen(
+                            state = state,
+                            onInputChange = viewModel::updateChatInput,
+                            onSend = viewModel::sendChatMessage,
+                            onCancel = viewModel::cancelGeneration,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(padding),
+                        )
+                        AppDestination.Pairing -> PairingScreen(
+                            state = state,
+                            onHostChange = viewModel::updateHost,
+                            onPortChange = viewModel::updatePort,
+                            onUseUsbReverse = viewModel::useUsbReverseEndpoint,
+                            onUseEmulator = viewModel::useEmulatorEndpoint,
+                            onStartDiscovery = viewModel::startDiscovery,
+                            onStopDiscovery = viewModel::stopDiscovery,
+                            onUseDiscoveredMac = viewModel::useDiscoveredMac,
+                            onForgetTrustedMac = viewModel::forgetTrustedMac,
+                            onScanPairingQr = {
+                                startPairingQrScanner(
+                                    context = context,
+                                    onResult = viewModel::trustMacFromPairingQr,
+                                    onFailure = viewModel::showQrScanFailed,
+                                )
+                            },
+                            onConnect = viewModel::connectToTrustedRuntime,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(padding),
+                        )
+                        AppDestination.Status -> ConnectionStatusScreen(
+                            state = state,
+                            onRefreshHealth = viewModel::requestRuntimeHealth,
+                            onDisconnect = viewModel::disconnect,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(padding),
+                        )
+                        AppDestination.Models -> ModelPickerScreen(
+                            state = state,
+                            onRequestModels = viewModel::requestModels,
+                            onSelectModel = viewModel::selectModel,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(padding),
+                        )
+                        AppDestination.Settings -> SettingsScreen(
+                            state = state,
+                            onHostChange = viewModel::updateHost,
+                            onPortChange = viewModel::updatePort,
+                            onUseUsbReverse = viewModel::useUsbReverseEndpoint,
+                            onUseEmulator = viewModel::useEmulatorEndpoint,
+                            onForgetTrustedMac = viewModel::forgetTrustedMac,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(padding),
+                        )
+                    }
                 }
             }
         }
@@ -261,19 +307,13 @@ private fun startPairingQrScanner(
         }
 }
 
-private enum class AppTab(@param:StringRes val labelRes: Int) {
-    Pairing(R.string.tab_pairing),
-    Status(R.string.tab_status),
-    Models(R.string.tab_models),
-    Chat(R.string.tab_chat),
-    Settings(R.string.tab_settings);
-
-    @Composable
-    fun icon() = when (this) {
-        Pairing -> Icons.Filled.Link
-        Status -> Icons.Filled.Sync
-        Models -> Icons.Filled.Storage
-        Chat -> Icons.AutoMirrored.Filled.Chat
-        Settings -> Icons.Filled.Settings
-    }
+private enum class AppDestination(
+    @param:StringRes val labelRes: Int,
+    val icon: ImageVector,
+) {
+    Chat(R.string.tab_chat, Icons.AutoMirrored.Filled.Chat),
+    Pairing(R.string.tab_pairing, Icons.Filled.Link),
+    Status(R.string.tab_status, Icons.Filled.Sync),
+    Models(R.string.tab_models, Icons.Filled.Storage),
+    Settings(R.string.tab_settings, Icons.Filled.Settings),
 }
