@@ -1,6 +1,7 @@
 package com.localagentbridge.android.runtime
 
 import android.content.Context
+import com.localagentbridge.android.core.protocol.ChatAttachmentPayload
 import com.localagentbridge.android.core.protocol.ChatMessagePayload
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
@@ -63,6 +64,7 @@ data class PersistedChatMessage(
     val role: String,
     val content: String,
     val reasoning: String = "",
+    val suggestions: List<String> = emptyList(),
     val createdAtMillis: Long,
 )
 
@@ -338,6 +340,7 @@ internal fun runtimeMemoryEntries(data: PersistedRuntimeData): List<RuntimeMemor
 internal fun chatSendMessages(
     messages: List<RuntimeChatMessage>,
     memoryEntries: List<RuntimeMemoryEntry>,
+    attachments: List<RuntimePendingAttachment> = emptyList(),
 ): List<ChatMessagePayload> {
     val enabledMemory = memoryEntries
         .filter { it.enabled }
@@ -347,10 +350,29 @@ internal fun chatSendMessages(
         .takeIf { it.isNotEmpty() }
         ?.joinToString(separator = "\n", prefix = "Local user memory:\n") { "- $it" }
         ?.let { ChatMessagePayload(role = "system", content = it) }
-    val conversation = messages
+    val conversationMessages = messages
         .filter { it.role == "user" || it.role == "assistant" }
         .filter { it.content.isNotBlank() }
-        .map { ChatMessagePayload(role = it.role, content = it.content) }
+    val conversation = conversationMessages
+        .mapIndexed { index, message ->
+            val messageAttachments = if (index == conversationMessages.lastIndex) {
+                attachments.map { attachment ->
+                    ChatAttachmentPayload(
+                        type = attachment.type,
+                        mimeType = attachment.mimeType,
+                        name = attachment.name,
+                        dataBase64 = attachment.dataBase64,
+                    )
+                }
+            } else {
+                emptyList()
+            }
+            ChatMessagePayload(
+                role = message.role,
+                content = message.content,
+                attachments = messageAttachments,
+            )
+        }
     return listOfNotNull(systemContext) + conversation
 }
 
@@ -360,6 +382,7 @@ private fun PersistedChatMessage.toRuntimeChatMessage(): RuntimeChatMessage {
         role = role,
         content = content,
         reasoning = reasoning,
+        suggestions = suggestions.cleanedSuggestions(),
     )
 }
 
@@ -369,6 +392,7 @@ private fun RuntimeChatMessage.toPersistedChatMessage(nowMillis: Long): Persiste
         role = role,
         content = content,
         reasoning = reasoning,
+        suggestions = suggestions.cleanedSuggestions(),
         createdAtMillis = nowMillis,
     )
 }
@@ -385,3 +409,11 @@ private fun titleForMessages(messages: List<RuntimeChatMessage>): String {
 
 private val CHAT_STORAGE_ROLES = setOf("user", "assistant")
 private const val MAX_TITLE_LENGTH = 48
+private const val MAX_SAVED_SUGGESTIONS = 3
+
+internal fun List<String>.cleanedSuggestions(): List<String> {
+    return map { it.trim() }
+        .filter { it.isNotBlank() }
+        .distinct()
+        .take(MAX_SAVED_SUGGESTIONS)
+}

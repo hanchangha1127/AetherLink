@@ -16,6 +16,8 @@ public enum MessageType {
     public static let chatDelta = "chat.delta"
     public static let chatDone = "chat.done"
     public static let chatCancel = "chat.cancel"
+    public static let chatSuggestionsRequest = "chat.suggestions.request"
+    public static let chatSuggestionsResult = "chat.suggestions.result"
     public static let error = "error"
 }
 

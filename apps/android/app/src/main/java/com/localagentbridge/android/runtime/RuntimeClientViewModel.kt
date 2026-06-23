@@ -1,15 +1,21 @@
 package com.localagentbridge.android.runtime
 
 import android.app.Application
+import android.net.Uri
+import android.provider.OpenableColumns
+import android.util.Base64
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.localagentbridge.android.core.protocol.AuthChallengePayload
 import com.localagentbridge.android.core.protocol.AuthResponsePayload
+import com.localagentbridge.android.core.protocol.ChatAttachmentPayload
 import com.localagentbridge.android.core.protocol.ChatCancelPayload
 import com.localagentbridge.android.core.protocol.ChatDeltaPayload
 import com.localagentbridge.android.core.protocol.ChatDonePayload
 import com.localagentbridge.android.core.protocol.ChatSendPayload
+import com.localagentbridge.android.core.protocol.ChatSuggestionsRequestPayload
+import com.localagentbridge.android.core.protocol.ChatSuggestionsResultPayload
 import com.localagentbridge.android.core.protocol.ErrorPayload
 import com.localagentbridge.android.core.protocol.HelloPayload
 import com.localagentbridge.android.core.protocol.MessageType
@@ -29,6 +35,7 @@ import com.localagentbridge.android.core.transport.BonjourDiscovery
 import com.localagentbridge.android.core.transport.MacRuntimeTransportClient
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -58,11 +65,16 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
     private val localStore = RuntimeLocalStore(application, json)
     private var readJob: Job? = null
     private var discoveryJob: Job? = null
+    private var reconnectJob: Job? = null
     private var pendingPairingPayload: MacPairingPayload? = null
     private var pendingModelPullRequestId: String? = null
+    private var pendingSuggestionRequestId: String? = null
+    private var pendingSuggestionSessionId: String? = null
     private var modelIdToSelectAfterRefresh: String? = null
     private var isSessionAuthenticated = false
     private var persistedRuntimeData = PersistedRuntimeData()
+    private var shouldRestoreTrustedRuntimeConnection = true
+    private var didAttemptTrustedRuntimeRestore = false
 
     private val mutableState = MutableStateFlow(RuntimeUiState())
     val state: StateFlow<RuntimeUiState> = mutableState.asStateFlow()
@@ -85,6 +97,17 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
                             macHost = trusted.host,
                             macPort = trusted.port.toString(),
                         )
+                    }
+                }
+                if (
+                    trusted != null &&
+                    shouldRestoreTrustedRuntimeConnection &&
+                    !didAttemptTrustedRuntimeRestore
+                ) {
+                    didAttemptTrustedRuntimeRestore = true
+                    val current = state.value
+                    if (!current.isConnected && !current.isConnecting) {
+                        connectToRuntime(trusted.host, trusted.port)
                     }
                 }
             }
@@ -127,6 +150,59 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
         mutableState.update { it.copy(chatInput = value) }
     }
 
+    fun useSuggestedQuestion(question: String) {
+        val trimmed = question.trim()
+        if (trimmed.isBlank()) return
+        mutableState.update { it.copy(chatInput = trimmed, error = null) }
+    }
+
+    fun addAttachments(uris: List<Uri>) {
+        if (uris.isEmpty()) return
+        viewModelScope.launch {
+            val resolver = getApplication<Application>().contentResolver
+            val loadedAttachments = mutableListOf<RuntimePendingAttachment>()
+            for (uri in uris.take(MAX_PENDING_ATTACHMENTS)) {
+                val metadata = attachmentMetadata(uri)
+                if (metadata.sizeBytes > MAX_ATTACHMENT_BYTES) {
+                    showError("attachment_too_large", metadata.name)
+                    return@launch
+                }
+                val bytes = runCatching {
+                    resolver.openInputStream(uri)?.use { input -> input.readBytes() }
+                }.getOrNull()
+                if (bytes == null) {
+                    showError("attachment_read_failed", metadata.name)
+                    return@launch
+                }
+                if (bytes.size > MAX_ATTACHMENT_BYTES) {
+                    showError("attachment_too_large", metadata.name)
+                    return@launch
+                }
+                loadedAttachments += RuntimePendingAttachment(
+                    type = attachmentType(metadata.mimeType, metadata.name),
+                    name = metadata.name,
+                    mimeType = metadata.mimeType,
+                    sizeBytes = bytes.size.toLong(),
+                    dataBase64 = Base64.encodeToString(bytes, Base64.NO_WRAP),
+                )
+            }
+            mutableState.update { current ->
+                val combined = (current.pendingAttachments + loadedAttachments)
+                    .take(MAX_PENDING_ATTACHMENTS)
+                current.copy(pendingAttachments = combined, error = null)
+            }
+        }
+    }
+
+    fun removePendingAttachment(attachmentId: String) {
+        mutableState.update { current ->
+            current.copy(
+                pendingAttachments = current.pendingAttachments.filterNot { it.id == attachmentId },
+                error = null,
+            )
+        }
+    }
+
     fun setAppLanguageTag(languageTag: String) {
         publishPersistedRuntimeData(
             persistedRuntimeData.withAppLanguageTag(languageTag),
@@ -139,11 +215,12 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
             showError("generation_in_progress")
             return
         }
+        clearPendingSuggestions()
         publishPersistedRuntimeData(
             persistedRuntimeData.withNoActiveSession(),
             save = true,
         )
-        mutableState.update { it.copy(chatInput = "") }
+        mutableState.update { it.copy(chatInput = "", isLoadingSuggestions = false) }
     }
 
     fun openPreviousChat(sessionId: String) {
@@ -155,10 +232,12 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
             showError("chat_session_not_found")
             return
         }
+        clearPendingSuggestions()
         publishPersistedRuntimeData(
             persistedRuntimeData.withActiveSession(sessionId),
             save = true,
         )
+        mutableState.update { it.copy(isLoadingSuggestions = false) }
     }
 
     fun selectChatSession(sessionId: String) {
@@ -281,6 +360,9 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
     }
 
     fun connectToTrustedRuntime() {
+        shouldRestoreTrustedRuntimeConnection = true
+        reconnectJob?.cancel()
+        reconnectJob = null
         viewModelScope.launch {
             val target = trustedRuntimeConnectionTarget(state.value)
             if (target == null) {
@@ -293,6 +375,7 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
     }
 
     fun trustMacFromPairingQr(rawValue: String) {
+        shouldRestoreTrustedRuntimeConnection = true
         viewModelScope.launch {
             val payload = runCatching { MacPairingPayloadParser.parse(rawValue) }
                 .onFailure { error -> showError("invalid_pairing_qr", error.message) }
@@ -398,6 +481,7 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
     }
 
     fun forgetTrustedMac() {
+        shouldRestoreTrustedRuntimeConnection = false
         viewModelScope.launch {
             pairingStore.forgetMac()
             mutableState.update { it.copy(error = null) }
@@ -405,17 +489,22 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
     }
 
     fun disconnect() {
+        shouldRestoreTrustedRuntimeConnection = false
+        reconnectJob?.cancel()
+        reconnectJob = null
         readJob?.cancel()
         readJob = null
         client.close()
         isSessionAuthenticated = false
         pendingModelPullRequestId = null
+        clearPendingSuggestions()
         modelIdToSelectAfterRefresh = null
         mutableState.update {
             it.copy(
                 isConnected = false,
                 isConnecting = false,
                 isStreaming = false,
+                isLoadingSuggestions = false,
                 installingModelId = null,
                 activeRequestId = null,
                 runtimeStatus = "disconnected",
@@ -505,7 +594,7 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
     fun sendChatMessage() {
         val current = state.value
         val text = current.chatInput.trim()
-        if (text.isEmpty()) return
+        if (text.isEmpty() && current.pendingAttachments.isEmpty()) return
         when (current.selectedModelSendState()) {
             SelectedModelSendState.Ready -> Unit
             SelectedModelSendState.Missing -> {
@@ -518,6 +607,11 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
             }
         }
         val model = current.selectedModelId ?: return
+        val selectedModel = current.models.firstOrNull { it.id == model }
+        if (current.pendingAttachments.any { it.type == ATTACHMENT_TYPE_IMAGE } && selectedModel?.supportsImageInput() != true) {
+            showError("select_vision_model")
+            return
+        }
         if (!current.isConnected) {
             showError("connect_first")
             return
@@ -529,16 +623,26 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
 
         val sessionId = ensureActiveChatSession()
         val requestId = UUID.randomUUID().toString()
-        val userMessage = RuntimeChatMessage(role = "user", content = text)
+        val displayText = text.ifBlank {
+            current.pendingAttachments.joinToString(
+                separator = "\n",
+                prefix = "Analyze attached input:\n",
+            ) { "- ${it.name}" }
+        }
+        val attachments = current.pendingAttachments
+        val userMessage = RuntimeChatMessage(role = "user", content = displayText)
         val assistantMessage = RuntimeChatMessage(role = "assistant", content = "")
         val updatedMessages = current.messages + userMessage + assistantMessage
+        clearPendingSuggestions()
         mutableState.update {
             it.copy(
                 activeChatSessionId = sessionId,
                 chatInput = "",
+                pendingAttachments = emptyList(),
                 messages = updatedMessages,
                 activeRequestId = requestId,
                 isStreaming = true,
+                isLoadingSuggestions = false,
                 error = null
             )
         }
@@ -555,6 +659,7 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
                     messages = chatSendMessages(
                         messages = current.messages + userMessage,
                         memoryEntries = current.memoryEntries,
+                        attachments = attachments,
                     )
                 )
             )
@@ -595,6 +700,7 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
             client.connect(host, port)
         }.onSuccess {
             Log.d(TAG, "Connected to Mac runtime $host:$port")
+            reconnectJob = null
             mutableState.update {
                 it.copy(
                     isConnected = true,
@@ -638,15 +744,34 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
                                 it.copy(
                                     isConnected = false,
                                     isStreaming = false,
+                                    isLoadingSuggestions = false,
                                     installingModelId = null,
                                     activeRequestId = null,
                                     runtimeStatus = "disconnected",
                                     error = RuntimeUiError("receive_failed", error.message)
                                 )
                             }
+                            scheduleTrustedRuntimeReconnect()
                         }
                         return@launch
                     }
+            }
+        }
+    }
+
+    private fun scheduleTrustedRuntimeReconnect() {
+        if (!shouldRestoreTrustedRuntimeConnection) return
+        val target = trustedRuntimeConnectionTarget(state.value) ?: return
+        reconnectJob?.cancel()
+        reconnectJob = viewModelScope.launch {
+            delay(RECONNECT_DELAY_MS)
+            val current = state.value
+            if (
+                shouldRestoreTrustedRuntimeConnection &&
+                !current.isConnected &&
+                !current.isConnecting
+            ) {
+                connectToRuntime(target.host, target.port)
             }
         }
     }
@@ -662,6 +787,7 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
             MessageType.ChatDelta -> handleChatDelta(envelope)
             MessageType.ChatDone -> handleChatDone(envelope)
             MessageType.ChatCancel -> handleCancelAck(envelope)
+            MessageType.ChatSuggestionsResult -> handleChatSuggestionsResult(envelope)
             MessageType.Error -> handleError(envelope)
         }
     }
@@ -780,6 +906,9 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
                 providerStatuses = providerStatuses,
                 error = null
             )
+        }
+        if (isSessionAuthenticated) {
+            requestModels()
         }
     }
 
@@ -911,6 +1040,68 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
         val updatedState = state.value.withChatDone(envelope, payload)
         mutableState.value = updatedState
         persistActiveMessages(updatedState.messages, clearError = false)
+        if (payload?.finishReason != "cancelled") {
+            requestChatSuggestions(updatedState)
+        }
+    }
+
+    private fun requestChatSuggestions(sourceState: RuntimeUiState) {
+        if (!sourceState.isConnected || !isSessionAuthenticated) return
+        if (sourceState.isStreaming || sourceState.isLoadingSuggestions) return
+        if (sourceState.selectedModelSendState() != SelectedModelSendState.Ready) return
+
+        val sessionId = sourceState.activeChatSessionId ?: return
+        val model = sourceState.selectedModelId ?: return
+        val recentMessages = sourceState.messages
+            .filter { it.role == "user" || it.role == "assistant" }
+            .filter { it.content.isNotBlank() }
+            .takeLast(MAX_SUGGESTION_CONTEXT_MESSAGES)
+            .map { message ->
+                ChatMessagePayload(
+                    role = message.role,
+                    content = message.content,
+                )
+            }
+        if (recentMessages.size < 2) return
+
+        val requestId = UUID.randomUUID().toString()
+        pendingSuggestionRequestId = requestId
+        pendingSuggestionSessionId = sessionId
+        mutableState.update {
+            it.copy(
+                isLoadingSuggestions = true,
+                error = null,
+            )
+        }
+        sendEnvelope(
+            envelope(
+                type = MessageType.ChatSuggestionsRequest,
+                requestId = requestId,
+                serializer = ChatSuggestionsRequestPayload.serializer(),
+                payload = ChatSuggestionsRequestPayload(
+                    sessionId = sessionId,
+                    model = model,
+                    messages = recentMessages,
+                    maxSuggestions = MAX_SUGGESTIONS,
+                    locale = sourceState.selectedLanguageTag.takeIf { it.isNotBlank() },
+                ),
+            )
+        )
+    }
+
+    private fun handleChatSuggestionsResult(envelope: ProtocolEnvelope) {
+        if (pendingSuggestionRequestId != envelope.requestId) return
+        if (pendingSuggestionSessionId != state.value.activeChatSessionId) {
+            clearPendingSuggestions()
+            mutableState.update { it.copy(isLoadingSuggestions = false) }
+            return
+        }
+        val payload = decodePayload(ChatSuggestionsResultPayload.serializer(), envelope.payload)
+        clearPendingSuggestions()
+        val suggestions = payload?.suggestions.orEmpty().cleanedSuggestions()
+        val updatedState = state.value.withChatSuggestions(suggestions)
+        mutableState.value = updatedState.copy(isLoadingSuggestions = false)
+        persistActiveMessages(updatedState.messages, clearError = false)
     }
 
     private fun handleCancelAck(envelope: ProtocolEnvelope) {
@@ -927,6 +1118,11 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
     }
 
     private fun handleError(envelope: ProtocolEnvelope) {
+        if (pendingSuggestionRequestId == envelope.requestId) {
+            clearPendingSuggestions()
+            mutableState.update { it.copy(isLoadingSuggestions = false) }
+            return
+        }
         val payload = decodePayload(ErrorPayload.serializer(), envelope.payload)
         val isModelPullError = pendingModelPullRequestId == envelope.requestId
         val isActiveChatError = state.value.activeRequestId == envelope.requestId
@@ -954,6 +1150,13 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
                     val current = state.value
                     val isActiveChatSend = envelope.type == MessageType.ChatSend &&
                         current.activeRequestId == envelope.requestId
+                    val isSuggestionRequest = envelope.type == MessageType.ChatSuggestionsRequest &&
+                        pendingSuggestionRequestId == envelope.requestId
+                    if (isSuggestionRequest) {
+                        clearPendingSuggestions()
+                        mutableState.update { it.copy(isLoadingSuggestions = false) }
+                        return@onFailure
+                    }
                     val cleanedMessages = if (isActiveChatSend) {
                         current.messages.withoutTrailingBlankAssistantPlaceholder()
                     } else {
@@ -1002,6 +1205,33 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
 
     private fun showError(code: String, detail: String? = null) {
         mutableState.update { it.copy(error = RuntimeUiError(code, detail)) }
+    }
+
+    private fun clearPendingSuggestions() {
+        pendingSuggestionRequestId = null
+        pendingSuggestionSessionId = null
+    }
+
+    private fun attachmentMetadata(uri: Uri): AttachmentMetadata {
+        val resolver = getApplication<Application>().contentResolver
+        var name = uri.lastPathSegment?.substringAfterLast('/')?.takeIf(String::isNotBlank)
+            ?: "attachment"
+        var sizeBytes = -1L
+        resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)
+            ?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                    val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
+                    if (nameIndex >= 0) {
+                        name = cursor.getString(nameIndex)?.takeIf(String::isNotBlank) ?: name
+                    }
+                    if (sizeIndex >= 0 && !cursor.isNull(sizeIndex)) {
+                        sizeBytes = cursor.getLong(sizeIndex)
+                    }
+                }
+            }
+        val mimeType = resolver.getType(uri) ?: mimeTypeFromName(name)
+        return AttachmentMetadata(name = name, mimeType = mimeType, sizeBytes = sizeBytes)
     }
 
     private fun ensureActiveChatSession(): String {
@@ -1103,12 +1333,21 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
 
     private companion object {
         const val TAG = "RuntimeClientVM"
+        const val MAX_ATTACHMENT_BYTES = 15 * 1024 * 1024
+        const val MAX_PENDING_ATTACHMENTS = 4
+        const val RECONNECT_DELAY_MS = 750L
+        const val MAX_SUGGESTIONS = 3
+        const val MAX_SUGGESTION_CONTEXT_MESSAGES = 8
+        const val ATTACHMENT_TYPE_IMAGE = "image"
+        const val ATTACHMENT_TYPE_DOCUMENT = "document"
         val CLIENT_CAPABILITIES = listOf(
             MessageType.RuntimeHealth,
             MessageType.ModelsList,
             MessageType.ModelsPull,
             MessageType.ChatSend,
             MessageType.ChatCancel,
+            MessageType.ChatSuggestionsRequest,
+            "chat.attachments",
         )
         val SUCCESS_PULL_STATUSES = setOf("success", "succeeded", "installed", "complete", "completed", "ready", "ok")
         val ACCEPTED_PULL_STATUSES = setOf("accepted", "queued", "pending", "started", "pulling", "downloading", "installing", "in_progress")
@@ -1132,6 +1371,76 @@ private val EMBEDDING_MODEL_NAME_HINTS = setOf(
     "qwen3-embedding",
     "embeddinggemma",
 )
+
+private data class AttachmentMetadata(
+    val name: String,
+    val mimeType: String,
+    val sizeBytes: Long,
+)
+
+private fun attachmentType(mimeType: String, name: String): String {
+    val normalizedMimeType = mimeType.lowercase()
+    val extension = name.substringAfterLast('.', "").lowercase()
+    return if (normalizedMimeType.startsWith("image/") || extension in IMAGE_EXTENSIONS) {
+        "image"
+    } else {
+        "document"
+    }
+}
+
+private fun mimeTypeFromName(name: String): String {
+    return when (name.substringAfterLast('.', "").lowercase()) {
+        "png" -> "image/png"
+        "jpg", "jpeg" -> "image/jpeg"
+        "webp" -> "image/webp"
+        "gif" -> "image/gif"
+        "pdf" -> "application/pdf"
+        "docx" -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        "docm" -> "application/vnd.ms-word.document.macroenabled.12"
+        "dotx" -> "application/vnd.openxmlformats-officedocument.wordprocessingml.template"
+        "dotm" -> "application/vnd.ms-word.template.macroenabled.12"
+        "doc" -> "application/msword"
+        "hwpx" -> "application/hwp+zip"
+        "odt" -> "application/vnd.oasis.opendocument.text"
+        "ods" -> "application/vnd.oasis.opendocument.spreadsheet"
+        "odp" -> "application/vnd.oasis.opendocument.presentation"
+        "xlsx" -> "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        "xlsm" -> "application/vnd.ms-excel.sheet.macroenabled.12"
+        "xltx" -> "application/vnd.openxmlformats-officedocument.spreadsheetml.template"
+        "xltm" -> "application/vnd.ms-excel.template.macroenabled.12"
+        "xls", "xlt" -> "application/vnd.ms-excel"
+        "pptx" -> "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+        "pptm" -> "application/vnd.ms-powerpoint.presentation.macroenabled.12"
+        "ppsx" -> "application/vnd.openxmlformats-officedocument.presentationml.slideshow"
+        "ppsm" -> "application/vnd.ms-powerpoint.slideshow.macroenabled.12"
+        "potx" -> "application/vnd.openxmlformats-officedocument.presentationml.template"
+        "potm" -> "application/vnd.ms-powerpoint.template.macroenabled.12"
+        "ppt", "pps", "pot" -> "application/vnd.ms-powerpoint"
+        "hwp" -> "application/x-hwp"
+        "epub" -> "application/epub+zip"
+        "pages" -> "application/vnd.apple.pages"
+        "numbers" -> "application/vnd.apple.numbers"
+        "key" -> "application/vnd.apple.keynote"
+        "webarchive" -> "application/x-webarchive"
+        "rtf" -> "application/rtf"
+        "html", "htm" -> "text/html"
+        "xml" -> "application/xml"
+        "md", "markdown" -> "text/markdown"
+        "rst" -> "text/x-rst"
+        "adoc", "asciidoc" -> "text/asciidoc"
+        "log" -> "text/x-log"
+        "text", "conf", "ini", "toml", "properties", "env" -> "text/plain"
+        "csv" -> "text/csv"
+        "tsv" -> "text/tab-separated-values"
+        "json" -> "application/json"
+        "jsonl" -> "application/x-ndjson"
+        "yaml", "yml" -> "application/yaml"
+        "txt" -> "text/plain"
+        else -> "application/octet-stream"
+    }
+}
+
+private val IMAGE_EXTENSIONS = setOf("png", "jpg", "jpeg", "webp", "gif")
 
 private fun providerFromQualifiedId(qualifiedId: String?): String? {
     val value = qualifiedId?.takeIf(String::isNotBlank) ?: return null
@@ -1210,11 +1519,15 @@ internal fun RuntimeUiState.selectedModelSendState(): SelectedModelSendState {
 }
 
 internal fun RuntimeModel.isChatModel(): Boolean {
-    return modelKind == MODEL_KIND_CHAT || capabilities.any { it == "chat" || it == "completion" }
+    return modelKind == MODEL_KIND_CHAT || capabilities.any { it == "chat" || it == "completion" || it == "vision" || it == "image" }
 }
 
 internal fun RuntimeModel.isEmbeddingModel(): Boolean {
     return modelKind == MODEL_KIND_EMBEDDING || capabilities.any { it == "embedding" || it == "embed" }
+}
+
+internal fun RuntimeModel.supportsImageInput(): Boolean {
+    return isChatModel() && capabilities.any { it == "vision" || it == "image" || it == "multimodal" }
 }
 
 internal fun normalizeModelKind(
@@ -1227,13 +1540,21 @@ internal fun normalizeModelKind(
     if (normalizedKind == MODEL_KIND_EMBEDDING || normalizedKind == "embed" || normalizedKind == "embeddings") {
         return MODEL_KIND_EMBEDDING
     }
-    if (normalizedKind == MODEL_KIND_CHAT || normalizedKind == "llm" || normalizedKind == "completion" || normalizedKind == "text") {
+    if (
+        normalizedKind == MODEL_KIND_CHAT ||
+        normalizedKind == "llm" ||
+        normalizedKind == "completion" ||
+        normalizedKind == "text" ||
+        normalizedKind == "vision" ||
+        normalizedKind == "vl" ||
+        normalizedKind == "multimodal"
+    ) {
         return MODEL_KIND_CHAT
     }
     if (capabilities.any { it == "embedding" || it == "embed" }) {
         return MODEL_KIND_EMBEDDING
     }
-    if (capabilities.any { it == "chat" || it == "completion" }) {
+    if (capabilities.any { it == "chat" || it == "completion" || it == "vision" || it == "image" || it == "multimodal" }) {
         return MODEL_KIND_CHAT
     }
     return if (looksLikeEmbeddingModel(id) || looksLikeEmbeddingModel(name)) {
@@ -1259,17 +1580,18 @@ internal fun RuntimeUiState.withChatDelta(
     if (activeRequestId != envelope.requestId) return this
     if (payload.content.isEmpty() && payload.reasoning.isEmpty()) return this
 
-    val updated = messages.toMutableList()
-    val index = updated.indexOfLast { it.role == "assistant" }
-    if (index >= 0) {
-        val item = updated[index]
-        updated[index] = item.copy(
-            content = item.content + payload.content,
-            reasoning = item.reasoning + payload.reasoning,
-        )
+        val updated = messages.toMutableList()
+        val index = updated.indexOfLast { it.role == "assistant" }
+        if (index >= 0) {
+            val item = updated[index]
+            updated[index] = item.copy(
+                content = item.content + payload.content,
+                reasoning = item.reasoning + payload.reasoning,
+                suggestions = emptyList(),
+            )
+        }
+        return copy(messages = updated)
     }
-    return copy(messages = updated)
-}
 
 internal fun RuntimeUiState.withChatDone(
     envelope: ProtocolEnvelope,
@@ -1281,7 +1603,16 @@ internal fun RuntimeUiState.withChatDone(
         isStreaming = false,
         activeRequestId = null,
         error = if (payload?.finishReason == "cancelled") RuntimeUiError("generation_cancelled") else error,
-    )
+        )
+    }
+
+internal fun RuntimeUiState.withChatSuggestions(suggestions: List<String>): RuntimeUiState {
+    val updated = messages.toMutableList()
+    val index = updated.indexOfLast { it.role == "assistant" && it.content.isNotBlank() }
+    if (index < 0) return this
+    val cleanedSuggestions = suggestions.cleanedSuggestions()
+    updated[index] = updated[index].copy(suggestions = cleanedSuggestions)
+    return copy(messages = updated)
 }
 
 internal fun RuntimeUiState.withChatCancelAck(
@@ -1314,6 +1645,7 @@ internal fun RuntimeUiState.withRuntimeError(
             messages
         },
         isStreaming = if (isActiveChatError) false else isStreaming,
+        isLoadingSuggestions = if (isActiveChatError) false else isLoadingSuggestions,
         activeRequestId = if (isActiveChatError) null else activeRequestId,
         isLoadingModels = false,
         installingModelId = if (isModelPullError) null else installingModelId,

@@ -9,7 +9,7 @@ struct LogsView: View {
         VStack(alignment: .leading, spacing: 18) {
             CompanionPageHeader(
                 title: "Runtime Logs",
-                subtitle: "Recent companion activity from this Mac session.",
+                subtitle: "Recent companion activity from this runtime host session.",
                 systemImage: "list.bullet.rectangle.fill"
             )
 
@@ -92,7 +92,7 @@ private func localizedLogLine(_ line: String) -> String {
             )
         }
         if line.hasPrefix("Received ") {
-            return NSLocalizedString("Received Android runtime request", comment: "")
+            return NSLocalizedString("Received client runtime request", comment: "")
         }
         if line.hasPrefix("Loaded "), line.hasSuffix(" local model(s)") {
             let count = String(line.dropFirst("Loaded ".count).dropLast(" local model(s)".count))

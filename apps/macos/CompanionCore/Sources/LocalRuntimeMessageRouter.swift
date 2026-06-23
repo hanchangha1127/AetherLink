@@ -1,5 +1,6 @@
 import BridgeProtocol
 import CryptoKit
+import DocumentIngestion
 import Foundation
 import LMStudioBackend
 import OllamaBackend
@@ -62,6 +63,9 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         case MessageType.chatCancel:
             guard allowRuntimeCommand(envelope, sink: sink) else { return }
             handleChatCancel(envelope, sink: sink)
+        case MessageType.chatSuggestionsRequest:
+            guard allowRuntimeCommand(envelope, sink: sink) else { return }
+            await handleChatSuggestionsRequest(envelope, sink: sink)
         default:
             sink.send(errorEnvelope(
                 requestID: envelope.requestID,
@@ -78,7 +82,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
             sink.send(errorEnvelope(
                 requestID: envelope.requestID,
                 code: "authentication_required",
-                message: "Pair and authenticate this Android device before sending runtime commands.",
+                message: "Pair and authenticate this client device before sending runtime commands.",
                 retryable: false
             ))
             return false
@@ -131,6 +135,39 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         }
     }
 
+    private func handleChatSuggestionsRequest(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) async {
+        do {
+            let parsedRequest = try chatSuggestionsRequest(from: envelope)
+            try await requireInstalledModel(parsedRequest.request.model)
+
+            var generatedText = ""
+            for try await event in backend.chat(request: parsedRequest.request) {
+                switch event {
+                case .delta(let text):
+                    generatedText += text
+                case .reasoningDelta:
+                    continue
+                case .done:
+                    break
+                }
+            }
+
+            let suggestions = Self.suggestions(
+                from: generatedText,
+                maxSuggestions: parsedRequest.maxSuggestions
+            )
+            sink.send(ProtocolEnvelope(
+                type: MessageType.chatSuggestionsResult,
+                requestID: envelope.requestID,
+                payload: [
+                    "suggestions": .array(suggestions.map { .string($0) })
+                ]
+            ))
+        } catch {
+            sink.send(errorEnvelope(requestID: envelope.requestID, error: error))
+        }
+    }
+
     private func handleHello(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) async {
         do {
             let deviceID = try requiredString("device_id", in: envelope.payload)
@@ -138,7 +175,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                 sink.send(errorEnvelope(
                     requestID: envelope.requestID,
                     code: "pairing_required",
-                    message: "This Android device is not trusted by the Mac runtime.",
+                    message: "This client device is not trusted by the companion runtime.",
                     retryable: false
                 ))
                 return
@@ -176,7 +213,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                 sink.send(errorEnvelope(
                     requestID: envelope.requestID,
                     code: "authentication_failed",
-                    message: "Could not authenticate this Android device.",
+                    message: "Could not authenticate this client device.",
                     retryable: false
                 ))
                 return
@@ -211,13 +248,13 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                     "ollama": providerPayloads[.ollama] ?? .object([
                         "available": .bool(false),
                         "code": .string("backend_unavailable"),
-                        "message": .string("Ollama is not enabled in the Mac runtime."),
+                        "message": .string("Ollama is not enabled in the companion runtime."),
                         "retryable": .bool(false)
                     ]),
                     "lm_studio": providerPayloads[.lmStudio] ?? .object([
                         "available": .bool(false),
                         "code": .string("backend_unavailable"),
-                        "message": .string("LM Studio is not enabled in the Mac runtime."),
+                        "message": .string("LM Studio is not enabled in the companion runtime."),
                         "retryable": .bool(false)
                     ])
                 ]
@@ -234,7 +271,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                     "status": .string("ok"),
                     backend.provider.rawValue: .object([
                         "available": .bool(true),
-                        "message": .string("\(backend.provider.displayName) is reachable from the Mac runtime")
+                        "message": .string("\(backend.provider.displayName) is reachable from the companion runtime")
                     ])
                 ]
             ))
@@ -442,9 +479,15 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
             guard case .object(let object) = value else {
                 throw LocalRuntimeRouterError.invalidPayload("Each message must be an object")
             }
+            let parsedAttachments = try chatAttachments(from: object)
+            let processed = try processChatAttachments(parsedAttachments)
             return ChatMessage(
                 role: try requiredString("role", in: object),
-                content: try requiredString("content", in: object)
+                content: content(
+                    try requiredString("content", in: object),
+                    appending: processed.promptText
+                ),
+                attachments: processed.preservedAttachments
             )
         }
 
@@ -453,6 +496,33 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
             sessionID: sessionID,
             model: model,
             messages: messages
+        )
+    }
+
+    private func chatSuggestionsRequest(from envelope: ProtocolEnvelope) throws -> ChatSuggestionRuntimeRequest {
+        let baseRequest = try chatRequest(from: envelope)
+        let maxSuggestions = optionalInt("max_suggestions", in: envelope.payload)
+            .map { min(max($0, 1), 5) }
+            ?? 3
+        let locale = optionalString("locale", in: envelope.payload)
+        let recentMessages = Array(baseRequest.messages.suffix(8))
+        guard recentMessages.contains(where: { $0.role == "user" }) else {
+            throw LocalRuntimeRouterError.invalidPayload("messages must include at least one user message")
+        }
+
+        let suggestionRequest = ChatRequest(
+            generationID: envelope.requestID,
+            sessionID: baseRequest.sessionID,
+            model: baseRequest.model,
+            messages: Self.suggestionPromptMessages(
+                recentMessages: recentMessages,
+                maxSuggestions: maxSuggestions,
+                locale: locale
+            )
+        )
+        return ChatSuggestionRuntimeRequest(
+            request: suggestionRequest,
+            maxSuggestions: maxSuggestions
         )
     }
 
@@ -521,7 +591,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         case .available:
             return .object([
                 "available": .bool(true),
-                "message": .string("Backend is reachable from the Mac runtime")
+                "message": .string("Backend is reachable from the companion runtime")
             ])
         case .unavailable(let error):
             return .object([
@@ -577,6 +647,55 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         return name
     }
 
+    private static func suggestionPromptMessages(
+        recentMessages: [ChatMessage],
+        maxSuggestions: Int,
+        locale: String?
+    ) -> [ChatMessage] {
+        let localeInstruction = locale
+            .map { "Use this BCP-47 locale when writing suggestions unless the conversation clearly uses another language: \($0)." }
+            ?? "Use the same language as the conversation."
+        return [
+            ChatMessage(
+                role: "system",
+                content: """
+                You generate short follow-up questions for a chat assistant UI.
+                Return only strict JSON with this shape: {"suggestions":["question 1","question 2"]}.
+                Generate \(maxSuggestions) useful next questions at most.
+                Each question must be concise, natural, and directly related to the latest assistant answer.
+                Do not answer the conversation. Do not include markdown, numbering, explanations, or extra keys.
+                \(localeInstruction)
+                """
+            )
+        ] + recentMessages + [
+            ChatMessage(
+                role: "user",
+                content: "Generate the next questions now."
+            )
+        ]
+    }
+
+    private static func suggestions(from rawText: String, maxSuggestions: Int) -> [String] {
+        let trimmedText = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let decoder = JSONDecoder()
+        if let data = trimmedText.data(using: .utf8) {
+            if let result = try? decoder.decode(ChatSuggestionsResult.self, from: data) {
+                return result.suggestions.cleanedSuggestions(maxCount: maxSuggestions)
+            }
+            if let result = try? decoder.decode([String].self, from: data) {
+                return result.cleanedSuggestions(maxCount: maxSuggestions)
+            }
+        }
+
+        return trimmedText
+            .split(whereSeparator: { $0.isNewline })
+            .map { line in
+                line.trimmingCharacters(in: .whitespacesAndNewlines)
+                    .trimmingCharacters(in: CharacterSet(charactersIn: "-*0123456789. )\"'"))
+            }
+            .cleanedSuggestions(maxCount: maxSuggestions)
+    }
+
     private static func verifySignature(
         publicKeyBase64: String,
         nonce: String,
@@ -599,9 +718,20 @@ private enum AuthSessionState: Equatable {
     case authenticated(deviceID: String)
 }
 
+private struct ChatSuggestionRuntimeRequest {
+    var request: ChatRequest
+    var maxSuggestions: Int
+}
+
+private struct ChatSuggestionsResult: Decodable {
+    var suggestions: [String]
+}
+
 private enum LocalRuntimeRouterError: Error, LocalizedError {
     case invalidPayload(String)
     case modelNotInstalled(String)
+    case unsupportedAttachment(String)
+    case unreadableAttachment(String)
 
     var code: String {
         switch self {
@@ -609,6 +739,10 @@ private enum LocalRuntimeRouterError: Error, LocalizedError {
             return "invalid_payload"
         case .modelNotInstalled:
             return "model_not_installed"
+        case .unsupportedAttachment:
+            return "unsupported_attachment"
+        case .unreadableAttachment:
+            return "unreadable_attachment"
         }
     }
 
@@ -617,8 +751,143 @@ private enum LocalRuntimeRouterError: Error, LocalizedError {
         case .invalidPayload(let message):
             return message
         case .modelNotInstalled(let model):
-            return "Model '\(model)' is not installed on the Mac runtime. Pull it through the Mac runtime before sending chat."
+            return "Model '\(model)' is not installed on the companion runtime. Pull it through the companion runtime before sending chat."
+        case .unsupportedAttachment(let message),
+             .unreadableAttachment(let message):
+            return message
         }
+    }
+}
+
+private struct ProcessedChatAttachments {
+    var promptText: String
+    var preservedAttachments: [ChatAttachment]
+}
+
+private func chatAttachments(from object: [String: JSONValue]) throws -> [ChatAttachment] {
+    guard let attachmentsValue = object["attachments"] else { return [] }
+    guard case .array(let attachmentValues) = attachmentsValue else {
+        throw LocalRuntimeRouterError.invalidPayload("attachments must be an array")
+    }
+    return try attachmentValues.map { value in
+        guard case .object(let attachmentObject) = value else {
+            throw LocalRuntimeRouterError.invalidPayload("Each attachment must be an object")
+        }
+        return ChatAttachment(
+            type: try requiredString("type", in: attachmentObject),
+            mimeType: try requiredString("mime_type", in: attachmentObject),
+            name: optionalString("name", in: attachmentObject),
+            dataBase64: optionalString("data_base64", in: attachmentObject),
+            text: optionalString("text", in: attachmentObject)
+        )
+    }
+}
+
+private func processChatAttachments(_ attachments: [ChatAttachment]) throws -> ProcessedChatAttachments {
+    var promptBlocks: [String] = []
+    var preservedAttachments: [ChatAttachment] = []
+
+    for attachment in attachments {
+        if attachment.isImage {
+            preservedAttachments.append(attachment)
+            continue
+        }
+
+        let name = attachment.name ?? "attachment"
+        if let text = attachment.text?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty {
+            promptBlocks.append(documentPromptBlock(name: name, mimeType: attachment.mimeType, text: text))
+            continue
+        }
+
+        guard let dataBase64 = attachment.dataBase64 else {
+            throw LocalRuntimeRouterError.unreadableAttachment(
+                "Attachment '\(name)' does not include readable text or base64 document data."
+            )
+        }
+        guard let data = Data(base64Encoded: dataBase64) else {
+            throw LocalRuntimeRouterError.unreadableAttachment(
+                "Attachment '\(name)' contains invalid base64 document data."
+            )
+        }
+
+        let extracted = try extractDocumentAttachment(
+            data: data,
+            name: name,
+            mimeType: attachment.mimeType
+        )
+        promptBlocks.append(documentPromptBlock(
+            name: extracted.fileName,
+            mimeType: extracted.mimeType,
+            text: extracted.text
+        ))
+    }
+
+    return ProcessedChatAttachments(
+        promptText: promptBlocks.joined(separator: "\n\n"),
+        preservedAttachments: preservedAttachments
+    )
+}
+
+private func extractDocumentAttachment(
+    data: Data,
+    name: String,
+    mimeType: String
+) throws -> ExtractedDocument {
+    let temporaryDirectory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("aetherlink-attachments", isDirectory: true)
+        .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    try FileManager.default.createDirectory(at: temporaryDirectory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
+
+    let fileURL = temporaryDirectory.appendingPathComponent(safeAttachmentFileName(name))
+    do {
+        try data.write(to: fileURL, options: .atomic)
+        return try DocumentTextExtractor().extractText(from: fileURL, mimeType: mimeType)
+    } catch let error as DocumentIngestionError {
+        switch error {
+        case .unsupportedFileType:
+            throw LocalRuntimeRouterError.unsupportedAttachment(
+                "Attachment '\(name)' has unsupported document type '\(mimeType)'."
+            )
+        case .unreadablePDF, .archiveListingFailed, .archiveEntryReadFailed, .converterFailed, .noExtractableText:
+            throw LocalRuntimeRouterError.unreadableAttachment(
+                "Attachment '\(name)' could not be read: \(error.localizedDescription)"
+            )
+        }
+    } catch {
+        throw LocalRuntimeRouterError.unreadableAttachment(
+            "Attachment '\(name)' could not be read: \(error.localizedDescription)"
+        )
+    }
+}
+
+private func content(_ baseContent: String, appending attachmentText: String) -> String {
+    guard !attachmentText.isEmpty else { return baseContent }
+    return "\(baseContent)\n\n\(attachmentText)"
+}
+
+private func documentPromptBlock(name: String, mimeType: String, text: String) -> String {
+    """
+    [Attached document: \(name) (\(mimeType))]
+    \(text)
+    """
+}
+
+private func safeAttachmentFileName(_ name: String) -> String {
+    let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+    let fallback = trimmedName.isEmpty ? "attachment" : trimmedName
+    let allowedCharacters = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-")
+    let scalars = fallback.unicodeScalars.map { scalar in
+        allowedCharacters.contains(scalar) ? Character(scalar) : "_"
+    }
+    return String(scalars)
+}
+
+private extension ChatAttachment {
+    var isImage: Bool {
+        let normalizedType = type.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let normalizedMimeType = mimeType.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return normalizedType == "image" || normalizedMimeType.hasPrefix("image/")
     }
 }
 
@@ -635,4 +904,44 @@ private func requiredString(_ key: String, in payload: [String: JSONValue]) thro
         throw LocalRuntimeRouterError.invalidPayload("Payload field \(key) must be a non-empty string")
     }
     return string
+}
+
+private func optionalString(_ key: String, in payload: [String: JSONValue]) -> String? {
+    guard let value = payload[key], case .string(let string) = value, !string.isEmpty else {
+        return nil
+    }
+    return string
+}
+
+private func optionalInt(_ key: String, in payload: [String: JSONValue]) -> Int? {
+    guard let value = payload[key] else { return nil }
+    switch value {
+    case .number(let number):
+        return Int(number)
+    case .string(let string):
+        return Int(string.trimmingCharacters(in: .whitespacesAndNewlines))
+    default:
+        return nil
+    }
+}
+
+private extension Array where Element == String {
+    func cleanedSuggestions(maxCount: Int) -> [String] {
+        var seen = Set<String>()
+        var result: [String] = []
+        for suggestion in self {
+            let cleaned = suggestion
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+            guard !cleaned.isEmpty else { continue }
+            let key = cleaned.lowercased()
+            guard !seen.contains(key) else { continue }
+            seen.insert(key)
+            result.append(cleaned)
+            if result.count >= maxCount {
+                break
+            }
+        }
+        return result
+    }
 }

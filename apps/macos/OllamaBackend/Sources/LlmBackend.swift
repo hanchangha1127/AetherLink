@@ -127,7 +127,7 @@ public enum ModelKind: String, Equatable, Sendable {
         if normalizedCapabilities.contains(where: { $0 == "embedding" || $0 == "embed" }) {
             return .embedding
         }
-        if normalizedCapabilities.contains(where: { $0 == "chat" || $0 == "completion" }) {
+        if normalizedCapabilities.contains(where: { $0 == "chat" || $0 == "completion" || $0 == "vision" || $0 == "image" }) {
             return .chat
         }
         return fallbackName.looksLikeEmbeddingModelName ? .embedding : .chat
@@ -176,10 +176,70 @@ public struct ModelPullResult: Equatable, Sendable {
 public struct ChatMessage: Codable, Equatable, Sendable {
     public var role: String
     public var content: String
+    public var attachments: [ChatAttachment]
 
     public init(role: String, content: String) {
         self.role = role
         self.content = content
+        self.attachments = []
+    }
+
+    public init(role: String, content: String, attachments: [ChatAttachment]) {
+        self.role = role
+        self.content = content
+        self.attachments = attachments
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case role
+        case content
+        case attachments
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        role = try container.decode(String.self, forKey: .role)
+        content = try container.decode(String.self, forKey: .content)
+        attachments = try container.decodeIfPresent([ChatAttachment].self, forKey: .attachments) ?? []
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(role, forKey: .role)
+        try container.encode(content, forKey: .content)
+        if !attachments.isEmpty {
+            try container.encode(attachments, forKey: .attachments)
+        }
+    }
+}
+
+public struct ChatAttachment: Codable, Equatable, Sendable {
+    public var type: String
+    public var mimeType: String
+    public var name: String?
+    public var dataBase64: String?
+    public var text: String?
+
+    public init(
+        type: String,
+        mimeType: String,
+        name: String? = nil,
+        dataBase64: String? = nil,
+        text: String? = nil
+    ) {
+        self.type = type
+        self.mimeType = mimeType
+        self.name = name
+        self.dataBase64 = dataBase64
+        self.text = text
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case mimeType = "mime_type"
+        case name
+        case dataBase64 = "data_base64"
+        case text
     }
 }
 

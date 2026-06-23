@@ -6,8 +6,10 @@ import android.os.Bundle
 import android.os.LocaleList
 import androidx.activity.SystemBarStyle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.StringRes
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.rememberScrollState
@@ -157,6 +159,11 @@ private fun LocalAgentBridgeApp() {
             }
             val hasChatSearchResults =
                 filteredChatSessions.isNotEmpty() || filteredArchivedChatSessions.isNotEmpty()
+            val attachmentPickerLauncher = rememberLauncherForActivityResult(
+                contract = ActivityResultContracts.GetMultipleContents(),
+            ) { uris ->
+                viewModel.addAttachments(uris)
+            }
 
             LaunchedEffect(state.trustedMac?.deviceId) {
                 if (state.trustedMac != null && destination == AppDestination.Pairing) {
@@ -382,6 +389,9 @@ private fun LocalAgentBridgeApp() {
                             onRefreshHealth = viewModel::requestRuntimeHealth,
                             onRequestModels = viewModel::requestModels,
                             onSelectModel = viewModel::selectModel,
+                            onAttachFiles = { attachmentPickerLauncher.launch("*/*") },
+                            onRemoveAttachment = viewModel::removePendingAttachment,
+                            onSuggestionClick = viewModel::useSuggestedQuestion,
                             modifier = Modifier
                                 .fillMaxSize()
                                 .padding(padding),

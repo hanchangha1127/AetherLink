@@ -25,7 +25,9 @@ data class RuntimeUiState(
     val activeChatSessionId: String? = null,
     val messages: List<RuntimeChatMessage> = emptyList(),
     val chatInput: String = "",
+    val pendingAttachments: List<RuntimePendingAttachment> = emptyList(),
     val isStreaming: Boolean = false,
+    val isLoadingSuggestions: Boolean = false,
     val activeRequestId: String? = null,
     val memoryEntries: List<RuntimeMemoryEntry> = emptyList(),
     val selectedLanguageTag: String = RuntimeAppLanguage.English.languageTag,
@@ -96,6 +98,16 @@ data class RuntimeChatMessage(
     val role: String,
     val content: String,
     val reasoning: String = "",
+    val suggestions: List<String> = emptyList(),
+)
+
+data class RuntimePendingAttachment(
+    val id: String = UUID.randomUUID().toString(),
+    val type: String,
+    val name: String,
+    val mimeType: String,
+    val sizeBytes: Long,
+    val dataBase64: String,
 )
 
 data class RuntimeChatSession(

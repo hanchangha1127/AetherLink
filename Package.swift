@@ -40,6 +40,10 @@ let package = Package(
             path: "apps/macos/LMStudioBackend/Sources"
         ),
         .target(
+            name: "DocumentIngestion",
+            path: "apps/macos/DocumentIngestion/Sources"
+        ),
+        .target(
             name: "CompanionCore",
             dependencies: [
                 "BridgeProtocol",
@@ -47,7 +51,8 @@ let package = Package(
                 "Pairing",
                 "Transport",
                 "OllamaBackend",
-                "LMStudioBackend"
+                "LMStudioBackend",
+                "DocumentIngestion"
             ],
             path: "apps/macos/CompanionCore/Sources"
         ),
@@ -86,6 +91,11 @@ let package = Package(
             name: "CompanionCoreTests",
             dependencies: ["CompanionCore"],
             path: "apps/macos/CompanionCore/Tests"
+        ),
+        .testTarget(
+            name: "DocumentIngestionTests",
+            dependencies: ["DocumentIngestion"],
+            path: "apps/macos/DocumentIngestion/Tests"
         )
     ]
 )

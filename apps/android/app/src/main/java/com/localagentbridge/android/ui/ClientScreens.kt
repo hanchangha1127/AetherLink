@@ -40,7 +40,6 @@ import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Link
-import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
@@ -90,11 +89,13 @@ import com.localagentbridge.android.runtime.RuntimeChatMessage
 import com.localagentbridge.android.runtime.RuntimeDiscoveredMac
 import com.localagentbridge.android.runtime.RuntimeMemoryEntry
 import com.localagentbridge.android.runtime.RuntimeModel
+import com.localagentbridge.android.runtime.RuntimePendingAttachment
 import com.localagentbridge.android.runtime.RuntimeProviderStatus
 import com.localagentbridge.android.runtime.RuntimeUiError
 import com.localagentbridge.android.runtime.RuntimeUiState
 import com.localagentbridge.android.runtime.isChatModel
 import com.localagentbridge.android.runtime.isEmbeddingModel
+import com.localagentbridge.android.runtime.supportsImageInput
 
 @Composable
 fun PairingScreen(
@@ -436,19 +437,19 @@ fun ChatScreen(
     onRefreshHealth: () -> Unit,
     onRequestModels: () -> Unit,
     onSelectModel: (String) -> Unit,
+    onAttachFiles: () -> Unit,
+    onRemoveAttachment: (String) -> Unit,
+    onSuggestionClick: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val listState = rememberLazyListState()
+    val hasSendableContent = state.chatInput.isNotBlank() || state.pendingAttachments.isNotEmpty()
+    val hasUnsupportedImageAttachment = hasUnsupportedImageAttachment(state)
     val canSend = state.isConnected &&
         !state.isStreaming &&
         selectedModelIsUsable(state) &&
-        state.chatInput.isNotBlank()
-    val selectedChatModel = state.models.firstOrNull { model ->
-        model.id == state.selectedModelId && model.isChatModel()
-    }
-    val composerModelLabel = selectedChatModel
-        ?.let { model -> "${model.provider} - ${model.name}" }
-        ?: stringResource(R.string.model_none)
+        hasSendableContent &&
+        !hasUnsupportedImageAttachment
     val density = LocalDensity.current
     val keyboardDockPadding = if (WindowInsets.ime.getBottom(density) > 0) 64.dp else 0.dp
 
@@ -472,7 +473,6 @@ fun ChatScreen(
             ) {
                 ChatEmptyState(
                     state = state,
-                    onInputChange = onInputChange,
                     onConnect = onConnect,
                     onRequestModels = onRequestModels,
                     onSelectModel = onSelectModel,
@@ -489,11 +489,16 @@ fun ChatScreen(
                     items = state.messages,
                     key = { message -> message.id },
                 ) { message ->
+                    val isLatestAssistant = message.role == "assistant" &&
+                        message.id == state.messages.lastAssistantMessageId()
                     ChatMessageRow(
                         message = message,
                         isStreaming = state.isStreaming &&
                             message.role == "assistant" &&
                             message.id == state.messages.lastOrNull()?.id,
+                        showSuggestions = isLatestAssistant && !state.isStreaming,
+                        isLoadingSuggestions = isLatestAssistant && state.isLoadingSuggestions,
+                        onSuggestionClick = onSuggestionClick,
                     )
                 }
             }
@@ -513,12 +518,14 @@ fun ChatScreen(
             ErrorText(state.error)
             ChatComposer(
                 value = state.chatInput,
+                attachments = state.pendingAttachments,
                 enabled = !state.isStreaming,
                 canSend = canSend,
                 isStreaming = state.isStreaming,
                 hint = chatInputHint(state),
-                modelProviderLabel = composerModelLabel,
                 onInputChange = onInputChange,
+                onAttachFiles = onAttachFiles,
+                onRemoveAttachment = onRemoveAttachment,
                 onSend = onSend,
                 onCancel = onCancel,
             )
@@ -891,7 +898,7 @@ private fun EndpointPanel(
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Icon(
-                            Icons.Filled.PhoneAndroid,
+                            Icons.Filled.Link,
                             contentDescription = null,
                         )
                         Spacer(Modifier.width(8.dp))
@@ -1053,23 +1060,11 @@ private fun DiscoveredMacRow(peer: RuntimeDiscoveredMac, onUse: (RuntimeDiscover
 @Composable
 private fun ChatEmptyState(
     state: RuntimeUiState,
-    onInputChange: (String) -> Unit,
     onConnect: () -> Unit,
     onRequestModels: () -> Unit,
     onSelectModel: (String) -> Unit,
 ) {
     val hapticFeedback = LocalHapticFeedback.current
-    val showStarterPrompts = state.isConnected &&
-        !state.isConnecting &&
-        !state.isLoadingModels &&
-        !state.isStreaming &&
-        selectedModelIsUsable(state)
-    val starterPrompts = listOf(
-        stringResource(R.string.chat_starter_prompt_explain_project),
-        stringResource(R.string.chat_starter_prompt_summarize_plan),
-        stringResource(R.string.chat_starter_prompt_debug_issue),
-        stringResource(R.string.chat_starter_prompt_compare_options),
-    )
 
     Column(
         modifier = Modifier
@@ -1116,29 +1111,6 @@ private fun ChatEmptyState(
         }
         if (state.isStreaming) {
             LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-        }
-        if (showStarterPrompts) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                starterPrompts.forEach { prompt ->
-                    OutlinedButton(
-                        onClick = {
-                            onInputChange(prompt)
-                        },
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                    ) {
-                        Text(
-                            text = prompt,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
-            }
         }
         val chatModels = state.models.filter { it.isChatModel() }
         if (state.isConnected && !selectedModelIsUsable(state) && chatModels.isNotEmpty()) {
@@ -1276,6 +1248,9 @@ private fun quickModelStatus(model: RuntimeModel, installing: Boolean): String {
 private fun ChatMessageRow(
     message: RuntimeChatMessage,
     isStreaming: Boolean,
+    showSuggestions: Boolean,
+    isLoadingSuggestions: Boolean,
+    onSuggestionClick: (String) -> Unit,
 ) {
     val isUser = message.role == "user"
     Row(
@@ -1311,6 +1286,9 @@ private fun ChatMessageRow(
             AssistantMessage(
                 message = message,
                 isStreaming = isStreaming,
+                showSuggestions = showSuggestions,
+                isLoadingSuggestions = isLoadingSuggestions,
+                onSuggestionClick = onSuggestionClick,
             )
         }
     }
@@ -1320,6 +1298,9 @@ private fun ChatMessageRow(
 private fun AssistantMessage(
     message: RuntimeChatMessage,
     isStreaming: Boolean,
+    showSuggestions: Boolean,
+    isLoadingSuggestions: Boolean,
+    onSuggestionClick: (String) -> Unit,
 ) {
     val hasReasoning = message.reasoning.isNotBlank()
     val isReasoningExpanded = rememberSaveable(message.id) { mutableStateOf(false) }
@@ -1365,6 +1346,64 @@ private fun AssistantMessage(
             if (textToCopy.isNotBlank()) {
                 MessageCopyButton(textToCopy = textToCopy)
             }
+            if (showSuggestions) {
+                SuggestedQuestions(
+                    suggestions = message.suggestions,
+                    isLoading = isLoadingSuggestions,
+                    onSuggestionClick = onSuggestionClick,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SuggestedQuestions(
+    suggestions: List<String>,
+    isLoading: Boolean,
+    onSuggestionClick: (String) -> Unit,
+) {
+    if (suggestions.isEmpty() && !isLoading) return
+
+    val hapticFeedback = LocalHapticFeedback.current
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(
+            text = stringResource(
+                if (isLoading && suggestions.isEmpty()) {
+                    R.string.generating_suggestions
+                } else {
+                    R.string.suggested_next_questions
+                }
+            ),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.secondary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        if (suggestions.isNotEmpty()) {
+            Row(
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                suggestions.forEach { suggestion ->
+                    OutlinedButton(
+                        onClick = {
+                            hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                            onSuggestionClick(suggestion)
+                        },
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 7.dp),
+                        modifier = Modifier.widthIn(max = 260.dp),
+                    ) {
+                        Text(
+                            text = suggestion,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+        } else {
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
         }
     }
 }
@@ -1538,6 +1577,10 @@ private fun addTextPart(
     }
 }
 
+private fun List<RuntimeChatMessage>.lastAssistantMessageId(): String? {
+    return lastOrNull { it.role == "assistant" }?.id
+}
+
 @Composable
 private fun AssistantReasoning(
     reasoning: String,
@@ -1625,12 +1668,14 @@ private fun AssistantAvatar() {
 @Composable
 private fun ChatComposer(
     value: String,
+    attachments: List<RuntimePendingAttachment>,
     enabled: Boolean,
     canSend: Boolean,
     isStreaming: Boolean,
     hint: String,
-    modelProviderLabel: String,
     onInputChange: (String) -> Unit,
+    onAttachFiles: () -> Unit,
+    onRemoveAttachment: (String) -> Unit,
     onSend: () -> Unit,
     onCancel: () -> Unit,
     modifier: Modifier = Modifier,
@@ -1649,6 +1694,11 @@ private fun ChatComposer(
             if (isStreaming) {
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
             }
+            AttachmentChips(
+                attachments = attachments,
+                enabled = enabled,
+                onRemoveAttachment = onRemoveAttachment,
+            )
             BasicTextField(
                 value = value,
                 onValueChange = onInputChange,
@@ -1687,31 +1737,20 @@ private fun ChatComposer(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Row(
-                    modifier = Modifier.weight(1f),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                FilledTonalIconButton(
+                    onClick = {
+                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onAttachFiles()
+                    },
+                    enabled = enabled,
+                    modifier = Modifier.size(40.dp),
                 ) {
                     Icon(
-                        imageVector = Icons.Filled.Add,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.secondary,
-                        modifier = Modifier.size(18.dp),
-                    )
-                    Icon(
-                        imageVector = Icons.Filled.Search,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.secondary,
-                        modifier = Modifier.size(18.dp),
-                    )
-                    Text(
-                        text = modelProviderLabel,
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.secondary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
+                        Icons.Filled.Add,
+                        contentDescription = stringResource(R.string.content_desc_attach_files),
                     )
                 }
+                Spacer(modifier = Modifier.weight(1f))
                 if (isStreaming) {
                     FilledIconButton(
                         onClick = {
@@ -1745,6 +1784,68 @@ private fun ChatComposer(
                         )
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AttachmentChips(
+    attachments: List<RuntimePendingAttachment>,
+    enabled: Boolean,
+    onRemoveAttachment: (String) -> Unit,
+) {
+    if (attachments.isEmpty()) return
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        attachments.forEach { attachment ->
+            AttachmentChip(
+                attachment = attachment,
+                enabled = enabled,
+                onRemoveAttachment = onRemoveAttachment,
+            )
+        }
+    }
+}
+
+@Composable
+private fun AttachmentChip(
+    attachment: RuntimePendingAttachment,
+    enabled: Boolean,
+    onRemoveAttachment: (String) -> Unit,
+) {
+    Surface(
+        shape = RoundedCornerShape(999.dp),
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+    ) {
+        Row(
+            modifier = Modifier.padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text(
+                text = attachment.name,
+                style = MaterialTheme.typography.labelMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.widthIn(max = 180.dp),
+            )
+            IconButton(
+                onClick = { onRemoveAttachment(attachment.id) },
+                enabled = enabled,
+                modifier = Modifier.size(28.dp),
+            ) {
+                Icon(
+                    Icons.Filled.Close,
+                    contentDescription = stringResource(R.string.content_desc_remove_attachment, attachment.name),
+                    modifier = Modifier.size(18.dp),
+                )
             }
         }
     }
@@ -1821,6 +1922,11 @@ private fun EmbeddingModelPanel(
         .filter { it.isEmbeddingModel() }
         .sortedWith(compareBy<RuntimeModel> { !it.installed }.thenBy { it.name.lowercase() })
     val selectedEmbeddingModel = embeddingModels.firstOrNull { it.id == state.selectedEmbeddingModelId }
+    val selectedEmbeddingModelLabel = selectedEmbeddingModel?.name
+        ?: state.selectedEmbeddingModelId
+            ?.substringAfter(':')
+            ?.takeIf(String::isNotBlank)
+        ?: stringResource(R.string.model_none)
 
     OutlinedCard(modifier = Modifier.fillMaxWidth()) {
         Column(
@@ -1841,7 +1947,7 @@ private fun EmbeddingModelPanel(
             }
             StatusLine(
                 label = stringResource(R.string.selected_embedding_model),
-                value = selectedEmbeddingModel?.name ?: stringResource(R.string.model_none),
+                value = selectedEmbeddingModelLabel,
             )
             Button(
                 onClick = {
@@ -2239,6 +2345,13 @@ private fun selectedModelIsMissingFromRuntime(state: RuntimeUiState): Boolean {
     return state.models.none { it.id == selectedId && it.isChatModel() }
 }
 
+private fun hasUnsupportedImageAttachment(state: RuntimeUiState): Boolean {
+    if (state.pendingAttachments.none { it.type == "image" }) return false
+    val selectedId = state.selectedModelId ?: return false
+    val selectedModel = state.models.firstOrNull { it.id == selectedId && it.isChatModel() }
+    return selectedModel?.supportsImageInput() != true
+}
+
 @Composable
 private fun chatInputHint(state: RuntimeUiState): String {
     return when {
@@ -2246,8 +2359,9 @@ private fun chatInputHint(state: RuntimeUiState): String {
         state.selectedModelId == null -> stringResource(R.string.chat_hint_select_model)
         selectedModelIsMissingFromRuntime(state) -> stringResource(R.string.chat_hint_model_unavailable)
         !selectedModelIsUsable(state) -> stringResource(R.string.chat_hint_install_model)
+        hasUnsupportedImageAttachment(state) -> stringResource(R.string.chat_hint_select_vision_model)
         state.isStreaming -> stringResource(R.string.chat_hint_wait_for_stream)
-        state.chatInput.isBlank() -> stringResource(R.string.chat_hint_enter_message)
+        state.chatInput.isBlank() && state.pendingAttachments.isEmpty() -> stringResource(R.string.chat_hint_enter_message)
         else -> stringResource(R.string.chat_hint_ready)
     }
 }
@@ -2300,6 +2414,11 @@ private fun runtimeErrorLabel(error: RuntimeUiError): String {
         "invalid_payload" -> stringResource(R.string.error_invalid_payload)
         "install_model_first" -> stringResource(R.string.error_install_model_first)
         "model_install_failed" -> stringResource(R.string.error_model_install_failed)
+        "attachment_too_large" -> stringResource(R.string.error_attachment_too_large)
+        "attachment_read_failed" -> stringResource(R.string.error_attachment_read_failed)
+        "select_vision_model" -> stringResource(R.string.error_select_vision_model)
+        "unsupported_attachment" -> stringResource(R.string.error_unsupported_attachment)
+        "unreadable_attachment" -> stringResource(R.string.error_unreadable_attachment)
         "backend_unavailable" -> stringResource(R.string.error_backend_unavailable)
         "generation_not_found" -> stringResource(R.string.error_generation_not_found)
         "transport_error" -> stringResource(R.string.error_transport_error)

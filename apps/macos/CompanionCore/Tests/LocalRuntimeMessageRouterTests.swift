@@ -230,6 +230,109 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(messages.first?.payload["delta"], .string("hello"))
     }
 
+    func testChatSendAppendsDocumentAttachmentTextAndPreservesImageAttachment() async throws {
+        let sink = RecordingSink()
+        let capturedRequest = LockedBox<ChatRequest?>(nil)
+        let router = makeRouter(backend: MockBackend(
+            models: [ModelInfo(id: "llama3.2-vision", name: "llama3.2-vision", installed: true)],
+            chatEvents: [.done(inputTokens: 1, outputTokens: 1)],
+            onChatRequest: { request in
+                capturedRequest.value = request
+            }
+        ))
+        let documentText = "Roadmap item: add offline document summaries."
+        let imageDataBase64 = "iVBORw0KGgo="
+        let envelope = ProtocolEnvelope(
+            type: MessageType.chatSend,
+            requestID: "chat-attachments",
+            payload: [
+                "session_id": .string("session-1"),
+                "model": .string("llama3.2-vision"),
+                "messages": .array([
+                    .object([
+                        "role": .string("user"),
+                        "content": .string("Summarize this."),
+                        "attachments": .array([
+                            .object([
+                                "type": .string("document"),
+                                "mime_type": .string("text/markdown"),
+                                "name": .string("roadmap.md"),
+                                "data_base64": .string(Data(documentText.utf8).base64EncodedString())
+                            ]),
+                            .object([
+                                "type": .string("image"),
+                                "mime_type": .string("image/png"),
+                                "name": .string("diagram.png"),
+                                "data_base64": .string(imageDataBase64)
+                            ])
+                        ])
+                    ])
+                ])
+            ]
+        )
+
+        router.handle(envelope, sink: sink)
+
+        let message = try await sink.waitForMessages(count: 1).first
+        XCTAssertEqual(message?.type, MessageType.chatDone)
+
+        let request = try XCTUnwrap(capturedRequest.value)
+        let forwardedMessage = try XCTUnwrap(request.messages.first)
+        XCTAssertTrue(forwardedMessage.content.contains("Summarize this."))
+        XCTAssertTrue(forwardedMessage.content.contains("[Attached document: roadmap.md (text/plain)]"))
+        XCTAssertTrue(forwardedMessage.content.contains(documentText))
+        XCTAssertEqual(forwardedMessage.attachments, [
+            ChatAttachment(
+                type: "image",
+                mimeType: "image/png",
+                name: "diagram.png",
+                dataBase64: imageDataBase64
+            )
+        ])
+    }
+
+    func testChatSendUnsupportedDocumentAttachmentReturnsStructuredError() async throws {
+        let sink = RecordingSink()
+        let capturedRequest = LockedBox<ChatRequest?>(nil)
+        let router = makeRouter(backend: MockBackend(
+            models: [ModelInfo(id: "llama3.1:8b", name: "llama3.1:8b", installed: true)],
+            onChatRequest: { request in
+                capturedRequest.value = request
+            }
+        ))
+        let envelope = ProtocolEnvelope(
+            type: MessageType.chatSend,
+            requestID: "chat-unsupported-attachment",
+            payload: [
+                "session_id": .string("session-1"),
+                "model": .string("llama3.1:8b"),
+                "messages": .array([
+                    .object([
+                        "role": .string("user"),
+                        "content": .string("Read this."),
+                        "attachments": .array([
+                            .object([
+                                "type": .string("document"),
+                                "mime_type": .string("application/x-custom"),
+                                "name": .string("archive.custom"),
+                                "data_base64": .string(Data("not supported".utf8).base64EncodedString())
+                            ])
+                        ])
+                    ])
+                ])
+            ]
+        )
+
+        router.handle(envelope, sink: sink)
+
+        let message = try await sink.waitForMessages(count: 1).first
+        XCTAssertEqual(message?.type, MessageType.error)
+        XCTAssertEqual(message?.requestID, "chat-unsupported-attachment")
+        XCTAssertEqual(message?.payload["code"], .string("unsupported_attachment"))
+        XCTAssertEqual(message?.payload["retryable"], .bool(false))
+        XCTAssertNil(capturedRequest.value)
+    }
+
     func testChatSendStreamsReasoningDeltaSeparatelyFromAnswerDelta() async throws {
         let sink = RecordingSink()
         let router = makeRouter(backend: MockBackend(
@@ -343,6 +446,55 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(message?.type, MessageType.chatDone)
         XCTAssertEqual(message?.payload["finish_reason"], .string("stop"))
         XCTAssertEqual(routedModel.value, "qwen-local")
+    }
+
+    func testChatSuggestionsRequestReturnsStructuredSuggestions() async throws {
+        let sink = RecordingSink()
+        let capturedRequest = LockedBox<ChatRequest?>(nil)
+        let router = makeRouter(backend: MockBackend(
+            models: [ModelInfo(id: "llama3.1:8b", name: "llama3.1:8b", installed: true)],
+            chatEvents: [
+                .delta(#"{"suggestions":["What should we verify next?","Can you compare the tradeoffs?"]}"#),
+                .done(inputTokens: 4, outputTokens: 12)
+            ],
+            onChatRequest: { request in
+                capturedRequest.value = request
+            }
+        ))
+        let envelope = ProtocolEnvelope(
+            type: MessageType.chatSuggestionsRequest,
+            requestID: "suggestions-1",
+            payload: [
+                "session_id": .string("session-1"),
+                "model": .string("llama3.1:8b"),
+                "max_suggestions": .number(3),
+                "locale": .string("en"),
+                "messages": .array([
+                    .object([
+                        "role": .string("user"),
+                        "content": .string("Explain the transport.")
+                    ]),
+                    .object([
+                        "role": .string("assistant"),
+                        "content": .string("The runtime mediates all backend access.")
+                    ])
+                ])
+            ]
+        )
+
+        router.handle(envelope, sink: sink)
+
+        let message = try await sink.waitForMessages(count: 1).first
+        XCTAssertEqual(message?.type, MessageType.chatSuggestionsResult)
+        XCTAssertEqual(message?.requestID, "suggestions-1")
+        XCTAssertEqual(message?.payload["suggestions"], .array([
+            .string("What should we verify next?"),
+            .string("Can you compare the tradeoffs?")
+        ]))
+        let request = try XCTUnwrap(capturedRequest.value)
+        XCTAssertEqual(request.generationID, "suggestions-1")
+        XCTAssertEqual(request.model, "llama3.1:8b")
+        XCTAssertTrue(request.messages.first?.content.contains("strict JSON") == true)
     }
 
     func testChatSendNonInstalledModelReturnsModelNotInstalled() async throws {

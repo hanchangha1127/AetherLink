@@ -10,8 +10,8 @@ struct PairingView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 CompanionPageHeader(
-                    title: "Pair an Android Device",
-                    subtitle: "Create a one-time QR code for AetherLink on Android.",
+                    title: "Pair a Client Device",
+                    subtitle: "Create a one-time QR code for the AetherLink client app.",
                     systemImage: "qrcode"
                 )
 
@@ -27,7 +27,7 @@ struct PairingView: View {
                         ContentUnavailableView(
                             "No active pairing code",
                             systemImage: "qrcode",
-                            description: Text("Start pairing when the Android app is ready to scan.")
+                            description: Text("Start pairing when the client app is ready to scan.")
                         )
                         .frame(maxWidth: .infinity, minHeight: 240)
                     }
@@ -45,7 +45,7 @@ struct PairingView: View {
                     }
                     .buttonStyle(.borderedProminent)
 
-                    Text("Android connects to this Mac runtime, not directly to Ollama or LM Studio.")
+                    Text("Client devices connect to this local runtime, not directly to Ollama or LM Studio.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -131,13 +131,13 @@ private struct ActivePairingCard: View {
             }
 
             VStack(alignment: .leading, spacing: 7) {
-                Label("Scan the QR code or enter the code in AetherLink for Android.", systemImage: "iphone")
-                Label("If macOS asks for Local Network access, allow it so Android can discover and pair with this Mac.", systemImage: "network")
+                Label("Scan the QR code or enter the code in the AetherLink client app.", systemImage: "qrcode.viewfinder")
+                Label("If the system asks for local network permission, allow it so client devices can discover and pair with this runtime host.", systemImage: "network")
                 TimelineView(.periodic(from: Date(), by: 1)) { timeline in
                     Label(expirationText(at: timeline.date), systemImage: expirationSystemImage(at: timeline.date))
                         .foregroundStyle(expiresAt <= timeline.date ? .orange : .secondary)
                 }
-                Label("Keep this Mac awake until pairing completes.", systemImage: "display")
+                Label("Keep this runtime host awake until pairing completes.", systemImage: "display")
             }
             .font(.callout)
             .foregroundStyle(.secondary)

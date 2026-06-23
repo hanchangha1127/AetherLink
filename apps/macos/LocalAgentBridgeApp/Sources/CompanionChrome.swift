@@ -133,7 +133,7 @@ func localizedTransportStatus(_ status: CompanionTransportStatus) -> String {
         if let port = status.port {
             return String(format: NSLocalizedString("Listening on port %@", comment: ""), "\(port)")
         }
-        return NSLocalizedString("Ready for trusted Android clients.", comment: "")
+        return NSLocalizedString("Ready for trusted client devices.", comment: "")
     case .failed:
         return NSLocalizedString("Runtime listener failed", comment: "")
     }

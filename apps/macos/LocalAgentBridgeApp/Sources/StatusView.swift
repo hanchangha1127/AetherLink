@@ -12,7 +12,7 @@ struct StatusView: View {
             VStack(alignment: .leading, spacing: 18) {
                 CompanionPageHeader(
                     title: "AetherLink Companion",
-                    subtitle: "Bridge trusted Android devices through this Mac runtime to local models.",
+                    subtitle: "Bridge trusted client devices through this local runtime to local models.",
                     systemImage: "bolt.horizontal.circle.fill"
                 )
 
@@ -88,7 +88,7 @@ struct StatusView: View {
                         ContentUnavailableView(
                             "No local models loaded",
                             systemImage: "shippingbox",
-                            description: Text("Load models to confirm what Android can request through this Mac runtime.")
+                            description: Text("Load models to confirm what client devices can request through this local runtime.")
                         )
                         .frame(maxWidth: .infinity, minHeight: 180)
                     } else {
@@ -111,7 +111,7 @@ struct StatusView: View {
     private var runtimeDetail: String {
         switch model.transportState.state {
         case .advertising:
-            return NSLocalizedString("Ready for trusted Android clients.", comment: "")
+            return NSLocalizedString("Ready for trusted client devices.", comment: "")
         case .failed:
             return model.transportState.failureMessage
                 ?? NSLocalizedString("Runtime listener could not start.", comment: "")
@@ -159,7 +159,7 @@ struct StatusView: View {
 
     private var trustedDeviceDetail: String {
         model.trustedDevices.isEmpty
-            ? NSLocalizedString("Pair a phone before allowing runtime requests.", comment: "")
+            ? NSLocalizedString("Pair a client device before allowing runtime requests.", comment: "")
             : NSLocalizedString("Authenticated devices can request runtime sessions.", comment: "")
     }
 
@@ -187,7 +187,7 @@ struct StatusView: View {
                 id: "model-list-loaded",
                 title: NSLocalizedString("Model list loaded", comment: ""),
                 detail: model.models.isEmpty
-                    ? NSLocalizedString("Load models to show what this Mac runtime can offer.", comment: "")
+                    ? NSLocalizedString("Load models to show what this local runtime can offer.", comment: "")
                     : String(format: NSLocalizedString("%d model(s) loaded", comment: ""), model.models.count),
                 tone: model.models.isEmpty ? .inactive : .ready
             )
@@ -210,8 +210,8 @@ struct StatusView: View {
         if model.transportState.state != .advertising {
             return RuntimeOverview(
                 title: NSLocalizedString("Setup needed", comment: ""),
-                detail: NSLocalizedString("Start the Mac companion runtime before Android can connect.", comment: ""),
-                footnote: NSLocalizedString("Android requests stay mediated by this Mac runtime. Ollama and LM Studio are never exposed directly to Android.", comment: ""),
+                detail: NSLocalizedString("Start the companion runtime before client devices can connect.", comment: ""),
+                footnote: NSLocalizedString("Client requests stay mediated by this local runtime. Ollama and LM Studio are never exposed directly to client devices.", comment: ""),
                 tone: transportTone(for: model.transportState)
             )
         }
@@ -219,17 +219,17 @@ struct StatusView: View {
         if backendSummary.tone != .ready {
             return RuntimeOverview(
                 title: NSLocalizedString("Backend needs attention", comment: ""),
-                detail: NSLocalizedString("Start Ollama or LM Studio on this Mac, then refresh backend status.", comment: ""),
-                footnote: NSLocalizedString("Android requests stay mediated by this Mac runtime. Ollama and LM Studio are never exposed directly to Android.", comment: ""),
+                detail: NSLocalizedString("Start Ollama or LM Studio on this runtime host, then refresh backend status.", comment: ""),
+                footnote: NSLocalizedString("Client requests stay mediated by this local runtime. Ollama and LM Studio are never exposed directly to client devices.", comment: ""),
                 tone: backendSummary.tone
             )
         }
 
         if model.trustedDevices.isEmpty {
             return RuntimeOverview(
-                title: NSLocalizedString("Pair Android to continue", comment: ""),
-                detail: NSLocalizedString("Generate a QR pairing code and scan it from AetherLink on Android.", comment: ""),
-                footnote: NSLocalizedString("Pairing creates a trusted-device record so the phone can reconnect without entering backend URLs.", comment: ""),
+                title: NSLocalizedString("Pair a Client Device to Continue", comment: ""),
+                detail: NSLocalizedString("Generate a QR pairing code and scan it from the AetherLink client app.", comment: ""),
+                footnote: NSLocalizedString("Pairing creates a trusted-device record so the client device can reconnect without entering backend URLs.", comment: ""),
                 tone: .inactive
             )
         }
@@ -237,16 +237,16 @@ struct StatusView: View {
         if model.models.isEmpty {
             return RuntimeOverview(
                 title: NSLocalizedString("Load local models", comment: ""),
-                detail: NSLocalizedString("Load models so Android can choose an installed chat model through this Mac runtime.", comment: ""),
-                footnote: NSLocalizedString("Embedding models stay separate from chat models and are selected for future retrieval features.", comment: ""),
+                detail: NSLocalizedString("Load models so client devices can choose an installed chat model through this local runtime.", comment: ""),
+                footnote: NSLocalizedString("Chat and embedding model choices are managed separately so each workflow uses the right model.", comment: ""),
                 tone: .neutral
             )
         }
 
         return RuntimeOverview(
-            title: NSLocalizedString("Ready for Android", comment: ""),
-            detail: NSLocalizedString("This Mac is listening, a local backend is responding, and trusted Android devices can request chat.", comment: ""),
-            footnote: NSLocalizedString("Android remains a controller; all model access stays on the Mac.", comment: ""),
+            title: NSLocalizedString("Ready for Client Devices", comment: ""),
+            detail: NSLocalizedString("This runtime host is listening, a local backend is responding, and trusted devices can request chat.", comment: ""),
+            footnote: NSLocalizedString("The client device remains a controller; all model access stays on the runtime host.", comment: ""),
             tone: .ready
         )
     }
@@ -526,7 +526,7 @@ private struct ProviderStatus: Identifiable {
 
         switch status.availability {
         case .notChecked:
-            detail = NSLocalizedString("Ollama and LM Studio are checked from this Mac.", comment: "")
+            detail = NSLocalizedString("Ollama and LM Studio are checked from this runtime host.", comment: "")
         case .available:
             detail = NSLocalizedString("Local backend is responding.", comment: "")
         case .unavailable:
@@ -587,7 +587,7 @@ private struct ProviderStatus: Identifiable {
             baseDetail = message
         } else {
             baseDetail = String(
-                format: NSLocalizedString("%@ is not responding from this Mac.", comment: ""),
+                format: NSLocalizedString("%@ is not responding from this runtime host.", comment: ""),
                 providerName
             )
         }
@@ -597,7 +597,7 @@ private struct ProviderStatus: Identifiable {
         }
         return [
             baseDetail,
-            NSLocalizedString("Open a local model provider on this Mac, then check again.", comment: "")
+            NSLocalizedString("Open a local model provider on this runtime host, then check again.", comment: "")
         ].joined(separator: "\n")
     }
 }

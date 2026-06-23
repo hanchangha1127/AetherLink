@@ -396,6 +396,8 @@ private struct LMStudioNativeModel: Decodable {
         switch normalizedType {
         case "embedding", "embeddings", "embed":
             return ["embedding"]
+        case "vision", "vl", "image", "multimodal", "mm":
+            return ["chat", "vision"]
         case "llm", "chat", "completion", nil:
             return ["chat"]
         default:

@@ -258,6 +258,27 @@ class RuntimeClientViewModelTest {
     }
 
     @Test
+    fun chatSuggestionsAttachToLatestAssistantMessage() {
+        val state = RuntimeUiState(
+            messages = listOf(
+                RuntimeChatMessage(role = "assistant", content = "Older answer"),
+                RuntimeChatMessage(role = "user", content = "Follow up"),
+                RuntimeChatMessage(role = "assistant", content = "Latest answer"),
+            )
+        )
+
+        val updated = state.withChatSuggestions(
+            listOf("What should we do next?", "What should we do next?", "Can you compare the options?"),
+        )
+
+        assertTrue(updated.messages[0].suggestions.isEmpty())
+        assertEquals(
+            listOf("What should we do next?", "Can you compare the options?"),
+            updated.messages.last().suggestions,
+        )
+    }
+
+    @Test
     fun staleReasoningDeltaForDifferentRequestIdIsIgnored() {
         val state = RuntimeUiState(
             messages = listOf(

@@ -8,11 +8,11 @@ struct TrustedDevicesView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
-            CompanionPageHeader(
-                title: "Trusted Devices",
-                subtitle: "Manage Android devices allowed to use this Mac runtime.",
-                systemImage: "lock.shield.fill"
-            )
+                CompanionPageHeader(
+                    title: "Trusted Devices",
+                    subtitle: "Manage trusted devices allowed to use this local runtime.",
+                    systemImage: "lock.shield.fill"
+                )
 
             HStack(spacing: 10) {
                 StatusPill(text: deviceCountText, tone: model.trustedDevices.isEmpty ? .inactive : .ready)
@@ -27,12 +27,12 @@ struct TrustedDevicesView: View {
                 .buttonStyle(.bordered)
             }
 
-            CompanionPanel(title: "Allowed Devices", systemImage: "iphone") {
+            CompanionPanel(title: "Allowed Devices", systemImage: "person.badge.key.fill") {
                 if model.trustedDevices.isEmpty {
                     ContentUnavailableView(
-                        "No trusted Android devices",
+                        "No trusted devices",
                         systemImage: "lock.slash",
-                        description: Text("Pair an Android device before allowing runtime commands.")
+                        description: Text("Pair a client device before allowing runtime commands.")
                     )
                     .frame(maxWidth: .infinity, minHeight: 280)
                 } else {
@@ -79,7 +79,7 @@ struct TrustedDevicesView: View {
         } message: {
             Text(
                 String(
-                    format: NSLocalizedString("%@ will need to pair again before it can use this Mac runtime.", comment: ""),
+                    format: NSLocalizedString("%@ will need to pair again before it can use this local runtime.", comment: ""),
                     pendingRemovalDevice?.name ?? ""
                 )
             )
@@ -102,7 +102,7 @@ private struct TrustedDeviceRow: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
-            Image(systemName: "iphone")
+            Image(systemName: "person.crop.circle.badge.checkmark")
                 .font(.title3)
                 .foregroundStyle(.tint)
                 .frame(width: 28)

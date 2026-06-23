@@ -31,6 +31,8 @@ object MessageType {
     const val ChatDelta = "chat.delta"
     const val ChatDone = "chat.done"
     const val ChatCancel = "chat.cancel"
+    const val ChatSuggestionsRequest = "chat.suggestions.request"
+    const val ChatSuggestionsResult = "chat.suggestions.result"
     const val Error = "error"
 }
 
@@ -117,6 +119,16 @@ data class ModelPullResultPayload(
 data class ChatMessagePayload(
     val role: String,
     val content: String,
+    val attachments: List<ChatAttachmentPayload> = emptyList(),
+)
+
+@Serializable
+data class ChatAttachmentPayload(
+    val type: String,
+    @SerialName("mime_type") val mimeType: String,
+    val name: String? = null,
+    @SerialName("data_base64") val dataBase64: String? = null,
+    val text: String? = null,
 )
 
 @Serializable
@@ -155,6 +167,20 @@ data class UsagePayload(
 @Serializable
 data class ChatCancelPayload(
     @SerialName("target_request_id") val targetRequestId: String,
+)
+
+@Serializable
+data class ChatSuggestionsRequestPayload(
+    @SerialName("session_id") val sessionId: String,
+    val model: String,
+    val messages: List<ChatMessagePayload>,
+    @SerialName("max_suggestions") val maxSuggestions: Int = 3,
+    val locale: String? = null,
+)
+
+@Serializable
+data class ChatSuggestionsResultPayload(
+    val suggestions: List<String>,
 )
 
 @Serializable

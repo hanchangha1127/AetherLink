@@ -385,7 +385,8 @@ Direction: Android -> Mac.
       },
       {
         "role": "user",
-        "content": "Hello"
+        "content": "Hello",
+        "attachments": []
       }
     ]
   }
@@ -399,6 +400,42 @@ Android may prepend user-managed local memory as a `system` message in `chat.sen
 If the requested model is not installed on the Mac runtime, Mac returns `error` with `code = "model_not_installed"`. Clients should call `models.pull` through the Mac runtime first.
 
 Backend adapters that expose reasoning or think content preserve it as a separate protocol field or stream from the final assistant answer text. The Mac runtime does not mix reasoning/think text into the assistant message body; Android can then render it as a muted, compact/collapsed section that expands on demand. Ollama chat requests opt into this with the Mac-side `/api/chat` request field `"think": true`; Android still sends only `chat.send` to the Mac runtime.
+
+`chat.send.messages[]` may include `attachments` when the client has a real ingestion path. Attachments are optional and default to an empty array. Clients must not expose file/image controls before the runtime can actually ingest and route the selected input.
+
+```json
+{
+  "role": "user",
+  "content": "Describe this image.",
+  "attachments": [
+    {
+      "type": "image",
+      "mime_type": "image/png",
+      "name": "diagram.png",
+      "data_base64": "base64-image-bytes"
+    }
+  ]
+}
+```
+
+For image attachments, the runtime forwards image bytes only to models whose capabilities include `vision`, `image`, or `multimodal`. Ollama-compatible vision models receive images through the runtime-owned backend adapter rather than through a direct client-to-backend connection.
+
+For document attachments, the runtime must parse files before model use. PDF, DOCX/DOCM/DOTX, DOC, HWPX, HWP, ODT/ODS/ODP, XLSX/XLSM, XLS, PPTX/PPTM/PPSX, PPT/PPS, EPUB, RTF, WebArchive, HTML/XHTML, Markdown, AsciiDoc, reStructuredText, plain text/log-style text, CSV/TSV, JSON/JSONL, YAML, TOML, INI/properties, and XML inputs should become extracted text plus metadata or chunks owned by the runtime. Pages/Numbers/Keynote archives are best-effort when text-bearing XML/HTML entries are available. Legacy binary HWP/XLS/PPT files are best-effort until dedicated parsers are added. A document attachment can carry extracted text when parsing already happened on the runtime side:
+
+```json
+{
+  "role": "user",
+  "content": "Summarize the attached document.",
+  "attachments": [
+    {
+      "type": "document",
+      "mime_type": "application/pdf",
+      "name": "brief.pdf",
+      "text": "extracted document text or a runtime chunk reference"
+    }
+  ]
+}
+```
 
 ## `chat.delta`
 
@@ -455,6 +492,61 @@ Direction: Mac -> Android.
 ```
 
 If a request is cancelled, `finish_reason` may be `cancelled`.
+
+## `chat.suggestions.request`
+
+Direction: Android -> Mac.
+
+After a normal `chat.done`, Android may ask the Mac runtime to generate short suggested next questions for the latest conversation. This request is a runtime-mediated model call. Android must not call Ollama, LM Studio, or another serving backend directly for suggestions.
+
+```json
+{
+  "version": 1,
+  "type": "chat.suggestions.request",
+  "request_id": "req_suggestions_001",
+  "timestamp": "2026-06-23T09:02:06Z",
+  "payload": {
+    "session_id": "default",
+    "model": "ollama:llama3.1:8b",
+    "max_suggestions": 3,
+    "locale": "en",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Explain this architecture."
+      },
+      {
+        "role": "assistant",
+        "content": "The runtime mediates local model access..."
+      }
+    ]
+  }
+}
+```
+
+The Mac runtime should use recent `messages`, the selected `model`, and the optional `locale` to generate concise next-question candidates. The runtime should return structured suggestions only; it should not stream these as normal assistant chat output.
+
+## `chat.suggestions.result`
+
+Direction: Mac -> Android.
+
+```json
+{
+  "version": 1,
+  "type": "chat.suggestions.result",
+  "request_id": "req_suggestions_001",
+  "timestamp": "2026-06-23T09:02:07Z",
+  "payload": {
+    "suggestions": [
+      "How should pairing be secured later?",
+      "What happens when the runtime is offline?",
+      "How are model capabilities detected?"
+    ]
+  }
+}
+```
+
+Android renders these as optional UI chips near the latest assistant answer. Selecting a suggestion should fill or send the normal chat composer through `chat.send`; suggestions are not a separate conversation role.
 
 ## `chat.cancel`
 
@@ -535,7 +627,7 @@ These namespaces are reserved but not implemented in v0.1. Android-local chat hi
 - Embeddings/research: future Mac-side semantic search, clustering, research notebook, source citation, and deep-research-like brief messages are reserved but not named yet. Embedding models must be listed and selected separately from chat/text-generation models, and retrieval/ranking/knowledge indexing must use the selected embedding model.
 - Projects/workspaces: reserve the `projects.` namespace for future project-scoped chats, files, instructions, memory, indexes, model/backend preferences, trusted-source controls, and project-level search/research. Do not add active message names until the product shape is ready.
 - Scheduling/automation: reserve the `automation.` namespace for future scheduled tasks, reminders, monitors, recurring automations, runtime-triggered jobs, permission prompts, audit logs, and mobile approval/status surfaces. Do not add active message names until the scheduler and permission model are designed.
-- Files/images: future file and image input messages are reserved but not named yet. Input ingestion, parsing, indexing, and backend calls must run through the Mac runtime, never direct Android-to-backend access.
+- Files/images: `chat.send.messages[].attachments[]` is the initial carrier for user-selected images and parsed documents. Runtime-side ingestion, parsing, indexing, and backend calls must run through the companion runtime, never direct client-to-backend access. Future dedicated file/index messages can extend this once project/workspace permissions are designed.
 - Internal Python tools: future deterministic Python execution messages are reserved but not named yet. Python execution must run in the Mac runtime with runtime-owned permissions, scoping, and audit logs.
 - Skills: `skills.list`, `skills.run`, `skills.result`.
 - MCP: `mcp.servers.list`, `mcp.tools.list`, `mcp.tool.call`, `mcp.tool.result`.

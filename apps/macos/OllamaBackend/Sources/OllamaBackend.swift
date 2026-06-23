@@ -88,7 +88,10 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
         }
 
         for model in installedModels {
-            let capabilities = capabilitiesByName[model.name] ?? capabilitiesByName[canonicalModelName(model.name)] ?? []
+            let capabilities = inferredCapabilities(
+                capabilitiesByName[model.name] ?? capabilitiesByName[canonicalModelName(model.name)] ?? [],
+                for: model.name
+            )
             let kind = ModelKind.from(capabilities: capabilities, fallbackName: model.name)
             remember(ModelInfo(
                 id: model.name,
@@ -116,7 +119,10 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
                 if model.source == .cloud {
                     continue
                 }
-                let capabilities = capabilitiesByName[model.name] ?? capabilitiesByName[canonicalModelName(model.name)] ?? []
+                let capabilities = inferredCapabilities(
+                    capabilitiesByName[model.name] ?? capabilitiesByName[canonicalModelName(model.name)] ?? [],
+                    for: model.name
+                )
                 let kind = ModelKind.from(capabilities: capabilities, fallbackName: model.name)
                 remember(ModelInfo(
                     id: model.name,
@@ -169,6 +175,24 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
             return String(name.dropLast(":latest".count))
         }
         return name
+    }
+
+    private static func inferredCapabilities(_ capabilities: [String], for modelName: String) -> [String] {
+        var result = capabilities
+        let normalized = Set(result.map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() })
+        if modelName.looksLikeVisionModelName && !normalized.contains("vision") {
+            result.append("vision")
+        }
+        if result.contains(where: { $0 == "vision" }) && !normalized.contains("chat") && !normalized.contains("completion") {
+            result.append("chat")
+        }
+        return result.map {
+            $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        }.filter { !$0.isEmpty }.reduce(into: [String]()) { unique, capability in
+            if !unique.contains(capability) {
+                unique.append(capability)
+            }
+        }
     }
 
     private static func uniqueModelNames(_ names: [String]) -> [String] {
@@ -321,6 +345,26 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
     }
 }
 
+private extension String {
+    var looksLikeVisionModelName: Bool {
+        let value = lowercased()
+        return [
+            "vision",
+            "visual",
+            "vl",
+            "llava",
+            "bakllava",
+            "moondream",
+            "minicpm-v",
+            "qwen2-vl",
+            "qwen2.5-vl",
+            "qwen3-vl",
+            "llama3.2-vision",
+            "gemma3",
+        ].contains { value.contains($0) }
+    }
+}
+
 private final class GenerationRegistry: @unchecked Sendable {
     private let lock = NSLock()
     private var tasks: [String: Task<Void, Never>] = [:]
@@ -456,9 +500,50 @@ private struct OllamaShowResponse: Decodable {
 
 private struct OllamaChatRequest: Encodable {
     var model: String
-    var messages: [ChatMessage]
+    var messages: [OllamaChatMessage]
     var stream: Bool
     var think: Bool
+
+    init(model: String, messages: [ChatMessage], stream: Bool, think: Bool) {
+        self.model = model
+        self.messages = messages.map(OllamaChatMessage.init(message:))
+        self.stream = stream
+        self.think = think
+    }
+}
+
+private struct OllamaChatMessage: Encodable {
+    var role: String
+    var content: String
+    var images: [String]
+
+    init(message: ChatMessage) {
+        role = message.role
+        content = message.content
+        images = message.attachments.compactMap { attachment in
+            let normalizedType = attachment.type.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            let normalizedMimeType = attachment.mimeType.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            guard normalizedType == "image" || normalizedMimeType.hasPrefix("image/") else {
+                return nil
+            }
+            return attachment.dataBase64
+        }
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case role
+        case content
+        case images
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(role, forKey: .role)
+        try container.encode(content, forKey: .content)
+        if !images.isEmpty {
+            try container.encode(images, forKey: .images)
+        }
+    }
 }
 
 private struct OllamaChatChunk: Decodable {

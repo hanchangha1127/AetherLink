@@ -34,7 +34,7 @@ public final class AggregatingLlmBackend: LlmBackend, @unchecked Sendable {
         return .unavailable(BackendError(
             provider: .aggregate,
             code: "backend_unavailable",
-            message: "No local model backend is reachable from the Mac runtime.",
+            message: "No local model backend is reachable from the companion runtime.",
             retryable: true
         ))
     }
@@ -160,7 +160,7 @@ public final class AggregatingLlmBackend: LlmBackend, @unchecked Sendable {
             throw BackendError(
                 provider: provider,
                 code: "backend_unavailable",
-                message: "\(provider.displayName) is not enabled in the Mac runtime.",
+                message: "\(provider.displayName) is not enabled in the companion runtime.",
                 retryable: false
             )
         }
