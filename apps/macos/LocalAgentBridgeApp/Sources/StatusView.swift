@@ -16,6 +16,8 @@ struct StatusView: View {
                     systemImage: "bolt.horizontal.circle.fill"
                 )
 
+                RuntimeOverviewPanel(overview: runtimeOverview)
+
                 LazyVGrid(columns: columns, alignment: .leading, spacing: 12) {
                     StatusCard(
                         title: "Runtime",
@@ -201,6 +203,111 @@ struct StatusView: View {
                 ?? NSLocalizedString("Runtime listener could not start.", comment: "")
         case .stopped:
             return NSLocalizedString("Start the companion runtime listener.", comment: "")
+        }
+    }
+
+    private var runtimeOverview: RuntimeOverview {
+        if model.transportState.state != .advertising {
+            return RuntimeOverview(
+                title: NSLocalizedString("Setup needed", comment: ""),
+                detail: NSLocalizedString("Start the Mac companion runtime before Android can connect.", comment: ""),
+                footnote: NSLocalizedString("Android requests stay mediated by this Mac runtime. Ollama and LM Studio are never exposed directly to Android.", comment: ""),
+                tone: transportTone(for: model.transportState)
+            )
+        }
+
+        if backendSummary.tone != .ready {
+            return RuntimeOverview(
+                title: NSLocalizedString("Backend needs attention", comment: ""),
+                detail: NSLocalizedString("Start Ollama or LM Studio on this Mac, then refresh backend status.", comment: ""),
+                footnote: NSLocalizedString("Android requests stay mediated by this Mac runtime. Ollama and LM Studio are never exposed directly to Android.", comment: ""),
+                tone: backendSummary.tone
+            )
+        }
+
+        if model.trustedDevices.isEmpty {
+            return RuntimeOverview(
+                title: NSLocalizedString("Pair Android to continue", comment: ""),
+                detail: NSLocalizedString("Generate a QR pairing code and scan it from AetherLink on Android.", comment: ""),
+                footnote: NSLocalizedString("Pairing creates a trusted-device record so the phone can reconnect without entering backend URLs.", comment: ""),
+                tone: .inactive
+            )
+        }
+
+        if model.models.isEmpty {
+            return RuntimeOverview(
+                title: NSLocalizedString("Load local models", comment: ""),
+                detail: NSLocalizedString("Load models so Android can choose an installed chat model through this Mac runtime.", comment: ""),
+                footnote: NSLocalizedString("Embedding models stay separate from chat models and are selected for future retrieval features.", comment: ""),
+                tone: .neutral
+            )
+        }
+
+        return RuntimeOverview(
+            title: NSLocalizedString("Ready for Android", comment: ""),
+            detail: NSLocalizedString("This Mac is listening, a local backend is responding, and trusted Android devices can request chat.", comment: ""),
+            footnote: NSLocalizedString("Android remains a controller; all model access stays on the Mac.", comment: ""),
+            tone: .ready
+        )
+    }
+}
+
+private struct RuntimeOverviewPanel: View {
+    let overview: RuntimeOverview
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 16) {
+            Image(systemName: overview.tone.systemImage)
+                .font(.system(size: 26, weight: .semibold))
+                .foregroundStyle(overview.tone.color)
+                .frame(width: 44, height: 44)
+                .background(overview.tone.color.opacity(0.14), in: RoundedRectangle(cornerRadius: 8))
+
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    Text(overview.title)
+                        .font(.title3.weight(.semibold))
+                    StatusPill(text: overview.statusText, tone: overview.tone)
+                }
+
+                Text(overview.detail)
+                    .font(.callout)
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text(overview.footnote)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(18)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .strokeBorder(overview.tone.color.opacity(0.22), lineWidth: 1)
+        }
+    }
+}
+
+private struct RuntimeOverview {
+    let title: String
+    let detail: String
+    let footnote: String
+    let tone: StatusTone
+
+    var statusText: String {
+        switch tone {
+        case .ready:
+            return NSLocalizedString("Ready", comment: "")
+        case .warning:
+            return NSLocalizedString("Needs attention", comment: "")
+        case .inactive:
+            return NSLocalizedString("Not ready", comment: "")
+        case .neutral:
+            return NSLocalizedString("Pending", comment: "")
         }
     }
 }

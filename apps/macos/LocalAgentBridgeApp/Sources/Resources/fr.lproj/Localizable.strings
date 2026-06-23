@@ -76,6 +76,20 @@
 "%d trusted device(s)" = "%d appareil(s) approuvé(s)";
 "Pair a phone before allowing runtime requests." = "Jumelez un téléphone avant d’autoriser les requêtes du runtime.";
 "Authenticated devices can request runtime sessions." = "Les appareils authentifiés peuvent demander des sessions de runtime.";
+"Setup needed" = "Configuration requise";
+"Start the Mac companion runtime before Android can connect." = "Démarrez le runtime Mac companion avant de connecter Android.";
+"Backend needs attention" = "Backend à vérifier";
+"Start Ollama or LM Studio on this Mac, then refresh backend status." = "Démarrez Ollama ou LM Studio sur ce Mac, puis actualisez l’état du backend.";
+"Pair Android to continue" = "Jumeler Android pour continuer";
+"Generate a QR pairing code and scan it from AetherLink on Android." = "Générez un code QR de jumelage et scannez-le depuis AetherLink sur Android.";
+"Load local models" = "Charger les modèles locaux";
+"Load models so Android can choose an installed chat model through this Mac runtime." = "Chargez les modèles pour qu’Android puisse choisir un modèle de chat installé via ce runtime Mac.";
+"Ready for Android" = "Prêt pour Android";
+"This Mac is listening, a local backend is responding, and trusted Android devices can request chat." = "Ce Mac écoute, un backend local répond, et les appareils Android approuvés peuvent demander un chat.";
+"Android requests stay mediated by this Mac runtime. Ollama and LM Studio are never exposed directly to Android." = "Les requêtes Android restent médiées par ce runtime Mac. Ollama et LM Studio ne sont jamais exposés directement à Android.";
+"Pairing creates a trusted-device record so the phone can reconnect without entering backend URLs." = "Le jumelage crée un appareil approuvé afin que le téléphone puisse se reconnecter sans saisir d’URL de backend.";
+"Embedding models stay separate from chat models and are selected for future retrieval features." = "Les modèles d’embedding restent séparés des modèles de chat et seront choisis pour les futures fonctions de recherche.";
+"Android remains a controller; all model access stays on the Mac." = "Android reste un contrôleur ; tout accès aux modèles reste sur le Mac.";
 
 "Pair an Android Device" = "Jumeler un appareil Android";
 "Create a one-time QR code for AetherLink on Android." = "Créer un QR code à usage unique pour AetherLink sur Android.";

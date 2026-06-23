@@ -10,9 +10,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -70,6 +72,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -446,6 +449,8 @@ fun ChatScreen(
     val composerModelLabel = selectedChatModel
         ?.let { model -> "${model.provider} - ${model.name}" }
         ?: stringResource(R.string.model_none)
+    val density = LocalDensity.current
+    val keyboardDockPadding = if (WindowInsets.ime.getBottom(density) > 0) 64.dp else 0.dp
 
     LaunchedEffect(state.messages.size, state.messages.lastOrNull()?.content) {
         if (state.messages.isNotEmpty()) {
@@ -453,17 +458,16 @@ fun ChatScreen(
         }
     }
 
-    Column(
+    Box(
         modifier = modifier
             .fillMaxSize()
             .padding(horizontal = 14.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         if (state.messages.isEmpty()) {
             Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
+                    .fillMaxSize()
+                    .padding(bottom = 168.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 ChatEmptyState(
@@ -477,11 +481,9 @@ fun ChatScreen(
         } else {
             LazyColumn(
                 state = listState,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
+                modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(18.dp),
-                contentPadding = PaddingValues(top = 10.dp, bottom = 12.dp),
+                contentPadding = PaddingValues(top = 10.dp, bottom = 176.dp),
             ) {
                 items(
                     items = state.messages,
@@ -498,8 +500,10 @@ fun ChatScreen(
         }
         Column(
             modifier = Modifier
+                .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .navigationBarsPadding(),
+                .navigationBarsPadding()
+                .padding(bottom = keyboardDockPadding),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             BackendReadinessBanner(
@@ -1708,14 +1712,6 @@ private fun ChatComposer(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
-                Text(
-                    text = hint,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.secondary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.widthIn(max = 128.dp),
-                )
                 if (isStreaming) {
                     FilledIconButton(
                         onClick = {

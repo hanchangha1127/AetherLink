@@ -76,6 +76,20 @@
 "%d trusted device(s)" = "信頼済みデバイス %d 台";
 "Pair a phone before allowing runtime requests." = "ランタイムリクエストを許可する前に、電話をペアリングしてください。";
 "Authenticated devices can request runtime sessions." = "認証済みデバイスはランタイムセッションをリクエストできます。";
+"Setup needed" = "設定が必要";
+"Start the Mac companion runtime before Android can connect." = "Android が接続する前に Mac companion ランタイムを開始してください。";
+"Backend needs attention" = "バックエンドの確認が必要";
+"Start Ollama or LM Studio on this Mac, then refresh backend status." = "この Mac で Ollama または LM Studio を起動してから、バックエンド状態を更新してください。";
+"Pair Android to continue" = "続行するには Android をペアリング";
+"Generate a QR pairing code and scan it from AetherLink on Android." = "QR ペアリングコードを生成し、Android の AetherLink でスキャンしてください。";
+"Load local models" = "ローカルモデルを読み込む";
+"Load models so Android can choose an installed chat model through this Mac runtime." = "Android がこの Mac ランタイム経由でインストール済みチャットモデルを選択できるよう、モデルを読み込んでください。";
+"Ready for Android" = "Android の準備完了";
+"This Mac is listening, a local backend is responding, and trusted Android devices can request chat." = "この Mac は待機中で、ローカルバックエンドが応答しており、信頼済み Android デバイスがチャットを要求できます。";
+"Android requests stay mediated by this Mac runtime. Ollama and LM Studio are never exposed directly to Android." = "Android のリクエストはこの Mac ランタイムが仲介します。Ollama と LM Studio が Android に直接公開されることはありません。";
+"Pairing creates a trusted-device record so the phone can reconnect without entering backend URLs." = "ペアリングにより信頼済みデバイス記録が作成され、バックエンド URL を入力せずに再接続できます。";
+"Embedding models stay separate from chat models and are selected for future retrieval features." = "埋め込みモデルはチャットモデルとは分離され、将来の検索機能用に選択されます。";
+"Android remains a controller; all model access stays on the Mac." = "Android はコントローラーのままで、すべてのモデルアクセスは Mac に留まります。";
 
 "Pair an Android Device" = "Android デバイスをペアリング";
 "Create a one-time QR code for AetherLink on Android." = "Android の AetherLink 用に一度だけ使える QR コードを作成します。";

@@ -76,6 +76,20 @@
 "%d trusted device(s)" = "%d trusted device(s)";
 "Pair a phone before allowing runtime requests." = "Pair a phone before allowing runtime requests.";
 "Authenticated devices can request runtime sessions." = "Authenticated devices can request runtime sessions.";
+"Setup needed" = "Setup needed";
+"Start the Mac companion runtime before Android can connect." = "Start the Mac companion runtime before Android can connect.";
+"Backend needs attention" = "Backend needs attention";
+"Start Ollama or LM Studio on this Mac, then refresh backend status." = "Start Ollama or LM Studio on this Mac, then refresh backend status.";
+"Pair Android to continue" = "Pair Android to continue";
+"Generate a QR pairing code and scan it from AetherLink on Android." = "Generate a QR pairing code and scan it from AetherLink on Android.";
+"Load local models" = "Load local models";
+"Load models so Android can choose an installed chat model through this Mac runtime." = "Load models so Android can choose an installed chat model through this Mac runtime.";
+"Ready for Android" = "Ready for Android";
+"This Mac is listening, a local backend is responding, and trusted Android devices can request chat." = "This Mac is listening, a local backend is responding, and trusted Android devices can request chat.";
+"Android requests stay mediated by this Mac runtime. Ollama and LM Studio are never exposed directly to Android." = "Android requests stay mediated by this Mac runtime. Ollama and LM Studio are never exposed directly to Android.";
+"Pairing creates a trusted-device record so the phone can reconnect without entering backend URLs." = "Pairing creates a trusted-device record so the phone can reconnect without entering backend URLs.";
+"Embedding models stay separate from chat models and are selected for future retrieval features." = "Embedding models stay separate from chat models and are selected for future retrieval features.";
+"Android remains a controller; all model access stays on the Mac." = "Android remains a controller; all model access stays on the Mac.";
 
 "Pair an Android Device" = "Pair an Android Device";
 "Create a one-time QR code for AetherLink on Android." = "Create a one-time QR code for AetherLink on Android.";
