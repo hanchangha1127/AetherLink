@@ -72,6 +72,21 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
         }
     }
 
+    public func unloadModel(providerModelID: String) async throws -> ModelUnloadResult {
+        let endpoint = "POST /api/chat"
+        var urlRequest = URLRequest(url: baseURL.appending(path: "api/chat"))
+        urlRequest.httpMethod = "POST"
+        urlRequest.addValue("application/json", forHTTPHeaderField: "Content-Type")
+        do {
+            urlRequest.httpBody = try encoder.encode(OllamaUnloadRequest(model: providerModelID))
+        } catch {
+            throw OllamaBackendError.requestEncoding(endpoint: endpoint, reason: error.localizedDescription)
+        }
+
+        _ = try await performDataRequest(endpoint: endpoint, request: urlRequest)
+        return .unloaded(provider: provider, modelID: providerModelID)
+    }
+
     private static func mergeModels(
         installedModels: [OllamaModel],
         runningModels: [OllamaRunningModel],
@@ -488,6 +503,18 @@ private struct OllamaPullRequest: Encodable {
 
 private struct OllamaPullResponse: Decodable {
     var status: String?
+}
+
+private struct OllamaUnloadRequest: Encodable {
+    var model: String
+    var messages: [OllamaChatMessage] = []
+    var keepAlive = 0
+
+    enum CodingKeys: String, CodingKey {
+        case model
+        case messages
+        case keepAlive = "keep_alive"
+    }
 }
 
 private struct OllamaShowRequest: Encodable {

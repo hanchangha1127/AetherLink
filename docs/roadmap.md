@@ -1,8 +1,32 @@
 # Roadmap
 
+## Current Implementation Snapshot
+
+See [progress.md](progress.md) for the detailed implementation record, verification commands, known limits, and next work queue.
+
+- AetherLink currently has a Mac-mediated local runtime, Android Compose client, Ollama and LM Studio backend adapters, QR pairing, trusted runtime persistence, model listing, streaming chat, cancellation, reasoning/think rendering, local chat history, archive/delete separation, user-managed local memory notes, separate embedding model selection, broad runtime-side document ingestion, image/vision gating, runtime-mediated AI next-question suggestions, and a first runtime-side model residency policy.
+- The Android client does not call Ollama or LM Studio directly.
+- MCP, skills, web search, advanced memory, project workspaces, automations, Python tools, iOS, Windows, and DGX OS-class runtime/server targets remain roadmap work.
+
+## Immediate Next Implementation Queue
+
+1. Physical Android device QA after the latest UI/protocol changes.
+2. Screenshot-based Android UI polish for the ChatGPT-like chat surface, drawer, model selector, settings, and suggested next-question chips.
+3. Capture launcher/dock screenshots on real devices to verify the generated AetherLink icon reads correctly at small sizes.
+4. Harden pairing/trusted-device UX and remove manual endpoint exposure from the normal user path.
+5. Replace fixed-IP development transport assumptions with a paired-device private P2P overlay:
+   - paired private peer identity as the primary connection target,
+   - local direct connection as the fast path,
+   - remote P2P NAT traversal for different networks,
+   - end-to-end encrypted blind relay/TURN fallback only when direct paths fail,
+   - no AI protocol payloads, model lists, prompts, files, memory, backend credentials, or model commands visible to any relay or discovery service.
+6. Expand smoke tests for pairing, authenticated model list, streaming chat, cancel, suggestions, attachments, model-residency unload behavior, and untrusted-client rejection.
+
 ## v0.1 Local Chat Link
 
 - Android scans a Mac-displayed QR code and pairs with the Mac companion.
+- Pairing binds device identities and keys; product connectivity must not depend on manually entering or permanently storing a fixed IP address.
+- Fixed host/port values and mDNS/Bonjour local discovery are v0.1 development hints or local fast paths, not the target reconnect model.
 - Mac detects Ollama health.
 - Mac lists Ollama models.
 - Android selects a model and sends chat messages.
@@ -15,6 +39,14 @@
 - Android can cancel generation.
 - Only trusted devices can control the Mac runtime.
 - Android never connects directly to Ollama or LM Studio.
+
+## Private Peer Connectivity Direction
+
+AetherLink's 1:1 connection model is Bitcoin-like only in the narrow sense of peer identity and discovery without relying on a single fixed address. It is not a public untrusted peer network. Only QR-paired trusted devices may discover, authenticate, and communicate with each other.
+
+The target reconnect order is paired peer identity, local direct connection, remote P2P NAT traversal, then encrypted blind relay/TURN fallback. Relay/signaling infrastructure must remain unable to see AI protocol payloads, model lists, prompts, files, memory, backend credentials, or backend URLs. Android still talks only to the trusted runtime/server boundary, never directly to Ollama, LM Studio, or future serving backends.
+
+Current status: the code has trusted identities, endpoint hints, Bonjour/local discovery candidates, USB/dev local paths, and route-candidate plumbing. Those pieces are local-direct placeholders for the future connection manager. Production remote P2P NAT traversal, signaling, encrypted blind relay transport, and production end-to-end transport encryption are not implemented yet.
 
 ## Current LM Studio Backend Support
 
@@ -55,9 +87,12 @@ This is not v0.1 implementation scope. Scheduling and automation should be Mac/r
 
 ## v0.2 Runtime Resource Policy
 
-- When switching models, unload the previous model before loading the newly selected model.
-- If there is no chat activity for 10 or more minutes, unload the active model.
+- Implemented first slice: when switching models, the aggregate Mac runtime asks the previous inactive provider model to unload before using the newly selected model.
+- Implemented first slice: if there is no chat activity for 10 or more minutes, the aggregate Mac runtime asks the active provider model to unload.
+- Ollama unload uses the Mac-side `/api/chat` path with empty messages and `keep_alive = 0`.
+- LM Studio unload uses the Mac-side `/api/v1/models/unload` path for loaded instance ids.
 - Keep model residency policy in the Mac runtime, not Android UI code.
+- Continue polishing this policy with runtime status UI, logging, user controls, and provider-specific failure reporting.
 
 ## v0.3 Embeddings And Research Notes
 
@@ -120,6 +155,7 @@ This is not v0.1 implementation scope. Scheduling and automation should be Mac/r
 - Runtime/server targets expand from Mac runtime first to Windows and DGX OS-class workstation/server support.
 - Client/controller targets expand from Android first to iOS.
 - Keep the same trust boundary: clients control sessions; runtime/server targets mediate all model access.
+- Keep the same private P2P identity model across platforms so paired devices can reconnect across local and remote networks without exposing backend URLs or relying on OS-specific fixed endpoints or local-only discovery.
 
 ## v1.1 Serving Backend Expansion
 

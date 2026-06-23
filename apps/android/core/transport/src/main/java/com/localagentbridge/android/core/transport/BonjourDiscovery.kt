@@ -7,6 +7,7 @@ import android.net.wifi.WifiManager
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import java.nio.charset.StandardCharsets
 
 class BonjourDiscovery(context: Context) {
     private val appContext = context.applicationContext
@@ -43,10 +44,16 @@ class BonjourDiscovery(context: Context) {
 
                     override fun onServiceResolved(resolved: NsdServiceInfo) {
                         val host = resolved.host?.hostAddress ?: return
+                        val attributes = resolved.attributes
                         peers[resolved.serviceName] = DiscoveredMac(
                             serviceName = resolved.serviceName,
                             host = host,
                             port = resolved.port,
+                            routeToken = attributes.txtStringOrNull("route_token"),
+                            deviceId = attributes.txtStringOrNull("device_id"),
+                            fingerprint = attributes.txtStringOrNull("fingerprint"),
+                            app = attributes.txtStringOrNull("app"),
+                            version = attributes.txtStringOrNull("version"),
                         )
                         trySend(peers.values.toList())
                     }
@@ -64,4 +71,11 @@ class BonjourDiscovery(context: Context) {
     companion object {
         const val SERVICE_TYPE = "_aetherlink._tcp."
     }
+}
+
+private fun Map<String, ByteArray>.txtStringOrNull(key: String): String? {
+    return this[key]
+        ?.toString(StandardCharsets.UTF_8)
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }
 }

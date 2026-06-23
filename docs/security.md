@@ -1,6 +1,10 @@
 # AetherLink Security Model
 
-The project is local-first: no cloud backend, no account server, and no default remote relay. The Mac is the runtime. Android is a controller/client. That split is the main security boundary.
+The project is local-first: no cloud AI backend and no account-server requirement for model access. The Mac is the runtime. Android is a controller/client. That split is the main security boundary.
+
+AetherLink may later use signaling or an encrypted blind relay/TURN-style component for connectivity when paired devices are on different networks. That component is connection infrastructure only: it must not run models, proxy backend APIs in plaintext, inspect AI protocol payloads, store prompts/responses, see model lists, files, memory, or backend credentials, or become a cloud AI backend.
+
+Current code status: remote P2P NAT traversal, signaling, encrypted blind relay transport, and production end-to-end transport encryption are not implemented yet. Existing endpoint hints, Bonjour/mDNS records, USB reverse paths, and localhost/dev-server flows are local-direct development scaffolding behind the trusted-device boundary.
 
 ## Local-First Threat Model
 
@@ -25,9 +29,9 @@ Primary threats:
 - A scheduled job runs later with broader file, network, tool, MCP, web search, or backend access than the user approved.
 - Future tool execution gains file, terminal, network, or MCP access without explicit permission.
 - Future image or file input flows bypass the Mac runtime and send user data directly to a serving backend.
-- A future cloud/relay shortcut weakens the local-first guarantee.
+- A future signaling/relay shortcut weakens the local-first guarantee by seeing prompts, responses, files, memory, model lists, or backend credentials.
 
-v0.1 may use a small development transport while the product matures, but it must not normalize unauthenticated same-network runtime access as the product model.
+v0.1 may use a small development transport while the product matures, but it must not normalize unauthenticated same-network runtime access, fixed IP/manual endpoint entry, or mDNS/local discovery as the product model.
 
 ## Trusted Devices
 
@@ -39,7 +43,7 @@ The target design is persistent device identity on both sides:
 - Android pins the trusted Mac identity.
 - Mac exposes remove-trusted-device controls.
 
-Pairing creates the persistent trust record used by later runtime sessions. Removing a trusted device invalidates future authentication attempts from that Android identity.
+Pairing creates the persistent trust record used by later runtime sessions and by the connection manager. Removing a trusted device invalidates future authentication attempts from that Android identity across local direct, remote P2P, and relay fallback paths.
 
 ## Pairing Design
 
@@ -47,7 +51,7 @@ Target pairing flow:
 
 1. User opens pairing on the Mac companion.
 2. Mac displays a QR code plus a one-time pairing code.
-3. QR pairing data includes Mac device id, pairing nonce, service identity, and Mac public key or certificate fingerprint.
+3. QR pairing data includes Mac device id, pairing nonce, service identity, Mac public key or certificate fingerprint, and optional development reachability hints.
 4. Android submits pairing nonce, code, Android device id, Android device name, and Android public key.
 5. Mac stores the Android public key only if the pairing window is active and user confirmation succeeds.
 6. Future sessions use challenge-response authentication before runtime commands.
@@ -57,6 +61,14 @@ v0.1 persists the scanned trusted Mac record on Android only after the Mac accep
 An active pairing session allows only a bounded number of invalid nonce/code submissions. After the limit is reached, the Mac invalidates that pairing session and returns structured `pairing.result` rejection details while preserving the existing `accepted: false` response shape.
 
 Implementation note: QR pairing and discovery can be simple in v0.1, but the docs must remain clear that the trusted-device gate is required before runtime commands execute.
+
+Connectivity note: pairing is identity binding, not a promise that the scanned host/port will stay reachable. Product builds should use the paired identities and keys to reconnect through a connection manager: local discovery/direct first, remote P2P NAT traversal second, and encrypted blind relay/TURN-style fallback only when direct P2P fails.
+
+Discovery note: Bonjour/local discovery candidates should carry minimal routing hints when possible. The preferred TXT hint is a pairing-derived `route_token`; stable device ids and public-key fingerprints are legacy/development fallback hints, not the production privacy target. Android must only auto-route a pinned trusted runtime identity to discovered endpoints whose hints match the trusted runtime record. Endpoints without identity metadata, or with non-matching metadata, are local/dev/manual candidates only and must not be treated as automatically trusted.
+
+Privacy note: discovery identity hints are not an authorization layer and must stay minimal. They must not publish backend URLs, Ollama or LM Studio details, model inventory, provider health, prompts, responses, files, memory, or runtime command metadata. Pairing, pinned keys, challenge-response authentication, and encrypted transport remain mandatory before runtime commands execute.
+
+Bitcoin-network analogy note: AetherLink should borrow only peer identity and discovery concepts. It is not a public open network; only QR-paired trusted devices may discover, authenticate, and communicate with the runtime.
 
 Development note: `AETHERLINK_DEV_PAIRING=1` is only for local automated smoke tests with RuntimeDevServer. It opens and prints a temporary pairing session for scripts, but runtime commands still require the normal pairing/trusted-device and challenge-response path. Do not enable this flag for production or normal trusted-device use.
 
@@ -71,6 +83,25 @@ After pairing, each runtime connection authenticates before model or command mes
 5. Mac allows runtime commands only after the connection is authenticated.
 
 Runtime commands include `runtime.health`, `models.list`, `models.pull`, `chat.send`, and `chat.cancel`. Requests sent before authentication fail with `authentication_required`; unknown or removed device ids fail with `pairing_required`; invalid signatures fail with `authentication_failed`.
+
+The same authentication requirement applies on every transport. A relay or signaling server must not be trusted as an authenticator, must not terminate the end-to-end encrypted AetherLink session, and must not be able to forge either device identity.
+
+## Remote Connectivity Security
+
+Reliable different-network connectivity cannot be guaranteed with pure mDNS or local IP addressing. mDNS is local-link discovery, and private IPs usually do not route across NATs, mobile carriers, VPNs, or separate Wi-Fi networks.
+
+Target security properties:
+
+- The connection manager prefers local discovery and direct authenticated connections when both devices are reachable on the same network.
+- Bonjour/local discovery records may advertise minimal runtime route hints for matching, preferably a pairing-derived `route_token`; Android only auto-routes to endpoints whose hints match the pinned trusted runtime identity.
+- Metadata-less Bonjour/local endpoints are limited to local/dev/manual reachability candidates and are not trusted identity matches.
+- Remote P2P NAT traversal uses paired identities, short-lived connection candidates, and authenticated encrypted session establishment.
+- Encrypted blind relay/TURN-style forwarding is a fallback for cases where direct P2P fails.
+- Signaling and relay services see only connection metadata needed for reachability or opaque encrypted packets.
+- End-to-end encryption is between the paired Android client and Mac runtime, so relay infrastructure cannot read AI protocol payloads, model lists, prompts, responses, memory notes, files, or backend credentials.
+- Fixed IP/manual host entry and mDNS/Bonjour local discovery are restricted to development, diagnostics, local fast paths, and emergency support flows, not normal onboarding.
+
+Current implementation status: AetherLink has placeholders and route-candidate plumbing for the target connection order, but the implemented transport is still local-direct/development TCP. Different-network remote P2P, NAT traversal, signaling, and blind relay fallback remain future work.
 
 ## Local Chat History, Memory, And Compaction
 
@@ -114,7 +145,8 @@ Hardening roadmap:
 - Android public-key challenge-response on Mac.
 - Session keys derived after pairing.
 - Protocol commands rejected until authenticated.
-- Optional BLE/QR/mDNS only for discovery or key exchange, not LLM streaming.
+- Connection manager with local direct, remote P2P NAT traversal, and encrypted blind relay/TURN-style fallback.
+- Optional BLE/QR/mDNS only for discovery, pairing, development reachability hints, or key exchange, not as the only product connectivity plan.
 
 ## Same-Network Unauthenticated Access Is Forbidden
 

@@ -38,6 +38,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Unarchive
@@ -561,7 +562,7 @@ private fun ChatModelTopBarMenu(
         state.isConnected && selectedModel != null -> selectedModel.name
         state.isLoadingModels -> stringResource(R.string.loading_models)
         selectedModelUnavailable -> stringResource(R.string.model_unavailable)
-        else -> stringResource(R.string.models_title)
+        else -> stringResource(R.string.choose_model)
     }
     val modelPickerStateDescription = when {
         state.isLoadingModels -> stringResource(R.string.loading_models)
@@ -588,7 +589,7 @@ private fun ChatModelTopBarMenu(
             },
             enabled = !state.isStreaming,
             modifier = Modifier
-                .widthIn(max = 176.dp)
+                .widthIn(max = 240.dp)
                 .semantics {
                     stateDescription = modelPickerStateDescription
                 },
@@ -613,15 +614,30 @@ private fun ChatModelTopBarMenu(
         ) {
             DropdownMenuItem(
                 text = {
-                    Text(
-                        text = if (state.isLoadingModels) {
-                            stringResource(R.string.loading_models)
-                        } else {
-                            stringResource(R.string.load_models)
-                        },
-                    )
+                    Column {
+                        Text(
+                            text = if (state.isLoadingModels) {
+                                stringResource(R.string.loading_models)
+                            } else {
+                                stringResource(R.string.load_models)
+                            },
+                        )
+                        Text(
+                            text = selectedModel?.let { model ->
+                                stringResource(R.string.model_provider_value, model.provider)
+                            } ?: if (state.isConnected) {
+                                stringResource(R.string.chat_status_connected)
+                            } else {
+                                stringResource(R.string.chat_status_disconnected)
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 },
-                leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                leadingIcon = { Icon(Icons.Filled.Refresh, contentDescription = null) },
                 enabled = state.isConnected && !state.isLoadingModels,
                 onClick = {
                     hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)

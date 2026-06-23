@@ -4,7 +4,7 @@ public final class BonjourAdvertiser: NSObject, NetServiceDelegate, RuntimeAdver
     private var service: NetService?
     public private(set) var serviceName = "AetherLink"
 
-    public func start(port: Int32) {
+    public func start(port: Int32, metadata: RuntimeAdvertisementMetadata = RuntimeAdvertisementMetadata()) {
         stop()
         let service = NetService(
             domain: "local.",
@@ -12,6 +12,7 @@ public final class BonjourAdvertiser: NSObject, NetServiceDelegate, RuntimeAdver
             name: serviceName,
             port: port
         )
+        service.setTXTRecord(NetService.data(fromTXTRecord: metadata.txtRecordData))
         service.delegate = self
         service.publish()
         self.service = service

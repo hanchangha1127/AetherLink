@@ -1,10 +1,13 @@
 package com.localagentbridge.android.runtime
 
+import com.localagentbridge.android.core.transport.RuntimeEndpointHint
+import com.localagentbridge.android.core.transport.RuntimeEndpointSource
 import java.util.UUID
 
 data class RuntimeUiState(
     val macHost: String = "127.0.0.1",
     val macPort: String = "43170",
+    val macEndpointSource: RuntimeEndpointSource = RuntimeEndpointSource.Manual,
     val trustedMac: RuntimeTrustedMac? = null,
     val discoveredMacs: List<RuntimeDiscoveredMac> = emptyList(),
     val isDiscovering: Boolean = false,
@@ -56,14 +59,23 @@ enum class RuntimeAppLanguage(val languageTag: String) {
 data class RuntimeTrustedMac(
     val deviceId: String,
     val name: String,
-    val host: String,
-    val port: Int,
-)
+    val fingerprint: String? = null,
+    val routeToken: String? = null,
+    val endpointHint: RuntimeEndpointHint? = null,
+) {
+    val lastKnownEndpoint: RuntimeEndpointHint
+        get() = requireNotNull(endpointHint) { "Trusted runtime endpoint hint is not available" }
+}
 
 data class RuntimeDiscoveredMac(
     val serviceName: String,
     val host: String,
     val port: Int,
+    val routeToken: String? = null,
+    val deviceId: String? = null,
+    val fingerprint: String? = null,
+    val app: String? = null,
+    val version: String? = null,
 )
 
 data class RuntimeModel(

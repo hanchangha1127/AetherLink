@@ -7,6 +7,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -91,6 +92,7 @@ import com.localagentbridge.android.runtime.RuntimeMemoryEntry
 import com.localagentbridge.android.runtime.RuntimeModel
 import com.localagentbridge.android.runtime.RuntimePendingAttachment
 import com.localagentbridge.android.runtime.RuntimeProviderStatus
+import com.localagentbridge.android.runtime.RuntimeTrustedMac
 import com.localagentbridge.android.runtime.RuntimeUiError
 import com.localagentbridge.android.runtime.RuntimeUiState
 import com.localagentbridge.android.runtime.isChatModel
@@ -279,7 +281,7 @@ private fun ConnectionStatusPanel(state: RuntimeUiState) {
             ProviderStatusRows(providers = state.providerStatuses)
             StatusLine(
                 label = stringResource(R.string.endpoint),
-                value = state.trustedMac?.let { trusted -> "${trusted.host}:${trusted.port}" }
+                value = state.trustedMac?.endpointHint?.let { endpoint -> "${endpoint.host}:${endpoint.port}" }
                     ?: "${state.macHost}:${state.macPort}",
             )
             StatusLine(
@@ -630,9 +632,6 @@ fun SettingsScreen(
             )
         }
         item {
-            CompanionOnlyPanel()
-        }
-        item {
             AppPreferencesPanel(
                 selectedLanguageTag = state.selectedLanguageTag,
                 onSetLanguageTag = onSetLanguageTag,
@@ -646,75 +645,62 @@ fun SettingsScreen(
             )
         }
         item {
-            ScreenHeader(
-                title = R.string.pairing_title,
-                subtitle = R.string.pairing_subtitle,
-            )
-        }
-        item {
-            QrPairingPanel(
-                isConnecting = state.isConnecting,
-                onScanPairingQr = onScanPairingQr,
-            )
-        }
-        item {
-            TrustedMacPanel(
-                state = state,
-                onForgetTrustedMac = onForgetTrustedMac,
-            )
-        }
-        item {
-            PairingConnectButton(
-                state = state,
-                onConnect = onConnect,
-            )
-        }
-        if (state.trustedMac == null) {
-            item {
-                EmptyState(text = stringResource(R.string.connect_requires_pairing))
-            }
-        }
-        item {
-            DiscoveryPanel(
-                state = state,
-                onStartDiscovery = onStartDiscovery,
-                onStopDiscovery = onStopDiscovery,
-                onUseDiscoveredMac = onUseDiscoveredMac,
-            )
-        }
-        item {
-            ScreenHeader(
-                title = R.string.status_title,
-                subtitle = R.string.status_subtitle,
-            )
-        }
-        item {
-            ConnectionStatusPanel(state = state)
-        }
-        item {
-            ConnectionStatusActions(
-                state = state,
-                onRefreshHealth = onRefreshHealth,
-                onDisconnect = onDisconnect,
-            )
-        }
-        item {
-            EndpointPanel(
-                state = state,
-                onHostChange = onHostChange,
-                onPortChange = onPortChange,
-                onUseUsbReverse = onUseUsbReverse,
-                onUseEmulator = onUseEmulator,
-                title = R.string.runtime_endpoint,
-            )
-        }
-        item {
             MemoryPanel(
                 entries = state.memoryEntries,
                 onAddMemoryEntry = onAddMemoryEntry,
                 onRemoveMemoryEntry = onRemoveMemoryEntry,
                 onSetMemoryEntryEnabled = onSetMemoryEntryEnabled,
             )
+        }
+        item {
+            SettingsExpandableSection(
+                title = R.string.status_title,
+                subtitle = R.string.status_subtitle,
+            ) {
+                CompanionOnlyPanel()
+                QrPairingPanel(
+                    isConnecting = state.isConnecting,
+                    onScanPairingQr = onScanPairingQr,
+                )
+                TrustedMacPanel(
+                    state = state,
+                    onForgetTrustedMac = onForgetTrustedMac,
+                )
+                PairingConnectButton(
+                    state = state,
+                    onConnect = onConnect,
+                )
+                if (state.trustedMac == null) {
+                    EmptyState(text = stringResource(R.string.connect_requires_pairing))
+                }
+                ConnectionStatusPanel(state = state)
+                ConnectionStatusActions(
+                    state = state,
+                    onRefreshHealth = onRefreshHealth,
+                    onDisconnect = onDisconnect,
+                )
+            }
+        }
+        item {
+            SettingsExpandableSection(
+                title = R.string.advanced_connection,
+                subtitle = R.string.advanced_connection_detail,
+            ) {
+                DiscoveryPanel(
+                    state = state,
+                    onStartDiscovery = onStartDiscovery,
+                    onStopDiscovery = onStopDiscovery,
+                    onUseDiscoveredMac = onUseDiscoveredMac,
+                )
+                EndpointPanel(
+                    state = state,
+                    onHostChange = onHostChange,
+                    onPortChange = onPortChange,
+                    onUseUsbReverse = onUseUsbReverse,
+                    onUseEmulator = onUseEmulator,
+                    title = R.string.runtime_endpoint,
+                )
+            }
         }
         item { ErrorText(state.error) }
     }
@@ -752,6 +738,71 @@ private fun ScreenHeader(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.secondary,
             )
+        }
+    }
+}
+
+@Composable
+private fun SettingsExpandableSection(
+    @StringRes title: Int,
+    @StringRes subtitle: Int,
+    initiallyExpanded: Boolean = false,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    val isExpanded = rememberSaveable { mutableStateOf(initiallyExpanded) }
+    val toggleExpanded = { isExpanded.value = !isExpanded.value }
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        HorizontalDivider()
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { toggleExpanded() }
+                .padding(vertical = 4.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    text = stringResource(title),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Medium,
+                )
+                Text(
+                    text = stringResource(subtitle),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.secondary,
+                )
+            }
+            Spacer(Modifier.width(12.dp))
+            FilledTonalIconButton(onClick = { toggleExpanded() }) {
+                Icon(
+                    imageVector = if (isExpanded.value) {
+                        Icons.Filled.KeyboardArrowUp
+                    } else {
+                        Icons.Filled.KeyboardArrowDown
+                    },
+                    contentDescription = null,
+                )
+            }
+        }
+        if (isExpanded.value) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    content = content,
+                )
+            }
         }
     }
 }
@@ -800,7 +851,8 @@ private fun TrustedMacPanel(
             }
             state.trustedMac?.let { trusted ->
                 Text(
-                    text = "${trusted.host}:${trusted.port}",
+                    text = trusted.endpointHint?.let { endpoint -> "${endpoint.host}:${endpoint.port}" }
+                        ?: stringResource(R.string.status_unknown),
                     color = MaterialTheme.colorScheme.secondary,
                     style = MaterialTheme.typography.bodyMedium,
                 )
@@ -1006,7 +1058,11 @@ private fun DiscoveryPanel(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     items(state.discoveredMacs) { peer ->
-                        DiscoveredMacRow(peer = peer, onUse = onUseDiscoveredMac)
+                        DiscoveredMacRow(
+                            peer = peer,
+                            trustedMac = state.trustedMac,
+                            onUse = onUseDiscoveredMac,
+                        )
                     }
                 }
             }
@@ -1015,8 +1071,15 @@ private fun DiscoveryPanel(
 }
 
 @Composable
-private fun DiscoveredMacRow(peer: RuntimeDiscoveredMac, onUse: (RuntimeDiscoveredMac) -> Unit) {
+private fun DiscoveredMacRow(
+    peer: RuntimeDiscoveredMac,
+    trustedMac: RuntimeTrustedMac?,
+    onUse: (RuntimeDiscoveredMac) -> Unit,
+) {
     val hapticFeedback = LocalHapticFeedback.current
+    val identityStatus = peer.identityStatus(trustedMac)
+    val hasAdvertisedIdentity = peer.hasAdvertisedIdentity()
+    val isKnownMismatch = identityStatus == DiscoveredMacIdentityStatus.DifferentTrustedRuntime
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -1044,18 +1107,91 @@ private fun DiscoveredMacRow(peer: RuntimeDiscoveredMac, onUse: (RuntimeDiscover
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+                Text(
+                    text = stringResource(identityStatus.labelRes(hasAdvertisedIdentity)),
+                    color = when (identityStatus) {
+                        DiscoveredMacIdentityStatus.TrustedMatch -> MaterialTheme.colorScheme.primary
+                        DiscoveredMacIdentityStatus.DifferentTrustedRuntime -> MaterialTheme.colorScheme.error
+                        DiscoveredMacIdentityStatus.Unknown -> MaterialTheme.colorScheme.secondary
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
             TextButton(
                 onClick = {
                     hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
                     onUse(peer)
                 },
+                enabled = !isKnownMismatch,
             ) {
                 Text(stringResource(R.string.use))
             }
         }
     }
 }
+
+private enum class DiscoveredMacIdentityStatus {
+    TrustedMatch,
+    Unknown,
+    DifferentTrustedRuntime;
+
+    @StringRes
+    fun labelRes(hasAdvertisedIdentity: Boolean): Int = when (this) {
+        TrustedMatch -> R.string.discovery_identity_trusted_match
+        Unknown -> if (hasAdvertisedIdentity) {
+            R.string.discovery_identity_unknown
+        } else {
+            R.string.discovery_identity_not_advertised
+        }
+        DifferentTrustedRuntime -> R.string.discovery_identity_different_trusted_runtime
+    }
+}
+
+private fun RuntimeDiscoveredMac.identityStatus(trustedMac: RuntimeTrustedMac?): DiscoveredMacIdentityStatus {
+    val discoveredRouteToken = routeToken.normalizedIdentityValue()
+    val discoveredDeviceId = deviceId.normalizedIdentityValue()
+    val discoveredFingerprint = fingerprint.normalizedIdentityValue()
+
+    if (discoveredRouteToken == null && discoveredDeviceId == null && discoveredFingerprint == null) {
+        return DiscoveredMacIdentityStatus.Unknown
+    }
+    if (trustedMac == null) {
+        return DiscoveredMacIdentityStatus.Unknown
+    }
+
+    val trustedRouteToken = trustedMac.routeToken.normalizedIdentityValue()
+    val trustedDeviceId = trustedMac.deviceId.normalizedIdentityValue()
+    val trustedFingerprint = trustedMac.fingerprint.normalizedIdentityValue()
+    val routeTokenMatches = discoveredRouteToken != null && discoveredRouteToken == trustedRouteToken
+    val deviceIdMatches = discoveredDeviceId != null && discoveredDeviceId == trustedDeviceId
+    val fingerprintMatches = discoveredFingerprint != null && discoveredFingerprint == trustedFingerprint
+    val routeTokenDiffers = discoveredRouteToken != null &&
+        trustedRouteToken != null &&
+        discoveredRouteToken != trustedRouteToken
+    val deviceIdDiffers = discoveredDeviceId != null && trustedDeviceId != null && discoveredDeviceId != trustedDeviceId
+    val fingerprintDiffers = discoveredFingerprint != null &&
+        trustedFingerprint != null &&
+        discoveredFingerprint != trustedFingerprint
+
+    return when {
+        routeTokenMatches -> DiscoveredMacIdentityStatus.TrustedMatch
+        routeTokenDiffers -> DiscoveredMacIdentityStatus.DifferentTrustedRuntime
+        (deviceIdMatches || fingerprintMatches) && !routeTokenDiffers && !fingerprintDiffers && !deviceIdDiffers -> {
+            DiscoveredMacIdentityStatus.TrustedMatch
+        }
+        deviceIdDiffers || fingerprintDiffers -> DiscoveredMacIdentityStatus.DifferentTrustedRuntime
+        else -> DiscoveredMacIdentityStatus.Unknown
+    }
+}
+
+private fun RuntimeDiscoveredMac.hasAdvertisedIdentity(): Boolean =
+    routeToken.normalizedIdentityValue() != null ||
+        deviceId.normalizedIdentityValue() != null ||
+        fingerprint.normalizedIdentityValue() != null
+
+private fun String?.normalizedIdentityValue(): String? = this?.trim()?.takeUnless { it.isEmpty() }
 
 @Composable
 private fun ChatEmptyState(
@@ -1079,17 +1215,17 @@ private fun ChatEmptyState(
             color = if (state.isConnected) {
                 MaterialTheme.colorScheme.primaryContainer
             } else {
-                MaterialTheme.colorScheme.errorContainer
+                MaterialTheme.colorScheme.surfaceVariant
             },
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Icon(
-                    imageVector = if (state.isConnected) Icons.Filled.Link else Icons.Filled.Close,
+                    imageVector = Icons.Filled.Link,
                     contentDescription = null,
                     tint = if (state.isConnected) {
                         MaterialTheme.colorScheme.onPrimaryContainer
                     } else {
-                        MaterialTheme.colorScheme.onErrorContainer
+                        MaterialTheme.colorScheme.onSurfaceVariant
                     },
                 )
             }
@@ -1366,7 +1502,7 @@ private fun SuggestedQuestions(
     if (suggestions.isEmpty() && !isLoading) return
 
     val hapticFeedback = LocalHapticFeedback.current
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
             text = stringResource(
                 if (isLoading && suggestions.isEmpty()) {
@@ -1381,9 +1517,9 @@ private fun SuggestedQuestions(
             overflow = TextOverflow.Ellipsis,
         )
         if (suggestions.isNotEmpty()) {
-            Row(
-                modifier = Modifier.horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 suggestions.forEach { suggestion ->
                     OutlinedButton(
@@ -1392,12 +1528,13 @@ private fun SuggestedQuestions(
                             onSuggestionClick(suggestion)
                         },
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 7.dp),
-                        modifier = Modifier.widthIn(max = 260.dp),
+                        modifier = Modifier.fillMaxWidth(),
                     ) {
                         Text(
                             text = suggestion,
-                            maxLines = 2,
+                            maxLines = 3,
                             overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.fillMaxWidth(),
                         )
                     }
                 }
@@ -1681,6 +1818,7 @@ private fun ChatComposer(
     modifier: Modifier = Modifier,
 ) {
     val hapticFeedback = LocalHapticFeedback.current
+    val showComposerStatus = !isStreaming && !canSend && hint.isNotBlank()
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
@@ -1732,6 +1870,16 @@ private fun ChatComposer(
                     }
                 },
             )
+            if (showComposerStatus) {
+                Text(
+                    text = hint,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.secondary,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(horizontal = 2.dp),
+                )
+            }
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -2392,8 +2540,11 @@ private fun runtimeErrorLabel(error: RuntimeUiError): String {
     return when (error.code) {
         "invalid_endpoint" -> stringResource(R.string.error_invalid_endpoint)
         "connection_failed" -> stringResource(R.string.error_connection_failed)
+        "no_route" -> stringResource(R.string.error_no_runtime_route)
+        "no_connectable_route" -> stringResource(R.string.error_no_connectable_runtime_route)
         "discovery_failed" -> stringResource(R.string.error_discovery_failed)
         "invalid_pairing_qr" -> stringResource(R.string.error_invalid_pairing_qr)
+        "pairing_endpoint_unavailable" -> stringResource(R.string.error_pairing_endpoint_unavailable)
         "qr_scan_failed" -> stringResource(R.string.error_qr_scan_failed)
         "pair_first" -> stringResource(R.string.error_pair_first)
         "pairing_required" -> stringResource(R.string.error_pairing_required)

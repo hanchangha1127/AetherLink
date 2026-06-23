@@ -91,6 +91,45 @@ final class LMStudioBackendTests: XCTestCase {
         XCTAssertEqual(models.map(\.provider), [.lmStudio])
     }
 
+    func testUnloadModelPostsLoadedInstanceID() async throws {
+        var paths: [String] = []
+        let backend = makeBackend { request in
+            paths.append(request.url?.path ?? "")
+            switch request.url?.path {
+            case "/api/v1/models":
+                return self.response(
+                    statusCode: 200,
+                    body: """
+                    {
+                      "models": [
+                        {
+                          "type": "llm",
+                          "key": "google/gemma-4-26b-a4b",
+                          "display_name": "Gemma 4 26B A4B",
+                          "loaded_instances": [{"id": "instance-gemma"}]
+                        }
+                      ]
+                    }
+                    """
+                )
+            case "/api/v1/models/unload":
+                XCTAssertEqual(request.httpMethod, "POST")
+                let body = try self.requestBodyData(from: request)
+                let posted = try JSONDecoder().decode(PostedUnloadRequest.self, from: body)
+                XCTAssertEqual(posted.instanceID, "instance-gemma")
+                return self.response(statusCode: 200, body: #"{"instance_id":"instance-gemma"}"#)
+            default:
+                XCTFail("Unexpected path: \(request.url?.path ?? "nil")")
+                return self.response(statusCode: 500, body: "{}")
+            }
+        }
+
+        let result = try await backend.unloadModel(providerModelID: "google/gemma-4-26b-a4b")
+
+        XCTAssertEqual(paths, ["/api/v1/models", "/api/v1/models/unload"])
+        XCTAssertEqual(result, .unloaded(provider: .lmStudio, modelID: "google/gemma-4-26b-a4b"))
+    }
+
     func testChatStreamsNativeServerSentEvents() async throws {
         let backend = makeBackend { request in
             switch request.url?.path {
@@ -276,6 +315,14 @@ private struct PostedNativeChatRequest: Decodable {
 private struct PostedNativeInput: Decodable {
     var role: String
     var content: String
+}
+
+private struct PostedUnloadRequest: Decodable {
+    var instanceID: String
+
+    enum CodingKeys: String, CodingKey {
+        case instanceID = "instance_id"
+    }
 }
 
 private final class MockURLProtocol: URLProtocol {

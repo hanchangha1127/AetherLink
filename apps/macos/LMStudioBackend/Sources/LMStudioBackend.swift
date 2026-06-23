@@ -69,6 +69,15 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
         )
     }
 
+    public func unloadModel(providerModelID: String) async throws -> ModelUnloadResult {
+        let instanceIDs = try await loadedInstanceIDs(for: providerModelID)
+        let unloadIDs = instanceIDs.isEmpty ? [providerModelID] : instanceIDs
+        for instanceID in unloadIDs {
+            try await unloadInstance(instanceID)
+        }
+        return .unloaded(provider: provider, modelID: providerModelID)
+    }
+
     public func chat(request: ChatRequest) -> AsyncThrowingStream<ChatStreamEvent, Error> {
         AsyncThrowingStream { continuation in
             let task = Task { [baseURL, session, encoder] in
@@ -163,6 +172,34 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
         } catch {
             throw LMStudioBackendError.badResponse(endpoint: "GET /v1/models", reason: error.localizedDescription)
         }
+    }
+
+    private func loadedInstanceIDs(for modelID: String) async throws -> [String] {
+        do {
+            let data = try await performDataRequest(endpoint: "GET /api/v1/models", url: baseURL.appending(path: "api/v1/models"))
+            let response = try decoder.decode(LMStudioNativeModelsResponse.self, from: data)
+            guard let model = response.models.first(where: { $0.key == modelID || $0.displayName == modelID }) else {
+                return []
+            }
+            return model.loadedInstances.map(\.id)
+        } catch let error as LMStudioBackendError where error.shouldFallbackToOpenAICompatible {
+            return []
+        } catch let error as DecodingError {
+            throw LMStudioBackendError.badResponse(endpoint: "GET /api/v1/models", reason: error.localizedDescription)
+        }
+    }
+
+    private func unloadInstance(_ instanceID: String) async throws {
+        let endpoint = "POST /api/v1/models/unload"
+        var urlRequest = URLRequest(url: baseURL.appending(path: "api/v1/models/unload"))
+        urlRequest.httpMethod = "POST"
+        urlRequest.addValue("application/json", forHTTPHeaderField: "Content-Type")
+        urlRequest.httpBody = try Self.encode(
+            LMStudioUnloadRequest(instanceID: instanceID),
+            encoder: encoder,
+            endpoint: endpoint
+        )
+        _ = try await performDataRequest(endpoint: endpoint, request: urlRequest)
     }
 
     private func performDataRequest(endpoint: String, url: URL) async throws -> Data {
@@ -435,6 +472,14 @@ private struct OpenAIModelsResponse: Decodable {
 
 private struct OpenAIModel: Decodable {
     var id: String
+}
+
+private struct LMStudioUnloadRequest: Encodable {
+    var instanceID: String
+
+    enum CodingKeys: String, CodingKey {
+        case instanceID = "instance_id"
+    }
 }
 
 private struct LMStudioNativeChatRequest: Encodable {

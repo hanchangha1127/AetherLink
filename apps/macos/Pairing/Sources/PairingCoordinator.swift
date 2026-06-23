@@ -9,25 +9,34 @@ public struct PairingSession: Identifiable, Equatable, Sendable {
     public var macDeviceID: String
     public var macName: String
     public var fingerprint: String
-    public var host: String
-    public var port: Int
+    public var routeToken: String?
+    public var host: String?
+    public var port: Int?
     public var serviceType: String
 
     public var qrPayload: String {
         var components = URLComponents()
         components.scheme = "aetherlink"
         components.host = "pair"
-        components.queryItems = [
+        var queryItems = [
             URLQueryItem(name: "version", value: "1"),
             URLQueryItem(name: "pairing_nonce", value: nonce),
             URLQueryItem(name: "pairing_code", value: code),
             URLQueryItem(name: "mac_device_id", value: macDeviceID),
             URLQueryItem(name: "mac_name", value: macName),
             URLQueryItem(name: "fingerprint", value: fingerprint),
-            URLQueryItem(name: "host", value: host),
-            URLQueryItem(name: "port", value: String(port)),
             URLQueryItem(name: "service_type", value: serviceType)
         ]
+        if let routeToken, !routeToken.isEmpty {
+            queryItems.append(URLQueryItem(name: "route_token", value: routeToken))
+        }
+        if let host {
+            queryItems.append(URLQueryItem(name: "host", value: host))
+        }
+        if let port {
+            queryItems.append(URLQueryItem(name: "port", value: String(port)))
+        }
+        components.queryItems = queryItems
         return components.string ?? "aetherlink://pair"
     }
 }
@@ -101,8 +110,9 @@ public final class PairingCoordinator: @unchecked Sendable {
         macDeviceID: String,
         macName: String = "AetherLink Mac",
         fingerprint: String,
-        host: String,
-        port: Int,
+        routeToken: String? = nil,
+        host: String? = nil,
+        port: Int? = nil,
         serviceType: String = "_aetherlink._tcp.local."
     ) -> PairingSession {
         let code = String(format: "%06d", Int.random(in: 0...999_999))
@@ -114,6 +124,7 @@ public final class PairingCoordinator: @unchecked Sendable {
             macDeviceID: macDeviceID,
             macName: macName,
             fingerprint: fingerprint,
+            routeToken: routeToken,
             host: host,
             port: port,
             serviceType: serviceType

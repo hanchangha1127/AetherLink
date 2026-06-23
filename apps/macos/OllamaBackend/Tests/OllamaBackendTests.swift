@@ -186,6 +186,23 @@ final class OllamaBackendTests: XCTestCase {
         }
     }
 
+    func testUnloadModelPostsEmptyChatWithKeepAliveZero() async throws {
+        let backend = makeBackend { request in
+            XCTAssertEqual(request.url?.path, "/api/chat")
+            XCTAssertEqual(request.httpMethod, "POST")
+            let body = try self.requestBodyData(from: request)
+            let postedRequest = try JSONDecoder().decode(PostedUnloadRequest.self, from: body)
+            XCTAssertEqual(postedRequest.model, "llama3.1:8b")
+            XCTAssertTrue(postedRequest.messages.isEmpty)
+            XCTAssertEqual(postedRequest.keepAlive, 0)
+            return self.response(statusCode: 200, body: #"{"done":true}"#)
+        }
+
+        let result = try await backend.unloadModel(providerModelID: "llama3.1:8b")
+
+        XCTAssertEqual(result, .unloaded(provider: .ollama, modelID: "llama3.1:8b"))
+    }
+
     func testChatStreamsOllamaLineDelimitedJSON() async throws {
         let backend = makeBackend { request in
             XCTAssertEqual(request.url?.path, "/api/chat")
@@ -423,6 +440,18 @@ private struct PostedChatRequest: Decodable {
 private struct PostedPullRequest: Decodable {
     var model: String
     var stream: Bool
+}
+
+private struct PostedUnloadRequest: Decodable {
+    var model: String
+    var messages: [ChatMessage]
+    var keepAlive: Int
+
+    enum CodingKeys: String, CodingKey {
+        case model
+        case messages
+        case keepAlive = "keep_alive"
+    }
 }
 
 private final class MockURLProtocol: URLProtocol {

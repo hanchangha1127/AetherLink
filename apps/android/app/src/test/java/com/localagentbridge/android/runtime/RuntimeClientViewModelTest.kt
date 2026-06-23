@@ -8,6 +8,18 @@ import com.localagentbridge.android.core.protocol.MessageType
 import com.localagentbridge.android.core.protocol.ProtocolEnvelope
 import com.localagentbridge.android.core.protocol.RuntimeBackendStatusPayload
 import com.localagentbridge.android.core.protocol.RuntimeHealthPayload
+import com.localagentbridge.android.core.transport.PairedRuntimeIdentity
+import com.localagentbridge.android.core.transport.RuntimeConnectionFailure
+import com.localagentbridge.android.core.transport.RuntimeConnectionFailureReason
+import com.localagentbridge.android.core.transport.RuntimeConnectionManager
+import com.localagentbridge.android.core.transport.RuntimeConnectionTarget
+import com.localagentbridge.android.core.transport.RuntimeEndpointHint
+import com.localagentbridge.android.core.transport.RuntimeEndpointSource
+import com.localagentbridge.android.core.transport.RuntimeRouteCandidate
+import com.localagentbridge.android.core.transport.RuntimeRouteResolver
+import com.localagentbridge.android.core.transport.RuntimeRouteSource
+import com.localagentbridge.android.core.transport.RuntimeTransportConnector
+import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.encodeToJsonElement
@@ -16,27 +28,460 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class RuntimeClientViewModelTest {
     @Test
-    fun trustedRuntimeConnectionTargetUsesTrustedMacInsteadOfManualHostFields() {
+    fun trustedRuntimeConnectionTargetUsesTrustedLastKnownEndpointInsteadOfManualHostFields() {
         val state = RuntimeUiState(
             macHost = "127.0.0.1",
             macPort = "43169",
             trustedMac = RuntimeTrustedMac(
                 deviceId = "mac-1",
                 name = "AetherLink Mac",
-                host = "192.168.1.20",
-                port = 43170,
+                endpointHint = RuntimeEndpointHint(
+                    host = "192.168.1.20",
+                    port = 43170,
+                    source = RuntimeEndpointSource.TrustedLastKnown,
+                ),
             ),
         )
 
         val target = trustedRuntimeConnectionTarget(state)
 
-        assertEquals("192.168.1.20", target?.host)
-        assertEquals(43170, target?.port)
+        assertEquals("mac-1", target?.identity?.deviceId)
+        assertEquals("AetherLink Mac", target?.identity?.name)
+        assertEquals("192.168.1.20", target?.endpointHint?.host)
+        assertEquals(43170, target?.endpointHint?.port)
+        assertEquals(RuntimeEndpointSource.TrustedLastKnown, target?.endpointHint?.source)
+    }
+
+    @Test
+    fun trustedRuntimeConnectionTargetAllowsTrustedIdentityWithoutEndpointHint() {
+        val state = RuntimeUiState(
+            macHost = "127.0.0.1",
+            macPort = "43170",
+            trustedMac = RuntimeTrustedMac(
+                deviceId = "mac-identity-only",
+                name = "AetherLink Mac",
+                fingerprint = "fingerprint",
+                endpointHint = null,
+            ),
+        )
+
+        val target = trustedRuntimeConnectionTarget(state)
+
+        assertEquals("mac-identity-only", target?.identity?.deviceId)
+        assertEquals("AetherLink Mac", target?.identity?.name)
+        assertEquals("fingerprint", target?.identity?.fingerprint)
+        assertNull(target?.endpointHint)
+    }
+
+    @Test
+    fun runtimeRouteCandidatesPreferDiscoveredEndpointBeforeStaleTrustedEndpoint() {
+        val staleTrustedEndpoint = RuntimeEndpointHint(
+            host = "192.168.1.20",
+            port = 43170,
+            source = RuntimeEndpointSource.TrustedLastKnown,
+        )
+        val state = RuntimeUiState(
+            macHost = "127.0.0.1",
+            macPort = "43170",
+            trustedMac = RuntimeTrustedMac(
+                deviceId = "mac-1",
+                name = "AetherLink Mac",
+                endpointHint = staleTrustedEndpoint,
+            ),
+            discoveredMacs = listOf(
+                RuntimeDiscoveredMac(
+                    serviceName = "AetherLink._localagentbridge._tcp.local.",
+                    host = "192.168.1.44",
+                    port = 43170,
+                    deviceId = "mac-1",
+                ),
+            ),
+        )
+        val target = trustedRuntimeConnectionTarget(state) ?: error("Expected trusted target")
+
+        val endpointRoutes = runtimeRouteCandidates(state, target)
+            .filterIsInstance<RuntimeRouteCandidate.DirectTcp>()
+
+        assertEquals(2, endpointRoutes.size)
+        assertEquals("192.168.1.44", endpointRoutes[0].hint.host)
+        assertEquals(RuntimeEndpointSource.BonjourDiscovery, endpointRoutes[0].hint.source)
+        assertEquals(RuntimeRouteSource.FreshDiscovery, endpointRoutes[0].source)
+        assertEquals("192.168.1.20", endpointRoutes[1].hint.host)
+        assertEquals(RuntimeEndpointSource.TrustedLastKnown, endpointRoutes[1].hint.source)
+        assertEquals(RuntimeRouteSource.TrustedLastKnownEndpoint, endpointRoutes[1].source)
+    }
+
+    @Test
+    fun runtimeRouteCandidatesDoNotAutoUseMetadataLessDiscoveryForTrustedIdentity() {
+        val staleTrustedEndpoint = RuntimeEndpointHint(
+            host = "192.168.1.20",
+            port = 43170,
+            source = RuntimeEndpointSource.TrustedLastKnown,
+        )
+        val state = RuntimeUiState(
+            trustedMac = RuntimeTrustedMac(
+                deviceId = "mac-1",
+                name = "AetherLink Mac",
+                fingerprint = "trusted-fingerprint",
+                endpointHint = staleTrustedEndpoint,
+            ),
+            discoveredMacs = listOf(
+                RuntimeDiscoveredMac(
+                    serviceName = "Metadata-less AetherLink",
+                    host = "192.168.1.44",
+                    port = 43170,
+                ),
+            ),
+        )
+        val target = trustedRuntimeConnectionTarget(state) ?: error("Expected trusted target")
+
+        val endpointRoutes = runtimeRouteCandidates(state, target)
+            .filterIsInstance<RuntimeRouteCandidate.DirectTcp>()
+
+        assertEquals(1, endpointRoutes.size)
+        assertEquals("192.168.1.20", endpointRoutes.single().hint.host)
+        assertEquals(RuntimeEndpointSource.TrustedLastKnown, endpointRoutes.single().hint.source)
+    }
+
+    @Test
+    fun runtimeRouteCandidatesUseDiscoveredEndpointWithMatchingIdentityMetadata() {
+        val staleTrustedEndpoint = RuntimeEndpointHint(
+            host = "192.168.1.20",
+            port = 43170,
+            source = RuntimeEndpointSource.TrustedLastKnown,
+        )
+        val state = RuntimeUiState(
+            trustedMac = RuntimeTrustedMac(
+                deviceId = "mac-1",
+                name = "AetherLink Mac",
+                fingerprint = "trusted-fingerprint",
+                endpointHint = staleTrustedEndpoint,
+            ),
+            discoveredMacs = listOf(
+                RuntimeDiscoveredMac(
+                    serviceName = "AetherLink",
+                    host = "192.168.1.44",
+                    port = 43170,
+                    deviceId = "mac-1",
+                    fingerprint = "other-fingerprint",
+                    app = "AetherLink",
+                    version = "0.1.0",
+                ),
+                RuntimeDiscoveredMac(
+                    serviceName = "AetherLink Fingerprint",
+                    host = "192.168.1.45",
+                    port = 43170,
+                    deviceId = "other-mac",
+                    fingerprint = "trusted-fingerprint",
+                ),
+            ),
+        )
+        val target = trustedRuntimeConnectionTarget(state) ?: error("Expected trusted target")
+
+        val endpointRoutes = runtimeRouteCandidates(state, target)
+            .filterIsInstance<RuntimeRouteCandidate.DirectTcp>()
+
+        assertEquals("192.168.1.44", endpointRoutes[0].hint.host)
+        assertEquals("192.168.1.45", endpointRoutes[1].hint.host)
+        assertEquals("192.168.1.20", endpointRoutes[2].hint.host)
+    }
+
+    @Test
+    fun runtimeRouteCandidatesUseRouteTokenBeforeLegacyIdentityMetadata() {
+        val state = RuntimeUiState(
+            trustedMac = RuntimeTrustedMac(
+                deviceId = "mac-1",
+                name = "AetherLink Runtime",
+                fingerprint = "trusted-fingerprint",
+                routeToken = "paired-route-token",
+                endpointHint = null,
+            ),
+            discoveredMacs = listOf(
+                RuntimeDiscoveredMac(
+                    serviceName = "AetherLink Route Token",
+                    host = "192.168.1.88",
+                    port = 43170,
+                    routeToken = "paired-route-token",
+                    deviceId = "legacy-device-id-that-should-not-be-used",
+                    fingerprint = "legacy-fingerprint-that-should-not-be-used",
+                ),
+            ),
+        )
+        val target = trustedRuntimeConnectionTarget(state) ?: error("Expected trusted target")
+
+        val endpointRoutes = runtimeRouteCandidates(state, target)
+            .filterIsInstance<RuntimeRouteCandidate.DirectTcp>()
+
+        assertEquals(1, endpointRoutes.size)
+        assertEquals("192.168.1.88", endpointRoutes.single().hint.host)
+        assertEquals(RuntimeEndpointSource.BonjourDiscovery, endpointRoutes.single().hint.source)
+    }
+
+    @Test
+    fun runtimeRouteCandidatesIgnoreRouteTokenMismatchEvenWhenLegacyIdentityMatches() {
+        val staleTrustedEndpoint = RuntimeEndpointHint(
+            host = "192.168.1.20",
+            port = 43170,
+            source = RuntimeEndpointSource.TrustedLastKnown,
+        )
+        val state = RuntimeUiState(
+            trustedMac = RuntimeTrustedMac(
+                deviceId = "mac-1",
+                name = "AetherLink Runtime",
+                fingerprint = "trusted-fingerprint",
+                routeToken = "trusted-route-token",
+                endpointHint = staleTrustedEndpoint,
+            ),
+            discoveredMacs = listOf(
+                RuntimeDiscoveredMac(
+                    serviceName = "AetherLink Wrong Route Token",
+                    host = "192.168.1.89",
+                    port = 43170,
+                    routeToken = "other-route-token",
+                    deviceId = "mac-1",
+                    fingerprint = "trusted-fingerprint",
+                ),
+            ),
+        )
+        val target = trustedRuntimeConnectionTarget(state) ?: error("Expected trusted target")
+
+        val endpointRoutes = runtimeRouteCandidates(state, target)
+            .filterIsInstance<RuntimeRouteCandidate.DirectTcp>()
+
+        assertEquals(1, endpointRoutes.size)
+        assertEquals("192.168.1.20", endpointRoutes.single().hint.host)
+        assertEquals(RuntimeEndpointSource.TrustedLastKnown, endpointRoutes.single().hint.source)
+    }
+
+    @Test
+    fun runtimeRouteCandidatesIgnoreDiscoveredEndpointWithMismatchedIdentityMetadata() {
+        val staleTrustedEndpoint = RuntimeEndpointHint(
+            host = "192.168.1.20",
+            port = 43170,
+            source = RuntimeEndpointSource.TrustedLastKnown,
+        )
+        val state = RuntimeUiState(
+            trustedMac = RuntimeTrustedMac(
+                deviceId = "mac-1",
+                name = "AetherLink Mac",
+                fingerprint = "trusted-fingerprint",
+                endpointHint = staleTrustedEndpoint,
+            ),
+            discoveredMacs = listOf(
+                RuntimeDiscoveredMac(
+                    serviceName = "Other AetherLink",
+                    host = "192.168.1.44",
+                    port = 43170,
+                    deviceId = "other-mac",
+                    fingerprint = "other-fingerprint",
+                ),
+            ),
+        )
+        val target = trustedRuntimeConnectionTarget(state) ?: error("Expected trusted target")
+
+        val endpointRoutes = runtimeRouteCandidates(state, target)
+            .filterIsInstance<RuntimeRouteCandidate.DirectTcp>()
+
+        assertEquals(1, endpointRoutes.size)
+        assertEquals("192.168.1.20", endpointRoutes.single().hint.host)
+        assertEquals(RuntimeEndpointSource.TrustedLastKnown, endpointRoutes.single().hint.source)
+    }
+
+    @Test
+    fun runtimeRouteCandidatesIgnoreSelectedBonjourEndpointWithMismatchedIdentityMetadata() {
+        val staleTrustedEndpoint = RuntimeEndpointHint(
+            host = "192.168.1.20",
+            port = 43170,
+            source = RuntimeEndpointSource.TrustedLastKnown,
+        )
+        val state = RuntimeUiState(
+            macHost = "192.168.1.44",
+            macPort = "43170",
+            macEndpointSource = RuntimeEndpointSource.BonjourDiscovery,
+            trustedMac = RuntimeTrustedMac(
+                deviceId = "mac-1",
+                name = "AetherLink Mac",
+                fingerprint = "trusted-fingerprint",
+                endpointHint = staleTrustedEndpoint,
+            ),
+            discoveredMacs = listOf(
+                RuntimeDiscoveredMac(
+                    serviceName = "Other AetherLink",
+                    host = "192.168.1.44",
+                    port = 43170,
+                    deviceId = "other-mac",
+                    fingerprint = "other-fingerprint",
+                ),
+            ),
+        )
+        val target = trustedRuntimeConnectionTarget(state) ?: error("Expected trusted target")
+
+        val endpointRoutes = runtimeRouteCandidates(state, target)
+            .filterIsInstance<RuntimeRouteCandidate.DirectTcp>()
+
+        assertEquals(1, endpointRoutes.size)
+        assertEquals("192.168.1.20", endpointRoutes.single().hint.host)
+        assertEquals(RuntimeEndpointSource.TrustedLastKnown, endpointRoutes.single().hint.source)
+    }
+
+    @Test
+    fun runtimeRouteCandidatesAllowMetadataLessSelectedBonjourEndpoint() {
+        val state = RuntimeUiState(
+            macHost = "192.168.1.99",
+            macPort = "43170",
+            macEndpointSource = RuntimeEndpointSource.BonjourDiscovery,
+            trustedMac = RuntimeTrustedMac(
+                deviceId = "mac-1",
+                name = "AetherLink Mac",
+                fingerprint = "trusted-fingerprint",
+                endpointHint = null,
+            ),
+            discoveredMacs = listOf(
+                RuntimeDiscoveredMac(
+                    serviceName = "Dev AetherLink",
+                    host = "192.168.1.99",
+                    port = 43170,
+                ),
+            ),
+        )
+        val target = trustedRuntimeConnectionTarget(state) ?: error("Expected trusted target")
+
+        val endpointRoutes = runtimeRouteCandidates(state, target)
+            .filterIsInstance<RuntimeRouteCandidate.DirectTcp>()
+
+        assertEquals(1, endpointRoutes.size)
+        assertEquals("192.168.1.99", endpointRoutes.single().hint.host)
+        assertEquals(RuntimeEndpointSource.BonjourDiscovery, endpointRoutes.single().hint.source)
+    }
+
+    @Test
+    fun runtimeRouteCandidatesPreferSelectedBonjourEndpointBeforeOtherDiscovery() {
+        val staleTrustedEndpoint = RuntimeEndpointHint(
+            host = "192.168.1.20",
+            port = 43170,
+            source = RuntimeEndpointSource.TrustedLastKnown,
+        )
+        val state = RuntimeUiState(
+            macHost = "192.168.1.99",
+            macPort = "43170",
+            macEndpointSource = RuntimeEndpointSource.BonjourDiscovery,
+            trustedMac = RuntimeTrustedMac(
+                deviceId = "mac-1",
+                name = "AetherLink Mac",
+                endpointHint = staleTrustedEndpoint,
+            ),
+            discoveredMacs = listOf(
+                RuntimeDiscoveredMac(
+                    serviceName = "Other AetherLink",
+                    host = "192.168.1.44",
+                    port = 43170,
+                    deviceId = "mac-1",
+                ),
+                RuntimeDiscoveredMac(
+                    serviceName = "Selected AetherLink",
+                    host = "192.168.1.99",
+                    port = 43170,
+                    deviceId = "mac-1",
+                ),
+            ),
+        )
+        val target = trustedRuntimeConnectionTarget(state) ?: error("Expected trusted target")
+
+        val endpointRoutes = runtimeRouteCandidates(state, target)
+            .filterIsInstance<RuntimeRouteCandidate.DirectTcp>()
+
+        assertEquals("192.168.1.99", endpointRoutes[0].hint.host)
+        assertEquals(RuntimeEndpointSource.BonjourDiscovery, endpointRoutes[0].hint.source)
+        assertEquals(RuntimeRouteSource.FreshDiscovery, endpointRoutes[0].source)
+        assertEquals("192.168.1.44", endpointRoutes[1].hint.host)
+        assertEquals("192.168.1.20", endpointRoutes[2].hint.host)
+    }
+
+    @Test
+    fun runtimeRouteCandidatesUseExplicitUsbReverseEndpointForTrustedIdentity() {
+        val state = RuntimeUiState(
+            macHost = "127.0.0.1",
+            macPort = "43170",
+            macEndpointSource = RuntimeEndpointSource.UsbReverse,
+            trustedMac = RuntimeTrustedMac(
+                deviceId = "mac-identity-only",
+                name = "AetherLink Mac",
+                endpointHint = null,
+            ),
+        )
+        val target = trustedRuntimeConnectionTarget(state) ?: error("Expected trusted target")
+
+        val endpointRoutes = runtimeRouteCandidates(state, target)
+            .filterIsInstance<RuntimeRouteCandidate.DirectTcp>()
+
+        assertEquals(1, endpointRoutes.size)
+        assertEquals("127.0.0.1", endpointRoutes.first().hint.host)
+        assertEquals(43170, endpointRoutes.first().hint.port)
+        assertEquals(RuntimeEndpointSource.UsbReverse, endpointRoutes.first().hint.source)
+        assertEquals(RuntimeRouteSource.FreshDiscovery, endpointRoutes.first().source)
+    }
+
+    @Test
+    fun identityOnlyTrustedRuntimeWithoutDiscoveredEndpointReturnsNoConnectableRoute() {
+        val state = RuntimeUiState(
+            macHost = "127.0.0.1",
+            macPort = "43170",
+            trustedMac = RuntimeTrustedMac(
+                deviceId = "mac-identity-only",
+                name = "AetherLink Mac",
+                endpointHint = null,
+            ),
+            discoveredMacs = emptyList(),
+        )
+        val target = trustedRuntimeConnectionTarget(state) ?: error("Expected trusted target")
+        val calls = mutableListOf<Pair<String, Int>>()
+        val manager = RuntimeConnectionManager(
+            connector = RuntimeTransportConnector { host, port, _ ->
+                calls += host to port
+            },
+            routeResolver = RuntimeRouteResolver { runtimeRouteCandidates(state, it) },
+        )
+
+        val failure = assertThrows(RuntimeConnectionFailure::class.java) {
+            runBlocking { manager.connect(target) }
+        }
+
+        assertEquals(RuntimeConnectionFailureReason.NoConnectableRoute, failure.reason)
+        assertTrue(failure.routes.any { it is RuntimeRouteCandidate.LocalDirect })
+        assertTrue(failure.routes.any { it is RuntimeRouteCandidate.PeerToPeer })
+        assertTrue(failure.routes.any { it is RuntimeRouteCandidate.Relay })
+        assertEquals(emptyList<Pair<String, Int>>(), calls)
+    }
+
+    @Test
+    fun runtimeConnectionFailureMapsRouteMissingReasonsToFocusedUiErrors() {
+        val identityOnlyTarget = RuntimeConnectionTarget(
+            identity = PairedRuntimeIdentity(
+                deviceId = "mac-identity-only",
+                name = "AetherLink Mac",
+            ),
+            endpointHint = null,
+        )
+
+        val noRoute = RuntimeConnectionFailure(
+            reason = RuntimeConnectionFailureReason.NoRoutesResolved,
+            target = identityOnlyTarget,
+            routes = emptyList(),
+        ).toRuntimeUiError()
+        val noConnectableRoute = RuntimeConnectionFailure(
+            reason = RuntimeConnectionFailureReason.NoConnectableRoute,
+            target = identityOnlyTarget,
+            routes = emptyList(),
+        ).toRuntimeUiError()
+
+        assertEquals("no_route", noRoute.code)
+        assertEquals("no_connectable_route", noConnectableRoute.code)
     }
 
     @Test

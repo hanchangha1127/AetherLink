@@ -10,30 +10,31 @@ AetherLink v0.1 proves the smallest useful local loop: Android pairs with the Ma
 - Ollama and LM Studio are Mac-mediated local model backends.
 - Pairing uses a Mac-displayed QR code in v0.1; the accepted trusted Mac record persists on Android.
 - Discovery remains scoped to pairing setup, while runtime access requires a trusted-device model and authenticated runtime session.
-- Android can request runtime health, list models, select a chat model, separately select one embedding model for future retrieval features, send chat, receive streamed answer deltas, render preserved reasoning/think deltas separately as muted collapsible UI, reopen previous local chats, manage user-entered local memory notes, and cancel generation.
+- Android can request runtime health, list models, select a chat model, separately select one embedding model for future retrieval features, send chat, receive streamed answer deltas, render preserved reasoning/think deltas separately as muted collapsible UI, request runtime-mediated suggested next questions, reopen previous local chats, manage user-entered local memory notes, and cancel generation.
 - If archive is exposed in v0.1 local chat UX, archive is distinct from delete: archived chats are retained but excluded from memory/reflection/research/compaction inputs unless restored or explicitly selected later.
 - Model listing includes installed Ollama models from Mac `/api/tags` and optional running state from Mac `/api/ps`; local models are the main path.
 - Model listing includes LM Studio local LLM and embedding models from Mac-side LM Studio REST API responses; chat and embedding selection surfaces stay separate, and no LM Studio defaults are invented.
 - Ollama cloud models are not default recommendations or generic suggestions. They remain installed/selectable only after the user-side Ollama pull/sign-in flow makes them appear in the local Mac `/api/tags` response.
 - Pulling a model is Mac-mediated through `models.pull` and Ollama `/api/pull`; LM Studio downloads remain Mac-side user actions through LM Studio or `lms`. Android never calls Ollama or LM Studio URLs directly.
-- Local development transport may use length-prefixed JSON over TCP. It must remain replaceable by encrypted P2P/pairing transport later, and it must not turn same-network access into a trust model.
+- Local development transport may use length-prefixed JSON over TCP. It must remain replaceable by a paired-device private P2P overlay later, and it must not turn same-network access, fixed IPs, or manual host entry into the product trust model.
+- Product connectivity should be identity/key based, not address based: local direct connection first, remote P2P NAT traversal second, and end-to-end encrypted blind relay/TURN-style fallback only when direct paths fail.
 
 ## Non-Goals
 
 - MCP.
 - Skills.
 - Web search.
-- Advanced memory, embedding search, RAG, session search, or file indexing.
+- Advanced memory, embedding search, RAG, session search, automatic memory compaction, or file indexing.
 - Project/workspace features such as project-scoped chats, files, instructions, memory, indexes, model/backend preferences, trusted-source controls, or project-level search/research.
 - Scheduling and automation features such as scheduled tasks, reminders, monitors, recurring automations, runtime-triggered jobs, mobile approval queues, or automation audit logs.
 - Context-window-aware session compaction.
-- Embedding model selection separate from chat/text-generation model selection.
 - Deep-research-like retrieval, ranking, or knowledge indexing.
-- Image input, file input, or direct file indexing workflows.
+- Production-grade image/file indexing workflows and project source management.
 - Terminal execution or file tool execution.
 - Internal Python tool execution.
 - Automatic model residency/resource policy beyond current backend behavior, including unload-after-inactivity.
-- Cloud backend, remote relay, account server, cloud sync, or multi-user collaboration.
+- Cloud AI backend, account server, cloud sync, multi-user collaboration, or production remote connectivity infrastructure.
+- A production relay/TURN fallback is not part of v0.1, but it remains a roadmap connection layer. If added later, it must be a blind encrypted transport relay only, not an AI backend or plaintext prompt/response proxy.
 - Android-side local model execution.
 - iOS client, Windows runtime/server, DGX OS-class runtime/server, or other companion targets.
 - Additional AI serving backend adapters beyond Ollama and LM Studio.
@@ -58,6 +59,7 @@ AetherLink v0.1 proves the smallest useful local loop: Android pairs with the Ma
 - Android can add, disable, and remove user-managed local memory notes; enabled notes are included only through the Mac-mediated `chat.send` path.
 - Mac streams backend answer chunks back as `chat.delta`; Ollama reasoning/think chunks are preserved separately as reasoning deltas rather than mixed into final answer text.
 - Mac sends `chat.done` when generation completes.
+- Android can request runtime-mediated suggested next questions after `chat.done`; Mac returns `chat.suggestions.result`, and Android renders optional next-question chips without calling model backends directly.
 - Android can send `chat.cancel`; Mac cancels the active generation abstraction.
 - Runtime errors are returned as structured `error` messages and shown in Android UI.
 - Untrusted clients receive `pairing_required` or `authentication_required` before runtime commands execute.

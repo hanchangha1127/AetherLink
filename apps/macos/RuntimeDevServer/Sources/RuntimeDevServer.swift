@@ -32,6 +32,7 @@ struct RuntimeDevServer {
             : AggregatingLlmBackend(ollama: OllamaBackend(), lmStudio: LMStudioBackend())
         let pairingCoordinator = PairingCoordinator()
         let trustedDeviceStore = Self.trustedDeviceStore(environment: environment)
+        let identity = Self.runtimeIdentity(environment: environment)
         let router = LocalRuntimeMessageRouter(
             backend: backend,
             pairingCoordinator: pairingCoordinator,
@@ -49,7 +50,7 @@ struct RuntimeDevServer {
             print("[runtime] received type=\(envelope.type) request_id=\(envelope.requestID)")
             router.handle(envelope, sink: LoggingSink(wrapped: sink))
         }
-        advertiser.start(port: Int32(port))
+        advertiser.start(port: Int32(port), metadata: identity.advertisementMetadata)
 
         print("[runtime] AetherLink dev server listening on 127.0.0.1:\(port)")
         print("[runtime] Backend: \(useMockBackend ? "dev mock" : "Ollama + LM Studio")")
@@ -62,6 +63,7 @@ struct RuntimeDevServer {
             startDevelopmentPairing(
                 coordinator: pairingCoordinator,
                 port: port,
+                identity: identity,
                 environment: environment
             )
         }
@@ -79,13 +81,15 @@ struct RuntimeDevServer {
     private static func startDevelopmentPairing(
         coordinator: PairingCoordinator,
         port: UInt16,
+        identity: RuntimeIdentity,
         environment: [String: String]
     ) {
         let session = coordinator.beginPairing(
             validFor: TimeInterval(environment["AETHERLINK_DEV_PAIRING_TTL_SECONDS"] ?? "") ?? 300,
-            macDeviceID: environment["AETHERLINK_DEV_MAC_DEVICE_ID"] ?? "aetherlink-dev-mac",
-            macName: environment["AETHERLINK_DEV_MAC_NAME"] ?? "AetherLink Dev Mac",
-            fingerprint: environment["AETHERLINK_DEV_MAC_FINGERPRINT"] ?? "dev-aetherlink-local",
+            macDeviceID: identity.deviceID,
+            macName: identity.name,
+            fingerprint: identity.fingerprint,
+            routeToken: identity.routeToken,
             host: environment["AETHERLINK_DEV_PAIRING_HOST"] ?? "127.0.0.1",
             port: Int(port)
         )
@@ -96,17 +100,24 @@ struct RuntimeDevServer {
     }
 
     private static func printDevelopmentPairingInfo(_ session: PairingSession) {
-        let info: [String: Any] = [
+        var info: [String: Any] = [
             "pairing_code": session.code,
             "pairing_nonce": session.nonce,
             "mac_device_id": session.macDeviceID,
             "mac_name": session.macName,
             "fingerprint": session.fingerprint,
-            "host": session.host,
-            "port": session.port,
             "service_type": session.serviceType,
             "expires_at": ISO8601DateFormatter().string(from: session.expiresAt)
         ]
+        if let routeToken = session.routeToken {
+            info["route_token"] = routeToken
+        }
+        if let host = session.host {
+            info["host"] = host
+        }
+        if let port = session.port {
+            info["port"] = port
+        }
 
         guard let data = try? JSONSerialization.data(withJSONObject: info, options: [.sortedKeys]),
               let json = String(data: data, encoding: .utf8)
@@ -115,6 +126,28 @@ struct RuntimeDevServer {
             return
         }
         print("[runtime] AETHERLINK_DEV_PAIRING_INFO \(json)")
+    }
+
+    private static func runtimeIdentity(environment: [String: String]) -> RuntimeIdentity {
+        RuntimeIdentity(
+            deviceID: environment["AETHERLINK_DEV_MAC_DEVICE_ID"] ?? "aetherlink-dev-mac",
+            name: environment["AETHERLINK_DEV_MAC_NAME"] ?? "AetherLink Dev Mac",
+            fingerprint: environment["AETHERLINK_DEV_MAC_FINGERPRINT"] ?? "dev-aetherlink-local",
+            routeToken: environment["AETHERLINK_DEV_ROUTE_TOKEN"] ?? "dev-aetherlink-route"
+        )
+    }
+}
+
+private struct RuntimeIdentity {
+    var deviceID: String
+    var name: String
+    var fingerprint: String
+    var routeToken: String
+
+    var advertisementMetadata: RuntimeAdvertisementMetadata {
+        RuntimeAdvertisementMetadata(
+            routeToken: routeToken
+        )
     }
 }
 

@@ -173,6 +173,38 @@ public struct ModelPullResult: Equatable, Sendable {
     }
 }
 
+public struct ModelUnloadResult: Equatable, Sendable {
+    public var provider: ModelProvider
+    public var modelID: String
+    public var unloaded: Bool
+    public var message: String
+
+    public init(provider: ModelProvider, modelID: String, unloaded: Bool, message: String) {
+        self.provider = provider
+        self.modelID = modelID
+        self.unloaded = unloaded
+        self.message = message
+    }
+
+    public static func unloaded(provider: ModelProvider, modelID: String) -> ModelUnloadResult {
+        ModelUnloadResult(
+            provider: provider,
+            modelID: modelID,
+            unloaded: true,
+            message: "Model unloaded."
+        )
+    }
+
+    public static func unsupported(provider: ModelProvider, modelID: String) -> ModelUnloadResult {
+        ModelUnloadResult(
+            provider: provider,
+            modelID: modelID,
+            unloaded: false,
+            message: "\(provider.displayName) does not support runtime-managed model unload."
+        )
+    }
+}
+
 public struct ChatMessage: Codable, Equatable, Sendable {
     public var role: String
     public var content: String
@@ -279,5 +311,21 @@ public protocol LlmBackend: Sendable {
     func listModels() async throws -> [ModelInfo]
     func pullModel(name: String) async throws -> ModelPullResult
     func chat(request: ChatRequest) -> AsyncThrowingStream<ChatStreamEvent, Error>
+    func unloadModel(providerModelID: String) async throws -> ModelUnloadResult
     @discardableResult func cancel(generationID: String) -> GenerationCancellationResult
+}
+
+public extension LlmBackend {
+    func pullModel(name: String) async throws -> ModelPullResult {
+        throw BackendError(
+            provider: provider,
+            code: "unsupported_operation",
+            message: "\(provider.displayName) does not support runtime-managed model downloads.",
+            retryable: false
+        )
+    }
+
+    func unloadModel(providerModelID: String) async throws -> ModelUnloadResult {
+        .unsupported(provider: provider, modelID: providerModelID)
+    }
 }

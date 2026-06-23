@@ -40,6 +40,13 @@ struct StatusView: View {
                         systemImage: "lock.shield",
                         tone: model.trustedDevices.isEmpty ? .inactive : .ready
                     )
+                    StatusCard(
+                        title: "Model Residency",
+                        value: modelResidencyValue,
+                        detail: modelResidencyDetail,
+                        systemImage: "memorychip",
+                        tone: modelResidencyTone
+                    )
                 }
 
                 CompanionPanel(title: "Readiness", systemImage: "checklist") {
@@ -161,6 +168,51 @@ struct StatusView: View {
         model.trustedDevices.isEmpty
             ? NSLocalizedString("Pair a client device before allowing runtime requests.", comment: "")
             : NSLocalizedString("Authenticated devices can request runtime sessions.", comment: "")
+    }
+
+    private var modelResidencyValue: String {
+        guard model.modelResidency.supported else {
+            return NSLocalizedString("Not managed", comment: "")
+        }
+        return model.modelResidency.activeModelID == nil
+            ? NSLocalizedString("Idle", comment: "")
+            : NSLocalizedString("Active", comment: "")
+    }
+
+    private var modelResidencyDetail: String {
+        guard model.modelResidency.supported else {
+            return NSLocalizedString("Model residency is not managed by this backend.", comment: "")
+        }
+        if let activeModelID = model.modelResidency.activeModelID,
+           let activeProvider = model.modelResidency.activeProvider {
+            let minutes = max(1, model.modelResidency.idleUnloadDelaySeconds / 60)
+            return String(
+                format: NSLocalizedString("%@ %@ active. Idle unload after %d minute(s).", comment: ""),
+                localizedProviderName(activeProvider),
+                activeModelID,
+                minutes
+            )
+        }
+        return model.modelResidency.lastEvent
+            ?? NSLocalizedString("No active model is resident through the runtime policy.", comment: "")
+    }
+
+    private var modelResidencyTone: StatusTone {
+        guard model.modelResidency.supported else {
+            return .inactive
+        }
+        return model.modelResidency.activeModelID == nil ? .neutral : .ready
+    }
+
+    private func localizedProviderName(_ provider: ModelProvider) -> String {
+        switch provider {
+        case .ollama:
+            return NSLocalizedString("Ollama", comment: "")
+        case .lmStudio:
+            return NSLocalizedString("LM Studio", comment: "")
+        case .aggregate:
+            return NSLocalizedString("Local runtime", comment: "")
+        }
     }
 
     private var readinessItems: [ReadinessItem] {

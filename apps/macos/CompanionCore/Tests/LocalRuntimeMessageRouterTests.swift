@@ -595,6 +595,34 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(message?.payload["retryable"], .bool(false))
     }
 
+    func testPairingQRCodePayloadCanOmitEndpointHints() throws {
+        let coordinator = PairingCoordinator()
+        let session = coordinator.beginPairing(
+            macDeviceID: "mac-1",
+            macName: "AetherLink Mac",
+            fingerprint: "fp-1",
+            routeToken: "route-1"
+        )
+
+        let components = try XCTUnwrap(URLComponents(string: session.qrPayload))
+        let queryItems = try XCTUnwrap(components.queryItems).reduce(into: [String: String]()) { result, item in
+            result[item.name] = item.value
+        }
+
+        XCTAssertEqual(components.scheme, "aetherlink")
+        XCTAssertEqual(components.host, "pair")
+        XCTAssertEqual(queryItems["version"], "1")
+        XCTAssertEqual(queryItems["pairing_nonce"], session.nonce)
+        XCTAssertEqual(queryItems["pairing_code"], session.code)
+        XCTAssertEqual(queryItems["mac_device_id"], "mac-1")
+        XCTAssertEqual(queryItems["mac_name"], "AetherLink Mac")
+        XCTAssertEqual(queryItems["fingerprint"], "fp-1")
+        XCTAssertEqual(queryItems["route_token"], "route-1")
+        XCTAssertEqual(queryItems["service_type"], "_aetherlink._tcp.local.")
+        XCTAssertNil(queryItems["host"])
+        XCTAssertNil(queryItems["port"])
+    }
+
     func testPairingRequestStoresTrustedDeviceAndReturnsAccepted() async throws {
         let sink = RecordingSink()
         let coordinator = PairingCoordinator()
@@ -873,6 +901,11 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
 
         XCTAssertEqual(transport.startedPort, 43210)
         XCTAssertEqual(advertiser.startedPort, 43210)
+        XCTAssertEqual(advertiser.startedMetadata?.version, "1")
+        XCTAssertEqual(advertiser.startedMetadata?.app, "AetherLink")
+        XCTAssertFalse(advertiser.startedMetadata?.routeToken?.isEmpty ?? true)
+        XCTAssertNil(advertiser.startedMetadata?.deviceID)
+        XCTAssertNil(advertiser.startedMetadata?.fingerprint)
         XCTAssertEqual(model.transportState.state, .advertising)
         XCTAssertEqual(model.transportState.serviceName, "_aetherlink._tcp.local.")
         XCTAssertEqual(model.transportState.port, 43210)
@@ -1123,10 +1156,12 @@ private final class FakeRuntimeTransport: RuntimeTransport {
 
 private final class FakeRuntimeAdvertiser: RuntimeAdvertiser {
     private(set) var startedPort: Int32?
+    private(set) var startedMetadata: RuntimeAdvertisementMetadata?
     private(set) var didStop = false
 
-    func start(port: Int32) {
+    func start(port: Int32, metadata: RuntimeAdvertisementMetadata) {
         startedPort = port
+        startedMetadata = metadata
         didStop = false
     }
 

@@ -14,11 +14,12 @@ Android Client
   User-managed local memory notes
   Cancel control
         |
-        | v0.1 local authenticated JSON transport
-        | future encrypted P2P/pairing transport
+        | authenticated JSON protocol over replaceable transport
+        | local direct, remote P2P, or encrypted blind relay fallback
         v
 Mac Companion Runtime
   Transport listener
+  Connection manager
   Protocol router
   Trusted-device boundary
   Backend abstraction
@@ -30,7 +31,31 @@ Mac Companion Runtime
         +--> LM Studio Adapter -> local LM Studio server
 ```
 
-There is no cloud backend in v0.1. Android must not call Ollama or LM Studio directly.
+There is no cloud AI backend in v0.1. Android must not call Ollama or LM Studio directly. Any future signaling, relay, or TURN-style service is connection metadata infrastructure only, not an AI backend.
+
+## Remote Connectivity Architecture
+
+AetherLink must not be designed around same-network fixed IPs. Smooth 1:1 connectivity should work when the Android client and Mac runtime are on different networks, while keeping AI execution local to the user's runtime. Fixed host/port values and mDNS/Bonjour service records are v0.1 development hints or local fast-path hints, not durable product addressing.
+
+Target connection order:
+
+1. Pairing binds device identities and public keys. The Android device trusts a specific Mac runtime identity, and the Mac trusts a specific Android identity.
+2. A route resolver takes the paired peer identity and returns ordered route candidates for that identity.
+3. Local direct candidates come first. These can use local discovery, mDNS/Bonjour, LAN addresses, USB reverse, hotspot, or a scanned development endpoint when available.
+4. If local direct connection is unavailable, future resolver candidates should cover remote P2P NAT traversal using the paired device identities, short-lived session metadata, and authenticated key exchange.
+5. If direct P2P fails, future resolver candidates may fall back to an encrypted blind relay or TURN-style path.
+
+Current implementation status: the code has the identity-first connection target and v0.1 direct endpoint hint boundary, but remote connectivity pieces are still placeholders. It does not implement real NAT traversal, signaling, encrypted relay transport, or production end-to-end transport encryption yet. Today, direct endpoint hints are still selected for the existing local TCP transport. They are candidates, not durable product addresses. The Android resolver now wires current Bonjour/local discovery results and explicitly selected local/dev endpoints into route candidates before stale trusted last-known endpoint hints; that slice is still same-network/local-direct only, not real remote P2P or NAT traversal.
+
+Bonjour/local discovery route candidates should carry minimal routing hints when available. The preferred hint is a pairing-derived `route_token` that Android learned from QR pairing; stable device id and fingerprint TXT values are legacy/development fallbacks rather than the production privacy target. Android may automatically route a trusted runtime identity only to discovered endpoints whose hints match the pinned trusted runtime record. Discovered endpoints without identity metadata are local/dev/manual reachability candidates only; they must not be treated as automatic trusted-identity matches.
+
+Discovery identity hints are not secrets and must not expose backend URLs, model names, provider status, prompts, files, memory, or other runtime details. They are only pre-auth routing hints that help Android choose which local endpoint to try before the authenticated session starts. They do not replace QR pairing, pinned identity, challenge-response authentication, or end-to-end encrypted transport.
+
+Bitcoin-network analogy note: the useful similarity is peer identity and discovery instead of a client pinned to one fixed server address. AetherLink is still a private trusted-device network, not a public untrusted open network; only QR-paired devices may discover, authenticate, and exchange runtime traffic.
+
+The relay/signaling component, if used, is not a cloud AI service and must not receive or inspect AI protocol payloads. It can coordinate reachability, exchange connection candidates, or forward encrypted packets, but end-to-end encryption between the paired Android client and Mac runtime must prevent it from reading model lists, prompts, responses, files, memory, backend credentials, or any runtime command payload. Until that encrypted relay path exists, relay/signaling references in these docs describe the target architecture rather than implemented behavior.
+
+Fixed IP entry, manual host/port entry, `127.0.0.1:43170`, USB reverse, and raw mDNS host records are development and diagnostics tools only. They can produce v0.1 direct route candidates, but they are not the product connectivity model. Pure mDNS/local IP discovery cannot guarantee reliable different-network connectivity because mDNS is link-local and private IPs are usually unroutable across NATs, carrier networks, VPNs, and separate Wi-Fi networks.
 
 ## Future Platform Shape
 
@@ -47,6 +72,7 @@ The invariant stays the same as platforms expand: client apps are controllers, a
 The Mac runtime is responsible for:
 
 - Starting the local runtime transport.
+- Managing local direct, remote P2P, and encrypted relay/TURN-style connectivity through a replaceable connection manager.
 - Receiving Android protocol messages.
 - Checking runtime health.
 - Listing models through backend adapters.
@@ -66,7 +92,7 @@ The runtime is also the future home for memory, file inputs, image inputs, inter
 The Android app is responsible for:
 
 - Pairing/discovery UI.
-- Connection status.
+- Connection status across local direct, remote P2P, and encrypted relay fallback modes.
 - Model selection.
 - Install action that sends model pull requests to the Mac runtime.
 - Chat input and transcript rendering.
@@ -137,10 +163,14 @@ Project files, project indexes, scheduled jobs, and automation definitions are s
 
 ## Replaceable Transport
 
-v0.1 may use a local socket transport while the product hardens authentication and encryption. The transport must stay replaceable:
+v0.1 may use a local socket transport while the product hardens authentication, encryption, and remote connectivity. The transport must stay replaceable:
 
 - Protocol routing is separate from socket implementation.
 - Runtime commands flow through a router rather than directly through UI code.
 - Pairing/auth checks can be inserted before dispatch.
-- Encrypted P2P or authenticated local socket can replace the development transport without changing Android feature screens.
+- A route resolver can order candidates for the paired peer identity, next preferring current Bonjour/local discovery results before stale trusted last-known endpoint hints for the same-network/local-direct path, and later adding remote P2P NAT traversal plus encrypted blind relay/TURN-style forwarding without changing Android feature screens.
+- Bonjour/local route candidates should include minimal runtime route hints when possible, preferably `route_token`. Android should auto-route a trusted runtime only when discovered route-token or legacy `device_id`/fingerprint metadata matches the pinned trusted identity. Metadata-less discovery results remain local/dev/manual candidates, not trusted identity matches.
+- Relay/signaling servers carry only connection metadata or encrypted transport packets. They are not AI/cloud backends and cannot inspect AI protocol payloads, model lists, prompts, responses, files, memory, or backend credentials.
+- Manual fixed endpoints, mDNS records, and same-network host/port assumptions are development-only hints.
+- Current code stops at local-direct route candidates over the existing TCP transport; remote P2P NAT traversal, signaling, and encrypted relay forwarding remain unimplemented transport milestones.
 - Same-network unauthenticated access remains forbidden even if discovery or pairing starts as a minimal v0.1 implementation.

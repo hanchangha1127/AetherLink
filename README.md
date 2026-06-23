@@ -15,6 +15,21 @@ v0.1 is intentionally narrow. It proves one product loop:
 
 There is no cloud backend, account server, relay server, Android-side local model execution, or direct Android-to-Ollama/LM Studio connection in v0.1.
 
+## Connectivity Direction
+
+AetherLink should not depend on a fixed IP address or permanent same-network access. Fixed host/port values, `127.0.0.1:43170`, USB reverse, and mDNS/Bonjour local discovery are v0.1 development hints or local fast paths only. The product direction is a paired-device private P2P overlay:
+
+1. Pair devices by QR and bind persistent device identities/keys.
+2. Try local direct discovery/connection when both devices are nearby.
+3. Try remote P2P NAT traversal when devices are on different networks.
+4. Fall back to an end-to-end encrypted blind relay/TURN-style path only when direct P2P fails.
+
+Bitcoin-network analogy note: AetherLink borrows only the idea that peers can be identified and discovered without depending on one fixed server address. It is not a public, untrusted, open network. Only QR-paired trusted devices should be able to discover, authenticate, and exchange runtime traffic.
+
+Any future relay/signaling component is connection infrastructure only. It must not run AI, store or inspect AI protocol payloads, see model lists, prompts, files, memory, or backend credentials, or replace the local runtime.
+
+Current implementation status: AetherLink has pairing, trusted runtime records, local endpoint hints, Bonjour/local discovery candidates, USB reverse/dev-server paths, and a first route-candidate abstraction. These are placeholders and local-direct scaffolding for the future connection manager. Real remote P2P NAT traversal, signaling, encrypted blind relay transport, and production end-to-end transport encryption are not implemented yet.
+
 ## Repository Layout
 
 ```text
@@ -37,6 +52,7 @@ script/           Project-local macOS build/run entrypoint
 - Ollama reasoning/think stream chunks are preserved separately from final answer text and forwarded through the Mac runtime as reasoning deltas.
 - LM Studio support through the Mac companion's local adapter. Start LM Studio's server from the Developer tab or `lms server start`; Android still never sees or calls the LM Studio URL.
 - Pairing and discovery may be simple in v0.1, but runtime commands still require a trusted-device boundary. Same-network unauthenticated access is not an acceptable architecture.
+- Remote P2P NAT traversal and encrypted relay fallback are target connectivity milestones, not current v0.1 transport capabilities.
 
 ## Model Behavior
 
@@ -52,7 +68,7 @@ script/           Project-local macOS build/run entrypoint
 
 ## Non-Goals
 
-MCP, embedding-based research, advanced memory/RAG, skills, web search, file indexing, terminal execution, iOS, Windows/DGX OS runtime targets, additional serving backends, cloud sync, user accounts, and remote relays are roadmap features, not the v0.1 local chat backend path.
+MCP, embedding-based research, advanced memory/RAG, skills, web search, file indexing, terminal execution, iOS, Windows/DGX OS runtime targets, additional serving backends, cloud sync, user accounts, and production remote connectivity infrastructure are roadmap features, not the v0.1 local chat backend path.
 
 한국어 메모: v0.1에서 Android는 Ollama나 LM Studio 주소를 직접 입력하거나 호출하지 않습니다. 항상 Mac companion을 통해 모델 목록, 채팅 스트리밍, 취소 요청을 보냅니다.
 

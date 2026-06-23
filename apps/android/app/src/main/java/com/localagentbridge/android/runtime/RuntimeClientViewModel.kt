@@ -13,6 +13,7 @@ import com.localagentbridge.android.core.protocol.ChatAttachmentPayload
 import com.localagentbridge.android.core.protocol.ChatCancelPayload
 import com.localagentbridge.android.core.protocol.ChatDeltaPayload
 import com.localagentbridge.android.core.protocol.ChatDonePayload
+import com.localagentbridge.android.core.protocol.ChatMessagePayload
 import com.localagentbridge.android.core.protocol.ChatSendPayload
 import com.localagentbridge.android.core.protocol.ChatSuggestionsRequestPayload
 import com.localagentbridge.android.core.protocol.ChatSuggestionsResultPayload
@@ -33,8 +34,19 @@ import com.localagentbridge.android.core.pairing.PairingStore
 import com.localagentbridge.android.core.pairing.TrustedMac
 import com.localagentbridge.android.core.transport.BonjourDiscovery
 import com.localagentbridge.android.core.transport.MacRuntimeTransportClient
-import kotlinx.coroutines.Job
+import com.localagentbridge.android.core.transport.PairedRuntimeIdentity
+import com.localagentbridge.android.core.transport.RuntimeConnectionFailure
+import com.localagentbridge.android.core.transport.RuntimeConnectionFailureReason
+import com.localagentbridge.android.core.transport.RuntimeConnectionManager
+import com.localagentbridge.android.core.transport.RuntimeConnectionTarget
+import com.localagentbridge.android.core.transport.RuntimeEndpointHint
+import com.localagentbridge.android.core.transport.RuntimeEndpointSource
+import com.localagentbridge.android.core.transport.RuntimeRouteCandidate
+import com.localagentbridge.android.core.transport.RuntimeRouteResolver
+import com.localagentbridge.android.core.transport.RuntimeRouteSource
+import com.localagentbridge.android.core.transport.RuntimeTransportConnector
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -59,6 +71,14 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
         encodeDefaults = true
     }
     private val client = MacRuntimeTransportClient()
+    private val connectionManager = RuntimeConnectionManager(
+        connector = RuntimeTransportConnector { host, port, timeoutMillis ->
+            client.connect(host = host, port = port, timeoutMillis = timeoutMillis)
+        },
+        routeResolver = RuntimeRouteResolver { target ->
+            runtimeRouteCandidates(state.value, target)
+        },
+    )
     private val discovery = BonjourDiscovery(application)
     private val pairingStore = PairingStore(application)
     private val deviceIdentityStore = DeviceIdentityStore(application)
@@ -87,15 +107,18 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
                     if (trusted == null) {
                         it.copy(trustedMac = null)
                     } else {
+                        val endpoint = trusted.lastKnownEndpointHintOrNull()
                         it.copy(
                             trustedMac = RuntimeTrustedMac(
                                 deviceId = trusted.deviceId,
                                 name = trusted.name,
-                                host = trusted.host,
-                                port = trusted.port,
+                                fingerprint = trusted.fingerprint,
+                                routeToken = trusted.routeToken,
+                                endpointHint = endpoint,
                             ),
-                            macHost = trusted.host,
-                            macPort = trusted.port.toString(),
+                            macHost = endpoint?.host ?: it.macHost,
+                            macPort = endpoint?.port?.toString() ?: it.macPort,
+                            macEndpointSource = endpoint?.source ?: it.macEndpointSource,
                         )
                     }
                 }
@@ -106,8 +129,9 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
                 ) {
                     didAttemptTrustedRuntimeRestore = true
                     val current = state.value
-                    if (!current.isConnected && !current.isConnecting) {
-                        connectToRuntime(trusted.host, trusted.port)
+                    val target = trusted.toConnectionTarget()
+                    if (!current.isConnected && !current.isConnecting && target.endpointHint != null) {
+                        connectToRuntime(target)
                     }
                 }
             }
@@ -115,11 +139,21 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
     }
 
     fun updateHost(value: String) {
-        mutableState.update { it.copy(macHost = value.trim()) }
+        mutableState.update {
+            it.copy(
+                macHost = value.trim(),
+                macEndpointSource = RuntimeEndpointSource.Manual,
+            )
+        }
     }
 
     fun updatePort(value: String) {
-        mutableState.update { it.copy(macPort = value.filter(Char::isDigit).take(5)) }
+        mutableState.update {
+            it.copy(
+                macPort = value.filter(Char::isDigit).take(5),
+                macEndpointSource = RuntimeEndpointSource.Manual,
+            )
+        }
     }
 
     fun useUsbReverseEndpoint() {
@@ -127,6 +161,7 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
             it.copy(
                 macHost = "127.0.0.1",
                 macPort = "43170",
+                macEndpointSource = RuntimeEndpointSource.UsbReverse,
                 error = null,
             )
         }
@@ -137,6 +172,7 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
             it.copy(
                 macHost = "10.0.2.2",
                 macPort = "43170",
+                macEndpointSource = RuntimeEndpointSource.Emulator,
                 error = null,
             )
         }
@@ -370,7 +406,7 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
                 return@launch
             }
 
-            connectToRuntime(target.host, target.port)
+            connectToRuntime(target)
         }
     }
 
@@ -384,14 +420,22 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
 
             pendingPairingPayload = payload
             mutableState.update {
+                val endpoint = payload.endpointHintOrNull()
                 it.copy(
                     pairingCode = payload.pairingCode,
-                    macHost = payload.host,
-                    macPort = payload.port.toString(),
+                    macHost = endpoint?.host ?: it.macHost,
+                    macPort = endpoint?.port?.toString() ?: it.macPort,
+                    macEndpointSource = endpoint?.source ?: it.macEndpointSource,
                     error = null,
                 )
             }
-            if (connectToRuntime(payload.host, payload.port, requestHealthAfterConnect = false)) {
+            val target = payload.toConnectionTarget()
+            if (target == null) {
+                pendingPairingPayload = null
+                showError("pairing_endpoint_unavailable")
+                return@launch
+            }
+            if (connectToRuntime(target, requestHealthAfterConnect = false)) {
                 sendPairingRequest(payload)
             } else {
                 pendingPairingPayload = null
@@ -445,6 +489,11 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
                                         serviceName = peer.serviceName,
                                         host = peer.host,
                                         port = peer.port,
+                                        routeToken = peer.routeToken,
+                                        deviceId = peer.deviceId,
+                                        fingerprint = peer.fingerprint,
+                                        app = peer.app,
+                                        version = peer.version,
                                     )
                                 },
                                 isDiscovering = true,
@@ -475,6 +524,7 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
             it.copy(
                 macHost = peer.host,
                 macPort = peer.port.toString(),
+                macEndpointSource = RuntimeEndpointSource.BonjourDiscovery,
                 error = null,
             )
         }
@@ -681,6 +731,22 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
         host: String,
         port: Int,
         requestHealthAfterConnect: Boolean = true,
+        endpointSource: RuntimeEndpointSource = RuntimeEndpointSource.Manual,
+    ): Boolean = connectToRuntime(
+        target = RuntimeConnectionTarget(
+            identity = null,
+            endpointHint = RuntimeEndpointHint(
+                host = host,
+                port = port,
+                source = endpointSource,
+            ),
+        ),
+        requestHealthAfterConnect = requestHealthAfterConnect,
+    )
+
+    private suspend fun connectToRuntime(
+        target: RuntimeConnectionTarget,
+        requestHealthAfterConnect: Boolean = true,
     ): Boolean {
         mutableState.update {
             it.copy(
@@ -696,10 +762,13 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
         isSessionAuthenticated = false
 
         val result = runCatching {
-            Log.d(TAG, "Connecting to Mac runtime $host:$port")
-            client.connect(host, port)
+            Log.d(
+                TAG,
+                "Connecting to runtime ${target.connectionLogLabel()}"
+            )
+            connectionManager.connect(target)
         }.onSuccess {
-            Log.d(TAG, "Connected to Mac runtime $host:$port")
+            Log.d(TAG, "Connected to runtime ${target.connectionLogLabel()}")
             reconnectJob = null
             mutableState.update {
                 it.copy(
@@ -714,13 +783,13 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
                 sendHello()
             }
         }.onFailure { error ->
-            Log.e(TAG, "Mac runtime connection failed", error)
+            Log.e(TAG, "Runtime connection failed", error)
             mutableState.update {
                 it.copy(
                     isConnected = false,
                     isConnecting = false,
                     runtimeStatus = "failed",
-                    error = RuntimeUiError("connection_failed", error.message),
+                    error = error.connectionUiError(),
                 )
             }
         }
@@ -738,7 +807,7 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
                     }
                     .onFailure { error ->
                         if (isActive) {
-                            Log.e(TAG, "Mac runtime receive failed", error)
+                            Log.e(TAG, "Runtime receive failed", error)
                             isSessionAuthenticated = false
                             mutableState.update {
                                 it.copy(
@@ -771,7 +840,7 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
                 !current.isConnected &&
                 !current.isConnecting
             ) {
-                connectToRuntime(target.host, target.port)
+                connectToRuntime(target)
             }
         }
     }
@@ -844,14 +913,17 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
         }
 
         viewModelScope.launch {
+            val endpoint = pending.endpointHintOrNull()
             val trusted = TrustedMac(
                 deviceId = payload.macDeviceId ?: pending.macDeviceId,
                 name = pending.macName,
                 fingerprint = pending.fingerprint,
-                host = pending.host,
-                port = pending.port,
+                routeToken = pending.routeToken,
+                host = endpoint?.host,
+                port = endpoint?.port,
             )
             pairingStore.trustMac(trusted)
+            val trustedEndpoint = trusted.lastKnownEndpointHintOrNull()
             pendingPairingPayload = null
             isSessionAuthenticated = true
             mutableState.update {
@@ -859,11 +931,13 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
                     trustedMac = RuntimeTrustedMac(
                         deviceId = trusted.deviceId,
                         name = trusted.name,
-                        host = trusted.host,
-                        port = trusted.port,
+                        fingerprint = trusted.fingerprint,
+                        routeToken = trusted.routeToken,
+                        endpointHint = trustedEndpoint,
                     ),
-                    macHost = trusted.host,
-                    macPort = trusted.port.toString(),
+                    macHost = trustedEndpoint?.host ?: it.macHost,
+                    macPort = trustedEndpoint?.port?.toString() ?: it.macPort,
+                    macEndpointSource = trustedEndpoint?.source ?: it.macEndpointSource,
                     error = null,
                 )
             }
@@ -1146,7 +1220,7 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
                 client.send(envelope)
             }
                 .onFailure { error ->
-                    Log.e(TAG, "Mac runtime send failed", error)
+                    Log.e(TAG, "Runtime send failed", error)
                     val current = state.value
                     val isActiveChatSend = envelope.type == MessageType.ChatSend &&
                         current.activeRequestId == envelope.requestId
@@ -1461,11 +1535,6 @@ private fun qualifyModelId(provider: String, modelId: String): String {
     return if (modelId.startsWith("$provider:")) modelId else "$provider:$modelId"
 }
 
-internal data class RuntimeConnectionTarget(
-    val host: String,
-    val port: Int,
-)
-
 internal enum class SelectedModelSendState {
     Ready,
     Missing,
@@ -1500,8 +1569,199 @@ internal fun runtimeProviderStatuses(payload: RuntimeHealthPayload): List<Runtim
 internal fun trustedRuntimeConnectionTarget(state: RuntimeUiState): RuntimeConnectionTarget? {
     val trustedMac = state.trustedMac ?: return null
     return RuntimeConnectionTarget(
-        host = trustedMac.host,
-        port = trustedMac.port,
+        identity = PairedRuntimeIdentity(
+            deviceId = trustedMac.deviceId,
+            name = trustedMac.name,
+            fingerprint = trustedMac.fingerprint,
+            routeToken = trustedMac.routeToken,
+        ),
+        endpointHint = trustedMac.endpointHint,
+    )
+}
+
+internal fun runtimeRouteCandidates(
+    state: RuntimeUiState,
+    target: RuntimeConnectionTarget,
+): List<RuntimeRouteCandidate> {
+    val routes = mutableListOf<RuntimeRouteCandidate>()
+    val seenEndpoints = mutableSetOf<Pair<String, Int>>()
+
+    val identity = target.identity
+    if (identity != null) {
+        state.selectedRouteEndpointHintOrNull()?.let { endpoint ->
+            val key = endpoint.host to endpoint.port
+            if (state.isTrustedRouteEndpointAllowed(endpoint, identity) && seenEndpoints.add(key)) {
+                routes += RuntimeRouteCandidate.DirectTcp(
+                    hint = endpoint,
+                    source = endpoint.routeSource(),
+                )
+            }
+        }
+        state.discoveredMacs.forEach { discovered ->
+            val key = discovered.host to discovered.port
+            if (discovered.matchesTrustedIdentity(identity, allowMissingMetadata = false) && seenEndpoints.add(key)) {
+                routes += RuntimeRouteCandidate.DirectTcp(
+                    hint = RuntimeEndpointHint(
+                        host = discovered.host,
+                        port = discovered.port,
+                        source = RuntimeEndpointSource.BonjourDiscovery,
+                    ),
+                    source = RuntimeRouteSource.FreshDiscovery,
+                )
+            }
+        }
+    }
+
+    target.endpointHint?.let { endpoint ->
+        val key = endpoint.host to endpoint.port
+        if (seenEndpoints.add(key)) {
+            routes += RuntimeRouteCandidate.DirectTcp(
+                hint = endpoint,
+                source = endpoint.routeSource(),
+            )
+        }
+    }
+
+    target.identity?.let { identity ->
+        routes += RuntimeRouteCandidate.LocalDirect(identity)
+        routes += RuntimeRouteCandidate.PeerToPeer(identity)
+        routes += RuntimeRouteCandidate.Relay(identity)
+    }
+
+    return routes
+}
+
+private fun RuntimeUiState.selectedRouteEndpointHintOrNull(): RuntimeEndpointHint? {
+    val source = macEndpointSource
+    if (source == RuntimeEndpointSource.Manual || source == RuntimeEndpointSource.TrustedLastKnown) {
+        return null
+    }
+    val port = macPort.toIntOrNull()?.takeIf { it in 1..65535 } ?: return null
+    val host = macHost.takeIf { it.isNotBlank() } ?: return null
+    return RuntimeEndpointHint(
+        host = host,
+        port = port,
+        source = source,
+    )
+}
+
+private fun RuntimeUiState.isTrustedRouteEndpointAllowed(
+    endpoint: RuntimeEndpointHint,
+    identity: PairedRuntimeIdentity,
+): Boolean {
+    if (endpoint.source != RuntimeEndpointSource.BonjourDiscovery) {
+        return true
+    }
+    val discovered = discoveredMacs.firstOrNull { it.host == endpoint.host && it.port == endpoint.port }
+        ?: return true
+    return discovered.matchesTrustedIdentity(identity, allowMissingMetadata = true)
+}
+
+private fun RuntimeDiscoveredMac.matchesTrustedIdentity(
+    identity: PairedRuntimeIdentity,
+    allowMissingMetadata: Boolean,
+): Boolean {
+    val advertisedDeviceId = deviceId.normalizedIdentityOrNull()
+    val advertisedFingerprint = fingerprint.normalizedIdentityOrNull()
+    val advertisedRouteToken = routeToken.normalizedIdentityOrNull()
+    if (advertisedRouteToken == null && advertisedDeviceId == null && advertisedFingerprint == null) {
+        return allowMissingMetadata
+    }
+    val targetRouteToken = identity.routeToken.normalizedIdentityOrNull()
+    if (advertisedRouteToken != null && targetRouteToken != null) {
+        return advertisedRouteToken == targetRouteToken
+    }
+    val targetDeviceId = identity.deviceId.normalizedIdentityOrNull()
+    val targetFingerprint = identity.fingerprint.normalizedIdentityOrNull()
+    return advertisedDeviceId?.equals(targetDeviceId, ignoreCase = true) == true ||
+        advertisedFingerprint?.equals(targetFingerprint, ignoreCase = true) == true
+}
+
+private fun String?.normalizedIdentityOrNull(): String? {
+    return this?.trim()?.takeIf { it.isNotEmpty() }
+}
+
+internal fun RuntimeConnectionFailure.toRuntimeUiError(): RuntimeUiError {
+    return when (reason) {
+        RuntimeConnectionFailureReason.NoRoutesResolved ->
+            RuntimeUiError("no_route", message)
+        RuntimeConnectionFailureReason.NoConnectableRoute ->
+            RuntimeUiError("no_connectable_route", message)
+        RuntimeConnectionFailureReason.RouteAttemptsFailed ->
+            RuntimeUiError("connection_failed", message)
+    }
+}
+
+private fun Throwable.connectionUiError(): RuntimeUiError {
+    return when (this) {
+        is RuntimeConnectionFailure -> toRuntimeUiError()
+        else -> RuntimeUiError("connection_failed", message)
+    }
+}
+
+private fun RuntimeConnectionTarget.connectionLogLabel(): String {
+    val endpoint = endpointHint
+    val endpointLabel = if (endpoint == null) {
+        "endpoint=unresolved"
+    } else {
+        "endpoint=${endpoint.host}:${endpoint.port} source=${endpoint.source}"
+    }
+    return "$endpointLabel identity=${identity?.deviceId}"
+}
+
+private fun RuntimeEndpointHint.routeSource(): RuntimeRouteSource {
+    return when (source) {
+        RuntimeEndpointSource.TrustedLastKnown -> RuntimeRouteSource.TrustedLastKnownEndpoint
+        RuntimeEndpointSource.PairingQr -> RuntimeRouteSource.EndpointHint
+        RuntimeEndpointSource.BonjourDiscovery -> RuntimeRouteSource.FreshDiscovery
+        RuntimeEndpointSource.UsbReverse -> RuntimeRouteSource.FreshDiscovery
+        RuntimeEndpointSource.Emulator -> RuntimeRouteSource.EndpointHint
+        RuntimeEndpointSource.Manual -> RuntimeRouteSource.Manual
+    }
+}
+
+private fun TrustedMac.lastKnownEndpointHintOrNull(): RuntimeEndpointHint? {
+    val endpointHost = host ?: return null
+    val endpointPort = port ?: return null
+    return RuntimeEndpointHint(
+        host = endpointHost,
+        port = endpointPort,
+        source = RuntimeEndpointSource.TrustedLastKnown,
+    )
+}
+
+private fun TrustedMac.toConnectionTarget(): RuntimeConnectionTarget {
+    return RuntimeConnectionTarget(
+        identity = PairedRuntimeIdentity(
+            deviceId = deviceId,
+            name = name,
+            fingerprint = fingerprint,
+            routeToken = routeToken,
+        ),
+        endpointHint = lastKnownEndpointHintOrNull(),
+    )
+}
+
+private fun MacPairingPayload.endpointHintOrNull(): RuntimeEndpointHint? {
+    val endpointHost = host ?: return null
+    val endpointPort = port ?: return null
+    return RuntimeEndpointHint(
+        host = endpointHost,
+        port = endpointPort,
+        source = RuntimeEndpointSource.PairingQr,
+    )
+}
+
+private fun MacPairingPayload.toConnectionTarget(): RuntimeConnectionTarget? {
+    val endpoint = endpointHintOrNull() ?: return null
+    return RuntimeConnectionTarget(
+        identity = PairedRuntimeIdentity(
+            deviceId = macDeviceId,
+            name = macName,
+            fingerprint = fingerprint,
+            routeToken = routeToken,
+        ),
+        endpointHint = endpoint,
     )
 }
 

@@ -10,8 +10,9 @@ data class MacPairingPayload(
     val macDeviceId: String,
     val macName: String,
     val fingerprint: String,
-    val host: String,
-    val port: Int,
+    val routeToken: String?,
+    val host: String?,
+    val port: Int?,
     val serviceType: String?,
 )
 
@@ -34,16 +35,20 @@ object MacPairingPayloadParser {
         val macDeviceId = query["mac_device_id"] ?: query["device_id"]
         val macName = query["mac_name"] ?: query["name"] ?: "AetherLink Mac"
         val fingerprint = query["fingerprint"] ?: query["cert_fingerprint"]
-        val host = query["host"] ?: query["runtime_host"]
-        val port = (query["port"] ?: query["runtime_port"])?.toIntOrNull()
+        val routeToken = query["route_token"] ?: query["discovery_token"]
+        val host = (query["host"] ?: query["runtime_host"])?.takeIf { it.isNotBlank() }
+        val rawPort = (query["port"] ?: query["runtime_port"])?.takeIf { it.isNotBlank() }
+        val port = rawPort?.toIntOrNull()
 
         require(!pairingNonce.isNullOrBlank()) { "Missing pairing nonce" }
         require(!pairingCode.isNullOrBlank()) { "Missing pairing code" }
         require(pairingCode.matches(Regex("\\d{6}"))) { "Invalid pairing code" }
         require(!macDeviceId.isNullOrBlank()) { "Missing Mac device id" }
         require(!fingerprint.isNullOrBlank()) { "Missing Mac fingerprint" }
-        require(!host.isNullOrBlank()) { "Missing Mac runtime host" }
-        require(port != null && port in 1..65535) { "Invalid Mac runtime port" }
+        if (host != null || rawPort != null) {
+            require(host != null) { "Missing Mac runtime host" }
+            require(port != null && port in 1..65535) { "Invalid Mac runtime port" }
+        }
 
         return MacPairingPayload(
             pairingNonce = pairingNonce,
@@ -51,6 +56,7 @@ object MacPairingPayloadParser {
             macDeviceId = macDeviceId,
             macName = macName,
             fingerprint = fingerprint,
+            routeToken = routeToken?.takeIf { it.isNotBlank() },
             host = host,
             port = port,
             serviceType = query["service_type"],

@@ -4,6 +4,11 @@ data class DiscoveredMac(
     val serviceName: String,
     val host: String,
     val port: Int,
+    val routeToken: String? = null,
+    val deviceId: String? = null,
+    val fingerprint: String? = null,
+    val app: String? = null,
+    val version: String? = null,
 )
 
 sealed interface ConnectionState {
@@ -13,4 +18,3 @@ sealed interface ConnectionState {
     data class Connected(val peer: DiscoveredMac) : ConnectionState
     data class Failed(val message: String) : ConnectionState
 }
-

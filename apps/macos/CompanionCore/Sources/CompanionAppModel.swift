@@ -100,6 +100,7 @@ public final class CompanionAppModel: ObservableObject {
     @Published public private(set) var pairingSession: PairingSession?
     @Published public private(set) var trustedDevices: [TrustedDevice] = []
     @Published public private(set) var models: [ModelInfo] = []
+    @Published public private(set) var modelResidency: CompanionModelResidencyStatus = .inactive
     @Published public private(set) var logs: [String] = []
 
     private let backend: any LlmBackend
@@ -121,6 +122,7 @@ public final class CompanionAppModel: ObservableObject {
         self.peerServer = peerServer
         self.advertiser = advertiser
         self.macDeviceID = Self.loadOrCreateMacDeviceID()
+        self.discoveryRouteToken = Self.loadOrCreateDiscoveryRouteToken()
         self.runtimeRouter = LocalRuntimeMessageRouter(
             backend: backend,
             pairingCoordinator: pairingCoordinator,
@@ -133,6 +135,7 @@ public final class CompanionAppModel: ObservableObject {
                 }
             }
         )
+        configureResidencyEventsIfAvailable()
     }
 
     public func start(port: UInt16 = 43170) {
@@ -147,7 +150,7 @@ public final class CompanionAppModel: ObservableObject {
         transportState = Self.transportStatus(from: peerServer.status)
         switch transportState.state {
         case .advertising:
-            advertiser.start(port: Int32(port))
+            advertiser.start(port: Int32(port), metadata: runtimeAdvertisementMetadata)
             transportStatus = "Advertising _aetherlink._tcp.local. on port \(port)"
             log("Companion started")
         case .failed:
@@ -207,10 +210,22 @@ public final class CompanionAppModel: ObservableObject {
         }
     }
 
+    public func refreshModelResidencyStatus() {
+        guard let aggregate = backend as? AggregatingLlmBackend else {
+            modelResidency = .unsupported
+            return
+        }
+        modelResidency = CompanionModelResidencyStatus(
+            snapshot: aggregate.modelResidencySnapshot(),
+            lastEvent: modelResidency.lastEvent
+        )
+    }
+
     public func beginPairing() {
         pairingSession = pairingCoordinator.beginPairing(
             macDeviceID: macDeviceID,
-            fingerprint: "dev-\(macDeviceID)",
+            fingerprint: macFingerprint,
+            routeToken: discoveryRouteToken,
             host: Self.primaryLocalIPv4Address(),
             port: Int(runtimePort)
         )
@@ -238,6 +253,44 @@ public final class CompanionAppModel: ObservableObject {
     private func log(_ message: String) {
         logs.insert(message, at: 0)
         logs = Array(logs.prefix(50))
+    }
+
+    private func configureResidencyEventsIfAvailable() {
+        guard let aggregate = backend as? AggregatingLlmBackend else {
+            modelResidency = .unsupported
+            return
+        }
+        modelResidency = CompanionModelResidencyStatus(
+            snapshot: aggregate.modelResidencySnapshot(),
+            lastEvent: nil
+        )
+        aggregate.setResidencyEventHandler { [weak self] event in
+            Task { @MainActor in
+                self?.handleResidencyEvent(event)
+            }
+        }
+    }
+
+    private func handleResidencyEvent(_ event: RuntimeModelResidencyEvent) {
+        if let aggregate = backend as? AggregatingLlmBackend {
+            modelResidency = CompanionModelResidencyStatus(
+                snapshot: aggregate.modelResidencySnapshot(),
+                lastEvent: event.logMessage
+            )
+        }
+        log(event.logMessage)
+    }
+
+    private var macFingerprint: String {
+        "dev-\(macDeviceID)"
+    }
+
+    private let discoveryRouteToken: String
+
+    private var runtimeAdvertisementMetadata: RuntimeAdvertisementMetadata {
+        RuntimeAdvertisementMetadata(
+            routeToken: discoveryRouteToken
+        )
     }
 
     private static func initialProviderStatuses(for backend: any LlmBackend) -> [CompanionProviderStatus] {
@@ -284,11 +337,101 @@ public final class CompanionAppModel: ObservableObject {
         return deviceID
     }
 
+    private static func loadOrCreateDiscoveryRouteToken() -> String {
+        let key = "aetherlink.discovery_route_token"
+        if let existing = UserDefaults.standard.string(forKey: key), !existing.isEmpty {
+            return existing
+        }
+        let token = UUID().uuidString
+        UserDefaults.standard.set(token, forKey: key)
+        return token
+    }
+
     private static func primaryLocalIPv4Address() -> String {
         Host.current().addresses.first { address in
             address.contains(".")
                 && !address.hasPrefix("127.")
                 && !address.hasPrefix("169.254.")
         } ?? "127.0.0.1"
+    }
+}
+
+public struct CompanionModelResidencyStatus: Equatable, Sendable {
+    public var activeProvider: ModelProvider?
+    public var activeModelID: String?
+    public var inFlightGenerations: Int
+    public var idleUnloadDelaySeconds: Int
+    public var lastEvent: String?
+    public var supported: Bool
+
+    public static let inactive = CompanionModelResidencyStatus(
+        activeProvider: nil,
+        activeModelID: nil,
+        inFlightGenerations: 0,
+        idleUnloadDelaySeconds: 600,
+        lastEvent: nil,
+        supported: true
+    )
+
+    public static let unsupported = CompanionModelResidencyStatus(
+        activeProvider: nil,
+        activeModelID: nil,
+        inFlightGenerations: 0,
+        idleUnloadDelaySeconds: 0,
+        lastEvent: nil,
+        supported: false
+    )
+
+    public init(
+        activeProvider: ModelProvider?,
+        activeModelID: String?,
+        inFlightGenerations: Int,
+        idleUnloadDelaySeconds: Int,
+        lastEvent: String?,
+        supported: Bool
+    ) {
+        self.activeProvider = activeProvider
+        self.activeModelID = activeModelID
+        self.inFlightGenerations = inFlightGenerations
+        self.idleUnloadDelaySeconds = idleUnloadDelaySeconds
+        self.lastEvent = lastEvent
+        self.supported = supported
+    }
+
+    public init(snapshot: RuntimeModelResidencySnapshot, lastEvent: String?) {
+        self.init(
+            activeProvider: snapshot.activeProvider,
+            activeModelID: snapshot.activeModelID,
+            inFlightGenerations: snapshot.inFlightGenerations,
+            idleUnloadDelaySeconds: snapshot.idleUnloadDelaySeconds,
+            lastEvent: lastEvent,
+            supported: true
+        )
+    }
+}
+
+private extension RuntimeModelResidencyEvent {
+    var logMessage: String {
+        switch self {
+        case .activeModelChanged(let provider, let modelID):
+            return "Model residency active: \(provider.displayName) \(modelID)"
+        case .unloadRequested(let provider, let modelID, let reason):
+            return "Model unload requested: \(provider.displayName) \(modelID) (\(reason.logLabel))"
+        case .unloadSucceeded(let provider, let modelID, let reason):
+            return "Model unloaded: \(provider.displayName) \(modelID) (\(reason.logLabel))"
+        case .unloadFailed(let provider, let modelID, let reason, let message):
+            return "Model unload failed: \(provider.displayName) \(modelID) (\(reason.logLabel)): \(message)"
+        }
+    }
+}
+
+private extension RuntimeModelResidencyUnloadReason {
+    var logLabel: String {
+        switch self {
+        case .modelSwitch:
+            return "model switch"
+        case .idleTimeout:
+            return "idle timeout"
+        }
     }
 }
