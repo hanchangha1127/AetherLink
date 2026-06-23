@@ -75,6 +75,88 @@ class RuntimeClientViewModelTest {
     }
 
     @Test
+    fun chatDeltaAppendsReasoningWithoutMixingIntoAnswerContent() {
+        val state = RuntimeUiState(
+            messages = listOf(
+                RuntimeChatMessage(role = "user", content = "Hello"),
+                RuntimeChatMessage(role = "assistant", content = "Final", reasoning = "Plan"),
+            ),
+            isStreaming = true,
+            activeRequestId = "active-request",
+        )
+
+        val afterReasoning = state.withChatDelta(
+            envelope(
+                type = MessageType.ChatDelta,
+                requestId = "active-request",
+                serializer = ChatDeltaPayload.serializer(),
+                payload = ChatDeltaPayload(reasoningDelta = " step"),
+            ),
+            ChatDeltaPayload(reasoningDelta = " step"),
+        )
+        val afterAnswer = afterReasoning.withChatDelta(
+            envelope(
+                type = MessageType.ChatDelta,
+                requestId = "active-request",
+                serializer = ChatDeltaPayload.serializer(),
+                payload = ChatDeltaPayload(delta = " answer"),
+            ),
+            ChatDeltaPayload(delta = " answer"),
+        )
+
+        val message = afterAnswer.messages.last()
+        assertEquals("Final answer", message.content)
+        assertEquals("Plan step", message.reasoning)
+    }
+
+    @Test
+    fun thinkingDeltaAliasAppendsReasoning() {
+        val state = RuntimeUiState(
+            messages = listOf(RuntimeChatMessage(role = "assistant", content = "")),
+            isStreaming = true,
+            activeRequestId = "active-request",
+        )
+
+        val afterDelta = state.withChatDelta(
+            envelope(
+                type = MessageType.ChatDelta,
+                requestId = "active-request",
+                serializer = ChatDeltaPayload.serializer(),
+                payload = ChatDeltaPayload(thinkingDelta = "Considering context"),
+            ),
+            ChatDeltaPayload(thinkingDelta = "Considering context"),
+        )
+
+        assertEquals("", afterDelta.messages.last().content)
+        assertEquals("Considering context", afterDelta.messages.last().reasoning)
+    }
+
+    @Test
+    fun staleReasoningDeltaForDifferentRequestIdIsIgnored() {
+        val state = RuntimeUiState(
+            messages = listOf(
+                RuntimeChatMessage(role = "assistant", content = "Partial", reasoning = "Plan"),
+            ),
+            isStreaming = true,
+            activeRequestId = "active-request",
+        )
+
+        val afterDelta = state.withChatDelta(
+            envelope(
+                type = MessageType.ChatDelta,
+                requestId = "stale-request",
+                serializer = ChatDeltaPayload.serializer(),
+                payload = ChatDeltaPayload(reasoningDelta = " stale"),
+            ),
+            ChatDeltaPayload(reasoningDelta = " stale"),
+        )
+
+        assertSame(state, afterDelta)
+        assertEquals("Partial", afterDelta.messages.last().content)
+        assertEquals("Plan", afterDelta.messages.last().reasoning)
+    }
+
+    @Test
     fun cancelAckAndErrorForUnrelatedRequestsDoNotClearActiveStreaming() {
         val state = RuntimeUiState(
             messages = listOf(RuntimeChatMessage(role = "assistant", content = "Partial")),

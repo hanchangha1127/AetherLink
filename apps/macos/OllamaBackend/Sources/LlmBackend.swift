@@ -151,6 +151,7 @@ public struct ChatRequest: Equatable, Sendable {
 
 public enum ChatStreamEvent: Equatable, Sendable {
     case delta(String)
+    case reasoningDelta(String)
     case done(inputTokens: Int?, outputTokens: Int?)
 }
 

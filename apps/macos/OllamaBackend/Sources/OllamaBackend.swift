@@ -160,7 +160,7 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
                     urlRequest.httpMethod = "POST"
                     urlRequest.addValue("application/json", forHTTPHeaderField: "Content-Type")
                     urlRequest.httpBody = try Self.encodeChatRequest(
-                        OllamaChatRequest(model: request.model, messages: request.messages, stream: true),
+                        OllamaChatRequest(model: request.model, messages: request.messages, stream: true, think: true),
                         encoder: encoder,
                         endpoint: endpoint
                     )
@@ -171,6 +171,9 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
                     for try await line in bytes.lines {
                         try Task.checkCancellation()
                         guard let chunk = try Self.decodeStreamLine(line, endpoint: endpoint) else { continue }
+                        if let thinking = chunk.message?.thinking, !thinking.isEmpty {
+                            continuation.yield(.reasoningDelta(thinking))
+                        }
                         if let content = chunk.message?.content, !content.isEmpty {
                             continuation.yield(.delta(content))
                         }
@@ -396,10 +399,11 @@ private struct OllamaChatRequest: Encodable {
     var model: String
     var messages: [ChatMessage]
     var stream: Bool
+    var think: Bool
 }
 
 private struct OllamaChatChunk: Decodable {
-    var message: ChatMessage?
+    var message: OllamaChatChunkMessage?
     var done: Bool?
     var promptEvalCount: Int?
     var evalCount: Int?
@@ -410,6 +414,11 @@ private struct OllamaChatChunk: Decodable {
         case promptEvalCount = "prompt_eval_count"
         case evalCount = "eval_count"
     }
+}
+
+private struct OllamaChatChunkMessage: Decodable {
+    var content: String?
+    var thinking: String?
 }
 
 private extension NSLock {

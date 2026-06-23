@@ -847,13 +847,17 @@ internal fun RuntimeUiState.withChatDelta(
     envelope: ProtocolEnvelope,
     payload: ChatDeltaPayload,
 ): RuntimeUiState {
-    if (activeRequestId != envelope.requestId || payload.content.isEmpty()) return this
+    if (activeRequestId != envelope.requestId) return this
+    if (payload.content.isEmpty() && payload.reasoning.isEmpty()) return this
 
     val updated = messages.toMutableList()
     val index = updated.indexOfLast { it.role == "assistant" }
     if (index >= 0) {
         val item = updated[index]
-        updated[index] = item.copy(content = item.content + payload.content)
+        updated[index] = item.copy(
+            content = item.content + payload.content,
+            reasoning = item.reasoning + payload.reasoning,
+        )
     }
     return copy(messages = updated)
 }

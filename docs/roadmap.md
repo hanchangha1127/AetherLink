@@ -7,6 +7,8 @@
 - Mac lists Ollama models.
 - Android selects a model and sends chat messages.
 - Mac streams Ollama responses back to Android.
+- Mac preserves Ollama reasoning/think chunks separately from final answer text.
+- Android shows reasoning/think text in a muted, compact section that expands on demand.
 - Android can cancel generation.
 - Only trusted devices can control the Mac runtime.
 - Android never connects directly to Ollama or LM Studio.
@@ -22,8 +24,7 @@
 - Mac-side SQLite conversation storage.
 - Session list, rename, delete, and search.
 - Android session list and resume UI.
-- Chat reasoning/think display: when a backend exposes reasoning separately, show it muted and compact/collapsed by default, with an expand action to inspect the full content.
-- Preserve reasoning/think text separately from final assistant answer text in storage and transport where available.
+- Preserve reasoning/think text separately from final assistant answer text in session storage.
 
 ## v0.3 Backend Selection Polish
 

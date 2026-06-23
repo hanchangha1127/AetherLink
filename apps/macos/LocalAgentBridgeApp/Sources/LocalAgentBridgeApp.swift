@@ -25,7 +25,7 @@ struct LocalAgentBridgeApp: App {
         }
 
         MenuBarExtra("AetherLink", systemImage: "bolt.horizontal.circle") {
-            Text(localizedStatus(model.backendStatus))
+            Text(localizedBackendStatus(model.providerStatuses))
             Button("Open AetherLink") {
                 NSApp.activate(ignoringOtherApps: true)
             }

@@ -1,4 +1,6 @@
+import CompanionCore
 import Foundation
+import OllamaBackend
 import SwiftUI
 
 struct CompanionPageHeader: View {
@@ -123,86 +125,71 @@ enum StatusTone {
     }
 }
 
-func localizedStatus(_ value: String) -> String {
-    if value == "Not checked" {
+func localizedTransportStatus(_ status: CompanionTransportStatus) -> String {
+    switch status.state {
+    case .stopped:
+        return NSLocalizedString("Stopped", comment: "")
+    case .advertising:
+        if let port = status.port {
+            return String(format: NSLocalizedString("Listening on port %@", comment: ""), "\(port)")
+        }
+        return NSLocalizedString("Ready for trusted Android clients.", comment: "")
+    }
+}
+
+func transportTone(for status: CompanionTransportStatus) -> StatusTone {
+    switch status.state {
+    case .advertising:
+        return .ready
+    case .stopped:
+        return .inactive
+    }
+}
+
+func localizedBackendStatus(_ statuses: [CompanionProviderStatus]) -> String {
+    if statuses.isEmpty || statuses.allSatisfy({ $0.availability == .notChecked }) {
         return NSLocalizedString("Not checked", comment: "")
     }
-    if value == "Stopped" {
-        return NSLocalizedString("Stopped", comment: "")
-    }
-    if value == "Ollama available" || value == "Available" {
-        return NSLocalizedString("Ollama available", comment: "")
-    }
-    if value == "LM Studio available" {
-        return NSLocalizedString("LM Studio available", comment: "")
-    }
-    if value.contains(" | ") {
-        let availableCount = value
-            .split(separator: "|")
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { $0.hasSuffix(" available") }
-            .count
-        if availableCount > 0 {
-            return String(format: NSLocalizedString("%d local backend(s) available", comment: ""), availableCount)
+
+    if statuses.count == 1, let status = statuses.first {
+        switch status.availability {
+        case .notChecked:
+            return NSLocalizedString("Not checked", comment: "")
+        case .available:
+            return localizedProviderAvailableStatus(status.provider)
+        case .unavailable:
+            return localizedProviderUnavailableStatus(status.provider)
         }
-        return NSLocalizedString("No local model backend is responding.", comment: "")
     }
 
-    let advertisingPrefix = "Advertising _aetherlink._tcp.local. on port "
-    if value.hasPrefix(advertisingPrefix) {
-        let port = String(value.dropFirst(advertisingPrefix.count))
-        return String(format: NSLocalizedString("Listening on port %@", comment: ""), port)
+    let availableCount = statuses.filter { $0.availability == .available }.count
+    if availableCount > 0 {
+        return String(format: NSLocalizedString("%d local backend(s) available", comment: ""), availableCount)
     }
 
-    if value.hasPrefix("Ollama is not reachable") {
+    return NSLocalizedString("No local model backend is responding.", comment: "")
+}
+
+private func localizedProviderAvailableStatus(_ provider: ModelProvider) -> String {
+    switch provider {
+    case .ollama:
+        return NSLocalizedString("Ollama available", comment: "")
+    case .lmStudio:
+        return NSLocalizedString("LM Studio available", comment: "")
+    case .aggregate:
+        return NSLocalizedString("Available", comment: "")
+    }
+}
+
+private func localizedProviderUnavailableStatus(_ provider: ModelProvider) -> String {
+    switch provider {
+    case .ollama:
         return NSLocalizedString("Ollama unavailable", comment: "")
-    }
-    if value.hasPrefix("Ollama returned HTTP") {
-        return NSLocalizedString("Ollama returned an error", comment: "")
-    }
-    if value.hasPrefix("Could not decode Ollama response") {
-        return NSLocalizedString("Ollama response could not be read", comment: "")
-    }
-    if value.hasPrefix("Ollama transport error") {
-        return NSLocalizedString("Ollama connection error", comment: "")
-    }
-    if value.hasPrefix("LM Studio is not reachable") {
+    case .lmStudio:
         return NSLocalizedString("LM Studio unavailable", comment: "")
+    case .aggregate:
+        return NSLocalizedString("Unavailable", comment: "")
     }
-    if value.hasPrefix("LM Studio returned HTTP") {
-        return NSLocalizedString("LM Studio returned an error", comment: "")
-    }
-    if value.hasPrefix("Could not decode LM Studio response") {
-        return NSLocalizedString("LM Studio response could not be read", comment: "")
-    }
-    if value.hasPrefix("LM Studio transport error") {
-        return NSLocalizedString("LM Studio connection error", comment: "")
-    }
-
-    return value
-}
-
-func transportTone(for value: String) -> StatusTone {
-    if value.hasPrefix("Advertising ") {
-        return .ready
-    }
-    if value == "Stopped" {
-        return .inactive
-    }
-    return .neutral
-}
-
-func backendTone(for value: String) -> StatusTone {
-    if value == "Ollama available" || value == "LM Studio available" || value == "Available" {
-        return .ready
-    }
-    if value == "Not checked" {
-        return .inactive
-    }
-    if value.contains(" available") {
-        return .ready
-    }
-    return .warning
 }
 
 func shortIdentifier(_ value: String) -> String {

@@ -369,7 +369,7 @@ The Mac runtime routes provider-prefixed model ids to the selected Mac-side back
 
 If the requested model is not installed on the Mac runtime, Mac returns `error` with `code = "model_not_installed"`. Clients should call `models.pull` through the Mac runtime first.
 
-Future backend adapters that expose reasoning or think content must preserve it as a separate protocol field or stream from the final assistant answer text. The Mac runtime should not mix reasoning/think text into the assistant message body; Android can then render it as a muted, compact/collapsed section that expands on demand.
+Backend adapters that expose reasoning or think content preserve it as a separate protocol field or stream from the final assistant answer text. The Mac runtime does not mix reasoning/think text into the assistant message body; Android can then render it as a muted, compact/collapsed section that expands on demand. Ollama chat requests opt into this with the Mac-side `/api/chat` request field `"think": true`; Android still sends only `chat.send` to the Mac runtime.
 
 ## `chat.delta`
 
@@ -388,6 +388,22 @@ Direction: Mac -> Android.
 ```
 
 The Android client appends `payload.delta` to the active assistant message.
+
+When a backend streams reasoning or thinking text, the Mac runtime sends it on the same `chat.delta` type with `reasoning_delta` instead of `delta`:
+
+```json
+{
+  "version": 1,
+  "type": "chat.delta",
+  "request_id": "req_chat_001",
+  "timestamp": "2026-06-23T09:02:01Z",
+  "payload": {
+    "reasoning_delta": "intermediate reasoning"
+  }
+}
+```
+
+The Android client appends `payload.reasoning_delta` to the active message's reasoning section, separate from the final assistant content.
 
 ## `chat.done`
 

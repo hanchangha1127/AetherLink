@@ -323,6 +323,12 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                         requestID: envelope.requestID,
                         payload: ["delta": .string(text)]
                     ))
+                case .reasoningDelta(let text):
+                    sink.send(ProtocolEnvelope(
+                        type: MessageType.chatDelta,
+                        requestID: envelope.requestID,
+                        payload: ["reasoning_delta": .string(text)]
+                    ))
                 case .done(let inputTokens, let outputTokens):
                     sink.send(ProtocolEnvelope(
                         type: MessageType.chatDone,

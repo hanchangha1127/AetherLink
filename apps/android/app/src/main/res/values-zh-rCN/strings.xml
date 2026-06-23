@@ -121,6 +121,9 @@
     <string name="role_assistant">助手</string>
     <string name="role_assistant_initial">A</string>
     <string name="assistant_typing">...</string>
+    <string name="assistant_reasoning_label">思考中</string>
+    <string name="assistant_reasoning_show">展开</string>
+    <string name="assistant_reasoning_hide">收起</string>
 
     <string name="settings_title">设置</string>
     <string name="settings_subtitle">手机连接到 Mac companion 运行时。它不会直接连接 Ollama 或 LM Studio。</string>

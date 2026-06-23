@@ -127,9 +127,14 @@ data class ChatSendPayload(
 data class ChatDeltaPayload(
     val delta: String? = null,
     val text: String? = null,
+    @SerialName("reasoning_delta") val reasoningDelta: String? = null,
+    @SerialName("thinking_delta") val thinkingDelta: String? = null,
 ) {
     val content: String
         get() = delta ?: text.orEmpty()
+
+    val reasoning: String
+        get() = reasoningDelta ?: thinkingDelta.orEmpty()
 }
 
 @Serializable

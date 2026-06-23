@@ -121,6 +121,9 @@
     <string name="role_assistant">アシスタント</string>
     <string name="role_assistant_initial">A</string>
     <string name="assistant_typing">...</string>
+    <string name="assistant_reasoning_label">思考中</string>
+    <string name="assistant_reasoning_show">表示</string>
+    <string name="assistant_reasoning_hide">非表示</string>
 
     <string name="settings_title">設定</string>
     <string name="settings_subtitle">スマートフォンは Mac companion ランタイムに接続します。Ollama や LM Studio に直接接続することはありません。</string>

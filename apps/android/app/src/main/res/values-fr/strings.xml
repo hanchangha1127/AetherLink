@@ -121,6 +121,9 @@
     <string name="role_assistant">Assistant</string>
     <string name="role_assistant_initial">A</string>
     <string name="assistant_typing">...</string>
+    <string name="assistant_reasoning_label">Réflexion</string>
+    <string name="assistant_reasoning_show">Afficher</string>
+    <string name="assistant_reasoning_hide">Masquer</string>
 
     <string name="settings_title">Réglages</string>
     <string name="settings_subtitle">Le téléphone se connecte au runtime Mac companion. Il ne se connecte jamais directement à Ollama ou LM Studio.</string>

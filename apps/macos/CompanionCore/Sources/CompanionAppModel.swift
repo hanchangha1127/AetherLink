@@ -5,10 +5,86 @@ import Pairing
 import Transport
 import TrustedDevices
 
+public struct CompanionTransportStatus: Equatable, Sendable {
+    public enum State: Equatable, Sendable {
+        case stopped
+        case advertising
+    }
+
+    public var state: State
+    public var serviceName: String?
+    public var port: UInt16?
+
+    public init(state: State, serviceName: String? = nil, port: UInt16? = nil) {
+        self.state = state
+        self.serviceName = serviceName
+        self.port = port
+    }
+
+    public static let stopped = CompanionTransportStatus(state: .stopped)
+
+    public static func advertising(serviceName: String, port: UInt16) -> CompanionTransportStatus {
+        CompanionTransportStatus(state: .advertising, serviceName: serviceName, port: port)
+    }
+}
+
+public struct CompanionProviderStatus: Identifiable, Equatable, Sendable {
+    public enum Availability: Equatable, Sendable {
+        case notChecked
+        case available
+        case unavailable
+    }
+
+    public var provider: ModelProvider
+    public var availability: Availability
+    public var message: String?
+    public var code: String?
+    public var retryable: Bool?
+
+    public var id: String {
+        provider.rawValue
+    }
+
+    public init(
+        provider: ModelProvider,
+        availability: Availability,
+        message: String? = nil,
+        code: String? = nil,
+        retryable: Bool? = nil
+    ) {
+        self.provider = provider
+        self.availability = availability
+        self.message = message
+        self.code = code
+        self.retryable = retryable
+    }
+
+    public static func notChecked(provider: ModelProvider) -> CompanionProviderStatus {
+        CompanionProviderStatus(provider: provider, availability: .notChecked)
+    }
+
+    public static func from(provider: ModelProvider, status: BackendStatus) -> CompanionProviderStatus {
+        switch status {
+        case .available:
+            return CompanionProviderStatus(provider: provider, availability: .available, message: status.message)
+        case .unavailable(let error):
+            return CompanionProviderStatus(
+                provider: provider,
+                availability: .unavailable,
+                message: error.message,
+                code: error.code,
+                retryable: error.retryable
+            )
+        }
+    }
+}
+
 @MainActor
 public final class CompanionAppModel: ObservableObject {
     @Published public private(set) var backendStatus = "Not checked"
     @Published public private(set) var transportStatus = "Stopped"
+    @Published public private(set) var transportState: CompanionTransportStatus = .stopped
+    @Published public private(set) var providerStatuses: [CompanionProviderStatus]
     @Published public private(set) var pairingSession: PairingSession?
     @Published public private(set) var trustedDevices: [TrustedDevice] = []
     @Published public private(set) var models: [ModelInfo] = []
@@ -29,6 +105,7 @@ public final class CompanionAppModel: ObservableObject {
         advertiser: any RuntimeAdvertiser = BonjourAdvertiser()
     ) {
         self.backend = backend
+        self.providerStatuses = Self.initialProviderStatuses(for: backend)
         self.peerServer = peerServer
         self.advertiser = advertiser
         self.macDeviceID = Self.loadOrCreateMacDeviceID()
@@ -56,6 +133,7 @@ public final class CompanionAppModel: ObservableObject {
             router.handle(envelope, sink: sink)
         }
         advertiser.start(port: Int32(port))
+        transportState = .advertising(serviceName: "_aetherlink._tcp.local.", port: port)
         transportStatus = "Advertising _aetherlink._tcp.local. on port \(port)"
         log("Companion started")
         Task {
@@ -67,6 +145,7 @@ public final class CompanionAppModel: ObservableObject {
     public func stop() {
         peerServer.stop()
         advertiser.stop()
+        transportState = .stopped
         transportStatus = "Stopped"
         log("Companion stopped")
     }
@@ -74,22 +153,18 @@ public final class CompanionAppModel: ObservableObject {
     public func refreshOllamaStatus() async {
         if let aggregate = backend as? AggregatingLlmBackend {
             let statuses = await aggregate.providerHealth()
-            backendStatus = statuses
-                .sorted { $0.key.rawValue < $1.key.rawValue }
-                .map { provider, status in
-                    switch status {
-                    case .available:
-                        return "\(provider.displayName) available"
-                    case .unavailable(let error):
-                        return "\(provider.displayName) unavailable: \(error.message)"
-                    }
-                }
-                .joined(separator: " | ")
+            let sortedStatuses = statuses.sorted { $0.key.rawValue < $1.key.rawValue }
+            providerStatuses = sortedStatuses.map { provider, status in
+                CompanionProviderStatus.from(provider: provider, status: status)
+            }
+            backendStatus = Self.backendStatusString(for: sortedStatuses)
             log(backendStatus)
             return
         }
 
-        switch await backend.healthCheck() {
+        let status = await backend.healthCheck()
+        providerStatuses = [CompanionProviderStatus.from(provider: backend.provider, status: status)]
+        switch status {
         case .available:
             backendStatus = "\(backend.provider.displayName) available"
             log("\(backend.provider.displayName) health check passed")
@@ -139,6 +214,29 @@ public final class CompanionAppModel: ObservableObject {
     private func log(_ message: String) {
         logs.insert(message, at: 0)
         logs = Array(logs.prefix(50))
+    }
+
+    private static func initialProviderStatuses(for backend: any LlmBackend) -> [CompanionProviderStatus] {
+        if backend is AggregatingLlmBackend {
+            return [
+                .notChecked(provider: .ollama),
+                .notChecked(provider: .lmStudio)
+            ]
+        }
+        return [.notChecked(provider: backend.provider)]
+    }
+
+    private static func backendStatusString(for statuses: [(key: ModelProvider, value: BackendStatus)]) -> String {
+        statuses
+            .map { provider, status in
+                switch status {
+                case .available:
+                    return "\(provider.displayName) available"
+                case .unavailable(let error):
+                    return "\(provider.displayName) unavailable: \(error.message)"
+                }
+            }
+            .joined(separator: " | ")
     }
 
     private static func loadOrCreateMacDeviceID() -> String {

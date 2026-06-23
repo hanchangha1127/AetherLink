@@ -228,6 +228,42 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(messages.first?.payload["delta"], .string("hello"))
     }
 
+    func testChatSendStreamsReasoningDeltaSeparatelyFromAnswerDelta() async throws {
+        let sink = RecordingSink()
+        let router = makeRouter(backend: MockBackend(
+            models: [ModelInfo(id: "qwen3:8b", name: "qwen3:8b", installed: true)],
+            chatEvents: [
+                .reasoningDelta("thinking"),
+                .delta("answer"),
+                .done(inputTokens: 3, outputTokens: 4)
+            ]
+        ))
+        let envelope = ProtocolEnvelope(
+            type: MessageType.chatSend,
+            requestID: "chat-reasoning",
+            payload: [
+                "session_id": .string("session-1"),
+                "model": .string("qwen3:8b"),
+                "messages": .array([
+                    .object([
+                        "role": .string("user"),
+                        "content": .string("hi")
+                    ])
+                ])
+            ]
+        )
+
+        router.handle(envelope, sink: sink)
+
+        let messages = try await sink.waitForMessages(count: 3)
+        XCTAssertEqual(messages.map(\.type), [MessageType.chatDelta, MessageType.chatDelta, MessageType.chatDone])
+        XCTAssertEqual(messages[0].requestID, "chat-reasoning")
+        XCTAssertEqual(messages[0].payload["reasoning_delta"], .string("thinking"))
+        XCTAssertNil(messages[0].payload["delta"])
+        XCTAssertEqual(messages[1].payload["delta"], .string("answer"))
+        XCTAssertNil(messages[1].payload["reasoning_delta"])
+    }
+
     func testChatSendInstalledCloudModelIsSelectable() async throws {
         let sink = RecordingSink()
         let router = makeRouter(backend: MockBackend(
@@ -683,6 +719,9 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
 
         XCTAssertEqual(transport.startedPort, 43210)
         XCTAssertEqual(advertiser.startedPort, 43210)
+        XCTAssertEqual(model.transportState.state, .advertising)
+        XCTAssertEqual(model.transportState.serviceName, "_aetherlink._tcp.local.")
+        XCTAssertEqual(model.transportState.port, 43210)
         XCTAssertTrue(model.transportStatus.contains("43210"))
 
         let sink = RecordingSink()
@@ -698,7 +737,36 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
 
         XCTAssertTrue(transport.didStop)
         XCTAssertTrue(advertiser.didStop)
+        XCTAssertEqual(model.transportState, .stopped)
         XCTAssertEqual(model.transportStatus, "Stopped")
+    }
+
+    @MainActor
+    func testCompanionAppModelPublishesStructuredBackendProviderStatuses() async throws {
+        let backend = AggregatingLlmBackend([
+            MockBackend(provider: .ollama, status: .available),
+            MockBackend(provider: .lmStudio, status: .unavailable(BackendError(
+                provider: .lmStudio,
+                code: "backend_unavailable",
+                message: "LM Studio is not reachable from the Mac runtime.",
+                retryable: true
+            )))
+        ])
+        let model = CompanionAppModel(
+            backend: backend,
+            peerServer: FakeRuntimeTransport(),
+            advertiser: FakeRuntimeAdvertiser()
+        )
+
+        await model.refreshOllamaStatus()
+
+        let statusesByProvider = Dictionary(uniqueKeysWithValues: model.providerStatuses.map { ($0.provider, $0) })
+        XCTAssertEqual(statusesByProvider[.ollama]?.availability, .available)
+        XCTAssertEqual(statusesByProvider[.lmStudio]?.availability, .unavailable)
+        XCTAssertEqual(statusesByProvider[.lmStudio]?.code, "backend_unavailable")
+        XCTAssertEqual(statusesByProvider[.lmStudio]?.retryable, true)
+        XCTAssertTrue(model.backendStatus.contains("Ollama available"))
+        XCTAssertTrue(model.backendStatus.contains("LM Studio unavailable"))
     }
 }
 

@@ -392,7 +392,10 @@ fun ChatScreen(
                 verticalArrangement = Arrangement.spacedBy(18.dp),
                 contentPadding = PaddingValues(top = 10.dp, bottom = 12.dp),
             ) {
-                items(state.messages) { message ->
+                items(
+                    items = state.messages,
+                    key = { message -> message.id },
+                ) { message ->
                     ChatMessageRow(message)
                 }
             }
@@ -1030,6 +1033,9 @@ private fun ChatMessageRow(message: RuntimeChatMessage) {
 
 @Composable
 private fun AssistantMessage(message: RuntimeChatMessage) {
+    val hasReasoning = message.reasoning.isNotBlank()
+    val isReasoningExpanded = rememberSaveable(message.id) { mutableStateOf(false) }
+
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -1049,6 +1055,13 @@ private fun AssistantMessage(message: RuntimeChatMessage) {
             Column(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
+                if (hasReasoning) {
+                    AssistantReasoning(
+                        reasoning = message.reasoning,
+                        expanded = isReasoningExpanded.value,
+                        onExpandedChange = { isReasoningExpanded.value = it },
+                    )
+                }
                 Text(
                     text = message.content.ifBlank { stringResource(R.string.assistant_typing) },
                     style = MaterialTheme.typography.bodyLarge,
@@ -1058,6 +1071,70 @@ private fun AssistantMessage(message: RuntimeChatMessage) {
                     LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun AssistantReasoning(
+    reasoning: String,
+    expanded: Boolean,
+    onExpandedChange: (Boolean) -> Unit,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = stringResource(R.string.assistant_reasoning_label),
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.secondary,
+                )
+                TextButton(
+                    onClick = { onExpandedChange(!expanded) },
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                ) {
+                    Icon(
+                        imageVector = if (expanded) {
+                            Icons.Filled.KeyboardArrowUp
+                        } else {
+                            Icons.Filled.KeyboardArrowDown
+                        },
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Spacer(modifier = Modifier.width(2.dp))
+                    Text(
+                        text = stringResource(
+                            if (expanded) {
+                                R.string.assistant_reasoning_hide
+                            } else {
+                                R.string.assistant_reasoning_show
+                            }
+                        ),
+                        style = MaterialTheme.typography.labelMedium,
+                    )
+                }
+            }
+            Text(
+                text = reasoning,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = if (expanded) Int.MAX_VALUE else 2,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }

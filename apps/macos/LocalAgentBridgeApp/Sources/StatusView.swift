@@ -19,10 +19,10 @@ struct StatusView: View {
                 LazyVGrid(columns: columns, alignment: .leading, spacing: 12) {
                     StatusCard(
                         title: "Runtime",
-                        value: localizedStatus(model.transportStatus),
+                        value: localizedTransportStatus(model.transportState),
                         detail: runtimeDetail,
                         systemImage: "antenna.radiowaves.left.and.right",
-                        tone: transportTone(for: model.transportStatus)
+                        tone: transportTone(for: model.transportState)
                     )
                     StatusCard(
                         title: "Local Backends",
@@ -96,7 +96,7 @@ struct StatusView: View {
     }
 
     private var runtimeDetail: String {
-        if model.transportStatus.hasPrefix("Advertising ") {
+        if model.transportState.state == .advertising {
             return NSLocalizedString("Ready for trusted Android clients.", comment: "")
         }
         return NSLocalizedString("The local runtime listener is not active.", comment: "")
@@ -129,7 +129,7 @@ struct StatusView: View {
     }
 
     private var providerStatuses: [ProviderStatus] {
-        ProviderStatus.parse(model.backendStatus)
+        model.providerStatuses.map(ProviderStatus.init(status:))
     }
 
     private var trustedDeviceCount: String {
@@ -306,6 +306,24 @@ private struct ProviderStatus: Identifiable {
     let rawStatus: RawStatus
     let detail: String
 
+    init(status: CompanionProviderStatus) {
+        id = status.id
+        name = Self.localizedProviderName(status.provider)
+        rawStatus = RawStatus(status.availability)
+
+        switch status.availability {
+        case .notChecked:
+            detail = NSLocalizedString("Ollama and LM Studio are checked from this Mac.", comment: "")
+        case .available:
+            detail = NSLocalizedString("Local backend is responding.", comment: "")
+        case .unavailable:
+            detail = String(
+                format: NSLocalizedString("%@ is not responding from this Mac.", comment: ""),
+                Self.localizedProviderName(status.provider)
+            )
+        }
+    }
+
     var value: String {
         switch rawStatus {
         case .notChecked:
@@ -339,74 +357,27 @@ private struct ProviderStatus: Identifiable {
         }
     }
 
-    static func parse(_ backendStatus: String) -> [ProviderStatus] {
-        if backendStatus == "Not checked" {
-            return [
-                ProviderStatus(
-                    id: "ollama",
-                    name: NSLocalizedString("Ollama", comment: ""),
-                    rawStatus: .notChecked,
-                    detail: NSLocalizedString("Ollama and LM Studio are checked from this Mac.", comment: "")
-                ),
-                ProviderStatus(
-                    id: "lm-studio",
-                    name: NSLocalizedString("LM Studio", comment: ""),
-                    rawStatus: .notChecked,
-                    detail: NSLocalizedString("Ollama and LM Studio are checked from this Mac.", comment: "")
-                )
-            ]
+    private static func localizedProviderName(_ provider: ModelProvider) -> String {
+        switch provider {
+        case .ollama:
+            return NSLocalizedString("Ollama", comment: "")
+        case .lmStudio:
+            return NSLocalizedString("LM Studio", comment: "")
+        case .aggregate:
+            return NSLocalizedString("Local runtime", comment: "")
         }
-
-        let components = backendStatus
-            .split(separator: "|")
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-
-        let parsed = components.compactMap(parseComponent(_:))
-        if parsed.isEmpty {
-            return [
-                ProviderStatus(
-                    id: "backend",
-                    name: NSLocalizedString("Local runtime", comment: ""),
-                    rawStatus: backendStatus == "Available" ? .available : .unavailable,
-                    detail: localizedStatus(backendStatus)
-                )
-            ]
-        }
-        return parsed
     }
+}
 
-    private static func parseComponent(_ component: String) -> ProviderStatus? {
-        parseProviderComponent(component, providerName: "Ollama", id: "ollama")
-            ?? parseProviderComponent(component, providerName: "LM Studio", id: "lm-studio")
-    }
-
-    private static func parseProviderComponent(
-        _ component: String,
-        providerName: String,
-        id: String
-    ) -> ProviderStatus? {
-        if component == "\(providerName) available" {
-            return ProviderStatus(
-                id: id,
-                name: NSLocalizedString(providerName, comment: ""),
-                rawStatus: .available,
-                detail: NSLocalizedString("Local backend is responding.", comment: "")
-            )
+private extension ProviderStatus.RawStatus {
+    init(_ availability: CompanionProviderStatus.Availability) {
+        switch availability {
+        case .notChecked:
+            self = .notChecked
+        case .available:
+            self = .available
+        case .unavailable:
+            self = .unavailable
         }
-
-        let unavailablePrefix = "\(providerName) unavailable:"
-        if component.hasPrefix(unavailablePrefix) {
-            return ProviderStatus(
-                id: id,
-                name: NSLocalizedString(providerName, comment: ""),
-                rawStatus: .unavailable,
-                detail: String(
-                    format: NSLocalizedString("%@ is not responding from this Mac.", comment: ""),
-                    NSLocalizedString(providerName, comment: "")
-                )
-            )
-        }
-
-        return nil
     }
 }

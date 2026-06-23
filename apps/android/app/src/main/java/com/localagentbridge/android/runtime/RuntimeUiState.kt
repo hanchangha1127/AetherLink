@@ -62,6 +62,7 @@ data class RuntimeChatMessage(
     val id: String = UUID.randomUUID().toString(),
     val role: String,
     val content: String,
+    val reasoning: String = "",
 )
 
 data class RuntimeUiError(

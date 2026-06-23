@@ -164,6 +164,7 @@ final class OllamaBackendTests: XCTestCase {
             XCTAssertEqual(postedRequest.model, "llama3.1:8b")
             XCTAssertEqual(postedRequest.messages, [ChatMessage(role: "user", content: "Hi")])
             XCTAssertTrue(postedRequest.stream)
+            XCTAssertTrue(postedRequest.think)
             return self.response(
                 statusCode: 200,
                 body: """
@@ -190,6 +191,44 @@ final class OllamaBackendTests: XCTestCase {
             .delta("Hello "),
             .delta("there"),
             .done(inputTokens: 3, outputTokens: 4)
+        ])
+    }
+
+    func testChatStreamsThinkingSeparatelyFromContent() async throws {
+        let backend = makeBackend { request in
+            XCTAssertEqual(request.url?.path, "/api/chat")
+            let body = try self.requestBodyData(from: request)
+            let postedRequest = try JSONDecoder().decode(PostedChatRequest.self, from: body)
+            XCTAssertTrue(postedRequest.think)
+            return self.response(
+                statusCode: 200,
+                body: """
+                {"message":{"role":"assistant","thinking":"I should reason first. "},"done":false}
+                {"message":{"role":"assistant","thinking":"Now answer. ","content":"Hello"},"done":false}
+                {"message":{"role":"assistant","content":" there"},"done":false}
+                {"done":true,"prompt_eval_count":5,"eval_count":6}
+
+                """
+            )
+        }
+        let request = ChatRequest(
+            generationID: "generation-thinking",
+            sessionID: "session-1",
+            model: "qwen3:8b",
+            messages: [ChatMessage(role: "user", content: "Hi")]
+        )
+
+        var events: [ChatStreamEvent] = []
+        for try await event in backend.chat(request: request) {
+            events.append(event)
+        }
+
+        XCTAssertEqual(events, [
+            .reasoningDelta("I should reason first. "),
+            .reasoningDelta("Now answer. "),
+            .delta("Hello"),
+            .delta(" there"),
+            .done(inputTokens: 5, outputTokens: 6)
         ])
     }
 
@@ -347,6 +386,7 @@ private struct PostedChatRequest: Decodable {
     var model: String
     var messages: [ChatMessage]
     var stream: Bool
+    var think: Bool
 }
 
 private struct PostedPullRequest: Decodable {
