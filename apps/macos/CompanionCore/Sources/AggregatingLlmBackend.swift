@@ -60,7 +60,7 @@ public final class AggregatingLlmBackend: LlmBackend, @unchecked Sendable {
         return .unavailable(BackendError(
             provider: .aggregate,
             code: "backend_unavailable",
-            message: "No local model backend is reachable from the companion runtime.",
+            message: "No model provider is reachable from AetherLink Runtime.",
             retryable: true
         ))
     }
@@ -196,7 +196,7 @@ public final class AggregatingLlmBackend: LlmBackend, @unchecked Sendable {
             throw BackendError(
                 provider: provider,
                 code: "backend_unavailable",
-                message: "\(provider.displayName) is not enabled in the companion runtime.",
+                message: "\(provider.displayName) is not enabled in AetherLink Runtime.",
                 retryable: false
             )
         }

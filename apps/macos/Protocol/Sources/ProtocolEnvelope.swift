@@ -16,10 +16,15 @@ public enum MessageType {
     public static let chatDelta = "chat.delta"
     public static let chatDone = "chat.done"
     public static let chatCancel = "chat.cancel"
+    public static let chatSessionsList = "chat.sessions.list"
+    public static let chatMessagesList = "chat.messages.list"
     public static let chatSuggestionsRequest = "chat.suggestions.request"
     public static let chatSuggestionsResult = "chat.suggestions.result"
     public static let chatTitleRequest = "chat.title.request"
     public static let chatTitleResult = "chat.title.result"
+    public static let chatSessionArchive = "chat.session.archive"
+    public static let chatSessionRestore = "chat.session.restore"
+    public static let chatSessionDelete = "chat.session.delete"
     public static let error = "error"
 }
 

@@ -55,7 +55,7 @@ AetherLink v0.1 proves the smallest useful local loop: a client pairs with a com
 - After a successful pull, the model appears as installed in `models.list`.
 - Client can send chat using the newly installed model.
 - Client can send `chat.send`; the runtime host forwards the request to the selected local backend.
-- Client can reopen local chat history from the drawer.
+- Runtime host stores chat processing events and exposes authenticated `chat.sessions.list` and `chat.messages.list` for runtime-owned session summaries/transcripts. The Android client requests those history messages after authentication and merges them into its local UI cache while keeping local-only/archive/manual-title state.
 - Client can add, disable, and remove user-managed local memory notes; enabled notes are included only through the runtime-mediated `chat.send` path.
 - Runtime host streams backend answer chunks back as `chat.delta`; Ollama reasoning/think chunks are preserved separately as reasoning deltas rather than mixed into final answer text.
 - Runtime host sends `chat.done` when generation completes.

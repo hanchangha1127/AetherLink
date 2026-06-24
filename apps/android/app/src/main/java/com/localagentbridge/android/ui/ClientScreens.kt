@@ -88,12 +88,14 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.localagentbridge.android.R
@@ -114,6 +116,8 @@ import com.localagentbridge.android.runtime.isChatModel
 import com.localagentbridge.android.runtime.isEmbeddingModel
 import com.localagentbridge.android.runtime.supportsImageInput
 import kotlinx.coroutines.launch
+import java.text.DateFormat
+import java.util.Date
 import java.util.Locale
 
 @Composable
@@ -180,40 +184,112 @@ private fun QrPairingPanel(
 ) {
     val hapticFeedback = LocalHapticFeedback.current
 
-    OutlinedCard(modifier = Modifier.fillMaxWidth()) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
+        contentColor = MaterialTheme.colorScheme.onSurface,
+    ) {
         Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.padding(18.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Text(
-                text = stringResource(R.string.qr_pairing_title),
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.SemiBold,
-            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Surface(
+                    modifier = Modifier.size(40.dp),
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f),
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Filled.Link,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
+                }
+                Text(
+                    text = stringResource(R.string.qr_pairing_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
             Text(
                 text = stringResource(R.string.qr_pairing_detail),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.secondary,
+                maxLines = 4,
+                overflow = TextOverflow.Ellipsis,
             )
             Button(
                 onClick = {
                     hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
                     onScanPairingQr()
                 },
-                enabled = !state.isConnecting && !state.isPairingAwaitingRoute,
-                modifier = Modifier.fillMaxWidth(),
+                enabled = !state.isConnecting,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(54.dp),
             ) {
                 Icon(
                     Icons.Filled.Link,
                     contentDescription = null,
                 )
                 Spacer(Modifier.width(8.dp))
-                Text(stringResource(R.string.scan_qr))
+                Text(
+                    text = if (state.isPairingAwaitingRoute) {
+                        stringResource(R.string.route_notice_action_scan_qr)
+                    } else {
+                        stringResource(R.string.scan_qr)
+                    }
+                )
             }
+            RouteRefreshSavedNotice(state = state)
             Text(
                 text = stringResource(R.string.qr_pairing_security_note),
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.secondary,
+                color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.82f),
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
+private fun RouteRefreshSavedNotice(state: RuntimeUiState) {
+    val runtimeName = state.routeRefreshNoticeRuntimeName
+        ?.takeIf { it.isNotBlank() }
+        ?: return
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.58f),
+        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                Icons.Filled.CheckCircle,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+            )
+            Text(
+                text = stringResource(R.string.route_refresh_notice, runtimeName),
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.Medium,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
             )
         }
     }
@@ -571,6 +647,20 @@ private fun RuntimeRouteNotice(state: RuntimeUiState) {
                     style = MaterialTheme.typography.bodySmall,
                     color = notice.contentColor(),
                 )
+                relayRouteEndpointLabel(trustedRuntime)?.let { endpointLabel ->
+                    Text(
+                        text = endpointLabel,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = notice.contentColor(),
+                    )
+                }
+                relayRouteLeaseLabel(trustedRuntime)?.let { leaseLabel ->
+                    Text(
+                        text = leaseLabel,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = notice.contentColor(),
+                    )
+                }
             }
         }
     }
@@ -639,7 +729,13 @@ private fun runtimeRouteNotice(
         }
     }
     if (trustedRuntime.hasRelayRoute()) {
-        return if (trustedRuntime?.relaySecret.isNullOrBlank()) {
+        return if (trustedRuntime.isRelayRouteExpired()) {
+            RuntimeRouteNoticeState(
+                detailRes = R.string.route_notice_relay_expired,
+                tone = RuntimeRouteNoticeTone.Warning,
+                icon = Icons.Filled.Error,
+            )
+        } else if (trustedRuntime?.relaySecret.isNullOrBlank()) {
             RuntimeRouteNoticeState(
                 detailRes = R.string.route_notice_relay_without_secret,
                 tone = RuntimeRouteNoticeTone.Warning,
@@ -672,6 +768,45 @@ private fun runtimeRouteNotice(
         tone = RuntimeRouteNoticeTone.Neutral,
         icon = Icons.Filled.Search,
     )
+}
+
+@Composable
+private fun relayRouteEndpointLabel(trustedRuntime: RuntimeTrustedRuntime?): String? {
+    val runtime = trustedRuntime?.takeIf { it.hasRelayRoute() } ?: return null
+    val host = runtime.relayHost?.takeIf { it.isNotBlank() } ?: return null
+    val port = runtime.relayPort?.takeIf { it in 1..65535 } ?: return null
+    return stringResource(R.string.route_notice_relay_endpoint, "$host:$port")
+}
+
+@Composable
+private fun relayRouteLeaseLabel(trustedRuntime: RuntimeTrustedRuntime?): String? {
+    val expiresAtMillis = trustedRuntime?.relayRouteExpiresAtMillis() ?: return null
+    val formatted = rememberFormattedDateTime(expiresAtMillis)
+    return if (expiresAtMillis <= System.currentTimeMillis()) {
+        stringResource(R.string.route_notice_relay_lease_expired_at, formatted)
+    } else {
+        stringResource(R.string.route_notice_relay_lease_expires_at, formatted)
+    }
+}
+
+@Composable
+private fun rememberFormattedDateTime(epochMillis: Long): String {
+    val locale = Locale.getDefault()
+    return DateFormat
+        .getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT, locale)
+        .format(Date(epochMillis))
+}
+
+private fun RuntimeTrustedRuntime?.relayRouteExpiresAtMillis(): Long? {
+    val expiresAt = this?.relayExpiresAtEpochMillis ?: return null
+    return expiresAt.takeIf { it > 0L && it != Long.MAX_VALUE }
+}
+
+private fun RuntimeTrustedRuntime?.isRelayRouteExpired(
+    nowEpochMillis: Long = System.currentTimeMillis(),
+): Boolean {
+    val expiresAt = relayRouteExpiresAtMillis() ?: return false
+    return expiresAt <= nowEpochMillis
 }
 
 @Composable
@@ -837,6 +972,7 @@ fun ChatScreen(
         !hasUnsupportedImageAttachment
     val density = LocalDensity.current
     val keyboardDockPadding = if (WindowInsets.ime.getBottom(density) > 0) 64.dp else 0.dp
+    val composerDockSpace = 166.dp
 
     LaunchedEffect(
         state.messages.size,
@@ -853,11 +989,11 @@ fun ChatScreen(
             .fillMaxSize()
             .padding(horizontal = 12.dp, vertical = 6.dp),
     ) {
-        if (state.messages.isEmpty() && shouldShowChatEmptyState(state)) {
+        if (state.messages.isEmpty()) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(bottom = 168.dp),
+                    .padding(bottom = composerDockSpace),
                 contentAlignment = Alignment.Center,
             ) {
                 ChatEmptyState(
@@ -870,13 +1006,17 @@ fun ChatScreen(
         } else {
             LazyColumn(
                 state = listState,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .widthIn(max = 840.dp)
+                    .fillMaxWidth()
+                    .fillMaxHeight(),
                 verticalArrangement = Arrangement.spacedBy(20.dp),
                 contentPadding = PaddingValues(
                     start = 4.dp,
                     top = 16.dp,
                     end = 4.dp,
-                    bottom = 178.dp,
+                    bottom = composerDockSpace + 12.dp,
                 ),
             ) {
                 items(
@@ -900,6 +1040,7 @@ fun ChatScreen(
         Column(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
+                .widthIn(max = 840.dp)
                 .fillMaxWidth()
                 .navigationBarsPadding()
                 .padding(bottom = keyboardDockPadding),
@@ -926,12 +1067,6 @@ fun ChatScreen(
             )
         }
     }
-}
-
-private fun shouldShowChatEmptyState(state: RuntimeUiState): Boolean {
-    return !state.isConnected ||
-        state.isStreaming ||
-        !selectedModelIsUsable(state)
 }
 
 @Composable
@@ -1047,6 +1182,9 @@ fun SettingsScreen(
             SettingsExpandableSection(
                 title = R.string.status_title,
                 subtitle = R.string.status_subtitle,
+                initiallyExpanded = !state.isConnected ||
+                    state.trustedRuntime == null ||
+                    state.isPairingAwaitingRoute,
             ) {
                 CompanionOnlyPanel()
                 QrPairingPanel(
@@ -1336,6 +1474,17 @@ private fun TrustedRuntimePanel(
                     color = MaterialTheme.colorScheme.secondary,
                     style = MaterialTheme.typography.bodyMedium,
                 )
+                relayRouteLeaseLabel(trusted)?.let { leaseLabel ->
+                    Text(
+                        text = leaseLabel,
+                        color = if (trusted.isRelayRouteExpired()) {
+                            MaterialTheme.colorScheme.error
+                        } else {
+                            MaterialTheme.colorScheme.secondary
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
                 OutlinedButton(
                     onClick = {
                         hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -1742,26 +1891,32 @@ private fun ChatEmptyState(
     onSelectModel: (String) -> Unit,
 ) {
     val hapticFeedback = LocalHapticFeedback.current
+    val statusIcon = when {
+        !state.isConnected -> Icons.Filled.Link
+        state.isStreaming -> Icons.Filled.Refresh
+        selectedModelIsUsable(state) -> Icons.Filled.CheckCircle
+        else -> Icons.Filled.Search
+    }
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+            .padding(horizontal = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Surface(
-            modifier = Modifier.size(44.dp),
-            shape = RoundedCornerShape(14.dp),
+            modifier = Modifier.size(38.dp),
+            shape = RoundedCornerShape(8.dp),
             color = if (state.isConnected) {
-                MaterialTheme.colorScheme.primaryContainer
+                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.76f)
             } else {
-                MaterialTheme.colorScheme.surfaceVariant
+                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.62f)
             },
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Icon(
-                    imageVector = Icons.Filled.Link,
+                    imageVector = statusIcon,
                     contentDescription = null,
                     tint = if (state.isConnected) {
                         MaterialTheme.colorScheme.onPrimaryContainer
@@ -1772,7 +1927,7 @@ private fun ChatEmptyState(
             }
         }
         Column(
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(5.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(
@@ -1784,6 +1939,9 @@ private fun ChatEmptyState(
                 text = chatEmptyText(state),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.secondary,
+                textAlign = TextAlign.Center,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
             )
         }
         if (state.isStreaming) {
@@ -2408,12 +2566,15 @@ private fun ChatComposer(
     val hapticFeedback = LocalHapticFeedback.current
     val showComposerWarning = !imageAttachmentsSupported && attachments.any { it.type == "image" }
     val showComposerStatus = !isStreaming && showComposerWarning && hint.isNotBlank()
+    val inputContentDescription = stringResource(R.string.message)
+    val inputPlaceholder = stringResource(R.string.chat_input_placeholder)
+    val sendStateDescription = hint.ifBlank { stringResource(R.string.chat_hint_ready) }
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(28.dp),
-        tonalElevation = 1.dp,
-        shadowElevation = 3.dp,
-        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.54f),
     ) {
         Column(
             modifier = Modifier.padding(horizontal = 9.dp, vertical = 8.dp),
@@ -2464,7 +2625,10 @@ private fun ChatComposer(
                     ),
                     modifier = Modifier
                         .weight(1f)
-                        .heightIn(min = 40.dp, max = 136.dp),
+                        .heightIn(min = 40.dp, max = 136.dp)
+                        .semantics {
+                            contentDescription = inputContentDescription
+                        },
                     decorationBox = { innerTextField ->
                         Box(
                             modifier = Modifier
@@ -2472,6 +2636,13 @@ private fun ChatComposer(
                                 .padding(horizontal = 2.dp, vertical = 9.dp),
                             contentAlignment = Alignment.TopStart,
                         ) {
+                            if (value.isBlank()) {
+                                Text(
+                                    text = inputPlaceholder,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
+                                )
+                            }
                             innerTextField()
                         }
                     },
@@ -2500,7 +2671,7 @@ private fun ChatComposer(
                         modifier = Modifier
                             .size(40.dp)
                             .semantics {
-                                stateDescription = hint
+                                stateDescription = sendStateDescription
                             },
                     ) {
                         Icon(
@@ -3636,6 +3807,7 @@ private fun RouteAvailabilityNotice(
 private fun routeAvailabilityCompactLabel(error: RuntimeUiError): String {
     return when {
         error.code == "remote_routes_unavailable" ||
+            error.code == "remote_route_expired" ||
             error.diagnosticCode in RELAY_ROUTE_NEEDED_DIAGNOSTIC_CODES ->
             stringResource(R.string.route_notice_short_relay_needed)
         else -> stringResource(R.string.route_notice_short_unavailable)
@@ -3650,18 +3822,21 @@ private val ROUTE_AVAILABILITY_NOTICE_CODES = setOf(
     "no_route",
     "no_connectable_route",
     "remote_routes_unavailable",
+    "remote_route_expired",
 )
 
 private val ROUTE_AVAILABILITY_DIAGNOSTIC_CODES = setOf(
     "route_diagnostic_local_missing_remote_pending",
     "route_diagnostic_direct_failed_remote_pending",
     "route_diagnostic_remote_pending",
+    "route_diagnostic_remote_route_expired",
 )
 
 private val RELAY_ROUTE_NEEDED_DIAGNOSTIC_CODES = setOf(
     "route_diagnostic_local_missing_remote_pending",
     "route_diagnostic_direct_failed_remote_pending",
     "route_diagnostic_remote_pending",
+    "route_diagnostic_remote_route_expired",
 )
 
 private fun selectedModelIsUsable(state: RuntimeUiState): Boolean {
@@ -3700,6 +3875,7 @@ private fun chatEmptyTitle(state: RuntimeUiState): String {
     return when {
         !state.isConnected -> stringResource(R.string.empty_chat_disconnected_title)
         state.isStreaming -> stringResource(R.string.empty_chat_streaming_title)
+        selectedModelIsUsable(state) -> stringResource(R.string.empty_chat_title)
         else -> stringResource(R.string.empty_chat_no_model_title)
     }
 }
@@ -3709,6 +3885,7 @@ private fun chatEmptyText(state: RuntimeUiState): String {
     return when {
         !state.isConnected -> stringResource(R.string.empty_chat_disconnected)
         state.isStreaming -> stringResource(R.string.empty_chat_streaming)
+        selectedModelIsUsable(state) -> stringResource(R.string.empty_chat)
         selectedModelIsMissingFromRuntime(state) -> stringResource(R.string.selected_model_unavailable)
         else -> stringResource(R.string.empty_chat_no_model)
     }
@@ -3722,8 +3899,10 @@ private fun runtimeErrorLabel(error: RuntimeUiError): String {
         "no_route" -> stringResource(R.string.error_no_runtime_route)
         "no_connectable_route" -> stringResource(R.string.error_no_connectable_runtime_route)
         "remote_routes_unavailable" -> stringResource(R.string.error_remote_routes_unavailable)
+        "remote_route_expired" -> stringResource(R.string.error_remote_route_expired)
         "discovery_failed" -> stringResource(R.string.error_discovery_failed)
         "invalid_pairing_qr" -> stringResource(R.string.error_invalid_pairing_qr)
+        "pairing_route_retrying" -> stringResource(R.string.error_pairing_route_retrying)
         "pairing_endpoint_unavailable" -> stringResource(R.string.error_pairing_endpoint_unavailable)
         "qr_scan_failed" -> stringResource(R.string.error_qr_scan_failed)
         "pair_first" -> stringResource(R.string.error_pair_first)
@@ -3779,6 +3958,8 @@ private fun runtimeErrorDiagnosticLabel(error: RuntimeUiError): String? {
             stringResource(R.string.route_diagnostic_remote_pending)
         "route_diagnostic_relay_failed" ->
             stringResource(R.string.route_diagnostic_relay_failed)
+        "route_diagnostic_remote_route_expired" ->
+            stringResource(R.string.route_diagnostic_remote_route_expired)
         else -> null
     }
 }
@@ -3788,11 +3969,16 @@ private fun providerStatusSummary(state: RuntimeUiState): String {
     if (state.providerStatuses.isEmpty()) {
         return backendStatusLabel(state.backendAvailable)
     }
-    val available = stringResource(R.string.backend_available)
-    val unavailable = stringResource(R.string.backend_unavailable)
-    return state.providerStatuses.joinToString(" | ") { provider ->
-        val status = if (provider.available) available else unavailable
-        "${provider.name}: $status"
+    val totalCount = state.providerStatuses.size
+    val availableCount = state.providerStatuses.count { it.available }
+    return when (availableCount) {
+        totalCount -> stringResource(R.string.provider_status_summary_all_ready)
+        0 -> stringResource(R.string.provider_status_summary_none_ready)
+        else -> stringResource(
+            R.string.provider_status_summary_mixed,
+            availableCount,
+            totalCount,
+        )
     }
 }
 

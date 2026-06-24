@@ -14,6 +14,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
     private let requiresAuthentication: Bool
     private let pairingCoordinator: PairingCoordinator
     private let trustedDeviceStore: TrustedDeviceStore
+    private let chatEventStore: any RuntimeChatEventStore
     private let onPairingAccepted: (@Sendable (TrustedDevice) -> Void)?
     private let dateFormatter = ISO8601DateFormatter()
     private let authLock = NSLock()
@@ -24,12 +25,14 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         requiresAuthentication: Bool = true,
         pairingCoordinator: PairingCoordinator = PairingCoordinator(),
         trustedDeviceStore: TrustedDeviceStore = TrustedDeviceStore(),
+        chatEventStore: any RuntimeChatEventStore = JSONLRuntimeChatEventStore(),
         onPairingAccepted: (@Sendable (TrustedDevice) -> Void)? = nil
     ) {
         self.backend = backend
         self.requiresAuthentication = requiresAuthentication
         self.pairingCoordinator = pairingCoordinator
         self.trustedDeviceStore = trustedDeviceStore
+        self.chatEventStore = chatEventStore
         self.onPairingAccepted = onPairingAccepted
         dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     }
@@ -63,12 +66,27 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         case MessageType.chatCancel:
             guard allowRuntimeCommand(envelope, sink: sink) else { return }
             handleChatCancel(envelope, sink: sink)
+        case MessageType.chatSessionsList:
+            guard allowRuntimeCommand(envelope, sink: sink) else { return }
+            handleChatSessionsList(envelope, sink: sink)
+        case MessageType.chatMessagesList:
+            guard allowRuntimeCommand(envelope, sink: sink) else { return }
+            handleChatMessagesList(envelope, sink: sink)
         case MessageType.chatSuggestionsRequest:
             guard allowRuntimeCommand(envelope, sink: sink) else { return }
             await handleChatSuggestionsRequest(envelope, sink: sink)
         case MessageType.chatTitleRequest:
             guard allowRuntimeCommand(envelope, sink: sink) else { return }
             await handleChatTitleRequest(envelope, sink: sink)
+        case MessageType.chatSessionArchive:
+            guard allowRuntimeCommand(envelope, sink: sink) else { return }
+            handleChatSessionMutation(envelope, sink: sink, mutation: .archive)
+        case MessageType.chatSessionRestore:
+            guard allowRuntimeCommand(envelope, sink: sink) else { return }
+            handleChatSessionMutation(envelope, sink: sink, mutation: .restore)
+        case MessageType.chatSessionDelete:
+            guard allowRuntimeCommand(envelope, sink: sink) else { return }
+            handleChatSessionMutation(envelope, sink: sink, mutation: .delete)
         default:
             sink.send(errorEnvelope(
                 requestID: envelope.requestID,
@@ -196,11 +214,22 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                 }
             }
 
+            let title = Self.title(from: generatedText)
+            if !title.isEmpty {
+                try recordChatEvent(.init(
+                    kind: .title,
+                    requestID: envelope.requestID,
+                    sessionID: parsedRequest.request.sessionID,
+                    model: parsedRequest.request.model,
+                    title: title
+                ))
+            }
+
             sink.send(ProtocolEnvelope(
                 type: MessageType.chatTitleResult,
                 requestID: envelope.requestID,
                 payload: [
-                    "title": .string(Self.title(from: generatedText))
+                    "title": .string(title)
                 ]
             ))
         } catch {
@@ -215,7 +244,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                 sink.send(errorEnvelope(
                     requestID: envelope.requestID,
                     code: "pairing_required",
-                    message: "This client device is not trusted by the companion runtime.",
+                    message: "This client device is not trusted by AetherLink Runtime.",
                     retryable: false
                 ))
                 return
@@ -288,13 +317,13 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                     "ollama": providerPayloads[.ollama] ?? .object([
                         "available": .bool(false),
                         "code": .string("backend_unavailable"),
-                        "message": .string("Ollama is not enabled in the companion runtime."),
+                        "message": .string("Ollama is not enabled in AetherLink Runtime."),
                         "retryable": .bool(false)
                     ]),
                     "lm_studio": providerPayloads[.lmStudio] ?? .object([
                         "available": .bool(false),
                         "code": .string("backend_unavailable"),
-                        "message": .string("LM Studio is not enabled in the companion runtime."),
+                        "message": .string("LM Studio is not enabled in AetherLink Runtime."),
                         "retryable": .bool(false)
                     ])
                 ]
@@ -311,7 +340,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                     "status": .string("ok"),
                     backend.provider.rawValue: .object([
                         "available": .bool(true),
-                        "message": .string("\(backend.provider.displayName) is reachable from the companion runtime")
+                        "message": .string("\(backend.provider.displayName) is reachable from AetherLink Runtime")
                     ])
                 ]
             ))
@@ -388,25 +417,60 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
     }
 
     private func handleChatSend(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) async {
+        var storageContext: RuntimeChatStorageContext?
         do {
             let request = Self.chatRequestWithRuntimeCapabilityGuard(try chatRequest(from: envelope))
+            storageContext = RuntimeChatStorageContext(
+                requestID: envelope.requestID,
+                sessionID: request.sessionID,
+                model: request.model
+            )
             let model = try await resolvedInstalledModel(request.model)
             try validateAttachments(in: request, for: model)
+            try recordChatEvent(.init(
+                kind: .request,
+                requestID: envelope.requestID,
+                sessionID: request.sessionID,
+                model: request.model,
+                messages: request.messages
+            ))
             for try await event in backend.chat(request: request) {
                 switch event {
                 case .delta(let text):
+                    try recordChatEvent(.init(
+                        kind: .assistantDelta,
+                        requestID: envelope.requestID,
+                        sessionID: request.sessionID,
+                        model: request.model,
+                        delta: text
+                    ))
                     sink.send(ProtocolEnvelope(
                         type: MessageType.chatDelta,
                         requestID: envelope.requestID,
                         payload: ["delta": .string(text)]
                     ))
                 case .reasoningDelta(let text):
+                    try recordChatEvent(.init(
+                        kind: .reasoningDelta,
+                        requestID: envelope.requestID,
+                        sessionID: request.sessionID,
+                        model: request.model,
+                        reasoningDelta: text
+                    ))
                     sink.send(ProtocolEnvelope(
                         type: MessageType.chatDelta,
                         requestID: envelope.requestID,
                         payload: ["reasoning_delta": .string(text)]
                     ))
                 case .done(let inputTokens, let outputTokens):
+                    try recordChatEvent(.init(
+                        kind: .done,
+                        requestID: envelope.requestID,
+                        sessionID: request.sessionID,
+                        model: request.model,
+                        finishReason: "stop",
+                        usage: RuntimeChatStoredUsage(inputTokens: inputTokens, outputTokens: outputTokens)
+                    ))
                     sink.send(ProtocolEnvelope(
                         type: MessageType.chatDone,
                         requestID: envelope.requestID,
@@ -421,26 +485,82 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                 }
             }
         } catch OllamaBackendError.generationCancelled {
+            recordCancelledChatEventIfPossible(context: storageContext)
             sink.send(ProtocolEnvelope(
                 type: MessageType.chatDone,
                 requestID: envelope.requestID,
                 payload: ["finish_reason": .string("cancelled")]
             ))
         } catch LMStudioBackendError.generationCancelled {
+            recordCancelledChatEventIfPossible(context: storageContext)
             sink.send(ProtocolEnvelope(
                 type: MessageType.chatDone,
                 requestID: envelope.requestID,
                 payload: ["finish_reason": .string("cancelled")]
             ))
         } catch let error as BackendError where error.code == "generation_cancelled" {
+            recordCancelledChatEventIfPossible(context: storageContext)
             sink.send(ProtocolEnvelope(
                 type: MessageType.chatDone,
                 requestID: envelope.requestID,
                 payload: ["finish_reason": .string("cancelled")]
             ))
         } catch {
+            recordChatErrorIfPossible(context: storageContext, error: error)
             sink.send(errorEnvelope(requestID: envelope.requestID, error: error))
         }
+    }
+
+    private func recordChatEvent(_ event: RuntimeChatStoredEvent) throws {
+        do {
+            try chatEventStore.append(event)
+        } catch {
+            throw LocalRuntimeRouterError.chatStoreUnavailable(error.localizedDescription)
+        }
+    }
+
+    private func mutateChatSession(
+        sessionID: String,
+        requestID: String,
+        mutation: RuntimeChatSessionMutation
+    ) throws -> RuntimeChatSessionMutationResult {
+        do {
+            return try chatEventStore.mutateSession(
+                sessionID: sessionID,
+                requestID: requestID,
+                mutation: mutation,
+                timestamp: Date()
+            )
+        } catch RuntimeChatEventStoreError.sessionNotFound {
+            throw LocalRuntimeRouterError.chatSessionNotFound(sessionID)
+        } catch {
+            throw LocalRuntimeRouterError.chatStoreUnavailable(error.localizedDescription)
+        }
+    }
+
+    private func recordCancelledChatEventIfPossible(context: RuntimeChatStorageContext?) {
+        guard let context else { return }
+        try? recordChatEvent(.init(
+            kind: .cancelled,
+            requestID: context.requestID,
+            sessionID: context.sessionID,
+            model: context.model,
+            finishReason: "cancelled"
+        ))
+    }
+
+    private func recordChatErrorIfPossible(context: RuntimeChatStorageContext?, error: Error) {
+        guard let context else { return }
+        try? recordChatEvent(.init(
+            kind: .error,
+            requestID: context.requestID,
+            sessionID: context.sessionID,
+            model: context.model,
+            error: RuntimeChatStoredError(
+                code: errorCode(for: error),
+                message: error.localizedDescription
+            )
+        ))
     }
 
     private func resolvedInstalledModel(_ requestedModel: String) async throws -> ResolvedRuntimeModel {
@@ -511,6 +631,86 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                     retryable: false
                 ))
             }
+        } catch {
+            sink.send(errorEnvelope(requestID: envelope.requestID, error: error))
+        }
+    }
+
+    private func handleChatSessionsList(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) {
+        do {
+            let limit = optionalInt("limit", in: envelope.payload).map { min(max($0, 1), 200) } ?? 100
+            let sessions = try chatEventStore.listSessions(limit: limit)
+            sink.send(ProtocolEnvelope(
+                type: MessageType.chatSessionsList,
+                requestID: envelope.requestID,
+                payload: [
+                    "sessions": .array(sessions.map { session in
+                        .object([
+                            "session_id": .string(session.sessionID),
+                            "title": .string(session.title),
+                            "model": .string(session.model),
+                            "last_activity_at": .string(dateFormatter.string(from: session.lastActivityAt)),
+                            "message_count": .number(Double(session.messageCount))
+                        ])
+                    })
+                ]
+            ))
+        } catch {
+            sink.send(errorEnvelope(requestID: envelope.requestID, error: LocalRuntimeRouterError.chatStoreUnavailable(error.localizedDescription)))
+        }
+    }
+
+    private func handleChatMessagesList(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) {
+        do {
+            let sessionID = try requiredString("session_id", in: envelope.payload)
+            let limit = optionalInt("limit", in: envelope.payload).map { min(max($0, 1), 500) } ?? 200
+            let messages = try chatEventStore.listMessages(sessionID: sessionID, limit: limit)
+            sink.send(ProtocolEnvelope(
+                type: MessageType.chatMessagesList,
+                requestID: envelope.requestID,
+                payload: [
+                    "session_id": .string(sessionID),
+                    "messages": .array(messages.map { message in
+                        var payload: [String: JSONValue] = [
+                            "role": .string(message.role),
+                            "content": .string(message.content)
+                        ]
+                        if let reasoning = message.reasoning, !reasoning.isEmpty {
+                            payload["reasoning"] = .string(reasoning)
+                        }
+                        if let createdAt = message.createdAt {
+                            payload["created_at"] = .string(dateFormatter.string(from: createdAt))
+                        }
+                        return .object(payload)
+                    })
+                ]
+            ))
+        } catch {
+            sink.send(errorEnvelope(requestID: envelope.requestID, error: error))
+        }
+    }
+
+    private func handleChatSessionMutation(
+        _ envelope: ProtocolEnvelope,
+        sink: any RuntimeMessageSink,
+        mutation: RuntimeChatSessionMutation
+    ) {
+        do {
+            let sessionID = try requiredString("session_id", in: envelope.payload)
+            let result = try mutateChatSession(
+                sessionID: sessionID,
+                requestID: envelope.requestID,
+                mutation: mutation
+            )
+            sink.send(ProtocolEnvelope(
+                type: mutation.messageType,
+                requestID: envelope.requestID,
+                payload: [
+                    "session_id": .string(result.sessionID),
+                    "status": .string(result.mutation.rawValue),
+                    mutation.timestampPayloadKey: .string(dateFormatter.string(from: result.timestamp))
+                ]
+            ))
         } catch {
             sink.send(errorEnvelope(requestID: envelope.requestID, error: error))
         }
@@ -638,6 +838,22 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         )
     }
 
+    private func errorCode(for error: Error) -> String {
+        if let error = error as? OllamaBackendError {
+            return error.backendError.code
+        }
+        if let error = error as? LMStudioBackendError {
+            return error.backendError.code
+        }
+        if let error = error as? BackendError {
+            return error.code
+        }
+        if let error = error as? LocalRuntimeRouterError {
+            return error.code
+        }
+        return "internal_error"
+    }
+
     private func errorEnvelope(
         requestID: String,
         code: String,
@@ -660,7 +876,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         case .available:
             return .object([
                 "available": .bool(true),
-                "message": .string("Backend is reachable from the companion runtime")
+                "message": .string("Model provider is reachable from AetherLink Runtime")
             ])
         case .unavailable(let error):
             return .object([
@@ -850,6 +1066,36 @@ private struct ChatTitleRuntimeRequest {
     var request: ChatRequest
 }
 
+private struct RuntimeChatStorageContext {
+    var requestID: String
+    var sessionID: String
+    var model: String
+}
+
+private extension RuntimeChatSessionMutation {
+    var messageType: String {
+        switch self {
+        case .archive:
+            return MessageType.chatSessionArchive
+        case .restore:
+            return MessageType.chatSessionRestore
+        case .delete:
+            return MessageType.chatSessionDelete
+        }
+    }
+
+    var timestampPayloadKey: String {
+        switch self {
+        case .archive:
+            return "archived_at"
+        case .restore:
+            return "restored_at"
+        case .delete:
+            return "deleted_at"
+        }
+    }
+}
+
 private struct ChatSuggestionsResult: Decodable {
     var suggestions: [String]
 }
@@ -863,6 +1109,8 @@ private enum LocalRuntimeRouterError: Error, LocalizedError {
     case modelNotInstalled(String)
     case unsupportedAttachment(String)
     case unreadableAttachment(String)
+    case chatSessionNotFound(String)
+    case chatStoreUnavailable(String)
 
     var code: String {
         switch self {
@@ -874,6 +1122,10 @@ private enum LocalRuntimeRouterError: Error, LocalizedError {
             return "unsupported_attachment"
         case .unreadableAttachment:
             return "unreadable_attachment"
+        case .chatSessionNotFound:
+            return "chat_session_not_found"
+        case .chatStoreUnavailable:
+            return "chat_store_unavailable"
         }
     }
 
@@ -882,10 +1134,14 @@ private enum LocalRuntimeRouterError: Error, LocalizedError {
         case .invalidPayload(let message):
             return message
         case .modelNotInstalled(let model):
-            return "Model '\(model)' is not installed on the companion runtime. Pull it through the companion runtime before sending chat."
+            return "Model '\(model)' is not installed in AetherLink Runtime. Pull it through AetherLink Runtime before sending chat."
         case .unsupportedAttachment(let message),
              .unreadableAttachment(let message):
             return message
+        case .chatSessionNotFound(let sessionID):
+            return "Chat session not found in AetherLink Runtime: \(sessionID)"
+        case .chatStoreUnavailable(let message):
+            return "The runtime could not save chat processing information on this host: \(message)"
         }
     }
 }

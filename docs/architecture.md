@@ -10,7 +10,7 @@ Client Device
   Runtime status UI
   Model picker
   Chat UI
-  Local chat history
+  Local chat cache
   User-managed local memory notes
   Cancel control
         |
@@ -22,6 +22,7 @@ Runtime Host
   Connection manager
   Protocol router
   Trusted-device boundary
+  Chat processing event store
   Backend abstraction
   Model lifecycle manager
   Permission boundary for future tools
@@ -118,13 +119,13 @@ The client device is responsible for the following. In v0.1, this role is implem
 - Model selection.
 - Install action that sends model pull requests to the runtime host.
 - Chat input and transcript rendering.
-- Previous chat list and local transcript restoration.
+- Previous chat list, local transcript cache restoration, and authenticated runtime-owned history restoration through `chat.sessions.list` / `chat.messages.list`.
 - User-managed local memory notes that can be included as chat context.
 - Streaming delta rendering.
 - Cancel action.
 - Displaying runtime and backend errors.
 
-The client sends high-level protocol messages only. It does not execute tools, read files, call MCP servers, perform web search, or call local model backend URLs. The client never calls Ollama `/api/tags`, `/api/ps`, `/api/pull`, `/api/chat`, or LM Studio endpoints directly. Client-side local memory is limited to user-managed notes and chat transcripts; when enabled, those notes are included in the same `chat.send` message path through the runtime host.
+The client sends high-level protocol messages only. It does not execute tools, read files, call MCP servers, perform web search, or call local model backend URLs. The client never calls Ollama `/api/tags`, `/api/ps`, `/api/pull`, `/api/chat`, or LM Studio endpoints directly. Client-side local memory is limited to user-managed notes and UI cache transcripts; when enabled, those notes are included in the same `chat.send` message path through the runtime host. The runtime host records accepted chat processing events and exposes narrow authenticated history reads so request/stream/done/cancel/error state is not owned only by the mobile client.
 
 In Korean terms: client device는 조작 화면이고, runtime host가 실행 경계입니다. 현재 구현에서는 Android가 client이고 macOS companion이 runtime host입니다. client가 Ollama/LM Studio 서버 주소를 직접 다루는 흐름은 v0.1 제품 방향이 아닙니다.
 
@@ -168,7 +169,7 @@ Additional serving backends should be added behind the runtime backend interface
 
 These layers are not v0.1:
 
-- Memory: runtime-host-side session history, SQLite/FTS, long-term facts, and later vector retrieval.
+- Memory: runtime-host-side long-term facts, SQLite/FTS search, and later vector retrieval. Narrow runtime-owned chat history retrieval already exists through authenticated chat history messages; richer memory extraction/search remains future work.
 - Project workspaces: project-scoped chats, files, instructions, memories, indexes, model/backend preferences, and trusted-source controls. The runtime host owns indexing, retrieval, research, and backend calls; client devices are controllers for choosing sources, approving access, and viewing status/results.
 - Scheduling and automation: user-created scheduled tasks, reminders, monitors, recurring automations, and runtime-triggered jobs. The runtime host owns the scheduler and job runner; client devices provide approval, status, pause/resume, cancellation, and result review surfaces.
 - Archived sessions: archive is distinct from delete. Archived chats remain retained, but they are excluded from memory, reflection, research, and compaction inputs unless the user explicitly restores them or selects them as a source.

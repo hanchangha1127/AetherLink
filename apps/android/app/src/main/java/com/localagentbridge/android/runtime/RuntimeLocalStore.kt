@@ -3,15 +3,19 @@ package com.localagentbridge.android.runtime
 import android.content.Context
 import com.localagentbridge.android.core.protocol.ChatAttachmentPayload
 import com.localagentbridge.android.core.protocol.ChatMessagePayload
+import com.localagentbridge.android.core.protocol.ChatSessionSummaryPayload
+import com.localagentbridge.android.core.protocol.ChatStoredMessagePayload
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import java.time.Instant
 import java.util.UUID
 
 private const val STORE_NAME = "runtime_local_store"
 private const val STORE_KEY = "runtime_data"
+private const val SUPPRESSED_REASON_DELETED = "deleted"
 
 class RuntimeLocalStore(
     context: Context,
@@ -46,6 +50,7 @@ data class PersistedRuntimeData(
     val trustedRuntimeAutoReconnectEnabled: Boolean = true,
     val pairingOnboardingCompleted: Boolean = false,
     val sessions: List<PersistedChatSession> = emptyList(),
+    val suppressedRuntimeSessions: List<PersistedSuppressedRuntimeSession> = emptyList(),
     val memoryEntries: List<PersistedMemoryEntry> = emptyList(),
     val appLanguageTag: String = RuntimeAppLanguage.English.languageTag,
 )
@@ -59,6 +64,7 @@ data class PersistedChatSession(
     val archivedAtMillis: Long? = null,
     val titleManuallyEdited: Boolean = false,
     val titleGenerated: Boolean = false,
+    val runtimeOwned: Boolean = false,
     val messages: List<PersistedChatMessage> = emptyList(),
 )
 
@@ -70,6 +76,13 @@ data class PersistedChatMessage(
     val reasoning: String = "",
     val suggestions: List<String> = emptyList(),
     val createdAtMillis: Long,
+)
+
+@Serializable
+data class PersistedSuppressedRuntimeSession(
+    val sessionId: String,
+    val reason: String,
+    val updatedAtMillis: Long,
 )
 
 @Serializable
@@ -91,13 +104,29 @@ internal fun PersistedRuntimeData.sanitized(): PersistedRuntimeData {
             session.copy(
                 title = cleanTitle,
                 titleManuallyEdited = session.titleManuallyEdited ||
-                    (!session.titleGenerated && cleanTitle != DEFAULT_CHAT_TITLE && cleanTitle != fallbackTitle),
+                    (
+                        !session.runtimeOwned &&
+                            !session.titleGenerated &&
+                            cleanTitle != DEFAULT_CHAT_TITLE &&
+                            cleanTitle != fallbackTitle
+                    ),
                 messages = session.messages.filter { it.role in CHAT_STORAGE_ROLES },
             )
         }
     val cleanMemory = memoryEntries
         .filter { it.id.isNotBlank() && it.content.isNotBlank() }
         .distinctBy { it.id }
+    val cleanSuppressedRuntimeSessions = suppressedRuntimeSessions
+        .mapNotNull { suppression ->
+            val sessionId = suppression.sessionId.trim()
+            val reason = suppression.reason.trim().takeIf(String::isNotBlank) ?: SUPPRESSED_REASON_DELETED
+            if (sessionId.isBlank()) {
+                null
+            } else {
+                suppression.copy(sessionId = sessionId, reason = reason)
+            }
+        }
+        .distinctBy { it.sessionId }
     return copy(
         activeSessionId = activeSessionId?.takeIf { id ->
             cleanSessions.any { it.id == id && it.archivedAtMillis == null }
@@ -107,6 +136,7 @@ internal fun PersistedRuntimeData.sanitized(): PersistedRuntimeData {
         trustedRuntimeAutoReconnectEnabled = trustedRuntimeAutoReconnectEnabled,
         pairingOnboardingCompleted = pairingOnboardingCompleted,
         sessions = cleanSessions.sortedByDescending { it.updatedAtMillis },
+        suppressedRuntimeSessions = cleanSuppressedRuntimeSessions.sortedByDescending { it.updatedAtMillis },
         memoryEntries = cleanMemory.sortedByDescending { it.updatedAtMillis },
         appLanguageTag = RuntimeAppLanguage.normalizeLanguageTag(appLanguageTag),
     )
@@ -198,6 +228,7 @@ internal fun PersistedRuntimeData.withUnarchivedChatSession(
     nowMillis: Long,
 ): PersistedRuntimeData {
     return copy(
+        suppressedRuntimeSessions = suppressedRuntimeSessions.filterNot { it.sessionId == sessionId },
         sessions = sessions.map { session ->
             if (session.id == sessionId) {
                 session.copy(archivedAtMillis = null, updatedAtMillis = nowMillis)
@@ -208,10 +239,18 @@ internal fun PersistedRuntimeData.withUnarchivedChatSession(
     ).sanitized()
 }
 
-internal fun PersistedRuntimeData.withoutChatSession(sessionId: String): PersistedRuntimeData {
+internal fun PersistedRuntimeData.withoutChatSession(
+    sessionId: String,
+    nowMillis: Long? = null,
+): PersistedRuntimeData {
+    val deletedSession = sessions.firstOrNull { it.id == sessionId }
     return copy(
         activeSessionId = activeSessionId?.takeIf { it != sessionId },
         sessions = sessions.filterNot { it.id == sessionId },
+        suppressedRuntimeSessions = suppressedRuntimeSessions.withRuntimeDeletion(
+            session = deletedSession,
+            nowMillis = nowMillis ?: deletedSession?.updatedAtMillis ?: 0L,
+        ),
     ).sanitized()
 }
 
@@ -237,16 +276,29 @@ internal fun PersistedRuntimeData.withGeneratedChatSessionTitle(
     ).sanitized()
 }
 
-internal fun PersistedRuntimeData.withoutChatSessions(): PersistedRuntimeData {
+internal fun PersistedRuntimeData.withoutChatSessions(
+    nowMillis: Long? = null,
+): PersistedRuntimeData {
     return copy(
         activeSessionId = null,
         sessions = emptyList(),
+        suppressedRuntimeSessions = suppressedRuntimeSessions.withRuntimeDeletions(
+            sessions = sessions,
+            nowMillis = nowMillis ?: sessions.maxOfOrNull { it.updatedAtMillis } ?: 0L,
+        ),
     ).sanitized()
 }
 
-internal fun PersistedRuntimeData.withoutArchivedChatSessions(): PersistedRuntimeData {
+internal fun PersistedRuntimeData.withoutArchivedChatSessions(
+    nowMillis: Long? = null,
+): PersistedRuntimeData {
+    val archivedSessions = sessions.filter { it.archivedAtMillis != null }
     return copy(
         sessions = sessions.filter { it.archivedAtMillis == null },
+        suppressedRuntimeSessions = suppressedRuntimeSessions.withRuntimeDeletions(
+            sessions = archivedSessions,
+            nowMillis = nowMillis ?: archivedSessions.maxOfOrNull { it.updatedAtMillis } ?: 0L,
+        ),
     ).sanitized()
 }
 
@@ -270,6 +322,7 @@ internal fun PersistedRuntimeData.withPersistedMessages(
     sessionId: String,
     messages: List<RuntimeChatMessage>,
     nowMillis: Long,
+    runtimeBacked: Boolean = false,
 ): PersistedRuntimeData {
     val existing = sessions.firstOrNull { it.id == sessionId }
     val createdAt = existing?.createdAtMillis ?: nowMillis
@@ -286,12 +339,114 @@ internal fun PersistedRuntimeData.withPersistedMessages(
         archivedAtMillis = existing?.archivedAtMillis,
         titleManuallyEdited = existing?.titleManuallyEdited ?: false,
         titleGenerated = existing?.titleGenerated ?: false,
+        runtimeOwned = existing?.runtimeOwned == true || runtimeBacked,
         messages = persistedMessages,
     )
     return copy(
         activeSessionId = sessionId,
         sessions = listOf(updatedSession) + sessions.filterNot { it.id == sessionId },
     ).sanitized()
+}
+
+internal fun PersistedRuntimeData.withRuntimeChatSessionSummaries(
+    sessions: List<ChatSessionSummaryPayload>,
+    nowMillis: Long,
+): PersistedRuntimeData {
+    val runtimeSummaries = sessions
+        .filter { it.sessionId.isNotBlank() }
+        .filterNot { it.sessionId in deletedRuntimeSessionIds() }
+        .distinctBy { it.sessionId }
+    val localOnlySessions = this.sessions.filterNot { it.runtimeOwned }
+    val mergedRuntimeSessions = runtimeSummaries.map { summary ->
+        val existing = this.sessions.firstOrNull { it.id == summary.sessionId }
+        val updatedAt = parseTimestampMillis(summary.lastActivityAt) ?: existing?.updatedAtMillis ?: nowMillis
+        val title = summary.title.trim().takeIf(String::isNotBlank) ?: existing?.title ?: DEFAULT_CHAT_TITLE
+        existing?.copy(
+            title = if (existing.titleManuallyEdited) existing.title else title,
+            updatedAtMillis = updatedAt,
+            titleGenerated = existing.titleGenerated || !existing.titleManuallyEdited,
+            runtimeOwned = true,
+        ) ?: PersistedChatSession(
+            id = summary.sessionId,
+            title = title,
+            createdAtMillis = updatedAt,
+            updatedAtMillis = updatedAt,
+            titleGenerated = true,
+            runtimeOwned = true,
+        )
+    }
+    return copy(
+        sessions = mergedRuntimeSessions + localOnlySessions,
+    ).sanitized()
+}
+
+internal fun PersistedRuntimeData.withRuntimeChatMessages(
+    sessionId: String,
+    messages: List<ChatStoredMessagePayload>,
+    nowMillis: Long,
+): PersistedRuntimeData {
+    val cleanSessionId = sessionId.trim()
+    if (cleanSessionId.isBlank()) return this
+    if (cleanSessionId in deletedRuntimeSessionIds()) return this
+    val existing = sessions.firstOrNull { it.id == cleanSessionId }
+    val persistedMessages = messages
+        .filter { it.role in CHAT_STORAGE_ROLES }
+        .mapIndexed { index, message ->
+            val createdAt = message.createdAt?.let(::parseTimestampMillis) ?: nowMillis
+            PersistedChatMessage(
+                id = stableRuntimeMessageId(cleanSessionId, index, message),
+                role = message.role,
+                content = message.content,
+                reasoning = message.reasoning.orEmpty(),
+                createdAtMillis = createdAt,
+            )
+        }
+    val updatedAt = persistedMessages.maxOfOrNull { it.createdAtMillis }
+        ?: existing?.updatedAtMillis
+        ?: nowMillis
+    val title = existing?.title?.takeIf(String::isNotBlank) ?: DEFAULT_CHAT_TITLE
+    val updatedSession = PersistedChatSession(
+        id = cleanSessionId,
+        title = title,
+        createdAtMillis = existing?.createdAtMillis ?: updatedAt,
+        updatedAtMillis = updatedAt,
+        archivedAtMillis = existing?.archivedAtMillis,
+        titleManuallyEdited = existing?.titleManuallyEdited ?: false,
+        titleGenerated = existing?.titleGenerated ?: false,
+        runtimeOwned = true,
+        messages = persistedMessages,
+    )
+    return copy(
+        sessions = listOf(updatedSession) + sessions.filterNot { it.id == cleanSessionId },
+    ).sanitized()
+}
+
+private fun List<PersistedSuppressedRuntimeSession>.withRuntimeDeletion(
+    session: PersistedChatSession?,
+    nowMillis: Long,
+): List<PersistedSuppressedRuntimeSession> {
+    if (session?.runtimeOwned != true) return this
+    val timestamp = maxOf(nowMillis, session.updatedAtMillis)
+    return filterNot { it.sessionId == session.id } + PersistedSuppressedRuntimeSession(
+        sessionId = session.id,
+        reason = SUPPRESSED_REASON_DELETED,
+        updatedAtMillis = timestamp,
+    )
+}
+
+private fun List<PersistedSuppressedRuntimeSession>.withRuntimeDeletions(
+    sessions: List<PersistedChatSession>,
+    nowMillis: Long,
+): List<PersistedSuppressedRuntimeSession> {
+    return sessions.fold(this) { suppressions, session ->
+        suppressions.withRuntimeDeletion(session, nowMillis)
+    }
+}
+
+private fun PersistedRuntimeData.deletedRuntimeSessionIds(): Set<String> {
+    return suppressedRuntimeSessions
+        .filter { it.reason == SUPPRESSED_REASON_DELETED }
+        .mapTo(mutableSetOf()) { it.sessionId }
 }
 
 internal fun PersistedRuntimeData.withMemoryEntry(
@@ -452,6 +607,27 @@ private fun RuntimeChatMessage.toPersistedChatMessage(nowMillis: Long): Persiste
         suggestions = suggestions.cleanedSuggestions(),
         createdAtMillis = nowMillis,
     )
+}
+
+private fun stableRuntimeMessageId(
+    sessionId: String,
+    index: Int,
+    message: ChatStoredMessagePayload,
+): String {
+    val seed = listOf(
+        "runtime",
+        sessionId,
+        index.toString(),
+        message.createdAt.orEmpty(),
+        message.role,
+        message.content,
+        message.reasoning.orEmpty(),
+    ).joinToString(separator = "\u001F")
+    return UUID.nameUUIDFromBytes(seed.encodeToByteArray()).toString()
+}
+
+private fun parseTimestampMillis(timestamp: String): Long? {
+    return runCatching { Instant.parse(timestamp).toEpochMilli() }.getOrNull()
 }
 
 private fun titleForMessages(messages: List<RuntimeChatMessage>): String {

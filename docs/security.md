@@ -12,7 +12,7 @@ Assets to protect:
 
 - Runtime host access.
 - Local model prompts and responses.
-- Client-local chat history and user-managed memory notes.
+- Runtime-host chat processing event logs, client-local chat cache, and user-managed memory notes.
 - Future compacted session summaries and embedding indexes.
 - Future project files, project instructions, trusted-source settings, and project indexes.
 - Future scheduled tasks, reminders, monitors, recurring automations, runtime-triggered jobs, client approvals, and audit logs.
@@ -24,7 +24,7 @@ Primary threats:
 - Any device on the same Wi-Fi attempts to control the runtime host.
 - A malicious client sends protocol messages directly to the local transport.
 - A paired client device is lost or should no longer be trusted.
-- Local chat history, memory notes, compacted summaries, or embedding indexes leak from a device backup or filesystem.
+- Runtime-host chat event logs, client-local chat cache, memory notes, compacted summaries, or embedding indexes leak from a device backup or filesystem.
 - Project files or indexes are used as model/research context without project-scoped permission or trusted-source selection.
 - A scheduled job runs later with broader file, network, tool, MCP, web search, or backend access than the user approved.
 - Future tool execution gains file, terminal, network, or MCP access without explicit permission.
@@ -118,11 +118,11 @@ Public access is forbidden for the same reason same-network unauthenticated acce
 
 ## Local Chat History, Memory, And Compaction
 
-v0.1 can store previous chats and user-managed memory notes locally on the client device. Enabled memory notes are sent only as context inside `chat.send`, which still goes through the authenticated runtime host. The client must not use memory features to call Ollama, LM Studio, web search, MCP, or tools directly.
+The runtime host stores chat processing events locally when it handles `chat.send`: request metadata/messages, streamed answer deltas, reasoning deltas, completion usage, cancellation, and errors. Inline attachment bytes are stripped before storage. The client may still keep a local chat cache for UI continuity, and v0.1 can store user-managed memory notes locally on the client device. Enabled memory notes are sent only as context inside `chat.send`, which still goes through the authenticated runtime host. The client must not use memory features to call Ollama, LM Studio, web search, MCP, or tools directly.
 
 Archive is not deletion. Archived chats remain retained, but they are excluded from memory, reflection, research, and compaction inputs unless the user explicitly restores them or selects them as sources. Deleted chats should be treated as removal requests, not hidden research material.
 
-Future runtime-host-side session storage, context-window compaction, embedding indexes, and deep-research-like research notebooks are sensitive data. A compacted summary or embedding index can still reveal private transcript content, so it must follow the same local-first storage, trusted-device, archive/delete, and future encryption rules as raw chat transcripts.
+Runtime-host-side session storage, context-window compaction, embedding indexes, and deep-research-like research notebooks are sensitive data. A compacted summary, event log, or embedding index can still reveal private transcript content, so it must follow the same local-first storage, trusted-device, archive/delete, and future encryption rules as raw chat transcripts.
 
 Embedding models must be selected separately from chat/text-generation models. Future retrieval, ranking, and knowledge indexing use the selected embedding model, and indexed sources must respect archive/delete state.
 

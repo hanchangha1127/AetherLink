@@ -52,10 +52,13 @@ Rules:
 20. The companion runtime calls Ollama `/api/pull` on the runtime host and reports the result.
 21. The client app sends `chat.send` for an installed model.
 22. The companion runtime streams `chat.delta` and finishes with `chat.done`.
-23. The client app may ask the companion runtime for a short generated chat title with `chat.title.request`.
-24. The client app may send `chat.cancel` for an active request.
+23. The client app may ask the companion runtime for runtime-owned session summaries with `chat.sessions.list`.
+24. The client app may ask the companion runtime for a stored transcript with `chat.messages.list`.
+25. The client app may ask the companion runtime for a short generated chat title with `chat.title.request`.
+26. The client app may archive, restore, or delete runtime-owned sessions with `chat.session.archive`, `chat.session.restore`, and `chat.session.delete`.
+27. The client app may send `chat.cancel` for an active request.
 
-Runtime commands are gated after pairing. `runtime.health`, `models.list`, `models.pull`, `chat.send`, `chat.suggestions.request`, `chat.title.request`, and `chat.cancel` require an authenticated session; unauthenticated requests return `authentication_required`.
+Runtime commands are gated after pairing. `runtime.health`, `models.list`, `models.pull`, `chat.send`, `chat.sessions.list`, `chat.messages.list`, `chat.suggestions.request`, `chat.title.request`, `chat.session.archive`, `chat.session.restore`, `chat.session.delete`, and `chat.cancel` require an authenticated session; unauthenticated requests return `authentication_required`.
 
 The authentication flow is part of the v0.1 product contract even if a development build uses minimal local transport plumbing while the channel is being hardened.
 
@@ -90,10 +93,10 @@ aetherlink://pair?version=1&pairing_nonce=<nonce>&pairing_code=<6-digit-code>&ma
 Remote-route QR payloads may include the current temporary relay route:
 
 ```text
-aetherlink://pair?version=1&pairing_nonce=<nonce>&pairing_code=<6-digit-code>&mac_device_id=<stable-runtime-id>&mac_name=AetherLink%20Runtime&fingerprint=<runtime-key-fingerprint>&runtime_public_key=<base64-runtime-public-key>&runtime_key_fingerprint=<runtime-key-fingerprint>&route_token=<paired-route-token>&relay_host=<relay-host>&relay_port=43171&relay_id=<private-network-id>&relay_secret=<pairwise-frame-secret>
+aetherlink://pair?version=1&pairing_nonce=<nonce>&pairing_code=<6-digit-code>&mac_device_id=<stable-runtime-id>&mac_name=AetherLink%20Runtime&fingerprint=<runtime-key-fingerprint>&runtime_public_key=<base64-runtime-public-key>&runtime_key_fingerprint=<runtime-key-fingerprint>&route_token=<paired-route-token>&relay_host=<relay-host>&relay_port=43171&relay_id=<private-network-id>&relay_secret=<pairwise-frame-secret>&relay_expires_at=<epoch-ms>&relay_nonce=<route-nonce>
 ```
 
-`relay_host`, `relay_port`, and `relay_id` are route material for the current relay path. `relay_secret` is shared only through QR pairing and is not sent in the relay registration line. The current relay uses outbound TCP from both peers and forwards bytes after matching one runtime and one client by `relay_id`. When `relay_secret` is present, AetherLink frame bodies over that relay are encrypted with AES-GCM using direction-bound nonces (`CLNT` for client-to-runtime, `RUNT` for runtime-to-client). This supports QR-only different-network development testing because Android scans the route QR, stores the remote route with the pinned runtime identity, and does not ask for a host or port. It is still not a complete production relay/TURN system.
+`relay_host`, `relay_port`, and `relay_id` are route material for the current relay path. `relay_secret` is shared only through QR pairing and is not sent in the relay registration line. New relay-route QR payloads also include `relay_expires_at` as an epoch-millisecond expiration and `relay_nonce` as pairwise anti-replay material for the fresh QR route attempt. Older development relay QR payloads without those two fields remain accepted for compatibility, but fresh QR route material should be preferred. After pairing succeeds, the client persists the trusted runtime identity plus stable relay host/id/secret, but does not treat the short QR lease as the lifetime of the trusted device relationship. The current relay uses outbound TCP from both peers and forwards bytes after matching one runtime and one client by `relay_id`. When `relay_secret` is present, AetherLink frame bodies over that relay are encrypted with AES-GCM using direction-bound nonces (`CLNT` for client-to-runtime, `RUNT` for runtime-to-client). This supports QR-only different-network development testing when a mutually reachable relay is configured because Android scans the route QR, stores the remote route with the pinned runtime identity, and does not ask for a host or port. It is still not a complete production relay/TURN system.
 
 When Bonjour/local discovery is available after pairing, TXT hints should prefer the QR-provided `route_token` so the client app can match the trusted runtime to a current local endpoint without publishing stable identifiers. Legacy/development TXT hints may include `device_id` or `fingerprint`, but production discovery should not rely on broadcasting stable peer identifiers. Those TXT hints are only routing metadata; they must not disclose backend URLs, model inventory, or provider state, and they do not authenticate the endpoint by themselves.
 
@@ -448,6 +451,8 @@ The companion runtime routes provider-prefixed model ids to the selected runtime
 
 The client app may prepend user-managed local memory as a `system` message in `chat.send.messages`. This does not create a direct client-to-backend path; the entire message list still goes only to the companion runtime, and only the companion runtime calls Ollama or LM Studio. Future runtime-side memory APIs should not be inferred from this client-local context injection.
 
+The companion runtime is the authoritative processing boundary for chat. When `chat.send` is accepted, the runtime host stores processing events locally: the request metadata/messages, streamed answer deltas, reasoning deltas, completion usage, cancellation, and errors. Inline attachment bytes are not kept in the event log. Client-side history can exist as UI cache, but it is not the only source of processing state. Authenticated clients can read runtime-owned summaries and transcripts through `chat.sessions.list` and `chat.messages.list`.
+
 If the requested model is not installed on the companion runtime, the companion runtime returns `error` with `code = "model_not_installed"`. Clients should call `models.pull` through the companion runtime first.
 
 Backend adapters that expose reasoning or think content preserve it as a separate protocol field or stream from the final assistant answer text. The companion runtime does not mix reasoning/think text into the assistant message body; the client app can then render it as a muted, compact/collapsed section that expands on demand. Ollama chat requests opt into this with the runtime-side `/api/chat` request field `"think": true` and map `message.thinking` to protocol reasoning deltas. LM Studio native and OpenAI-compatible streams map common local-model reasoning fields such as `reasoning_content`, `reasoning_delta`, `thinking_delta`, `reasoning`, `thinking`, and `thoughts` to protocol reasoning deltas. The client app still sends only `chat.send` to the companion runtime.
@@ -543,6 +548,100 @@ Direction: Runtime -> Client.
 ```
 
 If a request is cancelled, `finish_reason` may be `cancelled`.
+
+## `chat.sessions.list`
+
+Direction: Client -> Runtime, Runtime -> Client.
+
+This reads runtime-host-owned session summaries. It is not a model backend request, and the client must be authenticated before it can list sessions.
+
+Request:
+
+```json
+{
+  "version": 1,
+  "type": "chat.sessions.list",
+  "request_id": "req_sessions_001",
+  "timestamp": "2026-06-23T09:02:06Z",
+  "payload": {
+    "limit": 100
+  }
+}
+```
+
+Response:
+
+```json
+{
+  "version": 1,
+  "type": "chat.sessions.list",
+  "request_id": "req_sessions_001",
+  "timestamp": "2026-06-23T09:02:06Z",
+  "payload": {
+    "sessions": [
+      {
+        "session_id": "default",
+        "title": "Runtime-Mediated Model Access",
+        "model": "ollama:llama3.1:8b",
+        "last_activity_at": "2026-06-23T09:02:05Z",
+        "message_count": 2
+      }
+    ]
+  }
+}
+```
+
+`limit` is optional. The runtime clamps it to an implementation-defined maximum. `title` is runtime-owned metadata when a `chat.title.request` result has been generated and saved by the runtime; otherwise it should remain a neutral placeholder such as `New chat` instead of exposing the first user prompt verbatim.
+
+## `chat.messages.list`
+
+Direction: Client -> Runtime, Runtime -> Client.
+
+This reads a runtime-host-owned transcript for one session. Stored assistant reasoning is returned separately from assistant answer text so clients can render it in a muted/collapsible reasoning section.
+
+Request:
+
+```json
+{
+  "version": 1,
+  "type": "chat.messages.list",
+  "request_id": "req_messages_001",
+  "timestamp": "2026-06-23T09:02:07Z",
+  "payload": {
+    "session_id": "default",
+    "limit": 200
+  }
+}
+```
+
+Response:
+
+```json
+{
+  "version": 1,
+  "type": "chat.messages.list",
+  "request_id": "req_messages_001",
+  "timestamp": "2026-06-23T09:02:07Z",
+  "payload": {
+    "session_id": "default",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Explain this architecture.",
+        "created_at": "2026-06-23T09:02:00Z"
+      },
+      {
+        "role": "assistant",
+        "content": "The runtime mediates local model access...",
+        "reasoning": "Checking the runtime boundary.",
+        "created_at": "2026-06-23T09:02:05Z"
+      }
+    ]
+  }
+}
+```
+
+The runtime may omit inline attachment bytes and may return text extracted from documents rather than raw original files. The current runtime store reconstructs multi-turn transcripts from stored request/response event pairs. Archive/delete semantics will be layered on top of runtime-owned session storage later; until then, clients may keep local suppression metadata so a locally deleted runtime-owned session does not reappear after the next history sync.
 
 ## `chat.suggestions.request`
 
@@ -647,7 +746,91 @@ Direction: Runtime -> Client.
 }
 ```
 
-The client app may use `title` as local UI metadata for the chat only if the user has not manually renamed that chat. Empty or invalid backend output is represented as an empty title string rather than streamed assistant text.
+The client app may use `title` as local UI metadata for the chat only if the user has not manually renamed that chat. Empty or invalid backend output is represented as an empty title string rather than streamed assistant text. When the runtime accepts a generated title, it stores it as runtime-owned session metadata so later `chat.sessions.list` calls can return the summarized title.
+
+## `chat.session.archive`
+
+Direction: Client -> Runtime, Runtime -> Client.
+
+This archives a runtime-owned chat session on the runtime host. Archived sessions are omitted from the default `chat.sessions.list` response and should not be used as active memory/research context unless explicitly restored by the user.
+
+Request:
+
+```json
+{
+  "version": 1,
+  "type": "chat.session.archive",
+  "request_id": "req_archive_001",
+  "timestamp": "2026-06-23T09:03:00Z",
+  "payload": {
+    "session_id": "default"
+  }
+}
+```
+
+Acknowledgement:
+
+```json
+{
+  "version": 1,
+  "type": "chat.session.archive",
+  "request_id": "req_archive_001",
+  "timestamp": "2026-06-23T09:03:00Z",
+  "payload": {
+    "session_id": "default",
+    "status": "archived",
+    "archived_at": "2026-06-23T09:03:00Z"
+  }
+}
+```
+
+## `chat.session.restore`
+
+Direction: Client -> Runtime, Runtime -> Client.
+
+This restores an archived runtime-owned chat session so it can appear in default session history again.
+
+Request payload:
+
+```json
+{
+  "session_id": "default"
+}
+```
+
+Acknowledgement payload:
+
+```json
+{
+  "session_id": "default",
+  "status": "restored",
+  "restored_at": "2026-06-23T09:04:00Z"
+}
+```
+
+## `chat.session.delete`
+
+Direction: Client -> Runtime, Runtime -> Client.
+
+This records a runtime-side deletion/tombstone for a chat session. The runtime must stop returning the deleted session from `chat.sessions.list` and should return no transcript for `chat.messages.list` after deletion. Implementations may keep append-only audit events internally, but deleted sessions must not be used for memory, retrieval, suggestions, or compaction inputs.
+
+Request payload:
+
+```json
+{
+  "session_id": "default"
+}
+```
+
+Acknowledgement payload:
+
+```json
+{
+  "session_id": "default",
+  "status": "deleted",
+  "deleted_at": "2026-06-23T09:05:00Z"
+}
+```
 
 ## `chat.cancel`
 
@@ -720,12 +903,13 @@ Common v0.1 error codes:
 - `unsupported_operation`
 - `unsupported_attachment`
 - `unreadable_attachment`
+- `chat_store_unavailable`
 - `transport_error`
 - `internal_error`
 
 ## Future Extension Points
 
-These namespaces are reserved but not implemented in v0.1. Client-local chat history and user-entered memory notes do not use these namespaces; they are local UI state unless included as `chat.send` context.
+These namespaces are reserved but not implemented in v0.1. Runtime-side chat processing storage is exposed only through the narrow authenticated chat history messages above. Client-local chat cache and user-entered memory notes do not use these namespaces unless included as `chat.send` context.
 
 - Memory: `memory.sessions.list`, `memory.messages.list`, `memory.search`, `memory.update`. Archived sessions are retained but excluded from memory, reflection, research, and compaction inputs unless restored or explicitly selected by the user.
 - Session compaction: future messages may expose compacted session summaries, context-window budgets, transcript source pointers, and longer-inactivity compact memory summaries. This is separate from model lifecycle messages such as unload-after-10-minutes-inactive.

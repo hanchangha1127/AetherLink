@@ -31,10 +31,15 @@ object MessageType {
     const val ChatDelta = "chat.delta"
     const val ChatDone = "chat.done"
     const val ChatCancel = "chat.cancel"
+    const val ChatSessionsList = "chat.sessions.list"
+    const val ChatMessagesList = "chat.messages.list"
     const val ChatSuggestionsRequest = "chat.suggestions.request"
     const val ChatSuggestionsResult = "chat.suggestions.result"
     const val ChatTitleRequest = "chat.title.request"
     const val ChatTitleResult = "chat.title.result"
+    const val ChatSessionArchive = "chat.session.archive"
+    const val ChatSessionRestore = "chat.session.restore"
+    const val ChatSessionDelete = "chat.session.delete"
     const val Error = "error"
 }
 
@@ -175,6 +180,45 @@ data class ChatCancelPayload(
 )
 
 @Serializable
+data class ChatSessionsListRequestPayload(
+    val limit: Int? = null,
+)
+
+@Serializable
+data class ChatSessionsListResultPayload(
+    val sessions: List<ChatSessionSummaryPayload>,
+)
+
+@Serializable
+data class ChatSessionSummaryPayload(
+    @SerialName("session_id") val sessionId: String,
+    val title: String,
+    val model: String,
+    @SerialName("last_activity_at") val lastActivityAt: String,
+    @SerialName("message_count") val messageCount: Int,
+)
+
+@Serializable
+data class ChatMessagesListRequestPayload(
+    @SerialName("session_id") val sessionId: String,
+    val limit: Int? = null,
+)
+
+@Serializable
+data class ChatMessagesListResultPayload(
+    @SerialName("session_id") val sessionId: String,
+    val messages: List<ChatStoredMessagePayload>,
+)
+
+@Serializable
+data class ChatStoredMessagePayload(
+    val role: String,
+    val content: String,
+    val reasoning: String? = null,
+    @SerialName("created_at") val createdAt: String? = null,
+)
+
+@Serializable
 data class ChatSuggestionsRequestPayload(
     @SerialName("session_id") val sessionId: String,
     val model: String,
@@ -199,6 +243,15 @@ data class ChatTitleRequestPayload(
 @Serializable
 data class ChatTitleResultPayload(
     val title: String,
+)
+
+@Serializable
+data class ChatSessionLifecyclePayload(
+    @SerialName("session_id") val sessionId: String,
+    val status: String? = null,
+    @SerialName("archived_at") val archivedAt: String? = null,
+    @SerialName("restored_at") val restoredAt: String? = null,
+    @SerialName("deleted_at") val deletedAt: String? = null,
 )
 
 @Serializable

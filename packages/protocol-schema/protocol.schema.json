@@ -22,10 +22,15 @@
         "chat.delta",
         "chat.done",
         "chat.cancel",
+        "chat.sessions.list",
+        "chat.messages.list",
         "chat.suggestions.request",
         "chat.suggestions.result",
         "chat.title.request",
         "chat.title.result",
+        "chat.session.archive",
+        "chat.session.restore",
+        "chat.session.delete",
         "error"
       ]
     },
@@ -87,6 +92,14 @@
       "then": { "properties": { "payload": { "$ref": "#/$defs/chatCancelPayload" } } }
     },
     {
+      "if": { "properties": { "type": { "const": "chat.sessions.list" } }, "required": ["type"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/chatSessionsListPayload" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "chat.messages.list" } }, "required": ["type"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/chatMessagesListPayload" } } }
+    },
+    {
       "if": { "properties": { "type": { "const": "chat.suggestions.request" } }, "required": ["type"] },
       "then": { "properties": { "payload": { "$ref": "#/$defs/chatSuggestionsRequestPayload" } } }
     },
@@ -101,6 +114,18 @@
     {
       "if": { "properties": { "type": { "const": "chat.title.result" } }, "required": ["type"] },
       "then": { "properties": { "payload": { "$ref": "#/$defs/chatTitleResultPayload" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "chat.session.archive" } }, "required": ["type"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/chatSessionArchivePayload" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "chat.session.restore" } }, "required": ["type"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/chatSessionRestorePayload" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "chat.session.delete" } }, "required": ["type"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/chatSessionDeletePayload" } } }
     },
     {
       "if": { "properties": { "type": { "const": "error" } }, "required": ["type"] },
@@ -373,6 +398,76 @@
         }
       ]
     },
+    "chatSessionsListPayload": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "limit": { "type": "integer", "minimum": 1, "maximum": 200 }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["sessions"],
+          "properties": {
+            "sessions": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/chatSessionSummary" }
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "chatSessionSummary": {
+      "type": "object",
+      "required": ["session_id", "title", "model", "last_activity_at", "message_count"],
+      "properties": {
+        "session_id": { "$ref": "#/$defs/nonEmptyString" },
+        "title": { "type": "string" },
+        "model": { "type": "string" },
+        "last_activity_at": { "type": "string", "format": "date-time" },
+        "message_count": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "chatMessagesListPayload": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["session_id"],
+          "properties": {
+            "session_id": { "$ref": "#/$defs/nonEmptyString" },
+            "limit": { "type": "integer", "minimum": 1, "maximum": 500 }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["session_id", "messages"],
+          "properties": {
+            "session_id": { "$ref": "#/$defs/nonEmptyString" },
+            "messages": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/chatStoredMessage" }
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "chatStoredMessage": {
+      "type": "object",
+      "required": ["role", "content"],
+      "properties": {
+        "role": { "type": "string" },
+        "content": { "type": "string" },
+        "reasoning": { "type": "string" },
+        "created_at": { "type": "string", "format": "date-time" }
+      },
+      "additionalProperties": false
+    },
     "chatSuggestionsRequestPayload": {
       "type": "object",
       "required": ["session_id", "model", "messages"],
@@ -424,6 +519,59 @@
       },
       "additionalProperties": false
     },
+    "chatSessionArchivePayload": {
+      "oneOf": [
+        { "$ref": "#/$defs/chatSessionLifecycleRequestPayload" },
+        {
+          "type": "object",
+          "required": ["session_id", "status", "archived_at"],
+          "properties": {
+            "session_id": { "$ref": "#/$defs/nonEmptyString" },
+            "status": { "const": "archived" },
+            "archived_at": { "type": "string", "format": "date-time" }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "chatSessionRestorePayload": {
+      "oneOf": [
+        { "$ref": "#/$defs/chatSessionLifecycleRequestPayload" },
+        {
+          "type": "object",
+          "required": ["session_id", "status", "restored_at"],
+          "properties": {
+            "session_id": { "$ref": "#/$defs/nonEmptyString" },
+            "status": { "const": "restored" },
+            "restored_at": { "type": "string", "format": "date-time" }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "chatSessionDeletePayload": {
+      "oneOf": [
+        { "$ref": "#/$defs/chatSessionLifecycleRequestPayload" },
+        {
+          "type": "object",
+          "required": ["session_id", "status", "deleted_at"],
+          "properties": {
+            "session_id": { "$ref": "#/$defs/nonEmptyString" },
+            "status": { "const": "deleted" },
+            "deleted_at": { "type": "string", "format": "date-time" }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "chatSessionLifecycleRequestPayload": {
+      "type": "object",
+      "required": ["session_id"],
+      "properties": {
+        "session_id": { "$ref": "#/$defs/nonEmptyString" }
+      },
+      "additionalProperties": false
+    },
     "errorPayload": {
       "type": "object",
       "required": ["code", "message", "retryable"],
@@ -446,6 +594,7 @@
             "unsupported_operation",
             "unsupported_attachment",
             "unreadable_attachment",
+            "chat_store_unavailable",
             "transport_error",
             "internal_error"
           ]

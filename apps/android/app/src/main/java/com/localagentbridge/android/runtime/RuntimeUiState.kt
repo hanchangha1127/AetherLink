@@ -13,6 +13,7 @@ data class RuntimeUiState(
     val isDiscovering: Boolean = false,
     val pendingPairingRuntimeName: String? = null,
     val isPairingAwaitingRoute: Boolean = false,
+    val routeRefreshNoticeRuntimeName: String? = null,
     val pairingCode: String = "",
     val isConnected: Boolean = false,
     val isConnecting: Boolean = false,
@@ -89,6 +90,8 @@ data class RuntimeTrustedRuntime(
     val relayPort: Int? = null,
     val relayId: String? = null,
     val relaySecret: String? = null,
+    val relayExpiresAtEpochMillis: Long? = null,
+    val relayNonce: String? = null,
 ) {
     val lastKnownEndpoint: RuntimeEndpointHint
         get() = requireNotNull(endpointHint) { "Trusted runtime endpoint hint is not available" }

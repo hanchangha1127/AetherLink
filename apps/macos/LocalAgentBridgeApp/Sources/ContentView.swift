@@ -57,7 +57,7 @@ struct ContentView: View {
                 Button {
                     Task { await model.refreshBackendStatus() }
                 } label: {
-                    Label(NSLocalizedString("Refresh Backend Status", comment: ""), systemImage: "arrow.clockwise")
+                    Label(NSLocalizedString("Check Model Providers", comment: ""), systemImage: "arrow.clockwise")
                 }
 
                 Button {

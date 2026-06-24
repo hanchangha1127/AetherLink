@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
@@ -24,7 +25,23 @@ class PairingStore(private val context: Context) {
         val relayPort = prefs[Keys.runtimeRelayPort]
         val relayId = prefs[Keys.runtimeRelayId]
         val relaySecret = prefs[Keys.runtimeRelaySecret]
-        TrustedRuntime(id, name, fingerprint, publicKeyBase64, routeToken, host, port, relayHost, relayPort, relayId, relaySecret)
+        val relayExpiresAtEpochMillis = prefs[Keys.runtimeRelayExpiresAtEpochMillis]
+        val relayNonce = prefs[Keys.runtimeRelayNonce]
+        TrustedRuntime(
+            id,
+            name,
+            fingerprint,
+            publicKeyBase64,
+            routeToken,
+            host,
+            port,
+            relayHost,
+            relayPort,
+            relayId,
+            relaySecret,
+            relayExpiresAtEpochMillis,
+            relayNonce,
+        )
     }
 
     suspend fun trustRuntime(runtime: TrustedRuntime) {
@@ -56,6 +73,8 @@ class PairingStore(private val context: Context) {
             val relayPort = runtime.relayPort
             val relayId = runtime.relayId
             val relaySecret = runtime.relaySecret
+            val relayExpiresAtEpochMillis = runtime.relayExpiresAtEpochMillis
+            val relayNonce = runtime.relayNonce
             if (!relayHost.isNullOrBlank() && relayPort != null && relayPort in 1..65535 && !relayId.isNullOrBlank()) {
                 prefs[Keys.runtimeRelayHost] = relayHost
                 prefs[Keys.runtimeRelayPort] = relayPort
@@ -65,11 +84,23 @@ class PairingStore(private val context: Context) {
                 } else {
                     prefs.remove(Keys.runtimeRelaySecret)
                 }
+                if (relayExpiresAtEpochMillis != null && relayExpiresAtEpochMillis > 0L) {
+                    prefs[Keys.runtimeRelayExpiresAtEpochMillis] = relayExpiresAtEpochMillis
+                } else {
+                    prefs.remove(Keys.runtimeRelayExpiresAtEpochMillis)
+                }
+                if (!relayNonce.isNullOrBlank()) {
+                    prefs[Keys.runtimeRelayNonce] = relayNonce
+                } else {
+                    prefs.remove(Keys.runtimeRelayNonce)
+                }
             } else {
                 prefs.remove(Keys.runtimeRelayHost)
                 prefs.remove(Keys.runtimeRelayPort)
                 prefs.remove(Keys.runtimeRelayId)
                 prefs.remove(Keys.runtimeRelaySecret)
+                prefs.remove(Keys.runtimeRelayExpiresAtEpochMillis)
+                prefs.remove(Keys.runtimeRelayNonce)
             }
             prefs.removeLegacyRuntimeKeys()
         }
@@ -94,6 +125,8 @@ class PairingStore(private val context: Context) {
         val runtimeRelayPort = intPreferencesKey("runtime_relay_port")
         val runtimeRelayId = stringPreferencesKey("runtime_relay_id")
         val runtimeRelaySecret = stringPreferencesKey("runtime_relay_secret")
+        val runtimeRelayExpiresAtEpochMillis = longPreferencesKey("runtime_relay_expires_at_epoch_millis")
+        val runtimeRelayNonce = stringPreferencesKey("runtime_relay_nonce")
     }
 
     private object LegacyKeys {
@@ -118,6 +151,8 @@ class PairingStore(private val context: Context) {
         remove(Keys.runtimeRelayPort)
         remove(Keys.runtimeRelayId)
         remove(Keys.runtimeRelaySecret)
+        remove(Keys.runtimeRelayExpiresAtEpochMillis)
+        remove(Keys.runtimeRelayNonce)
     }
 
     private fun MutablePreferences.removeLegacyRuntimeKeys() {

@@ -35,7 +35,7 @@ struct StatusView: View {
                         tone: connectionRouteTone
                     )
                     StatusCard(
-                        title: NSLocalizedString("Local Backends", comment: ""),
+                        title: NSLocalizedString("Model Providers", comment: ""),
                         value: backendSummary.value,
                         detail: backendSummary.detail,
                         systemImage: "cpu",
@@ -85,7 +85,7 @@ struct StatusView: View {
                         Button {
                             Task { await model.refreshBackendStatus() }
                         } label: {
-                            Label(NSLocalizedString("Refresh Backend Status", comment: ""), systemImage: "arrow.clockwise")
+                            Label(NSLocalizedString("Check Model Providers", comment: ""), systemImage: "arrow.clockwise")
                         }
                         .buttonStyle(.bordered)
 
@@ -99,7 +99,7 @@ struct StatusView: View {
                     .controlSize(.regular)
                 }
 
-                CompanionPanel(title: NSLocalizedString("Local Backends", comment: ""), systemImage: "server.rack") {
+                CompanionPanel(title: NSLocalizedString("Model Providers", comment: ""), systemImage: "server.rack") {
                     VStack(spacing: 0) {
                         ForEach(providerStatuses) { provider in
                             ProviderStatusRow(status: provider)
@@ -205,7 +205,7 @@ struct StatusView: View {
         if statuses.allSatisfy({ $0.rawStatus == .notChecked }) {
             return BackendSummary(
                 value: NSLocalizedString("Not checked", comment: ""),
-                detail: NSLocalizedString("Backend status has not been checked yet.", comment: ""),
+                detail: NSLocalizedString("Model provider status has not been checked yet.", comment: ""),
                 tone: .inactive
             )
         }
@@ -214,14 +214,14 @@ struct StatusView: View {
         if availableCount > 0 {
             return BackendSummary(
                 value: String(format: NSLocalizedString("%d of %d available", comment: ""), availableCount, statuses.count),
-                detail: NSLocalizedString("At least one local model backend is responding.", comment: ""),
+                detail: NSLocalizedString("At least one model provider is responding.", comment: ""),
                 tone: .ready
             )
         }
 
         return BackendSummary(
             value: NSLocalizedString("Unavailable", comment: ""),
-            detail: NSLocalizedString("No local model backend is responding.", comment: ""),
+            detail: NSLocalizedString("No model provider is responding.", comment: ""),
             tone: .warning
         )
     }
@@ -264,7 +264,7 @@ struct StatusView: View {
 
     private var modelResidencyDetail: String {
         guard model.modelResidency.supported else {
-            return NSLocalizedString("Model residency is not managed by this backend.", comment: "")
+            return NSLocalizedString("Model residency is not managed by this provider.", comment: "")
         }
         if let activeModelID = model.modelResidency.activeModelID,
            let activeProvider = model.modelResidency.activeProvider {
@@ -308,7 +308,7 @@ struct StatusView: View {
             ),
             ReadinessItem(
                 id: "backend-availability",
-                title: NSLocalizedString("Local backend availability", comment: ""),
+                title: NSLocalizedString("Model provider availability", comment: ""),
                 detail: backendSummary.detail,
                 tone: backendSummary.tone
             ),
@@ -337,7 +337,7 @@ struct StatusView: View {
             return model.transportState.failureMessage
                 ?? NSLocalizedString("Runtime listener could not start.", comment: "")
         case .stopped:
-            return NSLocalizedString("Start the companion runtime listener.", comment: "")
+            return NSLocalizedString("Start AetherLink Runtime listener.", comment: "")
         }
     }
 
@@ -345,7 +345,7 @@ struct StatusView: View {
         if model.transportState.state != .advertising {
             return RuntimeOverview(
                 title: NSLocalizedString("Setup needed", comment: ""),
-                detail: NSLocalizedString("Start the companion runtime before client devices can connect.", comment: ""),
+                detail: NSLocalizedString("Start AetherLink Runtime before client devices can connect.", comment: ""),
                 footnote: NSLocalizedString("Client requests stay mediated by this local runtime. Ollama and LM Studio are never exposed directly to client devices.", comment: ""),
                 tone: transportTone(for: model.transportState)
             )
@@ -353,8 +353,8 @@ struct StatusView: View {
 
         if backendSummary.tone != .ready {
             return RuntimeOverview(
-                title: NSLocalizedString("Backend needs attention", comment: ""),
-                detail: NSLocalizedString("Start Ollama or LM Studio on this runtime host, then refresh backend status.", comment: ""),
+                title: NSLocalizedString("Model service needs attention", comment: ""),
+                detail: NSLocalizedString("Start Ollama or LM Studio here, then check model providers.", comment: ""),
                 footnote: NSLocalizedString("Client requests stay mediated by this local runtime. Ollama and LM Studio are never exposed directly to client devices.", comment: ""),
                 tone: backendSummary.tone
             )
@@ -378,9 +378,18 @@ struct StatusView: View {
             )
         }
 
+        if model.hasDevelopmentRelayRoute && !model.isDevelopmentRelayQRCodeReady {
+            return RuntimeOverview(
+                title: NSLocalizedString("Remote route unavailable for QR", comment: ""),
+                detail: NSLocalizedString("Use a public, VPN, or tunnel relay address before generating a remote QR.", comment: ""),
+                footnote: NSLocalizedString("The client device remains a controller; all model access stays on the runtime host.", comment: ""),
+                tone: .neutral
+            )
+        }
+
         return RuntimeOverview(
             title: NSLocalizedString("Ready for Client Devices", comment: ""),
-            detail: NSLocalizedString("Runtime route is ready, a local backend is responding, and trusted devices can request chat.", comment: ""),
+            detail: NSLocalizedString("Route ready, model provider responding, trusted devices can chat.", comment: ""),
             footnote: NSLocalizedString("The client device remains a controller; all model access stays on the runtime host.", comment: ""),
             tone: .ready
         )
@@ -474,14 +483,22 @@ private struct DevelopmentRelayPanel: View {
 
             if settings.isEnabled {
                 Button {
-                    onGenerateRelayQRCode?()
-                    message = NSLocalizedString("New relay QR generated. Scan it from already trusted clients to refresh the remote route.", comment: "")
+                    guard let onGenerateRelayQRCode else { return }
+                    onGenerateRelayQRCode()
+                    message = NSLocalizedString("Latest route QR generated. Scan it from the client app to pair or refresh connectivity.", comment: "")
                     messageTone = .ready
                 } label: {
                     Label(NSLocalizedString("Generate Relay QR", comment: ""), systemImage: "qrcode")
                 }
                 .buttonStyle(.bordered)
-                .disabled(onGenerateRelayQRCode == nil)
+                .disabled(!model.shouldIncludeDevelopmentRelayInPairingQRCode || onGenerateRelayQRCode == nil)
+
+                if !model.isDevelopmentRelayQRCodeReady {
+                    Label(NSLocalizedString("Use a public, VPN, or tunnel relay address to include it in QR.", comment: ""), systemImage: "info.circle")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
 
             relayHostWarning(settings: settings)
@@ -596,12 +613,12 @@ private struct DevelopmentRelayPanel: View {
         let endpoint = settings.endpointLabel ?? NSLocalizedString("configured relay", comment: "")
         if settings.isEnvironmentOverride {
             return String(
-                format: NSLocalizedString("Using %@ from environment variables. Open Pairing and generate a new QR after changing relay settings.", comment: ""),
+                format: NSLocalizedString("Using %@ from environment variables. Generate the latest QR after changing route settings.", comment: ""),
                 endpoint
             )
         }
         return String(
-            format: NSLocalizedString("New QR codes include %@ as the remote route. Open Pairing, generate a new QR, and have already paired clients scan it again to update their route.", comment: ""),
+            format: NSLocalizedString("New QR codes include %@ as the remote route. The client retries until the relay is reachable.", comment: ""),
             endpoint
         )
     }
@@ -619,9 +636,25 @@ private struct DevelopmentRelayPanel: View {
             return
         }
         if let warning = CompanionDevelopmentRelaySettings.hostReachabilityWarning(for: trimmedHost) {
-            message = relayHostWarningText(warning)
-            messageTone = .warning
-            return
+            switch warning {
+            case .loopback, .localName:
+                message = relayHostWarningText(warning)
+                messageTone = .warning
+                return
+            case .privateNetwork:
+                model.configureDevelopmentRelay(
+                    host: trimmedHost,
+                    port: relayPort,
+                    relaySecret: relaySecret.trimmingCharacters(in: .whitespacesAndNewlines)
+                )
+                syncFromModel()
+                message = [
+                    NSLocalizedString("Relay route saved with warning. Verify this address is reachable from both devices before generating the latest QR.", comment: ""),
+                    relayHostWarningText(warning)
+                ].joined(separator: "\n")
+                messageTone = .warning
+                return
+            }
         }
         model.configureDevelopmentRelay(
             host: trimmedHost,
@@ -629,7 +662,7 @@ private struct DevelopmentRelayPanel: View {
             relaySecret: relaySecret.trimmingCharacters(in: .whitespacesAndNewlines)
         )
         syncFromModel()
-        message = NSLocalizedString("Relay route saved. Open Pairing and generate a new QR; already paired clients must scan it again to use this remote route.", comment: "")
+        message = NSLocalizedString("Remote route saved. Generate the latest QR and scan it from the client app to pair or refresh connectivity.", comment: "")
         messageTone = .ready
     }
 
@@ -1005,7 +1038,7 @@ private struct ProviderStatus: Identifiable {
         case .notChecked:
             detail = NSLocalizedString("Ollama and LM Studio are checked from this runtime host.", comment: "")
         case .available:
-            detail = NSLocalizedString("Local backend is responding.", comment: "")
+            detail = NSLocalizedString("Model provider is responding.", comment: "")
         case .unavailable:
             detail = Self.unavailableDetail(for: status)
         }

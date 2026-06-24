@@ -30,9 +30,13 @@ class PairingStoreTest {
             relayPort = 443,
             relayId = "relay-1",
             relaySecret = "secret-1",
+            relayExpiresAtEpochMillis = 4102444800000L,
+            relayNonce = "nonce-route-1",
         )
 
         assertEquals("secret-1", runtime.relaySecret)
+        assertEquals(4102444800000L, runtime.relayExpiresAtEpochMillis)
+        assertEquals("nonce-route-1", runtime.relayNonce)
     }
 
     @Test

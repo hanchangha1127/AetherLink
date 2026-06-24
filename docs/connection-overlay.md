@@ -64,7 +64,7 @@ QR pairing should be identity-first and route-explicit:
 
 - Required: runtime identity, runtime public key or certificate fingerprint, pairing nonce/code material, service/protocol version, and a pairing-derived route token or token seed.
 - Optional local development hints: host/port for local direct testing.
-- Remote-route QR material: `relay_host`/`relay_port`/`relay_id` plus optional `relay_secret` for the current relay path, and future P2P rendezvous candidates/tokens for direct NAT traversal.
+- Remote-route QR material: `relay_host`/`relay_port`/`relay_id` plus optional `relay_secret` for the current relay path, `relay_expires_at` and `relay_nonce` for expiring QR-scan route material, and future P2P rendezvous candidates/tokens for direct NAT traversal.
 - Not allowed: Ollama URL, LM Studio URL, model list, provider health, prompt data, file paths, memory data, account identifiers, or public directory registration data.
 
 After pairing, each session still authenticates:
@@ -94,7 +94,7 @@ Local direct route candidates must be treated as reachability hints, not durable
 
 Local direct is a fast path inside the overlay, not the product foundation. A raw local socket, a remembered private IP, or mDNS alone cannot satisfy QR-only different-network connectivity. Production routing must be bootstrapped by QR and then resolved through the private encrypted overlay/rendezvous/relay layer when local reachability is absent.
 
-Current development behavior: when a trusted runtime has a prepared relay route from QR pairing, the client tries prepared remote routes first: future P2P before the current relay, then fresh same-network discovery, then explicit local diagnostics. Automatic reconnect does not promote a previously saved private IP address as the product route. This prevents an old private IP or same-network fast path from masking the different-network relay route. If the relay is unavailable, local discovery, USB/emulator forwarding, and other diagnostics still remain available without treating the stale IP as trusted reachability.
+Current development behavior: when a trusted runtime has a prepared relay route from QR pairing, the client tries prepared remote routes first: future P2P before the current relay, then fresh same-network discovery, then explicit local diagnostics. When no relay route is saved, automatic reconnect prefers fresh discovery for the pinned runtime identity and can fall back to the saved last-known direct endpoint as a reachability hint. That fallback improves app-restart recovery, but it is still not proof of identity or the product remote-route model. A different-network connection still needs QR-bootstrapped relay or future P2P overlay material.
 
 Bonjour/mDNS records may carry minimal route hints:
 
@@ -143,15 +143,17 @@ Behavior:
 2. The runtime host connects outbound and registers `AETHERLINK_RELAY runtime <relay_id>`.
 3. The client connects outbound and registers `AETHERLINK_RELAY client <relay_id>`.
 4. The relay matches one runtime and one client with the same `relay_id`, sends `AETHERLINK_RELAY ready`, then pipes bytes in both directions.
-5. If QR pairing supplied `relay_secret`, the client encrypts client-to-runtime frame bodies with direction `CLNT`, the runtime encrypts runtime-to-client frame bodies with direction `RUNT`, and the relay forwards only ciphertext frame bodies.
-6. The existing length-prefixed AetherLink JSON frame stream runs through that pipe.
+5. If QR pairing supplied `relay_expires_at` and `relay_nonce`, the client uses them while attempting the fresh QR route and rejects expired QR route material before opening the relay socket.
+6. If QR pairing supplied `relay_secret`, the client encrypts client-to-runtime frame bodies with direction `CLNT`, the runtime encrypts runtime-to-client frame bodies with direction `RUNT`, and the relay forwards only ciphertext frame bodies.
+7. The existing length-prefixed AetherLink JSON frame stream runs through that pipe.
 
 Current app wiring:
 
 - The macOS app Status screen has a Remote Relay panel for a relay host and port that both devices can reach.
 - Saving the relay route generates a frame secret when one is not provided and restarts the outbound runtime relay client if the runtime is already active.
 - The macOS app now reports live relay state: connecting, waiting for the client device to join the same relay id, connected, reconnecting, failed, or stopped.
-- New QR pairing payloads include `relay_host`, `relay_port`, `relay_id`, and `relay_secret` after the relay route is configured.
+- New QR pairing payloads include `relay_host`, `relay_port`, `relay_id`, `relay_secret`, `relay_expires_at`, and `relay_nonce` only after a configured non-loopback relay route is actually waiting for a peer or already connected. Before then, the companion app generates a local/identity-first QR instead of advertising a different-network route that is not reachable yet.
+- After a relay QR succeeds, Android persists the trusted runtime identity plus relay host/id/secret and the QR-provided `relay_expires_at`/`relay_nonce` route lease. The trusted-device record remains the long-lived pairing anchor, while an expired route lease blocks stale relay attempts and prompts the user to scan a fresh runtime QR.
 - The development runtime helper also generates a relay frame secret when `AETHERLINK_RELAY_HOST` is set without `AETHERLINK_RELAY_SECRET`.
 - When a development relay is configured, development pairing QR payloads no longer default to `127.0.0.1`; a direct host is included only when `AETHERLINK_DEV_PAIRING_HOST` is explicitly set.
 - Existing client pairings do not receive relay metadata retroactively. A client that already trusts the same pinned runtime identity can scan a fresh relay QR to refresh only the route metadata; if runtime trust was removed, pair again.

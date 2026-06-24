@@ -57,6 +57,9 @@ import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -145,12 +148,16 @@ private fun LocalAgentBridgeApp(
             val hapticFeedback = LocalHapticFeedback.current
             val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
             val scope = rememberCoroutineScope()
+            val snackbarHostState = remember { SnackbarHostState() }
             var destination by rememberSaveable { mutableStateOf(AppDestination.Pairing) }
             var renamingSessionId by rememberSaveable { mutableStateOf<String?>(null) }
             var renameDraft by rememberSaveable { mutableStateOf("") }
             var chatSearchQuery by rememberSaveable { mutableStateOf("") }
             val destinationTitle = stringResource(destination.labelRes)
             val untitledChatTitle = stringResource(R.string.untitled_chat)
+            val chatArchivedSnackbar = stringResource(R.string.chat_archived_snackbar)
+            val qrScanCanceledSnackbar = stringResource(R.string.qr_scan_canceled_snackbar)
+            val undoAction = stringResource(R.string.undo)
             val trimmedChatSearchQuery = chatSearchQuery.trim()
             val hasChatSearchQuery = trimmedChatSearchQuery.isNotEmpty()
             val hasAnyChatSessions = state.chatSessions.isNotEmpty()
@@ -168,16 +175,26 @@ private fun LocalAgentBridgeApp(
             ) { uris ->
                 viewModel.addAttachments(uris)
             }
+            val handlePairingQr: (String) -> Unit = { rawValue ->
+                destination = AppDestination.Pairing
+                viewModel.trustRuntimeFromPairingQr(rawValue)
+            }
             val scanPairingQr = {
                 startPairingQrScanner(
                     context = context,
-                    onResult = viewModel::trustRuntimeFromPairingQr,
+                    onResult = handlePairingQr,
+                    onCanceled = {
+                        scope.launch {
+                            snackbarHostState.showSnackbar(qrScanCanceledSnackbar)
+                        }
+                    },
                     onFailure = viewModel::showQrScanFailed,
                 )
             }
 
             LaunchedEffect(pairingUri) {
                 val uri = pairingUri?.takeIf { it.isNotBlank() } ?: return@LaunchedEffect
+                destination = AppDestination.Pairing
                 viewModel.trustRuntimeFromPairingQr(uri)
                 onPairingUriConsumed()
             }
@@ -274,7 +291,19 @@ private fun LocalAgentBridgeApp(
                                             },
                                             onArchive = {
                                                 hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                                                viewModel.archiveChatSession(session.id)
+                                                val archivedSessionId = session.id
+                                                viewModel.archiveChatSession(archivedSessionId)
+                                                scope.launch {
+                                                    drawerState.close()
+                                                    val result = snackbarHostState.showSnackbar(
+                                                        message = chatArchivedSnackbar,
+                                                        actionLabel = undoAction,
+                                                        withDismissAction = true,
+                                                    )
+                                                    if (result == SnackbarResult.ActionPerformed) {
+                                                        viewModel.unarchiveChatSession(archivedSessionId)
+                                                    }
+                                                }
                                             },
                                             onRestore = null,
                                             onDelete = null,
@@ -297,6 +326,7 @@ private fun LocalAgentBridgeApp(
                 },
             ) {
                 Scaffold(
+                    snackbarHost = { SnackbarHost(snackbarHostState) },
                     topBar = {
                         TopAppBar(
                             colors = TopAppBarDefaults.topAppBarColors(
@@ -1219,6 +1249,7 @@ private val AetherLinkDarkColors: ColorScheme = darkColorScheme(
 private fun startPairingQrScanner(
     context: Context,
     onResult: (String) -> Unit,
+    onCanceled: () -> Unit,
     onFailure: (String?) -> Unit,
 ) {
     val options = GmsBarcodeScannerOptions.Builder()
@@ -1236,7 +1267,7 @@ private fun startPairingQrScanner(
             }
         }
         .addOnCanceledListener {
-            // User intentionally dismissed the scanner. Keep the current pairing state.
+            onCanceled()
         }
         .addOnFailureListener { error ->
             onFailure(error.message)

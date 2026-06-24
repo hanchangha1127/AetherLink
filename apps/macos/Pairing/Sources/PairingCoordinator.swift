@@ -17,6 +17,8 @@ public struct PairingSession: Identifiable, Equatable, Sendable {
     public var relayPort: Int?
     public var relayID: String?
     public var relaySecret: String?
+    public var relayExpiresAtEpochMillis: Int64?
+    public var relayNonce: String?
     public var serviceType: String
 
     public var qrPayload: String {
@@ -56,6 +58,12 @@ public struct PairingSession: Identifiable, Equatable, Sendable {
         }
         if let relaySecret, !relaySecret.isEmpty {
             queryItems.append(URLQueryItem(name: "relay_secret", value: relaySecret))
+        }
+        if let relayExpiresAtEpochMillis {
+            queryItems.append(URLQueryItem(name: "relay_expires_at", value: String(relayExpiresAtEpochMillis)))
+        }
+        if let relayNonce, !relayNonce.isEmpty {
+            queryItems.append(URLQueryItem(name: "relay_nonce", value: relayNonce))
         }
         components.queryItems = queryItems
         if let percentEncodedQuery = components.percentEncodedQuery {
@@ -144,6 +152,8 @@ public final class PairingCoordinator: @unchecked Sendable {
         relayPort: Int? = nil,
         relayID: String? = nil,
         relaySecret: String? = nil,
+        relayExpiresAtEpochMillis: Int64? = nil,
+        relayNonce: String? = nil,
         serviceType: String = "_aetherlink._tcp.local."
     ) -> PairingSession {
         let code = String(format: "%06d", Int.random(in: 0...999_999))
@@ -163,6 +173,8 @@ public final class PairingCoordinator: @unchecked Sendable {
             relayPort: relayPort,
             relayID: relayID,
             relaySecret: relaySecret,
+            relayExpiresAtEpochMillis: relayExpiresAtEpochMillis,
+            relayNonce: relayNonce,
             serviceType: serviceType
         )
         lock.withLock {

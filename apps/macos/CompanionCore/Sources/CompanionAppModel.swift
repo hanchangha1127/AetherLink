@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import LMStudioBackend
 import OllamaBackend
@@ -208,6 +209,7 @@ public final class CompanionAppModel: ObservableObject {
     private let peerServer: any RuntimeTransport
     private let advertiser: any RuntimeAdvertiser
     private let relayClient: any RelayPeerTransport
+    private let runtimeRouteHostProvider: () -> String?
     private var relayConfiguration: RelayPeerConfiguration?
     private let macDeviceID: String
     private let runtimeIdentityKey: RuntimeIdentityKey
@@ -217,6 +219,20 @@ public final class CompanionAppModel: ObservableObject {
 
     public var hasDevelopmentRelayRoute: Bool {
         relayConfiguration != nil
+    }
+
+    public var isDevelopmentRelayQRCodeReady: Bool {
+        guard developmentRelaySettings.isEnabled, relayConfiguration != nil else { return false }
+        if let warning = developmentRelaySettings.hostReachabilityWarning,
+           !developmentRelaySettings.isEnvironmentOverride,
+           warning != .privateNetwork {
+            return false
+        }
+        return true
+    }
+
+    public var shouldIncludeDevelopmentRelayInPairingQRCode: Bool {
+        relayConfiguration != nil && isDevelopmentRelayQRCodeReady
     }
 
     public var developmentRelayEndpoint: String? {
@@ -232,7 +248,8 @@ public final class CompanionAppModel: ObservableObject {
         peerServer: any RuntimeTransport = LocalPeerServer(),
         advertiser: any RuntimeAdvertiser = BonjourAdvertiser(),
         relayClient: any RelayPeerTransport = RelayPeerClient(),
-        userDefaults: UserDefaults = .standard
+        userDefaults: UserDefaults = .standard,
+        runtimeRouteHostProvider: (() -> String?)? = nil
     ) {
         self.backend = backend
         self.providerStatuses = Self.initialProviderStatuses(for: backend)
@@ -240,6 +257,7 @@ public final class CompanionAppModel: ObservableObject {
         self.advertiser = advertiser
         self.relayClient = relayClient
         self.userDefaults = userDefaults
+        self.runtimeRouteHostProvider = runtimeRouteHostProvider ?? Self.defaultRuntimeRouteHost
         let macDeviceID = Self.loadOrCreateMacDeviceID(defaults: userDefaults)
         let runtimeIdentity = Self.loadOrCreateRuntimeIdentityKey(deviceID: macDeviceID)
         self.macDeviceID = macDeviceID
@@ -290,7 +308,7 @@ public final class CompanionAppModel: ObservableObject {
         switch transportState.state {
         case .advertising:
             advertiser.start(port: Int32(port), metadata: runtimeAdvertisementMetadata)
-            log("Companion started")
+            log("AetherLink runtime started")
             if let relayConfiguration {
                 log("Relay route enabled: \(relayConfiguration.host):\(relayConfiguration.port)")
             }
@@ -302,7 +320,7 @@ public final class CompanionAppModel: ObservableObject {
         case .stopped:
             advertiser.stop()
             transportStatus = "Stopped"
-            log("Companion stopped")
+            log("AetherLink runtime stopped")
         }
         Task {
             await refreshTrustedDevices()
@@ -321,7 +339,7 @@ public final class CompanionAppModel: ObservableObject {
             status: .stopped,
             endpoint: developmentRelaySettings.endpointLabel
         )
-        log("Companion stopped")
+        log("AetherLink runtime stopped")
     }
 
     public func refreshBackendStatus() async {
@@ -369,15 +387,25 @@ public final class CompanionAppModel: ObservableObject {
     }
 
     public func beginPairing() {
+        if !isRuntimeStarted {
+            start(port: runtimePort)
+        }
+        let pairingRelayConfiguration = shouldIncludeDevelopmentRelayInPairingQRCode ? relayConfiguration : nil
+        let localRouteHost = pairingRelayConfiguration == nil ? localPairingRouteHost : nil
+        let relayRouteLease = pairingRelayConfiguration.map { _ in Self.newRelayRouteLease() }
         pairingSession = pairingCoordinator.beginPairing(
             macDeviceID: macDeviceID,
             fingerprint: macFingerprint,
             runtimePublicKeyBase64: macPublicKeyBase64,
             routeToken: discoveryRouteToken,
-            relayHost: relayConfiguration?.host,
-            relayPort: relayConfiguration.map { Int($0.port) },
-            relayID: relayConfiguration?.relayID,
-            relaySecret: relayConfiguration?.relaySecret
+            host: localRouteHost,
+            port: localRouteHost == nil ? nil : Int(runtimePort),
+            relayHost: pairingRelayConfiguration?.host,
+            relayPort: pairingRelayConfiguration.map { Int($0.port) },
+            relayID: pairingRelayConfiguration?.relayID,
+            relaySecret: pairingRelayConfiguration?.relaySecret,
+            relayExpiresAtEpochMillis: relayRouteLease?.expiresAtEpochMillis,
+            relayNonce: relayRouteLease?.nonce
         )
         log("Pairing code generated")
     }
@@ -580,6 +608,11 @@ public final class CompanionAppModel: ObservableObject {
         runtimeIdentityKey.publicKeyBase64.takeIfNotEmpty()
     }
 
+    private var localPairingRouteHost: String? {
+        guard transportState.state == .advertising else { return nil }
+        return runtimeRouteHostProvider()
+    }
+
     private let discoveryRouteToken: String
 
     private var runtimeAdvertisementMetadata: RuntimeAdvertisementMetadata {
@@ -647,6 +680,16 @@ public final class CompanionAppModel: ObservableObject {
     private static func generateRelaySecret() -> String {
         let bytes = (0..<32).map { _ in UInt8.random(in: 0...255) }
         return Data(bytes).base64EncodedString()
+    }
+
+    private static func newRelayRouteLease(
+        validFor seconds: TimeInterval = 15 * 60
+    ) -> (expiresAtEpochMillis: Int64, nonce: String) {
+        let expiresAt = Date().addingTimeInterval(seconds)
+        return (
+            expiresAtEpochMillis: Int64((expiresAt.timeIntervalSince1970 * 1000).rounded()),
+            nonce: UUID().uuidString
+        )
     }
 
     private enum RelayDefaults {
@@ -718,6 +761,50 @@ public final class CompanionAppModel: ObservableObject {
                 "Runtime identity Keychain unavailable; using development fingerprint fallback."
             )
         }
+    }
+
+    nonisolated private static func defaultRuntimeRouteHost() -> String? {
+        var interfaces: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&interfaces) == 0, let firstInterface = interfaces else {
+            return nil
+        }
+        defer { freeifaddrs(interfaces) }
+
+        var candidates: [(name: String, address: String)] = []
+        var cursor: UnsafeMutablePointer<ifaddrs>? = firstInterface
+        while let interface = cursor {
+            defer { cursor = interface.pointee.ifa_next }
+            let flags = Int32(interface.pointee.ifa_flags)
+            guard (flags & IFF_UP) != 0, (flags & IFF_LOOPBACK) == 0 else { continue }
+            guard let address = interface.pointee.ifa_addr, address.pointee.sa_family == UInt8(AF_INET) else { continue }
+
+            var hostBuffer = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+            let result = getnameinfo(
+                address,
+                socklen_t(address.pointee.sa_len),
+                &hostBuffer,
+                socklen_t(hostBuffer.count),
+                nil,
+                0,
+                NI_NUMERICHOST
+            )
+            guard result == 0 else { continue }
+            let addressString = String(cString: hostBuffer)
+            guard isUsablePairingAddress(addressString) else { continue }
+            candidates.append((String(cString: interface.pointee.ifa_name), addressString))
+        }
+
+        let preferredPrefixes = ["en", "bridge", "utun"]
+        return candidates.first { candidate in
+            preferredPrefixes.contains { candidate.name.hasPrefix($0) }
+        }?.address ?? candidates.first?.address
+    }
+
+    nonisolated private static func isUsablePairingAddress(_ address: String) -> Bool {
+        guard !address.isEmpty else { return false }
+        if address == "0.0.0.0" || address == "255.255.255.255" { return false }
+        if address.hasPrefix("127.") || address.hasPrefix("169.254.") { return false }
+        return true
     }
 
 }

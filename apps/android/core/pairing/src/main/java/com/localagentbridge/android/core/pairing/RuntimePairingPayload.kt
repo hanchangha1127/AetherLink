@@ -18,6 +18,8 @@ data class RuntimePairingPayload(
     val relayPort: Int? = null,
     val relayId: String? = null,
     val relaySecret: String? = null,
+    val relayExpiresAtEpochMillis: Long? = null,
+    val relayNonce: String? = null,
     val serviceType: String?,
 )
 
@@ -49,8 +51,22 @@ object RuntimePairingPayloadParser {
         val relayHost = (query["relay_host"] ?: query["rendezvous_host"])?.takeIf { it.isNotBlank() }
         val rawRelayPort = (query["relay_port"] ?: query["rendezvous_port"])?.takeIf { it.isNotBlank() }
         val relayPort = rawRelayPort?.toIntOrNull()
-        val relayId = (query["relay_id"] ?: query["network_id"] ?: routeToken)?.takeIf { it.isNotBlank() }
+        val explicitRelayId = (query["relay_id"] ?: query["network_id"])?.takeIf { it.isNotBlank() }
+        val relayId = (explicitRelayId ?: routeToken)?.takeIf { it.isNotBlank() }
         val relaySecret = query["relay_secret"]?.takeIf { it.isNotBlank() }
+        val rawRelayExpiresAt = query["relay_expires_at"] ?: query["rendezvous_expires_at"]
+        val relayExpiresAtEpochMillis = rawRelayExpiresAt
+            ?.takeIf { it.isNotBlank() }
+            ?.toLongOrNull()
+        val rawRelayNonce = query["relay_nonce"] ?: query["rendezvous_nonce"]
+        val relayNonce = rawRelayNonce?.takeIf { it.isNotBlank() }
+        val hasExplicitRelayField =
+            relayHost != null ||
+                rawRelayPort != null ||
+                explicitRelayId != null ||
+                relaySecret != null ||
+                rawRelayExpiresAt != null ||
+                rawRelayNonce != null
 
         require(!pairingNonce.isNullOrBlank()) { "Missing pairing nonce" }
         require(!pairingCode.isNullOrBlank()) { "Missing pairing code" }
@@ -61,10 +77,18 @@ object RuntimePairingPayloadParser {
             require(host != null) { "Missing runtime host" }
             require(port != null && port in 1..65535) { "Invalid runtime port" }
         }
-        if (relayHost != null || rawRelayPort != null) {
+        if (hasExplicitRelayField) {
             require(relayHost != null) { "Missing relay host" }
             require(relayPort != null && relayPort in 1..65535) { "Invalid relay port" }
             require(!relayId.isNullOrBlank()) { "Missing relay id" }
+            if (rawRelayExpiresAt != null) {
+                require(relayExpiresAtEpochMillis != null && relayExpiresAtEpochMillis > 0L) {
+                    "Invalid relay expiration"
+                }
+            }
+            if (rawRelayNonce != null) {
+                require(!relayNonce.isNullOrBlank()) { "Invalid relay nonce" }
+            }
         }
 
         return RuntimePairingPayload(
@@ -81,6 +105,8 @@ object RuntimePairingPayloadParser {
             relayPort = relayPort,
             relayId = relayId,
             relaySecret = relaySecret,
+            relayExpiresAtEpochMillis = relayExpiresAtEpochMillis,
+            relayNonce = relayNonce,
             serviceType = query["service_type"],
         )
     }

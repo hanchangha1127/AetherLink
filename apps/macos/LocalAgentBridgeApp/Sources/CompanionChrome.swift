@@ -165,10 +165,10 @@ func localizedBackendStatus(_ statuses: [CompanionProviderStatus]) -> String {
 
     let availableCount = statuses.filter { $0.availability == .available }.count
     if availableCount > 0 {
-        return String(format: NSLocalizedString("%d local backend(s) available", comment: ""), availableCount)
+        return String(format: NSLocalizedString("%d model provider(s) available", comment: ""), availableCount)
     }
 
-    return NSLocalizedString("No local model backend is responding.", comment: "")
+    return NSLocalizedString("No model provider is responding.", comment: "")
 }
 
 private func localizedProviderAvailableStatus(_ provider: ModelProvider) -> String {

@@ -19,6 +19,9 @@ struct PairingView: View {
                         ActivePairingCard(
                             qrPayload: session.qrPayload,
                             expiresAt: session.expiresAt,
+                            remoteRouteExpiresAt: session.relayExpiresAtEpochMillis.map {
+                                Date(timeIntervalSince1970: TimeInterval($0) / 1000)
+                            },
                             routeNotice: pairingRouteNotice
                         )
                         .id(session.id)
@@ -64,11 +67,23 @@ struct PairingView: View {
             )
         }
 
+        guard model.isDevelopmentRelayQRCodeReady else {
+            let endpoint = model.developmentRelayEndpoint ?? NSLocalizedString("configured relay", comment: "")
+            return PairingRouteNotice(
+                text: String(
+                    format: NSLocalizedString("Remote Relay %@ is configured but not ready. This QR does not include it yet; wait for relay waiting or connected, then generate a new QR.", comment: ""),
+                    endpoint
+                ),
+                systemImage: "exclamationmark.triangle",
+                tone: .warning
+            )
+        }
+
         let endpoint = model.developmentRelayEndpoint ?? NSLocalizedString("configured relay", comment: "")
         if model.relayFrameEncryptionEnabled {
             return PairingRouteNotice(
                 text: String(
-                    format: NSLocalizedString("This QR includes remote relay route %@. Already trusted clients can scan it to update their saved route.", comment: ""),
+                    format: NSLocalizedString("This QR includes remote relay route %@. Client apps can scan it to pair or refresh their saved route.", comment: ""),
                     endpoint
                 ),
                 systemImage: "point.3.connected.trianglepath.dotted",
@@ -89,6 +104,7 @@ struct PairingView: View {
 private struct ActivePairingCard: View {
     let qrPayload: String
     let expiresAt: Date
+    let remoteRouteExpiresAt: Date?
     let routeNotice: PairingRouteNotice
     @State private var sessionStartedAt = Date()
 
@@ -162,6 +178,10 @@ private struct ActivePairingCard: View {
                 Label(NSLocalizedString("The QR code identifies this runtime; client apps resolve the current route after scanning.", comment: ""), systemImage: "point.3.connected.trianglepath.dotted")
                 Label(routeNotice.text, systemImage: routeNotice.systemImage)
                     .foregroundStyle(routeNotice.tone.color)
+                if let remoteRouteExpiresAt {
+                    Label(remoteRouteExpirationText(remoteRouteExpiresAt), systemImage: "timer")
+                        .foregroundStyle(routeNotice.tone.color)
+                }
                 Label(NSLocalizedString("After pairing, manage or remove trusted devices in Trusted Devices.", comment: ""), systemImage: "lock.shield")
                 Label(NSLocalizedString("Local Network permission enables the current local discovery path; pairing trust stays tied to this runtime identity.", comment: ""), systemImage: "network")
                 Label(expirationText(at: date), systemImage: expirationSystemImage(at: date))
@@ -230,6 +250,13 @@ private struct ActivePairingCard: View {
 
     private func expirationSystemImage(at date: Date) -> String {
         expiresAt <= date ? "exclamationmark.triangle.fill" : "timer"
+    }
+
+    private func remoteRouteExpirationText(_ date: Date) -> String {
+        String(
+            format: NSLocalizedString("Remote route saved from this QR expires at %@. Generate a new QR if a client scans later.", comment: ""),
+            companionDateFormatter.string(from: date)
+        )
     }
 
 }

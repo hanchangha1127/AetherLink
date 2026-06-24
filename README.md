@@ -142,11 +142,12 @@ The same smoke can be routed through the temporary development relay:
 ./script/runtime_authenticated_mock_smoke.swift --relay
 ```
 
-That command starts `script/aetherlink_relay.py`, starts RuntimeDevServer with
-relay metadata, verifies the relay fields in development pairing info, then
-runs pairing, fresh authentication, model list, streaming chat, and cancel over
-the relay socket. When relay mode is enabled, frame bodies are encrypted with
-the same `relay_secret` direction scheme used by the app transport.
+That command currently starts the compatibility Python relay at
+`script/aetherlink_relay.py`, starts RuntimeDevServer with relay metadata,
+verifies the relay fields in development pairing info, then runs pairing, fresh
+authentication, model list, streaming chat, and cancel over the relay socket.
+When relay mode is enabled, frame bodies are encrypted with the same
+`relay_secret` direction scheme used by the app transport.
 
 The real-Ollama mode keeps the same development pairing/auth path, but leaves
 `LOCAL_AGENT_BRIDGE_MOCK_BACKEND` unset so RuntimeDevServer talks to the local
@@ -165,8 +166,18 @@ testing, run a temporary relay on a public or otherwise mutually reachable
 machine:
 
 ```bash
-python3 script/aetherlink_relay.py --host 0.0.0.0 --port 43171
+swift run AetherLinkRelay --host 0.0.0.0 --port 43171
 ```
+
+`AetherLinkRelay` is the SwiftPM-native development relay executable. It
+accepts the same handshake lines as the compatibility Python script:
+`AETHERLINK_RELAY runtime <relay_id>` and
+`AETHERLINK_RELAY client <relay_id>`. After matching one runtime and one client
+with the same `relay_id`, it sends `AETHERLINK_RELAY ready\n` to both sides and
+blindly forwards bytes in both directions. It does not decode AetherLink
+protocol frames and never calls Ollama, LM Studio, or any other model backend.
+`script/aetherlink_relay.py` remains available for compatibility with existing
+local scripts and smoke tests.
 
 Then either configure the runtime app's advanced route diagnostics:
 
@@ -202,9 +213,9 @@ phone on another Wi-Fi or cellular network.
 
 When `AETHERLINK_RELAY_HOST` is set, the helper generates `AETHERLINK_RELAY_SECRET`
 if it is missing. Development pairing QR payloads then include `relay_host`,
-`relay_port`, `relay_id`, and `relay_secret`, and they no longer default to a
-`127.0.0.1` direct endpoint unless `AETHERLINK_DEV_PAIRING_HOST` is explicitly
-set. Existing pairings created before relay setup do not gain a
+`relay_port`, `relay_id`, `relay_secret`, `relay_expires_at`, and `relay_nonce`,
+and they no longer default to a `127.0.0.1` direct endpoint unless
+`AETHERLINK_DEV_PAIRING_HOST` is explicitly set. Existing pairings created before relay setup do not gain a
 remote route automatically; scan the latest QR from the same trusted runtime
 identity to refresh connectivity, or pair again if the runtime no longer trusts
 the client device. The client still connects to the paired AetherLink runtime
@@ -221,6 +232,8 @@ that touch localization, protocol schema, or platform runtime behavior:
 python3 script/check_macos_localization.py
 python3 script/check_protocol_schema.py
 python3 script/check_android_string_parity.py
+python3 script/check_copy_hygiene.py
+swift test --filter RelayServerCoreTests
 ./script/runtime_authenticated_mock_smoke.swift --relay
 swift test
 ```
@@ -229,6 +242,13 @@ The macOS localization check validates the five `Localizable.strings` files for
 English, Korean, Japanese, Simplified Chinese, and French. It confirms the files
 exist, can be linted as Apple strings property lists when `plutil` is available,
 and keep the same key set and order as English without duplicate keys.
+
+The copy hygiene check scans user-facing Android and macOS resources plus
+runtime/client-visible status strings for stale prototype wording. It blocks
+regressions such as visible `backend`, `Companion`, `companion runtime`, `this
+Mac`, generic chat placeholders, or client-facing model-provider URL entry copy
+where product wording should say model provider, model service, AetherLink
+Runtime, trusted runtime, or runtime host.
 
 ## v0.1 Acceptance Check
 

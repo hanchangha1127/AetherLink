@@ -49,4 +49,6 @@ data class TrustedRuntime(
     val relayPort: Int? = null,
     val relayId: String? = null,
     val relaySecret: String? = null,
+    val relayExpiresAtEpochMillis: Long? = null,
+    val relayNonce: String? = null,
 )

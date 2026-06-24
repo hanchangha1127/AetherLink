@@ -9,9 +9,14 @@ let package = Package(
     platforms: [.macOS(.v14)],
     products: [
         .executable(name: "AetherLink", targets: [macCompanionTarget]),
-        .executable(name: "RuntimeDevServer", targets: ["RuntimeDevServer"])
+        .executable(name: "RuntimeDevServer", targets: ["RuntimeDevServer"]),
+        .executable(name: "AetherLinkRelay", targets: ["AetherLinkRelay"])
     ],
     targets: [
+        .target(
+            name: "RelayServerCore",
+            path: "apps/macos/RelayServerCore/Sources"
+        ),
         .target(
             name: "BridgeProtocol",
             path: "apps/macos/Protocol/Sources"
@@ -71,6 +76,16 @@ let package = Package(
                 "Transport"
             ],
             path: "apps/macos/RuntimeDevServer/Sources"
+        ),
+        .executableTarget(
+            name: "AetherLinkRelay",
+            dependencies: ["RelayServerCore"],
+            path: "apps/macos/AetherLinkRelay/Sources"
+        ),
+        .testTarget(
+            name: "RelayServerCoreTests",
+            dependencies: ["RelayServerCore"],
+            path: "apps/macos/RelayServerCore/Tests"
         ),
         .testTarget(
             name: "BridgeProtocolTests",

@@ -109,13 +109,16 @@ class RuntimePairingPayloadParserTest {
             "aetherlink://pair?version=1&pairing_nonce=nonce-1&pairing_code=123456" +
                 "&runtime_device_id=runtime-1&runtime_name=AetherLink+Runtime" +
                 "&runtime_key_fingerprint=fp-1&relay_host=relay.example.test" +
-                "&relay_port=443&relay_id=relay-1&relay_secret=secret-1"
+                "&relay_port=443&relay_id=relay-1&relay_secret=secret-1" +
+                "&relay_expires_at=4102444800000&relay_nonce=nonce-route-1"
         )
 
         assertEquals("relay.example.test", payload.relayHost)
         assertEquals(443, payload.relayPort)
         assertEquals("relay-1", payload.relayId)
         assertEquals("secret-1", payload.relaySecret)
+        assertEquals(4102444800000L, payload.relayExpiresAtEpochMillis)
+        assertEquals("nonce-route-1", payload.relayNonce)
     }
 
     @Test
@@ -150,6 +153,51 @@ class RuntimePairingPayloadParserTest {
                     "&relay_host=relay.example.test&relay_port=443"
             )
             fail("Expected missing relay id to throw")
+        } catch (_: IllegalArgumentException) {
+            // Expected.
+        }
+
+        try {
+            RuntimePairingPayloadParser.parse(
+                "aetherlink://pair?version=1&pairing_nonce=nonce-1&pairing_code=123456" +
+                    "&mac_device_id=mac-1&fingerprint=fp-1&route_token=route-1" +
+                    "&relay_secret=secret-1"
+            )
+            fail("Expected relay secret without relay host/port to throw")
+        } catch (_: IllegalArgumentException) {
+            // Expected.
+        }
+
+        try {
+            RuntimePairingPayloadParser.parse(
+                "aetherlink://pair?version=1&pairing_nonce=nonce-1&pairing_code=123456" +
+                    "&mac_device_id=mac-1&fingerprint=fp-1&relay_id=relay-1"
+            )
+            fail("Expected relay id without relay host/port to throw")
+        } catch (_: IllegalArgumentException) {
+            // Expected.
+        }
+
+        try {
+            RuntimePairingPayloadParser.parse(
+                "aetherlink://pair?version=1&pairing_nonce=nonce-1&pairing_code=123456" +
+                    "&mac_device_id=mac-1&fingerprint=fp-1" +
+                    "&relay_host=relay.example.test&relay_port=443&relay_id=relay-1" +
+                    "&relay_expires_at=not-a-number"
+            )
+            fail("Expected invalid relay expiration to throw")
+        } catch (_: IllegalArgumentException) {
+            // Expected.
+        }
+
+        try {
+            RuntimePairingPayloadParser.parse(
+                "aetherlink://pair?version=1&pairing_nonce=nonce-1&pairing_code=123456" +
+                    "&mac_device_id=mac-1&fingerprint=fp-1" +
+                    "&relay_host=relay.example.test&relay_port=443&relay_id=relay-1" +
+                    "&relay_nonce="
+            )
+            fail("Expected blank relay nonce to throw")
         } catch (_: IllegalArgumentException) {
             // Expected.
         }

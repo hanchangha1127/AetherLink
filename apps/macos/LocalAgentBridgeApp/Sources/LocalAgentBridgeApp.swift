@@ -18,7 +18,7 @@ struct LocalAgentBridgeApp: App {
         }
         .commands {
             CommandGroup(after: .appInfo) {
-                Button(NSLocalizedString("Refresh Backend Status", comment: "")) {
+                Button(NSLocalizedString("Check Model Providers", comment: "")) {
                     Task { await model.refreshBackendStatus() }
                 }
                 .keyboardShortcut("r", modifiers: [.command])
@@ -34,7 +34,7 @@ struct LocalAgentBridgeApp: App {
             )
             Text(
                 String(
-                    format: NSLocalizedString("Backend: %@", comment: ""),
+                    format: NSLocalizedString("Model service: %@", comment: ""),
                     localizedBackendStatus(model.providerStatuses)
                 )
             )
