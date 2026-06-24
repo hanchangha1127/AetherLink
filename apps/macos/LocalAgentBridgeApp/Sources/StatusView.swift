@@ -100,9 +100,9 @@ struct StatusView: View {
                         .frame(maxWidth: .infinity, minHeight: 180)
                     } else {
                         VStack(spacing: 0) {
-                            ForEach(model.models) { item in
-                                ModelRow(model: item)
-                                if item.id != model.models.last?.id {
+                            ForEach(modelGroups) { group in
+                                ModelGroupSection(group: group)
+                                if group.id != modelGroups.last?.id {
                                     Divider()
                                 }
                             }
@@ -155,6 +155,16 @@ struct StatusView: View {
 
     private var providerStatuses: [ProviderStatus] {
         model.providerStatuses.map(ProviderStatus.init(status:))
+    }
+
+    private var modelGroups: [ModelGroup] {
+        let chatModels = model.models.filter { $0.kind == .chat }
+        let embeddingModels = model.models.filter { $0.kind == .embedding }
+
+        return [
+            ModelGroup(kind: .chat, models: chatModels),
+            ModelGroup(kind: .embedding, models: embeddingModels)
+        ].filter { !$0.models.isEmpty }
     }
 
     private var trustedDeviceCount: String {
@@ -396,6 +406,64 @@ private struct StatusCard: View {
     }
 }
 
+private struct ModelGroupSection: View {
+    let group: ModelGroup
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Label(group.title, systemImage: group.systemImage)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+                Text(group.countText)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+            }
+            .padding(.top, 12)
+            .padding(.bottom, 4)
+
+            ForEach(group.models) { item in
+                ModelRow(model: item)
+                if item.id != group.models.last?.id {
+                    Divider()
+                }
+            }
+        }
+    }
+}
+
+private struct ModelGroup: Identifiable {
+    let kind: ModelKind
+    let models: [ModelInfo]
+
+    var id: String {
+        kind.rawValue
+    }
+
+    var title: String {
+        switch kind {
+        case .chat:
+            return NSLocalizedString("Chat Models", comment: "")
+        case .embedding:
+            return NSLocalizedString("Embedding Models", comment: "")
+        }
+    }
+
+    var countText: String {
+        String(format: NSLocalizedString("%d model(s)", comment: ""), models.count)
+    }
+
+    var systemImage: String {
+        switch kind {
+        case .chat:
+            return "bubble.left.and.bubble.right"
+        case .embedding:
+            return "text.magnifyingglass"
+        }
+    }
+}
+
 private struct ModelRow: View {
     let model: ModelInfo
 
@@ -413,6 +481,7 @@ private struct ModelRow: View {
                         .lineLimit(1)
                         .truncationMode(.middle)
                         .textSelection(.enabled)
+                    ModelBadge(text: kindName(model.kind), systemImage: kindSystemImage(model.kind))
                     ModelBadge(text: providerName(model.provider), systemImage: "server.rack")
                     ModelBadge(text: sourceName(model.source), systemImage: sourceSystemImage(model.source))
                     if model.running {
@@ -432,6 +501,24 @@ private struct ModelRow: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 10)
+    }
+
+    private func kindName(_ kind: ModelKind) -> String {
+        switch kind {
+        case .chat:
+            return NSLocalizedString("Chat", comment: "")
+        case .embedding:
+            return NSLocalizedString("Embedding", comment: "")
+        }
+    }
+
+    private func kindSystemImage(_ kind: ModelKind) -> String {
+        switch kind {
+        case .chat:
+            return "bubble.left.and.bubble.right"
+        case .embedding:
+            return "text.magnifyingglass"
+        }
     }
 
     private func providerName(_ provider: ModelProvider) -> String {

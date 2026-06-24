@@ -314,15 +314,7 @@ private fun ConnectionStatusPanel(state: RuntimeUiState) {
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text(
-                text = if (state.isConnected) {
-                    stringResource(R.string.status_connected_summary)
-                } else {
-                    stringResource(R.string.status_disconnected_summary)
-                },
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-            )
+            ConnectionStatusHero(state = state)
             StatusLine(
                 label = stringResource(R.string.runtime),
                 value = runtimeStatusLabel(state.runtimeStatus),
@@ -375,20 +367,97 @@ private fun ConnectionStatusPanel(state: RuntimeUiState) {
 }
 
 @Composable
+private fun ConnectionStatusHero(state: RuntimeUiState) {
+    val trustedRuntimeName = state.trustedRuntime?.name?.takeIf { it.isNotBlank() }
+    val pendingRuntimeName = state.pendingPairingRuntimeName?.takeIf { it.isNotBlank() }
+    val runtimeName = trustedRuntimeName
+        ?: pendingRuntimeName
+        ?: stringResource(R.string.trusted_runtime)
+
+    val isTrustedConnection = state.isConnected && state.trustedRuntime != null
+    val needsPairing = state.trustedRuntime == null && !state.isConnected
+    val needsRoute = state.trustedRuntime != null &&
+        state.trustedRuntime.endpointHint == null &&
+        !state.isConnected
+    val hasSavedRoute = state.trustedRuntime != null &&
+        state.trustedRuntime.endpointHint != null &&
+        !state.isConnected
+
+    val title = when {
+        isTrustedConnection -> stringResource(R.string.status_connected_trusted_title)
+        state.isConnected -> stringResource(R.string.status_connected_diagnostics_title)
+        state.isConnecting -> stringResource(R.string.status_connecting_trusted_title)
+        state.isPairingAwaitingRoute || needsRoute -> stringResource(R.string.status_route_needed_title)
+        needsPairing -> stringResource(R.string.status_pairing_needed_title)
+        hasSavedRoute -> stringResource(R.string.status_connect_ready_title)
+        else -> stringResource(R.string.status_disconnected)
+    }
+    val detail = when {
+        isTrustedConnection -> stringResource(R.string.status_connected_trusted_detail, runtimeName)
+        state.isConnected -> stringResource(R.string.status_connected_diagnostics_detail)
+        state.isConnecting -> stringResource(R.string.status_connecting_trusted_detail, runtimeName)
+        state.isPairingAwaitingRoute -> stringResource(R.string.pending_pairing_route_status, runtimeName)
+        needsRoute -> stringResource(R.string.status_route_needed_detail)
+        needsPairing -> stringResource(R.string.status_pairing_needed_detail)
+        hasSavedRoute -> stringResource(R.string.status_connect_ready_detail, runtimeName)
+        else -> stringResource(R.string.status_disconnected_summary)
+    }
+    val icon = when {
+        isTrustedConnection -> Icons.Filled.CheckCircle
+        state.isConnecting -> Icons.Filled.Refresh
+        state.isPairingAwaitingRoute || needsRoute || needsPairing -> Icons.Filled.Error
+        else -> Icons.Filled.Link
+    }
+    val containerColor = when {
+        isTrustedConnection -> MaterialTheme.colorScheme.primaryContainer
+        state.isPairingAwaitingRoute || needsRoute || needsPairing -> MaterialTheme.colorScheme.errorContainer
+        else -> MaterialTheme.colorScheme.surfaceVariant
+    }
+    val contentColor = when {
+        isTrustedConnection -> MaterialTheme.colorScheme.onPrimaryContainer
+        state.isPairingAwaitingRoute || needsRoute || needsPairing -> MaterialTheme.colorScheme.onErrorContainer
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        color = containerColor,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.Top,
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = contentColor,
+                modifier = Modifier.size(22.dp),
+            )
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(3.dp),
+            ) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = contentColor,
+                )
+                Text(
+                    text = detail,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = contentColor,
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun runtimeRouteDisplayLabel(state: RuntimeUiState): String {
-    state.trustedRuntime?.endpointHint?.let {
-        return stringResource(R.string.runtime_route_saved_hint)
-    }
-    if (state.isPairingAwaitingRoute) {
-        val runtimeName = state.pendingPairingRuntimeName
-            ?.takeIf { it.isNotBlank() }
-            ?: stringResource(R.string.trusted_runtime)
-        return stringResource(R.string.pending_pairing_route_status, runtimeName)
-    }
-    if (state.trustedRuntime != null) {
-        return stringResource(R.string.runtime_route_resolving)
-    }
-    if (state.runtimeEndpointSource != RuntimeEndpointSource.Manual) {
+    if (state.isConnected || state.isConnecting) {
         val host = state.runtimeHost.takeIf { it.isNotBlank() }
         val port = state.runtimePort.takeIf { it.isNotBlank() }
         if (host != null && port != null) {
@@ -401,6 +470,18 @@ private fun runtimeRouteDisplayLabel(state: RuntimeUiState): String {
                 RuntimeEndpointSource.Manual -> stringResource(R.string.runtime_route_diagnostics)
             }
         }
+    }
+    state.trustedRuntime?.endpointHint?.let {
+        return stringResource(R.string.runtime_route_saved_hint)
+    }
+    if (state.isPairingAwaitingRoute) {
+        val runtimeName = state.pendingPairingRuntimeName
+            ?.takeIf { it.isNotBlank() }
+            ?: stringResource(R.string.trusted_runtime)
+        return stringResource(R.string.pending_pairing_route_status, runtimeName)
+    }
+    if (state.trustedRuntime != null) {
+        return stringResource(R.string.runtime_route_resolving)
     }
     return stringResource(R.string.runtime_route_pair_first)
 }
@@ -1977,6 +2058,7 @@ private fun AssistantReasoning(
     onExpandedChange: (Boolean) -> Unit,
 ) {
     val hapticFeedback = LocalHapticFeedback.current
+    val preview = reasoningPreview(reasoning)
     val toggleLabel = stringResource(
         if (expanded) {
             R.string.assistant_reasoning_hide
@@ -1984,16 +2066,73 @@ private fun AssistantReasoning(
             R.string.assistant_reasoning_show
         }
     )
+    val toggleExpanded = {
+        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+        onExpandedChange(!expanded)
+    }
+
+    if (!expanded) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .semantics {
+                    stateDescription = toggleLabel
+                }
+                .clickable(
+                    role = Role.Button,
+                    onClick = toggleExpanded,
+                ),
+            shape = RoundedCornerShape(10.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.24f),
+            contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        ) {
+            Row(
+                modifier = Modifier.padding(start = 9.dp, top = 5.dp, end = 7.dp, bottom = 5.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = stringResource(R.string.assistant_reasoning_label),
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.82f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = preview,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.56f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    text = toggleLabel,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.78f),
+                    maxLines = 1,
+                )
+                Icon(
+                    imageVector = Icons.Filled.KeyboardArrowDown,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.secondary.copy(alpha = 0.78f),
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+        }
+        return
+    }
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(8.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
+        shape = RoundedCornerShape(10.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.32f),
         contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
     ) {
         Column(
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -2007,10 +2146,7 @@ private fun AssistantReasoning(
                     color = MaterialTheme.colorScheme.secondary,
                 )
                 TextButton(
-                    onClick = {
-                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                        onExpandedChange(!expanded)
-                    },
+                    onClick = toggleExpanded,
                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
                     modifier = Modifier.semantics {
                         stateDescription = toggleLabel
@@ -2035,12 +2171,19 @@ private fun AssistantReasoning(
             Text(
                 text = reasoning,
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.62f),
-                maxLines = if (expanded) Int.MAX_VALUE else 1,
-                overflow = TextOverflow.Ellipsis,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
             )
         }
     }
+}
+
+private fun reasoningPreview(reasoning: String): String {
+    return reasoning
+        .lineSequence()
+        .map { it.trim() }
+        .firstOrNull { it.isNotBlank() }
+        ?.replace(Regex("\\s+"), " ")
+        ?: reasoning.trim().replace(Regex("\\s+"), " ")
 }
 
 @Composable
@@ -2078,7 +2221,8 @@ private fun ChatComposer(
     modifier: Modifier = Modifier,
 ) {
     val hapticFeedback = LocalHapticFeedback.current
-    val showComposerStatus = !isStreaming && !canSend && hint.isNotBlank()
+    val showComposerStatus = !isStreaming && hint.isNotBlank()
+    val showComposerWarning = !imageAttachmentsSupported && attachments.any { it.type == "image" }
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
@@ -2132,13 +2276,10 @@ private fun ChatComposer(
                 },
             )
             if (showComposerStatus) {
-                Text(
+                ComposerStatus(
                     text = hint,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.secondary,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(horizontal = 2.dp),
+                    isReady = canSend,
+                    isWarning = showComposerWarning,
                 )
             }
             Row(
@@ -2195,6 +2336,42 @@ private fun ChatComposer(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun ComposerStatus(
+    text: String,
+    isReady: Boolean,
+    isWarning: Boolean,
+) {
+    val statusColor = when {
+        isWarning -> MaterialTheme.colorScheme.error
+        isReady -> MaterialTheme.colorScheme.primary
+        else -> MaterialTheme.colorScheme.secondary
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 2.dp),
+        horizontalArrangement = Arrangement.spacedBy(7.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Surface(
+            modifier = Modifier.size(6.dp),
+            shape = RoundedCornerShape(999.dp),
+            color = statusColor,
+            content = {},
+        )
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelSmall,
+            color = statusColor,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
     }
 }
 
@@ -2844,7 +3021,9 @@ private fun ErrorText(error: RuntimeUiError?) {
                     text = runtimeErrorLabel(error),
                     color = MaterialTheme.colorScheme.onErrorContainer,
                 )
-                error.detail?.takeIf { it.isNotBlank() }?.let { detail ->
+                val detailText = runtimeErrorDetailLabel(error)
+                    ?: error.detail?.takeIf { it.isNotBlank() }
+                detailText?.let { detail ->
                     Text(
                         text = stringResource(R.string.error_detail, detail),
                         style = MaterialTheme.typography.bodySmall,
@@ -2865,42 +3044,43 @@ private fun ErrorText(error: RuntimeUiError?) {
 
 @Composable
 private fun RouteAvailabilityNotice(error: RuntimeUiError) {
+    val diagnostic = runtimeErrorDiagnosticLabel(error)
+    val body = diagnostic ?: runtimeErrorLabel(error)
+
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(8.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant,
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
     ) {
         Row(
-            modifier = Modifier.padding(12.dp),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
+            horizontalArrangement = Arrangement.spacedBy(9.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
                 Icons.Filled.Link,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.secondary,
+                modifier = Modifier.size(18.dp),
             )
-            Spacer(Modifier.width(10.dp))
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(1.dp),
+            ) {
                 Text(
                     text = stringResource(R.string.route_notice_title),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.secondary,
-                )
-                Text(
-                    text = runtimeErrorLabel(error),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 3,
+                    maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                runtimeErrorDiagnosticLabel(error)?.let { diagnostic ->
-                    Text(
-                        text = diagnostic,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.secondary,
-                        maxLines = 3,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
+                Text(
+                    text = body,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
     }
@@ -2949,8 +3129,7 @@ private fun chatInputHint(state: RuntimeUiState): String {
         !selectedModelIsUsable(state) -> stringResource(R.string.chat_hint_install_model)
         hasUnsupportedImageAttachment(state) -> stringResource(R.string.chat_hint_select_vision_model)
         state.isStreaming -> stringResource(R.string.chat_hint_wait_for_stream)
-        state.chatInput.isBlank() && state.pendingAttachments.isEmpty() -> stringResource(R.string.chat_hint_enter_message)
-        else -> stringResource(R.string.chat_hint_ready)
+        else -> ""
     }
 }
 
@@ -3010,11 +3189,20 @@ private fun runtimeErrorLabel(error: RuntimeUiError): String {
         "select_vision_model" -> stringResource(R.string.error_select_vision_model)
         "unsupported_attachment" -> stringResource(R.string.error_unsupported_attachment)
         "unreadable_attachment" -> stringResource(R.string.error_unreadable_attachment)
+        "ollama_auth_required" -> stringResource(R.string.error_ollama_auth_required)
         "backend_unavailable" -> stringResource(R.string.error_backend_unavailable)
         "generation_not_found" -> stringResource(R.string.error_generation_not_found)
         "transport_error" -> stringResource(R.string.error_transport_error)
         "internal_error" -> stringResource(R.string.error_internal_error)
         else -> stringResource(R.string.error_unknown)
+    }
+}
+
+@Composable
+private fun runtimeErrorDetailLabel(error: RuntimeUiError): String? {
+    return when (error.code) {
+        "ollama_auth_required" -> stringResource(R.string.error_ollama_auth_required_detail)
+        else -> null
     }
 }
 
@@ -3063,6 +3251,7 @@ private fun runtimeStatusLabel(status: String): String {
         "connecting" -> stringResource(R.string.status_connecting)
         "connected" -> stringResource(R.string.status_connected)
         "pairing" -> stringResource(R.string.status_pairing)
+        "pairing_required" -> stringResource(R.string.status_pairing_required)
         "authenticated" -> stringResource(R.string.status_authenticated)
         "failed" -> stringResource(R.string.status_failed)
         "ok" -> stringResource(R.string.status_ok)

@@ -2,7 +2,9 @@
 
 This document makes the remote 1:1 connection model concrete without defining an implementation plan for the current codebase. It is a product and architecture boundary for future transport work.
 
-AetherLink should feel less like "enter the computer's IP address" and more like a private peer network: a paired client asks for its paired runtime host by identity, and the connection layer finds the best route. The useful analogy to Bitcoin-style peer networks is decentralized peer discovery, not public access. AetherLink is still private, paired-device-only, and runtime-host-mediated.
+AetherLink should feel less like "enter the computer's IP address" and more like a private peer network: a paired client asks for its paired runtime host by identity, and the connection layer finds the best route. The useful analogy to Bitcoin-style peer networks is decentralized or distributed rendezvous and peer discovery, not public access. AetherLink is still private, paired-device-only, and runtime-host-mediated.
+
+Current implementation status: the local companion runtime server exists, and today's supported development routes are local direct routes only: same-network/local discovery, USB or emulator forwarding, and explicit local diagnostic endpoints. QR pairing and trusted-device state gate runtime commands on those routes. Different-network P2P, rendezvous/bootstrap/DHT discovery, signaling, and relay/TURN transport remain roadmap/foundation work, not implemented runtime connectivity.
 
 Non-negotiable boundaries:
 
@@ -25,8 +27,8 @@ Client device
         v
 Connection overlay
   1. Local direct path
-  2. Remote NAT traversal path
-  3. Privacy-preserving rendezvous/bootstrap/DHT assist
+  2. Privacy-preserving rendezvous/bootstrap/DHT assist
+  3. Remote NAT traversal path
   4. Blind encrypted relay fallback
         |
         | end-to-end encrypted AetherLink session
@@ -38,7 +40,7 @@ Runtime host
   Ollama/LM Studio/local backend adapters
 ```
 
-The overlay resolves a route to one specific trusted runtime identity. It does not expose a searchable public directory of runtimes, a list of model hosts, an account namespace, or an API endpoint registry.
+The overlay resolves a route to one specific trusted runtime identity. It does not expose a searchable public directory of runtimes, a list of model hosts, an account namespace, or an API endpoint registry. The normal product target is the paired runtime identity, not a fixed IP address, mDNS host, or remembered host string.
 
 ## Phase 0: Paired Identity
 
@@ -75,7 +77,7 @@ Removing a trusted device revokes future authentication on every path: local dir
 
 ## Phase 1: Local Direct Path
 
-The local direct path is the fast path when both devices are reachable on the same network, USB reverse path, hotspot, emulator bridge, or manually selected diagnostic endpoint.
+The local direct path is the fast path when both devices are reachable on the same network, USB reverse path, hotspot, emulator bridge, or manually selected diagnostic endpoint. In v0.1 this is the only implemented transport family, so it should be described as a development/local route rather than the intended product architecture.
 
 Allowed local-direct inputs:
 
@@ -183,13 +185,17 @@ Relay selection happens after local direct and remote P2P candidates fail. Relay
 
 The route resolver should operate on a paired runtime identity, not on a remembered host string.
 
-Candidate order:
+Product candidate order:
 
 1. Current local discovery candidate with matching route token or trusted identity hint.
-2. Current USB/emulator/hotspot/direct candidate explicitly associated with the trusted runtime.
-3. QR-provided or last-known local endpoint hint for diagnostics and v0.1 compatibility.
-4. Remote P2P NAT traversal candidate.
-5. Relay fallback candidate.
+2. Remote P2P NAT traversal candidate prepared through privacy-preserving rendezvous/bootstrap/DHT assist.
+3. Relay fallback candidate.
+
+v0.1 compatibility candidates:
+
+- USB forwarding, emulator forwarding, hotspot lab routes, QR-provided `host`/`port` hints, or last-known endpoint hints may be attempted for development, diagnostics, or local lab use.
+- These hints must not outrank the paired identity as the product target and must not become normal onboarding.
+- A stale fixed endpoint should never be treated as proof that the runtime identity is trusted or reachable.
 
 Every successful route must still establish an authenticated encrypted session before runtime commands can execute.
 
@@ -276,6 +282,7 @@ Required mitigations:
 
 - Implementing networking in this documentation pass.
 - Building a public AetherLink node network in v0.1.
+- Treating any future rendezvous, bootstrap, DHT, signaling, or relay component as a model backend, account backend, or product data service.
 - Making runtimes discoverable by unpaired devices.
 - Adding accounts as a trust requirement.
 - Moving model execution to cloud infrastructure.
@@ -287,12 +294,12 @@ Required mitigations:
 
 ### v0.1
 
-v0.1 should remain local-direct and identity-first:
+v0.1 should remain local-direct and identity-first. The current local runtime server is real, but the current local/dev routes are compatibility and validation paths, not the intended final connection design:
 
 - QR pairing establishes trusted client/runtime identity.
 - Runtime commands require trusted-device authentication.
 - Client stores runtime identity as the target, with host/port only as optional endpoint hints.
-- Local discovery and USB/dev paths can resolve direct route candidates.
+- Same-network/local discovery, USB or emulator forwarding, and manual diagnostic endpoints can resolve direct route candidates.
 - Bonjour/local discovery may advertise minimal route hints such as `route_token`.
 - Manual endpoint entry is development/diagnostics only.
 - No production NAT traversal.

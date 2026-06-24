@@ -70,6 +70,11 @@
 "Local runtime" = "Local runtime";
 "Local" = "Local";
 "Cloud" = "Cloud";
+"Chat Models" = "Chat Models";
+"Embedding Models" = "Embedding Models";
+"%d model(s)" = "%d model(s)";
+"Chat" = "Chat";
+"Embedding" = "Embedding";
 "Running" = "Running";
 "Model Residency" = "Model Residency";
 "Not managed" = "Not managed";

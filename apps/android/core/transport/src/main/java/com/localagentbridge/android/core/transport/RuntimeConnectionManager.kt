@@ -133,6 +133,8 @@ data class RemoteRouteSecurityContext(
         require(expiresAtEpochMillis > 0L) { "Remote route expiration must be positive" }
         require(antiReplayNonce.isNotBlank()) { "Remote route anti-replay nonce must not be blank" }
     }
+
+    fun isExpired(nowEpochMillis: Long): Boolean = expiresAtEpochMillis <= nowEpochMillis
 }
 
 fun interface RuntimeRemoteRoutePreparer {
@@ -140,17 +142,19 @@ fun interface RuntimeRemoteRoutePreparer {
 }
 
 fun interface RuntimePeerToPeerConnector {
-    suspend fun connect(route: PreparedRemoteRuntimeRoute.PeerToPeer, timeoutMillis: Int)
+    suspend fun connect(route: PreparedRemoteRuntimeRoute.PeerToPeer, timeoutMillis: Int): RuntimeProtocolChannel
 }
 
 fun interface RuntimeRelayConnector {
-    suspend fun connect(route: PreparedRemoteRuntimeRoute.Relay, timeoutMillis: Int)
+    suspend fun connect(route: PreparedRemoteRuntimeRoute.Relay, timeoutMillis: Int): RuntimeProtocolChannel
 }
 
 enum class RuntimeRouteRejectionReason {
     DirectTcpEndpointNotPrepared,
     PeerToPeerConnectorNotAvailable,
     RelayConnectorNotAvailable,
+    RemoteRouteIdentityMismatch,
+    RemoteRouteExpired,
 }
 
 data class RuntimeRouteRejection(
@@ -160,19 +164,47 @@ data class RuntimeRouteRejection(
 )
 
 private fun RuntimeRouteCandidate.connectabilityRejection(
+    targetIdentity: PairedRuntimeIdentity?,
     peerToPeerConnector: RuntimePeerToPeerConnector?,
     relayConnector: RuntimeRelayConnector?,
+    nowEpochMillis: Long = System.currentTimeMillis(),
 ): RuntimeRouteRejection? {
     val reason = when (this) {
         is RuntimeRouteCandidate.DirectTcp -> return null
         is RuntimeRouteCandidate.LocalDirect -> RuntimeRouteRejectionReason.DirectTcpEndpointNotPrepared
         is RuntimeRouteCandidate.PeerToPeer -> {
-            if (preparedRoute != null && peerToPeerConnector != null) return null
-            RuntimeRouteRejectionReason.PeerToPeerConnectorNotAvailable
+            val prepared = preparedRoute
+                ?: return RuntimeRouteRejection(
+                    route = this,
+                    capability = capability,
+                    reason = RuntimeRouteRejectionReason.PeerToPeerConnectorNotAvailable,
+                )
+            if (!prepared.isBoundTo(identity, targetIdentity)) {
+                RuntimeRouteRejectionReason.RemoteRouteIdentityMismatch
+            } else if (prepared.security.isExpired(nowEpochMillis)) {
+                RuntimeRouteRejectionReason.RemoteRouteExpired
+            } else if (peerToPeerConnector != null) {
+                return null
+            } else {
+                RuntimeRouteRejectionReason.PeerToPeerConnectorNotAvailable
+            }
         }
         is RuntimeRouteCandidate.Relay -> {
-            if (preparedRoute != null && relayConnector != null) return null
-            RuntimeRouteRejectionReason.RelayConnectorNotAvailable
+            val prepared = preparedRoute
+                ?: return RuntimeRouteRejection(
+                    route = this,
+                    capability = capability,
+                    reason = RuntimeRouteRejectionReason.RelayConnectorNotAvailable,
+                )
+            if (!prepared.isBoundTo(identity, targetIdentity)) {
+                RuntimeRouteRejectionReason.RemoteRouteIdentityMismatch
+            } else if (prepared.security.isExpired(nowEpochMillis)) {
+                RuntimeRouteRejectionReason.RemoteRouteExpired
+            } else if (relayConnector != null) {
+                return null
+            } else {
+                RuntimeRouteRejectionReason.RelayConnectorNotAvailable
+            }
         }
     }
     return RuntimeRouteRejection(
@@ -207,13 +239,16 @@ data class RuntimeRouteAttemptFailure(
     val cause: Throwable,
 )
 
+data class RuntimeConnectionResult(
+    val channel: RuntimeProtocolChannel,
+    val route: RuntimeRouteCandidate,
+)
+
 class RuntimeConnectionFailure(
     val reason: RuntimeConnectionFailureReason,
     val target: RuntimeConnectionTarget,
     val routes: List<RuntimeRouteCandidate>,
-    val routeRejections: List<RuntimeRouteRejection> = routes.mapNotNull {
-        it.connectabilityRejection(peerToPeerConnector = null, relayConnector = null)
-    },
+    val routeRejections: List<RuntimeRouteRejection> = emptyList(),
     val attemptFailures: List<RuntimeRouteAttemptFailure> = emptyList(),
 ) : IllegalArgumentException(
     when (reason) {
@@ -228,7 +263,7 @@ class RuntimeConnectionFailure(
 )
 
 fun interface RuntimeTransportConnector {
-    suspend fun connect(host: String, port: Int, timeoutMillis: Int)
+    suspend fun connect(host: String, port: Int, timeoutMillis: Int): RuntimeProtocolChannel
 }
 
 class RuntimeConnectionManager(
@@ -237,6 +272,7 @@ class RuntimeConnectionManager(
     private val remoteRoutePreparer: RuntimeRemoteRoutePreparer? = null,
     private val peerToPeerConnector: RuntimePeerToPeerConnector? = null,
     private val relayConnector: RuntimeRelayConnector? = null,
+    private val currentTimeMillis: () -> Long = { System.currentTimeMillis() },
 ) {
     constructor(transportClient: RuntimeTransportClient) : this(
         RuntimeTransportConnector { host, port, timeoutMillis ->
@@ -244,7 +280,14 @@ class RuntimeConnectionManager(
         },
     )
 
-    suspend fun connect(target: RuntimeConnectionTarget, timeoutMillis: Int = DEFAULT_TIMEOUT_MILLIS) {
+    suspend fun connect(target: RuntimeConnectionTarget, timeoutMillis: Int = DEFAULT_TIMEOUT_MILLIS): RuntimeProtocolChannel {
+        return connectWithRoute(target, timeoutMillis).channel
+    }
+
+    suspend fun connectWithRoute(
+        target: RuntimeConnectionTarget,
+        timeoutMillis: Int = DEFAULT_TIMEOUT_MILLIS,
+    ): RuntimeConnectionResult {
         val routes = resolveRoutes(target)
         if (routes.isEmpty()) {
             throw RuntimeConnectionFailure(
@@ -254,11 +297,22 @@ class RuntimeConnectionManager(
             )
         }
 
+        val nowEpochMillis = currentTimeMillis()
         val routeRejections = routes.mapNotNull {
-            it.connectabilityRejection(peerToPeerConnector, relayConnector)
+            it.connectabilityRejection(
+                targetIdentity = target.identity,
+                peerToPeerConnector = peerToPeerConnector,
+                relayConnector = relayConnector,
+                nowEpochMillis = nowEpochMillis,
+            )
         }
         val connectableRoutes = routes.filter { route ->
-            route.connectabilityRejection(peerToPeerConnector, relayConnector) == null
+            route.connectabilityRejection(
+                targetIdentity = target.identity,
+                peerToPeerConnector = peerToPeerConnector,
+                relayConnector = relayConnector,
+                nowEpochMillis = nowEpochMillis,
+            ) == null
         }
         if (connectableRoutes.isEmpty()) {
             throw RuntimeConnectionFailure(
@@ -274,7 +328,10 @@ class RuntimeConnectionManager(
             runCatching {
                 connect(route, timeoutMillis)
             }.onSuccess {
-                return
+                return RuntimeConnectionResult(
+                    channel = it,
+                    route = route,
+                )
             }.onFailure { error ->
                 failures += RuntimeRouteAttemptFailure(route, error)
             }
@@ -310,8 +367,8 @@ class RuntimeConnectionManager(
         return routes
     }
 
-    private suspend fun connect(route: RuntimeRouteCandidate, timeoutMillis: Int) {
-        when (route) {
+    private suspend fun connect(route: RuntimeRouteCandidate, timeoutMillis: Int): RuntimeProtocolChannel {
+        return when (route) {
             is RuntimeRouteCandidate.DirectTcp ->
                 connector.connect(
                     host = route.hint.host,
@@ -360,4 +417,24 @@ private fun RuntimeEndpointHint.routeSource(): RuntimeRouteSource {
         RuntimeEndpointSource.Emulator -> RuntimeRouteSource.EndpointHint
         RuntimeEndpointSource.Manual -> RuntimeRouteSource.Manual
     }
+}
+
+private fun PreparedRemoteRuntimeRoute.isBoundTo(
+    candidateIdentity: PairedRuntimeIdentity,
+    targetIdentity: PairedRuntimeIdentity?,
+): Boolean {
+    return identity.includesPinnedIdentity(candidateIdentity) &&
+        (targetIdentity == null || identity.includesPinnedIdentity(targetIdentity))
+}
+
+private fun PairedRuntimeIdentity.includesPinnedIdentity(pinned: PairedRuntimeIdentity): Boolean {
+    if (deviceId != pinned.deviceId) return false
+    if (!matchesPinnedValue(fingerprint, pinned.fingerprint)) return false
+    if (!matchesPinnedValue(publicKeyBase64, pinned.publicKeyBase64)) return false
+    if (!matchesPinnedValue(routeToken, pinned.routeToken)) return false
+    return true
+}
+
+private fun matchesPinnedValue(actual: String?, pinned: String?): Boolean {
+    return pinned == null || actual == pinned
 }

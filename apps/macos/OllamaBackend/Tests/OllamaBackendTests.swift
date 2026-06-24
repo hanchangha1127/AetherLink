@@ -327,6 +327,26 @@ final class OllamaBackendTests: XCTestCase {
         }
     }
 
+    func testHTTPForbiddenMapsToOllamaAccessRequiredBackendError() async {
+        let backend = makeBackend { request in
+            XCTAssertEqual(request.url?.path, "/api/tags")
+            return self.response(statusCode: 403, body: "forbidden")
+        }
+
+        do {
+            _ = try await backend.listModels()
+            XCTFail("Expected structured error")
+        } catch let error as OllamaBackendError {
+            XCTAssertEqual(error, .httpStatus(endpoint: "GET /api/tags", statusCode: 403, body: "forbidden"))
+            XCTAssertEqual(error.code, "ollama_auth_required")
+            XCTAssertEqual(error.backendError.code, "ollama_auth_required")
+            XCTAssertFalse(error.backendError.message.contains("Mac runtime"))
+            XCTAssertTrue(error.retryable)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
     func testCancelUnknownGenerationReturnsNotFound() {
         let backend = makeBackend { _ in
             self.response(statusCode: 200, body: "{}")

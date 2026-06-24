@@ -70,6 +70,11 @@
 "Local runtime" = "本地运行时";
 "Local" = "本地";
 "Cloud" = "云端";
+"Chat Models" = "聊天模型";
+"Embedding Models" = "嵌入模型";
+"%d model(s)" = "%d 个模型";
+"Chat" = "聊天";
+"Embedding" = "嵌入";
 "Running" = "运行中";
 "Model Residency" = "模型驻留";
 "Not managed" = "未管理";

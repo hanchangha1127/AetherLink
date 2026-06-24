@@ -17,7 +17,11 @@ import com.localagentbridge.android.core.transport.RuntimeConnectionManager
 import com.localagentbridge.android.core.transport.RuntimeConnectionTarget
 import com.localagentbridge.android.core.transport.RuntimeEndpointHint
 import com.localagentbridge.android.core.transport.RuntimeEndpointSource
+import com.localagentbridge.android.core.transport.RuntimeProtocolChannel
+import com.localagentbridge.android.core.transport.RuntimeRouteCapability
 import com.localagentbridge.android.core.transport.RuntimeRouteCandidate
+import com.localagentbridge.android.core.transport.RuntimeRouteRejection
+import com.localagentbridge.android.core.transport.RuntimeRouteRejectionReason
 import com.localagentbridge.android.core.transport.RuntimeRouteResolver
 import com.localagentbridge.android.core.transport.RuntimeRouteSource
 import com.localagentbridge.android.core.transport.RuntimeTransportConnector
@@ -749,7 +753,7 @@ class RuntimeClientViewModelTest {
     }
 
     @Test
-    fun runtimeRouteCandidatesAllowMetadataLessSelectedBonjourEndpoint() {
+    fun runtimeRouteCandidatesRejectMetadataLessSelectedBonjourEndpoint() {
         val state = RuntimeUiState(
             runtimeHost = "192.168.1.99",
             runtimePort = "43170",
@@ -773,9 +777,29 @@ class RuntimeClientViewModelTest {
         val endpointRoutes = runtimeRouteCandidates(state, target)
             .filterIsInstance<RuntimeRouteCandidate.DirectTcp>()
 
-        assertEquals(1, endpointRoutes.size)
-        assertEquals("192.168.1.99", endpointRoutes.single().hint.host)
-        assertEquals(RuntimeEndpointSource.BonjourDiscovery, endpointRoutes.single().hint.source)
+        assertTrue(endpointRoutes.isEmpty())
+    }
+
+    @Test
+    fun runtimeRouteCandidatesRejectSelectedBonjourEndpointMissingCurrentDiscoveryMetadata() {
+        val state = RuntimeUiState(
+            runtimeHost = "192.168.1.99",
+            runtimePort = "43170",
+            runtimeEndpointSource = RuntimeEndpointSource.BonjourDiscovery,
+            trustedRuntime = RuntimeTrustedRuntime(
+                deviceId = "mac-1",
+                name = "AetherLink Runtime",
+                fingerprint = "trusted-fingerprint",
+                endpointHint = null,
+            ),
+            discoveredRuntimes = emptyList(),
+        )
+        val target = trustedRuntimeConnectionTarget(state) ?: error("Expected trusted target")
+
+        val endpointRoutes = runtimeRouteCandidates(state, target)
+            .filterIsInstance<RuntimeRouteCandidate.DirectTcp>()
+
+        assertTrue(endpointRoutes.isEmpty())
     }
 
     @Test
@@ -846,6 +870,34 @@ class RuntimeClientViewModelTest {
     }
 
     @Test
+    fun runtimeRouteCandidatesAddDebugUsbReverseFallbackForTrustedIdentity() {
+        val staleTrustedEndpoint = RuntimeEndpointHint(
+            host = "192.168.219.104",
+            port = 43170,
+            source = RuntimeEndpointSource.TrustedLastKnown,
+        )
+        val state = RuntimeUiState(
+            trustedRuntime = RuntimeTrustedRuntime(
+                deviceId = "mac-identity",
+                name = "AetherLink Runtime",
+                endpointHint = staleTrustedEndpoint,
+            ),
+        )
+        val target = trustedRuntimeConnectionTarget(state) ?: error("Expected trusted target")
+
+        val endpointRoutes = runtimeRouteCandidates(
+            state = state,
+            target = target,
+            includeUsbReverseFallback = true,
+        ).filterIsInstance<RuntimeRouteCandidate.DirectTcp>()
+
+        assertEquals("127.0.0.1", endpointRoutes[0].hint.host)
+        assertEquals(RuntimeEndpointSource.UsbReverse, endpointRoutes[0].hint.source)
+        assertEquals("192.168.219.104", endpointRoutes[1].hint.host)
+        assertEquals(RuntimeEndpointSource.TrustedLastKnown, endpointRoutes[1].hint.source)
+    }
+
+    @Test
     fun identityOnlyTrustedRuntimeWithoutDiscoveredEndpointReturnsNoConnectableRoute() {
         val state = RuntimeUiState(
             runtimeHost = "127.0.0.1",
@@ -862,6 +914,7 @@ class RuntimeClientViewModelTest {
         val manager = RuntimeConnectionManager(
             connector = RuntimeTransportConnector { host, port, _ ->
                 calls += host to port
+                TestRuntimeProtocolChannel
             },
             routeResolver = RuntimeRouteResolver { runtimeRouteCandidates(state, it) },
         )
@@ -905,6 +958,23 @@ class RuntimeClientViewModelTest {
                 RuntimeRouteCandidate.LocalDirect(identity),
                 RuntimeRouteCandidate.PeerToPeer(identity),
                 RuntimeRouteCandidate.Relay(identity),
+            ),
+            routeRejections = listOf(
+                RuntimeRouteRejection(
+                    route = RuntimeRouteCandidate.LocalDirect(identity),
+                    capability = RuntimeRouteCapability.DirectTcp,
+                    reason = RuntimeRouteRejectionReason.DirectTcpEndpointNotPrepared,
+                ),
+                RuntimeRouteRejection(
+                    route = RuntimeRouteCandidate.PeerToPeer(identity),
+                    capability = RuntimeRouteCapability.PeerToPeer,
+                    reason = RuntimeRouteRejectionReason.PeerToPeerConnectorNotAvailable,
+                ),
+                RuntimeRouteRejection(
+                    route = RuntimeRouteCandidate.Relay(identity),
+                    capability = RuntimeRouteCapability.Relay,
+                    reason = RuntimeRouteRejectionReason.RelayConnectorNotAvailable,
+                ),
             ),
         ).toRuntimeUiError()
 
@@ -1502,6 +1572,70 @@ class RuntimeClientViewModelTest {
     }
 
     @Test
+    fun runtimeAuthenticationErrorTransitionsToPairingRequiredState() {
+        val state = RuntimeUiState(
+            isConnected = true,
+            isConnecting = true,
+            isStreaming = true,
+            isLoadingModels = true,
+            isLoadingSuggestions = true,
+            installingModelId = "ollama:llama3",
+            activeRequestId = "hello-request",
+            runtimeStatus = "connected",
+            backendAvailable = true,
+            backendCode = "ok",
+            providerStatuses = listOf(
+                RuntimeProviderStatus(
+                    id = "ollama",
+                    name = "Ollama",
+                    available = true,
+                )
+            ),
+        )
+
+        val afterError = state.withRuntimeError(
+            envelope(
+                type = MessageType.Error,
+                requestId = "hello-request",
+                serializer = ErrorPayload.serializer(),
+                payload = ErrorPayload(
+                    code = "authentication_required",
+                    message = "Pair this device first",
+                    retryable = false,
+                ),
+            ),
+            ErrorPayload(
+                code = "authentication_required",
+                message = "Pair this device first",
+                retryable = false,
+            ),
+            pendingModelPullRequestId = null,
+        )
+
+        assertFalse(afterError.isConnected)
+        assertFalse(afterError.isConnecting)
+        assertFalse(afterError.isStreaming)
+        assertFalse(afterError.isLoadingModels)
+        assertFalse(afterError.isLoadingSuggestions)
+        assertNull(afterError.installingModelId)
+        assertNull(afterError.activeRequestId)
+        assertEquals("pairing_required", afterError.runtimeStatus)
+        assertNull(afterError.backendAvailable)
+        assertNull(afterError.backendCode)
+        assertTrue(afterError.providerStatuses.isEmpty())
+        assertEquals("pairing_required", afterError.error?.code)
+        assertEquals("Pair this device first", afterError.error?.detail)
+    }
+
+    @Test
+    fun runtimePairingRequiredCodeMatchingIsCaseInsensitive() {
+        assertTrue("pairing_required".isPairingRequiredRuntimeCode())
+        assertTrue("AUTHENTICATION_REQUIRED".isPairingRequiredRuntimeCode())
+        assertFalse("connection_failed".isPairingRequiredRuntimeCode())
+        assertFalse(null.isPairingRequiredRuntimeCode())
+    }
+
+    @Test
     fun persistedMessagesCreateSortedSessionSummaryAndReloadActiveMessages() {
         val data = PersistedRuntimeData()
             .withPersistedMessages(
@@ -1909,6 +2043,20 @@ class RuntimeClientViewModelTest {
             port = 43170,
             serviceType = "_aetherlink._tcp.local.",
         )
+    }
+
+    private object TestRuntimeProtocolChannel : RuntimeProtocolChannel {
+        override val isConnected: Boolean = true
+
+        override suspend fun send(envelope: ProtocolEnvelope) {
+            error("Test channel does not send frames")
+        }
+
+        override suspend fun receive(): ProtocolEnvelope {
+            error("Test channel does not receive frames")
+        }
+
+        override fun close() = Unit
     }
 
     private companion object {

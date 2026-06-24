@@ -70,6 +70,11 @@
 "Local runtime" = "로컬 런타임";
 "Local" = "로컬";
 "Cloud" = "클라우드";
+"Chat Models" = "채팅 모델";
+"Embedding Models" = "임베딩 모델";
+"%d model(s)" = "모델 %d개";
+"Chat" = "채팅";
+"Embedding" = "임베딩";
 "Running" = "실행 중";
 "Model Residency" = "모델 상주";
 "Not managed" = "관리 안 함";

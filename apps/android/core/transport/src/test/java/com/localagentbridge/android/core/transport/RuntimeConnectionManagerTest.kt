@@ -1,5 +1,6 @@
 package com.localagentbridge.android.core.transport
 
+import com.localagentbridge.android.core.protocol.ProtocolEnvelope
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -133,6 +134,7 @@ class RuntimeConnectionManagerTest {
         val manager = RuntimeConnectionManager(
             RuntimeTransportConnector { host, port, timeoutMillis ->
                 calls += ConnectCall(host, port, timeoutMillis)
+                TestRuntimeProtocolChannel
             }
         )
 
@@ -155,6 +157,7 @@ class RuntimeConnectionManagerTest {
         val manager = RuntimeConnectionManager(
             RuntimeTransportConnector { host, port, timeoutMillis ->
                 calls += ConnectCall(host, port, timeoutMillis)
+                TestRuntimeProtocolChannel
             }
         )
 
@@ -179,6 +182,7 @@ class RuntimeConnectionManagerTest {
         val manager = RuntimeConnectionManager(
             RuntimeTransportConnector { host, port, timeoutMillis ->
                 calls += ConnectCall(host, port, timeoutMillis)
+                TestRuntimeProtocolChannel
             }
         )
 
@@ -216,26 +220,30 @@ class RuntimeConnectionManagerTest {
     @Test
     fun endpointHintRouteConnects() = runBlocking {
         val calls = mutableListOf<ConnectCall>()
+        val endpoint = RuntimeEndpointHint(
+            host = "10.0.2.2",
+            port = 43170,
+            source = RuntimeEndpointSource.Emulator,
+        )
         val manager = RuntimeConnectionManager(
             connector = RuntimeTransportConnector { host, port, timeoutMillis ->
                 calls += ConnectCall(host, port, timeoutMillis)
+                TestRuntimeProtocolChannel
             },
             routeResolver = RuntimeRouteResolver {
                 listOf(
                     RuntimeRouteCandidate.DirectTcp(
-                        hint = RuntimeEndpointHint(
-                            host = "10.0.2.2",
-                            port = 43170,
-                            source = RuntimeEndpointSource.Emulator,
-                        ),
+                        hint = endpoint,
                     )
                 )
             },
         )
 
-        manager.connect(RuntimeConnectionTarget(identity = pairedIdentity()), timeoutMillis = 750)
+        val result = manager.connectWithRoute(RuntimeConnectionTarget(identity = pairedIdentity()), timeoutMillis = 750)
 
         assertEquals(listOf(ConnectCall("10.0.2.2", 43170, 750)), calls)
+        assertEquals(RuntimeRouteCandidate.DirectTcp(endpoint), result.route)
+        assertEquals(TestRuntimeProtocolChannel, result.channel)
     }
 
     @Test
@@ -254,6 +262,7 @@ class RuntimeConnectionManagerTest {
         val manager = RuntimeConnectionManager(
             connector = RuntimeTransportConnector { host, port, timeoutMillis ->
                 calls += ConnectCall(host, port, timeoutMillis)
+                TestRuntimeProtocolChannel
             },
             routeResolver = RuntimeRouteResolver {
                 listOf(
@@ -323,6 +332,7 @@ class RuntimeConnectionManagerTest {
         val manager = RuntimeConnectionManager(
             connector = RuntimeTransportConnector { host, port, timeoutMillis ->
                 calls += ConnectCall(host, port, timeoutMillis)
+                TestRuntimeProtocolChannel
             },
             routeResolver = RuntimeRouteResolver {
                 listOf(
@@ -369,6 +379,7 @@ class RuntimeConnectionManagerTest {
         val manager = RuntimeConnectionManager(
             connector = RuntimeTransportConnector { host, port, timeoutMillis ->
                 directCalls += ConnectCall(host, port, timeoutMillis)
+                TestRuntimeProtocolChannel
             },
             routeResolver = RuntimeRouteResolver { emptyList() },
             remoteRoutePreparer = RuntimeRemoteRoutePreparer { pairedRuntime ->
@@ -383,6 +394,7 @@ class RuntimeConnectionManagerTest {
             peerToPeerConnector = RuntimePeerToPeerConnector { route, timeoutMillis ->
                 peerCalls += route
                 assertEquals(900, timeoutMillis)
+                TestRuntimeProtocolChannel
             },
         )
 
@@ -391,6 +403,131 @@ class RuntimeConnectionManagerTest {
         assertEquals(emptyList<ConnectCall>(), directCalls)
         assertEquals("p2p-route-token", peerCalls.single().sessionId)
         assertEquals(identity, peerCalls.single().identity)
+    }
+
+    @Test
+    fun expiredRemoteRoutesAreRejectedBeforeConnectorAttempt() {
+        val identity = pairedIdentity(routeToken = "route-token")
+        val peerCalls = mutableListOf<PreparedRemoteRuntimeRoute.PeerToPeer>()
+        val manager = RuntimeConnectionManager(
+            connector = RuntimeTransportConnector { _, _, _ ->
+                error("Direct TCP should not be used for this identity-only target")
+            },
+            routeResolver = RuntimeRouteResolver { emptyList() },
+            remoteRoutePreparer = RuntimeRemoteRoutePreparer { pairedRuntime ->
+                listOf(
+                    PreparedRemoteRuntimeRoute.PeerToPeer(
+                        identity = pairedRuntime,
+                        sessionId = "p2p-expired",
+                        security = securityContext("p2p-expired", expiresAtEpochMillis = 1_000),
+                    )
+                )
+            },
+            peerToPeerConnector = RuntimePeerToPeerConnector { route, _ ->
+                peerCalls += route
+                TestRuntimeProtocolChannel
+            },
+            currentTimeMillis = { 2_000 },
+        )
+
+        val failure = assertThrows(RuntimeConnectionFailure::class.java) {
+            runBlocking {
+                manager.connect(RuntimeConnectionTarget(identity = identity))
+            }
+        }
+
+        assertEquals(RuntimeConnectionFailureReason.NoConnectableRoute, failure.reason)
+        assertEquals(
+            listOf(RuntimeRouteRejectionReason.RemoteRouteExpired),
+            failure.routeRejections.map { it.reason },
+        )
+        assertEquals(emptyList<PreparedRemoteRuntimeRoute.PeerToPeer>(), peerCalls)
+    }
+
+    @Test
+    fun mismatchedRemoteRouteIdentityIsRejectedBeforeConnectorAttempt() {
+        val trustedIdentity = pairedIdentity(routeToken = "route-token")
+        val mismatchedIdentity = PairedRuntimeIdentity(
+            deviceId = "runtime-2",
+            name = "AetherLink",
+            fingerprint = "other-fingerprint",
+            routeToken = "other-route-token",
+        )
+        val peerCalls = mutableListOf<PreparedRemoteRuntimeRoute.PeerToPeer>()
+        val manager = RuntimeConnectionManager(
+            connector = RuntimeTransportConnector { _, _, _ ->
+                error("Direct TCP should not be used for this identity-only target")
+            },
+            routeResolver = RuntimeRouteResolver { emptyList() },
+            remoteRoutePreparer = RuntimeRemoteRoutePreparer {
+                listOf(
+                    PreparedRemoteRuntimeRoute.PeerToPeer(
+                        identity = mismatchedIdentity,
+                        sessionId = "p2p-wrong-runtime",
+                        security = securityContext("p2p-wrong-runtime"),
+                    )
+                )
+            },
+            peerToPeerConnector = RuntimePeerToPeerConnector { route, _ ->
+                peerCalls += route
+                TestRuntimeProtocolChannel
+            },
+        )
+
+        val failure = assertThrows(RuntimeConnectionFailure::class.java) {
+            runBlocking {
+                manager.connect(RuntimeConnectionTarget(identity = trustedIdentity))
+            }
+        }
+
+        assertEquals(RuntimeConnectionFailureReason.NoConnectableRoute, failure.reason)
+        assertEquals(
+            listOf(RuntimeRouteRejectionReason.RemoteRouteIdentityMismatch),
+            failure.routeRejections.map { it.reason },
+        )
+        assertEquals(emptyList<PreparedRemoteRuntimeRoute.PeerToPeer>(), peerCalls)
+    }
+
+    @Test
+    fun remoteRouteMissingPinnedMetadataIsRejectedBeforeConnectorAttempt() {
+        val trustedIdentity = pairedIdentity(routeToken = "route-token")
+        val incompleteIdentity = PairedRuntimeIdentity(
+            deviceId = trustedIdentity.deviceId,
+            name = trustedIdentity.name,
+        )
+        val peerCalls = mutableListOf<PreparedRemoteRuntimeRoute.PeerToPeer>()
+        val manager = RuntimeConnectionManager(
+            connector = RuntimeTransportConnector { _, _, _ ->
+                error("Direct TCP should not be used for this identity-only target")
+            },
+            routeResolver = RuntimeRouteResolver { emptyList() },
+            remoteRoutePreparer = RuntimeRemoteRoutePreparer {
+                listOf(
+                    PreparedRemoteRuntimeRoute.PeerToPeer(
+                        identity = incompleteIdentity,
+                        sessionId = "p2p-incomplete-runtime",
+                        security = securityContext("p2p-incomplete-runtime"),
+                    )
+                )
+            },
+            peerToPeerConnector = RuntimePeerToPeerConnector { route, _ ->
+                peerCalls += route
+                TestRuntimeProtocolChannel
+            },
+        )
+
+        val failure = assertThrows(RuntimeConnectionFailure::class.java) {
+            runBlocking {
+                manager.connect(RuntimeConnectionTarget(identity = trustedIdentity))
+            }
+        }
+
+        assertEquals(RuntimeConnectionFailureReason.NoConnectableRoute, failure.reason)
+        assertEquals(
+            listOf(RuntimeRouteRejectionReason.RemoteRouteIdentityMismatch),
+            failure.routeRejections.map { it.reason },
+        )
+        assertEquals(emptyList<PreparedRemoteRuntimeRoute.PeerToPeer>(), peerCalls)
     }
 
     @Test
@@ -423,6 +560,7 @@ class RuntimeConnectionManagerTest {
             },
             relayConnector = RuntimeRelayConnector { route, timeoutMillis ->
                 relayCalls += "${route.relayId}:$timeoutMillis"
+                TestRuntimeProtocolChannel
             },
         )
 
@@ -441,10 +579,13 @@ class RuntimeConnectionManagerTest {
         )
     }
 
-    private fun securityContext(token: String): RemoteRouteSecurityContext {
+    private fun securityContext(
+        token: String,
+        expiresAtEpochMillis: Long = 1_893_456_000_000,
+    ): RemoteRouteSecurityContext {
         return RemoteRouteSecurityContext(
             rendezvousToken = token,
-            expiresAtEpochMillis = 1_893_456_000_000,
+            expiresAtEpochMillis = expiresAtEpochMillis,
             antiReplayNonce = "nonce-$token",
         )
     }
@@ -454,4 +595,18 @@ class RuntimeConnectionManagerTest {
         val port: Int,
         val timeoutMillis: Int,
     )
+
+    private object TestRuntimeProtocolChannel : RuntimeProtocolChannel {
+        override val isConnected: Boolean = true
+
+        override suspend fun send(envelope: ProtocolEnvelope) {
+            error("Test channel does not send frames")
+        }
+
+        override suspend fun receive(): ProtocolEnvelope {
+            error("Test channel does not receive frames")
+        }
+
+        override fun close() = Unit
+    }
 }

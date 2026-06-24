@@ -70,6 +70,11 @@
 "Local runtime" = "Runtime local";
 "Local" = "Local";
 "Cloud" = "Cloud";
+"Chat Models" = "Modèles de chat";
+"Embedding Models" = "Modèles d’embedding";
+"%d model(s)" = "%d modèle(s)";
+"Chat" = "Chat";
+"Embedding" = "Embedding";
 "Running" = "En cours";
 "Model Residency" = "Résidence du modèle";
 "Not managed" = "Non gérée";

@@ -9,6 +9,7 @@ import android.util.Base64
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.localagentbridge.android.BuildConfig
 import com.localagentbridge.android.core.protocol.AuthChallengePayload
 import com.localagentbridge.android.core.protocol.AuthResponsePayload
 import com.localagentbridge.android.core.protocol.ChatAttachmentPayload
@@ -43,6 +44,7 @@ import com.localagentbridge.android.core.transport.RuntimeConnectionManager
 import com.localagentbridge.android.core.transport.RuntimeConnectionTarget
 import com.localagentbridge.android.core.transport.RuntimeEndpointHint
 import com.localagentbridge.android.core.transport.RuntimeEndpointSource
+import com.localagentbridge.android.core.transport.RuntimeProtocolChannel
 import com.localagentbridge.android.core.transport.RuntimeRouteCandidate
 import com.localagentbridge.android.core.transport.RuntimeRouteCapability
 import com.localagentbridge.android.core.transport.RuntimeRouteResolver
@@ -80,7 +82,11 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
             client.connect(host = host, port = port, timeoutMillis = timeoutMillis)
         },
         routeResolver = RuntimeRouteResolver { target ->
-            runtimeRouteCandidates(state.value, target)
+            runtimeRouteCandidates(
+                state = state.value,
+                target = target,
+                includeUsbReverseFallback = BuildConfig.DEBUG,
+            )
         },
     )
     private val discovery = BonjourDiscovery(application)
@@ -90,6 +96,7 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
     private var readJob: Job? = null
     private var discoveryJob: Job? = null
     private var reconnectJob: Job? = null
+    private var activeChannel: RuntimeProtocolChannel? = null
     private var pendingPairingPayload: RuntimePairingPayload? = null
     private var pendingModelPullRequestId: String? = null
     private var pendingSuggestionRequestId: String? = null
@@ -632,6 +639,8 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
         reconnectJob = null
         readJob?.cancel()
         readJob = null
+        activeChannel?.close()
+        activeChannel = null
         client.close()
         isSessionAuthenticated = false
         pendingModelPullRequestId = null
@@ -847,6 +856,8 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
 
         readJob?.cancel()
         readJob = null
+        activeChannel?.close()
+        activeChannel = null
         client.close()
         isSessionAuthenticated = false
 
@@ -855,15 +866,23 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
                 TAG,
                 "Connecting to runtime ${target.connectionLogLabel()}"
             )
-            connectionManager.connect(target)
-        }.onSuccess {
-            Log.d(TAG, "Connected to runtime ${target.connectionLogLabel()}")
+            connectionManager.connectWithRoute(target)
+        }.onSuccess { connection ->
+            activeChannel = connection.channel
+            val connectedEndpoint = connection.route.connectedEndpointHintOrNull()
+            Log.d(
+                TAG,
+                "Connected to runtime ${target.connectionLogLabel()} route=${connection.route.connectionRouteLogLabel()}"
+            )
             reconnectJob = null
             mutableState.update {
                 it.copy(
                     isConnected = true,
                     isConnecting = false,
                     runtimeStatus = "connected",
+                    runtimeHost = connectedEndpoint?.host ?: it.runtimeHost,
+                    runtimePort = connectedEndpoint?.port?.toString() ?: it.runtimePort,
+                    runtimeEndpointSource = connectedEndpoint?.source ?: it.runtimeEndpointSource,
                     error = null,
                 )
             }
@@ -888,8 +907,9 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
     private fun startReadLoop() {
         readJob?.cancel()
         readJob = viewModelScope.launch {
+            val channel = activeChannel ?: client
             while (isActive) {
-                runCatching { client.receive() }
+                runCatching { channel.receive() }
                     .onSuccess { envelope ->
                         Log.d(TAG, "Received ${envelope.type} request_id=${envelope.requestId}")
                         handleEnvelope(envelope)
@@ -1070,6 +1090,13 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
 
     private fun handleRuntimeHealth(envelope: ProtocolEnvelope) {
         val payload = decodePayload(RuntimeHealthPayload.serializer(), envelope.payload) ?: return
+        if (payload.status.isPairingRequiredRuntimeCode()) {
+            isSessionAuthenticated = false
+            mutableState.update {
+                it.withPairingRequiredRuntimeState(detail = null)
+            }
+            return
+        }
         val providerStatuses = runtimeProviderStatuses(payload)
         mutableState.update {
             it.copy(
@@ -1295,6 +1322,9 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
         if (isModelPullError) {
             modelIdToSelectAfterRefresh = null
         }
+        if (payload?.code.isPairingRequiredRuntimeCode()) {
+            isSessionAuthenticated = false
+        }
         val updatedState = state.value.withRuntimeError(envelope, payload, pendingModelPullRequestId)
         mutableState.value = updatedState
         if (isActiveChatError) {
@@ -1309,7 +1339,8 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
         viewModelScope.launch {
             runCatching {
                 Log.d(TAG, "Sending ${envelope.type} request_id=${envelope.requestId}")
-                client.send(envelope)
+                val channel = requireNotNull(activeChannel) { "Runtime transport is not connected" }
+                channel.send(envelope)
             }
                 .onFailure { error ->
                     Log.e(TAG, "Runtime send failed", error)
@@ -1329,7 +1360,7 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
                         current.messages
                     }
                     mutableState.value = current.copy(
-                        isConnected = client.isConnected,
+                        isConnected = activeChannel?.isConnected == true,
                         isStreaming = false,
                         isLoadingModels = false,
                         installingModelId = null,
@@ -1725,6 +1756,7 @@ internal fun RuntimeUiState.shouldDiscoverTrustedRuntimeRoute(): Boolean {
 internal fun runtimeRouteCandidates(
     state: RuntimeUiState,
     target: RuntimeConnectionTarget,
+    includeUsbReverseFallback: Boolean = false,
 ): List<RuntimeRouteCandidate> {
     val routes = mutableListOf<RuntimeRouteCandidate>()
     val seenEndpoints = mutableSetOf<Pair<String, Int>>()
@@ -1749,6 +1781,20 @@ internal fun runtimeRouteCandidates(
                         port = discovered.port,
                         source = RuntimeEndpointSource.BonjourDiscovery,
                     ),
+                    source = RuntimeRouteSource.FreshDiscovery,
+                )
+            }
+        }
+        if (includeUsbReverseFallback) {
+            val endpoint = RuntimeEndpointHint(
+                host = "127.0.0.1",
+                port = 43170,
+                source = RuntimeEndpointSource.UsbReverse,
+            )
+            val key = endpoint.host to endpoint.port
+            if (seenEndpoints.add(key)) {
+                routes += RuntimeRouteCandidate.DirectTcp(
+                    hint = endpoint,
                     source = RuntimeRouteSource.FreshDiscovery,
                 )
             }
@@ -1796,8 +1842,8 @@ private fun RuntimeUiState.isTrustedRouteEndpointAllowed(
         return true
     }
     val discovered = discoveredRuntimes.firstOrNull { it.host == endpoint.host && it.port == endpoint.port }
-        ?: return true
-    return discovered.matchesTrustedIdentity(identity, allowMissingMetadata = true)
+        ?: return false
+    return discovered.matchesTrustedIdentity(identity, allowMissingMetadata = false)
 }
 
 private fun RuntimeDiscoveredRuntime.matchesTrustedIdentity(
@@ -1913,6 +1959,22 @@ private fun RuntimeConnectionTarget.connectionLogLabel(): String {
         "endpoint=${endpoint.host}:${endpoint.port} source=${endpoint.source}"
     }
     return "$endpointLabel identity=${identity?.deviceId}"
+}
+
+private fun RuntimeRouteCandidate.connectedEndpointHintOrNull(): RuntimeEndpointHint? {
+    return when (this) {
+        is RuntimeRouteCandidate.DirectTcp -> hint
+        else -> null
+    }
+}
+
+private fun RuntimeRouteCandidate.connectionRouteLogLabel(): String {
+    return when (this) {
+        is RuntimeRouteCandidate.DirectTcp -> "direct=${hint.host}:${hint.port} source=${hint.source}"
+        is RuntimeRouteCandidate.LocalDirect -> "local_direct identity=${identity.deviceId}"
+        is RuntimeRouteCandidate.PeerToPeer -> "p2p identity=${identity.deviceId}"
+        is RuntimeRouteCandidate.Relay -> "relay identity=${identity.deviceId}"
+    }
 }
 
 private fun RuntimeEndpointHint.routeSource(): RuntimeRouteSource {
@@ -2217,7 +2279,9 @@ internal fun RuntimeUiState.withRuntimeError(
 ): RuntimeUiState {
     val isActiveChatError = activeRequestId == envelope.requestId
     val isModelPullError = pendingModelPullRequestId == envelope.requestId
-    return copy(
+    val runtimeError = payload?.let { error -> RuntimeUiError(error.code, error.message) }
+        ?: RuntimeUiError("runtime_error")
+    val updated = copy(
         messages = if (isActiveChatError) {
             messages.withoutTrailingBlankAssistantPlaceholder()
         } else {
@@ -2228,9 +2292,35 @@ internal fun RuntimeUiState.withRuntimeError(
         activeRequestId = if (isActiveChatError) null else activeRequestId,
         isLoadingModels = false,
         installingModelId = if (isModelPullError) null else installingModelId,
-        error = payload?.let { error -> RuntimeUiError(error.code, error.message) }
-            ?: RuntimeUiError("runtime_error"),
+        error = runtimeError,
     )
+    return if (runtimeError.code.isPairingRequiredRuntimeCode()) {
+        updated.withPairingRequiredRuntimeState(detail = runtimeError.detail)
+    } else {
+        updated
+    }
+}
+
+internal fun RuntimeUiState.withPairingRequiredRuntimeState(detail: String?): RuntimeUiState {
+    return copy(
+        isConnected = false,
+        isConnecting = false,
+        isStreaming = false,
+        isLoadingModels = false,
+        isLoadingSuggestions = false,
+        installingModelId = null,
+        activeRequestId = null,
+        runtimeStatus = "pairing_required",
+        backendAvailable = null,
+        backendCode = null,
+        providerStatuses = emptyList(),
+        error = RuntimeUiError("pairing_required", detail),
+    )
+}
+
+internal fun String?.isPairingRequiredRuntimeCode(): Boolean {
+    return equals("pairing_required", ignoreCase = true) ||
+        equals("authentication_required", ignoreCase = true)
 }
 
 private fun List<RuntimeChatMessage>.withoutTrailingBlankAssistantPlaceholder(): List<RuntimeChatMessage> {

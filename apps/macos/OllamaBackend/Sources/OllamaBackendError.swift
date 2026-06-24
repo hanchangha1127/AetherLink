@@ -18,6 +18,8 @@ public enum OllamaBackendError: Error, Equatable, LocalizedError, Sendable {
         switch self {
         case .unreachable:
             return "ollama_unreachable"
+        case .httpStatus(_, let statusCode, _) where statusCode == 401 || statusCode == 403:
+            return "ollama_auth_required"
         case .httpStatus:
             return "ollama_http_status"
         case .requestEncoding:
@@ -73,6 +75,13 @@ public enum OllamaBackendError: Error, Equatable, LocalizedError, Sendable {
                 provider: .ollama,
                 code: "backend_unavailable",
                 message: "Ollama is not reachable from the runtime host.",
+                retryable: true
+            )
+        case .httpStatus(_, let statusCode, _) where statusCode == 401 || statusCode == 403:
+            return BackendError(
+                provider: .ollama,
+                code: "ollama_auth_required",
+                message: "Ollama rejected the request. Open Ollama on the paired runtime, sign in or refresh model access, then try again.",
                 retryable: true
             )
         case .httpStatus(_, let statusCode, _):

@@ -41,6 +41,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Unarchive
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.DropdownMenu
@@ -603,8 +604,19 @@ private fun ChatModelTopBarMenu(
                 }
             },
             enabled = !state.isStreaming,
+            shape = androidx.compose.foundation.shape.RoundedCornerShape(18.dp),
+            colors = ButtonDefaults.textButtonColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
+                contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.36f),
+                disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.52f),
+            ),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                horizontal = 12.dp,
+                vertical = 6.dp,
+            ),
             modifier = Modifier
-                .widthIn(max = 240.dp)
+                .widthIn(max = 236.dp)
                 .semantics {
                     stateDescription = modelPickerStateDescription
                 },

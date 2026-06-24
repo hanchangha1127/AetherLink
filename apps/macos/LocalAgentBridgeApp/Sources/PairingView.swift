@@ -62,45 +62,72 @@ private struct ActivePairingCard: View {
     let code: String
     let expiresAt: Date
     @State private var didCopyCode = false
+    @State private var sessionStartedAt = Date()
 
     var body: some View {
-        ViewThatFits(in: .horizontal) {
-            content(axis: .horizontal)
-            content(axis: .vertical)
+        TimelineView(.periodic(from: Date(), by: 1)) { timeline in
+            let isExpired = expiresAt <= timeline.date
+
+            ViewThatFits(in: .horizontal) {
+                content(axis: .horizontal, at: timeline.date, isExpired: isExpired)
+                content(axis: .vertical, at: timeline.date, isExpired: isExpired)
+            }
+            .padding(16)
+            .background(expirationTint(at: timeline.date), in: RoundedRectangle(cornerRadius: 12))
+            .overlay {
+                RoundedRectangle(cornerRadius: 12)
+                    .strokeBorder(expirationBorderColor(at: timeline.date), lineWidth: isExpired ? 1.5 : 1)
+            }
+            .animation(.easeInOut(duration: 0.2), value: isExpired)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder
-    private func content(axis: Axis) -> some View {
+    private func content(axis: Axis, at date: Date, isExpired: Bool) -> some View {
         let spacing: CGFloat = axis == .horizontal ? 22 : 16
         if axis == .horizontal {
             HStack(alignment: .center, spacing: spacing) {
-                qrCode
-                instructions
+                qrCode(isExpired: isExpired)
+                instructions(at: date)
             }
         } else {
             VStack(alignment: .leading, spacing: spacing) {
-                qrCode
-                instructions
+                qrCode(isExpired: isExpired)
+                instructions(at: date)
             }
         }
     }
 
-    private var qrCode: some View {
+    private func qrCode(isExpired: Bool) -> some View {
         QRCodeView(text: qrPayload)
             .frame(width: 198, height: 198)
             .padding(14)
             .background(Color.white, in: RoundedRectangle(cornerRadius: 8))
+            .opacity(isExpired ? 0.28 : 1)
             .overlay {
                 RoundedRectangle(cornerRadius: 8)
                     .strokeBorder(.black.opacity(0.12), lineWidth: 1)
+            }
+            .overlay {
+                if isExpired {
+                    Label(
+                        NSLocalizedString("Pairing code expired. Generate a new code.", comment: ""),
+                        systemImage: "exclamationmark.triangle.fill"
+                    )
+                    .font(.callout.weight(.semibold))
+                    .foregroundStyle(.orange)
+                    .multilineTextAlignment(.center)
+                    .padding(12)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+                    .padding(18)
+                }
             }
             .shadow(color: .black.opacity(0.08), radius: 10, y: 4)
             .accessibilityLabel(Text("Pairing QR code"))
     }
 
-    private var instructions: some View {
+    private func instructions(at date: Date) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("One-Time Code")
@@ -134,10 +161,9 @@ private struct ActivePairingCard: View {
                 Label("Scan the QR code or enter the code in the AetherLink client app.", systemImage: "qrcode.viewfinder")
                 Label("The QR code identifies this runtime; client apps resolve the current route after scanning.", systemImage: "point.3.connected.trianglepath.dotted")
                 Label("Local Network permission enables the current local discovery path; pairing trust stays tied to this runtime identity.", systemImage: "network")
-                TimelineView(.periodic(from: Date(), by: 1)) { timeline in
-                    Label(expirationText(at: timeline.date), systemImage: expirationSystemImage(at: timeline.date))
-                        .foregroundStyle(expiresAt <= timeline.date ? .orange : .secondary)
-                }
+                Label(expirationText(at: date), systemImage: expirationSystemImage(at: date))
+                    .foregroundStyle(expiresAt <= date ? .orange : .secondary)
+                expirationProgress(at: date)
                 Label("Keep this runtime host awake until pairing completes.", systemImage: "display")
             }
             .font(.callout)
@@ -145,6 +171,38 @@ private struct ActivePairingCard: View {
             .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func expirationProgress(at date: Date) -> some View {
+        GeometryReader { geometry in
+            let progress = expirationProgressValue(at: date)
+            let width = max(0, geometry.size.width * progress)
+
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(Color.secondary.opacity(0.16))
+                Capsule()
+                    .fill(expiresAt <= date ? Color.orange : Color.accentColor)
+                    .frame(width: width)
+            }
+        }
+        .frame(height: 6)
+        .frame(maxWidth: 360)
+        .accessibilityLabel(Text(expirationText(at: date)))
+    }
+
+    private func expirationProgressValue(at date: Date) -> Double {
+        let totalSeconds = max(1, expiresAt.timeIntervalSince(sessionStartedAt))
+        let remainingSeconds = max(0, expiresAt.timeIntervalSince(date))
+        return min(1, remainingSeconds / totalSeconds)
+    }
+
+    private func expirationTint(at date: Date) -> Color {
+        expiresAt <= date ? Color.orange.opacity(0.08) : Color.accentColor.opacity(0.05)
+    }
+
+    private func expirationBorderColor(at date: Date) -> Color {
+        expiresAt <= date ? Color.orange.opacity(0.55) : Color.primary.opacity(0.08)
     }
 
     private func expirationText(at date: Date) -> String {

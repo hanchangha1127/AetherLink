@@ -12,22 +12,23 @@ import java.net.Socket
 
 class RuntimeTransportClient(
     private val codec: ProtocolCodec = ProtocolCodec(),
-) : Closeable {
+) : RuntimeProtocolChannel {
     private val sendMutex = Mutex()
     private var socket: Socket? = null
 
-    val isConnected: Boolean
+    override val isConnected: Boolean
         get() = socket?.isConnected == true && socket?.isClosed == false
 
-    suspend fun connect(host: String, port: Int, timeoutMillis: Int = 5_000) = withContext(Dispatchers.IO) {
+    suspend fun connect(host: String, port: Int, timeoutMillis: Int = 5_000): RuntimeProtocolChannel = withContext(Dispatchers.IO) {
         close()
         val connected = Socket()
         connected.tcpNoDelay = true
         connected.connect(InetSocketAddress(host, port), timeoutMillis)
         socket = connected
+        this@RuntimeTransportClient
     }
 
-    suspend fun send(envelope: ProtocolEnvelope) = withContext(Dispatchers.IO) {
+    override suspend fun send(envelope: ProtocolEnvelope) = withContext(Dispatchers.IO) {
         val active = requireNotNull(socket) { "Runtime transport is not connected" }
         val frame = codec.encode(envelope)
         sendMutex.withLock {
@@ -36,7 +37,7 @@ class RuntimeTransportClient(
         }
     }
 
-    suspend fun receive(): ProtocolEnvelope = withContext(Dispatchers.IO) {
+    override suspend fun receive(): ProtocolEnvelope = withContext(Dispatchers.IO) {
         val active = requireNotNull(socket) { "Runtime transport is not connected" }
         codec.readFrame(active.inputStream)
     }

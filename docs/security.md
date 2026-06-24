@@ -2,9 +2,9 @@
 
 The project is local-first: no cloud AI backend and no account-server requirement for model access. The runtime host owns execution and backend access. The client device is a controller/client. That split is the main security boundary. The current v0.1 implementation uses a macOS runtime and an Android client.
 
-AetherLink may later use signaling or an encrypted blind relay/TURN-style component for connectivity when paired devices are on different networks. That component is connection infrastructure only: it must not run models, proxy backend APIs in plaintext, inspect AI protocol payloads, store prompts/responses, see model lists, files, memory, or backend credentials, or become a cloud AI backend.
+AetherLink may later use distributed rendezvous/bootstrap/DHT-style discovery, signaling, or an encrypted blind relay/TURN-style component for connectivity when paired devices are on different networks. That component is connection infrastructure only: it must not run models, proxy backend APIs in plaintext, inspect AI protocol payloads, store prompts/responses, see model lists, files, memory, or backend credentials, or become a cloud AI backend, account backend, or model-logic backend.
 
-Current code status: remote P2P NAT traversal, signaling, encrypted blind relay transport, and production end-to-end transport encryption are not implemented yet. Existing endpoint hints, Bonjour/mDNS records, USB reverse paths, and localhost/dev-server flows are local-direct development scaffolding behind the trusted-device boundary.
+Current code status: remote P2P NAT traversal, decentralized/distributed rendezvous, signaling, encrypted blind relay transport, and production end-to-end transport encryption are not implemented yet. Existing endpoint hints, Bonjour/mDNS records, USB reverse paths, and localhost/dev-server flows are local-direct development scaffolding behind the trusted-device boundary.
 
 ## Local-First Threat Model
 
@@ -76,7 +76,7 @@ Bitcoin-network analogy note: AetherLink should borrow only peer identity and di
 
 DHT/bootstrap note: a future DHT-like or bootstrap-peer layer may be useful for finding a paired peer without a fixed IP, but it must publish only privacy-preserving rendezvous records. It must not expose stable runtime host directories, backend URLs, model inventory, prompts, files, memory, or any authority to mark a device as trusted.
 
-Implementation status note: identity-only QR, local route-token matching, and P2P/relay route preparation are connection-manager increments. Actual DHT/bootstrap discovery, NAT traversal, signaling, relay allocation, and relay forwarding are not implemented in the current transport.
+Implementation status note: identity-only QR, local route-token matching, and P2P/relay route preparation are connection-manager increments. Actual DHT/bootstrap discovery, NAT traversal, signaling, relay allocation, and relay forwarding are not implemented in the current transport. The current local route remains a v0.1 development/local route, not the intended final same-network-IP design.
 
 Development note: `AETHERLINK_DEV_PAIRING=1` is only for local automated smoke tests with RuntimeDevServer. It opens and prints a temporary pairing session for scripts, but runtime commands still require the normal pairing/trusted-device and challenge-response path. Do not enable this flag for production or normal trusted-device use.
 
@@ -106,7 +106,7 @@ Target security properties:
 - Bonjour/local discovery records may advertise minimal runtime route hints for matching, preferably a pairing-derived `route_token`; the client only auto-routes to endpoints whose hints match the pinned trusted runtime identity.
 - Metadata-less Bonjour/local endpoints are limited to local/dev/manual reachability candidates and are not trusted identity matches.
 - Remote P2P NAT traversal uses paired identities, STUN-like address discovery, short-lived connection candidates, authenticated hole punching, and encrypted session establishment.
-- Optional DHT/bootstrap-peer discovery exchanges only short-lived rendezvous records for paired identities and does not create public runtime access.
+- Optional DHT/bootstrap-peer discovery exchanges only short-lived rendezvous records for paired identities and does not create public runtime access, accounts, backend routing, or model-logic hosting.
 - Encrypted blind relay/TURN-style forwarding is a fallback for cases where direct P2P fails.
 - Signaling and relay services see only connection metadata needed for reachability or opaque encrypted packets.
 - End-to-end encryption is between the paired client device and runtime host, so relay infrastructure cannot read AI protocol payloads, model lists, prompts, responses, memory notes, files, or backend credentials.
