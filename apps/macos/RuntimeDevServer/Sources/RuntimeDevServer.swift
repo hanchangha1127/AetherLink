@@ -44,6 +44,7 @@ struct RuntimeDevServer {
         let server = LocalPeerServer()
         let advertiser = BonjourAdvertiser()
         let relayConfiguration = Self.relayConfiguration(environment: environment, identity: identity)
+        let devPairingDirectHost = Self.developmentPairingDirectHost(environment: environment, relayConfigured: relayConfiguration != nil)
         let relayClient = relayConfiguration == nil ? nil : RelayPeerClient()
         RuntimeDevServerState.server = server
         RuntimeDevServerState.advertiser = advertiser
@@ -55,7 +56,12 @@ struct RuntimeDevServer {
         }
         advertiser.start(port: Int32(port), metadata: identity.advertisementMetadata)
         if let relayConfiguration, let relayClient {
-            relayClient.start(configuration: relayConfiguration) { envelope, sink in
+            relayClient.start(
+                configuration: relayConfiguration,
+                onStatusChange: { status in
+                    print("[runtime] relay status=\(status.logLabel)")
+                }
+            ) { envelope, sink in
                 print("[runtime] relay received type=\(envelope.type) request_id=\(envelope.requestID)")
                 router.handle(envelope, sink: LoggingSink(wrapped: sink))
             }
@@ -76,7 +82,8 @@ struct RuntimeDevServer {
                 coordinator: pairingCoordinator,
                 port: port,
                 identity: identity,
-                environment: environment
+                environment: environment,
+                directHost: devPairingDirectHost
             )
         }
 
@@ -107,7 +114,8 @@ struct RuntimeDevServer {
         coordinator: PairingCoordinator,
         port: UInt16,
         identity: DevRuntimeIdentity,
-        environment: [String: String]
+        environment: [String: String],
+        directHost: String?
     ) {
         let session = coordinator.beginPairing(
             validFor: TimeInterval(environment["AETHERLINK_DEV_PAIRING_TTL_SECONDS"] ?? "") ?? 300,
@@ -116,8 +124,8 @@ struct RuntimeDevServer {
             fingerprint: identity.fingerprint,
             runtimePublicKeyBase64: identity.publicKeyBase64.isEmpty ? nil : identity.publicKeyBase64,
             routeToken: identity.routeToken,
-            host: environment["AETHERLINK_DEV_PAIRING_HOST"] ?? "127.0.0.1",
-            port: Int(port),
+            host: directHost,
+            port: directHost == nil ? nil : Int(port),
             relayHost: environment["AETHERLINK_RELAY_HOST"]?.takeIfNotEmpty,
             relayPort: environment["AETHERLINK_RELAY_PORT"].flatMap { UInt16($0) }.map(Int.init),
             relayID: environment["AETHERLINK_RELAY_ID"]?.takeIfNotEmpty ?? identity.routeToken,
@@ -127,6 +135,16 @@ struct RuntimeDevServer {
         print("[runtime] WARNING: AETHERLINK_DEV_PAIRING=1 opened a development-only pairing window.")
         print("[runtime] Do not enable this mode for production or normal trusted-device use.")
         printDevelopmentPairingInfo(session)
+    }
+
+    private static func developmentPairingDirectHost(
+        environment: [String: String],
+        relayConfigured: Bool
+    ) -> String? {
+        if let explicitHost = environment["AETHERLINK_DEV_PAIRING_HOST"]?.takeIfNotEmpty {
+            return explicitHost
+        }
+        return relayConfigured ? nil : "127.0.0.1"
     }
 
     private static func printDevelopmentPairingInfo(_ session: PairingSession) {
@@ -235,6 +253,25 @@ private enum RuntimeDevServerState {
 private extension String {
     var takeIfNotEmpty: String? {
         isEmpty ? nil : self
+    }
+}
+
+private extension RelayPeerStatus {
+    var logLabel: String {
+        switch self {
+        case .stopped:
+            return "stopped"
+        case .connecting:
+            return "connecting"
+        case .waitingForPeer:
+            return "waiting_for_peer"
+        case .ready:
+            return "ready"
+        case .reconnecting(let message):
+            return message.map { "reconnecting: \($0)" } ?? "reconnecting"
+        case .failed(let message):
+            return "failed: \(message)"
+        }
     }
 }
 

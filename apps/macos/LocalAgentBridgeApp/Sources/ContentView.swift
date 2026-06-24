@@ -37,7 +37,13 @@ struct ContentView: View {
         } detail: {
             switch selectedSection {
             case .status:
-                StatusView(model: model)
+                StatusView(
+                    model: model,
+                    onGenerateRelayQRCode: {
+                        model.beginPairing()
+                        selectedSection = .pairing
+                    }
+                )
             case .pairing:
                 PairingView(model: model)
             case .trustedDevices:

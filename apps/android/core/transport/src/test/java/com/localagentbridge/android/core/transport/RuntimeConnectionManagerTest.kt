@@ -410,6 +410,141 @@ class RuntimeConnectionManagerTest {
     }
 
     @Test
+    fun preparedRelayRouteIsAttemptedBeforeStaleEndpointHint() = runBlocking {
+        val directCalls = mutableListOf<ConnectCall>()
+        val relayCalls = mutableListOf<String>()
+        val identity = pairedIdentity(routeToken = "route-token")
+        val relayRoute = PreparedRemoteRuntimeRoute.Relay(
+            identity = identity,
+            relayId = "relay-session",
+            host = "relay.example.test",
+            port = 443,
+            security = securityContext("relay-session"),
+        )
+        val manager = RuntimeConnectionManager(
+            connector = RuntimeTransportConnector { host, port, timeoutMillis ->
+                directCalls += ConnectCall(host, port, timeoutMillis)
+                throw IllegalStateException("stale direct route should not be attempted first")
+            },
+            routeResolver = RuntimeRouteResolver {
+                listOf(
+                    RuntimeRouteCandidate.DirectTcp(
+                        hint = RuntimeEndpointHint(
+                            host = "192.168.1.10",
+                            port = 43170,
+                            source = RuntimeEndpointSource.TrustedLastKnown,
+                        ),
+                        source = RuntimeRouteSource.TrustedLastKnownEndpoint,
+                    ),
+                    RuntimeRouteCandidate.Relay(identity),
+                )
+            },
+            remoteRoutePreparer = RuntimeRemoteRoutePreparer { listOf(relayRoute) },
+            relayConnector = RuntimeRelayConnector { route, timeoutMillis ->
+                relayCalls += "${route.relayId}:$timeoutMillis"
+                TestRuntimeProtocolChannel
+            },
+        )
+
+        manager.connect(RuntimeConnectionTarget(identity = identity))
+
+        assertEquals(listOf("relay-session:5000"), relayCalls)
+        assertEquals(emptyList<ConnectCall>(), directCalls)
+    }
+
+    @Test
+    fun preparedRelayRoutePrecedesFreshDiscoveryRoute() = runBlocking {
+        val directCalls = mutableListOf<ConnectCall>()
+        val relayCalls = mutableListOf<String>()
+        val identity = pairedIdentity(routeToken = "route-token")
+        val manager = RuntimeConnectionManager(
+            connector = RuntimeTransportConnector { host, port, timeoutMillis ->
+                directCalls += ConnectCall(host, port, timeoutMillis)
+                TestRuntimeProtocolChannel
+            },
+            routeResolver = RuntimeRouteResolver {
+                listOf(
+                    RuntimeRouteCandidate.DirectTcp(
+                        hint = RuntimeEndpointHint(
+                            host = "192.168.1.20",
+                            port = 43170,
+                            source = RuntimeEndpointSource.BonjourDiscovery,
+                        ),
+                        source = RuntimeRouteSource.FreshDiscovery,
+                    ),
+                    RuntimeRouteCandidate.Relay(identity),
+                )
+            },
+            remoteRoutePreparer = RuntimeRemoteRoutePreparer {
+                listOf(
+                    PreparedRemoteRuntimeRoute.Relay(
+                        identity = identity,
+                        relayId = "relay-session",
+                        host = "relay.example.test",
+                        port = 443,
+                        security = securityContext("relay-session"),
+                    )
+                )
+            },
+            relayConnector = RuntimeRelayConnector { route, _ ->
+                relayCalls += route.relayId
+                TestRuntimeProtocolChannel
+            },
+        )
+
+        manager.connect(RuntimeConnectionTarget(identity = identity))
+
+        assertEquals(emptyList<ConnectCall>(), directCalls)
+        assertEquals(listOf("relay-session"), relayCalls)
+    }
+
+    @Test
+    fun freshDiscoveryRouteFallbacksWhenPreparedRelayRouteFails() = runBlocking {
+        val directCalls = mutableListOf<ConnectCall>()
+        val relayCalls = mutableListOf<String>()
+        val identity = pairedIdentity(routeToken = "route-token")
+        val manager = RuntimeConnectionManager(
+            connector = RuntimeTransportConnector { host, port, timeoutMillis ->
+                directCalls += ConnectCall(host, port, timeoutMillis)
+                TestRuntimeProtocolChannel
+            },
+            routeResolver = RuntimeRouteResolver {
+                listOf(
+                    RuntimeRouteCandidate.DirectTcp(
+                        hint = RuntimeEndpointHint(
+                            host = "192.168.1.20",
+                            port = 43170,
+                            source = RuntimeEndpointSource.BonjourDiscovery,
+                        ),
+                        source = RuntimeRouteSource.FreshDiscovery,
+                    ),
+                    RuntimeRouteCandidate.Relay(identity),
+                )
+            },
+            remoteRoutePreparer = RuntimeRemoteRoutePreparer {
+                listOf(
+                    PreparedRemoteRuntimeRoute.Relay(
+                        identity = identity,
+                        relayId = "relay-session",
+                        host = "relay.example.test",
+                        port = 443,
+                        security = securityContext("relay-session"),
+                    )
+                )
+            },
+            relayConnector = RuntimeRelayConnector { route, _ ->
+                relayCalls += route.relayId
+                throw IllegalStateException("relay offline")
+            },
+        )
+
+        manager.connect(RuntimeConnectionTarget(identity = identity))
+
+        assertEquals(listOf("relay-session"), relayCalls)
+        assertEquals(listOf(ConnectCall("192.168.1.20", 43170, 5000)), directCalls)
+    }
+
+    @Test
     fun expiredRemoteRoutesAreRejectedBeforeConnectorAttempt() {
         val identity = pairedIdentity(routeToken = "route-token")
         val peerCalls = mutableListOf<PreparedRemoteRuntimeRoute.PeerToPeer>()

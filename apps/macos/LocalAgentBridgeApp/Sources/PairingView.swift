@@ -1,5 +1,4 @@
 import CompanionCore
-import AppKit
 import CoreImage.CIFilterBuiltins
 import SwiftUI
 
@@ -19,10 +18,10 @@ struct PairingView: View {
                     if let session = model.pairingSession {
                         ActivePairingCard(
                             qrPayload: session.qrPayload,
-                            code: session.code,
-                            expiresAt: session.expiresAt
+                            expiresAt: session.expiresAt,
+                            routeNotice: pairingRouteNotice
                         )
-                        .id(session.code)
+                        .id(session.id)
                     } else {
                         ContentUnavailableView(
                             NSLocalizedString("No active pairing code", comment: ""),
@@ -55,13 +54,42 @@ struct PairingView: View {
             .frame(maxWidth: 920, alignment: .leading)
         }
     }
+
+    private var pairingRouteNotice: PairingRouteNotice {
+        guard model.hasDevelopmentRelayRoute else {
+            return PairingRouteNotice(
+                text: NSLocalizedString("This QR uses runtime identity first. Configure Remote Relay before generating a QR for different networks.", comment: ""),
+                systemImage: "network",
+                tone: .neutral
+            )
+        }
+
+        let endpoint = model.developmentRelayEndpoint ?? NSLocalizedString("configured relay", comment: "")
+        if model.relayFrameEncryptionEnabled {
+            return PairingRouteNotice(
+                text: String(
+                    format: NSLocalizedString("This QR includes remote relay route %@. Already trusted clients can scan it to update their saved route.", comment: ""),
+                    endpoint
+                ),
+                systemImage: "point.3.connected.trianglepath.dotted",
+                tone: .ready
+            )
+        }
+        return PairingRouteNotice(
+            text: String(
+                format: NSLocalizedString("This QR includes remote relay route %@ without a relay frame secret; use only for testing.", comment: ""),
+                endpoint
+            ),
+            systemImage: "exclamationmark.triangle",
+            tone: .warning
+        )
+    }
 }
 
 private struct ActivePairingCard: View {
     let qrPayload: String
-    let code: String
     let expiresAt: Date
-    @State private var didCopyCode = false
+    let routeNotice: PairingRouteNotice
     @State private var sessionStartedAt = Date()
 
     var body: some View {
@@ -129,37 +157,11 @@ private struct ActivePairingCard: View {
 
     private func instructions(at date: Date) -> some View {
         VStack(alignment: .leading, spacing: 14) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(NSLocalizedString("One-Time Code", comment: ""))
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                Text(groupedPairingCode(code))
-                    .font(.system(size: 48, weight: .bold, design: .rounded))
-                    .monospacedDigit()
-                    .minimumScaleFactor(0.65)
-                    .lineLimit(1)
-                    .textSelection(.enabled)
-                HStack(spacing: 8) {
-                    Button {
-                        copyPairingCode()
-                    } label: {
-                        Label(NSLocalizedString("Copy Code", comment: ""), systemImage: "doc.on.doc")
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-
-                    if didCopyCode {
-                        Label(NSLocalizedString("Code Copied", comment: ""), systemImage: "checkmark.circle.fill")
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(.green)
-                            .transition(.opacity)
-                    }
-                }
-            }
-
             VStack(alignment: .leading, spacing: 7) {
-                Label(NSLocalizedString("Scan the QR code or enter the code in the AetherLink client app.", comment: ""), systemImage: "qrcode.viewfinder")
+                Label(NSLocalizedString("Scan this QR code from the AetherLink client app.", comment: ""), systemImage: "qrcode.viewfinder")
                 Label(NSLocalizedString("The QR code identifies this runtime; client apps resolve the current route after scanning.", comment: ""), systemImage: "point.3.connected.trianglepath.dotted")
+                Label(routeNotice.text, systemImage: routeNotice.systemImage)
+                    .foregroundStyle(routeNotice.tone.color)
                 Label(NSLocalizedString("After pairing, manage or remove trusted devices in Trusted Devices.", comment: ""), systemImage: "lock.shield")
                 Label(NSLocalizedString("Local Network permission enables the current local discovery path; pairing trust stays tied to this runtime identity.", comment: ""), systemImage: "network")
                 Label(expirationText(at: date), systemImage: expirationSystemImage(at: date))
@@ -230,13 +232,12 @@ private struct ActivePairingCard: View {
         expiresAt <= date ? "exclamationmark.triangle.fill" : "timer"
     }
 
-    private func copyPairingCode() {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(code, forType: .string)
-        withAnimation(.easeInOut(duration: 0.16)) {
-            didCopyCode = true
-        }
-    }
+}
+
+private struct PairingRouteNotice {
+    let text: String
+    let systemImage: String
+    let tone: StatusTone
 }
 
 private struct QRCodeView: View {

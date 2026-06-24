@@ -23,6 +23,7 @@ class RuntimeRelayTcpClient(
     ): RuntimeProtocolChannel = withContext(Dispatchers.IO) {
         val socket = Socket()
         socket.tcpNoDelay = true
+        socket.soTimeout = timeoutMillis
         socket.connect(InetSocketAddress(route.host, route.port), timeoutMillis)
         val channel = RelayProtocolChannel(
             socket = socket,
@@ -34,6 +35,7 @@ class RuntimeRelayTcpClient(
         runCatching {
             channel.sendHandshake(route.relayId)
             channel.awaitReady()
+            socket.soTimeout = 0
         }.onFailure {
             channel.close()
         }.getOrThrow()

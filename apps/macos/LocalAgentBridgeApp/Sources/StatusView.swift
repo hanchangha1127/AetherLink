@@ -5,6 +5,7 @@ import SwiftUI
 
 struct StatusView: View {
     @ObservedObject var model: CompanionAppModel
+    var onGenerateRelayQRCode: (() -> Void)?
     private let columns = [GridItem(.adaptive(minimum: 240), spacing: 12)]
 
     var body: some View {
@@ -70,11 +71,23 @@ struct StatusView: View {
                 CompanionPanel(title: NSLocalizedString("Quick Actions", comment: ""), systemImage: "bolt.horizontal") {
                     HStack(spacing: 10) {
                         Button {
+                            onGenerateRelayQRCode?()
+                        } label: {
+                            if model.pairingSession == nil {
+                                Label(NSLocalizedString("Start Pairing", comment: ""), systemImage: "qrcode")
+                            } else {
+                                Label(NSLocalizedString("Generate New Code", comment: ""), systemImage: "arrow.triangle.2.circlepath")
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(onGenerateRelayQRCode == nil)
+
+                        Button {
                             Task { await model.refreshBackendStatus() }
                         } label: {
                             Label(NSLocalizedString("Refresh Backend Status", comment: ""), systemImage: "arrow.clockwise")
                         }
-                        .buttonStyle(.borderedProminent)
+                        .buttonStyle(.bordered)
 
                         Button {
                             Task { await model.loadModels() }
@@ -116,6 +129,11 @@ struct StatusView: View {
                         }
                     }
                 }
+
+                DevelopmentRelayPanel(
+                    model: model,
+                    onGenerateRelayQRCode: onGenerateRelayQRCode
+                )
             }
             .padding(24)
             .frame(maxWidth: 920, alignment: .leading)
@@ -167,8 +185,17 @@ struct StatusView: View {
         guard model.transportState.state == .advertising else {
             return transportTone(for: model.transportState)
         }
-        if model.hasDevelopmentRelayRoute && !model.relayFrameEncryptionEnabled {
-            return .warning
+        if model.hasDevelopmentRelayRoute {
+            switch model.developmentRelayConnectionStatus.status {
+            case .ready:
+                return model.relayFrameEncryptionEnabled ? .ready : .warning
+            case .failed:
+                return .warning
+            case .connecting, .waitingForPeer, .reconnecting:
+                return .neutral
+            case .stopped:
+                return .inactive
+            }
         }
         return .neutral
     }
@@ -357,6 +384,271 @@ struct StatusView: View {
             footnote: NSLocalizedString("The client device remains a controller; all model access stays on the runtime host.", comment: ""),
             tone: .ready
         )
+    }
+}
+
+private struct DevelopmentRelayPanel: View {
+    @ObservedObject var model: CompanionAppModel
+    var onGenerateRelayQRCode: (() -> Void)?
+    @State private var host = ""
+    @State private var port = "43171"
+    @State private var relaySecret = ""
+    @State private var message: String?
+    @State private var messageTone = StatusTone.neutral
+    @State private var isAdvancedSettingsExpanded = false
+
+    var body: some View {
+        CompanionPanel(title: NSLocalizedString("Remote Relay", comment: ""), systemImage: "point.3.connected.trianglepath.dotted") {
+            VStack(alignment: .leading, spacing: 12) {
+                relayStatus
+
+                DisclosureGroup(isExpanded: $isAdvancedSettingsExpanded) {
+                    advancedRouteSettings
+                        .padding(.top, 8)
+                } label: {
+                    Label(NSLocalizedString("Advanced Route Settings", comment: ""), systemImage: "slider.horizontal.3")
+                        .font(.subheadline.weight(.semibold))
+                }
+
+                if let message {
+                    Label(message, systemImage: messageTone.systemImage)
+                        .font(.caption)
+                        .foregroundStyle(messageTone.color)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .onAppear(perform: syncFromModel)
+    }
+
+    @ViewBuilder
+    private var advancedRouteSettings: some View {
+        let settings = model.developmentRelaySettings
+        VStack(alignment: .leading, spacing: 12) {
+            Text(NSLocalizedString("Use a relay host both devices can reach when they are not on the same network. The relay forwards AetherLink frames only; model providers stay private on this runtime host.", comment: ""))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: 8) {
+                TextField(NSLocalizedString("Relay host", comment: ""), text: $host)
+                    .textFieldStyle(.roundedBorder)
+                TextField(NSLocalizedString("Port", comment: ""), text: $port)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 86)
+            }
+
+            SecureField(NSLocalizedString("Relay frame secret", comment: ""), text: $relaySecret, prompt: Text(NSLocalizedString("Generated automatically if blank", comment: "")))
+                .textFieldStyle(.roundedBorder)
+
+            HStack(spacing: 8) {
+                Button {
+                    saveRelay()
+                } label: {
+                    Label(NSLocalizedString("Save Relay", comment: ""), systemImage: "externaldrive.badge.checkmark")
+                }
+                .buttonStyle(.bordered)
+
+                Button {
+                    model.regenerateDevelopmentRelaySecret()
+                    syncFromModel()
+                    message = NSLocalizedString("Relay frame secret regenerated.", comment: "")
+                    messageTone = .ready
+                } label: {
+                    Label(NSLocalizedString("Generate Secret", comment: ""), systemImage: "key")
+                }
+                .buttonStyle(.bordered)
+
+                if settings.isEnabled {
+                    Button(role: .destructive) {
+                        model.clearDevelopmentRelay()
+                        syncFromModel()
+                        message = NSLocalizedString("Relay route disabled.", comment: "")
+                        messageTone = .neutral
+                    } label: {
+                        Label(NSLocalizedString("Disable Relay", comment: ""), systemImage: "xmark.circle")
+                    }
+                    .buttonStyle(.bordered)
+                }
+            }
+
+            if settings.isEnabled {
+                Button {
+                    onGenerateRelayQRCode?()
+                    message = NSLocalizedString("New relay QR generated. Scan it from already trusted clients to refresh the remote route.", comment: "")
+                    messageTone = .ready
+                } label: {
+                    Label(NSLocalizedString("Generate Relay QR", comment: ""), systemImage: "qrcode")
+                }
+                .buttonStyle(.bordered)
+                .disabled(onGenerateRelayQRCode == nil)
+            }
+
+            relayHostWarning(settings: settings)
+        }
+    }
+
+    @ViewBuilder
+    private func relayHostWarning(settings: CompanionDevelopmentRelaySettings) -> some View {
+        if let warning = settings.hostReachabilityWarning {
+            Label(relayHostWarningText(warning), systemImage: "exclamationmark.triangle")
+                .font(.caption)
+                .foregroundStyle(StatusTone.warning.color)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    @ViewBuilder
+    private var relayStatus: some View {
+        let settings = model.developmentRelaySettings
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                StatusPill(
+                    text: settings.isEnabled
+                        ? NSLocalizedString("Relay enabled", comment: "")
+                        : NSLocalizedString("Relay disabled", comment: ""),
+                    tone: settings.isEnabled ? (settings.frameEncryptionEnabled ? .ready : .warning) : .inactive
+                )
+                Text(relayStatusText(settings: settings))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                StatusPill(
+                    text: relayConnectionLabel(model.developmentRelayConnectionStatus),
+                    tone: relayConnectionTone(model.developmentRelayConnectionStatus, isEnabled: settings.isEnabled)
+                )
+                Text(relayConnectionDetail(status: model.developmentRelayConnectionStatus, settings: settings))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func relayConnectionLabel(_ status: CompanionDevelopmentRelayStatus) -> String {
+        switch status.status {
+        case .stopped:
+            return NSLocalizedString("Relay not connected", comment: "")
+        case .connecting:
+            return NSLocalizedString("Relay connecting", comment: "")
+        case .waitingForPeer:
+            return NSLocalizedString("Relay waiting", comment: "")
+        case .ready:
+            return NSLocalizedString("Relay connected", comment: "")
+        case .reconnecting:
+            return NSLocalizedString("Relay reconnecting", comment: "")
+        case .failed:
+            return NSLocalizedString("Relay failed", comment: "")
+        }
+    }
+
+    private func relayConnectionTone(_ status: CompanionDevelopmentRelayStatus, isEnabled: Bool) -> StatusTone {
+        guard isEnabled else { return .inactive }
+        switch status.status {
+        case .ready:
+            return .ready
+        case .failed:
+            return .warning
+        case .connecting, .waitingForPeer, .reconnecting:
+            return .neutral
+        case .stopped:
+            return .inactive
+        }
+    }
+
+    private func relayConnectionDetail(
+        status: CompanionDevelopmentRelayStatus,
+        settings: CompanionDevelopmentRelaySettings
+    ) -> String {
+        guard settings.isEnabled else {
+            return NSLocalizedString("The relay client is off; local discovery remains the active route.", comment: "")
+        }
+        let endpoint = status.endpoint ?? settings.endpointLabel ?? NSLocalizedString("configured relay", comment: "")
+        switch status.status {
+        case .stopped:
+            return NSLocalizedString("Start the runtime to connect this runtime host to the relay.", comment: "")
+        case .connecting:
+            return String(format: NSLocalizedString("Connecting to relay %@.", comment: ""), endpoint)
+        case .waitingForPeer:
+            return String(format: NSLocalizedString("Registered with relay %@ and waiting for the client device to join.", comment: ""), endpoint)
+        case .ready:
+            return String(format: NSLocalizedString("Runtime host and client device are matched through relay %@. Model requests still run only through this local runtime.", comment: ""), endpoint)
+        case .reconnecting(let message):
+            let base = String(format: NSLocalizedString("Reconnecting to relay %@.", comment: ""), endpoint)
+            guard let message, !message.isEmpty else { return base }
+            return [base, message].joined(separator: "\n")
+        case .failed(let message):
+            return String(
+                format: NSLocalizedString("Relay %@ failed: %@", comment: ""),
+                endpoint,
+                message
+            )
+        }
+    }
+
+    private func relayStatusText(settings: CompanionDevelopmentRelaySettings) -> String {
+        guard settings.isEnabled else {
+            return NSLocalizedString("Different-network pairing needs a reachable relay or future P2P route.", comment: "")
+        }
+        let endpoint = settings.endpointLabel ?? NSLocalizedString("configured relay", comment: "")
+        if settings.isEnvironmentOverride {
+            return String(
+                format: NSLocalizedString("Using %@ from environment variables. Open Pairing and generate a new QR after changing relay settings.", comment: ""),
+                endpoint
+            )
+        }
+        return String(
+            format: NSLocalizedString("New QR codes include %@ as the remote route. Open Pairing, generate a new QR, and have already paired clients scan it again to update their route.", comment: ""),
+            endpoint
+        )
+    }
+
+    private func saveRelay() {
+        let trimmedHost = host.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedHost.isEmpty else {
+            message = NSLocalizedString("Enter a relay host.", comment: "")
+            messageTone = .warning
+            return
+        }
+        guard let relayPort = UInt16(port.trimmingCharacters(in: .whitespacesAndNewlines)), relayPort > 0 else {
+            message = NSLocalizedString("Enter a valid relay port.", comment: "")
+            messageTone = .warning
+            return
+        }
+        if let warning = CompanionDevelopmentRelaySettings.hostReachabilityWarning(for: trimmedHost) {
+            message = relayHostWarningText(warning)
+            messageTone = .warning
+            return
+        }
+        model.configureDevelopmentRelay(
+            host: trimmedHost,
+            port: relayPort,
+            relaySecret: relaySecret.trimmingCharacters(in: .whitespacesAndNewlines)
+        )
+        syncFromModel()
+        message = NSLocalizedString("Relay route saved. Open Pairing and generate a new QR; already paired clients must scan it again to use this remote route.", comment: "")
+        messageTone = .ready
+    }
+
+    private func syncFromModel() {
+        let settings = model.developmentRelaySettings
+        host = settings.host
+        port = settings.isEnabled ? String(settings.port) : "43171"
+        relaySecret = settings.relaySecret ?? ""
+    }
+
+    private func relayHostWarningText(_ warning: CompanionDevelopmentRelaySettings.HostReachabilityWarning) -> String {
+        switch warning {
+        case .loopback:
+            return NSLocalizedString("This relay host points back to this machine. A client on another network cannot reach it.", comment: "")
+        case .privateNetwork:
+            return NSLocalizedString("This relay host is a private network address. Use a public, VPN, or tunnel address reachable from both devices.", comment: "")
+        case .localName:
+            return NSLocalizedString("This relay host is local-network only. Use a public, VPN, or tunnel address for different networks.", comment: "")
+        }
     }
 }
 

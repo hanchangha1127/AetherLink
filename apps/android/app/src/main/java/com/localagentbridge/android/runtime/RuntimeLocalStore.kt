@@ -390,6 +390,10 @@ internal fun chatSendMessages(
     memoryEntries: List<RuntimeMemoryEntry>,
     attachments: List<RuntimePendingAttachment> = emptyList(),
 ): List<ChatMessagePayload> {
+    val capabilityGuard = ChatMessagePayload(
+        role = "system",
+        content = AETHERLINK_RUNTIME_CAPABILITY_GUARD,
+    )
     val enabledMemory = memoryEntries
         .filter { it.enabled }
         .map { it.content.trim() }
@@ -421,8 +425,13 @@ internal fun chatSendMessages(
                 attachments = messageAttachments,
             )
         }
-    return listOfNotNull(systemContext) + conversation
+    return listOfNotNull(capabilityGuard, systemContext) + conversation
 }
+
+internal const val AETHERLINK_RUNTIME_CAPABILITY_GUARD =
+    "AetherLink currently provides runtime-mediated local model chat, model listing, file/image attachment handling when supported, chat titles, and suggested next questions. " +
+        "The current build does not provide live web search, browsing, MCP tools, skills, scheduled automations, Python execution, or other external tools unless explicit tool output is included in this conversation. " +
+        "Do not claim that you can search the web, browse, run tools, access files, or use unavailable integrations. If asked for an unavailable capability, say it is not available in this build and offer the closest supported alternative."
 
 private fun PersistedChatMessage.toRuntimeChatMessage(): RuntimeChatMessage {
     return RuntimeChatMessage(

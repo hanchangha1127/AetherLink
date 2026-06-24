@@ -38,8 +38,15 @@ data class RuntimeUiState(
     val selectedLanguageTag: String = RuntimeAppLanguage.English.languageTag,
     val trustedRuntimeAutoReconnectEnabled: Boolean = true,
     val pairingOnboardingCompleted: Boolean = false,
+    val activeRouteKind: RuntimeActiveRouteKind? = null,
     val error: RuntimeUiError? = null,
 )
+
+enum class RuntimeActiveRouteKind {
+    DirectTcp,
+    PeerToPeer,
+    Relay,
+}
 
 enum class RuntimeAppLanguage(val languageTag: String) {
     System(""),

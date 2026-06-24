@@ -91,12 +91,109 @@ public struct CompanionProviderStatus: Identifiable, Equatable, Sendable {
     }
 }
 
+public struct CompanionDevelopmentRelaySettings: Equatable, Sendable {
+    public enum HostReachabilityWarning: String, Equatable, Sendable {
+        case loopback
+        case privateNetwork
+        case localName
+    }
+
+    public var isEnabled: Bool
+    public var host: String
+    public var port: UInt16
+    public var relayID: String
+    public var relaySecret: String?
+    public var isEnvironmentOverride: Bool
+
+    public init(
+        isEnabled: Bool,
+        host: String = "",
+        port: UInt16 = 43171,
+        relayID: String = "",
+        relaySecret: String? = nil,
+        isEnvironmentOverride: Bool = false
+    ) {
+        self.isEnabled = isEnabled
+        self.host = host
+        self.port = port
+        self.relayID = relayID
+        self.relaySecret = relaySecret
+        self.isEnvironmentOverride = isEnvironmentOverride
+    }
+
+    public static let disabled = CompanionDevelopmentRelaySettings(isEnabled: false)
+
+    public var endpointLabel: String? {
+        guard isEnabled, !host.isEmpty else { return nil }
+        return "\(host):\(port)"
+    }
+
+    public var hostReachabilityWarning: HostReachabilityWarning? {
+        Self.hostReachabilityWarning(for: host)
+    }
+
+    public var frameEncryptionEnabled: Bool {
+        relaySecret?.takeIfNotEmpty() != nil
+    }
+
+    public var relayConfiguration: RelayPeerConfiguration? {
+        guard isEnabled, !host.isEmpty, !relayID.isEmpty else { return nil }
+        return RelayPeerConfiguration(
+            host: host,
+            port: port,
+            relayID: relayID,
+            relaySecret: relaySecret?.takeIfNotEmpty()
+        )
+    }
+
+    public static func hostReachabilityWarning(for host: String) -> HostReachabilityWarning? {
+        let normalizedHost = host
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        guard !normalizedHost.isEmpty else { return nil }
+        if normalizedHost == "localhost" ||
+            normalizedHost == "::1" ||
+            normalizedHost.hasPrefix("127.") {
+            return .loopback
+        }
+        if normalizedHost.hasSuffix(".local") {
+            return .localName
+        }
+        if normalizedHost.hasPrefix("10.") ||
+            normalizedHost.hasPrefix("192.168.") {
+            return .privateNetwork
+        }
+        let octets = normalizedHost.split(separator: ".")
+        if octets.count == 4,
+           octets[0] == "172",
+           let secondOctet = Int(octets[1]),
+           (16...31).contains(secondOctet) {
+            return .privateNetwork
+        }
+        return nil
+    }
+}
+
+public struct CompanionDevelopmentRelayStatus: Equatable, Sendable {
+    public var status: RelayPeerStatus
+    public var endpoint: String?
+
+    public init(status: RelayPeerStatus, endpoint: String? = nil) {
+        self.status = status
+        self.endpoint = endpoint
+    }
+
+    public static let stopped = CompanionDevelopmentRelayStatus(status: .stopped)
+}
+
 @MainActor
 public final class CompanionAppModel: ObservableObject {
     @Published public private(set) var backendStatus = "Not checked"
     @Published public private(set) var transportStatus = "Stopped"
     @Published public private(set) var transportState: CompanionTransportStatus = .stopped
     @Published public private(set) var providerStatuses: [CompanionProviderStatus]
+    @Published public private(set) var developmentRelaySettings: CompanionDevelopmentRelaySettings = .disabled
+    @Published public private(set) var developmentRelayConnectionStatus: CompanionDevelopmentRelayStatus = .stopped
     @Published public private(set) var pairingSession: PairingSession?
     @Published public private(set) var trustedDevices: [TrustedDevice] = []
     @Published public private(set) var models: [ModelInfo] = []
@@ -107,45 +204,58 @@ public final class CompanionAppModel: ObservableObject {
     private var runtimeRouter: LocalRuntimeMessageRouter!
     private let pairingCoordinator = PairingCoordinator()
     private let trustedDeviceStore = TrustedDeviceStore()
+    private let userDefaults: UserDefaults
     private let peerServer: any RuntimeTransport
     private let advertiser: any RuntimeAdvertiser
-    private let relayClient: RelayPeerClient?
-    private let relayConfiguration: RelayPeerConfiguration?
+    private let relayClient: any RelayPeerTransport
+    private var relayConfiguration: RelayPeerConfiguration?
     private let macDeviceID: String
     private let runtimeIdentityKey: RuntimeIdentityKey
     private let runtimeIdentityWarning: String?
     private var runtimePort: UInt16 = 43170
+    private var isRuntimeStarted = false
 
     public var hasDevelopmentRelayRoute: Bool {
         relayConfiguration != nil
     }
 
     public var developmentRelayEndpoint: String? {
-        relayConfiguration.map { "\($0.host):\($0.port)" }
+        developmentRelaySettings.endpointLabel
     }
 
     public var relayFrameEncryptionEnabled: Bool {
-        relayConfiguration?.relaySecret?.takeIfNotEmpty() != nil
+        developmentRelaySettings.frameEncryptionEnabled
     }
 
     public init(
         backend: any LlmBackend = AggregatingLlmBackend(ollama: OllamaBackend(), lmStudio: LMStudioBackend()),
         peerServer: any RuntimeTransport = LocalPeerServer(),
-        advertiser: any RuntimeAdvertiser = BonjourAdvertiser()
+        advertiser: any RuntimeAdvertiser = BonjourAdvertiser(),
+        relayClient: any RelayPeerTransport = RelayPeerClient(),
+        userDefaults: UserDefaults = .standard
     ) {
         self.backend = backend
         self.providerStatuses = Self.initialProviderStatuses(for: backend)
         self.peerServer = peerServer
         self.advertiser = advertiser
-        let macDeviceID = Self.loadOrCreateMacDeviceID()
+        self.relayClient = relayClient
+        self.userDefaults = userDefaults
+        let macDeviceID = Self.loadOrCreateMacDeviceID(defaults: userDefaults)
         let runtimeIdentity = Self.loadOrCreateRuntimeIdentityKey(deviceID: macDeviceID)
         self.macDeviceID = macDeviceID
         self.runtimeIdentityKey = runtimeIdentity.key
         self.runtimeIdentityWarning = runtimeIdentity.warning
-        self.discoveryRouteToken = Self.loadOrCreateDiscoveryRouteToken()
-        let relayConfiguration = Self.loadRelayConfiguration(routeToken: discoveryRouteToken)
-        self.relayConfiguration = relayConfiguration
-        self.relayClient = relayConfiguration == nil ? nil : RelayPeerClient()
+        self.discoveryRouteToken = Self.loadOrCreateDiscoveryRouteToken(defaults: userDefaults)
+        let relaySettings = Self.loadDevelopmentRelaySettings(
+            routeToken: discoveryRouteToken,
+            defaults: userDefaults
+        )
+        self.developmentRelaySettings = relaySettings
+        self.relayConfiguration = relaySettings.relayConfiguration
+        self.developmentRelayConnectionStatus = CompanionDevelopmentRelayStatus(
+            status: .stopped,
+            endpoint: relaySettings.endpointLabel
+        )
         self.runtimeRouter = LocalRuntimeMessageRouter(
             backend: backend,
             pairingCoordinator: pairingCoordinator,
@@ -166,6 +276,7 @@ public final class CompanionAppModel: ObservableObject {
 
     public func start(port: UInt16 = 43170) {
         runtimePort = port
+        isRuntimeStarted = true
         let router = runtimeRouter!
         peerServer.start(port: port) { [router, weak self] envelope, sink in
             Task { @MainActor in
@@ -173,23 +284,12 @@ public final class CompanionAppModel: ObservableObject {
             }
             router.handle(envelope, sink: sink)
         }
-        if let relayConfiguration, let relayClient {
-            relayClient.start(configuration: relayConfiguration) { [router, weak self] envelope, sink in
-                Task { @MainActor in
-                    self?.log("Relay received \(envelope.type)")
-                }
-                router.handle(envelope, sink: sink)
-            }
-        }
+        startRelayClientIfConfigured()
         transportState = Self.transportStatus(from: peerServer.status)
+        refreshTransportStatusText()
         switch transportState.state {
         case .advertising:
             advertiser.start(port: Int32(port), metadata: runtimeAdvertisementMetadata)
-            if let relayConfiguration {
-                transportStatus = "Advertising locally and relay \(relayConfiguration.host):\(relayConfiguration.port)"
-            } else {
-                transportStatus = "Advertising _aetherlink._tcp.local. on port \(port)"
-            }
             log("Companion started")
             if let relayConfiguration {
                 log("Relay route enabled: \(relayConfiguration.host):\(relayConfiguration.port)")
@@ -211,11 +311,16 @@ public final class CompanionAppModel: ObservableObject {
     }
 
     public func stop() {
+        isRuntimeStarted = false
         peerServer.stop()
         advertiser.stop()
-        relayClient?.stop()
+        relayClient.stop()
         transportState = .stopped
         transportStatus = "Stopped"
+        developmentRelayConnectionStatus = CompanionDevelopmentRelayStatus(
+            status: .stopped,
+            endpoint: developmentRelaySettings.endpointLabel
+        )
         log("Companion stopped")
     }
 
@@ -277,6 +382,70 @@ public final class CompanionAppModel: ObservableObject {
         log("Pairing code generated")
     }
 
+    public func configureDevelopmentRelay(
+        host: String,
+        port: UInt16,
+        relaySecret: String? = nil
+    ) {
+        let trimmedHost = host.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedHost.isEmpty else {
+            clearDevelopmentRelay()
+            return
+        }
+
+        let secret = relaySecret?.takeIfNotEmpty() ?? Self.generateRelaySecret()
+        let settings = CompanionDevelopmentRelaySettings(
+            isEnabled: true,
+            host: trimmedHost,
+            port: port,
+            relayID: discoveryRouteToken,
+            relaySecret: secret,
+            isEnvironmentOverride: false
+        )
+        Self.saveDevelopmentRelaySettings(settings, defaults: userDefaults)
+        developmentRelaySettings = settings
+        relayConfiguration = settings.relayConfiguration
+        developmentRelayConnectionStatus = CompanionDevelopmentRelayStatus(
+            status: .stopped,
+            endpoint: settings.endpointLabel
+        )
+        restartRelayClientIfRunning()
+        refreshTransportStatusText()
+        log("Relay route configured: \(trimmedHost):\(port)")
+    }
+
+    public func clearDevelopmentRelay() {
+        Self.clearSavedDevelopmentRelaySettings(defaults: userDefaults)
+        developmentRelaySettings = .disabled
+        relayConfiguration = nil
+        relayClient.stop()
+        developmentRelayConnectionStatus = CompanionDevelopmentRelayStatus(status: .stopped)
+        refreshTransportStatusText()
+        log("Relay route disabled")
+    }
+
+    public func regenerateDevelopmentRelaySecret() {
+        guard developmentRelaySettings.isEnabled else { return }
+        let settings = CompanionDevelopmentRelaySettings(
+            isEnabled: true,
+            host: developmentRelaySettings.host,
+            port: developmentRelaySettings.port,
+            relayID: discoveryRouteToken,
+            relaySecret: Self.generateRelaySecret(),
+            isEnvironmentOverride: false
+        )
+        Self.saveDevelopmentRelaySettings(settings, defaults: userDefaults)
+        developmentRelaySettings = settings
+        relayConfiguration = settings.relayConfiguration
+        developmentRelayConnectionStatus = CompanionDevelopmentRelayStatus(
+            status: .stopped,
+            endpoint: settings.endpointLabel
+        )
+        restartRelayClientIfRunning()
+        refreshTransportStatusText()
+        log("Relay frame secret regenerated")
+    }
+
     public func removeTrustedDevice(_ device: TrustedDevice) async {
         do {
             try await trustedDeviceStore.remove(deviceID: device.id)
@@ -298,6 +467,83 @@ public final class CompanionAppModel: ObservableObject {
     private func log(_ message: String) {
         logs.insert(message, at: 0)
         logs = Array(logs.prefix(50))
+    }
+
+    private func startRelayClientIfConfigured() {
+        guard let relayConfiguration else { return }
+        let router = runtimeRouter!
+        let endpoint = "\(relayConfiguration.host):\(relayConfiguration.port)"
+        relayClient.start(
+            configuration: relayConfiguration,
+            onStatusChange: { [weak self] status in
+                Task { @MainActor in
+                    self?.handleRelayStatus(status, endpoint: endpoint)
+                }
+            }
+        ) { [router, weak self] envelope, sink in
+            Task { @MainActor in
+                self?.log("Relay received \(envelope.type)")
+            }
+            router.handle(envelope, sink: sink)
+        }
+    }
+
+    private func restartRelayClientIfRunning() {
+        relayClient.stop()
+        guard isRuntimeStarted else { return }
+        startRelayClientIfConfigured()
+    }
+
+    private func handleRelayStatus(_ status: RelayPeerStatus, endpoint: String) {
+        guard relayConfiguration != nil, developmentRelaySettings.endpointLabel == endpoint else {
+            if case .stopped = status {
+                developmentRelayConnectionStatus = .stopped
+            }
+            return
+        }
+        developmentRelayConnectionStatus = CompanionDevelopmentRelayStatus(status: status, endpoint: endpoint)
+        refreshTransportStatusText()
+        switch status {
+        case .ready:
+            log("Relay route ready: \(endpoint)")
+        case .failed(let message):
+            log("Relay route failed: \(endpoint): \(message)")
+        case .reconnecting(let message):
+            if let message {
+                log("Relay route reconnecting: \(endpoint): \(message)")
+            } else {
+                log("Relay route reconnecting: \(endpoint)")
+            }
+        default:
+            break
+        }
+    }
+
+    private func refreshTransportStatusText() {
+        switch transportState.state {
+        case .advertising:
+            if let relayConfiguration {
+                let endpoint = "\(relayConfiguration.host):\(relayConfiguration.port)"
+                switch developmentRelayConnectionStatus.status {
+                case .ready:
+                    transportStatus = "Advertising locally and relay ready \(endpoint)"
+                case .failed(let message):
+                    transportStatus = "Advertising locally; relay failed \(endpoint): \(message)"
+                case .connecting, .waitingForPeer:
+                    transportStatus = "Advertising locally; relay connecting \(endpoint)"
+                case .reconnecting:
+                    transportStatus = "Advertising locally; relay reconnecting \(endpoint)"
+                case .stopped:
+                    transportStatus = "Advertising locally and relay configured \(endpoint)"
+                }
+            } else {
+                transportStatus = "Advertising _aetherlink._tcp.local. on port \(runtimePort)"
+            }
+        case .failed:
+            transportStatus = "Runtime listener failed: \(transportState.failureMessage ?? "unknown error")"
+        case .stopped:
+            transportStatus = "Stopped"
+        }
     }
 
     private func configureResidencyEventsIfAvailable() {
@@ -344,15 +590,69 @@ public final class CompanionAppModel: ObservableObject {
         )
     }
 
-    private static func loadRelayConfiguration(routeToken: String) -> RelayPeerConfiguration? {
+    private static func loadDevelopmentRelaySettings(
+        routeToken: String,
+        defaults: UserDefaults
+    ) -> CompanionDevelopmentRelaySettings {
         let environment = ProcessInfo.processInfo.environment
-        guard let host = environment["AETHERLINK_RELAY_HOST"]?.takeIfNotEmpty() else {
-            return nil
+        if let host = environment["AETHERLINK_RELAY_HOST"]?.takeIfNotEmpty() {
+            let port = UInt16(environment["AETHERLINK_RELAY_PORT"] ?? "") ?? 43171
+            let relayID = environment["AETHERLINK_RELAY_ID"]?.takeIfNotEmpty() ?? routeToken
+            let relaySecret = environment["AETHERLINK_RELAY_SECRET"]?.takeIfNotEmpty()
+            return CompanionDevelopmentRelaySettings(
+                isEnabled: true,
+                host: host,
+                port: port,
+                relayID: relayID,
+                relaySecret: relaySecret,
+                isEnvironmentOverride: true
+            )
         }
-        let port = UInt16(environment["AETHERLINK_RELAY_PORT"] ?? "") ?? 43171
-        let relayID = environment["AETHERLINK_RELAY_ID"]?.takeIfNotEmpty() ?? routeToken
-        let relaySecret = environment["AETHERLINK_RELAY_SECRET"]?.takeIfNotEmpty()
-        return RelayPeerConfiguration(host: host, port: port, relayID: relayID, relaySecret: relaySecret)
+
+        guard let host = defaults.string(forKey: RelayDefaults.host)?.takeIfNotEmpty() else {
+            return .disabled
+        }
+        let storedPort = defaults.integer(forKey: RelayDefaults.port)
+        let port = UInt16(exactly: storedPort).flatMap { $0 == 0 ? nil : $0 } ?? 43171
+        let relaySecret = defaults.string(forKey: RelayDefaults.secret)?.takeIfNotEmpty()
+        return CompanionDevelopmentRelaySettings(
+            isEnabled: true,
+            host: host,
+            port: port,
+            relayID: routeToken,
+            relaySecret: relaySecret,
+            isEnvironmentOverride: false
+        )
+    }
+
+    private static func saveDevelopmentRelaySettings(
+        _ settings: CompanionDevelopmentRelaySettings,
+        defaults: UserDefaults
+    ) {
+        defaults.set(settings.host, forKey: RelayDefaults.host)
+        defaults.set(Int(settings.port), forKey: RelayDefaults.port)
+        if let relaySecret = settings.relaySecret?.takeIfNotEmpty() {
+            defaults.set(relaySecret, forKey: RelayDefaults.secret)
+        } else {
+            defaults.removeObject(forKey: RelayDefaults.secret)
+        }
+    }
+
+    private static func clearSavedDevelopmentRelaySettings(defaults: UserDefaults) {
+        defaults.removeObject(forKey: RelayDefaults.host)
+        defaults.removeObject(forKey: RelayDefaults.port)
+        defaults.removeObject(forKey: RelayDefaults.secret)
+    }
+
+    private static func generateRelaySecret() -> String {
+        let bytes = (0..<32).map { _ in UInt8.random(in: 0...255) }
+        return Data(bytes).base64EncodedString()
+    }
+
+    private enum RelayDefaults {
+        static let host = "aetherlink.relay.host"
+        static let port = "aetherlink.relay.port"
+        static let secret = "aetherlink.relay.secret"
     }
 
     private static func initialProviderStatuses(for backend: any LlmBackend) -> [CompanionProviderStatus] {
@@ -389,23 +689,23 @@ public final class CompanionAppModel: ObservableObject {
         }
     }
 
-    private static func loadOrCreateMacDeviceID() -> String {
+    private static func loadOrCreateMacDeviceID(defaults: UserDefaults) -> String {
         let key = "aetherlink.mac_device_id"
-        if let existing = UserDefaults.standard.string(forKey: key), !existing.isEmpty {
+        if let existing = defaults.string(forKey: key), !existing.isEmpty {
             return existing
         }
         let deviceID = UUID().uuidString
-        UserDefaults.standard.set(deviceID, forKey: key)
+        defaults.set(deviceID, forKey: key)
         return deviceID
     }
 
-    private static func loadOrCreateDiscoveryRouteToken() -> String {
+    private static func loadOrCreateDiscoveryRouteToken(defaults: UserDefaults) -> String {
         let key = "aetherlink.discovery_route_token"
-        if let existing = UserDefaults.standard.string(forKey: key), !existing.isEmpty {
+        if let existing = defaults.string(forKey: key), !existing.isEmpty {
             return existing
         }
         let token = UUID().uuidString
-        UserDefaults.standard.set(token, forKey: key)
+        defaults.set(token, forKey: key)
         return token
     }
 

@@ -35,6 +35,18 @@ class PairingStoreTest {
         assertEquals("secret-1", runtime.relaySecret)
     }
 
+    @Test
+    fun trustedRuntimeDirectEndpointIsIgnoredWhenRelayRouteExists() {
+        val runtime = trustedRuntime(host = "192.168.1.10", port = 43170).copy(
+            relayHost = "relay.example.test",
+            relayPort = 443,
+            relayId = "relay-1",
+            relaySecret = "secret-1",
+        )
+
+        assertNull(runtime.validDirectEndpointOrNull())
+    }
+
     private fun trustedRuntime(
         host: String?,
         port: Int?,

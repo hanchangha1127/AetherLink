@@ -20,6 +20,7 @@ import com.localagentbridge.android.core.transport.RuntimeEndpointSource
 import com.localagentbridge.android.core.transport.RuntimeProtocolChannel
 import com.localagentbridge.android.core.transport.RuntimeRouteCapability
 import com.localagentbridge.android.core.transport.RuntimeRouteCandidate
+import com.localagentbridge.android.core.transport.RuntimeRouteAttemptFailure
 import com.localagentbridge.android.core.transport.RuntimeRouteRejection
 import com.localagentbridge.android.core.transport.RuntimeRouteRejectionReason
 import com.localagentbridge.android.core.transport.RuntimeRouteResolver
@@ -83,6 +84,34 @@ class RuntimeClientViewModelTest {
         assertEquals("mac-identity-only", target?.identity?.deviceId)
         assertEquals("AetherLink Runtime", target?.identity?.name)
         assertEquals("fingerprint", target?.identity?.fingerprint)
+        assertNull(target?.endpointHint)
+    }
+
+    @Test
+    fun trustedRuntimeConnectionTargetUsesIdentityOnlyWhenRelayRouteIsSaved() {
+        val state = RuntimeUiState(
+            runtimeHost = "192.168.1.20",
+            runtimePort = "43170",
+            runtimeEndpointSource = RuntimeEndpointSource.PairingQr,
+            trustedRuntime = RuntimeTrustedRuntime(
+                deviceId = "runtime-relay",
+                name = "AetherLink Runtime",
+                fingerprint = "fingerprint",
+                endpointHint = RuntimeEndpointHint(
+                    host = "192.168.1.20",
+                    port = 43170,
+                    source = RuntimeEndpointSource.TrustedLastKnown,
+                ),
+                relayHost = "relay.example.test",
+                relayPort = 443,
+                relayId = "relay-1",
+                relaySecret = "secret-1",
+            ),
+        )
+
+        val target = trustedRuntimeConnectionTarget(state)
+
+        assertEquals("runtime-relay", target?.identity?.deviceId)
         assertNull(target?.endpointHint)
     }
 
@@ -220,6 +249,58 @@ class RuntimeClientViewModelTest {
         )
 
         assertNull(pairingRuntimeConnectionTarget(RuntimeUiState(), payload))
+    }
+
+    @Test
+    fun pairingRuntimeTargetUsesRelayQrWithoutLocalEndpoint() {
+        val payload = RuntimePairingPayload(
+            pairingNonce = "nonce-1",
+            pairingCode = "123456",
+            runtimeDeviceId = "runtime-identity-only",
+            runtimeName = "AetherLink Runtime",
+            fingerprint = "fingerprint",
+            runtimePublicKeyBase64 = "runtime-public-key",
+            routeToken = "route-token",
+            host = null,
+            port = null,
+            relayHost = "relay.example.test",
+            relayPort = 443,
+            relayId = "relay-1",
+            relaySecret = "secret-1",
+            serviceType = "_aetherlink._tcp.local.",
+        )
+
+        val target = pairingRuntimeConnectionTarget(RuntimeUiState(), payload)
+
+        assertEquals("runtime-identity-only", target?.identity?.deviceId)
+        assertEquals("fingerprint", target?.identity?.fingerprint)
+        assertEquals("route-token", target?.identity?.routeToken)
+        assertNull(target?.endpointHint)
+    }
+
+    @Test
+    fun pairingRuntimeTargetUsesRelayQrBeforeDirectEndpoint() {
+        val payload = RuntimePairingPayload(
+            pairingNonce = "nonce-1",
+            pairingCode = "123456",
+            runtimeDeviceId = "runtime-relay",
+            runtimeName = "AetherLink Runtime",
+            fingerprint = "fingerprint",
+            runtimePublicKeyBase64 = "runtime-public-key",
+            routeToken = "route-token",
+            host = "192.168.1.44",
+            port = 43170,
+            relayHost = "relay.example.test",
+            relayPort = 443,
+            relayId = "relay-1",
+            relaySecret = "secret-1",
+            serviceType = "_aetherlink._tcp.local.",
+        )
+
+        val target = pairingRuntimeConnectionTarget(RuntimeUiState(), payload)
+
+        assertEquals("runtime-relay", target?.identity?.deviceId)
+        assertNull(target?.endpointHint)
     }
 
     @Test
@@ -368,6 +449,51 @@ class RuntimeClientViewModelTest {
     }
 
     @Test
+    fun acceptedPairingResultDropsDirectEndpointWhenRelayRouteIsPresent() {
+        val pending = runtimePairingPayload(
+            host = "192.168.1.10",
+            port = 43170,
+            relayHost = "relay.example.test",
+            relayPort = 443,
+            relayId = "relay-1",
+            relaySecret = "secret-1",
+        )
+        val trusted = trustedRuntimeFromAcceptedPairing(
+            pending = pending,
+            payload = PairingResultPayload(
+                accepted = true,
+                runtimeDeviceIdV2 = "runtime-1",
+                runtimePublicKey = "runtime-public-key",
+                runtimeKeyFingerprint = "runtime-fingerprint",
+                trustedDeviceId = "client-1",
+                message = "trusted",
+            ),
+        ) ?: error("Expected trusted runtime")
+
+        assertNull(trusted.host)
+        assertNull(trusted.port)
+        assertEquals("relay.example.test", trusted.relayHost)
+        assertEquals("relay-1", trusted.relayId)
+        val restoredTarget = trustedRuntimeConnectionTarget(
+            RuntimeUiState(
+                trustedRuntime = RuntimeTrustedRuntime(
+                    deviceId = trusted.deviceId,
+                    name = trusted.name,
+                    fingerprint = trusted.fingerprint,
+                    publicKeyBase64 = trusted.publicKeyBase64,
+                    routeToken = trusted.routeToken,
+                    endpointHint = null,
+                    relayHost = trusted.relayHost,
+                    relayPort = trusted.relayPort,
+                    relayId = trusted.relayId,
+                    relaySecret = trusted.relaySecret,
+                ),
+            )
+        )
+        assertNull(restoredTarget?.endpointHint)
+    }
+
+    @Test
     fun acceptedPairingResultPreservesRelaySecretForTrustedRuntimeRestore() {
         val pending = runtimePairingPayload(
             host = null,
@@ -393,6 +519,159 @@ class RuntimeClientViewModelTest {
         assertEquals(443, trusted.relayPort)
         assertEquals("relay-1", trusted.relayId)
         assertEquals("secret-1", trusted.relaySecret)
+    }
+
+    @Test
+    fun routeRefreshQrAddsRelayRouteToExistingTrustedRuntime() {
+        val current = RuntimeTrustedRuntime(
+            deviceId = "runtime-1",
+            name = "AetherLink Runtime",
+            fingerprint = "runtime-fingerprint",
+            publicKeyBase64 = "runtime-public-key",
+            routeToken = "route-1",
+            endpointHint = RuntimeEndpointHint(
+                host = "192.168.219.104",
+                port = 43170,
+                source = RuntimeEndpointSource.TrustedLastKnown,
+            ),
+        )
+        val payload = runtimePairingPayload(
+            host = null,
+            port = null,
+            relayHost = "relay.example.test",
+            relayPort = 443,
+            relayId = "relay-1",
+            relaySecret = "secret-1",
+        )
+
+        val refreshed = trustedRuntimeFromRouteRefreshQr(current, payload)
+
+        assertEquals("runtime-1", refreshed?.deviceId)
+        assertEquals("runtime-fingerprint", refreshed?.fingerprint)
+        assertEquals("runtime-public-key", refreshed?.publicKeyBase64)
+        assertEquals("route-1", refreshed?.routeToken)
+        assertNull(refreshed?.host)
+        assertNull(refreshed?.port)
+        assertEquals("relay.example.test", refreshed?.relayHost)
+        assertEquals(443, refreshed?.relayPort)
+        assertEquals("relay-1", refreshed?.relayId)
+        assertEquals("secret-1", refreshed?.relaySecret)
+    }
+
+    @Test
+    fun routeRefreshQrRejectsUntrustedOrMismatchedRuntimeIdentity() {
+        val current = RuntimeTrustedRuntime(
+            deviceId = "runtime-1",
+            name = "AetherLink Runtime",
+            fingerprint = "runtime-fingerprint",
+            publicKeyBase64 = "runtime-public-key",
+            routeToken = "route-1",
+            endpointHint = null,
+        )
+
+        assertNull(
+            trustedRuntimeFromRouteRefreshQr(
+                current = null,
+                payload = runtimePairingPayload(
+                    relayHost = "relay.example.test",
+                    relayPort = 443,
+                    relayId = "relay-1",
+                    relaySecret = "secret-1",
+                ),
+            )
+        )
+        assertNull(
+            trustedRuntimeFromRouteRefreshQr(
+                current = current,
+                payload = runtimePairingPayload(
+                    runtimeDeviceId = "other-runtime",
+                    relayHost = "relay.example.test",
+                    relayPort = 443,
+                    relayId = "relay-1",
+                    relaySecret = "secret-1",
+                ),
+            )
+        )
+        assertNull(
+            trustedRuntimeFromRouteRefreshQr(
+                current = current,
+                payload = runtimePairingPayload(
+                    runtimePublicKeyBase64 = "other-public-key",
+                    relayHost = "relay.example.test",
+                    relayPort = 443,
+                    relayId = "relay-1",
+                    relaySecret = "secret-1",
+                ),
+            )
+        )
+        assertNull(
+            trustedRuntimeFromRouteRefreshQr(
+                current = current,
+                payload = runtimePairingPayload(
+                    relayHost = null,
+                    relayPort = null,
+                    relayId = null,
+                    relaySecret = null,
+                ),
+            )
+        )
+    }
+
+    @Test
+    fun routeRefreshQrRejectsMismatchedRouteToken() {
+        val current = RuntimeTrustedRuntime(
+            deviceId = "runtime-1",
+            name = "AetherLink Runtime",
+            fingerprint = "runtime-fingerprint",
+            publicKeyBase64 = "runtime-public-key",
+            routeToken = "route-1",
+            endpointHint = null,
+        )
+
+        val refreshed = trustedRuntimeFromRouteRefreshQr(
+            current = current,
+            payload = runtimePairingPayload(
+                routeToken = "other-route",
+                relayHost = "relay.example.test",
+                relayPort = 443,
+                relayId = "relay-1",
+                relaySecret = "secret-1",
+            ),
+        )
+
+        assertNull(refreshed)
+    }
+
+    @Test
+    fun routeRefreshQrClearsTrustedEndpointWhenRelayRouteIsSaved() {
+        val current = RuntimeTrustedRuntime(
+            deviceId = "runtime-1",
+            name = "AetherLink Runtime",
+            fingerprint = "runtime-fingerprint",
+            publicKeyBase64 = "runtime-public-key",
+            routeToken = "route-1",
+            endpointHint = RuntimeEndpointHint(
+                host = "192.168.219.104",
+                port = 43170,
+                source = RuntimeEndpointSource.TrustedLastKnown,
+            ),
+        )
+
+        val refreshed = trustedRuntimeFromRouteRefreshQr(
+            current = current,
+            payload = runtimePairingPayload(
+                host = null,
+                port = null,
+                relayHost = "relay.example.test",
+                relayPort = 443,
+                relayId = "relay-1",
+                relaySecret = "secret-1",
+            ),
+        )
+
+        assertNull(refreshed?.host)
+        assertNull(refreshed?.port)
+        assertEquals("relay.example.test", refreshed?.relayHost)
     }
 
     @Test
@@ -714,7 +993,7 @@ class RuntimeClientViewModelTest {
     }
 
     @Test
-    fun autoReconnectTrustedRuntimeTargetFallsBackToTrustedLastKnownEndpoint() {
+    fun autoReconnectTrustedRuntimeTargetDoesNotPromoteStaleTrustedLastKnownEndpoint() {
         val state = RuntimeUiState(
             trustedRuntime = RuntimeTrustedRuntime(
                 deviceId = "runtime-1",
@@ -731,8 +1010,33 @@ class RuntimeClientViewModelTest {
         val target = autoReconnectTrustedRuntimeConnectionTarget(state)
 
         assertEquals("runtime-1", target?.identity?.deviceId)
-        assertEquals("192.168.1.20", target?.endpointHint?.host)
-        assertEquals(RuntimeEndpointSource.TrustedLastKnown, target?.endpointHint?.source)
+        assertNull(target?.endpointHint)
+    }
+
+    @Test
+    fun autoReconnectRouteCandidatesDoNotUseStaleTrustedLastKnownEndpoint() {
+        val state = RuntimeUiState(
+            trustedRuntime = RuntimeTrustedRuntime(
+                deviceId = "runtime-1",
+                name = "AetherLink Runtime",
+                routeToken = "trusted-route-token",
+                endpointHint = RuntimeEndpointHint(
+                    host = "192.168.1.20",
+                    port = 43170,
+                    source = RuntimeEndpointSource.TrustedLastKnown,
+                ),
+            ),
+        )
+
+        val target = autoReconnectTrustedRuntimeConnectionTarget(state)
+            ?: error("Expected identity-only auto reconnect target")
+        val endpointRoutes = runtimeRouteCandidates(
+            state = state,
+            target = target,
+            includeUsbReverseFallback = false,
+        ).filterIsInstance<RuntimeRouteCandidate.DirectTcp>()
+
+        assertEquals(emptyList<RuntimeRouteCandidate.DirectTcp>(), endpointRoutes)
     }
 
     @Test
@@ -1005,6 +1309,86 @@ class RuntimeClientViewModelTest {
     }
 
     @Test
+    fun runtimeRouteCandidatesDoNotAddUsbReverseFallbackUnlessExplicitlyRequested() {
+        val state = RuntimeUiState(
+            runtimeEndpointSource = RuntimeEndpointSource.Manual,
+            trustedRuntime = RuntimeTrustedRuntime(
+                deviceId = "mac-identity",
+                name = "AetherLink Runtime",
+                endpointHint = null,
+            ),
+        )
+        val target = trustedRuntimeConnectionTarget(state) ?: error("Expected trusted target")
+
+        val endpointRoutes = runtimeRouteCandidates(
+            state = state,
+            target = target,
+            includeUsbReverseFallback = false,
+        ).filterIsInstance<RuntimeRouteCandidate.DirectTcp>()
+
+        assertEquals(emptyList<RuntimeRouteCandidate.DirectTcp>(), endpointRoutes)
+    }
+
+    @Test
+    fun runtimeRouteCandidatesDoNotUseStaleUiEndpointOrUsbFallbackWhenRelayRouteIsSaved() {
+        val state = RuntimeUiState(
+            runtimeHost = "192.168.1.20",
+            runtimePort = "43170",
+            runtimeEndpointSource = RuntimeEndpointSource.PairingQr,
+            trustedRuntime = RuntimeTrustedRuntime(
+                deviceId = "runtime-relay",
+                name = "AetherLink Runtime",
+                fingerprint = "fingerprint",
+                endpointHint = RuntimeEndpointHint(
+                    host = "192.168.1.20",
+                    port = 43170,
+                    source = RuntimeEndpointSource.TrustedLastKnown,
+                ),
+                relayHost = "relay.example.test",
+                relayPort = 443,
+                relayId = "relay-1",
+                relaySecret = "secret-1",
+            ),
+        )
+        val target = trustedRuntimeConnectionTarget(state) ?: error("Expected trusted target")
+
+        val endpointRoutes = runtimeRouteCandidates(
+            state = state,
+            target = target,
+            includeUsbReverseFallback = true,
+        ).filterIsInstance<RuntimeRouteCandidate.DirectTcp>()
+
+        assertTrue(endpointRoutes.isEmpty())
+    }
+
+    @Test
+    fun activeRouteKindTracksConnectedRouteType() {
+        val identity = PairedRuntimeIdentity(
+            deviceId = "mac-identity",
+            name = "AetherLink Runtime",
+        )
+
+        assertEquals(
+            RuntimeActiveRouteKind.DirectTcp,
+            RuntimeRouteCandidate.DirectTcp(
+                hint = RuntimeEndpointHint(
+                    host = "192.168.1.20",
+                    port = 43170,
+                    source = RuntimeEndpointSource.BonjourDiscovery,
+                )
+            ).activeRouteKind(),
+        )
+        assertEquals(
+            RuntimeActiveRouteKind.PeerToPeer,
+            RuntimeRouteCandidate.PeerToPeer(identity).activeRouteKind(),
+        )
+        assertEquals(
+            RuntimeActiveRouteKind.Relay,
+            RuntimeRouteCandidate.Relay(identity).activeRouteKind(),
+        )
+    }
+
+    @Test
     fun identityOnlyTrustedRuntimeWithoutDiscoveredEndpointReturnsNoConnectableRoute() {
         val state = RuntimeUiState(
             runtimeHost = "127.0.0.1",
@@ -1084,6 +1468,17 @@ class RuntimeClientViewModelTest {
                 ),
             ),
         ).toRuntimeUiError()
+        val relayRouteFailed = RuntimeConnectionFailure(
+            reason = RuntimeConnectionFailureReason.RouteAttemptsFailed,
+            target = identityOnlyTarget,
+            routes = listOf(RuntimeRouteCandidate.Relay(identity)),
+            attemptFailures = listOf(
+                RuntimeRouteAttemptFailure(
+                    route = RuntimeRouteCandidate.Relay(identity),
+                    cause = IllegalStateException("Relay did not accept route"),
+                )
+            ),
+        ).toRuntimeUiError()
 
         assertEquals("no_route", noRoute.code)
         assertEquals("no_connectable_route", noConnectableRoute.code)
@@ -1093,6 +1488,8 @@ class RuntimeClientViewModelTest {
             "route_diagnostic_local_missing_remote_pending",
             remoteRoutesUnavailable.diagnosticCode,
         )
+        assertEquals("connection_failed", relayRouteFailed.code)
+        assertEquals("route_diagnostic_relay_failed", relayRouteFailed.diagnosticCode)
     }
 
     @Test
@@ -1679,6 +2076,45 @@ class RuntimeClientViewModelTest {
     }
 
     @Test
+    fun runtimeReceiveFailureClearsStreamingAndRemovesOnlyBlankAssistantPlaceholder() {
+        val userMessage = RuntimeChatMessage(id = "user", role = "user", content = "Question")
+        val blankAssistant = RuntimeChatMessage(id = "assistant", role = "assistant", content = "")
+        val blankState = RuntimeUiState(
+            isConnected = true,
+            isStreaming = true,
+            isLoadingSuggestions = true,
+            installingModelId = "ollama:pulling",
+            activeRequestId = "active-request",
+            activeRouteKind = RuntimeActiveRouteKind.Relay,
+            runtimeStatus = "connected",
+            messages = listOf(userMessage, blankAssistant),
+        )
+
+        val afterBlankFailure = blankState.withRuntimeReceiveFailure("socket closed")
+
+        assertFalse(afterBlankFailure.isConnected)
+        assertFalse(afterBlankFailure.isStreaming)
+        assertFalse(afterBlankFailure.isLoadingSuggestions)
+        assertNull(afterBlankFailure.installingModelId)
+        assertNull(afterBlankFailure.activeRequestId)
+        assertNull(afterBlankFailure.activeRouteKind)
+        assertEquals("disconnected", afterBlankFailure.runtimeStatus)
+        assertEquals(listOf(userMessage), afterBlankFailure.messages)
+        assertEquals("receive_failed", afterBlankFailure.error?.code)
+        assertEquals("socket closed", afterBlankFailure.error?.detail)
+
+        val partialAssistant = blankAssistant.copy(content = "Partial")
+        val reasoningAssistant = blankAssistant.copy(reasoning = "Thinking")
+        val afterPartialFailure = blankState.copy(messages = listOf(userMessage, partialAssistant))
+            .withRuntimeReceiveFailure("socket closed")
+        val afterReasoningFailure = blankState.copy(messages = listOf(userMessage, reasoningAssistant))
+            .withRuntimeReceiveFailure("socket closed")
+
+        assertEquals(partialAssistant, afterPartialFailure.messages.last())
+        assertEquals(reasoningAssistant, afterReasoningFailure.messages.last())
+    }
+
+    @Test
     fun runtimeAuthenticationErrorTransitionsToPairingRequiredState() {
         val state = RuntimeUiState(
             isConnected = true,
@@ -1846,7 +2282,7 @@ class RuntimeClientViewModelTest {
                 sessionId = "session",
                 messages = listOf(
                     RuntimeChatMessage(id = "m1", role = "user", content = "Please explain this architecture"),
-                    RuntimeChatMessage(id = "m2", role = "assistant", content = "It uses an Android client and Mac runtime."),
+                    RuntimeChatMessage(id = "m2", role = "assistant", content = "It uses a client app and runtime host."),
                 ),
                 nowMillis = 100L,
             )
@@ -2107,6 +2543,16 @@ class RuntimeClientViewModelTest {
     }
 
     @Test
+    fun persistedRuntimeDataCanClearSelectedEmbeddingModel() {
+        val data = PersistedRuntimeData()
+            .withSelectedEmbeddingModelId("ollama:nomic-embed-text")
+            .withSelectedEmbeddingModelId(null)
+
+        assertNull(data.selectedEmbeddingModelId)
+        assertNull(data.sanitized().selectedEmbeddingModelId)
+    }
+
+    @Test
     fun persistedRuntimeDataDefaultsAutoReconnectOnAndCanDisableIt() {
         val disabled = PersistedRuntimeData()
             .withTrustedRuntimeAutoReconnectEnabled(false)
@@ -2128,7 +2574,7 @@ class RuntimeClientViewModelTest {
     }
 
     @Test
-    fun chatSendMessagesPrependsOnlyEnabledMemoryAsSystemContext() {
+    fun chatSendMessagesPrependsCapabilityGuardAndOnlyEnabledMemoryAsSystemContext() {
         val messages = listOf(
             RuntimeChatMessage(role = "system", content = "UI-only system"),
             RuntimeChatMessage(role = "user", content = "Hello"),
@@ -2154,10 +2600,14 @@ class RuntimeClientViewModelTest {
         val payloadMessages = chatSendMessages(messages, memory)
 
         assertEquals("system", payloadMessages[0].role)
-        assertEquals("Local user memory:\n- Prefers concise answers", payloadMessages[0].content)
-        assertEquals("user", payloadMessages[1].role)
-        assertEquals("Hello", payloadMessages[1].content)
-        assertEquals(2, payloadMessages.size)
+        assertEquals(AETHERLINK_RUNTIME_CAPABILITY_GUARD, payloadMessages[0].content)
+        assertTrue(payloadMessages[0].content.contains("does not provide live web search"))
+        assertTrue(payloadMessages[0].content.contains("Do not claim that you can search the web"))
+        assertEquals("system", payloadMessages[1].role)
+        assertEquals("Local user memory:\n- Prefers concise answers", payloadMessages[1].content)
+        assertEquals("user", payloadMessages[2].role)
+        assertEquals("Hello", payloadMessages[2].content)
+        assertEquals(3, payloadMessages.size)
     }
 
     @Test
@@ -2194,7 +2644,9 @@ class RuntimeClientViewModelTest {
     }
 
     private fun runtimePairingPayload(
+        runtimeDeviceId: String = "runtime-1",
         runtimePublicKeyBase64: String? = "runtime-public-key",
+        routeToken: String? = "route-1",
         host: String? = "192.168.1.10",
         port: Int? = 43170,
         relayHost: String? = null,
@@ -2205,11 +2657,11 @@ class RuntimeClientViewModelTest {
         return RuntimePairingPayload(
             pairingNonce = "nonce-1",
             pairingCode = "123456",
-            runtimeDeviceId = "runtime-1",
+            runtimeDeviceId = runtimeDeviceId,
             runtimeName = "AetherLink Runtime",
             fingerprint = "runtime-fingerprint",
             runtimePublicKeyBase64 = runtimePublicKeyBase64,
-            routeToken = "route-1",
+            routeToken = routeToken,
             host = host,
             port = port,
             relayHost = relayHost,

@@ -51,7 +51,7 @@ Target pairing flow:
 
 1. User opens pairing on the runtime host.
 2. The runtime host displays a QR code plus a one-time pairing code.
-3. QR pairing data includes runtime device id, pairing nonce, service identity, runtime public key or certificate fingerprint, and a route token. A fixed host/port is not required for the product pairing payload and is only an optional development reachability hint.
+3. QR pairing data includes runtime device id, pairing nonce, service identity, runtime public key or certificate fingerprint, and a route token. For different-network product use, it also bootstraps private overlay/rendezvous/relay material. A fixed host/port is not required for the product pairing payload and is only an optional development reachability hint.
 4. The client submits pairing nonce, code, client device id, client device name, and client public key.
 5. The runtime host stores the client public key only if the pairing window is active and user confirmation succeeds.
 6. Future sessions use challenge-response authentication before runtime commands.
@@ -62,7 +62,7 @@ An active pairing session allows only a bounded number of invalid nonce/code sub
 
 Implementation note: QR pairing and discovery can be simple in v0.1, but the docs must remain clear that the trusted-device gate is required before runtime commands execute.
 
-Connectivity note: pairing is identity binding, not a promise that a scanned host/port will stay reachable. Product builds should treat the QR as identity-only by default: runtime identity, public key/fingerprint, and route token establish the trusted target. The connection manager then resolves a route for that identity: local discovery/direct first, remote P2P NAT traversal preparation second, and encrypted blind relay/TURN-style fallback preparation only when direct P2P fails.
+Connectivity note: pairing is identity binding plus route bootstrap, not a promise that a scanned host/port will stay reachable. Product builds must keep pairing QR-only from the user's perspective while including enough private overlay material for different-network use: runtime identity, public key/fingerprint, route token, and rendezvous or relay allocation material. Raw local sockets, mDNS, or a remembered private IP cannot satisfy this requirement. The connection manager then resolves a route for that identity through local discovery/direct when available, remote P2P NAT traversal, or encrypted blind relay/TURN-style fallback.
 
 NAT traversal note: the future remote path should use STUN-like address discovery and authenticated hole punching to attempt direct 1:1 connectivity. Any candidate exchange must be bound to paired device identities, short-lived rendezvous tokens, and replay protection before the encrypted AetherLink session is accepted. This is not implemented yet; current code only prepares route-candidate concepts around the paired identity.
 
@@ -76,7 +76,7 @@ Bitcoin-network analogy note: AetherLink should borrow only peer identity and di
 
 DHT/bootstrap note: a future DHT-like or bootstrap-peer layer may be useful for finding a paired peer without a fixed IP, but it must publish only privacy-preserving rendezvous records. It must not expose stable runtime host directories, backend URLs, model inventory, prompts, files, memory, or any authority to mark a device as trusted.
 
-Implementation status note: identity-only QR, local route-token matching, and relay route preparation are connection-manager increments. A temporary outbound TCP development relay is implemented for different-Wi-Fi testing by `relay_id`; with `relay_secret`, Android and the runtime host encrypt relay frame bodies using AES-GCM before the relay sees them. Actual DHT/bootstrap discovery, NAT traversal, production signaling, relay allocation, key rotation, replay-resistant session setup, and production end-to-end encryption are not complete. Local direct and the development relay remain scaffolding, not the intended final same-network-IP design.
+Implementation status note: identity-only QR, local route-token matching, and relay route preparation are connection-manager increments. A temporary outbound TCP development relay is implemented for different-Wi-Fi testing by `relay_id`; with `relay_secret`, Android and the runtime host encrypt relay frame bodies using AES-GCM before the relay sees them. Actual private per-user overlay routing, DHT/bootstrap discovery, NAT traversal, production signaling, relay allocation, key rotation, replay-resistant session setup, and production end-to-end encryption are not complete. Local direct and the development relay remain diagnostics/development scaffolding, not the intended final same-network-IP design.
 
 Development note: `AETHERLINK_DEV_PAIRING=1` is only for local automated smoke tests with RuntimeDevServer. It opens and prints a temporary pairing session for scripts, but runtime commands still require the normal pairing/trusted-device and challenge-response path. Do not enable this flag for production or normal trusted-device use.
 

@@ -26,36 +26,61 @@ public struct RelayPeerConfiguration: Equatable, Sendable {
     }
 }
 
-public final class RelayPeerClient: @unchecked Sendable {
+public enum RelayPeerStatus: Equatable, Sendable {
+    case stopped
+    case connecting
+    case waitingForPeer
+    case ready
+    case reconnecting(String?)
+    case failed(String)
+}
+
+public protocol RelayPeerTransport: AnyObject, Sendable {
+    func start(
+        configuration: RelayPeerConfiguration,
+        onStatusChange: (@Sendable (RelayPeerStatus) -> Void)?,
+        onMessage: @escaping LocalPeerMessageHandler
+    )
+
+    func stop()
+}
+
+public final class RelayPeerClient: RelayPeerTransport, @unchecked Sendable {
     private let codec = ProtocolCodec()
     private let lock = NSLock()
     private var connection: NWConnection?
     private var isRunning = false
     private var reconnectWorkItem: DispatchWorkItem?
+    private var status: RelayPeerStatus = .stopped
+    private var statusHandler: (@Sendable (RelayPeerStatus) -> Void)?
 
     public init() {}
 
     public func start(
         configuration: RelayPeerConfiguration,
+        onStatusChange: (@Sendable (RelayPeerStatus) -> Void)? = nil,
         onMessage: @escaping LocalPeerMessageHandler
     ) {
         stop()
         lock.withLock {
             isRunning = true
+            statusHandler = onStatusChange
         }
+        updateStatus(.connecting)
         connect(configuration: configuration, onMessage: onMessage)
     }
 
     public func stop() {
-        let connectionToCancel = lock.withLock {
+        let result = lock.withLock {
             isRunning = false
             reconnectWorkItem?.cancel()
             reconnectWorkItem = nil
             let current = connection
             connection = nil
-            return current
+            return (connection: current, handler: statusHandler)
         }
-        connectionToCancel?.cancel()
+        result.connection?.cancel()
+        updateStatus(.stopped, handler: result.handler)
     }
 
     private func connect(
@@ -78,20 +103,37 @@ public final class RelayPeerClient: @unchecked Sendable {
         connection.stateUpdateHandler = { [weak self, sink] state in
             switch state {
             case .ready:
+                guard let self else { return }
+                self.updateStatus(.waitingForPeer)
                 sink.sendRelayHandshake(relayID: configuration.relayID)
                 Self.receiveReadyLine(connection: connection) { ready in
                     guard ready else {
+                        self.updateStatus(.failed("Relay did not return ready after registration."))
                         connection.cancel()
                         return
                     }
+                    self.updateStatus(.ready)
                     Self.receiveNextFrame(
                         connection: connection,
                         peer: sink,
                         onMessage: onMessage
                     )
                 }
-            case .failed, .cancelled:
-                self?.scheduleReconnect(configuration: configuration, onMessage: onMessage)
+            case .waiting(let error):
+                self?.updateStatus(.failed(error.localizedDescription))
+            case .failed(let error):
+                self?.updateStatus(.failed(error.localizedDescription))
+                self?.scheduleReconnect(
+                    configuration: configuration,
+                    onMessage: onMessage,
+                    message: error.localizedDescription
+                )
+            case .cancelled:
+                self?.scheduleReconnect(
+                    configuration: configuration,
+                    onMessage: onMessage,
+                    message: nil
+                )
             default:
                 break
             }
@@ -102,7 +144,8 @@ public final class RelayPeerClient: @unchecked Sendable {
 
     private func scheduleReconnect(
         configuration: RelayPeerConfiguration,
-        onMessage: @escaping LocalPeerMessageHandler
+        onMessage: @escaping LocalPeerMessageHandler,
+        message: String?
     ) {
         let shouldReconnect = lock.withLock {
             guard isRunning else { return false }
@@ -110,11 +153,13 @@ public final class RelayPeerClient: @unchecked Sendable {
             return true
         }
         guard shouldReconnect else { return }
+        updateStatus(.reconnecting(message))
 
         let item = DispatchWorkItem { [weak self] in
             guard let self else { return }
             let stillRunning = self.lock.withLock { self.isRunning }
             guard stillRunning else { return }
+            self.updateStatus(.connecting)
             self.connect(configuration: configuration, onMessage: onMessage)
         }
         lock.withLock {
@@ -122,6 +167,24 @@ public final class RelayPeerClient: @unchecked Sendable {
             reconnectWorkItem = item
         }
         DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + configuration.reconnectDelay, execute: item)
+    }
+
+    private func updateStatus(_ newStatus: RelayPeerStatus) {
+        let handler = lock.withLock {
+            status = newStatus
+            return statusHandler
+        }
+        handler?(newStatus)
+    }
+
+    private func updateStatus(
+        _ newStatus: RelayPeerStatus,
+        handler explicitHandler: (@Sendable (RelayPeerStatus) -> Void)?
+    ) {
+        lock.withLock {
+            status = newStatus
+        }
+        explicitHandler?(newStatus)
     }
 
     private static func receiveReadyLine(connection: NWConnection, completion: @escaping @Sendable (Bool) -> Void) {
@@ -237,5 +300,13 @@ public final class RelayPeerConnection: RuntimeMessageSink, @unchecked Sendable 
             receiveCipher = cipher
         }
         return try codec.decodeEnvelope(decodedBody)
+    }
+}
+
+private extension NSLock {
+    func withLock<T>(_ body: () throws -> T) rethrows -> T {
+        lock()
+        defer { unlock() }
+        return try body()
     }
 }

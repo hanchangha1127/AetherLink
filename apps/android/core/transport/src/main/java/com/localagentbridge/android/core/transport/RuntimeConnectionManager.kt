@@ -356,8 +356,8 @@ class RuntimeConnectionManager(
         val routes = routeResolver.resolveRoutes(target).toMutableList()
         val identity = target.identity ?: return routes
         val preparedRoutes = remoteRoutePreparer?.prepareRemoteRoutes(identity).orEmpty()
-        preparedRoutes.forEach { preparedRoute ->
-            routes += when (preparedRoute) {
+        val preparedCandidates = preparedRoutes.map { preparedRoute ->
+            when (preparedRoute) {
                 is PreparedRemoteRuntimeRoute.PeerToPeer ->
                     RuntimeRouteCandidate.PeerToPeer(
                         identity = preparedRoute.identity,
@@ -370,7 +370,17 @@ class RuntimeConnectionManager(
                     )
             }
         }
-        return routes
+        if (preparedCandidates.isEmpty()) return routes
+
+        val preparedPeerToPeerRoutes = preparedCandidates.filterIsInstance<RuntimeRouteCandidate.PeerToPeer>()
+        val preparedRelayRoutes = preparedCandidates.filterIsInstance<RuntimeRouteCandidate.Relay>()
+        val freshLocalRoutes = routes.filter { route ->
+            route is RuntimeRouteCandidate.DirectTcp && route.source == RuntimeRouteSource.FreshDiscovery
+        }
+        val staleOrUnpreparedRoutes = routes.filterNot { route ->
+            route is RuntimeRouteCandidate.DirectTcp && route.source == RuntimeRouteSource.FreshDiscovery
+        }
+        return preparedPeerToPeerRoutes + preparedRelayRoutes + freshLocalRoutes + staleOrUnpreparedRoutes
     }
 
     private suspend fun connect(route: RuntimeRouteCandidate, timeoutMillis: Int): RuntimeProtocolChannel {

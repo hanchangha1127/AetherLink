@@ -90,7 +90,8 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
             runtimeRouteCandidates(
                 state = state.value,
                 target = target,
-                includeUsbReverseFallback = BuildConfig.DEBUG,
+                includeUsbReverseFallback = BuildConfig.DEBUG &&
+                    state.value.runtimeEndpointSource == RuntimeEndpointSource.UsbReverse,
             )
         },
         remoteRoutePreparer = { identity ->
@@ -144,23 +145,19 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
                         it.copy(trustedRuntime = null)
                     } else {
                         val endpoint = trusted.lastKnownEndpointHintOrNull()
-                        it.copy(
-                            trustedRuntime = RuntimeTrustedRuntime(
-                                deviceId = trusted.deviceId,
-                                name = trusted.name,
-                                fingerprint = trusted.fingerprint,
-                                publicKeyBase64 = trusted.publicKeyBase64,
-                                routeToken = trusted.routeToken,
-                                endpointHint = endpoint,
-                                relayHost = trusted.relayHost,
-                                relayPort = trusted.relayPort,
-                                relayId = trusted.relayId,
-                                relaySecret = trusted.relaySecret,
-                            ),
-                            runtimeHost = endpoint?.host ?: it.runtimeHost,
-                            runtimePort = endpoint?.port?.toString() ?: it.runtimePort,
-                            runtimeEndpointSource = endpoint?.source ?: it.runtimeEndpointSource,
+                        val runtime = RuntimeTrustedRuntime(
+                            deviceId = trusted.deviceId,
+                            name = trusted.name,
+                            fingerprint = trusted.fingerprint,
+                            publicKeyBase64 = trusted.publicKeyBase64,
+                            routeToken = trusted.routeToken,
+                            endpointHint = endpoint,
+                            relayHost = trusted.relayHost,
+                            relayPort = trusted.relayPort,
+                            relayId = trusted.relayId,
+                            relaySecret = trusted.relaySecret,
                         )
+                        it.withTrustedRuntimeRouteFields(runtime, endpoint)
                     }
                 }
                 if (
@@ -501,6 +498,28 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
                 .getOrNull()
                 ?: return@launch
 
+            val refreshedTrustedRuntime = trustedRuntimeFromRouteRefreshQr(
+                current = state.value.trustedRuntime,
+                payload = payload,
+            )
+            if (refreshedTrustedRuntime != null) {
+                pendingPairingPayload = payload
+                pairingStore.trustRuntime(refreshedTrustedRuntime)
+                val trustedEndpoint = refreshedTrustedRuntime.lastKnownEndpointHintOrNull()
+                val runtime = refreshedTrustedRuntime.toRuntimeTrustedRuntime()
+                mutableState.update {
+                    it.withClearedPendingPairing()
+                        .withTrustedRuntimeRouteFields(runtime, trustedEndpoint)
+                        .copy(
+                            runtimeStatus = "route_refreshed",
+                            error = null,
+                        )
+                }
+                pendingPairingPayload = null
+                connectToRuntime(refreshedTrustedRuntime.toConnectionTarget())
+                return@launch
+            }
+
             pendingPairingPayload = payload
             mutableState.update {
                 it.withPendingPairing(payload)
@@ -683,6 +702,7 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
                 installingModelId = null,
                 activeRequestId = null,
                 runtimeStatus = "disconnected",
+                activeRouteKind = null,
             )
         }
     }
@@ -722,7 +742,11 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
         persistSelectedModel(modelId)
     }
 
-    fun selectEmbeddingModel(modelId: String) {
+    fun selectEmbeddingModel(modelId: String?) {
+        if (modelId == null) {
+            persistSelectedEmbeddingModel(null)
+            return
+        }
         val model = state.value.models.firstOrNull { it.id == modelId }
         if (model == null || !model.isEmbeddingModel()) {
             showError("select_embedding_model")
@@ -878,6 +902,7 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
                 isConnecting = true,
                 error = null,
                 runtimeStatus = "connecting",
+                activeRouteKind = null,
             )
         }
 
@@ -897,6 +922,7 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
         }.onSuccess { connection ->
             activeChannel = connection.channel
             val connectedEndpoint = connection.route.connectedEndpointHintOrNull()
+            val activeRouteKind = connection.route.activeRouteKind()
             Log.d(
                 TAG,
                 "Connected to runtime ${target.connectionLogLabel()} route=${connection.route.connectionRouteLogLabel()}"
@@ -910,6 +936,7 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
                     runtimeHost = connectedEndpoint?.host ?: it.runtimeHost,
                     runtimePort = connectedEndpoint?.port?.toString() ?: it.runtimePort,
                     runtimeEndpointSource = connectedEndpoint?.source ?: it.runtimeEndpointSource,
+                    activeRouteKind = activeRouteKind,
                     error = null,
                 )
             }
@@ -924,6 +951,7 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
                     isConnected = false,
                     isConnecting = false,
                     runtimeStatus = "failed",
+                    activeRouteKind = null,
                     error = error.connectionUiError(),
                 )
             }
@@ -945,16 +973,13 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
                         if (isActive) {
                             Log.e(TAG, "Runtime receive failed", error)
                             isSessionAuthenticated = false
-                            mutableState.update {
-                                it.copy(
-                                    isConnected = false,
-                                    isStreaming = false,
-                                    isLoadingSuggestions = false,
-                                    installingModelId = null,
-                                    activeRequestId = null,
-                                    runtimeStatus = "disconnected",
-                                    error = RuntimeUiError("receive_failed", error.message)
-                                )
+                            clearPendingSuggestions()
+                            clearPendingTitleRequest()
+                            val current = state.value
+                            val updatedState = current.withRuntimeReceiveFailure(error.message)
+                            mutableState.value = updatedState
+                            if (current.activeRequestId != null) {
+                                persistActiveMessages(updatedState.messages, clearError = false)
                             }
                             scheduleTrustedRuntimeReconnect()
                         }
@@ -1068,6 +1093,7 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
 
             pairingStore.trustRuntime(trusted)
             val trustedEndpoint = trusted.lastKnownEndpointHintOrNull()
+            val runtime = trusted.toRuntimeTrustedRuntime()
             pendingPairingPayload = null
             isSessionAuthenticated = true
             publishPersistedRuntimeData(
@@ -1075,24 +1101,9 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
                 save = true,
             )
             mutableState.update {
-                it.withClearedPendingPairing().copy(
-                    trustedRuntime = RuntimeTrustedRuntime(
-                        deviceId = trusted.deviceId,
-                        name = trusted.name,
-                        fingerprint = trusted.fingerprint,
-                        publicKeyBase64 = trusted.publicKeyBase64,
-                        routeToken = trusted.routeToken,
-                        endpointHint = trustedEndpoint,
-                        relayHost = trusted.relayHost,
-                        relayPort = trusted.relayPort,
-                        relayId = trusted.relayId,
-                        relaySecret = trusted.relaySecret,
-                    ),
-                    runtimeHost = trustedEndpoint?.host ?: it.runtimeHost,
-                    runtimePort = trustedEndpoint?.port?.toString() ?: it.runtimePort,
-                    runtimeEndpointSource = trustedEndpoint?.source ?: it.runtimeEndpointSource,
-                    error = null,
-                )
+                it.withClearedPendingPairing()
+                    .withTrustedRuntimeRouteFields(runtime, trustedEndpoint)
+                    .copy(error = null)
             }
             requestRuntimeHealth()
         }
@@ -1830,7 +1841,7 @@ internal fun trustedRuntimeConnectionTarget(state: RuntimeUiState): RuntimeConne
             publicKeyBase64 = trustedRuntime.publicKeyBase64,
             routeToken = trustedRuntime.routeToken,
         ),
-        endpointHint = trustedRuntime.endpointHint,
+        endpointHint = if (trustedRuntime.hasRelayRoute()) null else trustedRuntime.endpointHint,
     )
 }
 
@@ -1854,7 +1865,11 @@ internal fun autoReconnectTrustedRuntimeConnectionTarget(state: RuntimeUiState):
     val discoveredTarget = trustedDiscoveredRuntimeConnectionTarget(state)
     if (discoveredTarget != null) return discoveredTarget
     val trustedTarget = trustedRuntimeConnectionTarget(state) ?: return null
-    return trustedTarget.takeIf { it.endpointHint != null || state.trustedRuntime?.hasRelayRoute() == true }
+    if (state.trustedRuntime?.hasRelayRoute() == true) return trustedTarget
+    if (trustedTarget.endpointHint?.source == RuntimeEndpointSource.TrustedLastKnown) {
+        return trustedTarget.copy(endpointHint = null)
+    }
+    return trustedTarget.takeIf { it.endpointHint != null }
 }
 
 internal fun shouldAttemptTrustedRuntimeRestore(
@@ -1878,7 +1893,9 @@ internal fun runtimeRouteCandidates(
 
     val identity = target.identity
     if (identity != null) {
-        state.selectedRouteEndpointHintOrNull()?.let { endpoint ->
+        val hasSavedRelayRoute = state.trustedRuntime
+            ?.let { it.matchesIdentity(identity) && it.hasRelayRoute() } == true
+        if (!hasSavedRelayRoute) state.selectedRouteEndpointHintOrNull()?.let { endpoint ->
             val key = endpoint.host to endpoint.port
             if (state.isTrustedRouteEndpointAllowed(endpoint, identity) && seenEndpoints.add(key)) {
                 routes += RuntimeRouteCandidate.DirectTcp(
@@ -1900,7 +1917,7 @@ internal fun runtimeRouteCandidates(
                 )
             }
         }
-        if (includeUsbReverseFallback) {
+        if (includeUsbReverseFallback && !hasSavedRelayRoute) {
             val endpoint = RuntimeEndpointHint(
                 host = "127.0.0.1",
                 port = 43170,
@@ -2040,6 +2057,9 @@ private fun RuntimeConnectionFailure.routeDiagnosticCode(): String? {
     val hasFailedDirectEndpoint = attemptFailures.any {
         it.route is RuntimeRouteCandidate.DirectTcp
     }
+    val hasFailedRelayRoute = attemptFailures.any {
+        it.route is RuntimeRouteCandidate.Relay
+    }
     val hasPeerToPeerPlaceholder = routeRejections.any {
         it.capability == RuntimeRouteCapability.PeerToPeer &&
             it.reason == RuntimeRouteRejectionReason.PeerToPeerConnectorNotAvailable
@@ -2049,6 +2069,8 @@ private fun RuntimeConnectionFailure.routeDiagnosticCode(): String? {
             it.reason == RuntimeRouteRejectionReason.RelayConnectorNotAvailable
     }
     return when {
+        hasFailedRelayRoute ->
+            "route_diagnostic_relay_failed"
         hasFailedDirectEndpoint && hasPeerToPeerPlaceholder && hasRelayPlaceholder ->
             "route_diagnostic_direct_failed_remote_pending"
         hasUnpreparedLocalDirect && hasPeerToPeerPlaceholder && hasRelayPlaceholder ->
@@ -2080,6 +2102,15 @@ private fun RuntimeRouteCandidate.connectedEndpointHintOrNull(): RuntimeEndpoint
     return when (this) {
         is RuntimeRouteCandidate.DirectTcp -> hint
         else -> null
+    }
+}
+
+internal fun RuntimeRouteCandidate.activeRouteKind(): RuntimeActiveRouteKind {
+    return when (this) {
+        is RuntimeRouteCandidate.DirectTcp -> RuntimeActiveRouteKind.DirectTcp
+        is RuntimeRouteCandidate.PeerToPeer -> RuntimeActiveRouteKind.PeerToPeer
+        is RuntimeRouteCandidate.Relay -> RuntimeActiveRouteKind.Relay
+        is RuntimeRouteCandidate.LocalDirect -> RuntimeActiveRouteKind.DirectTcp
     }
 }
 
@@ -2211,6 +2242,22 @@ internal fun RuntimeUiState.withClearedPendingPairing(): RuntimeUiState {
     )
 }
 
+internal fun RuntimeUiState.withTrustedRuntimeRouteFields(
+    runtime: RuntimeTrustedRuntime,
+    endpoint: RuntimeEndpointHint?,
+): RuntimeUiState {
+    return copy(
+        trustedRuntime = runtime,
+        runtimeHost = if (runtime.hasRelayRoute()) "" else endpoint?.host ?: runtimeHost,
+        runtimePort = if (runtime.hasRelayRoute()) "" else endpoint?.port?.toString() ?: runtimePort,
+        runtimeEndpointSource = if (runtime.hasRelayRoute()) {
+            RuntimeEndpointSource.Manual
+        } else {
+            endpoint?.source ?: runtimeEndpointSource
+        },
+    )
+}
+
 internal fun RuntimePairingPayload.toConnectionTarget(
     endpoint: RuntimeEndpointHint? = endpointHintOrNull(),
 ): RuntimeConnectionTarget {
@@ -2230,9 +2277,9 @@ internal fun pairingRuntimeConnectionTarget(
     state: RuntimeUiState,
     payload: RuntimePairingPayload,
 ): RuntimeConnectionTarget? {
+    if (payload.hasRelayRoute()) return payload.toConnectionTarget(endpoint = null)
     val endpoint = payload.endpointHintOrNull()
     if (endpoint != null) return payload.toConnectionTarget(endpoint)
-    if (payload.hasRelayRoute()) return payload.toConnectionTarget(endpoint = null)
 
     val identityOnlyTarget = payload.toConnectionTarget(endpoint = null)
     val identity = requireNotNull(identityOnlyTarget.identity)
@@ -2274,12 +2321,64 @@ internal fun trustedRuntimeFromAcceptedPairing(
         fingerprint = acceptedFingerprint,
         publicKeyBase64 = acceptedPublicKey,
         routeToken = pending.routeToken,
-        host = pending.host,
-        port = pending.port,
+        host = if (pending.hasRelayRoute()) null else pending.host,
+        port = if (pending.hasRelayRoute()) null else pending.port,
         relayHost = pending.relayHost,
         relayPort = pending.relayPort,
         relayId = pending.relayId,
         relaySecret = pending.relaySecret,
+    )
+}
+
+internal fun trustedRuntimeFromRouteRefreshQr(
+    current: RuntimeTrustedRuntime?,
+    payload: RuntimePairingPayload,
+): TrustedRuntime? {
+    current ?: return null
+    if (!payload.hasRelayRoute()) return null
+    if (current.deviceId != payload.runtimeDeviceId) return null
+    if (current.fingerprint != null && current.fingerprint != payload.fingerprint) return null
+    if (
+        current.publicKeyBase64 != null &&
+        payload.runtimePublicKeyBase64 != current.publicKeyBase64
+    ) {
+        return null
+    }
+    if (
+        current.routeToken != null &&
+        payload.routeToken != null &&
+        current.routeToken != payload.routeToken
+    ) {
+        return null
+    }
+
+    return TrustedRuntime(
+        deviceId = current.deviceId,
+        name = payload.runtimeName.takeIf { it.isNotBlank() } ?: current.name,
+        fingerprint = current.fingerprint ?: payload.fingerprint,
+        publicKeyBase64 = current.publicKeyBase64 ?: payload.runtimePublicKeyBase64,
+        routeToken = current.routeToken ?: payload.routeToken,
+        host = null,
+        port = null,
+        relayHost = payload.relayHost,
+        relayPort = payload.relayPort,
+        relayId = payload.relayId,
+        relaySecret = payload.relaySecret,
+    )
+}
+
+private fun TrustedRuntime.toRuntimeTrustedRuntime(): RuntimeTrustedRuntime {
+    return RuntimeTrustedRuntime(
+        deviceId = deviceId,
+        name = name,
+        fingerprint = fingerprint,
+        publicKeyBase64 = publicKeyBase64,
+        routeToken = routeToken,
+        endpointHint = lastKnownEndpointHintOrNull(),
+        relayHost = relayHost,
+        relayPort = relayPort,
+        relayId = relayId,
+        relaySecret = relaySecret,
     )
 }
 
@@ -2420,18 +2519,18 @@ internal fun RuntimeUiState.withChatDelta(
     if (activeRequestId != envelope.requestId) return this
     if (payload.content.isEmpty() && payload.reasoning.isEmpty()) return this
 
-        val updated = messages.toMutableList()
-        val index = updated.indexOfLast { it.role == "assistant" }
-        if (index >= 0) {
-            val item = updated[index]
-            updated[index] = item.copy(
-                content = item.content + payload.content,
-                reasoning = item.reasoning + payload.reasoning,
-                suggestions = emptyList(),
-            )
-        }
-        return copy(messages = updated)
+    val updated = messages.toMutableList()
+    val index = updated.indexOfLast { it.role == "assistant" }
+    if (index >= 0) {
+        val item = updated[index]
+        updated[index] = item.copy(
+            content = item.content + payload.content,
+            reasoning = item.reasoning + payload.reasoning,
+            suggestions = emptyList(),
+        )
     }
+    return copy(messages = updated)
+}
 
 internal fun RuntimeUiState.withChatDone(
     envelope: ProtocolEnvelope,
@@ -2443,8 +2542,8 @@ internal fun RuntimeUiState.withChatDone(
         isStreaming = false,
         activeRequestId = null,
         error = if (payload?.finishReason == "cancelled") RuntimeUiError("generation_cancelled") else error,
-        )
-    }
+    )
+}
 
 internal fun RuntimeUiState.withChatSuggestions(suggestions: List<String>): RuntimeUiState {
     val updated = messages.toMutableList()
@@ -2498,6 +2597,24 @@ internal fun RuntimeUiState.withRuntimeError(
     } else {
         updated
     }
+}
+
+internal fun RuntimeUiState.withRuntimeReceiveFailure(detail: String?): RuntimeUiState {
+    return copy(
+        isConnected = false,
+        isStreaming = false,
+        isLoadingSuggestions = false,
+        installingModelId = null,
+        activeRequestId = null,
+        runtimeStatus = "disconnected",
+        activeRouteKind = null,
+        messages = if (activeRequestId != null) {
+            messages.withoutTrailingBlankAssistantPlaceholder()
+        } else {
+            messages
+        },
+        error = RuntimeUiError("receive_failed", detail),
+    )
 }
 
 internal fun RuntimeUiState.withPairingRequiredRuntimeState(detail: String?): RuntimeUiState {

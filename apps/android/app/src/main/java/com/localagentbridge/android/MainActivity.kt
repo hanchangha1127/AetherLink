@@ -1,6 +1,7 @@
 package com.localagentbridge.android
 
 import android.content.Context
+import android.content.Intent
 import android.content.res.Configuration
 import android.os.Bundle
 import android.os.LocaleList
@@ -97,6 +98,7 @@ import com.localagentbridge.android.runtime.RuntimeChatSession
 import com.localagentbridge.android.runtime.RuntimeModel
 import com.localagentbridge.android.runtime.RuntimeUiState
 import com.localagentbridge.android.runtime.isChatModel
+import com.localagentbridge.android.runtime.supportsImageInput
 import com.localagentbridge.android.ui.ChatScreen
 import com.localagentbridge.android.ui.PairingScreen
 import com.localagentbridge.android.ui.SettingsScreen
@@ -105,17 +107,32 @@ import kotlinx.coroutines.launch
 import java.util.Locale
 
 class MainActivity : ComponentActivity() {
+    private val pairingUriState = mutableStateOf<String?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        pairingUriState.value = intent.pairingUriOrNull()
         setContent {
-            LocalAgentBridgeApp()
+            LocalAgentBridgeApp(
+                pairingUri = pairingUriState.value,
+                onPairingUriConsumed = { pairingUriState.value = null },
+            )
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        pairingUriState.value = intent.pairingUriOrNull()
     }
 }
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
-private fun LocalAgentBridgeApp() {
+private fun LocalAgentBridgeApp(
+    pairingUri: String? = null,
+    onPairingUriConsumed: () -> Unit = {},
+) {
     AetherLinkTheme {
         Surface(
             modifier = Modifier.fillMaxSize(),
@@ -147,9 +164,22 @@ private fun LocalAgentBridgeApp() {
             }
             val hasChatSearchResults = filteredChatSessions.isNotEmpty()
             val attachmentPickerLauncher = rememberLauncherForActivityResult(
-                contract = ActivityResultContracts.GetMultipleContents(),
+                contract = ActivityResultContracts.OpenMultipleDocuments(),
             ) { uris ->
                 viewModel.addAttachments(uris)
+            }
+            val scanPairingQr = {
+                startPairingQrScanner(
+                    context = context,
+                    onResult = viewModel::trustRuntimeFromPairingQr,
+                    onFailure = viewModel::showQrScanFailed,
+                )
+            }
+
+            LaunchedEffect(pairingUri) {
+                val uri = pairingUri?.takeIf { it.isNotBlank() } ?: return@LaunchedEffect
+                viewModel.trustRuntimeFromPairingQr(uri)
+                onPairingUriConsumed()
             }
 
             LaunchedEffect(
@@ -327,9 +357,10 @@ private fun LocalAgentBridgeApp() {
                             onRefreshHealth = viewModel::requestRuntimeHealth,
                             onRequestModels = viewModel::requestModels,
                             onSelectModel = viewModel::selectModel,
-                            onAttachFiles = { attachmentPickerLauncher.launch("*/*") },
+                            onAttachFiles = { attachmentPickerLauncher.launch(attachmentPickerMimeTypes(state)) },
                             onRemoveAttachment = viewModel::removePendingAttachment,
                             onSuggestionClick = viewModel::useSuggestedQuestion,
+                            onResolveRoute = scanPairingQr,
                             modifier = Modifier
                                 .fillMaxSize()
                                 .padding(padding),
@@ -340,13 +371,7 @@ private fun LocalAgentBridgeApp() {
                             onStopDiscovery = viewModel::stopDiscovery,
                             onUseDiscoveredRuntime = viewModel::useDiscoveredRuntime,
                             onForgetTrustedRuntime = viewModel::forgetTrustedRuntime,
-                            onScanPairingQr = {
-                                startPairingQrScanner(
-                                    context = context,
-                                    onResult = viewModel::trustRuntimeFromPairingQr,
-                                    onFailure = viewModel::showQrScanFailed,
-                                )
-                            },
+                            onScanPairingQr = scanPairingQr,
                             onConnect = viewModel::connectToTrustedRuntime,
                             modifier = Modifier
                                 .fillMaxSize()
@@ -362,13 +387,7 @@ private fun LocalAgentBridgeApp() {
                             onStopDiscovery = viewModel::stopDiscovery,
                             onUseDiscoveredRuntime = viewModel::useDiscoveredRuntime,
                             onForgetTrustedRuntime = viewModel::forgetTrustedRuntime,
-                            onScanPairingQr = {
-                                startPairingQrScanner(
-                                    context = context,
-                                    onResult = viewModel::trustRuntimeFromPairingQr,
-                                    onFailure = viewModel::showQrScanFailed,
-                                )
-                            },
+                            onScanPairingQr = scanPairingQr,
                             onConnect = viewModel::connectToTrustedRuntime,
                             onRefreshHealth = viewModel::requestRuntimeHealth,
                             onRequestModels = viewModel::requestModels,
@@ -475,11 +494,11 @@ private fun ChatModelTopBarMenu(
         state.isConnected -> stringResource(R.string.selected_model_unavailable)
         else -> stringResource(R.string.selected_model_restoring)
     }
-    val selectedLabel = when {
-        selectedModel != null -> selectedModel.name
-        state.isLoadingModels -> stringResource(R.string.loading_models)
-        else -> stringResource(R.string.choose_model)
-    }
+    val selectedLabel = chatModelPickerClosedLabel(
+        state = state,
+        loadingModelsLabel = stringResource(R.string.loading_models),
+        chooseModelLabel = stringResource(R.string.choose_model),
+    )
     val modelPickerStateDescription = when {
         selectedModel != null -> selectedModel.name
         selectedModelUnavailable -> selectedModelRecoveryMessage
@@ -749,13 +768,58 @@ private fun RuntimeModel.matchesModelQuery(query: String): Boolean {
     ).any { value -> value.contains(query, ignoreCase = true) }
 }
 
+internal fun attachmentPickerMimeTypes(state: RuntimeUiState): Array<String> {
+    val selectedModel = state.models.firstOrNull { it.id == state.selectedModelId }
+    return if (selectedModel?.supportsImageInput() == true) {
+        arrayOf("application/*", "text/*", "image/*")
+    } else {
+        arrayOf("application/*", "text/*")
+    }
+}
+
+internal fun savedModelDisplayName(modelId: String): String {
+    val trimmed = modelId.trim()
+    if (trimmed.isEmpty()) return trimmed
+    val providerPrefix = trimmed.substringBefore(':', missingDelimiterValue = "")
+        .lowercase(Locale.US)
+    return if (providerPrefix in modelDisplayProviderPrefixes && ':' in trimmed) {
+        trimmed.substringAfter(':').takeIf { it.isNotBlank() } ?: trimmed
+    } else {
+        trimmed
+    }
+}
+
+internal fun chatModelPickerClosedLabel(
+    state: RuntimeUiState,
+    loadingModelsLabel: String,
+    chooseModelLabel: String,
+): String {
+    val selectedModel = state.models
+        .filter { it.isChatModel() }
+        .firstOrNull { it.id == state.selectedModelId }
+    return when {
+        selectedModel != null -> selectedModel.name
+        state.selectedModelId != null -> savedModelDisplayName(state.selectedModelId)
+        state.isLoadingModels -> loadingModelsLabel
+        else -> chooseModelLabel
+    }
+}
+
+private val modelDisplayProviderPrefixes = setOf(
+    "ollama",
+    "lmstudio",
+    "lm_studio",
+    "companion",
+    "runtime",
+)
+
 @Composable
 private fun DrawerRuntimeSummary(state: RuntimeUiState) {
     val chatModels = state.models.filter { it.isChatModel() }
     val selectedModel = chatModels.firstOrNull { it.id == state.selectedModelId }
     val runtimeName = state.trustedRuntime?.name ?: stringResource(R.string.no_trusted_runtime)
     val modelName = selectedModel?.name
-        ?: state.selectedModelId
+        ?: state.selectedModelId?.let(::savedModelDisplayName)
         ?: stringResource(R.string.model_none)
     val connectionLabel = when {
         state.isConnected -> stringResource(R.string.status_connected)
@@ -1177,4 +1241,27 @@ private fun startPairingQrScanner(
         .addOnFailureListener { error ->
             onFailure(error.message)
         }
+}
+
+private fun Intent?.pairingUriOrNull(): String? {
+    val uri = this?.data ?: return null
+    return pairingUriStringOrNull(
+        scheme = uri.scheme,
+        host = uri.host,
+        path = uri.path,
+        rawUri = uri.toString(),
+    )
+}
+
+internal fun pairingUriStringOrNull(
+    scheme: String?,
+    host: String?,
+    path: String?,
+    rawUri: String,
+): String? {
+    val normalizedScheme = scheme?.lowercase(Locale.US)
+    if (normalizedScheme != "aetherlink" && normalizedScheme != "lab") return null
+    val action = host ?: path?.trim('/')
+    if (action != "pair") return null
+    return rawUri
 }

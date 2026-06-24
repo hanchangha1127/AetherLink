@@ -37,15 +37,15 @@ There is no cloud AI backend in v0.1. The client device must not call Ollama or 
 
 See [connection-overlay.md](connection-overlay.md) for the concrete phased design for paired identity, local direct routing, distributed or decentralized rendezvous/bootstrap/DHT options where possible, remote NAT traversal, and blind encrypted relay fallback.
 
-AetherLink must not be designed around same-network fixed IPs. Smooth 1:1 connectivity should work when the client device and runtime host are on different networks, while keeping AI execution local to the user's runtime host. Fixed host/port values and mDNS/Bonjour service records are v0.1 development hints or local fast-path hints, not durable product addressing.
+AetherLink must not be designed around same-network fixed IPs. Smooth 1:1 connectivity should work when the client device and runtime host are on different networks, while keeping AI execution local to the user's runtime host. Pairing and route refresh are QR-only from the user's perspective; the QR bootstraps private per-user overlay, rendezvous, and relay material so the user never enters network endpoints. Fixed host/port values and mDNS/Bonjour service records are v0.1 development hints or local fast-path hints, not durable product addressing.
 
 Target connection order:
 
 1. Pairing binds device identities and public keys. The client device trusts a specific runtime identity, and the runtime host trusts a specific client identity.
-2. A route resolver takes the paired peer identity and returns ordered route candidates for that identity.
-3. Local direct candidates come first. These can use local discovery, mDNS/Bonjour, LAN addresses, USB reverse, hotspot, or a scanned development endpoint when available.
-4. If local direct connection is unavailable, future resolver candidates should cover remote P2P NAT traversal using the paired device identities, short-lived session metadata, STUN-like address discovery, authenticated hole punching, and authenticated key exchange.
-5. If direct P2P fails, future resolver candidates may fall back to an encrypted blind relay or TURN-style path.
+2. A route resolver takes the paired peer identity plus QR-bootstrapped overlay state and returns ordered route candidates for that identity.
+3. Local direct candidates are opportunistic fast paths when available. These can use local discovery, mDNS/Bonjour, LAN addresses, USB reverse, hotspot, or a scanned development endpoint.
+4. Different-network resolver candidates use remote P2P NAT traversal with paired device identities, short-lived session metadata, STUN-like address discovery, authenticated hole punching, and authenticated key exchange.
+5. If direct P2P fails, resolver candidates fall back to an encrypted blind relay or TURN-style path.
 
 Future peer discovery can use a DHT-like or bootstrap-peer layer, but only as a privacy-preserving rendezvous fabric for paired identities. Where practical, rendezvous should be distributed or decentralized rather than pinned to one fixed service. Bootstrap peers may help a client and runtime host find each other's short-lived reachability records, but they must not become accounts, a directory of public runtime hosts, a backend URL registry, a cloud control plane, or an authority that grants trust. Trust comes only from QR pairing, pinned peer identity, challenge-response authentication, and the encrypted session.
 
@@ -59,7 +59,7 @@ Bitcoin-network analogy note: the useful similarity is peer identity and discove
 
 The relay/signaling component, if used, is not a cloud AI service and must not receive or inspect AI protocol payloads. It can coordinate reachability, exchange STUN-like connection candidates, allocate TURN-like relay paths, or forward encrypted packets, but end-to-end encryption between the paired client device and runtime host must prevent it from reading model lists, prompts, responses, files, memory, backend credentials, or any runtime command payload. Until that encrypted relay path exists, relay/signaling references in these docs describe the target architecture rather than implemented behavior.
 
-Fixed IP entry, manual host/port entry, `127.0.0.1:43170`, USB reverse, and raw mDNS host records are development and diagnostics tools only. They can produce v0.1 direct route candidates, but they are not the product connectivity model and should not be presented as normal onboarding. Pure mDNS/local IP discovery cannot guarantee reliable different-network connectivity because mDNS is link-local and private IPs are usually unroutable across NATs, carrier networks, VPNs, and separate Wi-Fi networks.
+Fixed IP entry, manual host/port entry, `127.0.0.1:43170`, USB reverse, and raw mDNS host records are development and diagnostics tools only. They can produce v0.1 direct route candidates, but they are not the product connectivity model and should not be presented as normal onboarding. Pure mDNS/local IP discovery and raw local sockets cannot guarantee reliable different-network connectivity because mDNS is link-local and private IPs are usually unroutable across NATs, carrier networks, VPNs, and separate Wi-Fi networks.
 
 ### Connectivity Implementation Status
 
@@ -67,9 +67,9 @@ Fixed IP entry, manual host/port entry, `127.0.0.1:43170`, USB reverse, and raw 
 | --- | --- | --- |
 | Client persistent keypair | Implemented | Android uses a persistent client identity and signs runtime challenges. |
 | Runtime persistent keypair | Partially implemented | The macOS runtime can create a Keychain-backed P-256 identity key and expose its public key/fingerprint in QR pairing metadata. Production encrypted transport still needs to bind sessions to this key. |
-| QR trusted-device pairing | Implemented for v0.1 | QR pairing creates a trusted client/runtime record and can carry runtime public-key metadata, identity-first route data, and optional development endpoint hints. |
+| QR trusted-device pairing | Implemented for v0.1 | QR pairing creates a trusted client/runtime record and can carry runtime public-key metadata, identity-first route data, remote-route material, and optional development endpoint hints. |
 | Runtime command authentication | Implemented for v0.1 | Runtime commands are rejected until pairing and challenge-response authentication succeed. |
-| Local direct endpoint hints | Implemented as development/local fast path | USB reverse, emulator, Bonjour/local discovery, pairing QR host/port, and manual diagnostics can produce direct TCP route candidates. This is the current v0.1 local/dev route, not the intended final connection design. |
+| Local direct endpoint hints | Implemented as development/local fast path | USB reverse, emulator, Bonjour/local discovery, pairing QR host/port, and manual diagnostics can produce direct TCP route candidates. This is the current v0.1 local/dev route, not the intended final connection design or a solution for unrelated networks. |
 | Identity-first reconnect | Partially implemented | The client treats paired runtime identity as the primary target and starts local discovery when restoring a trusted runtime, even if a stable endpoint is not available. |
 | Route-token matched local discovery | Partially implemented | Bonjour/local discovery can advertise a pairing-derived route token; the client only auto-routes discovered runtimes whose route hints match the trusted runtime record. |
 | Production encrypted transport | Not implemented | The active transport remains development TCP. TLS or Noise-style encryption bound to paired identities is required. |
@@ -77,7 +77,7 @@ Fixed IP entry, manual host/port entry, `127.0.0.1:43170`, USB reverse, and raw 
 | DHT/bootstrap peer discovery | Not implemented | Future bootstrap or DHT-like discovery may publish only short-lived rendezvous records derived from paired-device secrets. It must not expose stable public runtime directories or backend URLs. |
 | Signaling service | Not implemented | Future signaling may exchange only reachability metadata, never AI protocol payloads. |
 | Encrypted blind relay/TURN fallback | Interface scaffolded, transport not implemented | `Relay` route candidates and fallback connector injection are modeled so a future blind relay transport can be attempted after direct/P2P paths fail and return the same `RuntimeProtocolChannel` abstraction. No relay allocation, forwarding, or production encryption exists yet. |
-| Fixed-IP-free normal onboarding | In progress | Normal UX is QR/trusted-runtime oriented, but compatibility paths still preserve host/port hints for v0.1 development and diagnostics. |
+| QR-only normal onboarding | In progress | Normal UX is QR/trusted-runtime oriented and must support different-network route bootstrap through overlay/rendezvous/relay material. Compatibility paths still preserve host/port hints for v0.1 development and diagnostics. |
 
 ## Future Platform Shape
 

@@ -99,6 +99,7 @@ import androidx.compose.ui.unit.dp
 import com.localagentbridge.android.R
 import com.localagentbridge.android.core.transport.RuntimeEndpointSource
 import com.localagentbridge.android.runtime.RuntimeAppLanguage
+import com.localagentbridge.android.runtime.RuntimeActiveRouteKind
 import com.localagentbridge.android.runtime.RuntimeChatMessage
 import com.localagentbridge.android.runtime.RuntimeChatSession
 import com.localagentbridge.android.runtime.RuntimeDiscoveredRuntime
@@ -127,6 +128,8 @@ fun PairingScreen(
     modifier: Modifier = Modifier,
 ) {
     ScreenList(modifier) {
+        val hasTrustedRuntime = state.trustedRuntime != null
+        val hasRouteDiscoveryContext = hasTrustedRuntime || state.isPairingAwaitingRoute
         item {
             ScreenHeader(
                 title = R.string.pairing_title,
@@ -142,32 +145,31 @@ fun PairingScreen(
         if (state.isPairingAwaitingRoute) {
             item { PendingPairingRouteStatus(state = state) }
         }
-        item {
-            TrustedRuntimePanel(
-                state = state,
-                onForgetTrustedRuntime = onForgetTrustedRuntime,
-            )
-        }
-        item {
-            PairingConnectButton(
-                state = state,
-                onConnect = onConnect,
-            )
-        }
-        if (state.trustedRuntime == null) {
+        if (hasTrustedRuntime) {
             item {
-                EmptyState(text = stringResource(R.string.connect_requires_pairing))
+                TrustedRuntimePanel(
+                    state = state,
+                    onForgetTrustedRuntime = onForgetTrustedRuntime,
+                )
+            }
+            item {
+                PairingConnectButton(
+                    state = state,
+                    onConnect = onConnect,
+                )
             }
         }
-        item {
-            DiscoveryPanel(
-                state = state,
-                onStartDiscovery = onStartDiscovery,
-                onStopDiscovery = onStopDiscovery,
-                onUseDiscoveredRuntime = onUseDiscoveredRuntime,
-            )
+        if (hasRouteDiscoveryContext) {
+            item {
+                DiscoveryPanel(
+                    state = state,
+                    onStartDiscovery = onStartDiscovery,
+                    onStopDiscovery = onStopDiscovery,
+                    onUseDiscoveredRuntime = onUseDiscoveredRuntime,
+                )
+            }
         }
-        item { ErrorText(state.error) }
+        item { ErrorText(state.error, onRouteAction = onScanPairingQr) }
     }
 }
 
@@ -286,7 +288,18 @@ private fun PairingConnectButton(
             contentDescription = null,
         )
         Spacer(Modifier.width(8.dp))
-        Text(if (state.isConnecting) stringResource(R.string.connecting) else stringResource(R.string.connect_runtime))
+        Text(connectRuntimeActionLabel(state))
+    }
+}
+
+@Composable
+private fun connectRuntimeActionLabel(state: RuntimeUiState): String {
+    return if (state.isConnecting) {
+        stringResource(R.string.connecting)
+    } else if (state.trustedRuntime.hasRelayRoute()) {
+        stringResource(R.string.connect_remote_route)
+    } else {
+        stringResource(R.string.connect_runtime)
     }
 }
 
@@ -393,6 +406,7 @@ private fun ConnectionStatusHero(state: RuntimeUiState) {
         state.trustedRuntime.endpointHint == null &&
         !hasRelayRoute &&
         !state.isConnected
+    val hasSavedRelayRoute = hasRelayRoute && !state.isConnected
     val hasSavedRoute = state.trustedRuntime != null &&
         (state.trustedRuntime.endpointHint != null || hasRelayRoute) &&
         !state.isConnected
@@ -403,6 +417,7 @@ private fun ConnectionStatusHero(state: RuntimeUiState) {
         state.isConnecting -> stringResource(R.string.status_connecting_trusted_title)
         state.isPairingAwaitingRoute || needsRoute -> stringResource(R.string.status_route_needed_title)
         needsPairing -> stringResource(R.string.status_pairing_needed_title)
+        hasSavedRelayRoute -> stringResource(R.string.status_relay_ready_title)
         hasSavedRoute -> stringResource(R.string.status_connect_ready_title)
         else -> stringResource(R.string.status_disconnected)
     }
@@ -413,6 +428,7 @@ private fun ConnectionStatusHero(state: RuntimeUiState) {
         state.isPairingAwaitingRoute -> stringResource(R.string.pending_pairing_route_status, runtimeName)
         needsRoute -> stringResource(R.string.status_route_needed_detail)
         needsPairing -> stringResource(R.string.status_pairing_needed_detail)
+        hasSavedRelayRoute -> stringResource(R.string.status_relay_ready_detail, runtimeName)
         hasSavedRoute -> stringResource(R.string.status_connect_ready_detail, runtimeName)
         else -> stringResource(R.string.status_disconnected_summary)
     }
@@ -471,6 +487,11 @@ private fun ConnectionStatusHero(state: RuntimeUiState) {
 
 @Composable
 private fun runtimeRouteDisplayLabel(state: RuntimeUiState): String {
+    when (state.activeRouteKind) {
+        RuntimeActiveRouteKind.Relay -> return stringResource(R.string.runtime_route_relay)
+        RuntimeActiveRouteKind.PeerToPeer -> return stringResource(R.string.runtime_route_p2p)
+        RuntimeActiveRouteKind.DirectTcp, null -> Unit
+    }
     if (state.isConnected || state.isConnecting) {
         val host = state.runtimeHost.takeIf { it.isNotBlank() }
         val port = state.runtimePort.takeIf { it.isNotBlank() }
@@ -587,6 +608,19 @@ private fun runtimeRouteNotice(
 ): RuntimeRouteNoticeState? {
     if (trustedRuntime == null && !state.isConnected && !state.isPairingAwaitingRoute) return null
     if (state.isConnected) {
+        when (state.activeRouteKind) {
+            RuntimeActiveRouteKind.Relay -> return RuntimeRouteNoticeState(
+                detailRes = R.string.route_notice_relay_active,
+                tone = RuntimeRouteNoticeTone.Ready,
+                icon = Icons.Filled.CheckCircle,
+            )
+            RuntimeActiveRouteKind.PeerToPeer -> return RuntimeRouteNoticeState(
+                detailRes = R.string.route_notice_p2p_active,
+                tone = RuntimeRouteNoticeTone.Ready,
+                icon = Icons.Filled.CheckCircle,
+            )
+            RuntimeActiveRouteKind.DirectTcp, null -> Unit
+        }
         return when (state.runtimeEndpointSource) {
             RuntimeEndpointSource.BonjourDiscovery,
             RuntimeEndpointSource.PairingQr,
@@ -790,6 +824,7 @@ fun ChatScreen(
     onAttachFiles: () -> Unit,
     onRemoveAttachment: (String) -> Unit,
     onSuggestionClick: (String) -> Unit,
+    onResolveRoute: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val listState = rememberLazyListState()
@@ -874,7 +909,7 @@ fun ChatScreen(
                 state = state,
                 onRefreshHealth = onRefreshHealth,
             )
-            ErrorText(state.error)
+            ErrorText(state.error, onRouteAction = onResolveRoute)
             ChatComposer(
                 value = state.chatInput,
                 attachments = state.pendingAttachments,
@@ -983,7 +1018,7 @@ fun SettingsScreen(
     onDisconnect: () -> Unit,
     onSetAutoReconnectEnabled: (Boolean) -> Unit,
     onSetLanguageTag: (String) -> Unit,
-    onSelectEmbeddingModel: (String) -> Unit,
+    onSelectEmbeddingModel: (String?) -> Unit,
     onAddMemoryEntry: (String) -> Unit,
     onRemoveMemoryEntry: (String) -> Unit,
     onSetMemoryEntryEnabled: (String, Boolean) -> Unit,
@@ -1094,7 +1129,7 @@ fun SettingsScreen(
                 onPermanentlyDeleteArchivedChatSessions = onPermanentlyDeleteArchivedChatSessions,
             )
         }
-        item { ErrorText(state.error) }
+        item { ErrorText(state.error, onRouteAction = onScanPairingQr) }
     }
 }
 
@@ -1786,11 +1821,7 @@ private fun ChatEmptyState(
                 Icon(Icons.Filled.Link, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    text = if (state.isConnecting) {
-                        stringResource(R.string.connecting)
-                    } else {
-                        stringResource(R.string.connect_runtime)
-                    },
+                    text = connectRuntimeActionLabel(state),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -2308,12 +2339,14 @@ private fun AssistantReasoning(
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(2.dp),
                     verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f, fill = false),
                 ) {
                     Text(
                         text = toggleLabel,
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.68f),
                         maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                     Icon(
                         imageVector = if (expanded) {
@@ -2338,15 +2371,23 @@ private fun AssistantReasoning(
     }
 }
 
-private fun reasoningPreview(reasoning: String): String {
-    return reasoning
+internal fun reasoningPreview(
+    reasoning: String,
+    maxLines: Int = REASONING_PREVIEW_MAX_LINES,
+): String {
+    val previewLines = reasoning
         .trim()
         .lineSequence()
-        .map { it.trim() }
+        .map { it.trim().replace(Regex("\\s+"), " ") }
         .filter { it.isNotBlank() }
+        .take(maxLines)
+        .toList()
+    return previewLines
         .joinToString(separator = "\n")
         .ifBlank { reasoning.trim().replace(Regex("\\s+"), " ") }
 }
+
+private const val REASONING_PREVIEW_MAX_LINES = 3
 
 @Composable
 private fun ChatComposer(
@@ -2735,7 +2776,7 @@ private fun AppearanceStatus() {
 private fun EmbeddingModelPanel(
     state: RuntimeUiState,
     onRequestModels: () -> Unit,
-    onSelectEmbeddingModel: (String) -> Unit,
+    onSelectEmbeddingModel: (String?) -> Unit,
 ) {
     val hapticFeedback = LocalHapticFeedback.current
     val embeddingModels = state.models
@@ -2784,6 +2825,10 @@ private fun EmbeddingModelPanel(
                     color = MaterialTheme.colorScheme.secondary,
                 )
             }
+            EmbeddingModelNoneRow(
+                selected = state.selectedEmbeddingModelId == null,
+                onSelectEmbeddingModel = onSelectEmbeddingModel,
+            )
             Button(
                 onClick = {
                     hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -2822,10 +2867,54 @@ private fun EmbeddingModelPanel(
 }
 
 @Composable
+private fun EmbeddingModelNoneRow(
+    selected: Boolean,
+    onSelectEmbeddingModel: (String?) -> Unit,
+) {
+    val hapticFeedback = LocalHapticFeedback.current
+    OutlinedButton(
+        onClick = {
+            hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+            onSelectEmbeddingModel(null)
+        },
+        modifier = Modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = if (selected) Icons.Filled.CheckCircle else Icons.Filled.Close,
+                contentDescription = null,
+            )
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.model_none),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = stringResource(R.string.embedding_model_none_detail),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.secondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun EmbeddingModelRow(
     model: RuntimeModel,
     selected: Boolean,
-    onSelectEmbeddingModel: (String) -> Unit,
+    onSelectEmbeddingModel: (String?) -> Unit,
 ) {
     val hapticFeedback = LocalHapticFeedback.current
     OutlinedButton(
@@ -3428,11 +3517,14 @@ private fun EmptyState(text: String) {
 }
 
 @Composable
-private fun ErrorText(error: RuntimeUiError?) {
+private fun ErrorText(
+    error: RuntimeUiError?,
+    onRouteAction: (() -> Unit)? = null,
+) {
     if (error == null) return
 
     if (error.isRouteAvailabilityNotice()) {
-        RouteAvailabilityNotice(error)
+        RouteAvailabilityNotice(error, onClick = onRouteAction)
         return
     }
 
@@ -3483,12 +3575,26 @@ private fun ErrorText(error: RuntimeUiError?) {
 }
 
 @Composable
-private fun RouteAvailabilityNotice(error: RuntimeUiError) {
-    val diagnostic = runtimeErrorDiagnosticLabel(error)
-    val body = "${stringResource(R.string.route_notice_title)} · ${diagnostic ?: runtimeErrorLabel(error)}"
+private fun RouteAvailabilityNotice(
+    error: RuntimeUiError,
+    onClick: (() -> Unit)?,
+) {
+    val body = routeAvailabilityCompactLabel(error)
+    val hapticFeedback = LocalHapticFeedback.current
 
     Surface(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .let { base ->
+                if (onClick == null) {
+                    base
+                } else {
+                    base.clickable(role = Role.Button) {
+                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onClick()
+                    }
+                }
+            },
         shape = RoundedCornerShape(24.dp),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.56f),
     ) {
@@ -3508,10 +3614,31 @@ private fun RouteAvailabilityNotice(error: RuntimeUiError) {
                 modifier = Modifier.weight(1f),
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.86f),
                 style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.Medium,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
+            if (onClick != null) {
+                Text(
+                    text = stringResource(R.string.route_notice_action_scan_qr),
+                    color = MaterialTheme.colorScheme.primary,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
+    }
+}
+
+@Composable
+private fun routeAvailabilityCompactLabel(error: RuntimeUiError): String {
+    return when {
+        error.code == "remote_routes_unavailable" ||
+            error.diagnosticCode in RELAY_ROUTE_NEEDED_DIAGNOSTIC_CODES ->
+            stringResource(R.string.route_notice_short_relay_needed)
+        else -> stringResource(R.string.route_notice_short_unavailable)
     }
 }
 
@@ -3526,6 +3653,12 @@ private val ROUTE_AVAILABILITY_NOTICE_CODES = setOf(
 )
 
 private val ROUTE_AVAILABILITY_DIAGNOSTIC_CODES = setOf(
+    "route_diagnostic_local_missing_remote_pending",
+    "route_diagnostic_direct_failed_remote_pending",
+    "route_diagnostic_remote_pending",
+)
+
+private val RELAY_ROUTE_NEEDED_DIAGNOSTIC_CODES = setOf(
     "route_diagnostic_local_missing_remote_pending",
     "route_diagnostic_direct_failed_remote_pending",
     "route_diagnostic_remote_pending",
@@ -3644,6 +3777,8 @@ private fun runtimeErrorDiagnosticLabel(error: RuntimeUiError): String? {
             stringResource(R.string.route_diagnostic_direct_failed_remote_pending)
         "route_diagnostic_remote_pending" ->
             stringResource(R.string.route_diagnostic_remote_pending)
+        "route_diagnostic_relay_failed" ->
+            stringResource(R.string.route_diagnostic_relay_failed)
         else -> null
     }
 }
@@ -3681,6 +3816,7 @@ private fun runtimeStatusLabel(status: String): String {
         "connected" -> stringResource(R.string.status_connected)
         "pairing" -> stringResource(R.string.status_pairing)
         "pairing_required" -> stringResource(R.string.status_pairing_required)
+        "route_refreshed" -> stringResource(R.string.status_route_refreshed)
         "authenticated" -> stringResource(R.string.status_authenticated)
         "failed" -> stringResource(R.string.status_failed)
         "ok" -> stringResource(R.string.status_ok)

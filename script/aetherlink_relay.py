@@ -41,6 +41,10 @@ class RelayHub:
             other = room.pop(other_role, None)
             if other is None:
                 room[peer.role] = peer
+                print(
+                    f"[relay] waiting relay_id={short_id(peer.relay_id)} role={peer.role}",
+                    flush=True,
+                )
                 return
             if not room:
                 self._pending.pop(peer.relay_id, None)
@@ -49,6 +53,11 @@ class RelayHub:
 
 
 async def bridge(first: PendingPeer, second: PendingPeer) -> None:
+    print(
+        f"[relay] matched relay_id={short_id(first.relay_id)} "
+        f"{first.role}<->{second.role}",
+        flush=True,
+    )
     first.writer.write(READY_LINE)
     second.writer.write(READY_LINE)
     await asyncio.gather(first.writer.drain(), second.writer.drain())
@@ -79,6 +88,11 @@ async def handle_client(
     try:
         raw = await asyncio.wait_for(reader.readline(), timeout=10)
         role, relay_id = parse_handshake(raw.decode("utf-8", errors="replace"))
+        peername = writer.get_extra_info("peername")
+        print(
+            f"[relay] accepted role={role} relay_id={short_id(relay_id)} peer={peername}",
+            flush=True,
+        )
         await hub.add(PendingPeer(role=role, relay_id=relay_id, reader=reader, writer=writer))
     except Exception:
         writer.close()
@@ -95,6 +109,12 @@ def parse_handshake(line: str) -> tuple[str, str]:
     if not relay_id or any(char.isspace() for char in relay_id):
         raise ValueError("invalid relay id")
     return role, relay_id
+
+
+def short_id(value: str) -> str:
+    if len(value) <= 12:
+        return value
+    return f"{value[:6]}...{value[-6:]}"
 
 
 async def main() -> None:

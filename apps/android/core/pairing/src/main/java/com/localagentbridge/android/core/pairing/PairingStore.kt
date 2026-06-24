@@ -136,7 +136,15 @@ internal data class TrustedRuntimeDirectEndpoint(
     val port: Int,
 )
 
+internal fun TrustedRuntime.hasValidRelayRoute(): Boolean {
+    return !relayHost.isNullOrBlank() &&
+        relayPort != null &&
+        relayPort in 1..65535 &&
+        !relayId.isNullOrBlank()
+}
+
 internal fun TrustedRuntime.validDirectEndpointOrNull(): TrustedRuntimeDirectEndpoint? {
+    if (hasValidRelayRoute()) return null
     val endpointHost = host?.takeIf { it.isNotBlank() } ?: return null
     val endpointPort = port?.takeIf { it in 1..65535 } ?: return null
     return TrustedRuntimeDirectEndpoint(endpointHost, endpointPort)

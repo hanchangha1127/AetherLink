@@ -389,7 +389,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
 
     private func handleChatSend(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) async {
         do {
-            let request = try chatRequest(from: envelope)
+            let request = Self.chatRequestWithRuntimeCapabilityGuard(try chatRequest(from: envelope))
             let model = try await resolvedInstalledModel(request.model)
             try validateAttachments(in: request, for: model)
             for try await event in backend.chat(request: request) {
@@ -770,6 +770,27 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         ]
     }
 
+    private static func chatRequestWithRuntimeCapabilityGuard(_ request: ChatRequest) -> ChatRequest {
+        guard !request.messages.contains(where: { $0.isAetherLinkCapabilityGuard }) else {
+            return request
+        }
+        return ChatRequest(
+            generationID: request.generationID,
+            sessionID: request.sessionID,
+            model: request.model,
+            messages: [runtimeCapabilityGuardMessage] + request.messages
+        )
+    }
+
+    private static let runtimeCapabilityGuardMessage = ChatMessage(
+        role: "system",
+        content: """
+        AetherLink currently provides runtime-mediated local model chat, model listing, file/image attachment handling when supported, chat titles, and suggested next questions.
+        The current build does not provide live web search, browsing, MCP tools, skills, scheduled automations, Python execution, or other external tools unless explicit tool output is included in this conversation.
+        Do not claim that you can search the web, browse, run tools, access files, or use unavailable integrations. If asked for an unavailable capability, say it is not available in this build and offer the closest supported alternative.
+        """
+    )
+
     private static func suggestions(from rawText: String, maxSuggestions: Int) -> [String] {
         let trimmedText = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
         let decoder = JSONDecoder()
@@ -998,6 +1019,18 @@ private extension ChatAttachment {
         let normalizedType = type.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let normalizedMimeType = mimeType.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         return normalizedType == "image" || normalizedMimeType.hasPrefix("image/")
+    }
+}
+
+private extension ChatMessage {
+    var isAetherLinkCapabilityGuard: Bool {
+        guard role.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "system" else {
+            return false
+        }
+        let lowercasedContent = content.lowercased()
+        return lowercasedContent.contains("aetherlink currently provides runtime-mediated local model chat") &&
+            lowercasedContent.contains("does not provide live web search") &&
+            lowercasedContent.contains("do not claim that you can search the web")
     }
 }
 

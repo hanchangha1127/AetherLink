@@ -230,6 +230,91 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(messages.first?.payload["delta"], .string("hello"))
     }
 
+    func testChatSendPrependsRuntimeCapabilityGuard() async throws {
+        let sink = RecordingSink()
+        let capturedRequest = LockedBox<ChatRequest?>(nil)
+        let router = makeRouter(backend: MockBackend(
+            models: [ModelInfo(id: "llama3.1:8b", name: "llama3.1:8b", installed: true)],
+            chatEvents: [.done(inputTokens: 1, outputTokens: 1)],
+            onChatRequest: { request in
+                capturedRequest.value = request
+            }
+        ))
+        let envelope = ProtocolEnvelope(
+            type: MessageType.chatSend,
+            requestID: "chat-capability-guard",
+            payload: [
+                "session_id": .string("session-1"),
+                "model": .string("llama3.1:8b"),
+                "messages": .array([
+                    .object([
+                        "role": .string("user"),
+                        "content": .string("Can you search the web?")
+                    ])
+                ])
+            ]
+        )
+
+        router.handle(envelope, sink: sink)
+
+        let message = try await sink.waitForMessages(count: 1).first
+        XCTAssertEqual(message?.type, MessageType.chatDone)
+        let request = try XCTUnwrap(capturedRequest.value)
+        XCTAssertEqual(request.messages.first?.role, "system")
+        XCTAssertTrue(request.messages.first?.content.contains("does not provide live web search") == true)
+        XCTAssertTrue(request.messages.first?.content.contains("Do not claim that you can search the web") == true)
+        XCTAssertEqual(request.messages.dropFirst().first?.role, "user")
+        XCTAssertEqual(request.messages.dropFirst().first?.content, "Can you search the web?")
+    }
+
+    func testChatSendDoesNotDuplicateClientCapabilityGuard() async throws {
+        let sink = RecordingSink()
+        let capturedRequest = LockedBox<ChatRequest?>(nil)
+        let clientGuard = """
+        AetherLink currently provides runtime-mediated local model chat, model listing, file/image attachment handling when supported, chat titles, and suggested next questions.
+        The current build does not provide live web search, browsing, MCP tools, skills, scheduled automations, Python execution, or other external tools unless explicit tool output is included in this conversation.
+        Do not claim that you can search the web, browse, run tools, access files, or use unavailable integrations.
+        """
+        let router = makeRouter(backend: MockBackend(
+            models: [ModelInfo(id: "llama3.1:8b", name: "llama3.1:8b", installed: true)],
+            chatEvents: [.done(inputTokens: 1, outputTokens: 1)],
+            onChatRequest: { request in
+                capturedRequest.value = request
+            }
+        ))
+        let envelope = ProtocolEnvelope(
+            type: MessageType.chatSend,
+            requestID: "chat-capability-guard-existing",
+            payload: [
+                "session_id": .string("session-1"),
+                "model": .string("llama3.1:8b"),
+                "messages": .array([
+                    .object([
+                        "role": .string("system"),
+                        "content": .string(clientGuard)
+                    ]),
+                    .object([
+                        "role": .string("user"),
+                        "content": .string("Can you browse?")
+                    ])
+                ])
+            ]
+        )
+
+        router.handle(envelope, sink: sink)
+
+        let message = try await sink.waitForMessages(count: 1).first
+        XCTAssertEqual(message?.type, MessageType.chatDone)
+        let request = try XCTUnwrap(capturedRequest.value)
+        let guardMessages = request.messages.filter { message in
+            message.role == "system" &&
+                message.content.lowercased().contains("does not provide live web search")
+        }
+        XCTAssertEqual(guardMessages.count, 1)
+        XCTAssertEqual(request.messages.count, 2)
+        XCTAssertEqual(request.messages.first?.content, clientGuard)
+    }
+
     func testChatSendAppendsDocumentAttachmentTextAndPreservesImageAttachment() async throws {
         let sink = RecordingSink()
         let capturedRequest = LockedBox<ChatRequest?>(nil)
@@ -284,7 +369,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(message?.type, MessageType.chatDone)
 
         let request = try XCTUnwrap(capturedRequest.value)
-        let forwardedMessage = try XCTUnwrap(request.messages.first)
+        let forwardedMessage = try XCTUnwrap(request.messages.first(where: { $0.role == "user" }))
         XCTAssertTrue(forwardedMessage.content.contains("Summarize this."))
         XCTAssertTrue(forwardedMessage.content.contains("[Attached document: roadmap.md (text/plain)]"))
         XCTAssertTrue(forwardedMessage.content.contains(documentText))
@@ -387,7 +472,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(message?.type, MessageType.chatDone)
         XCTAssertEqual(message?.requestID, "chat-lmstudio-image")
         let forwardedRequest = try XCTUnwrap(capturedRequest.value)
-        let forwardedMessage = try XCTUnwrap(forwardedRequest.messages.first)
+        let forwardedMessage = try XCTUnwrap(forwardedRequest.messages.first(where: { $0.role == "user" }))
         XCTAssertEqual(forwardedMessage.attachments.first?.dataBase64, "iVBORw0KGgo=")
     }
 
@@ -910,7 +995,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
             macDeviceID: "mac-1",
             macName: "AetherLink Runtime",
             fingerprint: "fp-1",
-            runtimePublicKeyBase64: "runtime-public-key",
+            runtimePublicKeyBase64: "runtime+public/key=",
             routeToken: "route-1"
         )
 
@@ -927,12 +1012,13 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(queryItems["mac_device_id"], "mac-1")
         XCTAssertEqual(queryItems["mac_name"], "AetherLink Runtime")
         XCTAssertEqual(queryItems["fingerprint"], "fp-1")
-        XCTAssertEqual(queryItems["runtime_public_key"], "runtime-public-key")
+        XCTAssertEqual(queryItems["runtime_public_key"], "runtime+public/key=")
         XCTAssertEqual(queryItems["runtime_key_fingerprint"], "fp-1")
         XCTAssertEqual(queryItems["route_token"], "route-1")
         XCTAssertEqual(queryItems["service_type"], "_aetherlink._tcp.local.")
         XCTAssertNil(queryItems["host"])
         XCTAssertNil(queryItems["port"])
+        XCTAssertTrue(session.qrPayload.contains("runtime_public_key=runtime%2Bpublic/key%3D"))
     }
 
     func testPairingQRCodePayloadIncludesRelaySecretWhenPresent() throws {
@@ -957,6 +1043,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(queryItems["relay_port"], "43171")
         XCTAssertEqual(queryItems["relay_id"], "relay-id-1")
         XCTAssertEqual(queryItems["relay_secret"], "secret with symbols + / =")
+        XCTAssertTrue(session.qrPayload.contains("relay_secret=secret%20with%20symbols%20%2B%20/%20%3D"))
     }
 
     func testPairingRequestStoresTrustedDeviceAndReturnsAccepted() async throws {
@@ -1255,6 +1342,183 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
     }
 
     @MainActor
+    func testCompanionAppModelPersistsRelaySettingsAndIncludesRelayInNewQRCode() throws {
+        let defaults = try isolatedDefaults()
+        let transport = FakeRuntimeTransport()
+        let model = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: transport,
+            advertiser: FakeRuntimeAdvertiser(),
+            userDefaults: defaults
+        )
+
+        model.configureDevelopmentRelay(
+            host: " relay.example.test ",
+            port: 43171,
+            relaySecret: "secret-1"
+        )
+        model.beginPairing()
+
+        XCTAssertTrue(model.hasDevelopmentRelayRoute)
+        XCTAssertEqual(model.developmentRelayEndpoint, "relay.example.test:43171")
+        XCTAssertTrue(model.relayFrameEncryptionEnabled)
+        XCTAssertEqual(model.developmentRelaySettings.host, "relay.example.test")
+        XCTAssertEqual(model.developmentRelaySettings.port, 43171)
+        XCTAssertEqual(model.developmentRelaySettings.relaySecret, "secret-1")
+        XCTAssertFalse(model.developmentRelaySettings.isEnvironmentOverride)
+        XCTAssertEqual(defaults.string(forKey: "aetherlink.relay.host"), "relay.example.test")
+        XCTAssertEqual(defaults.integer(forKey: "aetherlink.relay.port"), 43171)
+        XCTAssertEqual(defaults.string(forKey: "aetherlink.relay.secret"), "secret-1")
+
+        let session = try XCTUnwrap(model.pairingSession)
+        let qrItems = try queryItems(from: session.qrPayload)
+        XCTAssertEqual(qrItems["relay_host"], "relay.example.test")
+        XCTAssertEqual(qrItems["relay_port"], "43171")
+        XCTAssertEqual(qrItems["relay_secret"], "secret-1")
+        XCTAssertEqual(qrItems["relay_id"], qrItems["route_token"])
+        XCTAssertFalse(qrItems["relay_id"]?.isEmpty ?? true)
+        XCTAssertNil(qrItems["host"])
+        XCTAssertNil(qrItems["port"])
+
+        let restoredModel = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: FakeRuntimeTransport(),
+            advertiser: FakeRuntimeAdvertiser(),
+            userDefaults: defaults
+        )
+        XCTAssertTrue(restoredModel.hasDevelopmentRelayRoute)
+        XCTAssertEqual(restoredModel.developmentRelayEndpoint, "relay.example.test:43171")
+        XCTAssertEqual(restoredModel.developmentRelaySettings.relaySecret, "secret-1")
+        XCTAssertFalse(restoredModel.developmentRelaySettings.isEnvironmentOverride)
+
+        restoredModel.regenerateDevelopmentRelaySecret()
+        let regeneratedSecret = try XCTUnwrap(restoredModel.developmentRelaySettings.relaySecret)
+        XCTAssertNotEqual(regeneratedSecret, "secret-1")
+        XCTAssertEqual(defaults.string(forKey: "aetherlink.relay.secret"), regeneratedSecret)
+        restoredModel.beginPairing()
+        let regeneratedQueryItems = try queryItems(from: try XCTUnwrap(restoredModel.pairingSession).qrPayload)
+        XCTAssertEqual(regeneratedQueryItems["relay_secret"], regeneratedSecret)
+
+        restoredModel.clearDevelopmentRelay()
+        restoredModel.beginPairing()
+
+        XCTAssertFalse(restoredModel.hasDevelopmentRelayRoute)
+        XCTAssertNil(restoredModel.developmentRelayEndpoint)
+        XCTAssertFalse(restoredModel.relayFrameEncryptionEnabled)
+        XCTAssertNil(defaults.string(forKey: "aetherlink.relay.host"))
+        XCTAssertEqual(defaults.integer(forKey: "aetherlink.relay.port"), 0)
+        XCTAssertNil(defaults.string(forKey: "aetherlink.relay.secret"))
+        let clearedQueryItems = try queryItems(from: try XCTUnwrap(restoredModel.pairingSession).qrPayload)
+        XCTAssertNil(clearedQueryItems["relay_host"])
+        XCTAssertNil(clearedQueryItems["relay_port"])
+        XCTAssertNil(clearedQueryItems["relay_id"])
+        XCTAssertNil(clearedQueryItems["relay_secret"])
+    }
+
+    @MainActor
+    func testCompanionAppModelGeneratesRelaySecretWhenSavingBlankSecret() throws {
+        let model = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: FakeRuntimeTransport(),
+            advertiser: FakeRuntimeAdvertiser(),
+            userDefaults: try isolatedDefaults()
+        )
+
+        model.configureDevelopmentRelay(host: "relay.example.test", port: 43171, relaySecret: "")
+
+        XCTAssertTrue(model.relayFrameEncryptionEnabled)
+        XCTAssertFalse(model.developmentRelaySettings.relaySecret?.isEmpty ?? true)
+    }
+
+    func testDevelopmentRelaySettingsClassifiesHostsThatCannotCrossNetworks() {
+        XCTAssertEqual(
+            CompanionDevelopmentRelaySettings.hostReachabilityWarning(for: "127.0.0.1"),
+            .loopback
+        )
+        XCTAssertEqual(
+            CompanionDevelopmentRelaySettings.hostReachabilityWarning(for: "localhost"),
+            .loopback
+        )
+        XCTAssertEqual(
+            CompanionDevelopmentRelaySettings.hostReachabilityWarning(for: "192.168.1.10"),
+            .privateNetwork
+        )
+        XCTAssertEqual(
+            CompanionDevelopmentRelaySettings.hostReachabilityWarning(for: "172.20.1.10"),
+            .privateNetwork
+        )
+        XCTAssertEqual(
+            CompanionDevelopmentRelaySettings.hostReachabilityWarning(for: "runtime.local"),
+            .localName
+        )
+        XCTAssertNil(
+            CompanionDevelopmentRelaySettings.hostReachabilityWarning(for: "relay.example.test")
+        )
+    }
+
+    @MainActor
+    func testCompanionAppModelPublishesRelayConnectionStatus() async throws {
+        let relayClient = FakeRelayPeerClient()
+        let model = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: FakeRuntimeTransport(),
+            advertiser: FakeRuntimeAdvertiser(),
+            relayClient: relayClient,
+            userDefaults: try isolatedDefaults()
+        )
+
+        model.configureDevelopmentRelay(host: "relay.example.test", port: 43171, relaySecret: "secret-1")
+        model.start(port: 43210)
+
+        XCTAssertEqual(relayClient.startedConfiguration?.host, "relay.example.test")
+        XCTAssertEqual(relayClient.startedConfiguration?.port, 43171)
+        XCTAssertEqual(model.developmentRelayConnectionStatus.status, .stopped)
+        XCTAssertEqual(model.developmentRelayConnectionStatus.endpoint, "relay.example.test:43171")
+        XCTAssertTrue(model.transportStatus.contains("relay configured relay.example.test:43171"))
+
+        relayClient.emit(.connecting)
+        await Task.yield()
+        XCTAssertEqual(model.developmentRelayConnectionStatus.status, .connecting)
+        XCTAssertEqual(model.developmentRelayConnectionStatus.endpoint, "relay.example.test:43171")
+        XCTAssertTrue(model.transportStatus.contains("relay connecting relay.example.test:43171"))
+
+        relayClient.emit(.ready)
+        await Task.yield()
+        XCTAssertEqual(model.developmentRelayConnectionStatus.status, .ready)
+        XCTAssertTrue(model.transportStatus.contains("relay ready relay.example.test:43171"))
+
+        relayClient.emit(.failed("Connection refused"))
+        await Task.yield()
+        XCTAssertEqual(model.developmentRelayConnectionStatus.status, .failed("Connection refused"))
+        XCTAssertTrue(model.transportStatus.contains("relay failed relay.example.test:43171: Connection refused"))
+    }
+
+    @MainActor
+    func testCompanionAppModelStopsRelayClientWhenRelayIsCleared() async throws {
+        let relayClient = FakeRelayPeerClient()
+        let model = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: FakeRuntimeTransport(),
+            advertiser: FakeRuntimeAdvertiser(),
+            relayClient: relayClient,
+            userDefaults: try isolatedDefaults()
+        )
+
+        model.configureDevelopmentRelay(host: "relay.example.test", port: 43171, relaySecret: "secret-1")
+        model.start(port: 43210)
+        relayClient.emit(.ready)
+        await Task.yield()
+
+        model.clearDevelopmentRelay()
+        await Task.yield()
+
+        XCTAssertTrue(relayClient.didStop)
+        XCTAssertEqual(model.developmentRelayConnectionStatus.status, .stopped)
+        XCTAssertNil(model.developmentRelayConnectionStatus.endpoint)
+        XCTAssertFalse(model.hasDevelopmentRelayRoute)
+    }
+
+    @MainActor
     func testCompanionAppModelStartsReplaceableTransportAndStopsIt() async throws {
         let transport = FakeRuntimeTransport()
         let advertiser = FakeRuntimeAdvertiser()
@@ -1364,6 +1628,20 @@ private func trustedDeviceStoreURL() -> URL {
     FileManager.default.temporaryDirectory
         .appendingPathComponent(UUID().uuidString)
         .appendingPathComponent("trusted-devices.json")
+}
+
+private func isolatedDefaults() throws -> UserDefaults {
+    let suiteName = "dev.aetherlink.tests.\(UUID().uuidString)"
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+    defaults.removePersistentDomain(forName: suiteName)
+    return defaults
+}
+
+private func queryItems(from urlString: String) throws -> [String: String] {
+    let components = try XCTUnwrap(URLComponents(string: urlString))
+    return try XCTUnwrap(components.queryItems).reduce(into: [String: String]()) { result, item in
+        result[item.name] = item.value
+    }
 }
 
 private func pairingEnvelope(
@@ -1534,6 +1812,32 @@ private final class FakeRuntimeAdvertiser: RuntimeAdvertiser {
 
     func stop() {
         didStop = true
+    }
+}
+
+private final class FakeRelayPeerClient: RelayPeerTransport, @unchecked Sendable {
+    private(set) var startedConfiguration: RelayPeerConfiguration?
+    private(set) var didStop = false
+    private var statusHandler: (@Sendable (RelayPeerStatus) -> Void)?
+
+    func start(
+        configuration: RelayPeerConfiguration,
+        onStatusChange: (@Sendable (RelayPeerStatus) -> Void)?,
+        onMessage: @escaping LocalPeerMessageHandler
+    ) {
+        startedConfiguration = configuration
+        statusHandler = onStatusChange
+        didStop = false
+    }
+
+    func stop() {
+        didStop = true
+        statusHandler?(.stopped)
+        statusHandler = nil
+    }
+
+    func emit(_ status: RelayPeerStatus) {
+        statusHandler?(status)
     }
 }
 

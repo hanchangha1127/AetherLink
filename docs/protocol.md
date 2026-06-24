@@ -36,29 +36,30 @@ Rules:
 4. The companion runtime accepts pairing only inside an active pairing window, then stores the trusted client identity/key.
 5. The client app stores the trusted runtime identity/key only after accepted `pairing.result`.
 6. For later sessions, the connection manager resolves ordered route candidates from the paired runtime identity.
-7. The v0.1 direct endpoint hint, when present, is one candidate only. Local direct discovery candidates should be tried before any remote fallback.
-8. If local direct connection is unavailable and QR pairing supplied development relay metadata, the current client can prepare a relay route and connect outbound to the relay by `relay_id`.
-9. Future production builds should replace this temporary relay with remote P2P NAT traversal candidates gathered through STUN-like address discovery, authenticated hole punching, paired-identity-bound key exchange, and encrypted blind relay/TURN-style fallback.
-10. After a transport path is established, the client app sends `hello` with its persisted device id.
-11. The companion runtime verifies that the device is trusted and replies with `auth.challenge`.
-12. The client app signs the challenge and sends `auth.response`.
-13. The companion runtime accepts the authenticated end-to-end encrypted session.
-14. The client app sends `runtime.health`.
-15. The companion runtime replies with runtime/Ollama/LM Studio status.
-16. The client app sends `models.list`.
-17. The companion runtime returns installed local backend models and optional running status.
-18. If the client app requests installation of an Ollama model name, it sends `models.pull`.
-19. The companion runtime calls Ollama `/api/pull` on the runtime host and reports the result.
-20. The client app sends `chat.send` for an installed model.
-21. The companion runtime streams `chat.delta` and finishes with `chat.done`.
-22. The client app may ask the companion runtime for a short generated chat title with `chat.title.request`.
-23. The client app may send `chat.cancel` for an active request.
+7. The connection manager targets the paired runtime identity, not a raw endpoint. Product builds use QR-bootstrapped overlay material to resolve local, P2P, or relay routes without user-entered endpoints.
+8. The v0.1 direct endpoint hint, when present, is one developer/local diagnostic candidate only. It is not required for product pairing and must not become the normal reconnect model.
+9. If QR pairing supplied development relay metadata, the current client can prepare a relay route and connect outbound to the relay by `relay_id`; this remains diagnostics/development transport.
+10. Future production builds should replace this temporary route with a private per-user encrypted overlay: remote P2P NAT traversal candidates gathered through STUN-like address discovery, authenticated hole punching, paired-identity-bound key exchange, and encrypted blind relay/TURN-style fallback.
+11. After a transport path is established, the client app sends `hello` with its persisted device id.
+12. The companion runtime verifies that the device is trusted and replies with `auth.challenge`.
+13. The client app signs the challenge and sends `auth.response`.
+14. The companion runtime accepts the authenticated end-to-end encrypted session.
+15. The client app sends `runtime.health`.
+16. The companion runtime replies with runtime/Ollama/LM Studio status.
+17. The client app sends `models.list`.
+18. The companion runtime returns installed local backend models and optional running status.
+19. If the client app requests installation of an Ollama model name, it sends `models.pull`.
+20. The companion runtime calls Ollama `/api/pull` on the runtime host and reports the result.
+21. The client app sends `chat.send` for an installed model.
+22. The companion runtime streams `chat.delta` and finishes with `chat.done`.
+23. The client app may ask the companion runtime for a short generated chat title with `chat.title.request`.
+24. The client app may send `chat.cancel` for an active request.
 
 Runtime commands are gated after pairing. `runtime.health`, `models.list`, `models.pull`, `chat.send`, `chat.suggestions.request`, `chat.title.request`, and `chat.cancel` require an authenticated session; unauthenticated requests return `authentication_required`.
 
 The authentication flow is part of the v0.1 product contract even if a development build uses minimal local transport plumbing while the channel is being hardened.
 
-Fixed IP/manual host entry, raw local host/port from QR data, USB reverse/dev-server localhost forwarding, mDNS/Bonjour service records, and `relay_host` development relay metadata are v0.1 development reachability hints. They are route candidates only, not the final product connection model. Current code implements a temporary outbound TCP relay path. If QR pairing provides `relay_secret`, the client and runtime encrypt relay frame bodies with AES-GCM while the relay still only matches peers by `relay_id`. The code still does not implement real NAT traversal, decentralized signaling, hardened relay allocation, replay-resistant production session setup, or complete production end-to-end transport encryption. Pure mDNS/local IP discovery cannot guarantee reliable connectivity when the client device and runtime host are on different networks.
+Fixed IP/manual host entry, raw local host/port from QR data, USB reverse/dev-server localhost forwarding, mDNS/Bonjour service records, and `relay_host` development relay metadata are v0.1 development reachability hints. They are route candidates only, not the final product connection model. Current code implements a temporary outbound TCP relay path. If QR pairing provides `relay_secret`, the client and runtime encrypt relay frame bodies with AES-GCM while the relay still only matches peers by `relay_id`. The code still does not implement the production private per-user encrypted overlay, real NAT traversal, decentralized signaling, hardened relay allocation, replay-resistant production session setup, or complete production end-to-end transport encryption. Pure mDNS/local IP discovery and raw local sockets cannot guarantee connectivity when the client device and runtime host are on different networks.
 
 A future DHT-like or bootstrap-peer discovery layer may help paired devices exchange short-lived rendezvous records. Those records should be derived from paired-device secrets or rotating route tokens, not stable public device ids. Bootstrap peers are optional connectivity infrastructure; they are not accounts, not cloud backend state, not trust authorities, and not a place where AI protocol payloads or backend URLs appear.
 
@@ -68,7 +69,7 @@ Discovery identity hints must not contain backend URLs, Ollama/LM Studio host de
 
 ## QR Pairing Data
 
-The companion runtime displays a QR code containing pairing data encoded as a URI. v0.1 uses it to avoid asking the client app for a backend URL and to persist the trusted runtime on the client device.
+The companion runtime displays a QR code containing pairing data encoded as a URI. Product pairing is QR-only from the user's perspective: the user scans a QR to pair or refresh routes, and the client never asks for hostnames, ports, Ollama URLs, LM Studio URLs, or other backend URLs. For different-network use, the QR must bootstrap overlay/rendezvous/relay material; identity-only QR can establish trust, but it cannot make raw local sockets work across unrelated networks.
 
 ```text
 aetherlink://pair?version=1&pairing_nonce=<nonce>&pairing_code=<6-digit-code>&mac_device_id=<stable-runtime-id>&mac_name=AetherLink%20Runtime&fingerprint=<runtime-key-fingerprint>&runtime_public_key=<base64-runtime-public-key>&runtime_key_fingerprint=<runtime-key-fingerprint>&route_token=<paired-route-token>&service_type=_aetherlink._tcp.local.
@@ -84,15 +85,15 @@ Development QR payloads may include temporary local direct route hints:
 aetherlink://pair?version=1&pairing_nonce=<nonce>&pairing_code=<6-digit-code>&mac_device_id=<stable-runtime-id>&mac_name=AetherLink%20Runtime&fingerprint=<runtime-key-fingerprint>&runtime_public_key=<base64-runtime-public-key>&runtime_key_fingerprint=<runtime-key-fingerprint>&route_token=<paired-route-token>&service_type=_aetherlink._tcp.local.&host=<runtime-host>&port=43170
 ```
 
-`host` and `port` are route candidates only. Product reconnect should use the paired runtime identity/key with a connection manager that tries local direct discovery, then remote P2P NAT traversal, then encrypted blind relay/TURN-style fallback. Today that reconnect behavior is only partially represented by local-direct candidates, not by real NAT traversal or relay code.
+`host` and `port` are developer/local diagnostic route candidates only. Product reconnect should use the paired runtime identity/key plus QR-bootstrapped overlay material so the connection manager can resolve local direct, remote P2P NAT traversal, or encrypted blind relay/TURN-style routes automatically. Identity-only QR pairing can establish trust and later resolve local routes, but it cannot cross unrelated networks without relay or P2P rendezvous material in the QR.
 
-Development QR payloads may also include a temporary relay route:
+Remote-route QR payloads may include the current temporary relay route:
 
 ```text
 aetherlink://pair?version=1&pairing_nonce=<nonce>&pairing_code=<6-digit-code>&mac_device_id=<stable-runtime-id>&mac_name=AetherLink%20Runtime&fingerprint=<runtime-key-fingerprint>&runtime_public_key=<base64-runtime-public-key>&runtime_key_fingerprint=<runtime-key-fingerprint>&route_token=<paired-route-token>&relay_host=<relay-host>&relay_port=43171&relay_id=<private-network-id>&relay_secret=<pairwise-frame-secret>
 ```
 
-`relay_host`, `relay_port`, and `relay_id` are development route metadata. `relay_secret` is shared only through QR pairing and is not sent in the relay registration line. The current relay uses outbound TCP from both peers and forwards bytes after matching one runtime and one client by `relay_id`. When `relay_secret` is present, AetherLink frame bodies over that relay are encrypted with AES-GCM using direction-bound nonces (`CLNT` for client-to-runtime, `RUNT` for runtime-to-client). This is useful for different-Wi-Fi development testing, but it is not a complete production relay/TURN system.
+`relay_host`, `relay_port`, and `relay_id` are route material for the current relay path. `relay_secret` is shared only through QR pairing and is not sent in the relay registration line. The current relay uses outbound TCP from both peers and forwards bytes after matching one runtime and one client by `relay_id`. When `relay_secret` is present, AetherLink frame bodies over that relay are encrypted with AES-GCM using direction-bound nonces (`CLNT` for client-to-runtime, `RUNT` for runtime-to-client). This supports QR-only different-network development testing because Android scans the route QR, stores the remote route with the pinned runtime identity, and does not ask for a host or port. It is still not a complete production relay/TURN system.
 
 When Bonjour/local discovery is available after pairing, TXT hints should prefer the QR-provided `route_token` so the client app can match the trusted runtime to a current local endpoint without publishing stable identifiers. Legacy/development TXT hints may include `device_id` or `fingerprint`, but production discovery should not rely on broadcasting stable peer identifiers. Those TXT hints are only routing metadata; they must not disclose backend URLs, model inventory, or provider state, and they do not authenticate the endpoint by themselves.
 

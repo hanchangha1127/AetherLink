@@ -1,10 +1,16 @@
 package com.localagentbridge.android.core.transport
 
 import com.localagentbridge.android.core.protocol.ProtocolCodec
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.ByteArrayInputStream
+import java.net.ServerSocket
+import kotlin.concurrent.thread
+import kotlin.system.measureTimeMillis
 
 class RuntimeRelayTcpClientTest {
     @Test
@@ -41,6 +47,48 @@ class RuntimeRelayTcpClientTest {
             "ec6f782db28fe4e5bc8a0bfd9c8944051dbaeceea6bd1d3ec34b1ef9cf265f728a76ef7f24dcad7daaa516cb1f756d24d686df0b05806e436524baf6f4d27f6fb86e25b5eae90f83ccf30718cf68",
             runtimeCryptor.encryptRuntimeFrameBodyForTest(runtimeBody).toHex(),
         )
+    }
+
+    @Test
+    fun relayConnectTimesOutWhenReadyLineNeverArrives() {
+        val server = ServerSocket(0)
+        val serverThread = thread(start = true, isDaemon = true) {
+            runCatching {
+                server.accept().use { socket ->
+                    socket.getInputStream().read()
+                    Thread.sleep(1_000)
+                }
+            }
+        }
+        val client = RuntimeRelayTcpClient()
+        val identity = PairedRuntimeIdentity(
+            deviceId = "runtime-1",
+            name = "AetherLink",
+            fingerprint = "fingerprint",
+        )
+        val route = PreparedRemoteRuntimeRoute.Relay(
+            identity = identity,
+            relayId = "relay-timeout",
+            host = "127.0.0.1",
+            port = server.localPort,
+            security = RemoteRouteSecurityContext(
+                rendezvousToken = "relay-timeout",
+                expiresAtEpochMillis = Long.MAX_VALUE,
+                antiReplayNonce = "relay-timeout",
+            ),
+        )
+
+        val elapsedMillis = measureTimeMillis {
+            assertThrows(Exception::class.java) {
+                runBlocking {
+                    client.connect(route, timeoutMillis = 150)
+                }
+            }
+        }
+
+        server.close()
+        serverThread.join(1_500)
+        assertTrue("Relay connect should not wait forever", elapsedMillis < 1_500)
     }
 }
 

@@ -4,7 +4,9 @@ This document makes the remote 1:1 connection model concrete without defining an
 
 AetherLink should feel less like "enter the computer's IP address" and more like a private peer network: a paired client asks for its paired runtime host by identity, and the connection layer finds the best route. The useful analogy to Bitcoin-style peer networks is decentralized or distributed rendezvous and peer discovery, not public access. AetherLink is still private, paired-device-only, and runtime-host-mediated.
 
-Current implementation status: the local companion runtime server exists, and supported development routes include local direct routes plus a small outbound TCP development relay. Local routes cover same-network/local discovery, USB or emulator forwarding, and explicit local diagnostic endpoints. The development relay lets a paired runtime host and client join the same private `relay_id` room through outbound TCP when they are not on the same Wi-Fi. When QR pairing provides `relay_secret`, the peers encrypt AetherLink frame bodies before relay forwarding. QR pairing and trusted-device state still gate runtime commands on every route. Production P2P NAT traversal, DHT/bootstrap discovery, hardened relay/TURN allocation, replay-resistant session setup, and production end-to-end transport encryption remain roadmap/foundation work.
+Current implementation status: the local companion runtime server exists, and supported development routes include local direct routes plus a small outbound TCP relay. Local routes cover same-network/local discovery, USB or emulator forwarding, and explicit local diagnostic endpoints. The relay lets a paired runtime host and client join the same private `relay_id` room through outbound TCP when they are not on the same Wi-Fi. When QR pairing provides `relay_secret`, the peers encrypt AetherLink frame bodies before relay forwarding. QR pairing and trusted-device state still gate runtime commands on every route. Production per-user encrypted overlay, rendezvous, relay/TURN allocation, P2P NAT traversal, replay-resistant session setup, and production end-to-end transport encryption remain roadmap/foundation work.
+
+QR-only pairing is the product requirement from the user's perspective. The user scans a QR to pair, refresh, or repair connectivity and never enters a host, port, Ollama URL, LM Studio URL, or backend URL in the client app. QR-only does not mean raw local sockets can cross unrelated networks. A production QR must bootstrap a private per-user encrypted overlay: paired identity, route tokens, rendezvous material, and relay/P2P allocation material sufficient for the connection layer to create a route automatically. If the QR is identity-only, it can establish trust and resolve local routes later, but it cannot by itself cross unrelated networks.
 
 Non-negotiable boundaries:
 
@@ -58,10 +60,11 @@ The client device owns:
 - A persistent client public/private keypair stored in platform-secure storage when available.
 - A pinned trusted-runtime record containing runtime id, runtime public key or certificate fingerprint, display label, and route-token material.
 
-QR pairing should be identity-first:
+QR pairing should be identity-first and route-explicit:
 
 - Required: runtime identity, runtime public key or certificate fingerprint, pairing nonce/code material, service/protocol version, and a pairing-derived route token or token seed.
-- Optional development hints: host/port for local direct testing, and `relay_host`/`relay_port`/`relay_id` plus optional `relay_secret` for the temporary development relay.
+- Optional local development hints: host/port for local direct testing.
+- Remote-route QR material: `relay_host`/`relay_port`/`relay_id` plus optional `relay_secret` for the current relay path, and future P2P rendezvous candidates/tokens for direct NAT traversal.
 - Not allowed: Ollama URL, LM Studio URL, model list, provider health, prompt data, file paths, memory data, account identifiers, or public directory registration data.
 
 After pairing, each session still authenticates:
@@ -89,6 +92,10 @@ Allowed local-direct inputs:
 
 Local direct route candidates must be treated as reachability hints, not durable product identity. The route resolver should prefer current discovery results for the pinned runtime identity over stale last-known endpoints.
 
+Local direct is a fast path inside the overlay, not the product foundation. A raw local socket, a remembered private IP, or mDNS alone cannot satisfy QR-only different-network connectivity. Production routing must be bootstrapped by QR and then resolved through the private encrypted overlay/rendezvous/relay layer when local reachability is absent.
+
+Current development behavior: when a trusted runtime has a prepared relay route from QR pairing, the client tries prepared remote routes first: future P2P before the current relay, then fresh same-network discovery, then explicit local diagnostics. Automatic reconnect does not promote a previously saved private IP address as the product route. This prevents an old private IP or same-network fast path from masking the different-network relay route. If the relay is unavailable, local discovery, USB/emulator forwarding, and other diagnostics still remain available without treating the stale IP as trusted reachability.
+
 Bonjour/mDNS records may carry minimal route hints:
 
 - Preferred: pairing-derived `route_token`.
@@ -97,18 +104,21 @@ Bonjour/mDNS records may carry minimal route hints:
 
 The client may automatically try a discovered endpoint only when its route hints match the pinned trusted runtime record. Metadata-less endpoints can remain useful for local development and manual diagnostics, but they are not automatic trusted-runtime matches.
 
-## Phase 2: Remote NAT Traversal
+## Phase 2: QR-Only Remote Route
 
-Different-network connectivity requires more than mDNS or private IP addresses. The target remote direct path is authenticated P2P NAT traversal.
+Different-network connectivity requires more than mDNS, private IP addresses, or an identity-only QR. The target user experience is QR-only: the runtime generates a remote-route QR, the client scans it, and the connection layer automatically tries P2P NAT traversal before falling back to a blind encrypted relay.
 
 Target behavior:
 
-1. The client and runtime each derive or request short-lived rendezvous material for their paired relationship.
-2. Each side gathers network candidates through STUN-like address discovery.
-3. Candidate exchange happens through a privacy-preserving rendezvous/bootstrap path.
-4. The peers attempt authenticated hole punching.
-5. The first viable direct path upgrades into an end-to-end encrypted AetherLink session bound to the paired identities.
-6. Runtime commands remain blocked until session authentication succeeds.
+1. The runtime creates a QR that contains paired identity material plus remote-route material.
+2. The client scans the QR and stores the remote route with the pinned runtime identity.
+3. The client and runtime each derive or request short-lived rendezvous material for their paired relationship.
+4. Each side gathers network candidates through STUN-like address discovery.
+5. Candidate exchange happens through a privacy-preserving rendezvous/bootstrap path.
+6. The peers attempt authenticated hole punching.
+7. If direct P2P fails, both sides connect outbound to a blind relay/TURN-style path keyed by paired-route material.
+8. The first viable path upgrades into an end-to-end encrypted AetherLink session bound to the paired identities.
+9. Runtime commands remain blocked until session authentication succeeds.
 
 Security requirements:
 
@@ -134,7 +144,17 @@ Behavior:
 3. The client connects outbound and registers `AETHERLINK_RELAY client <relay_id>`.
 4. The relay matches one runtime and one client with the same `relay_id`, sends `AETHERLINK_RELAY ready`, then pipes bytes in both directions.
 5. If QR pairing supplied `relay_secret`, the client encrypts client-to-runtime frame bodies with direction `CLNT`, the runtime encrypts runtime-to-client frame bodies with direction `RUNT`, and the relay forwards only ciphertext frame bodies.
-5. The existing length-prefixed AetherLink JSON frame stream runs through that pipe.
+6. The existing length-prefixed AetherLink JSON frame stream runs through that pipe.
+
+Current app wiring:
+
+- The macOS app Status screen has a Remote Relay panel for a relay host and port that both devices can reach.
+- Saving the relay route generates a frame secret when one is not provided and restarts the outbound runtime relay client if the runtime is already active.
+- The macOS app now reports live relay state: connecting, waiting for the client device to join the same relay id, connected, reconnecting, failed, or stopped.
+- New QR pairing payloads include `relay_host`, `relay_port`, `relay_id`, and `relay_secret` after the relay route is configured.
+- The development runtime helper also generates a relay frame secret when `AETHERLINK_RELAY_HOST` is set without `AETHERLINK_RELAY_SECRET`.
+- When a development relay is configured, development pairing QR payloads no longer default to `127.0.0.1`; a direct host is included only when `AETHERLINK_DEV_PAIRING_HOST` is explicitly set.
+- Existing client pairings do not receive relay metadata retroactively. A client that already trusts the same pinned runtime identity can scan a fresh relay QR to refresh only the route metadata; if runtime trust was removed, pair again.
 
 Boundaries:
 
@@ -208,13 +228,14 @@ The route resolver should operate on a paired runtime identity, not on a remembe
 
 Product candidate order:
 
-1. Current local discovery candidate with matching route token or trusted identity hint.
-2. Remote P2P NAT traversal candidate prepared through privacy-preserving rendezvous/bootstrap/DHT assist.
-3. Relay fallback candidate.
+1. QR-bootstrapped private overlay state for the paired runtime identity.
+2. Current local discovery candidate with matching route token or trusted identity hint, when available.
+3. Remote P2P NAT traversal candidate prepared through privacy-preserving rendezvous/bootstrap/DHT assist.
+4. Encrypted relay/TURN fallback candidate.
 
 v0.1 compatibility candidates:
 
-- USB forwarding, emulator forwarding, hotspot lab routes, QR-provided `host`/`port` hints, or last-known endpoint hints may be attempted for development, diagnostics, or local lab use.
+- USB forwarding, emulator forwarding, hotspot lab routes, QR-provided `host`/`port` hints, the temporary development relay, or last-known endpoint hints may be attempted for development, diagnostics, or local lab use.
 - These hints must not outrank the paired identity as the product target and must not become normal onboarding.
 - A stale fixed endpoint should never be treated as proof that the runtime identity is trusted or reachable.
 

@@ -60,6 +60,21 @@ class RuntimePairingPayloadParserTest {
     }
 
     @Test
+    fun preservesLiteralPlusInOpaqueQrValues() {
+        val payload = RuntimePairingPayloadParser.parse(
+            "aetherlink://pair?version=1&pairing_nonce=nonce-1&pairing_code=123456" +
+                "&runtime_device_id=runtime-1&runtime_name=AetherLink%20Runtime" +
+                "&runtime_public_key=abc+def/ghi%3D&runtime_key_fingerprint=fp-1" +
+                "&relay_host=relay.example.test&relay_port=443&relay_id=relay-1" +
+                "&relay_secret=secret%20with%20symbols%20+%20/%20%3D"
+        )
+
+        assertEquals("AetherLink Runtime", payload.runtimeName)
+        assertEquals("abc+def/ghi=", payload.runtimePublicKeyBase64)
+        assertEquals("secret with symbols + / =", payload.relaySecret)
+    }
+
+    @Test
     fun parsesLegacyDiscoveryTokenAlias() {
         val payload = RuntimePairingPayloadParser.parse(
             "aetherlink://pair?version=1&pairing_nonce=nonce-1&pairing_code=123456" +
@@ -121,6 +136,20 @@ class RuntimePairingPayloadParserTest {
                     "&mac_device_id=mac-1&fingerprint=fp-1&host=192.168.1.10"
             )
             fail("Expected incomplete endpoint hint to throw")
+        } catch (_: IllegalArgumentException) {
+            // Expected.
+        }
+    }
+
+    @Test
+    fun rejectsIncompleteRelayRouteWhenProvided() {
+        try {
+            RuntimePairingPayloadParser.parse(
+                "aetherlink://pair?version=1&pairing_nonce=nonce-1&pairing_code=123456" +
+                    "&mac_device_id=mac-1&fingerprint=fp-1" +
+                    "&relay_host=relay.example.test&relay_port=443"
+            )
+            fail("Expected missing relay id to throw")
         } catch (_: IllegalArgumentException) {
             // Expected.
         }

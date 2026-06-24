@@ -31,6 +31,8 @@ Any future relay/signaling component is connection infrastructure only. It must 
 
 Current implementation status: AetherLink has pairing, trusted runtime records, local endpoint hints, Bonjour/local discovery candidates, USB reverse/dev-server paths, a route-candidate abstraction, and a temporary outbound TCP development relay keyed by private `relay_id`. The relay path can optionally encrypt AetherLink frame bodies with `relay_secret`, but real remote P2P NAT traversal, distributed/bootstrap discovery, hardened relay allocation, replay-resistant session setup, and production end-to-end transport encryption are not complete yet.
 
+When a QR/trusted runtime record contains relay metadata, the client tries prepared remote routes before local direct routes: future P2P first, then the current relay, then fresh local discovery and diagnostic endpoint hints. Automatic reconnect does not promote a stale last-known private IP address as the product route; it resolves the paired runtime identity through current discovery, USB/emulator development forwarding, or relay metadata instead.
+
 ## Repository Layout
 
 ```text
@@ -134,6 +136,18 @@ The authenticated mock smoke is automation for the local protocol loop only:
 automate the physical QR camera flow and must not be treated as production
 pairing mode.
 
+The same smoke can be routed through the temporary development relay:
+
+```bash
+./script/runtime_authenticated_mock_smoke.swift --relay
+```
+
+That command starts `script/aetherlink_relay.py`, starts RuntimeDevServer with
+relay metadata, verifies the relay fields in development pairing info, then
+runs pairing, fresh authentication, model list, streaming chat, and cancel over
+the relay socket. When relay mode is enabled, frame bodies are encrypted with
+the same `relay_secret` direction scheme used by the app transport.
+
 The real-Ollama mode keeps the same development pairing/auth path, but leaves
 `LOCAL_AGENT_BRIDGE_MOCK_BACKEND` unset so RuntimeDevServer talks to the local
 backend aggregate. It fails by default if Ollama is unavailable; add
@@ -141,21 +155,62 @@ backend aggregate. It fails by default if Ollama is unavailable; add
 
 The current Android client project is rooted at `apps/android` but is also included from the repository root Gradle settings.
 
-### Different-Wi-Fi Development Relay
+### Developer-Only Temporary Remote Route
 
-Run a relay on a mutually reachable machine:
+Normal product flow is QR-first: show the AetherLink Runtime QR, scan it from
+the client, and never enter Ollama, LM Studio, host, or port details on the
+client. Current source builds do not yet ship production P2P rendezvous or a
+hardened relay allocation service. For development-only different-network
+testing, run a temporary relay on a public or otherwise mutually reachable
+machine:
 
 ```bash
 python3 script/aetherlink_relay.py --host 0.0.0.0 --port 43171
 ```
 
-Start the runtime with relay metadata:
+Then either configure the runtime app's advanced route diagnostics:
+
+1. Open AetherLink Runtime.
+2. Go to `Status` -> `Remote Route Diagnostics`.
+3. Enter the route host and port.
+4. Save the route.
+5. Generate the latest QR and scan that QR from the client app.
+
+The route diagnostics panel shows whether the runtime host is connecting to the
+relay, registered and waiting for the client device, connected through the
+relay, reconnecting, or failed. If it stays waiting, the runtime reached the
+relay but the client has not joined the same `relay_id` yet. If it fails, check
+the route host/port and firewall before debugging model access.
+
+Or start the development runtime with relay metadata:
 
 ```bash
 AETHERLINK_RELAY_HOST=<relay-host> AETHERLINK_RELAY_PORT=43171 ./script/run_runtime_dev_server.sh
 ```
 
-The QR can then include `relay_host`, `relay_port`, `relay_id`, and optionally `relay_secret`. The client still connects to the paired AetherLink runtime protocol, not to Ollama or LM Studio. Use this only for development until production end-to-end session setup, replay protection, NAT traversal, and hardened rendezvous are implemented.
+For a single command wrapper that validates the relay settings and can also
+start the local development relay process, use:
+
+```bash
+script/run_different_network_dev_runtime.sh --relay-host <relay-host> --relay-port 43171
+```
+
+Add `--start-local-relay` only when `<relay-host>:43171` really reaches this
+machine from the client network, for example through a port forward, VPN, or
+tunnel you control. Starting the relay on the Mac alone is not enough for a
+phone on another Wi-Fi or cellular network.
+
+When `AETHERLINK_RELAY_HOST` is set, the helper generates `AETHERLINK_RELAY_SECRET`
+if it is missing. Development pairing QR payloads then include `relay_host`,
+`relay_port`, `relay_id`, and `relay_secret`, and they no longer default to a
+`127.0.0.1` direct endpoint unless `AETHERLINK_DEV_PAIRING_HOST` is explicitly
+set. Existing pairings created before relay setup do not gain a
+remote route automatically; scan the latest QR from the same trusted runtime
+identity to refresh connectivity, or pair again if the runtime no longer trusts
+the client device. The client still connects to the paired AetherLink runtime
+protocol, not to Ollama or LM Studio.
+Use this only for development until production end-to-end session setup, replay
+protection, NAT traversal, and hardened rendezvous are implemented.
 
 ## Verification
 
@@ -166,6 +221,7 @@ that touch localization, protocol schema, or platform runtime behavior:
 python3 script/check_macos_localization.py
 python3 script/check_protocol_schema.py
 python3 script/check_android_string_parity.py
+./script/runtime_authenticated_mock_smoke.swift --relay
 swift test
 ```
 

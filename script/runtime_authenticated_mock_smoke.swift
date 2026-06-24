@@ -43,9 +43,24 @@ enum BackendMode {
     }
 }
 
+enum TransportMode: Equatable {
+    case direct
+    case relay
+
+    var name: String {
+        switch self {
+        case .direct:
+            return "direct TCP"
+        case .relay:
+            return "development relay"
+        }
+    }
+}
+
 struct SmokeOptions {
     var backendMode: BackendMode = .mock
     var allowUnavailable = false
+    var transportMode: TransportMode = .direct
 
     static func parse(_ arguments: [String]) throws -> SmokeOptions {
         var options = SmokeOptions()
@@ -55,11 +70,14 @@ struct SmokeOptions {
                 options.backendMode = .realOllama
             case "--allow-unavailable":
                 options.allowUnavailable = true
+            case "--relay":
+                options.transportMode = .relay
             case "--help", "-h":
                 print("""
-                Usage: ./script/runtime_authenticated_mock_smoke.swift [--real-ollama] [--allow-unavailable]
+                Usage: ./script/runtime_authenticated_mock_smoke.swift [--relay] [--real-ollama] [--allow-unavailable]
 
                   default              Run authenticated mock E2E smoke, including pull and chat coverage.
+                  --relay              Route the smoke through script/aetherlink_relay.py with encrypted relay frames.
                   --real-ollama        Run pairing/auth smoke against the real local Ollama backend.
                   --allow-unavailable  In --real-ollama mode, skip successfully if Ollama is unavailable.
                 """)
@@ -70,6 +88,9 @@ struct SmokeOptions {
         }
         if options.allowUnavailable, case .mock = options.backendMode {
             throw SmokeFailure.message("--allow-unavailable only applies with --real-ollama")
+        }
+        if options.allowUnavailable, options.transportMode == .relay {
+            throw SmokeFailure.message("--allow-unavailable with --relay is not supported yet")
         }
         return options
     }
@@ -114,10 +135,43 @@ final class ServerOutput {
     }
 }
 
-struct TCPClient {
-    let fd: Int32
+final class RelayProcessOutput {
+    private let lock = NSLock()
+    private var buffer = ""
+    let listeningReady = DispatchSemaphore(value: 0)
 
-    init(host: String, port: UInt16) throws {
+    func append(_ data: Data) {
+        guard !data.isEmpty, let text = String(data: data, encoding: .utf8) else { return }
+        lock.lock()
+        buffer += text
+        let lines = buffer.split(separator: "\n", omittingEmptySubsequences: false)
+        let completeLineCount = buffer.hasSuffix("\n") ? lines.count : max(lines.count - 1, 0)
+        let completeLines = lines.prefix(completeLineCount)
+        buffer = buffer.hasSuffix("\n") ? "" : String(lines.last ?? "")
+        lock.unlock()
+
+        for line in completeLines {
+            print("[relay] \(line)")
+            if line.contains("development relay listening") {
+                listeningReady.signal()
+            }
+        }
+    }
+}
+
+struct RelayConfiguration {
+    var relayID: String
+    var relaySecret: String
+    var host: String
+    var port: UInt16
+}
+
+final class TCPClient {
+    let fd: Int32
+    private var relayCipher: RelayFrameBodyCipher?
+
+    init(host: String, port: UInt16, relayCipher: RelayFrameBodyCipher? = nil) throws {
+        self.relayCipher = relayCipher
         fd = socket(AF_INET, SOCK_STREAM, 0)
         guard fd >= 0 else {
             throw SmokeFailure.message("socket() failed: \(String(cString: strerror(errno)))")
@@ -148,12 +202,35 @@ struct TCPClient {
         }
     }
 
+    static func relay(host: String, port: UInt16, relayID: String, relaySecret: String) throws -> TCPClient {
+        let client = try TCPClient(
+            host: host,
+            port: port,
+            relayCipher: RelayFrameBodyCipher(secret: relaySecret)
+        )
+        do {
+            try client.writeAll(Data("AETHERLINK_RELAY client \(relayID)\n".utf8))
+            let ready = try client.readExactly(Data("AETHERLINK_RELAY ready\n".utf8).count)
+            guard ready == Data("AETHERLINK_RELAY ready\n".utf8) else {
+                throw SmokeFailure.message("Relay did not return ready line")
+            }
+            return client
+        } catch {
+            client.close()
+            throw error
+        }
+    }
+
     func close() {
         Darwin.close(fd)
     }
 
     func send(_ envelope: [String: Any]) throws {
-        let body = try JSONSerialization.data(withJSONObject: envelope, options: [])
+        var body = try JSONSerialization.data(withJSONObject: envelope, options: [])
+        if var cipher = relayCipher {
+            body = try cipher.encryptClientFrameBody(body)
+            relayCipher = cipher
+        }
         var length = UInt32(body.count).bigEndian
         let header = Data(bytes: &length, count: MemoryLayout<UInt32>.size)
         try writeAll(header)
@@ -166,7 +243,11 @@ struct TCPClient {
         guard length > 0, length <= 1024 * 1024 else {
             throw SmokeFailure.message("Invalid frame length: \(length)")
         }
-        let body = try readExactly(Int(length))
+        var body = try readExactly(Int(length))
+        if var cipher = relayCipher {
+            body = try cipher.decryptRuntimeFrameBody(body)
+            relayCipher = cipher
+        }
         guard let object = try JSONSerialization.jsonObject(with: body) as? [String: Any] else {
             throw SmokeFailure.message("Response frame was not a JSON object")
         }
@@ -204,6 +285,64 @@ struct TCPClient {
             }
         }
         return data
+    }
+}
+
+struct RelayFrameBodyCipher {
+    private static let aad = Data("AETHERLINK_RELAY_FRAME_V1".utf8)
+    private static let keyPrefix = Data("AetherLink relay frame v1\n".utf8)
+    private static let tagBytes = 16
+
+    private let key: SymmetricKey
+    private var clientSendCounter: UInt64 = 0
+    private var runtimeReceiveCounter: UInt64 = 0
+
+    init(secret: String) {
+        var material = Self.keyPrefix
+        material.append(Data(secret.utf8))
+        key = SymmetricKey(data: Data(SHA256.hash(data: material)))
+    }
+
+    mutating func encryptClientFrameBody(_ body: Data) throws -> Data {
+        let encrypted = try encrypt(body, direction: "CLNT", counter: clientSendCounter)
+        clientSendCounter += 1
+        return encrypted
+    }
+
+    mutating func decryptRuntimeFrameBody(_ body: Data) throws -> Data {
+        defer { runtimeReceiveCounter += 1 }
+        return try decrypt(body, direction: "RUNT", counter: runtimeReceiveCounter)
+    }
+
+    private func encrypt(_ body: Data, direction: String, counter: UInt64) throws -> Data {
+        let sealed = try AES.GCM.seal(
+            body,
+            using: key,
+            nonce: nonce(direction: direction, counter: counter),
+            authenticating: Self.aad
+        )
+        var encryptedBody = sealed.ciphertext
+        encryptedBody.append(sealed.tag)
+        return encryptedBody
+    }
+
+    private func decrypt(_ body: Data, direction: String, counter: UInt64) throws -> Data {
+        guard body.count >= Self.tagBytes else {
+            throw SmokeFailure.message("Relay ciphertext was too short: \(body.count)")
+        }
+        let sealed = try AES.GCM.SealedBox(
+            nonce: nonce(direction: direction, counter: counter),
+            ciphertext: body.prefix(body.count - Self.tagBytes),
+            tag: body.suffix(Self.tagBytes)
+        )
+        return try AES.GCM.open(sealed, using: key, authenticating: Self.aad)
+    }
+
+    private func nonce(direction: String, counter: UInt64) throws -> AES.GCM.Nonce {
+        var data = Data(direction.utf8)
+        var bigEndianCounter = counter.bigEndian
+        data.append(Data(bytes: &bigEndianCounter, count: MemoryLayout<UInt64>.size))
+        return try AES.GCM.Nonce(data: data)
     }
 }
 
@@ -268,11 +407,19 @@ func freePort() throws -> UInt16 {
     return UInt16(bigEndian: resolved.sin_port)
 }
 
-func connectWithRetry(host: String, port: UInt16) throws -> TCPClient {
+func connectWithRetry(host: String, port: UInt16, relay: RelayConfiguration? = nil) throws -> TCPClient {
     let deadline = Date().addingTimeInterval(10)
     var lastError: Error?
     while Date() < deadline {
         do {
+            if let relay {
+                return try TCPClient.relay(
+                    host: relay.host,
+                    port: relay.port,
+                    relayID: relay.relayID,
+                    relaySecret: relay.relaySecret
+                )
+            }
             return try TCPClient(host: host, port: port)
         } catch {
             lastError = error
@@ -435,7 +582,12 @@ func canonicalModelName(_ name: String) -> String {
     return name
 }
 
-func startServer(port: UInt16, trustedDevicesFile: URL, backendMode: BackendMode) throws -> Process {
+func startServer(
+    port: UInt16,
+    trustedDevicesFile: URL,
+    backendMode: BackendMode,
+    relay: RelayConfiguration?
+) throws -> Process {
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
     process.arguments = ["\(try runAndCapture(["swift", "build", "--show-bin-path"]))/RuntimeDevServer"]
@@ -449,6 +601,14 @@ func startServer(port: UInt16, trustedDevicesFile: URL, backendMode: BackendMode
     }
     environment["AETHERLINK_DEV_PAIRING"] = "1"
     environment["AETHERLINK_DEV_TRUSTED_DEVICES_FILE"] = trustedDevicesFile.path
+    environment["AETHERLINK_DEV_RUNTIME_PUBLIC_KEY"] = "aetherlink-smoke-runtime-public-key"
+    environment["AETHERLINK_DEV_RUNTIME_KEY_FINGERPRINT"] = "aetherlink-smoke-runtime-fingerprint"
+    if let relay {
+        environment["AETHERLINK_RELAY_HOST"] = relay.host
+        environment["AETHERLINK_RELAY_PORT"] = String(relay.port)
+        environment["AETHERLINK_RELAY_ID"] = relay.relayID
+        environment["AETHERLINK_RELAY_SECRET"] = relay.relaySecret
+    }
     process.environment = environment
     return process
 }
@@ -695,10 +855,56 @@ func main() throws {
         throw SmokeFailure.message("Run this script from the repository root.")
     }
 
-    print("Building RuntimeDevServer for \(options.backendMode.name) smoke...")
+    print("Building RuntimeDevServer for \(options.backendMode.name) smoke over \(options.transportMode.name)...")
     _ = try runAndCapture(["swift", "build", "--product", "RuntimeDevServer"])
 
     let port = try freePort()
+    var relayConfiguration: RelayConfiguration?
+    var relayProcess: Process?
+    var relayPipe: Pipe?
+    if options.transportMode == .relay {
+        let relayPort = try freePort()
+        let relay = RelayConfiguration(
+            relayID: "aetherlink-smoke-\(UUID().uuidString)",
+            relaySecret: "aetherlink-relay-smoke-\(UUID().uuidString)",
+            host: "127.0.0.1",
+            port: relayPort
+        )
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments = [
+            "python3",
+            "script/aetherlink_relay.py",
+            "--host",
+            relay.host,
+            "--port",
+            String(relay.port)
+        ]
+        let output = RelayProcessOutput()
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = pipe
+        pipe.fileHandleForReading.readabilityHandler = { handle in
+            output.append(handle.availableData)
+        }
+        try process.run()
+        guard output.listeningReady.wait(timeout: .now() + 10) == .success else {
+            process.terminate()
+            throw SmokeFailure.message("Development relay did not start")
+        }
+        relayConfiguration = relay
+        relayProcess = process
+        relayPipe = pipe
+        print("Relay smoke route ready on \(relay.host):\(relay.port) relay_id=\(relay.relayID)")
+    }
+    defer {
+        relayPipe?.fileHandleForReading.readabilityHandler = nil
+        if let relayProcess, relayProcess.isRunning {
+            relayProcess.terminate()
+            relayProcess.waitUntilExit()
+        }
+    }
+
     let temporaryDirectory = FileManager.default.temporaryDirectory
         .appendingPathComponent("aetherlink-auth-smoke-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: temporaryDirectory, withIntermediateDirectories: true)
@@ -708,7 +914,8 @@ func main() throws {
     let server = try startServer(
         port: port,
         trustedDevicesFile: temporaryDirectory.appendingPathComponent("trusted-devices.json"),
-        backendMode: options.backendMode
+        backendMode: options.backendMode,
+        relay: relayConfiguration
     )
     let outputPipe = Pipe()
     server.standardOutput = outputPipe
@@ -735,13 +942,28 @@ func main() throws {
     let pairingCode = try requireString(pairingInfo, "pairing_code", context: "dev pairing info")
     let pairingNonce = try requireString(pairingInfo, "pairing_nonce", context: "dev pairing info")
     let macDeviceID = try requireString(pairingInfo, "mac_device_id", context: "dev pairing info")
+    if let relayConfiguration {
+        let relayHost = try requireString(pairingInfo, "relay_host", context: "dev pairing info")
+        let relayID = try requireString(pairingInfo, "relay_id", context: "dev pairing info")
+        let relaySecret = try requireString(pairingInfo, "relay_secret", context: "dev pairing info")
+        guard relayHost == relayConfiguration.host,
+              relayID == relayConfiguration.relayID,
+              relaySecret == relayConfiguration.relaySecret,
+              pairingInfo["relay_port"] as? Int == Int(relayConfiguration.port)
+        else {
+            throw SmokeFailure.message("Development pairing info did not include the configured relay route: \(pairingInfo)")
+        }
+        if pairingInfo["host"] != nil || pairingInfo["port"] != nil {
+            throw SmokeFailure.message("Relay-mode development pairing info must not include a local direct host/port by default: \(pairingInfo)")
+        }
+    }
 
     let privateKey = P256.Signing.PrivateKey()
     let publicKeyBase64 = privateKey.publicKey.derRepresentation.base64EncodedString()
     let deviceID = "aetherlink-auth-smoke-device"
 
-    print("Pairing with dev session mac_device_id=\(macDeviceID)...")
-    let pairingClient = try connectWithRetry(host: "127.0.0.1", port: port)
+    print("Pairing with dev session mac_device_id=\(macDeviceID) over \(options.transportMode.name)...")
+    let pairingClient = try connectWithRetry(host: "127.0.0.1", port: port, relay: relayConfiguration)
     do {
         let pairResponse = try sendAndRead(
             pairingClient,
@@ -765,8 +987,8 @@ func main() throws {
         throw error
     }
 
-    print("Authenticating a fresh connection with P-256 challenge-response...")
-    let client = try connectWithRetry(host: "127.0.0.1", port: port)
+    print("Authenticating a fresh \(options.transportMode.name) connection with P-256 challenge-response...")
+    let client = try connectWithRetry(host: "127.0.0.1", port: port, relay: relayConfiguration)
     defer { client.close() }
 
     let challenge = try sendAndRead(

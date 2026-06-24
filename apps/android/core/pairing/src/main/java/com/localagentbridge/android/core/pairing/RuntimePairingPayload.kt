@@ -38,7 +38,8 @@ object RuntimePairingPayloadParser {
         val pairingNonce = query["pairing_nonce"] ?: query["nonce"]
         val pairingCode = query["pairing_code"] ?: query["code"]
         val runtimeDeviceId = query["runtime_device_id"] ?: query["mac_device_id"] ?: query["device_id"]
-        val runtimeName = query["runtime_name"] ?: query["mac_name"] ?: query["name"] ?: "AetherLink Runtime"
+        val runtimeName = (query["runtime_name"] ?: query["mac_name"] ?: query["name"] ?: "AetherLink Runtime")
+            .decodeLegacyNamePlus()
         val fingerprint = query["runtime_key_fingerprint"] ?: query["fingerprint"] ?: query["cert_fingerprint"]
         val runtimePublicKeyBase64 = query["runtime_public_key"] ?: query["mac_public_key"]
         val routeToken = query["route_token"] ?: query["discovery_token"]
@@ -63,6 +64,7 @@ object RuntimePairingPayloadParser {
         if (relayHost != null || rawRelayPort != null) {
             require(relayHost != null) { "Missing relay host" }
             require(relayPort != null && relayPort in 1..65535) { "Invalid relay port" }
+            require(!relayId.isNullOrBlank()) { "Missing relay id" }
         }
 
         return RuntimePairingPayload(
@@ -92,13 +94,16 @@ object RuntimePairingPayloadParser {
                 val separator = part.indexOf('=')
                 val rawKey = if (separator >= 0) part.substring(0, separator) else part
                 val rawValue = if (separator >= 0) part.substring(separator + 1) else ""
-                val key = rawKey.urlDecode()
-                val value = rawValue.urlDecode()
+                val key = rawKey.uriQueryDecode()
+                val value = rawValue.uriQueryDecode()
                 key to value
             }
             .toMap()
     }
 
-    private fun String.urlDecode(): String =
-        URLDecoder.decode(this, StandardCharsets.UTF_8.name())
+    private fun String.uriQueryDecode(): String =
+        URLDecoder.decode(replace("+", "%2B"), StandardCharsets.UTF_8.name())
+
+    private fun String.decodeLegacyNamePlus(): String =
+        replace('+', ' ')
 }

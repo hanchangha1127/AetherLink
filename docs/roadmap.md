@@ -13,10 +13,11 @@ See [progress.md](progress.md) for the detailed implementation record, verificat
 1. Physical Android device QA after the latest UI/protocol changes.
 2. Screenshot-based Android UI polish for a cleaner modern/classic chat surface, drawer, model selector, settings, transcript spacing, and suggested next-question actions.
 3. Capture launcher/dock screenshots on real devices to verify the generated AetherLink icon reads correctly at small sizes.
-4. Harden pairing/trusted-device UX and remove manual endpoint exposure from the normal user path.
-5. Replace the temporary relay/fixed-endpoint development assumptions with a paired-device private P2P overlay:
+4. Harden pairing/trusted-device UX so normal users only pair or refresh routes by scanning QR.
+5. Replace the temporary relay/fixed-endpoint development assumptions with a paired-device private encrypted overlay:
    - paired private peer identity as the primary connection target,
-   - local direct connection as the fast path,
+   - QR-bootstrapped overlay/rendezvous/relay material for same-network and different-network use,
+   - local direct connection as an opportunistic fast path,
    - remote P2P NAT traversal for different networks using STUN-like address discovery and authenticated hole punching,
    - optional DHT/bootstrap-peer rendezvous for short-lived paired-device discovery records,
    - end-to-end encrypted blind relay/TURN fallback only when direct paths fail,
@@ -27,7 +28,7 @@ See [progress.md](progress.md) for the detailed implementation record, verificat
 
 - The client scans a runtime-host-displayed QR code and pairs with the companion runtime.
 - Pairing binds device identities and keys; product connectivity must not depend on manually entering or permanently storing a fixed IP address.
-- Fixed host/port values and mDNS/Bonjour local discovery are v0.1 development hints or local fast paths, not the target reconnect model.
+- Fixed host/port values, mDNS/Bonjour local discovery, and raw local sockets are v0.1 development hints or local fast paths, not the target reconnect model and not sufficient for unrelated networks.
 - Runtime host detects Ollama health.
 - Runtime host lists Ollama models.
 - Client selects a model and sends chat messages.
@@ -47,7 +48,7 @@ The concrete phased architecture is tracked in [connection-overlay.md](connectio
 
 AetherLink's 1:1 connection model is Bitcoin-like only in the narrow sense of peer identity and discovery without relying on a single fixed address. It is not a public untrusted peer network. Only QR-paired trusted devices may discover, authenticate, and communicate with each other.
 
-The target reconnect order is paired peer identity, local direct connection, remote P2P NAT traversal, then encrypted blind relay/TURN fallback. NAT traversal should use STUN-like address discovery, authenticated hole punching, short-lived candidate exchange, and session keys bound to the paired identities. Optional DHT/bootstrap-peer discovery may provide a Bitcoin-network-like feel for finding peers without a fixed IP, but only with privacy-preserving rendezvous records for already-paired devices. Relay/signaling infrastructure must remain unable to see AI protocol payloads, model lists, prompts, files, memory, backend credentials, or backend URLs. Clients still talk only to the trusted runtime/server boundary, never directly to Ollama, LM Studio, or future serving backends.
+The target reconnect model is paired peer identity plus QR-bootstrapped private overlay state, with local direct as an opportunistic fast path, remote P2P NAT traversal for different networks, and encrypted blind relay/TURN fallback. NAT traversal should use STUN-like address discovery, authenticated hole punching, short-lived candidate exchange, and session keys bound to the paired identities. Optional DHT/bootstrap-peer discovery may provide a Bitcoin-network-like feel for finding peers without a fixed IP, but only with privacy-preserving rendezvous records for already-paired devices. Relay/signaling infrastructure must remain unable to see AI protocol payloads, model lists, prompts, files, memory, backend credentials, or backend URLs. Clients still talk only to the trusted runtime/server boundary, never directly to Ollama, LM Studio, or future serving backends.
 
 Current status: the code has trusted identities, endpoint hints, Bonjour/local discovery candidates, USB/dev local paths, route-candidate plumbing, and a temporary outbound TCP relay keyed by private `relay_id`. This relay helps different-Wi-Fi development testing, and can encrypt AetherLink frame bodies when QR pairing supplies `relay_secret`, but it is not the production private overlay. Production remote P2P NAT traversal, DHT/bootstrap rendezvous, hardened relay allocation, replay-resistant session setup, and production end-to-end transport encryption are not complete yet.
 

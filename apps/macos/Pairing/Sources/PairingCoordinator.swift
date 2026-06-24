@@ -58,6 +58,9 @@ public struct PairingSession: Identifiable, Equatable, Sendable {
             queryItems.append(URLQueryItem(name: "relay_secret", value: relaySecret))
         }
         components.queryItems = queryItems
+        if let percentEncodedQuery = components.percentEncodedQuery {
+            components.percentEncodedQuery = percentEncodedQuery.replacingOccurrences(of: "+", with: "%2B")
+        }
         return components.string ?? "aetherlink://pair"
     }
 }
