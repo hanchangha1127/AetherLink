@@ -13,7 +13,7 @@ v0.1 is intentionally narrow. It proves one product loop:
 7. Cancel an in-flight generation.
 8. Reopen previous local chats and optionally attach user-entered local memory.
 
-There is no cloud backend, account server, relay server, client-side local model execution, or direct client-to-Ollama/LM Studio connection in v0.1.
+There is no cloud AI backend, account server, client-side local model execution, or direct client-to-Ollama/LM Studio connection. A small outbound TCP development relay exists for different-Wi-Fi testing. When QR pairing includes `relay_secret`, relay payload frame bodies are encrypted end-to-end between the client and runtime host, while the relay still sees only `relay_id`. This is still development transport scaffolding, not a production relay, account service, model backend, or complete NAT traversal layer.
 
 ## Connectivity Direction
 
@@ -21,14 +21,15 @@ AetherLink should not depend on a fixed IP address or permanent same-network acc
 
 1. Pair devices by QR and bind persistent device identities/keys.
 2. Try local direct discovery/connection when both devices are nearby.
-3. Try remote P2P NAT traversal when devices are on different networks.
-4. Fall back to an end-to-end encrypted blind relay/TURN-style path only when direct P2P fails.
+3. Use the temporary development relay for current different-Wi-Fi testing when explicitly configured.
+4. Replace that with remote P2P NAT traversal when devices are on different networks.
+5. Fall back to an end-to-end encrypted blind relay/TURN-style path only when direct P2P fails.
 
 Bitcoin-network analogy note: AetherLink borrows only the idea that peers can be identified and discovered without depending on one fixed server address. It is not a public, untrusted, open network. Only QR-paired trusted devices should be able to discover, authenticate, and exchange runtime traffic.
 
 Any future relay/signaling component is connection infrastructure only. It must not run AI, store or inspect AI protocol payloads, see model lists, prompts, files, memory, or backend credentials, or replace the local runtime.
 
-Current implementation status: AetherLink has pairing, trusted runtime records, local endpoint hints, Bonjour/local discovery candidates, USB reverse/dev-server paths, and a first route-candidate abstraction. These are placeholders and local-direct scaffolding for the future connection manager. Real remote P2P NAT traversal, signaling, encrypted blind relay transport, and production end-to-end transport encryption are not implemented yet.
+Current implementation status: AetherLink has pairing, trusted runtime records, local endpoint hints, Bonjour/local discovery candidates, USB reverse/dev-server paths, a route-candidate abstraction, and a temporary outbound TCP development relay keyed by private `relay_id`. The relay path can optionally encrypt AetherLink frame bodies with `relay_secret`, but real remote P2P NAT traversal, distributed/bootstrap discovery, hardened relay allocation, replay-resistant session setup, and production end-to-end transport encryption are not complete yet.
 
 ## Repository Layout
 
@@ -52,7 +53,8 @@ script/           Project-local macOS build/run entrypoint
 - Ollama reasoning/think stream chunks are preserved separately from final answer text and forwarded through the companion runtime as reasoning deltas.
 - LM Studio support through the runtime host's local adapter. Start LM Studio's server from the Developer tab or `lms server start`; the client app still never sees or calls the LM Studio URL.
 - Pairing and discovery may be simple in v0.1, but runtime commands still require a trusted-device boundary. Same-network unauthenticated access is not an acceptable architecture.
-- Remote P2P NAT traversal and encrypted relay fallback are target connectivity milestones, not current v0.1 transport capabilities.
+- Remote P2P NAT traversal and production encrypted relay fallback are target connectivity milestones, not current v0.1 transport capabilities.
+- The current development relay can help test devices on different Wi-Fi networks. With `relay_secret`, relay payload frames are encrypted between the paired client and runtime, but the relay still lacks production-grade allocation, token rotation, replay protection, and NAT traversal.
 
 ## Model Behavior
 
@@ -138,6 +140,22 @@ backend aggregate. It fails by default if Ollama is unavailable; add
 `--allow-unavailable` only when a local skip is intentional.
 
 The current Android client project is rooted at `apps/android` but is also included from the repository root Gradle settings.
+
+### Different-Wi-Fi Development Relay
+
+Run a relay on a mutually reachable machine:
+
+```bash
+python3 script/aetherlink_relay.py --host 0.0.0.0 --port 43171
+```
+
+Start the runtime with relay metadata:
+
+```bash
+AETHERLINK_RELAY_HOST=<relay-host> AETHERLINK_RELAY_PORT=43171 ./script/run_runtime_dev_server.sh
+```
+
+The QR can then include `relay_host`, `relay_port`, `relay_id`, and optionally `relay_secret`. The client still connects to the paired AetherLink runtime protocol, not to Ollama or LM Studio. Use this only for development until production end-to-end session setup, replay protection, NAT traversal, and hardened rendezvous are implemented.
 
 ## Verification
 

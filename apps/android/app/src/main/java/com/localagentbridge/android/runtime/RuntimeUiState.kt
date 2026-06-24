@@ -78,6 +78,10 @@ data class RuntimeTrustedRuntime(
     val publicKeyBase64: String? = null,
     val routeToken: String? = null,
     val endpointHint: RuntimeEndpointHint? = null,
+    val relayHost: String? = null,
+    val relayPort: Int? = null,
+    val relayId: String? = null,
+    val relaySecret: String? = null,
 ) {
     val lastKnownEndpoint: RuntimeEndpointHint
         get() = requireNotNull(endpointHint) { "Trusted runtime endpoint hint is not available" }

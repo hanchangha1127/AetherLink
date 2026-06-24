@@ -160,6 +160,7 @@ private struct ActivePairingCard: View {
             VStack(alignment: .leading, spacing: 7) {
                 Label(NSLocalizedString("Scan the QR code or enter the code in the AetherLink client app.", comment: ""), systemImage: "qrcode.viewfinder")
                 Label(NSLocalizedString("The QR code identifies this runtime; client apps resolve the current route after scanning.", comment: ""), systemImage: "point.3.connected.trianglepath.dotted")
+                Label(NSLocalizedString("After pairing, manage or remove trusted devices in Trusted Devices.", comment: ""), systemImage: "lock.shield")
                 Label(NSLocalizedString("Local Network permission enables the current local discovery path; pairing trust stays tied to this runtime identity.", comment: ""), systemImage: "network")
                 Label(expirationText(at: date), systemImage: expirationSystemImage(at: date))
                     .foregroundStyle(expiresAt <= date ? .orange : .secondary)

@@ -23,6 +23,17 @@ class ProtocolCodecTest {
     }
 
     @Test
+    fun encodesAndReadsFrameBodySeparatelyFromLengthPrefix() {
+        val codec = ProtocolCodec()
+        val envelope = ProtocolEnvelope(type = MessageType.RuntimeHealth, payload = JsonObject(emptyMap()))
+        val body = codec.encodeBody(envelope)
+
+        val framedBody = codec.readFrameBody(ByteArrayInputStream(codec.encodeFrameBody(body)))
+
+        assertEquals(envelope, codec.decode(framedBody))
+    }
+
+    @Test
     fun helloPayloadUsesProtocolClientCapabilitiesFieldName() {
         val payload = HelloPayload(
             deviceId = "client-1",

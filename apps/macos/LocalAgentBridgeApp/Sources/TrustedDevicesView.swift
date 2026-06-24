@@ -10,7 +10,7 @@ struct TrustedDevicesView: View {
         VStack(alignment: .leading, spacing: 18) {
                 CompanionPageHeader(
                     title: NSLocalizedString("Trusted Devices", comment: ""),
-                    subtitle: NSLocalizedString("Manage trusted devices allowed to use this local runtime.", comment: ""),
+                    subtitle: NSLocalizedString("Manage pairing trust and remove client devices allowed to use this local runtime.", comment: ""),
                     systemImage: "lock.shield.fill"
                 )
 

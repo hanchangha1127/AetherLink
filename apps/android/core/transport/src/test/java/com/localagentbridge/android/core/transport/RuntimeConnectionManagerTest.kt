@@ -301,6 +301,8 @@ class RuntimeConnectionManagerTest {
                 PreparedRemoteRuntimeRoute.Relay(
                     identity = pairedRuntime,
                     relayId = "relay-${pairedRuntime.routeToken}",
+                    host = "relay.example.test",
+                    port = 443,
                     security = securityContext("relay-${pairedRuntime.routeToken}"),
                 ),
             )
@@ -327,6 +329,8 @@ class RuntimeConnectionManagerTest {
         val relayRoute = PreparedRemoteRuntimeRoute.Relay(
             identity = identity,
             relayId = "relay-route-1",
+            host = "relay.example.test",
+            port = 443,
             security = securityContext("relay-route-1"),
         )
         val manager = RuntimeConnectionManager(
@@ -550,6 +554,8 @@ class RuntimeConnectionManagerTest {
                     PreparedRemoteRuntimeRoute.Relay(
                         identity = pairedRuntime,
                         relayId = "relay-session",
+                        host = "relay.example.test",
+                        port = 443,
                         security = securityContext("relay-session"),
                     ),
                 )

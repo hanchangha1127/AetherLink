@@ -305,7 +305,7 @@ class RuntimeClientViewModelTest {
 
     @Test
     fun acceptedPairingResultCreatesIdentityOnlyTrustedRuntimeFromMatchingRuntimeIdentity() {
-        val pending = runtimePairingPayload()
+        val pending = runtimePairingPayload(host = null, port = null)
         val trusted = trustedRuntimeFromAcceptedPairing(
             pending = pending,
             payload = PairingResultPayload(
@@ -325,6 +325,74 @@ class RuntimeClientViewModelTest {
         assertEquals("route-1", trusted?.routeToken)
         assertNull(trusted?.host)
         assertNull(trusted?.port)
+    }
+
+    @Test
+    fun acceptedPairingResultPreservesQrEndpointForTrustedRuntimeRestore() {
+        val pending = runtimePairingPayload(host = "192.168.1.10", port = 43170)
+        val trusted = trustedRuntimeFromAcceptedPairing(
+            pending = pending,
+            payload = PairingResultPayload(
+                accepted = true,
+                runtimeDeviceIdV2 = "runtime-1",
+                runtimePublicKey = "runtime-public-key",
+                runtimeKeyFingerprint = "runtime-fingerprint",
+                trustedDeviceId = "client-1",
+                message = "trusted",
+            ),
+        ) ?: error("Expected trusted runtime")
+
+        assertEquals("192.168.1.10", trusted.host)
+        assertEquals(43170, trusted.port)
+
+        val restored = RuntimeUiState(
+            trustedRuntime = RuntimeTrustedRuntime(
+                deviceId = trusted.deviceId,
+                name = trusted.name,
+                fingerprint = trusted.fingerprint,
+                publicKeyBase64 = trusted.publicKeyBase64,
+                routeToken = trusted.routeToken,
+                endpointHint = RuntimeEndpointHint(
+                    host = trusted.host ?: error("Expected persisted host"),
+                    port = trusted.port ?: error("Expected persisted port"),
+                    source = RuntimeEndpointSource.TrustedLastKnown,
+                ),
+            ),
+        )
+        val target = trustedRuntimeConnectionTarget(restored)
+
+        assertEquals("runtime-1", target?.identity?.deviceId)
+        assertEquals("192.168.1.10", target?.endpointHint?.host)
+        assertEquals(43170, target?.endpointHint?.port)
+        assertEquals(RuntimeEndpointSource.TrustedLastKnown, target?.endpointHint?.source)
+    }
+
+    @Test
+    fun acceptedPairingResultPreservesRelaySecretForTrustedRuntimeRestore() {
+        val pending = runtimePairingPayload(
+            host = null,
+            port = null,
+            relayHost = "relay.example.test",
+            relayPort = 443,
+            relayId = "relay-1",
+            relaySecret = "secret-1",
+        )
+        val trusted = trustedRuntimeFromAcceptedPairing(
+            pending = pending,
+            payload = PairingResultPayload(
+                accepted = true,
+                runtimeDeviceIdV2 = "runtime-1",
+                runtimePublicKey = "runtime-public-key",
+                runtimeKeyFingerprint = "runtime-fingerprint",
+                trustedDeviceId = "client-1",
+                message = "trusted",
+            ),
+        ) ?: error("Expected trusted runtime")
+
+        assertEquals("relay.example.test", trusted.relayHost)
+        assertEquals(443, trusted.relayPort)
+        assertEquals("relay-1", trusted.relayId)
+        assertEquals("secret-1", trusted.relaySecret)
     }
 
     @Test
@@ -867,6 +935,45 @@ class RuntimeClientViewModelTest {
         assertEquals(43170, endpointRoutes.first().hint.port)
         assertEquals(RuntimeEndpointSource.UsbReverse, endpointRoutes.first().hint.source)
         assertEquals(RuntimeRouteSource.FreshDiscovery, endpointRoutes.first().source)
+    }
+
+    @Test
+    fun runtimeRouteCandidatesRejectManualLocalModelBackendPorts() {
+        val blockedPorts = listOf(11434, 1234)
+
+        blockedPorts.forEach { blockedPort ->
+            val target = RuntimeConnectionTarget(
+                identity = null,
+                endpointHint = RuntimeEndpointHint(
+                    host = "127.0.0.1",
+                    port = blockedPort,
+                    source = RuntimeEndpointSource.Manual,
+                ),
+            )
+
+            val routes = runtimeRouteCandidates(RuntimeUiState(), target)
+
+            assertTrue(routes.filterIsInstance<RuntimeRouteCandidate.DirectTcp>().isEmpty())
+        }
+    }
+
+    @Test
+    fun runtimeRouteCandidatesAllowManualAetherLinkRuntimePort() {
+        val target = RuntimeConnectionTarget(
+            identity = null,
+            endpointHint = RuntimeEndpointHint(
+                host = "127.0.0.1",
+                port = 43170,
+                source = RuntimeEndpointSource.Manual,
+            ),
+        )
+
+        val routes = runtimeRouteCandidates(RuntimeUiState(), target)
+            .filterIsInstance<RuntimeRouteCandidate.DirectTcp>()
+
+        assertEquals(1, routes.size)
+        assertEquals(43170, routes.single().hint.port)
+        assertEquals(RuntimeRouteSource.Manual, routes.single().source)
     }
 
     @Test
@@ -2088,6 +2195,12 @@ class RuntimeClientViewModelTest {
 
     private fun runtimePairingPayload(
         runtimePublicKeyBase64: String? = "runtime-public-key",
+        host: String? = "192.168.1.10",
+        port: Int? = 43170,
+        relayHost: String? = null,
+        relayPort: Int? = null,
+        relayId: String? = null,
+        relaySecret: String? = null,
     ): RuntimePairingPayload {
         return RuntimePairingPayload(
             pairingNonce = "nonce-1",
@@ -2097,8 +2210,12 @@ class RuntimeClientViewModelTest {
             fingerprint = "runtime-fingerprint",
             runtimePublicKeyBase64 = runtimePublicKeyBase64,
             routeToken = "route-1",
-            host = "192.168.1.10",
-            port = 43170,
+            host = host,
+            port = port,
+            relayHost = relayHost,
+            relayPort = relayPort,
+            relayId = relayId,
+            relaySecret = relaySecret,
             serviceType = "_aetherlink._tcp.local.",
         )
     }

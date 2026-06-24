@@ -40,6 +40,8 @@ import com.localagentbridge.android.core.pairing.TrustedRuntime
 import com.localagentbridge.android.core.transport.BonjourDiscovery
 import com.localagentbridge.android.core.transport.RuntimeTransportClient
 import com.localagentbridge.android.core.transport.PairedRuntimeIdentity
+import com.localagentbridge.android.core.transport.PreparedRemoteRuntimeRoute
+import com.localagentbridge.android.core.transport.RemoteRouteSecurityContext
 import com.localagentbridge.android.core.transport.RuntimeConnectionFailure
 import com.localagentbridge.android.core.transport.RuntimeConnectionFailureReason
 import com.localagentbridge.android.core.transport.RuntimeConnectionManager
@@ -47,6 +49,7 @@ import com.localagentbridge.android.core.transport.RuntimeConnectionTarget
 import com.localagentbridge.android.core.transport.RuntimeEndpointHint
 import com.localagentbridge.android.core.transport.RuntimeEndpointSource
 import com.localagentbridge.android.core.transport.RuntimeProtocolChannel
+import com.localagentbridge.android.core.transport.RuntimeRelayTcpClient
 import com.localagentbridge.android.core.transport.RuntimeRouteCandidate
 import com.localagentbridge.android.core.transport.RuntimeRouteCapability
 import com.localagentbridge.android.core.transport.RuntimeRouteResolver
@@ -90,6 +93,10 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
                 includeUsbReverseFallback = BuildConfig.DEBUG,
             )
         },
+        remoteRoutePreparer = { identity ->
+            remoteRuntimeRoutes(identity)
+        },
+        relayConnector = RuntimeRelayTcpClient(),
     )
     private val discovery = BonjourDiscovery(application)
     private val pairingStore = PairingStore(application)
@@ -145,6 +152,10 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
                                 publicKeyBase64 = trusted.publicKeyBase64,
                                 routeToken = trusted.routeToken,
                                 endpointHint = endpoint,
+                                relayHost = trusted.relayHost,
+                                relayPort = trusted.relayPort,
+                                relayId = trusted.relayId,
+                                relaySecret = trusted.relaySecret,
                             ),
                             runtimeHost = endpoint?.host ?: it.runtimeHost,
                             runtimePort = endpoint?.port?.toString() ?: it.runtimePort,
@@ -1072,6 +1083,10 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
                         publicKeyBase64 = trusted.publicKeyBase64,
                         routeToken = trusted.routeToken,
                         endpointHint = trustedEndpoint,
+                        relayHost = trusted.relayHost,
+                        relayPort = trusted.relayPort,
+                        relayId = trusted.relayId,
+                        relaySecret = trusted.relaySecret,
                     ),
                     runtimeHost = trustedEndpoint?.host ?: it.runtimeHost,
                     runtimePort = trustedEndpoint?.port?.toString() ?: it.runtimePort,
@@ -1081,6 +1096,17 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
             }
             requestRuntimeHealth()
         }
+    }
+
+    private fun remoteRuntimeRoutes(identity: PairedRuntimeIdentity): List<PreparedRemoteRuntimeRoute> {
+        val relay = pendingPairingPayload
+            ?.takeIf { it.matchesIdentity(identity) }
+            ?.relayRouteOrNull(identity)
+            ?: state.value.trustedRuntime
+                ?.takeIf { it.matchesIdentity(identity) }
+                ?.relayRouteOrNull(identity)
+            ?: return emptyList()
+        return listOf(relay)
     }
 
     private fun sendHello() {
@@ -1828,7 +1854,7 @@ internal fun autoReconnectTrustedRuntimeConnectionTarget(state: RuntimeUiState):
     val discoveredTarget = trustedDiscoveredRuntimeConnectionTarget(state)
     if (discoveredTarget != null) return discoveredTarget
     val trustedTarget = trustedRuntimeConnectionTarget(state) ?: return null
-    return trustedTarget.takeIf { it.endpointHint != null }
+    return trustedTarget.takeIf { it.endpointHint != null || state.trustedRuntime?.hasRelayRoute() == true }
 }
 
 internal fun shouldAttemptTrustedRuntimeRestore(
@@ -1839,7 +1865,7 @@ internal fun shouldAttemptTrustedRuntimeRestore(
 }
 
 internal fun RuntimeUiState.shouldDiscoverTrustedRuntimeRoute(): Boolean {
-    return trustedRuntime != null && !isConnected && !isConnecting
+    return trustedRuntime != null && !isConnected && !isConnecting && trustedRuntime.hasRelayRoute().not()
 }
 
 internal fun runtimeRouteCandidates(
@@ -1892,7 +1918,7 @@ internal fun runtimeRouteCandidates(
 
     target.endpointHint?.let { endpoint ->
         val key = endpoint.host to endpoint.port
-        if (seenEndpoints.add(key)) {
+        if (endpoint.isAllowedDirectEndpoint() && seenEndpoints.add(key)) {
             routes += RuntimeRouteCandidate.DirectTcp(
                 hint = endpoint,
                 source = endpoint.routeSource(),
@@ -2077,6 +2103,11 @@ private fun RuntimeEndpointHint.routeSource(): RuntimeRouteSource {
     }
 }
 
+private fun RuntimeEndpointHint.isAllowedDirectEndpoint(): Boolean {
+    if (source != RuntimeEndpointSource.Manual) return true
+    return port !in LOCAL_MODEL_BACKEND_PORTS
+}
+
 private fun TrustedRuntime.lastKnownEndpointHintOrNull(): RuntimeEndpointHint? {
     val endpointHost = host ?: return null
     val endpointPort = port ?: return null
@@ -2100,6 +2131,28 @@ private fun TrustedRuntime.toConnectionTarget(): RuntimeConnectionTarget {
     )
 }
 
+private fun RuntimeTrustedRuntime?.hasRelayRoute(): Boolean {
+    return this != null &&
+        !relayHost.isNullOrBlank() &&
+        relayPort != null &&
+        relayPort in 1..65535 &&
+        !relayId.isNullOrBlank()
+}
+
+private fun TrustedRuntime.relayRouteOrNull(identity: PairedRuntimeIdentity): PreparedRemoteRuntimeRoute.Relay? {
+    val host = relayHost?.takeIf { it.isNotBlank() } ?: return null
+    val port = relayPort?.takeIf { it in 1..65535 } ?: return null
+    val relayRouteId = relayId?.takeIf { it.isNotBlank() } ?: routeToken?.takeIf { it.isNotBlank() } ?: return null
+    return PreparedRemoteRuntimeRoute.Relay(
+        identity = identity,
+        relayId = relayRouteId,
+        host = host,
+        port = port,
+        relayFrameSecret = relaySecret?.takeIf { it.isNotBlank() },
+        security = relaySecurityContext(relayRouteId),
+    )
+}
+
 private fun RuntimePairingPayload.endpointHintOrNull(): RuntimeEndpointHint? {
     val endpointHost = host ?: return null
     val endpointPort = port ?: return null
@@ -2110,16 +2163,42 @@ private fun RuntimePairingPayload.endpointHintOrNull(): RuntimeEndpointHint? {
     )
 }
 
+private fun RuntimePairingPayload.hasRelayRoute(): Boolean {
+    return !relayHost.isNullOrBlank() && relayPort != null && relayPort in 1..65535 && !relayId.isNullOrBlank()
+}
+
+private fun RuntimePairingPayload.relayRouteOrNull(identity: PairedRuntimeIdentity): PreparedRemoteRuntimeRoute.Relay? {
+    val host = relayHost?.takeIf { it.isNotBlank() } ?: return null
+    val port = relayPort?.takeIf { it in 1..65535 } ?: return null
+    val relayRouteId = relayId?.takeIf { it.isNotBlank() } ?: return null
+    return PreparedRemoteRuntimeRoute.Relay(
+        identity = identity,
+        relayId = relayRouteId,
+        host = host,
+        port = port,
+        relayFrameSecret = relaySecret?.takeIf { it.isNotBlank() },
+        security = relaySecurityContext(relayRouteId),
+    )
+}
+
+private fun relaySecurityContext(relayId: String): RemoteRouteSecurityContext {
+    return RemoteRouteSecurityContext(
+        rendezvousToken = relayId,
+        expiresAtEpochMillis = Long.MAX_VALUE,
+        antiReplayNonce = relayId,
+    )
+}
+
 internal fun RuntimeUiState.withPendingPairing(payload: RuntimePairingPayload): RuntimeUiState {
     val endpoint = payload.endpointHintOrNull()
     return copy(
         pairingCode = payload.pairingCode,
         pendingPairingRuntimeName = payload.runtimeName,
-        isPairingAwaitingRoute = endpoint == null,
+        isPairingAwaitingRoute = endpoint == null && !payload.hasRelayRoute(),
         runtimeHost = endpoint?.host ?: runtimeHost,
         runtimePort = endpoint?.port?.toString() ?: runtimePort,
         runtimeEndpointSource = endpoint?.source ?: runtimeEndpointSource,
-        runtimeStatus = if (endpoint == null) "pairing" else runtimeStatus,
+        runtimeStatus = if (endpoint == null && !payload.hasRelayRoute()) "pairing" else runtimeStatus,
         error = null,
     )
 }
@@ -2153,6 +2232,7 @@ internal fun pairingRuntimeConnectionTarget(
 ): RuntimeConnectionTarget? {
     val endpoint = payload.endpointHintOrNull()
     if (endpoint != null) return payload.toConnectionTarget(endpoint)
+    if (payload.hasRelayRoute()) return payload.toConnectionTarget(endpoint = null)
 
     val identityOnlyTarget = payload.toConnectionTarget(endpoint = null)
     val identity = requireNotNull(identityOnlyTarget.identity)
@@ -2194,8 +2274,38 @@ internal fun trustedRuntimeFromAcceptedPairing(
         fingerprint = acceptedFingerprint,
         publicKeyBase64 = acceptedPublicKey,
         routeToken = pending.routeToken,
-        host = null,
-        port = null,
+        host = pending.host,
+        port = pending.port,
+        relayHost = pending.relayHost,
+        relayPort = pending.relayPort,
+        relayId = pending.relayId,
+        relaySecret = pending.relaySecret,
+    )
+}
+
+private fun RuntimePairingPayload.matchesIdentity(identity: PairedRuntimeIdentity): Boolean {
+    return runtimeDeviceId == identity.deviceId &&
+        fingerprint == identity.fingerprint &&
+        runtimePublicKeyMatches(runtimePublicKeyBase64, identity.publicKeyBase64)
+}
+
+private fun RuntimeTrustedRuntime.matchesIdentity(identity: PairedRuntimeIdentity): Boolean {
+    return deviceId == identity.deviceId &&
+        runtimePublicKeyMatches(fingerprint, identity.fingerprint) &&
+        runtimePublicKeyMatches(publicKeyBase64, identity.publicKeyBase64)
+}
+
+private fun RuntimeTrustedRuntime.relayRouteOrNull(identity: PairedRuntimeIdentity): PreparedRemoteRuntimeRoute.Relay? {
+    val host = relayHost?.takeIf { it.isNotBlank() } ?: return null
+    val port = relayPort?.takeIf { it in 1..65535 } ?: return null
+    val relayRouteId = relayId?.takeIf { it.isNotBlank() } ?: routeToken?.takeIf { it.isNotBlank() } ?: return null
+    return PreparedRemoteRuntimeRoute.Relay(
+        identity = identity,
+        relayId = relayRouteId,
+        host = host,
+        port = port,
+        relayFrameSecret = relaySecret?.takeIf { it.isNotBlank() },
+        security = relaySecurityContext(relayRouteId),
     )
 }
 
@@ -2424,3 +2534,5 @@ private fun List<RuntimeChatMessage>.withoutTrailingBlankAssistantPlaceholder():
         this
     }
 }
+
+private val LOCAL_MODEL_BACKEND_PORTS = setOf(11434, 1234)

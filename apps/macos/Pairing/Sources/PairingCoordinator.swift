@@ -13,6 +13,10 @@ public struct PairingSession: Identifiable, Equatable, Sendable {
     public var routeToken: String?
     public var host: String?
     public var port: Int?
+    public var relayHost: String?
+    public var relayPort: Int?
+    public var relayID: String?
+    public var relaySecret: String?
     public var serviceType: String
 
     public var qrPayload: String {
@@ -40,6 +44,18 @@ public struct PairingSession: Identifiable, Equatable, Sendable {
         }
         if let port {
             queryItems.append(URLQueryItem(name: "port", value: String(port)))
+        }
+        if let relayHost, !relayHost.isEmpty {
+            queryItems.append(URLQueryItem(name: "relay_host", value: relayHost))
+        }
+        if let relayPort {
+            queryItems.append(URLQueryItem(name: "relay_port", value: String(relayPort)))
+        }
+        if let relayID, !relayID.isEmpty {
+            queryItems.append(URLQueryItem(name: "relay_id", value: relayID))
+        }
+        if let relaySecret, !relaySecret.isEmpty {
+            queryItems.append(URLQueryItem(name: "relay_secret", value: relaySecret))
         }
         components.queryItems = queryItems
         return components.string ?? "aetherlink://pair"
@@ -121,6 +137,10 @@ public final class PairingCoordinator: @unchecked Sendable {
         routeToken: String? = nil,
         host: String? = nil,
         port: Int? = nil,
+        relayHost: String? = nil,
+        relayPort: Int? = nil,
+        relayID: String? = nil,
+        relaySecret: String? = nil,
         serviceType: String = "_aetherlink._tcp.local."
     ) -> PairingSession {
         let code = String(format: "%06d", Int.random(in: 0...999_999))
@@ -136,6 +156,10 @@ public final class PairingCoordinator: @unchecked Sendable {
             routeToken: routeToken,
             host: host,
             port: port,
+            relayHost: relayHost,
+            relayPort: relayPort,
+            relayID: relayID,
+            relaySecret: relaySecret,
             serviceType: serviceType
         )
         lock.withLock {

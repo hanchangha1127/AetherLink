@@ -113,10 +113,16 @@ sealed class PreparedRemoteRuntimeRoute {
     data class Relay(
         override val identity: PairedRuntimeIdentity,
         val relayId: String,
+        val host: String,
+        val port: Int,
+        val relayFrameSecret: String? = null,
         override val security: RemoteRouteSecurityContext,
     ) : PreparedRemoteRuntimeRoute() {
         init {
             require(relayId.isNotBlank()) { "Relay id must not be blank" }
+            require(host.isNotBlank()) { "Relay host must not be blank" }
+            require(port in 1..65535) { "Relay port must be in 1..65535" }
+            require(relayFrameSecret?.isNotBlank() != false) { "Relay frame secret must not be blank" }
         }
 
         override val capability: RuntimeRouteCapability = RuntimeRouteCapability.Relay

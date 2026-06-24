@@ -27,6 +27,13 @@ struct StatusView: View {
                         tone: transportTone(for: model.transportState)
                     )
                     StatusCard(
+                        title: NSLocalizedString("Connection Routes", comment: ""),
+                        value: connectionRouteValue,
+                        detail: connectionRouteDetail,
+                        systemImage: "point.3.connected.trianglepath.dotted",
+                        tone: connectionRouteTone
+                    )
+                    StatusCard(
                         title: NSLocalizedString("Local Backends", comment: ""),
                         value: backendSummary.value,
                         detail: backendSummary.detail,
@@ -125,6 +132,45 @@ struct StatusView: View {
         case .stopped:
             return NSLocalizedString("The local runtime listener is not active.", comment: "")
         }
+    }
+
+    private var connectionRouteValue: String {
+        guard model.transportState.state == .advertising else {
+            return NSLocalizedString("Not ready", comment: "")
+        }
+        return model.hasDevelopmentRelayRoute
+            ? NSLocalizedString("Local + development relay", comment: "")
+            : NSLocalizedString("Local route", comment: "")
+    }
+
+    private var connectionRouteDetail: String {
+        guard model.transportState.state == .advertising else {
+            return NSLocalizedString("Start the runtime listener before resolving routes.", comment: "")
+        }
+        if model.hasDevelopmentRelayRoute {
+            let endpoint = model.developmentRelayEndpoint ?? NSLocalizedString("configured relay", comment: "")
+            if model.relayFrameEncryptionEnabled {
+                return String(
+                    format: NSLocalizedString("Development relay %@ is configured; relay frame bodies are encrypted, but production P2P remains roadmap.", comment: ""),
+                    endpoint
+                )
+            }
+            return String(
+                format: NSLocalizedString("Development relay %@ is configured without relay_secret; use only for testing until encrypted session setup is complete.", comment: ""),
+                endpoint
+            )
+        }
+        return NSLocalizedString("Local discovery/direct routes are available after pairing. Different-network production P2P remains roadmap.", comment: "")
+    }
+
+    private var connectionRouteTone: StatusTone {
+        guard model.transportState.state == .advertising else {
+            return transportTone(for: model.transportState)
+        }
+        if model.hasDevelopmentRelayRoute && !model.relayFrameEncryptionEnabled {
+            return .warning
+        }
+        return .neutral
     }
 
     private var backendSummary: BackendSummary {

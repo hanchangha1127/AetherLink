@@ -109,10 +109,24 @@ public final class CompanionAppModel: ObservableObject {
     private let trustedDeviceStore = TrustedDeviceStore()
     private let peerServer: any RuntimeTransport
     private let advertiser: any RuntimeAdvertiser
+    private let relayClient: RelayPeerClient?
+    private let relayConfiguration: RelayPeerConfiguration?
     private let macDeviceID: String
     private let runtimeIdentityKey: RuntimeIdentityKey
     private let runtimeIdentityWarning: String?
     private var runtimePort: UInt16 = 43170
+
+    public var hasDevelopmentRelayRoute: Bool {
+        relayConfiguration != nil
+    }
+
+    public var developmentRelayEndpoint: String? {
+        relayConfiguration.map { "\($0.host):\($0.port)" }
+    }
+
+    public var relayFrameEncryptionEnabled: Bool {
+        relayConfiguration?.relaySecret?.takeIfNotEmpty() != nil
+    }
 
     public init(
         backend: any LlmBackend = AggregatingLlmBackend(ollama: OllamaBackend(), lmStudio: LMStudioBackend()),
@@ -129,6 +143,9 @@ public final class CompanionAppModel: ObservableObject {
         self.runtimeIdentityKey = runtimeIdentity.key
         self.runtimeIdentityWarning = runtimeIdentity.warning
         self.discoveryRouteToken = Self.loadOrCreateDiscoveryRouteToken()
+        let relayConfiguration = Self.loadRelayConfiguration(routeToken: discoveryRouteToken)
+        self.relayConfiguration = relayConfiguration
+        self.relayClient = relayConfiguration == nil ? nil : RelayPeerClient()
         self.runtimeRouter = LocalRuntimeMessageRouter(
             backend: backend,
             pairingCoordinator: pairingCoordinator,
@@ -156,12 +173,27 @@ public final class CompanionAppModel: ObservableObject {
             }
             router.handle(envelope, sink: sink)
         }
+        if let relayConfiguration, let relayClient {
+            relayClient.start(configuration: relayConfiguration) { [router, weak self] envelope, sink in
+                Task { @MainActor in
+                    self?.log("Relay received \(envelope.type)")
+                }
+                router.handle(envelope, sink: sink)
+            }
+        }
         transportState = Self.transportStatus(from: peerServer.status)
         switch transportState.state {
         case .advertising:
             advertiser.start(port: Int32(port), metadata: runtimeAdvertisementMetadata)
-            transportStatus = "Advertising _aetherlink._tcp.local. on port \(port)"
+            if let relayConfiguration {
+                transportStatus = "Advertising locally and relay \(relayConfiguration.host):\(relayConfiguration.port)"
+            } else {
+                transportStatus = "Advertising _aetherlink._tcp.local. on port \(port)"
+            }
             log("Companion started")
+            if let relayConfiguration {
+                log("Relay route enabled: \(relayConfiguration.host):\(relayConfiguration.port)")
+            }
         case .failed:
             advertiser.stop()
             let message = transportState.failureMessage ?? "Runtime listener failed"
@@ -181,6 +213,7 @@ public final class CompanionAppModel: ObservableObject {
     public func stop() {
         peerServer.stop()
         advertiser.stop()
+        relayClient?.stop()
         transportState = .stopped
         transportStatus = "Stopped"
         log("Companion stopped")
@@ -235,7 +268,11 @@ public final class CompanionAppModel: ObservableObject {
             macDeviceID: macDeviceID,
             fingerprint: macFingerprint,
             runtimePublicKeyBase64: macPublicKeyBase64,
-            routeToken: discoveryRouteToken
+            routeToken: discoveryRouteToken,
+            relayHost: relayConfiguration?.host,
+            relayPort: relayConfiguration.map { Int($0.port) },
+            relayID: relayConfiguration?.relayID,
+            relaySecret: relayConfiguration?.relaySecret
         )
         log("Pairing code generated")
     }
@@ -305,6 +342,17 @@ public final class CompanionAppModel: ObservableObject {
             deviceID: macDeviceID,
             fingerprint: macFingerprint
         )
+    }
+
+    private static func loadRelayConfiguration(routeToken: String) -> RelayPeerConfiguration? {
+        let environment = ProcessInfo.processInfo.environment
+        guard let host = environment["AETHERLINK_RELAY_HOST"]?.takeIfNotEmpty() else {
+            return nil
+        }
+        let port = UInt16(environment["AETHERLINK_RELAY_PORT"] ?? "") ?? 43171
+        let relayID = environment["AETHERLINK_RELAY_ID"]?.takeIfNotEmpty() ?? routeToken
+        let relaySecret = environment["AETHERLINK_RELAY_SECRET"]?.takeIfNotEmpty()
+        return RelayPeerConfiguration(host: host, port: port, relayID: relayID, relaySecret: relaySecret)
     }
 
     private static func initialProviderStatuses(for backend: any LlmBackend) -> [CompanionProviderStatus] {

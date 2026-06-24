@@ -187,6 +187,55 @@ final class LMStudioBackendTests: XCTestCase {
         ])
     }
 
+    func testChatStreamsNativeReasoningSeparatelyFromAnswerContent() async throws {
+        let backend = makeBackend { request in
+            switch request.url?.path {
+            case "/api/v1/models":
+                return self.response(statusCode: 200, body: #"{"models":[{"type":"llm","key":"reasoning-local","loaded_instances":[{"id":"reasoning-local"}]}]}"#)
+            case "/api/v1/chat":
+                return self.response(
+                    statusCode: 200,
+                    body: """
+                    event: chat.start
+                    data: {"type":"chat.start","model_instance_id":"reasoning-local"}
+
+                    event: message.delta
+                    data: {"type":"message.delta","reasoning_content":"Plan first. "}
+
+                    event: message.delta
+                    data: {"type":"message.delta","thinking":"Then answer. ","content":"Hello"}
+
+                    event: chat.end
+                    data: {"type":"chat.end","result":{"model_instance_id":"reasoning-local","output":[{"type":"message","content":"Hello"}],"stats":{"input_tokens":4,"total_output_tokens":1}}}
+
+                    """
+                )
+            default:
+                XCTFail("Unexpected path: \(request.url?.path ?? "nil")")
+                return self.response(statusCode: 500, body: "{}")
+            }
+        }
+
+        let request = ChatRequest(
+            generationID: "lm-generation-reasoning-native",
+            sessionID: "session-1",
+            model: "reasoning-local",
+            messages: [ChatMessage(role: "user", content: "Think")]
+        )
+
+        var events: [ChatStreamEvent] = []
+        for try await event in backend.chat(request: request) {
+            events.append(event)
+        }
+
+        XCTAssertEqual(events, [
+            .reasoningDelta("Plan first. "),
+            .reasoningDelta("Then answer. "),
+            .delta("Hello"),
+            .done(inputTokens: 4, outputTokens: 1)
+        ])
+    }
+
     func testChatFallsBackToOpenAICompatibleStreamingWhenNativeChatShapeFails() async throws {
         var paths: [String] = []
         let backend = makeBackend { request in
@@ -230,6 +279,50 @@ final class LMStudioBackendTests: XCTestCase {
             .delta("Fallback"),
             .delta(" stream"),
             .done(inputTokens: 2, outputTokens: 3)
+        ])
+    }
+
+    func testChatStreamsOpenAICompatibleReasoningSeparatelyFromAnswerContent() async throws {
+        let backend = makeBackend { request in
+            switch request.url?.path {
+            case "/api/v1/models":
+                return self.response(statusCode: 200, body: #"{"models":[{"type":"llm","key":"reasoning-openai","loaded_instances":[]}]}"#)
+            case "/api/v1/chat":
+                return self.response(statusCode: 422, body: "native rejected")
+            case "/v1/chat/completions":
+                return self.response(
+                    statusCode: 200,
+                    body: """
+                    data: {"choices":[{"delta":{"reasoning_content":"Plan. "},"finish_reason":null}]}
+                    data: {"choices":[{"delta":{"thinking":"Check. ","content":"Answer"},"finish_reason":null}],"usage":{"prompt_tokens":3,"completion_tokens":2}}
+                    data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":2}}
+                    data: [DONE]
+
+                    """
+                )
+            default:
+                XCTFail("Unexpected path: \(request.url?.path ?? "nil")")
+                return self.response(statusCode: 500, body: "{}")
+            }
+        }
+
+        let request = ChatRequest(
+            generationID: "lm-generation-reasoning-openai",
+            sessionID: "session-1",
+            model: "reasoning-openai",
+            messages: [ChatMessage(role: "user", content: "Think")]
+        )
+
+        var events: [ChatStreamEvent] = []
+        for try await event in backend.chat(request: request) {
+            events.append(event)
+        }
+
+        XCTAssertEqual(events, [
+            .reasoningDelta("Plan. "),
+            .reasoningDelta("Check. "),
+            .delta("Answer"),
+            .done(inputTokens: 3, outputTokens: 2)
         ])
     }
 

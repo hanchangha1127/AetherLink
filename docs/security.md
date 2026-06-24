@@ -4,7 +4,7 @@ The project is local-first: no cloud AI backend and no account-server requiremen
 
 AetherLink may later use distributed rendezvous/bootstrap/DHT-style discovery, signaling, or an encrypted blind relay/TURN-style component for connectivity when paired devices are on different networks. That component is connection infrastructure only: it must not run models, proxy backend APIs in plaintext, inspect AI protocol payloads, store prompts/responses, see model lists, files, memory, or backend credentials, or become a cloud AI backend, account backend, or model-logic backend.
 
-Current code status: remote P2P NAT traversal, decentralized/distributed rendezvous, signaling, encrypted blind relay transport, and production end-to-end transport encryption are not implemented yet. Existing endpoint hints, Bonjour/mDNS records, USB reverse paths, and localhost/dev-server flows are local-direct development scaffolding behind the trusted-device boundary.
+Current code status: remote P2P NAT traversal, decentralized/distributed rendezvous, hardened blind relay allocation, and production end-to-end transport encryption are not complete yet. Existing endpoint hints, Bonjour/mDNS records, USB reverse paths, localhost/dev-server flows, and the outbound TCP development relay are development scaffolding behind the trusted-device boundary. The development relay can optionally encrypt AetherLink frame bodies with a QR-provided `relay_secret`, but that is only a foundation slice, not the final production transport security model.
 
 ## Local-First Threat Model
 
@@ -76,7 +76,7 @@ Bitcoin-network analogy note: AetherLink should borrow only peer identity and di
 
 DHT/bootstrap note: a future DHT-like or bootstrap-peer layer may be useful for finding a paired peer without a fixed IP, but it must publish only privacy-preserving rendezvous records. It must not expose stable runtime host directories, backend URLs, model inventory, prompts, files, memory, or any authority to mark a device as trusted.
 
-Implementation status note: identity-only QR, local route-token matching, and P2P/relay route preparation are connection-manager increments. Actual DHT/bootstrap discovery, NAT traversal, signaling, relay allocation, and relay forwarding are not implemented in the current transport. The current local route remains a v0.1 development/local route, not the intended final same-network-IP design.
+Implementation status note: identity-only QR, local route-token matching, and relay route preparation are connection-manager increments. A temporary outbound TCP development relay is implemented for different-Wi-Fi testing by `relay_id`; with `relay_secret`, Android and the runtime host encrypt relay frame bodies using AES-GCM before the relay sees them. Actual DHT/bootstrap discovery, NAT traversal, production signaling, relay allocation, key rotation, replay-resistant session setup, and production end-to-end encryption are not complete. Local direct and the development relay remain scaffolding, not the intended final same-network-IP design.
 
 Development note: `AETHERLINK_DEV_PAIRING=1` is only for local automated smoke tests with RuntimeDevServer. It opens and prints a temporary pairing session for scripts, but runtime commands still require the normal pairing/trusted-device and challenge-response path. Do not enable this flag for production or normal trusted-device use.
 
@@ -112,7 +112,7 @@ Target security properties:
 - End-to-end encryption is between the paired client device and runtime host, so relay infrastructure cannot read AI protocol payloads, model lists, prompts, responses, memory notes, files, or backend credentials.
 - Fixed IP/manual host entry and mDNS/Bonjour local discovery are restricted to development, diagnostics, local fast paths, and emergency support flows, not normal onboarding.
 
-Current implementation status: AetherLink has placeholders and route-candidate plumbing for the target connection order, but the implemented transport is still local-direct/development TCP. Different-network remote P2P, NAT traversal, signaling, and blind relay fallback remain future work.
+Current implementation status: AetherLink has route-candidate plumbing for the target connection order and a temporary outbound TCP development relay for different-Wi-Fi testing. Different-network production P2P, NAT traversal, decentralized/bootstrap signaling, encrypted blind relay fallback, and production end-to-end transport encryption remain future work.
 
 Public access is forbidden for the same reason same-network unauthenticated access is forbidden: network reachability is not trust. A runtime host must never accept model, file, memory, tool, or backend commands just because a peer found it through local discovery, a bootstrap peer, a DHT-like record, a relay allocation, or a public address.
 

@@ -935,6 +935,30 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertNil(queryItems["port"])
     }
 
+    func testPairingQRCodePayloadIncludesRelaySecretWhenPresent() throws {
+        let coordinator = PairingCoordinator()
+        let session = coordinator.beginPairing(
+            macDeviceID: "mac-1",
+            macName: "AetherLink Runtime",
+            fingerprint: "fp-1",
+            routeToken: "route-1",
+            relayHost: "relay.example.test",
+            relayPort: 43171,
+            relayID: "relay-id-1",
+            relaySecret: "secret with symbols + / ="
+        )
+
+        let components = try XCTUnwrap(URLComponents(string: session.qrPayload))
+        let queryItems = try XCTUnwrap(components.queryItems).reduce(into: [String: String]()) { result, item in
+            result[item.name] = item.value
+        }
+
+        XCTAssertEqual(queryItems["relay_host"], "relay.example.test")
+        XCTAssertEqual(queryItems["relay_port"], "43171")
+        XCTAssertEqual(queryItems["relay_id"], "relay-id-1")
+        XCTAssertEqual(queryItems["relay_secret"], "secret with symbols + / =")
+    }
+
     func testPairingRequestStoresTrustedDeviceAndReturnsAccepted() async throws {
         let sink = RecordingSink()
         let coordinator = PairingCoordinator()

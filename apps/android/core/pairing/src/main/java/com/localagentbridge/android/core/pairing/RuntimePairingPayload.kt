@@ -14,6 +14,10 @@ data class RuntimePairingPayload(
     val routeToken: String?,
     val host: String?,
     val port: Int?,
+    val relayHost: String? = null,
+    val relayPort: Int? = null,
+    val relayId: String? = null,
+    val relaySecret: String? = null,
     val serviceType: String?,
 )
 
@@ -41,6 +45,11 @@ object RuntimePairingPayloadParser {
         val host = (query["host"] ?: query["runtime_host"])?.takeIf { it.isNotBlank() }
         val rawPort = (query["port"] ?: query["runtime_port"])?.takeIf { it.isNotBlank() }
         val port = rawPort?.toIntOrNull()
+        val relayHost = (query["relay_host"] ?: query["rendezvous_host"])?.takeIf { it.isNotBlank() }
+        val rawRelayPort = (query["relay_port"] ?: query["rendezvous_port"])?.takeIf { it.isNotBlank() }
+        val relayPort = rawRelayPort?.toIntOrNull()
+        val relayId = (query["relay_id"] ?: query["network_id"] ?: routeToken)?.takeIf { it.isNotBlank() }
+        val relaySecret = query["relay_secret"]?.takeIf { it.isNotBlank() }
 
         require(!pairingNonce.isNullOrBlank()) { "Missing pairing nonce" }
         require(!pairingCode.isNullOrBlank()) { "Missing pairing code" }
@@ -50,6 +59,10 @@ object RuntimePairingPayloadParser {
         if (host != null || rawPort != null) {
             require(host != null) { "Missing runtime host" }
             require(port != null && port in 1..65535) { "Invalid runtime port" }
+        }
+        if (relayHost != null || rawRelayPort != null) {
+            require(relayHost != null) { "Missing relay host" }
+            require(relayPort != null && relayPort in 1..65535) { "Invalid relay port" }
         }
 
         return RuntimePairingPayload(
@@ -62,6 +75,10 @@ object RuntimePairingPayloadParser {
             routeToken = routeToken?.takeIf { it.isNotBlank() },
             host = host,
             port = port,
+            relayHost = relayHost,
+            relayPort = relayPort,
+            relayId = relayId,
+            relaySecret = relaySecret,
             serviceType = query["service_type"],
         )
     }

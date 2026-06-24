@@ -43,18 +43,30 @@ struct RuntimeDevServer {
         )
         let server = LocalPeerServer()
         let advertiser = BonjourAdvertiser()
+        let relayConfiguration = Self.relayConfiguration(environment: environment, identity: identity)
+        let relayClient = relayConfiguration == nil ? nil : RelayPeerClient()
         RuntimeDevServerState.server = server
         RuntimeDevServerState.advertiser = advertiser
+        RuntimeDevServerState.relayClient = relayClient
 
         server.start(port: port) { envelope, sink in
             print("[runtime] received type=\(envelope.type) request_id=\(envelope.requestID)")
             router.handle(envelope, sink: LoggingSink(wrapped: sink))
         }
         advertiser.start(port: Int32(port), metadata: identity.advertisementMetadata)
+        if let relayConfiguration, let relayClient {
+            relayClient.start(configuration: relayConfiguration) { envelope, sink in
+                print("[runtime] relay received type=\(envelope.type) request_id=\(envelope.requestID)")
+                router.handle(envelope, sink: LoggingSink(wrapped: sink))
+            }
+        }
 
         print("[runtime] AetherLink dev server listening on 127.0.0.1:\(port)")
         print("[runtime] Backend: \(useMockBackend ? "dev mock" : "Ollama + LM Studio")")
         print("[runtime] Advertising _aetherlink._tcp.local. on port \(port)")
+        if let relayConfiguration {
+            print("[runtime] Relay route enabled: \(relayConfiguration.host):\(relayConfiguration.port) id=\(relayConfiguration.relayID)")
+        }
         print("[runtime] For a USB-connected client device, run:")
         print("[runtime]   adb reverse tcp:\(port) tcp:\(port)")
         print("[runtime] Then connect the client app to 127.0.0.1:\(port)")
@@ -78,6 +90,19 @@ struct RuntimeDevServer {
         return TrustedDeviceStore(fileURL: URL(fileURLWithPath: path))
     }
 
+    private static func relayConfiguration(
+        environment: [String: String],
+        identity: DevRuntimeIdentity
+    ) -> RelayPeerConfiguration? {
+        guard let host = environment["AETHERLINK_RELAY_HOST"]?.takeIfNotEmpty else {
+            return nil
+        }
+        let port = UInt16(environment["AETHERLINK_RELAY_PORT"] ?? "") ?? 43171
+        let relayID = environment["AETHERLINK_RELAY_ID"]?.takeIfNotEmpty ?? identity.routeToken
+        let relaySecret = environment["AETHERLINK_RELAY_SECRET"]?.takeIfNotEmpty
+        return RelayPeerConfiguration(host: host, port: port, relayID: relayID, relaySecret: relaySecret)
+    }
+
     private static func startDevelopmentPairing(
         coordinator: PairingCoordinator,
         port: UInt16,
@@ -92,7 +117,11 @@ struct RuntimeDevServer {
             runtimePublicKeyBase64: identity.publicKeyBase64.isEmpty ? nil : identity.publicKeyBase64,
             routeToken: identity.routeToken,
             host: environment["AETHERLINK_DEV_PAIRING_HOST"] ?? "127.0.0.1",
-            port: Int(port)
+            port: Int(port),
+            relayHost: environment["AETHERLINK_RELAY_HOST"]?.takeIfNotEmpty,
+            relayPort: environment["AETHERLINK_RELAY_PORT"].flatMap { UInt16($0) }.map(Int.init),
+            relayID: environment["AETHERLINK_RELAY_ID"]?.takeIfNotEmpty ?? identity.routeToken,
+            relaySecret: environment["AETHERLINK_RELAY_SECRET"]?.takeIfNotEmpty
         )
 
         print("[runtime] WARNING: AETHERLINK_DEV_PAIRING=1 opened a development-only pairing window.")
@@ -122,6 +151,18 @@ struct RuntimeDevServer {
         }
         if let port = session.port {
             info["port"] = port
+        }
+        if let relayHost = session.relayHost {
+            info["relay_host"] = relayHost
+        }
+        if let relayPort = session.relayPort {
+            info["relay_port"] = relayPort
+        }
+        if let relayID = session.relayID {
+            info["relay_id"] = relayID
+        }
+        if let relaySecret = session.relaySecret {
+            info["relay_secret"] = relaySecret
         }
 
         guard let data = try? JSONSerialization.data(withJSONObject: info, options: [.sortedKeys]),
@@ -188,6 +229,13 @@ private struct DevRuntimeIdentity {
 private enum RuntimeDevServerState {
     static var server: LocalPeerServer?
     static var advertiser: BonjourAdvertiser?
+    static var relayClient: RelayPeerClient?
+}
+
+private extension String {
+    var takeIfNotEmpty: String? {
+        isEmpty ? nil : self
+    }
 }
 
 private final class DevMockBackend: LlmBackend, @unchecked Sendable {

@@ -4,17 +4,17 @@
 
 See [progress.md](progress.md) for the detailed implementation record, verification commands, known limits, and next work queue.
 
-- AetherLink currently has a runtime-host-mediated local model loop, an Android Compose client implementation, localized Android and macOS companion UI, Ollama and LM Studio backend adapters, QR pairing, trusted runtime persistence, model listing, streaming chat, cancellation, reasoning/think rendering, local chat history, runtime-generated short chat titles, archive/delete separation, user-managed local memory notes, separate embedding model selection, broad runtime-side document ingestion, image/vision gating, runtime-mediated AI next-question suggestions, and a first runtime-side model residency policy.
+- AetherLink currently has a runtime-host-mediated local model loop, an Android Compose client implementation, localized Android and macOS companion UI, Ollama and LM Studio backend adapters, QR pairing, trusted runtime persistence, model listing, streaming chat, cancellation, Ollama/LM Studio reasoning or think rendering, local chat history, runtime-generated short chat titles, archive/delete separation, user-managed local memory notes, separate embedding model selection, broad runtime-side document ingestion, image/vision gating, runtime-mediated AI next-question suggestions, a first runtime-side model residency policy, identity-based route candidates, and a temporary outbound TCP development relay for different-Wi-Fi testing. The development relay can optionally encrypt frame bodies with QR-provided `relay_secret`.
 - The client implementation does not call Ollama or LM Studio directly.
 - MCP, skills, web search, advanced memory, project workspaces, automations, Python tools, iOS, Windows, and DGX OS-class runtime/server targets remain roadmap work.
 
 ## Immediate Next Implementation Queue
 
 1. Physical Android device QA after the latest UI/protocol changes.
-2. Screenshot-based Android UI polish for the ChatGPT-like chat surface, drawer, model selector, settings, and suggested next-question chips.
+2. Screenshot-based Android UI polish for a cleaner modern/classic chat surface, drawer, model selector, settings, transcript spacing, and suggested next-question actions.
 3. Capture launcher/dock screenshots on real devices to verify the generated AetherLink icon reads correctly at small sizes.
 4. Harden pairing/trusted-device UX and remove manual endpoint exposure from the normal user path.
-5. Replace fixed-IP development transport assumptions with a paired-device private P2P overlay:
+5. Replace the temporary relay/fixed-endpoint development assumptions with a paired-device private P2P overlay:
    - paired private peer identity as the primary connection target,
    - local direct connection as the fast path,
    - remote P2P NAT traversal for different networks using STUN-like address discovery and authenticated hole punching,
@@ -49,7 +49,15 @@ AetherLink's 1:1 connection model is Bitcoin-like only in the narrow sense of pe
 
 The target reconnect order is paired peer identity, local direct connection, remote P2P NAT traversal, then encrypted blind relay/TURN fallback. NAT traversal should use STUN-like address discovery, authenticated hole punching, short-lived candidate exchange, and session keys bound to the paired identities. Optional DHT/bootstrap-peer discovery may provide a Bitcoin-network-like feel for finding peers without a fixed IP, but only with privacy-preserving rendezvous records for already-paired devices. Relay/signaling infrastructure must remain unable to see AI protocol payloads, model lists, prompts, files, memory, backend credentials, or backend URLs. Clients still talk only to the trusted runtime/server boundary, never directly to Ollama, LM Studio, or future serving backends.
 
-Current status: the code has trusted identities, endpoint hints, Bonjour/local discovery candidates, USB/dev local paths, and route-candidate plumbing. Those pieces are local-direct placeholders for the future connection manager. Production remote P2P NAT traversal, DHT/bootstrap rendezvous, signaling, encrypted blind relay transport, and production end-to-end transport encryption are not implemented yet.
+Current status: the code has trusted identities, endpoint hints, Bonjour/local discovery candidates, USB/dev local paths, route-candidate plumbing, and a temporary outbound TCP relay keyed by private `relay_id`. This relay helps different-Wi-Fi development testing, and can encrypt AetherLink frame bodies when QR pairing supplies `relay_secret`, but it is not the production private overlay. Production remote P2P NAT traversal, DHT/bootstrap rendezvous, hardened relay allocation, replay-resistant session setup, and production end-to-end transport encryption are not complete yet.
+
+## Current Development Relay
+
+- A Python development relay exists at `script/aetherlink_relay.py`.
+- Runtime hosts can register outbound with `AETHERLINK_RELAY_HOST`, `AETHERLINK_RELAY_PORT`, and optional `AETHERLINK_RELAY_ID`.
+- Pairing QR payloads can carry `relay_host`, `relay_port`, `relay_id`, and optional `relay_secret` so the client can prepare a relay route after trust is established.
+- The relay matches one runtime and one client in a private room and pipes bytes; it does not call Ollama, LM Studio, or any model backend. When `relay_secret` is present, it forwards encrypted AetherLink frame bodies.
+- This is a development bridge only. It must be replaced or hardened with production session-key exchange, key-bound route tokens, replay protection, relay allocation, and a real bootstrap/NAT traversal strategy before sensitive remote use.
 
 ## Current LM Studio Backend Support
 

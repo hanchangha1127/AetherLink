@@ -4,7 +4,7 @@ This document makes the remote 1:1 connection model concrete without defining an
 
 AetherLink should feel less like "enter the computer's IP address" and more like a private peer network: a paired client asks for its paired runtime host by identity, and the connection layer finds the best route. The useful analogy to Bitcoin-style peer networks is decentralized or distributed rendezvous and peer discovery, not public access. AetherLink is still private, paired-device-only, and runtime-host-mediated.
 
-Current implementation status: the local companion runtime server exists, and today's supported development routes are local direct routes only: same-network/local discovery, USB or emulator forwarding, and explicit local diagnostic endpoints. QR pairing and trusted-device state gate runtime commands on those routes. Different-network P2P, rendezvous/bootstrap/DHT discovery, signaling, and relay/TURN transport remain roadmap/foundation work, not implemented runtime connectivity.
+Current implementation status: the local companion runtime server exists, and supported development routes include local direct routes plus a small outbound TCP development relay. Local routes cover same-network/local discovery, USB or emulator forwarding, and explicit local diagnostic endpoints. The development relay lets a paired runtime host and client join the same private `relay_id` room through outbound TCP when they are not on the same Wi-Fi. When QR pairing provides `relay_secret`, the peers encrypt AetherLink frame bodies before relay forwarding. QR pairing and trusted-device state still gate runtime commands on every route. Production P2P NAT traversal, DHT/bootstrap discovery, hardened relay/TURN allocation, replay-resistant session setup, and production end-to-end transport encryption remain roadmap/foundation work.
 
 Non-negotiable boundaries:
 
@@ -61,7 +61,7 @@ The client device owns:
 QR pairing should be identity-first:
 
 - Required: runtime identity, runtime public key or certificate fingerprint, pairing nonce/code material, service/protocol version, and a pairing-derived route token or token seed.
-- Optional development hint: host/port for local direct testing.
+- Optional development hints: host/port for local direct testing, and `relay_host`/`relay_port`/`relay_id` plus optional `relay_secret` for the temporary development relay.
 - Not allowed: Ollama URL, LM Studio URL, model list, provider health, prompt data, file paths, memory data, account identifiers, or public directory registration data.
 
 After pairing, each session still authenticates:
@@ -77,7 +77,7 @@ Removing a trusted device revokes future authentication on every path: local dir
 
 ## Phase 1: Local Direct Path
 
-The local direct path is the fast path when both devices are reachable on the same network, USB reverse path, hotspot, emulator bridge, or manually selected diagnostic endpoint. In v0.1 this is the only implemented transport family, so it should be described as a development/local route rather than the intended product architecture.
+The local direct path is the fast path when both devices are reachable on the same network, USB reverse path, hotspot, emulator bridge, or manually selected diagnostic endpoint. It remains a development/local route rather than the intended product architecture.
 
 Allowed local-direct inputs:
 
@@ -122,6 +122,27 @@ Implementation boundary:
 
 - This is not implemented in v0.1.
 - Current route-candidate plumbing may model future P2P candidates, but it must not claim real NAT traversal until STUN-like discovery, candidate exchange, authenticated hole punching, replay protection, and encrypted session binding exist.
+
+## Phase 2a: Development Relay
+
+The current code includes a temporary outbound TCP relay for different-Wi-Fi development testing. It is not the production encrypted relay design.
+
+Behavior:
+
+1. A relay process listens on a public or otherwise mutually reachable host.
+2. The runtime host connects outbound and registers `AETHERLINK_RELAY runtime <relay_id>`.
+3. The client connects outbound and registers `AETHERLINK_RELAY client <relay_id>`.
+4. The relay matches one runtime and one client with the same `relay_id`, sends `AETHERLINK_RELAY ready`, then pipes bytes in both directions.
+5. If QR pairing supplied `relay_secret`, the client encrypts client-to-runtime frame bodies with direction `CLNT`, the runtime encrypts runtime-to-client frame bodies with direction `RUNT`, and the relay forwards only ciphertext frame bodies.
+5. The existing length-prefixed AetherLink JSON frame stream runs through that pipe.
+
+Boundaries:
+
+- The relay does not call Ollama, LM Studio, or any model backend.
+- The relay does not authenticate devices; pairing and runtime challenge-response still happen between client and runtime.
+- Relay frame encryption is a development foundation slice. Production still needs short-lived allocations, key rotation, replay protection, and a session key exchange bound to paired device identities.
+- The relay is a development bridge, not a cloud AI backend.
+- Until production end-to-end encryption is added, do not treat this relay as safe for sensitive prompts, files, memory, or private model output on an untrusted public host.
 
 ## Phase 3: Rendezvous, Bootstrap, And DHT Option
 

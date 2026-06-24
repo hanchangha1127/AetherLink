@@ -284,6 +284,9 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
         for try await line in bytes.lines {
             try Task.checkCancellation()
             guard let chunk = try decodeOpenAIStreamLine(line, endpoint: endpoint) else { continue }
+            if let reasoning = chunk.choices.first?.delta.reasoningText, !reasoning.isEmpty {
+                continuation.yield(.reasoningDelta(reasoning))
+            }
             if let content = chunk.choices.first?.delta.content, !content.isEmpty {
                 continuation.yield(.delta(content))
             }
@@ -311,8 +314,11 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
         switch event.name {
         case "message.delta":
             let delta = try decode(LMStudioMessageDelta.self, from: data, endpoint: endpoint, line: event.data)
-            if !delta.content.isEmpty {
-                continuation.yield(.delta(delta.content))
+            if !delta.reasoningText.isEmpty {
+                continuation.yield(.reasoningDelta(delta.reasoningText))
+            }
+            if !delta.answerText.isEmpty {
+                continuation.yield(.delta(delta.answerText))
             }
         case "error":
             let payload = try decode(LMStudioStreamError.self, from: data, endpoint: endpoint, line: event.data)
@@ -622,7 +628,37 @@ private struct OpenAIImageURL: Encodable {
 }
 
 private struct LMStudioMessageDelta: Decodable {
-    var content: String
+    var content: String?
+    var reasoningContent: String?
+    var reasoningDelta: String?
+    var thinkingDelta: String?
+    var reasoning: String?
+    var thinking: String?
+    var thoughts: String?
+
+    var answerText: String {
+        content ?? ""
+    }
+
+    var reasoningText: String {
+        reasoningContent ??
+            reasoningDelta ??
+            thinkingDelta ??
+            reasoning ??
+            thinking ??
+            thoughts ??
+            ""
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case content
+        case reasoningContent = "reasoning_content"
+        case reasoningDelta = "reasoning_delta"
+        case thinkingDelta = "thinking_delta"
+        case reasoning
+        case thinking
+        case thoughts
+    }
 }
 
 private struct LMStudioStreamError: Decodable {
@@ -668,6 +704,32 @@ private struct OpenAIChatChoice: Decodable {
 
 private struct OpenAIChatDelta: Decodable {
     var content: String?
+    var reasoningContent: String?
+    var reasoningDelta: String?
+    var thinkingDelta: String?
+    var reasoning: String?
+    var thinking: String?
+    var thoughts: String?
+
+    var reasoningText: String {
+        reasoningContent ??
+            reasoningDelta ??
+            thinkingDelta ??
+            reasoning ??
+            thinking ??
+            thoughts ??
+            ""
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case content
+        case reasoningContent = "reasoning_content"
+        case reasoningDelta = "reasoning_delta"
+        case thinkingDelta = "thinking_delta"
+        case reasoning
+        case thinking
+        case thoughts
+    }
 }
 
 private struct OpenAIUsage: Decodable {

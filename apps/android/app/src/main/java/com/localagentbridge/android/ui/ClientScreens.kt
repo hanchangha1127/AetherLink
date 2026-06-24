@@ -3,18 +3,23 @@ package com.localagentbridge.android.ui
 import android.content.ClipData
 import android.widget.Toast
 import androidx.annotation.StringRes
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -75,6 +80,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
@@ -82,6 +88,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontFamily
@@ -347,6 +354,7 @@ private fun ConnectionStatusPanel(state: RuntimeUiState) {
                 label = stringResource(R.string.runtime_route),
                 value = runtimeRouteDisplayLabel(state),
             )
+            RuntimeRouteNotice(state = state)
             StatusLine(
                 label = stringResource(R.string.connected),
                 value = if (state.isConnected) stringResource(R.string.yes) else stringResource(R.string.no),
@@ -380,11 +388,13 @@ private fun ConnectionStatusHero(state: RuntimeUiState) {
 
     val isTrustedConnection = state.isConnected && state.trustedRuntime != null
     val needsPairing = state.trustedRuntime == null && !state.isConnected
+    val hasRelayRoute = state.trustedRuntime.hasRelayRoute()
     val needsRoute = state.trustedRuntime != null &&
         state.trustedRuntime.endpointHint == null &&
+        !hasRelayRoute &&
         !state.isConnected
     val hasSavedRoute = state.trustedRuntime != null &&
-        state.trustedRuntime.endpointHint != null &&
+        (state.trustedRuntime.endpointHint != null || hasRelayRoute) &&
         !state.isConnected
 
     val title = when {
@@ -467,9 +477,9 @@ private fun runtimeRouteDisplayLabel(state: RuntimeUiState): String {
         if (host != null && port != null) {
             return when (state.runtimeEndpointSource) {
                 RuntimeEndpointSource.BonjourDiscovery -> stringResource(R.string.runtime_route_local_discovery)
+                RuntimeEndpointSource.PairingQr -> stringResource(R.string.runtime_route_local_qr)
                 RuntimeEndpointSource.UsbReverse,
-                RuntimeEndpointSource.Emulator,
-                RuntimeEndpointSource.PairingQr -> stringResource(R.string.runtime_route_development)
+                RuntimeEndpointSource.Emulator -> stringResource(R.string.runtime_route_development)
                 RuntimeEndpointSource.TrustedLastKnown -> stringResource(R.string.runtime_route_saved_hint)
                 RuntimeEndpointSource.Manual -> stringResource(R.string.runtime_route_diagnostics)
             }
@@ -477,6 +487,9 @@ private fun runtimeRouteDisplayLabel(state: RuntimeUiState): String {
     }
     state.trustedRuntime?.endpointHint?.let {
         return stringResource(R.string.runtime_route_saved_hint)
+    }
+    if (state.trustedRuntime.hasRelayRoute()) {
+        return stringResource(R.string.runtime_route_relay)
     }
     if (state.isPairingAwaitingRoute) {
         val runtimeName = state.pendingPairingRuntimeName
@@ -488,6 +501,143 @@ private fun runtimeRouteDisplayLabel(state: RuntimeUiState): String {
         return stringResource(R.string.runtime_route_resolving)
     }
     return stringResource(R.string.runtime_route_pair_first)
+}
+
+private fun RuntimeTrustedRuntime?.hasRelayRoute(): Boolean {
+    return this != null &&
+        !relayHost.isNullOrBlank() &&
+        relayPort != null &&
+        relayPort in 1..65535 &&
+        !relayId.isNullOrBlank()
+}
+
+@Composable
+private fun RuntimeRouteNotice(state: RuntimeUiState) {
+    val trustedRuntime = state.trustedRuntime
+    val notice = runtimeRouteNotice(state, trustedRuntime) ?: return
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        color = notice.containerColor(),
+        contentColor = notice.contentColor(),
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.Top,
+        ) {
+            Icon(
+                imageVector = notice.icon,
+                contentDescription = null,
+                modifier = Modifier.size(20.dp),
+                tint = notice.contentColor(),
+            )
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.route_notice_title),
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = notice.contentColor(),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = stringResource(notice.detailRes),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = notice.contentColor(),
+                )
+            }
+        }
+    }
+}
+
+private data class RuntimeRouteNoticeState(
+    @param:StringRes val detailRes: Int,
+    val tone: RuntimeRouteNoticeTone,
+    val icon: androidx.compose.ui.graphics.vector.ImageVector,
+)
+
+private enum class RuntimeRouteNoticeTone {
+    Neutral,
+    Ready,
+    Warning,
+}
+
+@Composable
+private fun RuntimeRouteNoticeState.containerColor() = when (tone) {
+    RuntimeRouteNoticeTone.Ready -> MaterialTheme.colorScheme.primaryContainer
+    RuntimeRouteNoticeTone.Warning -> MaterialTheme.colorScheme.errorContainer
+    RuntimeRouteNoticeTone.Neutral -> MaterialTheme.colorScheme.surfaceVariant
+}
+
+@Composable
+private fun RuntimeRouteNoticeState.contentColor() = when (tone) {
+    RuntimeRouteNoticeTone.Ready -> MaterialTheme.colorScheme.onPrimaryContainer
+    RuntimeRouteNoticeTone.Warning -> MaterialTheme.colorScheme.onErrorContainer
+    RuntimeRouteNoticeTone.Neutral -> MaterialTheme.colorScheme.onSurfaceVariant
+}
+
+private fun runtimeRouteNotice(
+    state: RuntimeUiState,
+    trustedRuntime: RuntimeTrustedRuntime?,
+): RuntimeRouteNoticeState? {
+    if (trustedRuntime == null && !state.isConnected && !state.isPairingAwaitingRoute) return null
+    if (state.isConnected) {
+        return when (state.runtimeEndpointSource) {
+            RuntimeEndpointSource.BonjourDiscovery,
+            RuntimeEndpointSource.PairingQr,
+            RuntimeEndpointSource.TrustedLastKnown -> RuntimeRouteNoticeState(
+                detailRes = R.string.route_notice_local_route,
+                tone = RuntimeRouteNoticeTone.Ready,
+                icon = Icons.Filled.CheckCircle,
+            )
+            RuntimeEndpointSource.UsbReverse,
+            RuntimeEndpointSource.Emulator,
+            RuntimeEndpointSource.Manual -> RuntimeRouteNoticeState(
+                detailRes = R.string.route_notice_development_route,
+                tone = RuntimeRouteNoticeTone.Neutral,
+                icon = Icons.Filled.Link,
+            )
+        }
+    }
+    if (trustedRuntime.hasRelayRoute()) {
+        return if (trustedRuntime?.relaySecret.isNullOrBlank()) {
+            RuntimeRouteNoticeState(
+                detailRes = R.string.route_notice_relay_without_secret,
+                tone = RuntimeRouteNoticeTone.Warning,
+                icon = Icons.Filled.Error,
+            )
+        } else {
+            RuntimeRouteNoticeState(
+                detailRes = R.string.route_notice_relay_encrypted,
+                tone = RuntimeRouteNoticeTone.Neutral,
+                icon = Icons.Filled.Link,
+            )
+        }
+    }
+    if (state.runtimeEndpointSource == RuntimeEndpointSource.BonjourDiscovery) {
+        return RuntimeRouteNoticeState(
+            detailRes = R.string.route_notice_local_route,
+            tone = RuntimeRouteNoticeTone.Ready,
+            icon = Icons.Filled.CheckCircle,
+        )
+    }
+    if (state.runtimeEndpointSource != RuntimeEndpointSource.Manual && state.runtimeHost.isNotBlank()) {
+        return RuntimeRouteNoticeState(
+            detailRes = R.string.route_notice_development_route,
+            tone = RuntimeRouteNoticeTone.Neutral,
+            icon = Icons.Filled.Link,
+        )
+    }
+    return RuntimeRouteNoticeState(
+        detailRes = R.string.route_notice_remote_pending,
+        tone = RuntimeRouteNoticeTone.Neutral,
+        icon = Icons.Filled.Search,
+    )
 }
 
 @Composable
@@ -653,7 +803,11 @@ fun ChatScreen(
     val density = LocalDensity.current
     val keyboardDockPadding = if (WindowInsets.ime.getBottom(density) > 0) 64.dp else 0.dp
 
-    LaunchedEffect(state.messages.size, state.messages.lastOrNull()?.content) {
+    LaunchedEffect(
+        state.messages.size,
+        state.messages.lastOrNull()?.content,
+        state.messages.lastOrNull()?.reasoning,
+    ) {
         if (state.messages.isNotEmpty()) {
             listState.animateScrollToItem(state.messages.lastIndex)
         }
@@ -662,7 +816,7 @@ fun ChatScreen(
     Box(
         modifier = modifier
             .fillMaxSize()
-            .padding(horizontal = 14.dp, vertical = 8.dp),
+            .padding(horizontal = 12.dp, vertical = 6.dp),
     ) {
         if (state.messages.isEmpty() && shouldShowChatEmptyState(state)) {
             Box(
@@ -682,8 +836,13 @@ fun ChatScreen(
             LazyColumn(
                 state = listState,
                 modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(18.dp),
-                contentPadding = PaddingValues(top = 10.dp, bottom = 176.dp),
+                verticalArrangement = Arrangement.spacedBy(20.dp),
+                contentPadding = PaddingValues(
+                    start = 4.dp,
+                    top = 16.dp,
+                    end = 4.dp,
+                    bottom = 178.dp,
+                ),
             ) {
                 items(
                     items = state.messages,
@@ -850,33 +1009,6 @@ fun SettingsScreen(
             )
         }
         item {
-            EmbeddingModelPanel(
-                state = state,
-                onRequestModels = onRequestModels,
-                onSelectEmbeddingModel = onSelectEmbeddingModel,
-            )
-        }
-        item {
-            MemoryPanel(
-                entries = state.memoryEntries,
-                onAddMemoryEntry = onAddMemoryEntry,
-                onRemoveMemoryEntry = onRemoveMemoryEntry,
-                onSetMemoryEntryEnabled = onSetMemoryEntryEnabled,
-            )
-        }
-        item {
-            ChatHistorySettingsPanel(
-                activeSessions = state.chatSessions,
-                archivedSessions = state.archivedChatSessions,
-                isActionEnabled = !state.isStreaming,
-                onArchiveChatSession = onArchiveChatSession,
-                onRestoreChatSession = onRestoreChatSession,
-                onPermanentlyDeleteChatSession = onPermanentlyDeleteChatSession,
-                onArchiveAllChatSessions = onArchiveAllChatSessions,
-                onPermanentlyDeleteArchivedChatSessions = onPermanentlyDeleteArchivedChatSessions,
-            )
-        }
-        item {
             SettingsExpandableSection(
                 title = R.string.status_title,
                 subtitle = R.string.status_subtitle,
@@ -934,6 +1066,33 @@ fun SettingsScreen(
                     )
                 }
             }
+        }
+        item {
+            EmbeddingModelPanel(
+                state = state,
+                onRequestModels = onRequestModels,
+                onSelectEmbeddingModel = onSelectEmbeddingModel,
+            )
+        }
+        item {
+            MemoryPanel(
+                entries = state.memoryEntries,
+                onAddMemoryEntry = onAddMemoryEntry,
+                onRemoveMemoryEntry = onRemoveMemoryEntry,
+                onSetMemoryEntryEnabled = onSetMemoryEntryEnabled,
+            )
+        }
+        item {
+            ChatHistorySettingsPanel(
+                activeSessions = state.chatSessions,
+                archivedSessions = state.archivedChatSessions,
+                isActionEnabled = !state.isStreaming,
+                onArchiveChatSession = onArchiveChatSession,
+                onRestoreChatSession = onRestoreChatSession,
+                onPermanentlyDeleteChatSession = onPermanentlyDeleteChatSession,
+                onArchiveAllChatSessions = onArchiveAllChatSessions,
+                onPermanentlyDeleteArchivedChatSessions = onPermanentlyDeleteArchivedChatSessions,
+            )
         }
         item { ErrorText(state.error) }
     }
@@ -1138,11 +1297,7 @@ private fun TrustedRuntimePanel(
             }
             state.trustedRuntime?.let { trusted ->
                 Text(
-                    text = if (trusted.endpointHint != null) {
-                        stringResource(R.string.runtime_route_saved_hint)
-                    } else {
-                        stringResource(R.string.runtime_route_resolving)
-                    },
+                    text = runtimeRouteDisplayLabel(state),
                     color = MaterialTheme.colorScheme.secondary,
                     style = MaterialTheme.typography.bodyMedium,
                 )
@@ -1746,27 +1901,26 @@ private fun ChatMessageRow(
     ) {
         if (isUser) {
             Column(
-                modifier = Modifier.widthIn(max = 560.dp),
+                modifier = Modifier.widthIn(max = 548.dp),
                 horizontalAlignment = Alignment.End,
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
                 Surface(
+                    modifier = Modifier.copyOnLongPress(message.content),
                     shape = RoundedCornerShape(
                         topStart = 18.dp,
                         topEnd = 6.dp,
                         bottomStart = 18.dp,
                         bottomEnd = 18.dp,
                     ),
-                    color = MaterialTheme.colorScheme.primaryContainer,
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
+                    contentColor = MaterialTheme.colorScheme.onSurface,
                 ) {
                     MessageContent(
                         content = message.content,
-                        textColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
+                        textColor = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.padding(horizontal = 15.dp, vertical = 10.dp),
                     )
-                }
-                if (message.content.isNotBlank()) {
-                    MessageCopyButton(textToCopy = message.content)
                 }
             }
         } else {
@@ -1791,12 +1945,13 @@ private fun AssistantMessage(
 ) {
     val hasReasoning = message.reasoning.isNotBlank()
     val isReasoningExpanded = rememberSaveable(message.id) { mutableStateOf(false) }
-    val textToCopy = message.content.ifBlank { message.reasoning }
     val showTyping = isStreaming && message.content.isBlank()
 
     Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = Modifier
+            .widthIn(max = 720.dp)
+            .fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         if (hasReasoning) {
             AssistantReasoning(
@@ -1809,13 +1964,13 @@ private fun AssistantMessage(
             MessageContent(
                 content = message.content.ifBlank { stringResource(R.string.assistant_typing) },
                 textColor = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier
+                    .copyOnLongPress(message.content)
+                    .padding(horizontal = 2.dp),
             )
         }
         if (showTyping) {
             LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-        }
-        if (textToCopy.isNotBlank()) {
-            MessageCopyButton(textToCopy = textToCopy)
         }
         if (showSuggestions) {
             SuggestedQuestions(
@@ -1988,6 +2143,36 @@ private fun MessageCopyButton(textToCopy: String) {
     }
 }
 
+@Composable
+private fun Modifier.copyOnLongPress(textToCopy: String): Modifier {
+    if (textToCopy.isBlank()) return this
+
+    val clipboard = LocalClipboard.current
+    val context = LocalContext.current
+    val hapticFeedback = LocalHapticFeedback.current
+    val scope = rememberCoroutineScope()
+    val copiedMessage = stringResource(R.string.message_copied)
+    val copyAction = {
+        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+        scope.launch {
+            clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("AetherLink", textToCopy)))
+            Toast.makeText(context, copiedMessage, Toast.LENGTH_SHORT).show()
+        }
+        Unit
+    }
+
+    return this
+        .pointerInput(textToCopy, copiedMessage) {
+            detectTapGestures(onLongPress = { copyAction() })
+        }
+        .semantics {
+            onLongClick(label = copiedMessage) {
+                copyAction()
+                true
+            }
+        }
+}
+
 private sealed interface MessageContentPart {
     data class Text(val text: String) : MessageContentPart
     data class Code(val language: String?, val code: String) : MessageContentPart
@@ -2074,69 +2259,37 @@ private fun AssistantReasoning(
         hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
         onExpandedChange(!expanded)
     }
+    val reasoningText = if (expanded) reasoning.trim() else preview
+    val contentAlpha = if (expanded) 0.62f else 0.46f
 
-    if (!expanded) {
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .semantics {
-                    stateDescription = toggleLabel
-                }
-                .clickable(
-                    role = Role.Button,
-                    onClick = toggleExpanded,
-                ),
-            shape = RoundedCornerShape(10.dp),
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.24f),
-            contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-        ) {
-            Row(
-                modifier = Modifier.padding(start = 9.dp, top = 5.dp, end = 7.dp, bottom = 5.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = stringResource(R.string.assistant_reasoning_label),
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.82f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = preview,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.56f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
-                )
-                Text(
-                    text = toggleLabel,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.78f),
-                    maxLines = 1,
-                )
-                Icon(
-                    imageVector = Icons.Filled.KeyboardArrowDown,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.secondary.copy(alpha = 0.78f),
-                    modifier = Modifier.size(18.dp),
-                )
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(IntrinsicSize.Min)
+            .semantics {
+                stateDescription = toggleLabel
             }
-        }
-        return
-    }
-
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(10.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.32f),
-        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            .clickable(
+                role = Role.Button,
+                onClick = toggleExpanded,
+            )
+            .padding(horizontal = 2.dp, vertical = 2.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
+        Box(
+            modifier = Modifier
+                .fillMaxHeight()
+                .width(2.dp)
+                .background(
+                    color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.24f),
+                    shape = RoundedCornerShape(1.dp),
+                ),
+        )
         Column(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier
+                .weight(1f)
+                .padding(vertical = 2.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -2145,17 +2298,23 @@ private fun AssistantReasoning(
             ) {
                 Text(
                     text = stringResource(R.string.assistant_reasoning_label),
-                    style = MaterialTheme.typography.labelMedium,
+                    style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.secondary,
+                    color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.7f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
                 )
-                TextButton(
-                    onClick = toggleExpanded,
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                    modifier = Modifier.semantics {
-                        stateDescription = toggleLabel
-                    },
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    Text(
+                        text = toggleLabel,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.68f),
+                        maxLines = 1,
+                    )
                     Icon(
                         imageVector = if (expanded) {
                             Icons.Filled.KeyboardArrowUp
@@ -2163,19 +2322,17 @@ private fun AssistantReasoning(
                             Icons.Filled.KeyboardArrowDown
                         },
                         contentDescription = null,
-                        modifier = Modifier.size(18.dp),
-                    )
-                    Spacer(modifier = Modifier.width(2.dp))
-                    Text(
-                        text = toggleLabel,
-                        style = MaterialTheme.typography.labelMedium,
+                        tint = MaterialTheme.colorScheme.secondary.copy(alpha = 0.68f),
+                        modifier = Modifier.size(17.dp),
                     )
                 }
             }
             Text(
-                text = reasoning,
+                text = reasoningText,
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = contentAlpha),
+                maxLines = if (expanded) Int.MAX_VALUE else 3,
+                overflow = TextOverflow.Ellipsis,
             )
         }
     }
@@ -2183,11 +2340,12 @@ private fun AssistantReasoning(
 
 private fun reasoningPreview(reasoning: String): String {
     return reasoning
+        .trim()
         .lineSequence()
         .map { it.trim() }
-        .firstOrNull { it.isNotBlank() }
-        ?.replace(Regex("\\s+"), " ")
-        ?: reasoning.trim().replace(Regex("\\s+"), " ")
+        .filter { it.isNotBlank() }
+        .joinToString(separator = "\n")
+        .ifBlank { reasoning.trim().replace(Regex("\\s+"), " ") }
 }
 
 @Composable
@@ -2207,17 +2365,18 @@ private fun ChatComposer(
     modifier: Modifier = Modifier,
 ) {
     val hapticFeedback = LocalHapticFeedback.current
-    val showComposerStatus = !isStreaming && hint.isNotBlank()
     val showComposerWarning = !imageAttachmentsSupported && attachments.any { it.type == "image" }
+    val showComposerStatus = !isStreaming && showComposerWarning && hint.isNotBlank()
     Surface(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
-        tonalElevation = 2.dp,
+        shape = RoundedCornerShape(28.dp),
+        tonalElevation = 1.dp,
+        shadowElevation = 3.dp,
         color = MaterialTheme.colorScheme.surface,
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.padding(horizontal = 9.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             if (isStreaming) {
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
@@ -2228,41 +2387,12 @@ private fun ChatComposer(
                 imageAttachmentsSupported = imageAttachmentsSupported,
                 onRemoveAttachment = onRemoveAttachment,
             )
-            BasicTextField(
-                value = value,
-                onValueChange = onInputChange,
-                enabled = enabled,
-                singleLine = false,
-                minLines = 1,
-                maxLines = 5,
-                textStyle = MaterialTheme.typography.bodyLarge.copy(
-                    color = MaterialTheme.colorScheme.onSurface,
-                ),
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(min = 38.dp, max = 150.dp),
-	                decorationBox = { innerTextField ->
-	                    Box(
-	                        modifier = Modifier
-	                            .fillMaxWidth()
-	                            .padding(horizontal = 2.dp, vertical = 8.dp),
-	                        contentAlignment = Alignment.TopStart,
-	                    ) {
-	                        innerTextField()
-	                    }
-	                },
-	            )
-            if (showComposerStatus) {
-                ComposerStatus(
-                    text = hint,
-                    isReady = canSend,
-                    isWarning = showComposerWarning,
-                )
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
+                    .heightIn(min = 42.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
+                verticalAlignment = Alignment.Bottom,
             ) {
                 FilledTonalIconButton(
                     onClick = {
@@ -2277,7 +2407,34 @@ private fun ChatComposer(
                         contentDescription = stringResource(R.string.content_desc_attach_files),
                     )
                 }
-                Spacer(modifier = Modifier.weight(1f))
+                BasicTextField(
+                    value = value,
+                    onValueChange = onInputChange,
+                    enabled = enabled,
+                    singleLine = false,
+                    minLines = 1,
+                    maxLines = 6,
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(
+                        color = if (enabled) {
+                            MaterialTheme.colorScheme.onSurface
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                    ),
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 40.dp, max = 136.dp),
+                    decorationBox = { innerTextField ->
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 2.dp, vertical = 9.dp),
+                            contentAlignment = Alignment.TopStart,
+                        ) {
+                            innerTextField()
+                        }
+                    },
+                )
                 if (isStreaming) {
                     FilledIconButton(
                         onClick = {
@@ -2311,6 +2468,13 @@ private fun ChatComposer(
                         )
                     }
                 }
+            }
+            if (showComposerStatus) {
+                ComposerStatus(
+                    text = hint,
+                    isReady = canSend,
+                    isWarning = showComposerWarning,
+                )
             }
         }
     }
@@ -3321,43 +3485,32 @@ private fun ErrorText(error: RuntimeUiError?) {
 @Composable
 private fun RouteAvailabilityNotice(error: RuntimeUiError) {
     val diagnostic = runtimeErrorDiagnosticLabel(error)
-    val body = diagnostic ?: runtimeErrorLabel(error)
+    val body = "${stringResource(R.string.route_notice_title)} · ${diagnostic ?: runtimeErrorLabel(error)}"
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.56f),
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
-            horizontalArrangement = Arrangement.spacedBy(9.dp),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(
                 Icons.Filled.Link,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.secondary,
-                modifier = Modifier.size(18.dp),
+                modifier = Modifier.size(16.dp),
             )
-            Column(
+            Text(
+                text = body,
                 modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(1.dp),
-            ) {
-                Text(
-                    text = stringResource(R.string.route_notice_title),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.secondary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = body,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodySmall,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.86f),
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }

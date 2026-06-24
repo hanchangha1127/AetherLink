@@ -9,7 +9,7 @@ This document records what has been implemented so far and what should happen ne
 The concrete remote 1:1 connection architecture is now tracked in [connection-overlay.md](connection-overlay.md).
 
 - AetherLink is local-first.
-- There is no cloud model backend, account server, production rendezvous fabric, or relay in the current v0.1 implementation.
+- There is no cloud model backend, account server, production rendezvous fabric, or production relay in the current implementation.
 - Client apps are controllers. Runtime/server apps mediate model access, file ingestion, future tools, future web search, future project workspaces, and future automations.
 - The client must not call Ollama, LM Studio, or future serving backends directly.
 - Device connectivity must be based on paired device identity and keys, not on a fixed IP address.
@@ -17,8 +17,8 @@ The concrete remote 1:1 connection architecture is now tracked in [connection-ov
 - The intended product connection model is a paired-device private P2P overlay, closer in spirit to decentralized or distributed peer discovery in networks such as Bitcoin than to a fixed server address. This analogy is only about rendezvous, peer identity, and discovery; AetherLink must not expose a public open peer network, and only QR-paired trusted devices should be able to discover, authenticate, and communicate with each other.
 - The connection manager should work across different networks: local direct connection first, remote peer-to-peer NAT traversal with STUN-like address discovery and authenticated hole punching second, and an end-to-end encrypted blind relay/TURN-style fallback only when direct peer-to-peer fails.
 - Optional DHT/bootstrap-peer discovery can provide short-lived rendezvous records for paired devices where practical, but it must not become a public runtime directory, account system, backend URL registry, model-logic backend, or trust authority.
-- Relay/signaling infrastructure must not see AI protocol payloads, model lists, prompts, files, memory, backend credentials, or backend URLs.
-- Current code has local-direct route-candidate plumbing and development endpoint hints only. Remote P2P NAT traversal, DHT/bootstrap rendezvous, signaling, encrypted blind relay transport, and production end-to-end transport encryption are placeholders/future milestones, not implemented capabilities.
+- Relay/signaling infrastructure must not see AI protocol payloads, model lists, prompts, files, memory, backend credentials, or backend URLs in production.
+- Current code has local-direct route-candidate plumbing, development endpoint hints, and a temporary outbound TCP relay path keyed by `relay_id` for different-Wi-Fi development testing. When QR pairing supplies `relay_secret`, the Android client and runtime host encrypt relay frame bodies before the relay forwards them. Remote P2P NAT traversal, DHT/bootstrap rendezvous, production signaling, hardened relay allocation, replay-resistant session setup, and complete production end-to-end transport encryption remain future milestones.
 - Next remote-connection increment: QR pairing should be identity-only by default. The QR should carry runtime identity, runtime public key or certificate fingerprint, and a pairing/route token, while host/port remain optional development reachability hints rather than required product addressing.
 - Current first targets are the Android client and the macOS companion runtime.
 - Future targets include iOS clients and runtime/server targets on Windows and DGX OS-class systems.
@@ -45,6 +45,7 @@ The concrete remote 1:1 connection architecture is now tracked in [connection-ov
 - LM Studio model listing supports local LLM and embedding models through the runtime.
 - Chat requests stream deltas back to the client.
 - Ollama reasoning/think chunks are preserved separately from final assistant answer text.
+- LM Studio native and OpenAI-compatible streaming paths now preserve common reasoning fields such as `reasoning_content`, `reasoning_delta`, `thinking_delta`, `reasoning`, `thinking`, and `thoughts` as separate reasoning events instead of dropping them or merging them into answer text.
 - Cancellation is routed by request id through the backend abstraction.
 - Runtime-side model residency now unloads the previous inactive model when switching providers/models and unloads the active model after 10 minutes without chat activity.
 - Ollama unload is runtime-mediated through `/api/chat` with empty messages and `keep_alive = 0`; LM Studio unload is runtime-mediated through `/api/v1/models/unload` using loaded instance ids.
@@ -62,14 +63,19 @@ The concrete remote 1:1 connection architecture is now tracked in [connection-ov
 - The v0.1 direct endpoint hint remains only one route candidate. Hints from QR pairing, current Bonjour/local discovery, trusted last-known records, USB reverse, emulator, or manual diagnostics are reachability candidates for the current direct TCP transport, not the product address of the runtime host.
 - Android `RuntimeConnectionManager` now has injectable remote route preparation, peer-to-peer connector, and relay connector seams. This lets a future NAT traversal implementation and a future blind relay implementation plug into the same ordered route attempt flow, while the current app still ships only the direct TCP/local-development connector.
 - Android transport connectors now share a `RuntimeProtocolChannel` abstraction for framed protocol send/receive/close. The existing direct TCP transport and peer socket client implement this channel, and future P2P/relay connectors must return the same channel shape instead of leaking a backend URL or a transport-specific API into chat/model code.
+- Android now includes `RuntimeRelayTcpClient`, an outbound relay connector that joins a private relay room by `relay_id`, waits for `AETHERLINK_RELAY ready`, and then sends/receives length-prefixed AetherLink protocol frames. If a `relay_secret` is present, frame bodies are AES-GCM encrypted with direction-bound nonces before they leave the client.
 - Client route resolution now wires current Bonjour/local discovery results and explicitly selected local/dev endpoints into route candidates before stale trusted last-known endpoint hints, while staying same-network/local-direct only. Bonjour/local candidates should carry minimal route hints when available, preferably a pairing-derived `route_token`, so the client can route a pinned trusted runtime only to matching discovered endpoints. Stable `device_id`/fingerprint TXT values are legacy/development fallbacks. Metadata-less Bonjour endpoints are not trusted identity matches and are not used as automatic or selected trusted-runtime routes; explicit USB/emulator/manual diagnostics remain the local development escape hatch. This is not real remote P2P, NAT traversal, signaling, or relay transport yet.
 - Discovery identity hints are routing metadata only. They must not expose backend URLs, Ollama or LM Studio details, model inventory, provider health, prompts, files, memory, or runtime command metadata, and they do not replace QR pairing, pinned identity, challenge-response authentication, or encrypted transport.
 - Android trusted runtime storage now preserves paired runtime identity even when no last-known endpoint hint is available.
 - Android QR parsing accepts identity-only pairing payloads; host/port are validated only when present.
 - Android identity-only QR pairing no longer fails just because the QR lacks a fixed host/port. The client keeps the pending runtime identity, starts local discovery, and sends `pairing.request` after a discovered runtime advertises a matching route token or legacy identity hint.
 - Android pairing UI now surfaces that pending identity-only QR state: after a QR scan without a fixed endpoint, the client shows the scanned runtime name and explains that it is resolving a local route rather than silently showing an empty discovery list.
-- Android trusted runtime writes now persist identity/key/route-token material only. QR host/port hints can still be used as temporary development route candidates during the current pairing attempt, but new trusted-runtime records no longer save those hints as durable product addresses.
+- Android trusted runtime writes now persist identity/key/route-token material as the source of trust. If QR pairing included a valid development/local host/port, the client also stores it as an optional last-known direct route hint for reconnect; it is still treated as a route candidate, not as the product identity or durable address.
 - macOS `PairingSession` can generate identity-first QR payloads without host/port and includes those endpoint hints only when supplied. The companion app now uses that identity-only QR shape by default instead of embedding the current local IPv4 address in normal app-generated pairing codes.
+- macOS `PairingSession` can include temporary relay metadata (`relay_host`, `relay_port`, `relay_id`, and optional `relay_secret`) when a development relay is configured.
+- macOS Transport now includes `RelayPeerClient`, an outbound relay client that registers the runtime side with a private `relay_id` and forwards matched client frames into the existing `LocalRuntimeMessageRouter`. With `relay_secret`, it decrypts client frame bodies and encrypts runtime response bodies without exposing AI protocol JSON to the relay.
+- `RuntimeDevServer` and the SwiftUI companion model can enable the development relay from `AETHERLINK_RELAY_HOST`, `AETHERLINK_RELAY_PORT`, and optional `AETHERLINK_RELAY_ID`.
+- `script/aetherlink_relay.py` implements a minimal development relay that pairs one runtime and one client with the same `relay_id` and pipes bytes after both are ready.
 - The next remote-connection increment should preserve that identity-only QR shape: pairing records the runtime identity, pinned public key/fingerprint, and route token first; local discovery can later resolve a direct LAN endpoint for that identity without requiring the user to scan or enter a fixed host:port.
 - QR-based pairing is implemented for the current runtime/client loop.
 - Trusted runtime records persist on the client after pairing.
@@ -78,7 +84,7 @@ The concrete remote 1:1 connection architecture is now tracked in [connection-ov
 - Runtime commands are gated behind pairing/authentication.
 - Untrusted clients are rejected before runtime commands reach Ollama or LM Studio.
 - Authenticated runtime commands require QR pairing and trusted-device state first, regardless of whether the current route is same-network, USB/emulator forwarding, or a manual local diagnostic endpoint.
-- The development transport remains replaceable by encrypted P2P/pairing transport later; current remote P2P, NAT traversal, signaling, and relay references are target architecture placeholders rather than live transports.
+- The development transport remains replaceable by encrypted P2P/pairing transport later. A temporary outbound TCP relay is now available for different-Wi-Fi testing, with optional pairwise frame-body encryption. Production remote P2P, NAT traversal, DHT/bootstrap signaling, relay allocation, replay protection, and full production transport encryption remain future transport work.
 - Cross-network 1:1 connectivity is not solved by mDNS or fixed private IPs; it needs a connection manager that can resolve route candidates from the same paired identity, then negotiate local direct, remote P2P, and encrypted relay paths.
 - Public peer-discovery ideas can inspire the design, but AetherLink discovery must be privacy-preserving:
   - do not publish stable device ids directly,
@@ -90,7 +96,8 @@ The concrete remote 1:1 connection architecture is now tracked in [connection-ov
   - keep relay/signaling blind to encrypted AI protocol payloads and backend details.
 - Current code now prepares that direction by advertising and matching a QR-provided `route_token` before falling back to legacy device id/fingerprint matching.
 - Trusted-runtime restoration now starts local discovery from the saved runtime identity even when the saved record has no usable host/port endpoint. If a later Bonjour/local candidate advertises a matching route token or legacy identity hint, the route resolver can reconnect without treating the old fixed IP as the product address.
-- Future P2P/relay route preparation should consume the same trusted runtime identity and route token to prepare different-network 1:1 candidates, but actual NAT traversal, DHT/bootstrap rendezvous, signaling, and relay transport are still not implemented.
+- Trusted-runtime restoration can also use a verified QR-provided host/port as a last-known direct route hint when present, while still blocking manual attempts to connect directly to common local model backend ports such as Ollama `11434` and LM Studio `1234`.
+- Relay route preparation now consumes the same trusted runtime identity and route token to prepare a different-Wi-Fi development relay candidate. It also carries `relay_secret` when present, so Android and macOS can use matching AES-GCM relay frame encryption. Actual NAT traversal, DHT/bootstrap rendezvous, production signaling, hardened relay allocation, replay-resistant session setup, and complete production E2E session encryption are still not implemented.
 
 ### Android Client
 
@@ -112,6 +119,8 @@ The concrete remote 1:1 connection architecture is now tracked in [connection-ov
 - The Settings connection status panel now labels connectivity as a runtime route and no longer shows the development default `127.0.0.1:43170` as the apparent product endpoint before pairing; unpaired and identity-only QR states show pair/route-resolution status instead.
 - Android no longer seeds a fixed development endpoint into the default UI state. USB reverse, emulator, and lab network host/port controls are developer diagnostics only: release builds hide them, and debug builds require opening Developer routes before they appear. Normal routing is presented as paired, resolving, local-discovery, saved-hint, or development route state.
 - Android connection errors now surface route diagnostics without implying remote transport is already implemented: local direct can report missing or failed endpoints, while P2P and relay are explicitly labeled as not enabled in this build.
+- Android connection status now includes a route-status notice that distinguishes local discovery, QR/local routes, development routes, and the temporary relay path. Relay routes warn when frame encryption material is missing and otherwise state that production P2P remains roadmap work.
+- The trusted-runtime settings panel now uses the same route-label resolver as connection status, so relay-only trusted runtimes no longer appear as indefinitely resolving.
 - Trusted runtime and discovered runtime rows no longer expose raw host/port as the primary user-facing route label; those details stay in diagnostics/logging paths.
 - Settings now includes an explicit auto-reconnect toggle for the trusted runtime, so users can control restore behavior instead of inferring it only from connection status.
 - Trusted runtime restoration no longer depends only on stale fixed endpoint hints: when local discovery later finds a runtime whose route token or legacy identity matches the saved trusted runtime, the client can automatically reconnect through the route resolver.
@@ -124,6 +133,8 @@ The concrete remote 1:1 connection architecture is now tracked in [connection-ov
 - Android message/code copy now uses the current Compose `LocalClipboard` API instead of deprecated `LocalClipboardManager`, keeping debug builds free of that UI deprecation warning.
 - Chat supports streaming answer deltas, cancellation, and structured error display.
 - Reasoning/think text is shown separately as a muted compact section that can expand.
+- Android reasoning/think rendering now shows a muted inline preview with a subtle rail, collapsed to about three lines by default, with tap-to-expand full reasoning.
+- Reasoning visibility now covers Ollama `message.thinking` and LM Studio/OpenAI-compatible reasoning field variants. If a selected model or mock backend does not stream reasoning fields, the UI correctly has no reasoning section to show.
 - Local previous chat history exists.
 - New chats no longer use the first prompt verbatim as the title. After the first assistant response completes, the client asks the runtime for a concise `chat.title.request` result and applies it only while the user has not manually renamed the chat.
 - Archive and delete are separate chat actions: normal previous-chat rows expose archive/removal from active history, while permanent delete is reserved for archived chats.
@@ -140,16 +151,24 @@ The concrete remote 1:1 connection architecture is now tracked in [connection-ov
 - Suggested next questions now require structured JSON from the runtime model call; invalid prose/list output becomes an empty suggestion list instead of arbitrary text chips.
 - Latest Android UI polish pass applied:
   - Settings now opens with preferences, embedding model, and memory first, while connection/status and advanced endpoint controls are collapsed into secondary sections.
-  - The chat composer no longer shows redundant helper text while it is already ready for input; it keeps the placeholder as the primary cue and reserves status text for blocked/error states.
+  - The chat composer no longer shows redundant helper or placeholder text while it is already ready for input; status text is reserved for blocked/error states.
   - The top model selector says "Choose model" when no model is selected, uses refresh wording, gives the selected model more room, and now renders as a compact pill-style control next to the drawer button.
+  - The top model selector now shows a compact selected/search icon so selected vs unselected model state is easier to scan without adding extra text.
+  - The left drawer now includes a compact runtime/model summary below the AetherLink title, giving users current trust/connection and selected-model context before they browse chat history.
+  - Settings now presents runtime/pairing status before embedding, memory, and chat-history management, keeping the runtime-mediated product boundary visible while leaving previous chats primarily in the drawer.
   - Suggested next questions render as full-width follow-up actions instead of truncated horizontal chips.
   - Empty chat copy is more user-facing and less runtime-status-first.
   - The fully ready empty chat state is now intentionally quiet: it leaves the center blank and makes the bottom composer the primary action surface until a real assistant answer can produce suggested next questions.
   - The chat composer no longer renders a generic placeholder such as "Ask anything"; the empty input stays visually quiet unless a real connection/model/file warning is needed.
+  - The chat composer was tightened into a compact single-row control. Generic connection/model helper text is no longer rendered inside the composer; only actionable file/model warnings can appear there.
+  - The chat timeline now uses quieter neutral user bubbles, a constrained assistant reading width, tighter transcript padding, and a more docked composer surface so the default chat view feels closer to a modern/classic assistant app.
   - Assistant messages no longer show repeated assistant avatars or role labels in the timeline, making the chat surface quieter and closer to a modern assistant transcript.
+  - Normal chat messages no longer show always-visible copy icons; long-press copies message text while code blocks keep an explicit copy affordance.
+  - Chat-bottom route availability notices now render as a compact status chip instead of a taller two-line card, so connection-route guidance does not dominate the composer area.
   - Haptic feedback now covers more high-frequency controls, including drawer opening, chat history selection, chat history menus, model menu opening, Settings navigation, and expandable Settings sections.
   - User-facing Android copy now prefers "runtime host" over "paired computer" across supported languages, keeping the UI less tied to one operating-system pairing.
   - Chat-facing install/backend/file-type messages avoid "runtime host" implementation wording where possible.
+  - Android visible model-service copy now avoids user-facing "backend" wording where practical, while preserving internal keys and structured error codes for compatibility.
 - Latest discovery UI pass applied:
   - Discovered runtimes now show whether their advertised identity matches the trusted runtime, is missing, is unknown, or belongs to a different trusted runtime.
   - Known mismatched discovered runtimes cannot be selected when a trusted runtime is already saved.
@@ -157,10 +176,14 @@ The concrete remote 1:1 connection architecture is now tracked in [connection-ov
   - Matching discovered trusted runtimes can trigger restore connection attempts, while metadata-less discoveries remain manual/dev candidates only.
 - macOS companion copy now describes Bonjour/local transport status as a pairing service and keeps Local Network permission language scoped to completing local pairing, rather than implying local-network discovery is the final product connectivity model.
 - macOS companion UI, menu bar actions, page headers, panels, pairing instructions, trusted-device controls, and empty-state messages are routed through localization resources for English, Korean, Japanese, Simplified Chinese, and French. Remaining source-visible system image names and log parsing tokens are implementation identifiers rather than user-facing strings.
+- Latest macOS companion UI polish adds an explicit Connection Routes status card that distinguishes local routes from the temporary development relay, indicates whether relay frame-body encryption is configured, and states that production different-network P2P remains roadmap work. Runtime Logs and Trusted Devices copy now use AetherLink runtime/trust-management wording instead of visible "Companion" phrasing.
+- Latest macOS localization polish maps remaining companion/local-runtime visible values to AetherLink Runtime or runtime-host wording across English, Korean, Japanese, Simplified Chinese, and French, while retaining legacy raw log keys only for compatibility mapping.
+- Latest macOS copy polish maps visible backend/local-runtime/Companion phrasing to model provider, model service, AetherLink Runtime, or runtime-host wording across English, Korean, Japanese, Simplified Chinese, and French.
+- Latest localization fit polish shortens pairing, route, history, status, provider, and error copy across Android and macOS locales while preserving the Android client -> AetherLink Runtime -> model provider boundary.
 - Android pairing and transport internals now use runtime-centered names for pairing payloads, trusted runtime records, discovered runtime records, transport clients, and UI state. Legacy `mac_*` QR/query and DataStore keys remain only as compatibility aliases for existing v0.1 pairings and wire payloads.
 - macOS backend, pairing, and development-server status/error messages now prefer runtime-host/client wording. New pairing defaults use `AetherLink Runtime` as the display name while legacy `mac_*` protocol fields remain accepted for compatibility.
 - Android chat/model-facing copy now avoids implementation-heavy phrases such as "install on runtime host" in favor of direct action labels like "Install model" and "Open the model app, then refresh health." Runtime-host wording remains in Settings, advanced endpoint controls, and security-oriented explanations where the trust boundary matters.
-- Latest physical-device check installed the debug APK on a connected Samsung device, verified USB-reverse runtime reconnect, authenticated `runtime.health` and `models.list`, and captured the connected dark-mode chat shell after the composer/top-model-selector polish.
+- Latest physical-device check installed the debug APK on a connected Samsung device and captured the dark-mode chat shell after the connection-route notice and compact composer polish. Earlier physical-device checks also verified USB-reverse runtime reconnect plus authenticated `runtime.health` and `models.list`.
 
 ### Branding And Assets
 
@@ -189,8 +212,8 @@ The concrete remote 1:1 connection architecture is now tracked in [connection-ov
 
 - The local transport is still development-grade and must be replaced or hardened with encrypted authenticated transport.
 - Current development connections can look like same-network or fixed endpoint connections. This must be treated as temporary scaffolding, not the final product.
-- Different-network 1:1 connectivity is not implemented yet. The next transport milestone must remove fixed-IP assumptions from the normal user path and replace the current placeholders with real local-direct, remote P2P NAT traversal, and encrypted relay transports.
-- DHT/bootstrap-peer discovery, STUN-like address discovery, authenticated hole punching, and TURN-style relay allocation are design targets only; none are implemented in the current transport.
+- Different-network 1:1 connectivity now has a temporary development relay path, but production-grade connectivity is not complete. The next transport milestone must replace or harden the temporary relay with real local-direct, remote P2P NAT traversal, DHT/bootstrap discovery, and encrypted relay transports.
+- DHT/bootstrap-peer discovery, STUN-like address discovery, authenticated hole punching, production TURN-style relay allocation, replay protection, and production end-to-end transport encryption are design targets only; none are implemented in the current transport.
 - QR pairing exists, but production trust UX still needs certificate/public-key pinning polish and trusted-device management hardening.
 - There is no cloud backend by design.
 - A future relay/signaling service, if added for NAT traversal, must not become a cloud AI backend, account server, prompt store, model proxy, backend URL directory, or traffic observer for AI protocol payloads.
@@ -199,9 +222,9 @@ The concrete remote 1:1 connection architecture is now tracked in [connection-ov
   - QR pairing and Bonjour discovery currently provide reachability endpoint hints.
   - Android route resolution prefers current Bonjour/local discovery candidates with matching route-token or legacy runtime identity hints before stale trusted last-known endpoint hints.
   - Bonjour/local endpoints without identity metadata are visible for diagnostics but are not used as trusted-runtime route candidates; explicit USB/emulator/manual diagnostic paths remain available for development.
-  - Android `RuntimeConnectionManager` still delegates shipping connections to the existing TCP `connect(host, port)` implementation unless future P2P/relay connectors are injected. The connector boundary now returns a common framed `RuntimeProtocolChannel` so future remote connectors can feed the same protocol stream.
-  - macOS pairing QR can omit `host`/`port`, but current companion/dev-server flows still supply local endpoint hints for the v0.1 direct TCP path.
-  These are now isolated behind identity, connection target, endpoint hint, and route-candidate concepts, but the implemented/next Android path is still same-network/local-direct only. Production remote P2P, real NAT traversal, relay fallback, and macOS-side connection-manager integration are not implemented yet.
+  - Android `RuntimeConnectionManager` now delegates local direct routes to the existing TCP `connect(host, port)` implementation and prepared relay routes to the outbound relay connector. The connector boundary returns a common framed `RuntimeProtocolChannel` so future remote connectors can feed the same protocol stream.
+  - macOS pairing QR can omit `host`/`port`, and can include development relay metadata when configured.
+  These are now isolated behind identity, connection target, endpoint hint, and route-candidate concepts. The implemented remote path is still a development relay, not production P2P or encrypted relay. Production remote P2P, real NAT traversal, hardened relay fallback, and a full macOS-side connection-manager integration are not implemented yet.
 - There is no MCP implementation.
 - There is no skills runtime implementation.
 - There is no web search implementation.
@@ -216,14 +239,14 @@ The concrete remote 1:1 connection architecture is now tracked in [connection-ov
 
 ## Immediate Next Work
 
-1. Replace the fixed-endpoint development assumption with a product connection plan:
-   - define a `ConnectionManager` abstraction on client and runtime,
+1. Replace the temporary relay/fixed-endpoint development assumption with a production connection plan:
+   - define a full `ConnectionManager` abstraction on client and runtime,
    - store paired runtime identity rather than a raw host/IP as the primary connection target,
    - make identity-only QR the normal pairing payload: runtime identity, public key/fingerprint, and route token are required; fixed host:port is only an optional local/dev hint,
    - try same-network discovery/direct connection as the fast path,
    - let local discovery resolve a direct LAN endpoint from the trusted runtime identity and route token instead of from a fixed scanned address,
-   - add a private P2P peer-discovery and NAT traversal design for different networks,
-   - prepare P2P/relay route candidates for different-network 1:1 connections without claiming NAT traversal, DHT/bootstrap, signaling, or relay is implemented,
+   - add a private P2P peer-discovery and NAT traversal implementation for different networks,
+   - replace the development relay with key-bound encrypted relay allocation and forwarding,
    - use Bitcoin-like peer-network inspiration only for decentralized discovery concepts, not for public visibility or untrusted command routing,
    - add an end-to-end encrypted blind relay/TURN fallback design for networks where P2P fails,
    - keep every path behind the same pairing/authentication and backend mediation boundary.
@@ -239,7 +262,13 @@ The concrete remote 1:1 connection architecture is now tracked in [connection-ov
    - verify AI-generated suggested next questions,
    - test image/document attachments,
    - check Korean/Japanese/Chinese/English/French UI strings.
-3. Capture Android UI screenshots after the QA pass and continue polishing spacing, typography, button affordances, drawer layout, and small-screen behavior.
+3. Capture Android UI screenshots after the QA pass and continue polishing a modern/classic interface:
+   - quieter transcript spacing and typography,
+   - less visually noisy message actions,
+   - more refined drawer and Settings surfaces,
+   - model selector that feels integrated into chat,
+   - small-screen behavior and touch targets,
+   - consistent light/dark treatment.
 4. Continue the `ConnectionManager` work:
    - expand the route resolver from v0.1 direct endpoint candidates to real remote P2P NAT traversal candidates and encrypted relay fallback candidates,
    - keep explicit source-aware endpoint hints for USB reverse, emulator, Bonjour, and manual diagnostics,

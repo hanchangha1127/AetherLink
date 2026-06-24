@@ -17,7 +17,15 @@ class ProtocolCodec(
     },
 ) {
     fun encode(envelope: ProtocolEnvelope): ByteArray {
-        val body = json.encodeToString(envelope).encodeToByteArray()
+        return encodeFrameBody(encodeBody(envelope))
+    }
+
+    fun encodeBody(envelope: ProtocolEnvelope): ByteArray {
+        return json.encodeToString(envelope).encodeToByteArray()
+    }
+
+    fun encodeFrameBody(body: ByteArray): ByteArray {
+        require(body.size in 1..MAX_FRAME_BYTES) { "Invalid frame body length: ${body.size}" }
         val prefix = ByteBuffer.allocate(4).putInt(body.size).array()
         return prefix + body
     }
@@ -26,11 +34,15 @@ class ProtocolCodec(
         return json.decodeFromString(ProtocolEnvelope.serializer(), bytes.decodeToString())
     }
 
-    fun readFrame(input: InputStream): ProtocolEnvelope {
+    fun readFrameBody(input: InputStream): ByteArray {
         val lengthBytes = input.readExactly(4)
         val length = ByteBuffer.wrap(lengthBytes).int
         require(length in 1..MAX_FRAME_BYTES) { "Invalid frame length: $length" }
-        return decode(input.readExactly(length))
+        return input.readExactly(length)
+    }
+
+    fun readFrame(input: InputStream): ProtocolEnvelope {
+        return decode(readFrameBody(input))
     }
 
     fun <T> envelope(
@@ -67,4 +79,3 @@ private fun InputStream.readExactly(size: Int): ByteArray {
 private fun kotlinx.serialization.json.JsonElement.jsonObject(): kotlinx.serialization.json.JsonObject {
     return this as kotlinx.serialization.json.JsonObject
 }
-

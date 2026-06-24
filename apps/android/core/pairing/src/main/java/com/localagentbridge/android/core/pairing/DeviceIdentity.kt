@@ -45,4 +45,8 @@ data class TrustedRuntime(
     val routeToken: String? = null,
     val host: String? = null,
     val port: Int? = null,
+    val relayHost: String? = null,
+    val relayPort: Int? = null,
+    val relayId: String? = null,
+    val relaySecret: String? = null,
 )

@@ -89,6 +89,21 @@ class RuntimePairingPayloadParserTest {
     }
 
     @Test
+    fun parsesRelaySecretFromQrPayload() {
+        val payload = RuntimePairingPayloadParser.parse(
+            "aetherlink://pair?version=1&pairing_nonce=nonce-1&pairing_code=123456" +
+                "&runtime_device_id=runtime-1&runtime_name=AetherLink+Runtime" +
+                "&runtime_key_fingerprint=fp-1&relay_host=relay.example.test" +
+                "&relay_port=443&relay_id=relay-1&relay_secret=secret-1"
+        )
+
+        assertEquals("relay.example.test", payload.relayHost)
+        assertEquals(443, payload.relayPort)
+        assertEquals("relay-1", payload.relayId)
+        assertEquals("secret-1", payload.relaySecret)
+    }
+
+    @Test
     fun rejectsInvalidEndpointHintWhenProvided() {
         try {
             RuntimePairingPayloadParser.parse(

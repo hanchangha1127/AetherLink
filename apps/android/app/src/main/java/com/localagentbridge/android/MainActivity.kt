@@ -12,6 +12,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -73,6 +74,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
@@ -179,6 +181,7 @@ private fun LocalAgentBridgeApp() {
                                 style = MaterialTheme.typography.titleLarge,
                                 modifier = Modifier.padding(horizontal = 28.dp, vertical = 12.dp),
                             )
+                            DrawerRuntimeSummary(state = state)
                             Button(
                                 onClick = {
                                     hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -514,15 +517,22 @@ private fun ChatModelTopBarMenu(
                 vertical = 6.dp,
             ),
             modifier = Modifier
-                .widthIn(max = 236.dp)
+                .widthIn(max = 220.dp)
                 .semantics {
                     stateDescription = modelPickerStateDescription
                 },
         ) {
+            Icon(
+                imageVector = if (selectedModel != null) Icons.Filled.CheckCircle else Icons.Filled.Search,
+                contentDescription = null,
+                modifier = Modifier.size(16.dp),
+            )
+            Spacer(Modifier.size(6.dp))
             Text(
                 text = selectedLabel,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.labelLarge,
             )
             Icon(
                 imageVector = Icons.Filled.KeyboardArrowDown,
@@ -737,6 +747,82 @@ private fun RuntimeModel.matchesModelQuery(query: String): Boolean {
         source,
         description,
     ).any { value -> value.contains(query, ignoreCase = true) }
+}
+
+@Composable
+private fun DrawerRuntimeSummary(state: RuntimeUiState) {
+    val chatModels = state.models.filter { it.isChatModel() }
+    val selectedModel = chatModels.firstOrNull { it.id == state.selectedModelId }
+    val runtimeName = state.trustedRuntime?.name ?: stringResource(R.string.no_trusted_runtime)
+    val modelName = selectedModel?.name
+        ?: state.selectedModelId
+        ?: stringResource(R.string.model_none)
+    val connectionLabel = when {
+        state.isConnected -> stringResource(R.string.status_connected)
+        state.isConnecting -> stringResource(R.string.status_connecting)
+        state.trustedRuntime != null -> stringResource(R.string.status_disconnected)
+        else -> stringResource(R.string.status_pairing_required)
+    }
+    val connectionTone = when {
+        state.isConnected -> MaterialTheme.colorScheme.primary
+        state.isConnecting -> MaterialTheme.colorScheme.secondary
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 2.dp),
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.52f),
+        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp),
+            verticalArrangement = Arrangement.spacedBy(7.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = stringResource(R.string.runtime),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.secondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = connectionLabel,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = connectionTone,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Text(
+                text = runtimeName,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.22f))
+            Text(
+                text = stringResource(R.string.selected_model),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.secondary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = modelName,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
 }
 
 @Composable

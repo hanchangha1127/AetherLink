@@ -9,7 +9,7 @@ struct LogsView: View {
         VStack(alignment: .leading, spacing: 18) {
             CompanionPageHeader(
                 title: NSLocalizedString("Runtime Logs", comment: ""),
-                subtitle: NSLocalizedString("Recent companion activity from this runtime host session.", comment: ""),
+                subtitle: NSLocalizedString("Recent AetherLink runtime activity from this session.", comment: ""),
                 systemImage: "list.bullet.rectangle.fill"
             )
 
@@ -18,7 +18,7 @@ struct LogsView: View {
                     ContentUnavailableView(
                         NSLocalizedString("No runtime logs", comment: ""),
                         systemImage: "list.bullet.rectangle",
-                        description: Text(NSLocalizedString("Events will appear here after the companion starts receiving activity.", comment: ""))
+                        description: Text(NSLocalizedString("Events will appear here after the runtime starts receiving activity.", comment: ""))
                     )
                     .frame(maxWidth: .infinity, minHeight: 300)
                 } else {
@@ -71,9 +71,9 @@ private func logTone(_ line: String) -> StatusTone {
 private func localizedLogLine(_ line: String) -> String {
     switch line {
     case "Companion started":
-        return NSLocalizedString("Companion started", comment: "")
+        return NSLocalizedString("AetherLink runtime started", comment: "")
     case "Companion stopped":
-        return NSLocalizedString("Companion stopped", comment: "")
+        return NSLocalizedString("AetherLink runtime stopped", comment: "")
     case "Ollama health check passed":
         return NSLocalizedString("Ollama health check passed", comment: "")
     case "Pairing code generated":

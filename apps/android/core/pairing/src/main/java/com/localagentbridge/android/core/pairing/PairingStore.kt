@@ -20,7 +20,11 @@ class PairingStore(private val context: Context) {
         val routeToken = prefs[Keys.runtimeRouteToken] ?: prefs[LegacyKeys.runtimeRouteToken]
         val host = prefs[Keys.runtimeHost] ?: prefs[LegacyKeys.runtimeHost]
         val port = prefs[Keys.runtimePort] ?: prefs[LegacyKeys.runtimePort]
-        TrustedRuntime(id, name, fingerprint, publicKeyBase64, routeToken, host, port)
+        val relayHost = prefs[Keys.runtimeRelayHost]
+        val relayPort = prefs[Keys.runtimeRelayPort]
+        val relayId = prefs[Keys.runtimeRelayId]
+        val relaySecret = prefs[Keys.runtimeRelaySecret]
+        TrustedRuntime(id, name, fingerprint, publicKeyBase64, routeToken, host, port, relayHost, relayPort, relayId, relaySecret)
     }
 
     suspend fun trustRuntime(runtime: TrustedRuntime) {
@@ -40,8 +44,33 @@ class PairingStore(private val context: Context) {
             } else {
                 prefs.remove(Keys.runtimeRouteToken)
             }
-            prefs.remove(Keys.runtimeHost)
-            prefs.remove(Keys.runtimePort)
+            val endpoint = runtime.validDirectEndpointOrNull()
+            if (endpoint != null) {
+                prefs[Keys.runtimeHost] = endpoint.host
+                prefs[Keys.runtimePort] = endpoint.port
+            } else {
+                prefs.remove(Keys.runtimeHost)
+                prefs.remove(Keys.runtimePort)
+            }
+            val relayHost = runtime.relayHost
+            val relayPort = runtime.relayPort
+            val relayId = runtime.relayId
+            val relaySecret = runtime.relaySecret
+            if (!relayHost.isNullOrBlank() && relayPort != null && relayPort in 1..65535 && !relayId.isNullOrBlank()) {
+                prefs[Keys.runtimeRelayHost] = relayHost
+                prefs[Keys.runtimeRelayPort] = relayPort
+                prefs[Keys.runtimeRelayId] = relayId
+                if (!relaySecret.isNullOrBlank()) {
+                    prefs[Keys.runtimeRelaySecret] = relaySecret
+                } else {
+                    prefs.remove(Keys.runtimeRelaySecret)
+                }
+            } else {
+                prefs.remove(Keys.runtimeRelayHost)
+                prefs.remove(Keys.runtimeRelayPort)
+                prefs.remove(Keys.runtimeRelayId)
+                prefs.remove(Keys.runtimeRelaySecret)
+            }
             prefs.removeLegacyRuntimeKeys()
         }
     }
@@ -61,6 +90,10 @@ class PairingStore(private val context: Context) {
         val runtimeRouteToken = stringPreferencesKey("runtime_route_token")
         val runtimeHost = stringPreferencesKey("runtime_host")
         val runtimePort = intPreferencesKey("runtime_port")
+        val runtimeRelayHost = stringPreferencesKey("runtime_relay_host")
+        val runtimeRelayPort = intPreferencesKey("runtime_relay_port")
+        val runtimeRelayId = stringPreferencesKey("runtime_relay_id")
+        val runtimeRelaySecret = stringPreferencesKey("runtime_relay_secret")
     }
 
     private object LegacyKeys {
@@ -81,6 +114,10 @@ class PairingStore(private val context: Context) {
         remove(Keys.runtimeRouteToken)
         remove(Keys.runtimeHost)
         remove(Keys.runtimePort)
+        remove(Keys.runtimeRelayHost)
+        remove(Keys.runtimeRelayPort)
+        remove(Keys.runtimeRelayId)
+        remove(Keys.runtimeRelaySecret)
     }
 
     private fun MutablePreferences.removeLegacyRuntimeKeys() {
@@ -92,4 +129,15 @@ class PairingStore(private val context: Context) {
         remove(LegacyKeys.runtimeHost)
         remove(LegacyKeys.runtimePort)
     }
+}
+
+internal data class TrustedRuntimeDirectEndpoint(
+    val host: String,
+    val port: Int,
+)
+
+internal fun TrustedRuntime.validDirectEndpointOrNull(): TrustedRuntimeDirectEndpoint? {
+    val endpointHost = host?.takeIf { it.isNotBlank() } ?: return null
+    val endpointPort = port?.takeIf { it in 1..65535 } ?: return null
+    return TrustedRuntimeDirectEndpoint(endpointHost, endpointPort)
 }
