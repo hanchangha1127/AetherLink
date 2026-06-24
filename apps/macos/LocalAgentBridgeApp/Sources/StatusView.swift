@@ -11,8 +11,8 @@ struct StatusView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 CompanionPageHeader(
-                    title: "AetherLink Runtime",
-                    subtitle: "Bridge trusted client devices through this local runtime to local models.",
+                    title: NSLocalizedString("AetherLink Runtime", comment: ""),
+                    subtitle: NSLocalizedString("Bridge trusted client devices through this local runtime to local models.", comment: ""),
                     systemImage: "bolt.horizontal.circle.fill"
                 )
 
@@ -20,28 +20,28 @@ struct StatusView: View {
 
                 LazyVGrid(columns: columns, alignment: .leading, spacing: 12) {
                     StatusCard(
-                        title: "Runtime",
+                        title: NSLocalizedString("Runtime", comment: ""),
                         value: localizedTransportStatus(model.transportState),
                         detail: runtimeDetail,
                         systemImage: "antenna.radiowaves.left.and.right",
                         tone: transportTone(for: model.transportState)
                     )
                     StatusCard(
-                        title: "Local Backends",
+                        title: NSLocalizedString("Local Backends", comment: ""),
                         value: backendSummary.value,
                         detail: backendSummary.detail,
                         systemImage: "cpu",
                         tone: backendSummary.tone
                     )
                     StatusCard(
-                        title: "Trusted Devices",
+                        title: NSLocalizedString("Trusted Devices", comment: ""),
                         value: trustedDeviceCount,
                         detail: trustedDeviceDetail,
                         systemImage: "lock.shield",
                         tone: model.trustedDevices.isEmpty ? .inactive : .ready
                     )
                     StatusCard(
-                        title: "Model Residency",
+                        title: NSLocalizedString("Model Residency", comment: ""),
                         value: modelResidencyValue,
                         detail: modelResidencyDetail,
                         systemImage: "memorychip",
@@ -49,7 +49,7 @@ struct StatusView: View {
                     )
                 }
 
-                CompanionPanel(title: "Readiness", systemImage: "checklist") {
+                CompanionPanel(title: NSLocalizedString("Readiness", comment: ""), systemImage: "checklist") {
                     VStack(spacing: 0) {
                         ForEach(readinessItems) { item in
                             ReadinessRow(item: item)
@@ -60,26 +60,26 @@ struct StatusView: View {
                     }
                 }
 
-                CompanionPanel(title: "Quick Actions", systemImage: "bolt.horizontal") {
+                CompanionPanel(title: NSLocalizedString("Quick Actions", comment: ""), systemImage: "bolt.horizontal") {
                     HStack(spacing: 10) {
                         Button {
                             Task { await model.refreshBackendStatus() }
                         } label: {
-                            Label("Refresh Backend Status", systemImage: "arrow.clockwise")
+                            Label(NSLocalizedString("Refresh Backend Status", comment: ""), systemImage: "arrow.clockwise")
                         }
                         .buttonStyle(.borderedProminent)
 
                         Button {
                             Task { await model.loadModels() }
                         } label: {
-                            Label("Load Local Models", systemImage: "shippingbox")
+                            Label(NSLocalizedString("Load Local Models", comment: ""), systemImage: "shippingbox")
                         }
                         .buttonStyle(.bordered)
                     }
                     .controlSize(.regular)
                 }
 
-                CompanionPanel(title: "Local Backends", systemImage: "server.rack") {
+                CompanionPanel(title: NSLocalizedString("Local Backends", comment: ""), systemImage: "server.rack") {
                     VStack(spacing: 0) {
                         ForEach(providerStatuses) { provider in
                             ProviderStatusRow(status: provider)
@@ -90,12 +90,12 @@ struct StatusView: View {
                     }
                 }
 
-                CompanionPanel(title: "Local Models", systemImage: "shippingbox") {
+                CompanionPanel(title: NSLocalizedString("Local Models", comment: ""), systemImage: "shippingbox") {
                     if model.models.isEmpty {
                         ContentUnavailableView(
-                            "No local models loaded",
+                            NSLocalizedString("No local models loaded", comment: ""),
                             systemImage: "shippingbox",
-                            description: Text("Load models to confirm what client devices can request through this local runtime.")
+                            description: Text(NSLocalizedString("Load models to confirm what client devices can request through this local runtime.", comment: ""))
                         )
                         .frame(maxWidth: .infinity, minHeight: 180)
                     } else {
@@ -375,7 +375,7 @@ private struct RuntimeOverview {
 }
 
 private struct StatusCard: View {
-    let title: LocalizedStringKey
+    let title: String
     let value: String
     let detail: String
     let systemImage: String

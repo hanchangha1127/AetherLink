@@ -3,7 +3,7 @@
     <string name="tab_pairing">Jumeler</string>
     <string name="tab_status">Statut</string>
     <string name="tab_models">Modèles</string>
-    <string name="tab_chat">Chat</string>
+    <string name="tab_chat">Discussion</string>
     <string name="tab_settings">Réglages</string>
     <string name="content_desc_open_navigation">Ouvrir le menu de navigation</string>
     <string name="expand_section">Développer la section</string>
@@ -23,10 +23,22 @@
     <string name="archived_chat">Chat archivé</string>
     <string name="archived_chats">Chats archivés</string>
     <string name="restore_chat">Restaurer le chat</string>
+    <string name="chat_history_settings_title">Historique des chats</string>
+    <string name="chat_history_settings_subtitle">Archivez les chats actifs ou gérez les chats archivés. La suppression définitive est disponible uniquement pour les chats archivés.</string>
     <string name="archive_all_chats">Archiver tous les chats</string>
     <string name="archive_all_chats_confirm">Archiver tous les chats locaux de cet appareil ? Les chats archivés restent enregistrés localement, mais sont masqués des chats précédents et des entrées de mémoire.</string>
+    <string name="archive_all_chats_confirm_first">Archiver tous les chats actifs de cet appareil ? Les chats archivés restent enregistrés localement, mais sont masqués des chats précédents et des entrées de mémoire.</string>
+    <string name="archive_all_chats_confirm_second">Confirmez à nouveau pour archiver tous les chats actifs. Vous pourrez restaurer les chats archivés plus tard dans Réglages.</string>
     <string name="delete_all_chats">Supprimer tous les chats</string>
     <string name="delete_all_chats_confirm">Supprimer définitivement tous les chats locaux de cet appareil ?</string>
+    <string name="permanently_delete">Supprimer définitivement</string>
+    <string name="permanently_delete_chat">Supprimer définitivement le chat</string>
+    <string name="permanently_delete_chat_confirm_first">Supprimer définitivement « %1$s » de cet appareil ? Cette action est disponible uniquement parce que le chat est archivé.</string>
+    <string name="permanently_delete_chat_confirm_second">Confirmez la suppression définitive de « %1$s ». Cette action est irréversible.</string>
+    <string name="permanently_delete_archived_chats">Supprimer définitivement les chats archivés</string>
+    <string name="delete_archived_chats_confirm_first">Supprimer définitivement tous les chats archivés de cet appareil ? Les chats précédents actifs ne seront pas supprimés.</string>
+    <string name="delete_archived_chats_confirm_second">Confirmez la suppression définitive de tous les chats archivés. Cette action est irréversible.</string>
+    <string name="continue_action">Continuer</string>
     <string name="chat_title_label">Titre du chat</string>
     <string name="save">Enregistrer</string>
     <string name="delete">Supprimer</string>
@@ -60,7 +72,7 @@
     <string name="stop">Arrêter</string>
     <string name="use">Utiliser</string>
     <string name="forget">Oublier</string>
-    <string name="usb_reverse">USB reverse</string>
+    <string name="usb_reverse">Redirection USB</string>
     <string name="emulator">Pont d’émulateur</string>
     <string name="runtime_host">Hôte de développement</string>
     <string name="runtime_port">Port de développement</string>
@@ -92,9 +104,9 @@
     <string name="status_connect_ready_title">Runtime de confiance enregistré</string>
     <string name="status_connect_ready_detail">Touchez Connecter pour restaurer %1$s.</string>
     <string name="runtime">Runtime</string>
-    <string name="backend">Backend</string>
+    <string name="backend">Moteur</string>
     <string name="endpoint">Point de terminaison</string>
-    <string name="runtime_route">Route</string>
+    <string name="runtime_route">Route du runtime</string>
     <string name="runtime_route_resolving">Résolution de la route de confiance</string>
     <string name="runtime_route_pair_first">Jumelez d’abord un runtime</string>
     <string name="runtime_route_saved_hint">Indice de route enregistré</string>
@@ -159,9 +171,9 @@
     <string name="no_model_search_results_title">Aucun modèle correspondant</string>
     <string name="no_model_search_results">Essayez un autre nom de modèle, backend, fournisseur ou source.</string>
 
-    <string name="chat_title">Chat</string>
+    <string name="chat_title">Discussion</string>
     <string name="chat_subtitle">Les messages sont diffusés via AetherLink Runtime.</string>
-    <string name="chat_via_companion">Via AetherLink Runtime</string>
+    <string name="chat_via_companion">Via le runtime AetherLink</string>
     <string name="chat_select_model_from_runtime">Sélectionnez un modèle exposé par AetherLink Runtime.</string>
     <string name="chat_composer_placeholder">Demandez ce que vous voulez</string>
     <string name="model_value">Modèle : %1$s</string>

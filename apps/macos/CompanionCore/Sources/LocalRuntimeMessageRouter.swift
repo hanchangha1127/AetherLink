@@ -66,6 +66,9 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         case MessageType.chatSuggestionsRequest:
             guard allowRuntimeCommand(envelope, sink: sink) else { return }
             await handleChatSuggestionsRequest(envelope, sink: sink)
+        case MessageType.chatTitleRequest:
+            guard allowRuntimeCommand(envelope, sink: sink) else { return }
+            await handleChatTitleRequest(envelope, sink: sink)
         default:
             sink.send(errorEnvelope(
                 requestID: envelope.requestID,
@@ -169,6 +172,35 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                 requestID: envelope.requestID,
                 payload: [
                     "suggestions": .array(suggestions.map { .string($0) })
+                ]
+            ))
+        } catch {
+            sink.send(errorEnvelope(requestID: envelope.requestID, error: error))
+        }
+    }
+
+    private func handleChatTitleRequest(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) async {
+        do {
+            let parsedRequest = try chatTitleRequest(from: envelope)
+            _ = try await resolvedInstalledModel(parsedRequest.request.model)
+
+            var generatedText = ""
+            for try await event in backend.chat(request: parsedRequest.request) {
+                switch event {
+                case .delta(let text):
+                    generatedText += text
+                case .reasoningDelta:
+                    continue
+                case .done:
+                    break
+                }
+            }
+
+            sink.send(ProtocolEnvelope(
+                type: MessageType.chatTitleResult,
+                requestID: envelope.requestID,
+                payload: [
+                    "title": .string(Self.title(from: generatedText))
                 ]
             ))
         } catch {
@@ -543,6 +575,26 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         )
     }
 
+    private func chatTitleRequest(from envelope: ProtocolEnvelope) throws -> ChatTitleRuntimeRequest {
+        let baseRequest = try chatRequest(from: envelope)
+        let locale = optionalString("locale", in: envelope.payload)
+        let recentMessages = Array(baseRequest.messages.suffix(8))
+        guard recentMessages.contains(where: { $0.role == "user" }) else {
+            throw LocalRuntimeRouterError.invalidPayload("messages must include at least one user message")
+        }
+
+        let titleRequest = ChatRequest(
+            generationID: envelope.requestID,
+            sessionID: baseRequest.sessionID,
+            model: baseRequest.model,
+            messages: Self.titlePromptMessages(
+                recentMessages: recentMessages,
+                locale: locale
+            )
+        )
+        return ChatTitleRuntimeRequest(request: titleRequest)
+    }
+
     private func errorEnvelope(requestID: String, error: Error) -> ProtocolEnvelope {
         if let error = error as? OllamaBackendError {
             let mappedError = error.backendError
@@ -692,6 +744,32 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         ]
     }
 
+    private static func titlePromptMessages(
+        recentMessages: [ChatMessage],
+        locale: String?
+    ) -> [ChatMessage] {
+        let localeInstruction = locale
+            .map { "Use this BCP-47 locale when writing the title unless the conversation clearly uses another language: \($0)." }
+            ?? "Use the same language as the conversation."
+        return [
+            ChatMessage(
+                role: "system",
+                content: """
+                You generate a short title for a chat conversation.
+                Return only strict JSON with this shape: {"title":"concise title"}.
+                The title must be natural, specific to the recent conversation, and at most 8 words.
+                Do not include markdown, quotes around the whole response, numbering, explanations, or extra keys.
+                \(localeInstruction)
+                """
+            )
+        ] + recentMessages + [
+            ChatMessage(
+                role: "user",
+                content: "Generate the chat title now."
+            )
+        ]
+    }
+
     private static func suggestions(from rawText: String, maxSuggestions: Int) -> [String] {
         let trimmedText = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
         let decoder = JSONDecoder()
@@ -701,6 +779,23 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
             }
         }
         return []
+    }
+
+    private static func title(from rawText: String) -> String {
+        let trimmedText = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedText.isEmpty else { return "" }
+
+        let decoder = JSONDecoder()
+        if let data = trimmedText.data(using: .utf8),
+           let result = try? decoder.decode(ChatTitleResult.self, from: data) {
+            return result.title.cleanedTitle()
+        }
+
+        if trimmedText.hasPrefix("{") || trimmedText.hasPrefix("[") {
+            return ""
+        }
+
+        return trimmedText.cleanedTitle()
     }
 
     private static func verifySignature(
@@ -730,8 +825,16 @@ private struct ChatSuggestionRuntimeRequest {
     var maxSuggestions: Int
 }
 
+private struct ChatTitleRuntimeRequest {
+    var request: ChatRequest
+}
+
 private struct ChatSuggestionsResult: Decodable {
     var suggestions: [String]
+}
+
+private struct ChatTitleResult: Decodable {
+    var title: String
 }
 
 private enum LocalRuntimeRouterError: Error, LocalizedError {
@@ -964,5 +1067,42 @@ private extension Array where Element == String {
             }
         }
         return result
+    }
+}
+
+private extension String {
+    func cleanedTitle(maxWordCount: Int = 8, maxCharacterCount: Int = 80) -> String {
+        var cleaned = trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "\"'`"))
+
+        if cleaned.hasPrefix("```") {
+            cleaned = cleaned
+                .replacingOccurrences(of: "```json", with: "")
+                .replacingOccurrences(of: "```", with: "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .trimmingCharacters(in: CharacterSet(charactersIn: "\"'`"))
+        }
+
+        let disallowedPrefixes = ["title:", "Title:", "- ", "* ", "1. "]
+        for prefix in disallowedPrefixes where cleaned.hasPrefix(prefix) {
+            cleaned = String(cleaned.dropFirst(prefix.count))
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        cleaned = cleaned
+            .components(separatedBy: .newlines)
+            .first?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !cleaned.isEmpty else { return "" }
+
+        let words = cleaned.split(whereSeparator: { $0.isWhitespace })
+        if words.count > maxWordCount {
+            cleaned = words.prefix(maxWordCount).joined(separator: " ")
+        }
+        if cleaned.count > maxCharacterCount {
+            let index = cleaned.index(cleaned.startIndex, offsetBy: maxCharacterCount)
+            cleaned = String(cleaned[..<index]).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return cleaned
     }
 }

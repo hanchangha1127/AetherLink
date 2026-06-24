@@ -9,8 +9,8 @@ struct TrustedDevicesView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
                 CompanionPageHeader(
-                    title: "Trusted Devices",
-                    subtitle: "Manage trusted devices allowed to use this local runtime.",
+                    title: NSLocalizedString("Trusted Devices", comment: ""),
+                    subtitle: NSLocalizedString("Manage trusted devices allowed to use this local runtime.", comment: ""),
                     systemImage: "lock.shield.fill"
                 )
 
@@ -22,17 +22,17 @@ struct TrustedDevicesView: View {
                 Button {
                     Task { await model.refreshTrustedDevices() }
                 } label: {
-                    Label("Refresh Devices", systemImage: "arrow.clockwise")
+                    Label(NSLocalizedString("Refresh Devices", comment: ""), systemImage: "arrow.clockwise")
                 }
                 .buttonStyle(.bordered)
             }
 
-            CompanionPanel(title: "Allowed Devices", systemImage: "person.badge.key.fill") {
+            CompanionPanel(title: NSLocalizedString("Allowed Devices", comment: ""), systemImage: "person.badge.key.fill") {
                 if model.trustedDevices.isEmpty {
                     ContentUnavailableView(
-                        "No trusted devices",
+                        NSLocalizedString("No trusted devices", comment: ""),
                         systemImage: "lock.slash",
-                        description: Text("Pair a client device before allowing runtime commands.")
+                        description: Text(NSLocalizedString("Pair a client device before allowing runtime commands.", comment: ""))
                     )
                     .frame(maxWidth: .infinity, minHeight: 280)
                 } else {
@@ -127,7 +127,7 @@ private struct TrustedDeviceRow: View {
             Spacer(minLength: 12)
 
             Button(role: .destructive, action: onRemove) {
-                Label("Remove Trust", systemImage: "trash")
+                Label(NSLocalizedString("Remove Trust", comment: ""), systemImage: "trash")
             }
             .labelStyle(.titleAndIcon)
             .buttonStyle(.bordered)

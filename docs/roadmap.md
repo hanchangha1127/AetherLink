@@ -4,7 +4,7 @@
 
 See [progress.md](progress.md) for the detailed implementation record, verification commands, known limits, and next work queue.
 
-- AetherLink currently has a runtime-host-mediated local model loop, an Android Compose client implementation, Ollama and LM Studio backend adapters, QR pairing, trusted runtime persistence, model listing, streaming chat, cancellation, reasoning/think rendering, local chat history, archive/delete separation, user-managed local memory notes, separate embedding model selection, broad runtime-side document ingestion, image/vision gating, runtime-mediated AI next-question suggestions, and a first runtime-side model residency policy.
+- AetherLink currently has a runtime-host-mediated local model loop, an Android Compose client implementation, localized Android and macOS companion UI, Ollama and LM Studio backend adapters, QR pairing, trusted runtime persistence, model listing, streaming chat, cancellation, reasoning/think rendering, local chat history, runtime-generated short chat titles, archive/delete separation, user-managed local memory notes, separate embedding model selection, broad runtime-side document ingestion, image/vision gating, runtime-mediated AI next-question suggestions, and a first runtime-side model residency policy.
 - The client implementation does not call Ollama or LM Studio directly.
 - MCP, skills, web search, advanced memory, project workspaces, automations, Python tools, iOS, Windows, and DGX OS-class runtime/server targets remain roadmap work.
 

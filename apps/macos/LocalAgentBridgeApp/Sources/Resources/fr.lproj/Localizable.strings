@@ -74,7 +74,7 @@
 "Embedding Models" = "Modèles d’embedding";
 "%d model(s)" = "%d modèle(s)";
 "Chat" = "Chat";
-"Embedding" = "Embedding";
+"Embedding" = "Intégration";
 "Running" = "En cours";
 "Model Residency" = "Résidence du modèle";
 "Not managed" = "Non gérée";
@@ -154,7 +154,7 @@
 
 "Open Companion" = "Ouvrir Companion";
 "Companion Status" = "État de Companion";
-"Transport" = "Transport";
+"Transport" = "Connexion";
 "Advertising _aetherlink._tcp.local. on port %@" = "Service de jumelage disponible sur le port %@";
 "Load Models" = "Charger les modèles";
 "No models loaded" = "Aucun modèle chargé";

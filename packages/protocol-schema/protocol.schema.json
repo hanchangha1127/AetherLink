@@ -24,6 +24,8 @@
         "chat.cancel",
         "chat.suggestions.request",
         "chat.suggestions.result",
+        "chat.title.request",
+        "chat.title.result",
         "error"
       ]
     },
@@ -91,6 +93,14 @@
     {
       "if": { "properties": { "type": { "const": "chat.suggestions.result" } }, "required": ["type"] },
       "then": { "properties": { "payload": { "$ref": "#/$defs/chatSuggestionsResultPayload" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "chat.title.request" } }, "required": ["type"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/chatTitleRequestPayload" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "chat.title.result" } }, "required": ["type"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/chatTitleResultPayload" } } }
     },
     {
       "if": { "properties": { "type": { "const": "error" } }, "required": ["type"] },
@@ -388,6 +398,29 @@
           "items": { "$ref": "#/$defs/nonEmptyString" },
           "maxItems": 5
         }
+      },
+      "additionalProperties": false
+    },
+    "chatTitleRequestPayload": {
+      "type": "object",
+      "required": ["session_id", "model", "messages"],
+      "properties": {
+        "session_id": { "$ref": "#/$defs/nonEmptyString" },
+        "model": { "$ref": "#/$defs/nonEmptyString" },
+        "locale": { "type": "string" },
+        "messages": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/chatMessage" },
+          "minItems": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "chatTitleResultPayload": {
+      "type": "object",
+      "required": ["title"],
+      "properties": {
+        "title": { "type": "string" }
       },
       "additionalProperties": false
     },

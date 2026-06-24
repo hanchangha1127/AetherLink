@@ -4,8 +4,8 @@ import OllamaBackend
 import SwiftUI
 
 struct CompanionPageHeader: View {
-    let title: LocalizedStringKey
-    let subtitle: LocalizedStringKey
+    let title: String
+    let subtitle: String
     let systemImage: String
 
     var body: some View {
@@ -37,12 +37,12 @@ struct CompanionPageHeader: View {
 }
 
 struct CompanionPanel<Content: View>: View {
-    let title: LocalizedStringKey
+    let title: String
     let systemImage: String
     let content: Content
 
     init(
-        title: LocalizedStringKey,
+        title: String,
         systemImage: String,
         @ViewBuilder content: () -> Content
     ) {

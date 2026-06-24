@@ -51,9 +51,10 @@ Rules:
 19. The companion runtime calls Ollama `/api/pull` on the runtime host and reports the result.
 20. The client app sends `chat.send` for an installed model.
 21. The companion runtime streams `chat.delta` and finishes with `chat.done`.
-22. The client app may send `chat.cancel` for an active request.
+22. The client app may ask the companion runtime for a short generated chat title with `chat.title.request`.
+23. The client app may send `chat.cancel` for an active request.
 
-Runtime commands are gated after pairing. `runtime.health`, `models.list`, `models.pull`, `chat.send`, and `chat.cancel` require an authenticated session; unauthenticated requests return `authentication_required`.
+Runtime commands are gated after pairing. `runtime.health`, `models.list`, `models.pull`, `chat.send`, `chat.suggestions.request`, `chat.title.request`, and `chat.cancel` require an authenticated session; unauthenticated requests return `authentication_required`.
 
 The authentication flow is part of the v0.1 product contract even if a development build uses minimal local transport plumbing while the channel is being hardened.
 
@@ -588,6 +589,56 @@ Direction: Runtime -> Client.
 ```
 
 The client app renders these as optional UI chips near the latest assistant answer. Selecting a suggestion should fill or send the normal chat composer through `chat.send`; suggestions are not a separate conversation role.
+
+## `chat.title.request`
+
+Direction: Client -> Runtime.
+
+After the first assistant response completes, the client app may ask the companion runtime to generate a concise chat title for local conversation lists. This request is a runtime-mediated model call through the selected backend adapter. The client app must not call Ollama, LM Studio, or another serving backend directly for title generation.
+
+```json
+{
+  "version": 1,
+  "type": "chat.title.request",
+  "request_id": "req_title_001",
+  "timestamp": "2026-06-23T09:02:08Z",
+  "payload": {
+    "session_id": "default",
+    "model": "ollama:llama3.1:8b",
+    "locale": "en",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Explain this architecture."
+      },
+      {
+        "role": "assistant",
+        "content": "The runtime mediates local model access..."
+      }
+    ]
+  }
+}
+```
+
+The companion runtime should use recent `messages`, the selected `model`, and the optional `locale` to generate one short title. The runtime should return a single non-streaming result; it should not emit `chat.delta` or normal assistant output for title requests.
+
+## `chat.title.result`
+
+Direction: Runtime -> Client.
+
+```json
+{
+  "version": 1,
+  "type": "chat.title.result",
+  "request_id": "req_title_001",
+  "timestamp": "2026-06-23T09:02:09Z",
+  "payload": {
+    "title": "Runtime-Mediated Model Access"
+  }
+}
+```
+
+The client app may use `title` as local UI metadata for the chat only if the user has not manually renamed that chat. Empty or invalid backend output is represented as an empty title string rather than streamed assistant text.
 
 ## `chat.cancel`
 

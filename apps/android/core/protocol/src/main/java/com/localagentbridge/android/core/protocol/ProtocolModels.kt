@@ -33,6 +33,8 @@ object MessageType {
     const val ChatCancel = "chat.cancel"
     const val ChatSuggestionsRequest = "chat.suggestions.request"
     const val ChatSuggestionsResult = "chat.suggestions.result"
+    const val ChatTitleRequest = "chat.title.request"
+    const val ChatTitleResult = "chat.title.result"
     const val Error = "error"
 }
 
@@ -184,6 +186,19 @@ data class ChatSuggestionsRequestPayload(
 @Serializable
 data class ChatSuggestionsResultPayload(
     val suggestions: List<String>,
+)
+
+@Serializable
+data class ChatTitleRequestPayload(
+    @SerialName("session_id") val sessionId: String,
+    val model: String,
+    val messages: List<ChatMessagePayload>,
+    val locale: String? = null,
+)
+
+@Serializable
+data class ChatTitleResultPayload(
+    val title: String,
 )
 
 @Serializable

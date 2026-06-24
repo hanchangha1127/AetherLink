@@ -30,8 +30,6 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Menu
@@ -131,15 +129,12 @@ private fun LocalAgentBridgeApp() {
             var destination by rememberSaveable { mutableStateOf(AppDestination.Pairing) }
             var renamingSessionId by rememberSaveable { mutableStateOf<String?>(null) }
             var renameDraft by rememberSaveable { mutableStateOf("") }
-            var deletingSessionId by rememberSaveable { mutableStateOf<String?>(null) }
-            var isArchiveHistoryDialogVisible by rememberSaveable { mutableStateOf(false) }
-            var isDeleteHistoryDialogVisible by rememberSaveable { mutableStateOf(false) }
             var chatSearchQuery by rememberSaveable { mutableStateOf("") }
             val destinationTitle = stringResource(destination.labelRes)
             val untitledChatTitle = stringResource(R.string.untitled_chat)
             val trimmedChatSearchQuery = chatSearchQuery.trim()
             val hasChatSearchQuery = trimmedChatSearchQuery.isNotEmpty()
-            val hasAnyChatSessions = state.chatSessions.isNotEmpty() || state.archivedChatSessions.isNotEmpty()
+            val hasAnyChatSessions = state.chatSessions.isNotEmpty()
             val filteredChatSessions = if (hasChatSearchQuery) {
                 state.chatSessions.filter { session ->
                     session.title.ifBlank { untitledChatTitle }
@@ -148,16 +143,7 @@ private fun LocalAgentBridgeApp() {
             } else {
                 state.chatSessions
             }
-            val filteredArchivedChatSessions = if (hasChatSearchQuery) {
-                state.archivedChatSessions.filter { session ->
-                    session.title.ifBlank { untitledChatTitle }
-                        .contains(trimmedChatSearchQuery, ignoreCase = true)
-                }
-            } else {
-                state.archivedChatSessions
-            }
-            val hasChatSearchResults =
-                filteredChatSessions.isNotEmpty() || filteredArchivedChatSessions.isNotEmpty()
+            val hasChatSearchResults = filteredChatSessions.isNotEmpty()
             val attachmentPickerLauncher = rememberLauncherForActivityResult(
                 contract = ActivityResultContracts.GetMultipleContents(),
             ) { uris ->
@@ -258,69 +244,8 @@ private fun LocalAgentBridgeApp() {
                                                 viewModel.archiveChatSession(session.id)
                                             },
                                             onRestore = null,
-                                            onDelete = {
-                                                hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                                                deletingSessionId = session.id
-                                            },
+                                            onDelete = null,
                                         )
-                                    }
-                                    if (filteredChatSessions.isNotEmpty()) {
-                                        OutlinedButton(
-                                            onClick = {
-                                                hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                                                isArchiveHistoryDialogVisible = true
-                                            },
-                                            enabled = !state.isStreaming,
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(horizontal = 12.dp, vertical = 8.dp),
-                                        ) {
-                                            Icon(Icons.Filled.Archive, contentDescription = null)
-                                            Spacer(Modifier.size(8.dp))
-                                            Text(stringResource(R.string.archive_all_chats))
-                                        }
-                                    }
-                                }
-                                if (filteredArchivedChatSessions.isNotEmpty()) {
-                                    DrawerSectionLabel(text = stringResource(R.string.archived_chats))
-                                    filteredArchivedChatSessions.forEach { session ->
-                                        ChatSessionDrawerItem(
-                                            session = session,
-                                            selected = false,
-                                            enabled = !state.isStreaming,
-                                            onClick = {
-                                                viewModel.unarchiveChatSession(session.id)
-                                                viewModel.selectChatSession(session.id)
-                                                destination = AppDestination.Chat
-                                                scope.launch { drawerState.close() }
-                                            },
-                                            onRename = null,
-                                            onArchive = null,
-                                            onRestore = {
-                                                hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                                                viewModel.unarchiveChatSession(session.id)
-                                            },
-                                            onDelete = {
-                                                hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                                                deletingSessionId = session.id
-                                            },
-                                        )
-                                    }
-                                }
-                                if (state.chatSessions.isNotEmpty() || state.archivedChatSessions.isNotEmpty()) {
-                                    OutlinedButton(
-                                        onClick = {
-                                            hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                                            isDeleteHistoryDialogVisible = true
-                                        },
-                                        enabled = !state.isStreaming,
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(horizontal = 12.dp, vertical = 8.dp),
-                                    ) {
-                                        Icon(Icons.Filled.DeleteSweep, contentDescription = null)
-                                        Spacer(Modifier.size(8.dp))
-                                        Text(stringResource(R.string.delete_all_chats))
                                     }
                                 }
                             }
@@ -451,6 +376,11 @@ private fun LocalAgentBridgeApp() {
                             onAddMemoryEntry = viewModel::addMemoryEntry,
                             onRemoveMemoryEntry = viewModel::removeMemoryEntry,
                             onSetMemoryEntryEnabled = viewModel::setMemoryEntryEnabled,
+                            onArchiveChatSession = viewModel::archiveChatSession,
+                            onRestoreChatSession = viewModel::unarchiveChatSession,
+                            onPermanentlyDeleteChatSession = viewModel::deleteChatSession,
+                            onArchiveAllChatSessions = viewModel::archiveChatSessions,
+                            onPermanentlyDeleteArchivedChatSessions = viewModel::clearArchivedChatSessions,
                             showDeveloperDiagnostics = BuildConfig.DEBUG,
                             modifier = Modifier
                                 .fillMaxSize()
@@ -477,38 +407,6 @@ private fun LocalAgentBridgeApp() {
                 )
             }
 
-            val sessionBeingDeleted = (state.chatSessions + state.archivedChatSessions)
-                .firstOrNull { it.id == deletingSessionId }
-            if (sessionBeingDeleted != null) {
-                DeleteChatSessionDialog(
-                            sessionTitle = sessionBeingDeleted.title,
-                            onDismiss = { deletingSessionId = null },
-                            onConfirm = {
-                                viewModel.deleteChatSession(sessionBeingDeleted.id)
-                                deletingSessionId = null
-                            },
-                )
-            }
-
-            if (isArchiveHistoryDialogVisible) {
-                ArchiveChatHistoryDialog(
-                        onDismiss = { isArchiveHistoryDialogVisible = false },
-                        onConfirm = {
-                            viewModel.archiveChatSessions()
-                            isArchiveHistoryDialogVisible = false
-                        },
-                )
-            }
-
-            if (isDeleteHistoryDialogVisible) {
-                DeleteChatHistoryDialog(
-                        onDismiss = { isDeleteHistoryDialogVisible = false },
-                        onConfirm = {
-                            viewModel.clearChatSessions()
-                            isDeleteHistoryDialogVisible = false
-                        },
-                )
-            }
             }
         }
     }
@@ -904,7 +802,7 @@ private fun ChatSessionDrawerItem(
     onRename: (() -> Unit)?,
     onArchive: (() -> Unit)?,
     onRestore: (() -> Unit)?,
-    onDelete: () -> Unit,
+    onDelete: (() -> Unit)?,
 ) {
     var isMenuExpanded by rememberSaveable(session.id) { mutableStateOf(false) }
     val hapticFeedback = LocalHapticFeedback.current
@@ -1000,14 +898,16 @@ private fun ChatSessionDrawerItem(
                             },
                         )
                     }
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.delete_chat)) },
-                        leadingIcon = { Icon(Icons.Filled.Delete, contentDescription = null) },
-                        onClick = {
-                            isMenuExpanded = false
-                            onDelete()
-                        },
-                    )
+                    if (onDelete != null) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.delete_chat)) },
+                            leadingIcon = { Icon(Icons.Filled.Archive, contentDescription = null) },
+                            onClick = {
+                                isMenuExpanded = false
+                                onDelete()
+                            },
+                        )
+                    }
                 }
             }
         },
@@ -1060,115 +960,6 @@ private fun RenameChatSessionDialog(
     )
 }
 
-@Composable
-private fun DeleteChatSessionDialog(
-    sessionTitle: String,
-    onDismiss: () -> Unit,
-    onConfirm: () -> Unit,
-) {
-    val hapticFeedback = LocalHapticFeedback.current
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.delete_chat)) },
-        text = {
-            Text(
-                text = stringResource(
-                    R.string.delete_chat_confirm,
-                    sessionTitle.ifBlank { stringResource(R.string.untitled_chat) },
-                ),
-            )
-        },
-        confirmButton = {
-            TextButton(
-                onClick = {
-                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                    onConfirm()
-                },
-            ) {
-                Text(stringResource(R.string.delete))
-            }
-        },
-        dismissButton = {
-            TextButton(
-                onClick = {
-                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                    onDismiss()
-                },
-            ) {
-                Text(stringResource(R.string.cancel))
-            }
-        },
-    )
-}
-
-@Composable
-private fun ArchiveChatHistoryDialog(
-    onDismiss: () -> Unit,
-    onConfirm: () -> Unit,
-) {
-    val hapticFeedback = LocalHapticFeedback.current
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.archive_all_chats)) },
-        text = { Text(stringResource(R.string.archive_all_chats_confirm)) },
-        confirmButton = {
-            TextButton(
-                onClick = {
-                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                    onConfirm()
-                },
-            ) {
-                Text(stringResource(R.string.archive))
-            }
-        },
-        dismissButton = {
-            TextButton(
-                onClick = {
-                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                    onDismiss()
-                },
-            ) {
-                Text(stringResource(R.string.cancel))
-            }
-        },
-    )
-}
-
-@Composable
-private fun DeleteChatHistoryDialog(
-    onDismiss: () -> Unit,
-    onConfirm: () -> Unit,
-) {
-    val hapticFeedback = LocalHapticFeedback.current
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.delete_all_chats)) },
-        text = { Text(stringResource(R.string.delete_all_chats_confirm)) },
-        confirmButton = {
-            TextButton(
-                onClick = {
-                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                    onConfirm()
-                },
-            ) {
-                Text(stringResource(R.string.delete))
-            }
-        },
-        dismissButton = {
-            TextButton(
-                onClick = {
-                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                    onDismiss()
-                },
-            ) {
-                Text(stringResource(R.string.cancel))
-            }
-        },
-    )
-}
 
 @Composable
 private fun DrawerDestinationItem(

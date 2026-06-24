@@ -8,17 +8,17 @@ struct LogsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             CompanionPageHeader(
-                title: "Runtime Logs",
-                subtitle: "Recent companion activity from this runtime host session.",
+                title: NSLocalizedString("Runtime Logs", comment: ""),
+                subtitle: NSLocalizedString("Recent companion activity from this runtime host session.", comment: ""),
                 systemImage: "list.bullet.rectangle.fill"
             )
 
-            CompanionPanel(title: "Activity", systemImage: "clock.arrow.circlepath") {
+            CompanionPanel(title: NSLocalizedString("Activity", comment: ""), systemImage: "clock.arrow.circlepath") {
                 if model.logs.isEmpty {
                     ContentUnavailableView(
-                        "No runtime logs",
+                        NSLocalizedString("No runtime logs", comment: ""),
                         systemImage: "list.bullet.rectangle",
-                        description: Text("Events will appear here after the companion starts receiving activity.")
+                        description: Text(NSLocalizedString("Events will appear here after the companion starts receiving activity.", comment: ""))
                     )
                     .frame(maxWidth: .infinity, minHeight: 300)
                 } else {

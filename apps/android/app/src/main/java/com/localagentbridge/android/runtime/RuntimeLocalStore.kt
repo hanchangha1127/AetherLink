@@ -57,6 +57,8 @@ data class PersistedChatSession(
     val createdAtMillis: Long,
     val updatedAtMillis: Long,
     val archivedAtMillis: Long? = null,
+    val titleManuallyEdited: Boolean = false,
+    val titleGenerated: Boolean = false,
     val messages: List<PersistedChatMessage> = emptyList(),
 )
 
@@ -84,9 +86,12 @@ internal fun PersistedRuntimeData.sanitized(): PersistedRuntimeData {
         .filter { it.id.isNotBlank() }
         .distinctBy { it.id }
         .map { session ->
+            val fallbackTitle = titleForMessages(session.messages.map { it.toRuntimeChatMessage() })
+            val cleanTitle = session.title.trim().takeIf(String::isNotBlank) ?: DEFAULT_CHAT_TITLE
             session.copy(
-                title = session.title.takeIf(String::isNotBlank)
-                    ?: titleForMessages(session.messages.map { it.toRuntimeChatMessage() }),
+                title = cleanTitle,
+                titleManuallyEdited = session.titleManuallyEdited ||
+                    (!session.titleGenerated && cleanTitle != DEFAULT_CHAT_TITLE && cleanTitle != fallbackTitle),
                 messages = session.messages.filter { it.role in CHAT_STORAGE_ROLES },
             )
         }
@@ -146,7 +151,12 @@ internal fun PersistedRuntimeData.withRenamedChatSession(
     return copy(
         sessions = sessions.map { session ->
             if (session.id == sessionId) {
-                session.copy(title = cleanTitle, updatedAtMillis = nowMillis)
+                session.copy(
+                    title = cleanTitle,
+                    titleManuallyEdited = true,
+                    titleGenerated = false,
+                    updatedAtMillis = nowMillis,
+                )
             } else {
                 session
             }
@@ -205,10 +215,38 @@ internal fun PersistedRuntimeData.withoutChatSession(sessionId: String): Persist
     ).sanitized()
 }
 
+internal fun PersistedRuntimeData.withGeneratedChatSessionTitle(
+    sessionId: String,
+    title: String,
+    nowMillis: Long,
+): PersistedRuntimeData {
+    val cleanTitle = title.cleanedChatTitle()
+    if (cleanTitle.isBlank()) return this
+    return copy(
+        sessions = sessions.map { session ->
+            if (session.id == sessionId && !session.titleManuallyEdited) {
+                session.copy(
+                    title = cleanTitle,
+                    titleGenerated = true,
+                    updatedAtMillis = nowMillis,
+                )
+            } else {
+                session
+            }
+        }
+    ).sanitized()
+}
+
 internal fun PersistedRuntimeData.withoutChatSessions(): PersistedRuntimeData {
     return copy(
         activeSessionId = null,
         sessions = emptyList(),
+    ).sanitized()
+}
+
+internal fun PersistedRuntimeData.withoutArchivedChatSessions(): PersistedRuntimeData {
+    return copy(
+        sessions = sessions.filter { it.archivedAtMillis == null },
     ).sanitized()
 }
 
@@ -218,7 +256,7 @@ internal fun PersistedRuntimeData.withNewChatSession(
 ): PersistedRuntimeData {
     val session = PersistedChatSession(
         id = sessionId,
-        title = "New chat",
+        title = DEFAULT_CHAT_TITLE,
         createdAtMillis = nowMillis,
         updatedAtMillis = nowMillis,
     )
@@ -236,11 +274,7 @@ internal fun PersistedRuntimeData.withPersistedMessages(
     val existing = sessions.firstOrNull { it.id == sessionId }
     val createdAt = existing?.createdAtMillis ?: nowMillis
     val existingMessageTimes = existing?.messages.orEmpty().associate { it.id to it.createdAtMillis }
-    val generatedTitle = titleForMessages(messages)
-    val title = existing
-        ?.title
-        ?.takeIf { it != titleForMessages(existing.messages.map { message -> message.toRuntimeChatMessage() }) }
-        ?: generatedTitle
+    val title = existing?.title?.trim()?.takeIf(String::isNotBlank) ?: DEFAULT_CHAT_TITLE
     val persistedMessages = messages
         .filter { it.role in CHAT_STORAGE_ROLES }
         .map { it.toPersistedChatMessage(existingMessageTimes[it.id] ?: nowMillis) }
@@ -250,6 +284,8 @@ internal fun PersistedRuntimeData.withPersistedMessages(
         createdAtMillis = createdAt,
         updatedAtMillis = nowMillis,
         archivedAtMillis = existing?.archivedAtMillis,
+        titleManuallyEdited = existing?.titleManuallyEdited ?: false,
+        titleGenerated = existing?.titleGenerated ?: false,
         messages = persistedMessages,
     )
     return copy(
@@ -416,10 +452,11 @@ private fun titleForMessages(messages: List<RuntimeChatMessage>): String {
         ?.firstOrNull()
         ?.trim()
         ?.take(MAX_TITLE_LENGTH)
-        ?: "New chat"
+        ?: DEFAULT_CHAT_TITLE
 }
 
 private val CHAT_STORAGE_ROLES = setOf("user", "assistant")
+private const val DEFAULT_CHAT_TITLE = "New chat"
 private const val MAX_TITLE_LENGTH = 48
 private const val MAX_SAVED_SUGGESTIONS = 3
 
@@ -428,4 +465,14 @@ internal fun List<String>.cleanedSuggestions(): List<String> {
         .filter { it.isNotBlank() }
         .distinct()
         .take(MAX_SAVED_SUGGESTIONS)
+}
+
+internal fun String.cleanedChatTitle(): String {
+    return trim()
+        .lineSequence()
+        .firstOrNull()
+        ?.trim()
+        ?.trim('"', '\'', '`')
+        ?.take(MAX_TITLE_LENGTH)
+        .orEmpty()
 }

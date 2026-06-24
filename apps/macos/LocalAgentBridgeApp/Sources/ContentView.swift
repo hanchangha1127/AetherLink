@@ -16,9 +16,9 @@ struct ContentView: View {
                         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
 
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("AetherLink")
+                        Text(NSLocalizedString("AetherLink", comment: ""))
                             .font(.headline.weight(.semibold))
-                        Text("Runtime")
+                        Text(NSLocalizedString("Runtime", comment: ""))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -51,13 +51,13 @@ struct ContentView: View {
                 Button {
                     Task { await model.refreshBackendStatus() }
                 } label: {
-                    Label("Refresh Backend Status", systemImage: "arrow.clockwise")
+                    Label(NSLocalizedString("Refresh Backend Status", comment: ""), systemImage: "arrow.clockwise")
                 }
 
                 Button {
                     Task { await model.loadModels() }
                 } label: {
-                    Label("Load Local Models", systemImage: "shippingbox")
+                    Label(NSLocalizedString("Load Local Models", comment: ""), systemImage: "shippingbox")
                 }
 
                 Button {
@@ -65,9 +65,9 @@ struct ContentView: View {
                     selectedSection = .pairing
                 } label: {
                     if model.pairingSession == nil {
-                        Label("Start Pairing", systemImage: "qrcode")
+                        Label(NSLocalizedString("Start Pairing", comment: ""), systemImage: "qrcode")
                     } else {
-                        Label("Generate New Code", systemImage: "arrow.triangle.2.circlepath")
+                        Label(NSLocalizedString("Generate New Code", comment: ""), systemImage: "arrow.triangle.2.circlepath")
                     }
                 }
             }
@@ -83,12 +83,16 @@ private enum CompanionSection: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    var title: LocalizedStringKey {
+    var title: String {
         switch self {
-        case .status: "Status"
-        case .pairing: "Pairing"
-        case .trustedDevices: "Trusted Devices"
-        case .logs: "Logs"
+        case .status:
+            return NSLocalizedString("Status", comment: "")
+        case .pairing:
+            return NSLocalizedString("Pairing", comment: "")
+        case .trustedDevices:
+            return NSLocalizedString("Trusted Devices", comment: "")
+        case .logs:
+            return NSLocalizedString("Logs", comment: "")
         }
     }
 

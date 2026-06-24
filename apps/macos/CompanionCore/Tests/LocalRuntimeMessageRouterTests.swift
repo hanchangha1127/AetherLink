@@ -633,6 +633,179 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(message?.payload["suggestions"], .array([]))
     }
 
+    func testChatTitleRequestReturnsStructuredTitle() async throws {
+        let sink = RecordingSink()
+        let capturedRequest = LockedBox<ChatRequest?>(nil)
+        let router = makeRouter(backend: MockBackend(
+            models: [ModelInfo(id: "llama3.1:8b", name: "llama3.1:8b", installed: true)],
+            chatEvents: [
+                .delta(#"{"title":"Runtime-Mediated Model Access"}"#),
+                .done(inputTokens: 4, outputTokens: 8)
+            ],
+            onChatRequest: { request in
+                capturedRequest.value = request
+            }
+        ))
+        let envelope = ProtocolEnvelope(
+            type: MessageType.chatTitleRequest,
+            requestID: "title-1",
+            payload: [
+                "session_id": .string("session-1"),
+                "model": .string("llama3.1:8b"),
+                "locale": .string("en"),
+                "messages": .array([
+                    .object([
+                        "role": .string("user"),
+                        "content": .string("Explain the transport.")
+                    ]),
+                    .object([
+                        "role": .string("assistant"),
+                        "content": .string("The runtime mediates all backend access.")
+                    ])
+                ])
+            ]
+        )
+
+        router.handle(envelope, sink: sink)
+
+        let message = try await sink.waitForMessages(count: 1).first
+        XCTAssertEqual(message?.type, MessageType.chatTitleResult)
+        XCTAssertEqual(message?.requestID, "title-1")
+        XCTAssertEqual(message?.payload["title"], .string("Runtime-Mediated Model Access"))
+        let request = try XCTUnwrap(capturedRequest.value)
+        XCTAssertEqual(request.generationID, "title-1")
+        XCTAssertEqual(request.model, "llama3.1:8b")
+        XCTAssertTrue(request.messages.first?.content.contains("strict JSON") == true)
+        XCTAssertTrue(request.messages.first?.content.contains("en") == true)
+    }
+
+    func testChatTitleRequestFallsBackToPlainTitle() async throws {
+        let sink = RecordingSink()
+        let router = makeRouter(backend: MockBackend(
+            models: [ModelInfo(id: "llama3.1:8b", name: "llama3.1:8b", installed: true)],
+            chatEvents: [
+                .delta("Title: Runtime pairing and model routing"),
+                .done(inputTokens: 4, outputTokens: 8)
+            ]
+        ))
+        let envelope = ProtocolEnvelope(
+            type: MessageType.chatTitleRequest,
+            requestID: "title-plain",
+            payload: [
+                "session_id": .string("session-1"),
+                "model": .string("llama3.1:8b"),
+                "messages": .array([
+                    .object([
+                        "role": .string("user"),
+                        "content": .string("How should pairing work?")
+                    ]),
+                    .object([
+                        "role": .string("assistant"),
+                        "content": .string("Use QR pairing and keep model routing on the runtime.")
+                    ])
+                ])
+            ]
+        )
+
+        router.handle(envelope, sink: sink)
+
+        let message = try await sink.waitForMessages(count: 1).first
+        XCTAssertEqual(message?.type, MessageType.chatTitleResult)
+        XCTAssertEqual(message?.requestID, "title-plain")
+        XCTAssertEqual(message?.payload["title"], .string("Runtime pairing and model routing"))
+    }
+
+    func testChatTitleRequestReturnsEmptyTitleForInvalidJSONOrEmptyOutput() async throws {
+        let invalidJSONSink = RecordingSink()
+        let invalidJSONRouter = makeRouter(backend: MockBackend(
+            models: [ModelInfo(id: "llama3.1:8b", name: "llama3.1:8b", installed: true)],
+            chatEvents: [
+                .delta(#"{"name":"Wrong key"}"#),
+                .done(inputTokens: 4, outputTokens: 8)
+            ]
+        ))
+        let invalidJSONEnvelope = ProtocolEnvelope(
+            type: MessageType.chatTitleRequest,
+            requestID: "title-invalid-json",
+            payload: [
+                "session_id": .string("session-1"),
+                "model": .string("llama3.1:8b"),
+                "messages": .array([
+                    .object([
+                        "role": .string("user"),
+                        "content": .string("Explain the transport.")
+                    ])
+                ])
+            ]
+        )
+
+        invalidJSONRouter.handle(invalidJSONEnvelope, sink: invalidJSONSink)
+
+        let invalidJSONMessage = try await invalidJSONSink.waitForMessages(count: 1).first
+        XCTAssertEqual(invalidJSONMessage?.type, MessageType.chatTitleResult)
+        XCTAssertEqual(invalidJSONMessage?.requestID, "title-invalid-json")
+        XCTAssertEqual(invalidJSONMessage?.payload["title"], .string(""))
+
+        let emptySink = RecordingSink()
+        let emptyRouter = makeRouter(backend: MockBackend(
+            models: [ModelInfo(id: "llama3.1:8b", name: "llama3.1:8b", installed: true)],
+            chatEvents: [
+                .delta("   \n"),
+                .done(inputTokens: 4, outputTokens: 0)
+            ]
+        ))
+        let emptyEnvelope = ProtocolEnvelope(
+            type: MessageType.chatTitleRequest,
+            requestID: "title-empty",
+            payload: [
+                "session_id": .string("session-1"),
+                "model": .string("llama3.1:8b"),
+                "messages": .array([
+                    .object([
+                        "role": .string("user"),
+                        "content": .string("Explain the transport.")
+                    ])
+                ])
+            ]
+        )
+
+        emptyRouter.handle(emptyEnvelope, sink: emptySink)
+
+        let emptyMessage = try await emptySink.waitForMessages(count: 1).first
+        XCTAssertEqual(emptyMessage?.type, MessageType.chatTitleResult)
+        XCTAssertEqual(emptyMessage?.requestID, "title-empty")
+        XCTAssertEqual(emptyMessage?.payload["title"], .string(""))
+    }
+
+    func testChatTitleRequestWithoutUserMessageReturnsInvalidPayload() async throws {
+        let sink = RecordingSink()
+        let router = makeRouter(backend: MockBackend(
+            models: [ModelInfo(id: "llama3.1:8b", name: "llama3.1:8b", installed: true)]
+        ))
+        let envelope = ProtocolEnvelope(
+            type: MessageType.chatTitleRequest,
+            requestID: "title-invalid",
+            payload: [
+                "session_id": .string("session-1"),
+                "model": .string("llama3.1:8b"),
+                "messages": .array([
+                    .object([
+                        "role": .string("assistant"),
+                        "content": .string("The runtime mediates all backend access.")
+                    ])
+                ])
+            ]
+        )
+
+        router.handle(envelope, sink: sink)
+
+        let message = try await sink.waitForMessages(count: 1).first
+        XCTAssertEqual(message?.type, MessageType.error)
+        XCTAssertEqual(message?.requestID, "title-invalid")
+        XCTAssertEqual(message?.payload["code"], .string("invalid_payload"))
+        XCTAssertEqual(message?.payload["retryable"], .bool(false))
+    }
+
     func testChatSendNonInstalledModelReturnsModelNotInstalled() async throws {
         let sink = RecordingSink()
         let router = makeRouter(backend: MockBackend(

@@ -9,7 +9,7 @@ struct LocalAgentBridgeApp: App {
     @StateObject private var model = CompanionAppModel()
 
     var body: some Scene {
-        WindowGroup("AetherLink", id: "main") {
+        WindowGroup(NSLocalizedString("AetherLink", comment: ""), id: "main") {
             ContentView(model: model)
                 .frame(minWidth: 860, minHeight: 560)
                 .task {
@@ -18,14 +18,14 @@ struct LocalAgentBridgeApp: App {
         }
         .commands {
             CommandGroup(after: .appInfo) {
-                Button("Refresh Backend Status") {
+                Button(NSLocalizedString("Refresh Backend Status", comment: "")) {
                     Task { await model.refreshBackendStatus() }
                 }
                 .keyboardShortcut("r", modifiers: [.command])
             }
         }
 
-        MenuBarExtra("AetherLink", systemImage: "bolt.horizontal.circle") {
+        MenuBarExtra(NSLocalizedString("AetherLink", comment: ""), systemImage: "bolt.horizontal.circle") {
             Text(
                 String(
                     format: NSLocalizedString("Runtime: %@", comment: ""),
@@ -39,21 +39,21 @@ struct LocalAgentBridgeApp: App {
                 )
             )
             Divider()
-            Button("Open AetherLink") {
+            Button(NSLocalizedString("Open AetherLink", comment: "")) {
                 openWindow(id: "main")
                 NSApp.activate(ignoringOtherApps: true)
             }
-            Button("Refresh") {
+            Button(NSLocalizedString("Refresh", comment: "")) {
                 Task { await model.refreshBackendStatus() }
             }
-            Button("Load Models") {
+            Button(NSLocalizedString("Load Models", comment: "")) {
                 Task { await model.loadModels() }
             }
-            Button("Start Pairing") {
+            Button(NSLocalizedString("Start Pairing", comment: "")) {
                 model.beginPairing()
             }
             Divider()
-            Button("Quit") {
+            Button(NSLocalizedString("Quit", comment: "")) {
                 NSApp.terminate(nil)
             }
         }

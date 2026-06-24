@@ -10,12 +10,12 @@ struct PairingView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 CompanionPageHeader(
-                    title: "Pair a Client Device",
-                    subtitle: "Scan once from the AetherLink client app to trust this runtime identity.",
+                    title: NSLocalizedString("Pair a Client Device", comment: ""),
+                    subtitle: NSLocalizedString("Scan once from the AetherLink client app to trust this runtime identity.", comment: ""),
                     systemImage: "qrcode"
                 )
 
-                CompanionPanel(title: "Pairing Code", systemImage: "qrcode") {
+                CompanionPanel(title: NSLocalizedString("Pairing Code", comment: ""), systemImage: "qrcode") {
                     if let session = model.pairingSession {
                         ActivePairingCard(
                             qrPayload: session.qrPayload,
@@ -25,9 +25,9 @@ struct PairingView: View {
                         .id(session.code)
                     } else {
                         ContentUnavailableView(
-                            "No active pairing code",
+                            NSLocalizedString("No active pairing code", comment: ""),
                             systemImage: "qrcode",
-                            description: Text("Start pairing when the client app is ready to scan.")
+                            description: Text(NSLocalizedString("Start pairing when the client app is ready to scan.", comment: ""))
                         )
                         .frame(maxWidth: .infinity, minHeight: 240)
                     }
@@ -38,14 +38,14 @@ struct PairingView: View {
                         model.beginPairing()
                     } label: {
                         if model.pairingSession == nil {
-                            Label("Start Pairing", systemImage: "qrcode")
+                            Label(NSLocalizedString("Start Pairing", comment: ""), systemImage: "qrcode")
                         } else {
-                            Label("Generate New Code", systemImage: "arrow.clockwise")
+                            Label(NSLocalizedString("Generate New Code", comment: ""), systemImage: "arrow.clockwise")
                         }
                     }
                     .buttonStyle(.borderedProminent)
 
-                    Text("Client devices connect to this local runtime, not directly to Ollama or LM Studio.")
+                    Text(NSLocalizedString("Client devices connect to this local runtime, not directly to Ollama or LM Studio.", comment: ""))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -124,13 +124,13 @@ private struct ActivePairingCard: View {
                 }
             }
             .shadow(color: .black.opacity(0.08), radius: 10, y: 4)
-            .accessibilityLabel(Text("Pairing QR code"))
+            .accessibilityLabel(Text(NSLocalizedString("Pairing QR code", comment: "")))
     }
 
     private func instructions(at date: Date) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("One-Time Code")
+                Text(NSLocalizedString("One-Time Code", comment: ""))
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                 Text(groupedPairingCode(code))
@@ -143,13 +143,13 @@ private struct ActivePairingCard: View {
                     Button {
                         copyPairingCode()
                     } label: {
-                        Label("Copy Code", systemImage: "doc.on.doc")
+                        Label(NSLocalizedString("Copy Code", comment: ""), systemImage: "doc.on.doc")
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
 
                     if didCopyCode {
-                        Label("Code Copied", systemImage: "checkmark.circle.fill")
+                        Label(NSLocalizedString("Code Copied", comment: ""), systemImage: "checkmark.circle.fill")
                             .font(.caption.weight(.medium))
                             .foregroundStyle(.green)
                             .transition(.opacity)
@@ -158,13 +158,13 @@ private struct ActivePairingCard: View {
             }
 
             VStack(alignment: .leading, spacing: 7) {
-                Label("Scan the QR code or enter the code in the AetherLink client app.", systemImage: "qrcode.viewfinder")
-                Label("The QR code identifies this runtime; client apps resolve the current route after scanning.", systemImage: "point.3.connected.trianglepath.dotted")
-                Label("Local Network permission enables the current local discovery path; pairing trust stays tied to this runtime identity.", systemImage: "network")
+                Label(NSLocalizedString("Scan the QR code or enter the code in the AetherLink client app.", comment: ""), systemImage: "qrcode.viewfinder")
+                Label(NSLocalizedString("The QR code identifies this runtime; client apps resolve the current route after scanning.", comment: ""), systemImage: "point.3.connected.trianglepath.dotted")
+                Label(NSLocalizedString("Local Network permission enables the current local discovery path; pairing trust stays tied to this runtime identity.", comment: ""), systemImage: "network")
                 Label(expirationText(at: date), systemImage: expirationSystemImage(at: date))
                     .foregroundStyle(expiresAt <= date ? .orange : .secondary)
                 expirationProgress(at: date)
-                Label("Keep this runtime host awake until pairing completes.", systemImage: "display")
+                Label(NSLocalizedString("Keep this runtime host awake until pairing completes.", comment: ""), systemImage: "display")
             }
             .font(.callout)
             .foregroundStyle(.secondary)
@@ -252,7 +252,7 @@ private struct QRCodeView: View {
                 .resizable()
                 .scaledToFit()
                 .foregroundStyle(.secondary)
-                .accessibilityLabel(Text("Pairing QR code unavailable"))
+                .accessibilityLabel(Text(NSLocalizedString("Pairing QR code unavailable", comment: "")))
         }
     }
 

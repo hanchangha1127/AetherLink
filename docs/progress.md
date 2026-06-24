@@ -125,7 +125,9 @@ The concrete remote 1:1 connection architecture is now tracked in [connection-ov
 - Chat supports streaming answer deltas, cancellation, and structured error display.
 - Reasoning/think text is shown separately as a muted compact section that can expand.
 - Local previous chat history exists.
-- Archive and delete are separate chat actions.
+- New chats no longer use the first prompt verbatim as the title. After the first assistant response completes, the client asks the runtime for a concise `chat.title.request` result and applies it only while the user has not manually renamed the chat.
+- Archive and delete are separate chat actions: normal previous-chat rows expose archive/removal from active history, while permanent delete is reserved for archived chats.
+- Dangerous bulk history operations are hidden inside Settings chat-history management and require two confirmation steps.
 - Archived chats remain retained locally but are excluded from memory/research/compaction inputs unless restored or explicitly selected in a future source picker.
 - User-managed local memory notes can be added, disabled, and removed; enabled notes are included only through the runtime-mediated `chat.send` path.
 - File/image attachment UI is present.
@@ -143,6 +145,8 @@ The concrete remote 1:1 connection architecture is now tracked in [connection-ov
   - Suggested next questions render as full-width follow-up actions instead of truncated horizontal chips.
   - Empty chat copy is more user-facing and less runtime-status-first.
   - The fully ready empty chat state is now intentionally quiet: it leaves the center blank and makes the bottom composer the primary action surface until a real assistant answer can produce suggested next questions.
+  - The chat composer no longer renders a generic placeholder such as "Ask anything"; the empty input stays visually quiet unless a real connection/model/file warning is needed.
+  - Assistant messages no longer show repeated assistant avatars or role labels in the timeline, making the chat surface quieter and closer to a modern assistant transcript.
   - Haptic feedback now covers more high-frequency controls, including drawer opening, chat history selection, chat history menus, model menu opening, Settings navigation, and expandable Settings sections.
   - User-facing Android copy now prefers "runtime host" over "paired computer" across supported languages, keeping the UI less tied to one operating-system pairing.
   - Chat-facing install/backend/file-type messages avoid "runtime host" implementation wording where possible.
@@ -152,6 +156,7 @@ The concrete remote 1:1 connection architecture is now tracked in [connection-ov
   - Metadata-less local/dev discovery candidates are labeled as missing advertised identity and are not used as trusted-runtime routes.
   - Matching discovered trusted runtimes can trigger restore connection attempts, while metadata-less discoveries remain manual/dev candidates only.
 - macOS companion copy now describes Bonjour/local transport status as a pairing service and keeps Local Network permission language scoped to completing local pairing, rather than implying local-network discovery is the final product connectivity model.
+- macOS companion UI, menu bar actions, page headers, panels, pairing instructions, trusted-device controls, and empty-state messages are routed through localization resources for English, Korean, Japanese, Simplified Chinese, and French. Remaining source-visible system image names and log parsing tokens are implementation identifiers rather than user-facing strings.
 - Android pairing and transport internals now use runtime-centered names for pairing payloads, trusted runtime records, discovered runtime records, transport clients, and UI state. Legacy `mac_*` QR/query and DataStore keys remain only as compatibility aliases for existing v0.1 pairings and wire payloads.
 - macOS backend, pairing, and development-server status/error messages now prefer runtime-host/client wording. New pairing defaults use `AetherLink Runtime` as the display name while legacy `mac_*` protocol fields remain accepted for compatibility.
 - Android chat/model-facing copy now avoids implementation-heavy phrases such as "install on runtime host" in favor of direct action labels like "Install model" and "Open the model app, then refresh health." Runtime-host wording remains in Settings, advanced endpoint controls, and security-oriented explanations where the trust boundary matters.

@@ -1655,7 +1655,7 @@ class RuntimeClientViewModelTest {
         val sessions = runtimeChatSessions(data)
 
         assertEquals(listOf("newer", "older"), sessions.map { it.id })
-        assertEquals("Newer question", sessions.first().title)
+        assertEquals("New chat", sessions.first().title)
         assertEquals(2, sessions.first().messageCount)
         assertEquals("newer", data.activeSessionId)
         assertEquals("Newer answer", activeSessionMessages(data).last().content)
@@ -1730,6 +1730,40 @@ class RuntimeClientViewModelTest {
 
         assertEquals("Project notes", session.title)
         assertEquals(3, session.messageCount)
+    }
+
+    @Test
+    fun generatedChatTitleAppliesOnlyUntilUserRenamesSession() {
+        val data = PersistedRuntimeData()
+            .withPersistedMessages(
+                sessionId = "session",
+                messages = listOf(
+                    RuntimeChatMessage(id = "m1", role = "user", content = "Please explain this architecture"),
+                    RuntimeChatMessage(id = "m2", role = "assistant", content = "It uses an Android client and Mac runtime."),
+                ),
+                nowMillis = 100L,
+            )
+            .withGeneratedChatSessionTitle(
+                sessionId = "session",
+                title = " Runtime architecture plan ",
+                nowMillis = 200L,
+            )
+
+        assertEquals("Runtime architecture plan", runtimeChatSessions(data).single().title)
+
+        val renamed = data
+            .withRenamedChatSession(
+                sessionId = "session",
+                title = "Manual title",
+                nowMillis = 300L,
+            )
+            .withGeneratedChatSessionTitle(
+                sessionId = "session",
+                title = "Generated replacement",
+                nowMillis = 400L,
+            )
+
+        assertEquals("Manual title", runtimeChatSessions(renamed).single().title)
     }
 
     @Test
@@ -1818,6 +1852,30 @@ class RuntimeClientViewModelTest {
         assertTrue(memoryCandidateChatSessions(data).isEmpty())
         assertTrue(reflectionCandidateChatSessions(data).isEmpty())
         assertTrue(researchCandidateChatSessions(data).isEmpty())
+    }
+
+    @Test
+    fun permanentDeleteArchivedChatSessionsDoesNotDeleteActivePreviousChats() {
+        val data = PersistedRuntimeData()
+            .withPersistedMessages(
+                sessionId = "active",
+                messages = listOf(RuntimeChatMessage(role = "user", content = "Active question")),
+                nowMillis = 100L,
+            )
+            .withPersistedMessages(
+                sessionId = "archived",
+                messages = listOf(RuntimeChatMessage(role = "user", content = "Archived question")),
+                nowMillis = 200L,
+            )
+            .withArchivedChatSession(
+                sessionId = "archived",
+                nowMillis = 300L,
+            )
+            .withoutArchivedChatSessions()
+
+        assertEquals(listOf("active"), runtimeChatSessions(data).map { it.id })
+        assertTrue(archivedRuntimeChatSessions(data).isEmpty())
+        assertNull(data.activeSessionId)
     }
 
     @Test

@@ -20,6 +20,8 @@ import com.localagentbridge.android.core.protocol.ChatMessagePayload
 import com.localagentbridge.android.core.protocol.ChatSendPayload
 import com.localagentbridge.android.core.protocol.ChatSuggestionsRequestPayload
 import com.localagentbridge.android.core.protocol.ChatSuggestionsResultPayload
+import com.localagentbridge.android.core.protocol.ChatTitleRequestPayload
+import com.localagentbridge.android.core.protocol.ChatTitleResultPayload
 import com.localagentbridge.android.core.protocol.ErrorPayload
 import com.localagentbridge.android.core.protocol.HelloPayload
 import com.localagentbridge.android.core.protocol.MessageType
@@ -101,6 +103,8 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
     private var pendingModelPullRequestId: String? = null
     private var pendingSuggestionRequestId: String? = null
     private var pendingSuggestionSessionId: String? = null
+    private var pendingTitleRequestId: String? = null
+    private var pendingTitleSessionId: String? = null
     private var modelIdToSelectAfterRefresh: String? = null
     private var isSessionAuthenticated = false
     private var persistedRuntimeData = PersistedRuntimeData()
@@ -392,6 +396,17 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
         mutableState.update { it.copy(chatInput = "") }
     }
 
+    fun clearArchivedChatSessions() {
+        if (state.value.isStreaming) {
+            showError("generation_in_progress")
+            return
+        }
+        publishPersistedRuntimeData(
+            persistedRuntimeData.withoutArchivedChatSessions(),
+            save = true,
+        )
+    }
+
     fun storeMemoryEntry(content: String) {
         publishPersistedRuntimeData(
             persistedRuntimeData.withMemoryEntry(content, nowMillis()),
@@ -646,6 +661,7 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
         pendingModelPullRequestId = null
         pendingPairingPayload = null
         clearPendingSuggestions()
+        clearPendingTitleRequest()
         modelIdToSelectAfterRefresh = null
         mutableState.update {
             it.withClearedPendingPairing().copy(
@@ -969,6 +985,7 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
             MessageType.ChatDone -> handleChatDone(envelope)
             MessageType.ChatCancel -> handleCancelAck(envelope)
             MessageType.ChatSuggestionsResult -> handleChatSuggestionsResult(envelope)
+            MessageType.ChatTitleResult -> handleChatTitleResult(envelope)
             MessageType.Error -> handleError(envelope)
         }
     }
@@ -1234,8 +1251,47 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
         mutableState.value = updatedState
         persistActiveMessages(updatedState.messages, clearError = false)
         if (payload?.finishReason != "cancelled") {
+            requestChatTitleIfNeeded(updatedState)
             requestChatSuggestions(updatedState)
         }
+    }
+
+    private fun requestChatTitleIfNeeded(sourceState: RuntimeUiState) {
+        if (!sourceState.isConnected || !isSessionAuthenticated) return
+        if (sourceState.isStreaming) return
+        if (sourceState.selectedModelSendState() != SelectedModelSendState.Ready) return
+
+        val sessionId = sourceState.activeChatSessionId ?: return
+        val session = persistedRuntimeData.sessions.firstOrNull { it.id == sessionId } ?: return
+        if (session.archivedAtMillis != null || session.titleManuallyEdited || session.titleGenerated) return
+        val chatMessages = sourceState.messages
+            .filter { it.role == "user" || it.role == "assistant" }
+            .filter { it.content.isNotBlank() }
+        if (chatMessages.count { it.role == "user" } != 1) return
+        if (chatMessages.count { it.role == "assistant" } != 1) return
+
+        val model = sourceState.selectedModelId ?: return
+        val requestId = UUID.randomUUID().toString()
+        pendingTitleRequestId = requestId
+        pendingTitleSessionId = sessionId
+        sendEnvelope(
+            envelope(
+                type = MessageType.ChatTitleRequest,
+                requestId = requestId,
+                serializer = ChatTitleRequestPayload.serializer(),
+                payload = ChatTitleRequestPayload(
+                    sessionId = sessionId,
+                    model = model,
+                    messages = chatMessages.map { message ->
+                        ChatMessagePayload(
+                            role = message.role,
+                            content = message.content,
+                        )
+                    },
+                    locale = sourceState.selectedLanguageTag.takeIf { it.isNotBlank() },
+                ),
+            )
+        )
     }
 
     private fun requestChatSuggestions(sourceState: RuntimeUiState) {
@@ -1297,6 +1353,23 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
         persistActiveMessages(updatedState.messages, clearError = false)
     }
 
+    private fun handleChatTitleResult(envelope: ProtocolEnvelope) {
+        if (pendingTitleRequestId != envelope.requestId) return
+        val sessionId = pendingTitleSessionId
+        clearPendingTitleRequest()
+        if (sessionId == null) return
+        val payload = decodePayload(ChatTitleResultPayload.serializer(), envelope.payload) ?: return
+        publishPersistedRuntimeData(
+            persistedRuntimeData.withGeneratedChatSessionTitle(
+                sessionId = sessionId,
+                title = payload.title,
+                nowMillis = nowMillis(),
+            ),
+            save = true,
+            clearError = false,
+        )
+    }
+
     private fun handleCancelAck(envelope: ProtocolEnvelope) {
         val activeRequestId = state.value.activeRequestId ?: return
         val payload = if (envelope.requestId != activeRequestId) {
@@ -1314,6 +1387,10 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
         if (pendingSuggestionRequestId == envelope.requestId) {
             clearPendingSuggestions()
             mutableState.update { it.copy(isLoadingSuggestions = false) }
+            return
+        }
+        if (pendingTitleRequestId == envelope.requestId) {
+            clearPendingTitleRequest()
             return
         }
         val payload = decodePayload(ErrorPayload.serializer(), envelope.payload)
@@ -1349,9 +1426,15 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
                         current.activeRequestId == envelope.requestId
                     val isSuggestionRequest = envelope.type == MessageType.ChatSuggestionsRequest &&
                         pendingSuggestionRequestId == envelope.requestId
+                    val isTitleRequest = envelope.type == MessageType.ChatTitleRequest &&
+                        pendingTitleRequestId == envelope.requestId
                     if (isSuggestionRequest) {
                         clearPendingSuggestions()
                         mutableState.update { it.copy(isLoadingSuggestions = false) }
+                        return@onFailure
+                    }
+                    if (isTitleRequest) {
+                        clearPendingTitleRequest()
                         return@onFailure
                     }
                     val cleanedMessages = if (isActiveChatSend) {
@@ -1407,6 +1490,11 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
     private fun clearPendingSuggestions() {
         pendingSuggestionRequestId = null
         pendingSuggestionSessionId = null
+    }
+
+    private fun clearPendingTitleRequest() {
+        pendingTitleRequestId = null
+        pendingTitleSessionId = null
     }
 
     private fun attachmentMetadata(uri: Uri): AttachmentMetadata {
@@ -1560,6 +1648,7 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
             MessageType.ChatSend,
             MessageType.ChatCancel,
             MessageType.ChatSuggestionsRequest,
+            MessageType.ChatTitleRequest,
             "chat.attachments",
         )
         val SUCCESS_PULL_STATUSES = setOf("success", "succeeded", "installed", "complete", "completed", "ready", "ok")

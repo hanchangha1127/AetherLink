@@ -34,10 +34,12 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -45,6 +47,7 @@ import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Unarchive
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -90,6 +93,7 @@ import com.localagentbridge.android.R
 import com.localagentbridge.android.core.transport.RuntimeEndpointSource
 import com.localagentbridge.android.runtime.RuntimeAppLanguage
 import com.localagentbridge.android.runtime.RuntimeChatMessage
+import com.localagentbridge.android.runtime.RuntimeChatSession
 import com.localagentbridge.android.runtime.RuntimeDiscoveredRuntime
 import com.localagentbridge.android.runtime.RuntimeMemoryEntry
 import com.localagentbridge.android.runtime.RuntimeModel
@@ -824,6 +828,11 @@ fun SettingsScreen(
     onAddMemoryEntry: (String) -> Unit,
     onRemoveMemoryEntry: (String) -> Unit,
     onSetMemoryEntryEnabled: (String, Boolean) -> Unit,
+    onArchiveChatSession: (String) -> Unit,
+    onRestoreChatSession: (String) -> Unit,
+    onPermanentlyDeleteChatSession: (String) -> Unit,
+    onArchiveAllChatSessions: () -> Unit,
+    onPermanentlyDeleteArchivedChatSessions: () -> Unit,
     showDeveloperDiagnostics: Boolean,
     modifier: Modifier = Modifier,
 ) {
@@ -853,6 +862,18 @@ fun SettingsScreen(
                 onAddMemoryEntry = onAddMemoryEntry,
                 onRemoveMemoryEntry = onRemoveMemoryEntry,
                 onSetMemoryEntryEnabled = onSetMemoryEntryEnabled,
+            )
+        }
+        item {
+            ChatHistorySettingsPanel(
+                activeSessions = state.chatSessions,
+                archivedSessions = state.archivedChatSessions,
+                isActionEnabled = !state.isStreaming,
+                onArchiveChatSession = onArchiveChatSession,
+                onRestoreChatSession = onRestoreChatSession,
+                onPermanentlyDeleteChatSession = onPermanentlyDeleteChatSession,
+                onArchiveAllChatSessions = onArchiveAllChatSessions,
+                onPermanentlyDeleteArchivedChatSessions = onPermanentlyDeleteArchivedChatSessions,
             )
         }
         item {
@@ -1773,52 +1794,35 @@ private fun AssistantMessage(
     val textToCopy = message.content.ifBlank { message.reasoning }
     val showTyping = isStreaming && message.content.isBlank()
 
-    Row(
+    Column(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        verticalAlignment = Alignment.Top,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        AssistantAvatar()
-        Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Text(
-                text = stringResource(R.string.role_assistant),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.secondary,
-                fontWeight = FontWeight.Medium,
+        if (hasReasoning) {
+            AssistantReasoning(
+                reasoning = message.reasoning,
+                expanded = isReasoningExpanded.value,
+                onExpandedChange = { isReasoningExpanded.value = it },
             )
-            Column(
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                if (hasReasoning) {
-                    AssistantReasoning(
-                        reasoning = message.reasoning,
-                        expanded = isReasoningExpanded.value,
-                        onExpandedChange = { isReasoningExpanded.value = it },
-                    )
-                }
-                if (message.content.isNotBlank() || showTyping) {
-                    MessageContent(
-                        content = message.content.ifBlank { stringResource(R.string.assistant_typing) },
-                        textColor = MaterialTheme.colorScheme.onSurface,
-                    )
-                }
-                if (showTyping) {
-                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                }
-            }
-            if (textToCopy.isNotBlank()) {
-                MessageCopyButton(textToCopy = textToCopy)
-            }
-            if (showSuggestions) {
-                SuggestedQuestions(
-                    suggestions = message.suggestions,
-                    isLoading = isLoadingSuggestions,
-                    onSuggestionClick = onSuggestionClick,
-                )
-            }
+        }
+        if (message.content.isNotBlank() || showTyping) {
+            MessageContent(
+                content = message.content.ifBlank { stringResource(R.string.assistant_typing) },
+                textColor = MaterialTheme.colorScheme.onSurface,
+            )
+        }
+        if (showTyping) {
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        }
+        if (textToCopy.isNotBlank()) {
+            MessageCopyButton(textToCopy = textToCopy)
+        }
+        if (showSuggestions) {
+            SuggestedQuestions(
+                suggestions = message.suggestions,
+                isLoading = isLoadingSuggestions,
+                onSuggestionClick = onSuggestionClick,
+            )
         }
     }
 }
@@ -2187,24 +2191,6 @@ private fun reasoningPreview(reasoning: String): String {
 }
 
 @Composable
-private fun AssistantAvatar() {
-    Surface(
-        modifier = Modifier.size(30.dp),
-        shape = RoundedCornerShape(10.dp),
-        color = MaterialTheme.colorScheme.primaryContainer,
-    ) {
-        Box(contentAlignment = Alignment.Center) {
-            Text(
-                text = stringResource(R.string.role_assistant_initial),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
-                fontWeight = FontWeight.SemiBold,
-            )
-        }
-    }
-}
-
-@Composable
 private fun ChatComposer(
     value: String,
     attachments: List<RuntimePendingAttachment>,
@@ -2255,26 +2241,17 @@ private fun ChatComposer(
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = 38.dp, max = 150.dp),
-                decorationBox = { innerTextField ->
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 2.dp, vertical = 8.dp),
-                        contentAlignment = Alignment.TopStart,
-                    ) {
-                        if (value.isBlank()) {
-                            Text(
-                                text = stringResource(R.string.chat_composer_placeholder),
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = MaterialTheme.colorScheme.secondary,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                        innerTextField()
-                    }
-                },
-            )
+	                decorationBox = { innerTextField ->
+	                    Box(
+	                        modifier = Modifier
+	                            .fillMaxWidth()
+	                            .padding(horizontal = 2.dp, vertical = 8.dp),
+	                        contentAlignment = Alignment.TopStart,
+	                    ) {
+	                        innerTextField()
+	                    }
+	                },
+	            )
             if (showComposerStatus) {
                 ComposerStatus(
                     text = hint,
@@ -2781,6 +2758,305 @@ private fun LanguagePreferenceSelector(
             }
         }
     }
+}
+
+@Composable
+private fun ChatHistorySettingsPanel(
+    activeSessions: List<RuntimeChatSession>,
+    archivedSessions: List<RuntimeChatSession>,
+    isActionEnabled: Boolean,
+    onArchiveChatSession: (String) -> Unit,
+    onRestoreChatSession: (String) -> Unit,
+    onPermanentlyDeleteChatSession: (String) -> Unit,
+    onArchiveAllChatSessions: () -> Unit,
+    onPermanentlyDeleteArchivedChatSessions: () -> Unit,
+) {
+    val hapticFeedback = LocalHapticFeedback.current
+    val bulkArchiveConfirmStep = rememberSaveable { mutableStateOf(0) }
+    val bulkDeleteConfirmStep = rememberSaveable { mutableStateOf(0) }
+
+    TwoStepConfirmationDialog(
+        step = bulkArchiveConfirmStep.value,
+        titleRes = R.string.archive_all_chats,
+        firstMessage = stringResource(R.string.archive_all_chats_confirm_first),
+        secondMessage = stringResource(R.string.archive_all_chats_confirm_second),
+        confirmRes = R.string.archive,
+        onStepChange = { bulkArchiveConfirmStep.value = it },
+        onConfirm = onArchiveAllChatSessions,
+    )
+    TwoStepConfirmationDialog(
+        step = bulkDeleteConfirmStep.value,
+        titleRes = R.string.permanently_delete_archived_chats,
+        firstMessage = stringResource(R.string.delete_archived_chats_confirm_first),
+        secondMessage = stringResource(R.string.delete_archived_chats_confirm_second),
+        confirmRes = R.string.permanently_delete,
+        onStepChange = { bulkDeleteConfirmStep.value = it },
+        onConfirm = onPermanentlyDeleteArchivedChatSessions,
+    )
+
+    OutlinedCard(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    text = stringResource(R.string.chat_history_settings_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = stringResource(R.string.chat_history_settings_subtitle),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.secondary,
+                )
+            }
+            StatusLine(
+                label = stringResource(R.string.previous_chats),
+                value = activeSessions.size.toString(),
+            )
+            StatusLine(
+                label = stringResource(R.string.archived_chats),
+                value = archivedSessions.size.toString(),
+            )
+            OutlinedButton(
+                onClick = {
+                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                    bulkArchiveConfirmStep.value = 1
+                },
+                enabled = isActionEnabled && activeSessions.isNotEmpty(),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Icon(Icons.Filled.Archive, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = stringResource(R.string.archive_all_chats),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            OutlinedButton(
+                onClick = {
+                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                    bulkDeleteConfirmStep.value = 1
+                },
+                enabled = isActionEnabled && archivedSessions.isNotEmpty(),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Icon(Icons.Filled.DeleteSweep, contentDescription = null)
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    text = stringResource(R.string.permanently_delete_archived_chats),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            if (activeSessions.isNotEmpty()) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    activeSessions.forEach { session ->
+                        ChatHistorySettingsRow(
+                            session = session,
+                            isActionEnabled = isActionEnabled,
+                            onArchiveChatSession = onArchiveChatSession,
+                            onRestoreChatSession = onRestoreChatSession,
+                            onPermanentlyDeleteChatSession = onPermanentlyDeleteChatSession,
+                        )
+                    }
+                }
+            }
+            if (archivedSessions.isNotEmpty()) {
+                HorizontalDivider()
+                Text(
+                    text = stringResource(R.string.archived_chats),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.secondary,
+                )
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    archivedSessions.forEach { session ->
+                        ChatHistorySettingsRow(
+                            session = session,
+                            isActionEnabled = isActionEnabled,
+                            onArchiveChatSession = onArchiveChatSession,
+                            onRestoreChatSession = onRestoreChatSession,
+                            onPermanentlyDeleteChatSession = onPermanentlyDeleteChatSession,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChatHistorySettingsRow(
+    session: RuntimeChatSession,
+    isActionEnabled: Boolean,
+    onArchiveChatSession: (String) -> Unit,
+    onRestoreChatSession: (String) -> Unit,
+    onPermanentlyDeleteChatSession: (String) -> Unit,
+) {
+    val hapticFeedback = LocalHapticFeedback.current
+    val deleteConfirmStep = rememberSaveable(session.id) { mutableStateOf(0) }
+    val isArchived = session.archivedAtMillis != null
+    val title = session.title.ifBlank { stringResource(R.string.untitled_chat) }
+
+    TwoStepConfirmationDialog(
+        step = deleteConfirmStep.value,
+        titleRes = R.string.permanently_delete_chat,
+        firstMessage = stringResource(R.string.permanently_delete_chat_confirm_first, title),
+        secondMessage = stringResource(R.string.permanently_delete_chat_confirm_second, title),
+        confirmRes = R.string.permanently_delete,
+        onStepChange = { deleteConfirmStep.value = it },
+        onConfirm = { onPermanentlyDeleteChatSession(session.id) },
+    )
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    Text(
+                        text = title,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = if (isArchived) {
+                            stringResource(R.string.archived_chat)
+                        } else {
+                            stringResource(R.string.chat_message_count, session.messageCount)
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.secondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                if (isArchived) {
+                    OutlinedButton(
+                        onClick = {
+                            hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                            onRestoreChatSession(session.id)
+                        },
+                        enabled = isActionEnabled,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Icon(Icons.Filled.Unarchive, contentDescription = null)
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = stringResource(R.string.restore_chat),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                            deleteConfirmStep.value = 1
+                        },
+                        enabled = isActionEnabled,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Icon(Icons.Filled.Delete, contentDescription = null)
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = stringResource(R.string.permanently_delete),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                } else {
+                    OutlinedButton(
+                        onClick = {
+                            hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                            onArchiveChatSession(session.id)
+                        },
+                        enabled = isActionEnabled,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Icon(Icons.Filled.Archive, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = stringResource(R.string.archive_chat),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TwoStepConfirmationDialog(
+    step: Int,
+    @StringRes titleRes: Int,
+    firstMessage: String,
+    secondMessage: String,
+    @StringRes confirmRes: Int,
+    onStepChange: (Int) -> Unit,
+    onConfirm: () -> Unit,
+) {
+    if (step == 0) return
+    val hapticFeedback = LocalHapticFeedback.current
+
+    AlertDialog(
+        onDismissRequest = { onStepChange(0) },
+        title = { Text(stringResource(titleRes)) },
+        text = { Text(if (step == 1) firstMessage else secondMessage) },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                    if (step == 1) {
+                        onStepChange(2)
+                    } else {
+                        onStepChange(0)
+                        onConfirm()
+                    }
+                },
+            ) {
+                Text(
+                    text = if (step == 1) {
+                        stringResource(R.string.continue_action)
+                    } else {
+                        stringResource(confirmRes)
+                    },
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = {
+                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onStepChange(0)
+                },
+            ) {
+                Text(stringResource(R.string.cancel))
+            }
+        },
+    )
 }
 
 @Composable
