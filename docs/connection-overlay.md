@@ -1,0 +1,319 @@
+# AetherLink Connection Overlay
+
+This document makes the remote 1:1 connection model concrete without defining an implementation plan for the current codebase. It is a product and architecture boundary for future transport work.
+
+AetherLink should feel less like "enter the computer's IP address" and more like a private peer network: a paired client asks for its paired runtime host by identity, and the connection layer finds the best route. The useful analogy to Bitcoin-style peer networks is decentralized peer discovery, not public access. AetherLink is still private, paired-device-only, and runtime-host-mediated.
+
+Non-negotiable boundaries:
+
+- The Android/iOS client is a controller.
+- The macOS/Windows/DGX OS-class runtime host mediates all model access.
+- The client never calls Ollama, LM Studio, or future serving backend URLs directly.
+- Discovery, rendezvous, bootstrap, relay, and TURN-style infrastructure must never become a cloud AI backend.
+- Only QR-paired trusted devices may authenticate and exchange AetherLink protocol traffic.
+- Network reachability is not trust; pairing, pinned identities, challenge-response authentication, and encrypted sessions are still required.
+
+## Target Shape
+
+```text
+Client device
+  Paired client identity
+  Pinned runtime identity
+  Route resolver
+        |
+        | choose best route for the paired runtime identity
+        v
+Connection overlay
+  1. Local direct path
+  2. Remote NAT traversal path
+  3. Privacy-preserving rendezvous/bootstrap/DHT assist
+  4. Blind encrypted relay fallback
+        |
+        | end-to-end encrypted AetherLink session
+        v
+Runtime host
+  Paired runtime identity
+  Trusted client store
+  Protocol router
+  Ollama/LM Studio/local backend adapters
+```
+
+The overlay resolves a route to one specific trusted runtime identity. It does not expose a searchable public directory of runtimes, a list of model hosts, an account namespace, or an API endpoint registry.
+
+## Phase 0: Paired Identity
+
+Pairing is the root of trust and the input to every route decision.
+
+The runtime host owns:
+
+- A persistent runtime device id.
+- A persistent runtime public/private keypair stored in the platform keychain when available.
+- A trusted-client store containing paired client public keys, labels, revocation state, and route-token material.
+
+The client device owns:
+
+- A persistent client device id.
+- A persistent client public/private keypair stored in platform-secure storage when available.
+- A pinned trusted-runtime record containing runtime id, runtime public key or certificate fingerprint, display label, and route-token material.
+
+QR pairing should be identity-first:
+
+- Required: runtime identity, runtime public key or certificate fingerprint, pairing nonce/code material, service/protocol version, and a pairing-derived route token or token seed.
+- Optional development hint: host/port for local direct testing.
+- Not allowed: Ollama URL, LM Studio URL, model list, provider health, prompt data, file paths, memory data, account identifiers, or public directory registration data.
+
+After pairing, each session still authenticates:
+
+1. Client connects over any candidate route.
+2. Runtime checks whether the client device id is trusted.
+3. Runtime returns a nonce.
+4. Client signs the nonce.
+5. Runtime verifies the signature before accepting runtime commands.
+6. The encrypted session binds both paired identities and the selected route.
+
+Removing a trusted device revokes future authentication on every path: local direct, P2P, rendezvous-assisted, and relay fallback.
+
+## Phase 1: Local Direct Path
+
+The local direct path is the fast path when both devices are reachable on the same network, USB reverse path, hotspot, emulator bridge, or manually selected diagnostic endpoint.
+
+Allowed local-direct inputs:
+
+- Bonjour/mDNS discovery records.
+- USB reverse or emulator loopback forwarding.
+- A QR-provided development host/port hint.
+- A last-known endpoint hint stored with the trusted runtime.
+- A manual diagnostic endpoint hidden away from normal onboarding.
+
+Local direct route candidates must be treated as reachability hints, not durable product identity. The route resolver should prefer current discovery results for the pinned runtime identity over stale last-known endpoints.
+
+Bonjour/mDNS records may carry minimal route hints:
+
+- Preferred: pairing-derived `route_token`.
+- Legacy/development fallback: runtime device id or public-key fingerprint.
+- Forbidden: backend URLs, model names, provider status, prompts, files, memory, runtime commands, or user account data.
+
+The client may automatically try a discovered endpoint only when its route hints match the pinned trusted runtime record. Metadata-less endpoints can remain useful for local development and manual diagnostics, but they are not automatic trusted-runtime matches.
+
+## Phase 2: Remote NAT Traversal
+
+Different-network connectivity requires more than mDNS or private IP addresses. The target remote direct path is authenticated P2P NAT traversal.
+
+Target behavior:
+
+1. The client and runtime each derive or request short-lived rendezvous material for their paired relationship.
+2. Each side gathers network candidates through STUN-like address discovery.
+3. Candidate exchange happens through a privacy-preserving rendezvous/bootstrap path.
+4. The peers attempt authenticated hole punching.
+5. The first viable direct path upgrades into an end-to-end encrypted AetherLink session bound to the paired identities.
+6. Runtime commands remain blocked until session authentication succeeds.
+
+Security requirements:
+
+- Candidate exchange uses short-lived tokens derived from the paired relationship, not stable public device ids.
+- Replay protection prevents old candidates or old rendezvous records from opening a new session.
+- Hole punching is not authorization. It only creates reachability.
+- The encrypted AetherLink session is authenticated by the paired client and runtime keys.
+- Failure to create a P2P path falls through to relay fallback rather than weakening authentication.
+
+Implementation boundary:
+
+- This is not implemented in v0.1.
+- Current route-candidate plumbing may model future P2P candidates, but it must not claim real NAT traversal until STUN-like discovery, candidate exchange, authenticated hole punching, replay protection, and encrypted session binding exist.
+
+## Phase 3: Rendezvous, Bootstrap, And DHT Option
+
+AetherLink can use a Bitcoin-network-like feel for finding peers without one fixed server address, but the privacy model is different. Bitcoin-style public propagation is not acceptable for AetherLink runtime access.
+
+Acceptable roles for bootstrap or DHT-like infrastructure:
+
+- Help a paired client and runtime find short-lived rendezvous records.
+- Help locate candidate exchange points when neither side has a stable public address.
+- Provide multiple bootstrap entry points so discovery does not depend on one hardcoded host.
+- Carry only opaque, expiring records that are useful to an already-paired device.
+
+Unacceptable roles:
+
+- Public runtime directory.
+- Account server.
+- Trust authority.
+- Backend URL registry.
+- Model host registry.
+- Prompt, response, file, memory, or model metadata store.
+- Plaintext proxy for AetherLink protocol messages.
+
+Privacy-preserving record shape should be closer to:
+
+```text
+rendezvous_key = H(pairwise_secret, time_window, purpose)
+record = encrypted_or_opaque({
+  candidate_exchange_hint,
+  expiration,
+  anti_replay_nonce,
+  protocol_version
+})
+```
+
+The exact cryptographic construction is future work, but the design intent is clear: unpaired observers should not learn stable runtime identity, client identity, backend details, model inventory, or usable connection information.
+
+The DHT/bootstrap option should remain optional. AetherLink can start with simpler rendezvous servers and later distribute bootstrap across more peers, as long as privacy and trust boundaries stay unchanged.
+
+## Phase 4: Blind Encrypted Relay Fallback
+
+Some networks will block direct P2P. The fallback is a blind encrypted relay or TURN-style path.
+
+Relay responsibilities:
+
+- Allocate a temporary relay path.
+- Forward opaque encrypted packets between the paired client and runtime.
+- Enforce basic abuse controls, quotas, and expiration.
+- Avoid storing payloads beyond transient forwarding buffers.
+
+Relay non-responsibilities:
+
+- Run models.
+- Terminate the AetherLink encrypted session.
+- Authenticate devices as trusted.
+- See prompts, responses, model lists, files, memory, backend credentials, or runtime command payloads.
+- Provide Ollama, LM Studio, or OpenAI-compatible API access.
+
+Relay selection happens after local direct and remote P2P candidates fail. Relay use should be visible in diagnostics because it affects latency and availability, but it must not change the user-facing trust model.
+
+## Route Resolution Order
+
+The route resolver should operate on a paired runtime identity, not on a remembered host string.
+
+Candidate order:
+
+1. Current local discovery candidate with matching route token or trusted identity hint.
+2. Current USB/emulator/hotspot/direct candidate explicitly associated with the trusted runtime.
+3. QR-provided or last-known local endpoint hint for diagnostics and v0.1 compatibility.
+4. Remote P2P NAT traversal candidate.
+5. Relay fallback candidate.
+
+Every successful route must still establish an authenticated encrypted session before runtime commands can execute.
+
+## Route Record Contract
+
+Route records are the connection-layer objects that make "find my paired runtime" possible without turning host/port into the product identity.
+
+Normal product target:
+
+```json
+{
+  "target": "paired_runtime_identity",
+  "runtime_device_id": "runtime-1",
+  "runtime_key_fingerprint": "fingerprint",
+  "route_token": "pairwise-route-token"
+}
+```
+
+Allowed route record classes:
+
+- `local_direct`: current same-network, USB, hotspot, emulator, or explicit diagnostic endpoint candidates.
+- `p2p_rendezvous`: short-lived remote P2P candidate-exchange records for authenticated NAT traversal.
+- `relay_allocation`: short-lived blind encrypted relay or TURN-style allocation records used only after direct P2P fails.
+
+Every non-local route record must be:
+
+- Pairwise: derived from one paired client/runtime relationship, not from a global runtime id.
+- Opaque to infrastructure: observers should not learn stable client id, stable runtime id, backend URLs, model inventory, prompts, files, memory, or provider status.
+- Expiring: bounded by a short lifetime and rejected after expiration.
+- Replay protected: bound to a nonce, time window, and authenticated session establishment.
+- Identity bound: usable only when the paired client and runtime complete the encrypted session and challenge-response flow.
+
+A practical future record shape is:
+
+```json
+{
+  "class": "p2p_rendezvous",
+  "record_id": "opaque-pairwise-record-id",
+  "encrypted_body": "opaque-candidate-material",
+  "expires_at": "2026-06-24T12:00:00Z",
+  "anti_replay_nonce": "nonce",
+  "protocol_version": 1
+}
+```
+
+`host` and `port` are never the normal product target. If a QR payload or local setting carries them, treat them as `dev_endpoint_hint` or `local_direct` candidates for compatibility and diagnostics only. Future `route.*` protocol messages should be reserved until v0.2 implementation work starts; v0.1 should not expose active route messages that imply remote P2P is already implemented.
+
+## Threat Model
+
+Assets:
+
+- Runtime host control.
+- Trusted device identities and keys.
+- Model prompts and responses.
+- Model inventory and provider health.
+- Chat history, memory notes, future summaries, and future indexes.
+- Files, images, future tools, future web search, future MCP, and future automations.
+- Backend credentials and local backend URLs.
+
+Threats:
+
+- Same-network attacker attempts to send runtime commands.
+- Unpaired remote peer discovers a rendezvous record and attempts to connect.
+- Bootstrap/DHT observer correlates stable identifiers across time.
+- Relay operator attempts to inspect AI payloads or infer model usage.
+- Stale NAT candidates are replayed.
+- Lost paired client remains trusted after the user expects revocation.
+- Manual endpoint compatibility accidentally becomes normal onboarding.
+- Client-side code attempts direct Ollama/LM Studio access for convenience.
+
+Required mitigations:
+
+- Pairing-derived route tokens instead of public stable identifiers.
+- Short-lived rendezvous and candidate records.
+- Challenge-response authentication on every session.
+- End-to-end encryption between paired devices.
+- Replay protection for rendezvous and NAT traversal.
+- Device revocation that applies to all route types.
+- Minimal discovery metadata.
+- Strict runtime-host mediation for all backend calls.
+- Clear diagnostics that distinguish local direct, P2P, and relay paths.
+
+## Non-Goals
+
+- Implementing networking in this documentation pass.
+- Building a public AetherLink node network in v0.1.
+- Making runtimes discoverable by unpaired devices.
+- Adding accounts as a trust requirement.
+- Moving model execution to cloud infrastructure.
+- Letting clients call Ollama, LM Studio, or future serving backends directly.
+- Treating mDNS, local IPs, or fixed host/port entry as the final product connection model.
+- Exposing model inventory, prompts, responses, files, memory, or backend URLs through discovery or relay infrastructure.
+
+## Version Boundaries
+
+### v0.1
+
+v0.1 should remain local-direct and identity-first:
+
+- QR pairing establishes trusted client/runtime identity.
+- Runtime commands require trusted-device authentication.
+- Client stores runtime identity as the target, with host/port only as optional endpoint hints.
+- Local discovery and USB/dev paths can resolve direct route candidates.
+- Bonjour/local discovery may advertise minimal route hints such as `route_token`.
+- Manual endpoint entry is development/diagnostics only.
+- No production NAT traversal.
+- No production DHT/bootstrap rendezvous.
+- No production relay path.
+- No direct client access to Ollama or LM Studio.
+
+### v0.2
+
+v0.2 should make remote connectivity real enough to test across different networks:
+
+- Define the production encrypted session handshake.
+- Bind sessions to paired runtime and client keys.
+- Add replay protection and token rotation rules.
+- Add STUN-like address discovery and candidate gathering.
+- Add a privacy-preserving rendezvous or bootstrap service for short-lived candidate exchange.
+- Attempt authenticated direct P2P before relay.
+- Add blind encrypted relay/TURN-style fallback for blocked networks.
+- Add diagnostics for route type, failure reason, and relay use.
+- Keep AI payloads, backend calls, model inventory, files, memory, and credentials invisible to rendezvous and relay infrastructure.
+
+### Later
+
+Later releases can distribute bootstrap further, support more runtime platforms, and support more client platforms. The invariant does not change: clients control sessions, runtime hosts mediate execution, and only paired identities can communicate.

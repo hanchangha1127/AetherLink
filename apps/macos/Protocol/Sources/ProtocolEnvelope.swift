@@ -60,7 +60,6 @@ public struct ModelInfo: Codable, Identifiable, Equatable, Sendable {
     public var running: Bool
     public var source: String
     public var remoteModel: String?
-    public var remoteHost: String?
 
     public init(
         id: String,
@@ -70,8 +69,7 @@ public struct ModelInfo: Codable, Identifiable, Equatable, Sendable {
         installed: Bool = true,
         running: Bool = false,
         source: String = "local",
-        remoteModel: String? = nil,
-        remoteHost: String? = nil
+        remoteModel: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -81,7 +79,6 @@ public struct ModelInfo: Codable, Identifiable, Equatable, Sendable {
         self.running = running
         self.source = source
         self.remoteModel = remoteModel
-        self.remoteHost = remoteHost
     }
 
     enum CodingKeys: String, CodingKey {
@@ -93,6 +90,5 @@ public struct ModelInfo: Codable, Identifiable, Equatable, Sendable {
         case running
         case source
         case remoteModel = "remote_model"
-        case remoteHost = "remote_host"
     }
 }

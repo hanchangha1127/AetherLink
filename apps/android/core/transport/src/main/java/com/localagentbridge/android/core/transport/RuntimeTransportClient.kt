@@ -10,7 +10,7 @@ import java.io.Closeable
 import java.net.InetSocketAddress
 import java.net.Socket
 
-class MacRuntimeTransportClient(
+class RuntimeTransportClient(
     private val codec: ProtocolCodec = ProtocolCodec(),
 ) : Closeable {
     private val sendMutex = Mutex()
@@ -28,7 +28,7 @@ class MacRuntimeTransportClient(
     }
 
     suspend fun send(envelope: ProtocolEnvelope) = withContext(Dispatchers.IO) {
-        val active = requireNotNull(socket) { "Mac runtime transport is not connected" }
+        val active = requireNotNull(socket) { "Runtime transport is not connected" }
         val frame = codec.encode(envelope)
         sendMutex.withLock {
             active.outputStream.write(frame)
@@ -37,7 +37,7 @@ class MacRuntimeTransportClient(
     }
 
     suspend fun receive(): ProtocolEnvelope = withContext(Dispatchers.IO) {
-        val active = requireNotNull(socket) { "Mac runtime transport is not connected" }
+        val active = requireNotNull(socket) { "Runtime transport is not connected" }
         codec.readFrame(active.inputStream)
     }
 

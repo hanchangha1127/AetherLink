@@ -339,10 +339,7 @@ func assertNoBackendLeak(_ value: Any, context: String, keyPath: [String] = []) 
     }
     if let string = value as? String {
         let lowered = string.lowercased()
-        let markers = keyPath.last == "remote_host"
-            ? backendLeakMarkers.filter { !["http://", "https://", "ws://", "wss://"].contains($0) }
-            : backendLeakMarkers
-        if let marker = markers.first(where: { lowered.contains($0) }) {
+        if let marker = backendLeakMarkers.first(where: { lowered.contains($0) }) {
             throw SmokeFailure.message("\(context) leaked backend marker \(marker): \(string)")
         }
     }
@@ -776,7 +773,11 @@ func main() throws {
         client,
         type: "hello",
         requestID: "smoke-hello",
-        payload: ["device_id": deviceID]
+        payload: [
+            "device_id": deviceID,
+            "device_name": "Smoke Test Client",
+            "client_capabilities": ["chat", "streaming", "attachments"]
+        ]
     )
     try requireType(challenge, "auth.challenge", context: "hello")
     let challengePayload = try payload(challenge, context: "hello")

@@ -6,11 +6,11 @@
 "Logs" = "日志";
 "Open AetherLink" = "打开 AetherLink";
 "Refresh" = "刷新";
-"Companion: %@" = "Companion：%@";
+"Runtime: %@" = "运行时：%@";
 "Backend: %@" = "后端：%@";
 "Quit" = "退出";
 
-"AetherLink Companion" = "AetherLink 运行时";
+"AetherLink Runtime" = "AetherLink 运行时";
 "Bridge trusted client devices to this local runtime." = "将受信任的客户端设备连接到此本地运行时。";
 "Bridge trusted client devices through this local runtime to local models." = "通过此本地运行时将受信任的客户端设备桥接到本地模型。";
 "Runtime" = "运行时";
@@ -26,7 +26,7 @@
 "Runtime listener" = "运行时监听器";
 "Runtime listener failed" = "运行时监听器失败";
 "Runtime listener could not start." = "无法启动运行时监听器。";
-"Listening for authenticated runtime sessions." = "正在监听已认证的运行时会话。";
+"Accepting authenticated runtime sessions." = "正在接受已认证的运行时会话。";
 "Start the companion runtime listener." = "启动 Companion 运行时监听器。";
 "Local backend availability" = "本地后端可用性";
 "Trusted device pairing" = "受信任设备配对";
@@ -47,7 +47,7 @@
 "Unavailable" = "不可用";
 "Ollama available" = "Ollama 可用";
 "LM Studio available" = "LM Studio 可用";
-"Listening on port %@" = "正在监听端口 %@";
+"Route ready" = "路径已就绪";
 "Ollama unavailable" = "Ollama 不可用";
 "LM Studio unavailable" = "LM Studio 不可用";
 "Ollama returned an error" = "Ollama 返回了错误";
@@ -56,7 +56,7 @@
 "LM Studio response could not be read" = "无法读取 LM Studio 响应";
 "Ollama connection error" = "Ollama 连接错误";
 "LM Studio connection error" = "LM Studio 连接错误";
-"Ready for trusted client devices." = "已准备好接受受信任的客户端设备。";
+"Trusted devices can resolve the current local route after pairing." = "受信任设备可在配对后解析当前本地路径。";
 "The local runtime listener is not active." = "本地运行时监听器未激活。";
 "Local model backend is responding." = "本地模型后端正在响应。";
 "Local backend is responding." = "本地后端正在响应。";
@@ -71,6 +71,13 @@
 "Local" = "本地";
 "Cloud" = "云端";
 "Running" = "运行中";
+"Model Residency" = "模型驻留";
+"Not managed" = "未管理";
+"Idle" = "空闲";
+"Active" = "活动";
+"Model residency is not managed by this backend." = "此后端不管理模型驻留。";
+"%@ %@ active. Idle unload after %d minute(s)." = "%@ %@ 处于活动状态。空闲 %d 分钟后卸载。";
+"No active model is resident through the runtime policy." = "当前没有通过运行时策略驻留的活动模型。";
 "Run a check to verify local backends before connecting a client device." = "连接客户端设备前，请先检查本地后端。";
 "Open a local model provider on this runtime host, then check again." = "在此运行时主机上打开本地模型提供方，然后再次检查。";
 "%d trusted device(s)" = "%d 台受信任设备";
@@ -85,14 +92,14 @@
 "Load local models" = "加载本地模型";
 "Load models so client devices can choose an installed chat model through this local runtime." = "加载模型，使客户端设备能通过此本地运行时选择已安装的聊天模型。";
 "Ready for Client Devices" = "已为客户端设备准备好";
-"This runtime host is listening, a local backend is responding, and trusted devices can request chat." = "此运行时主机正在监听，本地后端正在响应，受信任设备可以请求聊天。";
+"Runtime route is ready, a local backend is responding, and trusted devices can request chat." = "运行时路径已就绪，本地后端正在响应，受信任设备可以请求聊天。";
 "Client requests stay mediated by this local runtime. Ollama and LM Studio are never exposed directly to client devices." = "客户端请求始终由此本地运行时中介。Ollama 和 LM Studio 不会直接暴露给客户端设备。";
 "Pairing creates a trusted-device record so the client device can reconnect without entering backend URLs." = "配对会创建受信任设备记录，使客户端设备无需输入后端 URL 即可重新连接。";
 "Chat and embedding model choices are managed separately so each workflow uses the right model." = "聊天模型和嵌入模型会分开管理，以便每种工作流使用合适的模型。";
 "The client device remains a controller; all model access stays on the runtime host." = "客户端设备仍是控制器；所有模型访问都保留在运行时主机上。";
 
 "Pair a Client Device" = "配对客户端设备";
-"Create a one-time QR code for the AetherLink client app." = "为 AetherLink 客户端应用创建一次性 QR 码。";
+"Scan once from the AetherLink client app to trust this runtime identity." = "从 AetherLink 客户端应用扫描一次，以信任此运行时身份。";
 "Pairing Code" = "配对码";
 "No active pairing code" = "没有有效的配对码";
 "Start pairing when the client app is ready to scan." = "当客户端应用准备好扫描时开始配对。";
@@ -104,7 +111,8 @@
 "Copy Code" = "复制代码";
 "Code Copied" = "代码已复制";
 "Scan the QR code or enter the code in the AetherLink client app." = "在 AetherLink 客户端应用中扫描 QR 码或输入代码。";
-"If the system asks for local network permission, allow it so client devices can discover and pair with this runtime host." = "如果系统请求本地网络权限，请允许，以便客户端设备能发现并配对此运行时主机。";
+"The QR code identifies this runtime; client apps resolve the current route after scanning." = "QR 码用于识别此运行时；客户端应用会在扫描后解析当前连接路径。";
+"Local Network permission enables the current local discovery path; pairing trust stays tied to this runtime identity." = "本地网络权限用于启用当前的本地发现路径；配对信任仍绑定到此运行时身份。";
 "Keep this runtime host awake until pairing completes." = "配对完成前，请保持此运行时主机唤醒。";
 "Client devices connect to this local runtime, not directly to Ollama or LM Studio." = "客户端设备连接到此本地运行时，而不是直接连接 Ollama 或 LM Studio。";
 "Expires in %d min %02d sec" = "%d 分 %02d 秒后过期";
@@ -142,7 +150,7 @@
 "Open Companion" = "打开 Companion";
 "Companion Status" = "Companion 状态";
 "Transport" = "传输";
-"Advertising _aetherlink._tcp.local. on port %@" = "正在端口 %@ 广播 _aetherlink._tcp.local.";
+"Advertising _aetherlink._tcp.local. on port %@" = "配对服务可通过端口 %@ 使用";
 "Load Models" = "加载模型";
 "No models loaded" = "尚未加载模型";
 "Pair Client Device" = "配对客户端设备";

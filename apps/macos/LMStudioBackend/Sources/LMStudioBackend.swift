@@ -65,7 +65,7 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
     public func pullModel(name: String) async throws -> ModelPullResult {
         throw LMStudioBackendError.badResponse(
             endpoint: "POST /api/v1/models/download",
-            reason: "LM Studio downloads are managed from LM Studio or lms; AetherLink does not expose Android-initiated LM Studio downloads."
+            reason: "LM Studio downloads are managed from LM Studio or lms; AetherLink does not expose client-initiated LM Studio downloads."
         )
     }
 
@@ -484,26 +484,141 @@ private struct LMStudioUnloadRequest: Encodable {
 
 private struct LMStudioNativeChatRequest: Encodable {
     var model: String
-    var input: [LMStudioInputMessage]
+    var input: [LMStudioInputItem]
     var stream = true
     var store = false
 
     init(model: String, messages: [ChatMessage]) {
         self.model = model
-        input = messages.map { LMStudioInputMessage(role: $0.role, content: $0.content) }
+        input = messages.flatMap(LMStudioInputItem.items)
     }
 }
 
-private struct LMStudioInputMessage: Encodable {
-    var type = "message"
-    var role: String
-    var content: String
+private struct LMStudioInputItem: Encodable {
+    var type: String
+    var role: String?
+    var content: String?
+    var dataURL: String?
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case role
+        case content
+        case dataURL = "data_url"
+    }
+
+    static func items(message: ChatMessage) -> [LMStudioInputItem] {
+        let imageItems = message.attachments.compactMap(image)
+        let trimmedContent = message.content.trimmingCharacters(in: .whitespacesAndNewlines)
+        var items: [LMStudioInputItem] = []
+
+        if !trimmedContent.isEmpty || imageItems.isEmpty {
+            items.append(.message(role: message.role, content: message.content))
+        }
+        items.append(contentsOf: imageItems)
+        return items
+    }
+
+    static func message(role: String, content: String) -> LMStudioInputItem {
+        LMStudioInputItem(type: "message", role: role, content: content)
+    }
+
+    static func image(_ attachment: ChatAttachment) -> LMStudioInputItem? {
+        guard let dataURL = attachment.imageDataURL else { return nil }
+        return LMStudioInputItem(type: "image", dataURL: dataURL)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(type, forKey: .type)
+        try container.encodeIfPresent(role, forKey: .role)
+        try container.encodeIfPresent(content, forKey: .content)
+        try container.encodeIfPresent(dataURL, forKey: .dataURL)
+    }
 }
 
 private struct OpenAIChatCompletionsRequest: Encodable {
     var model: String
-    var messages: [ChatMessage]
+    var messages: [OpenAIChatMessage]
     var stream: Bool
+
+    init(model: String, messages: [ChatMessage], stream: Bool) {
+        self.model = model
+        self.messages = messages.map(OpenAIChatMessage.init(message:))
+        self.stream = stream
+    }
+}
+
+private struct OpenAIChatMessage: Encodable {
+    var role: String
+    var content: OpenAIMessageContent
+
+    init(message: ChatMessage) {
+        role = message.role
+        let imageParts = message.attachments.compactMap(OpenAIContentPart.image)
+        guard !imageParts.isEmpty else {
+            content = .text(message.content)
+            return
+        }
+
+        var parts: [OpenAIContentPart] = []
+        let trimmedContent = message.content.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedContent.isEmpty {
+            parts.append(.text(trimmedContent))
+        }
+        parts.append(contentsOf: imageParts)
+        content = .parts(parts)
+    }
+}
+
+private enum OpenAIMessageContent: Encodable {
+    case text(String)
+    case parts([OpenAIContentPart])
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .text(let text):
+            try container.encode(text)
+        case .parts(let parts):
+            try container.encode(parts)
+        }
+    }
+}
+
+private struct OpenAIContentPart: Encodable {
+    var type: String
+    var text: String?
+    var imageURL: OpenAIImageURL?
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case text
+        case imageURL = "image_url"
+    }
+
+    static func text(_ text: String) -> OpenAIContentPart {
+        OpenAIContentPart(type: "text", text: text)
+    }
+
+    static func image(_ attachment: ChatAttachment) -> OpenAIContentPart? {
+        guard let dataURL = attachment.imageDataURL else { return nil }
+        return OpenAIContentPart(
+            type: "image_url",
+            imageURL: OpenAIImageURL(url: dataURL)
+        )
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(type, forKey: .type)
+        try container.encodeIfPresent(text, forKey: .text)
+        try container.encodeIfPresent(imageURL, forKey: .imageURL)
+    }
+}
+
+private struct OpenAIImageURL: Encodable {
+    var url: String
 }
 
 private struct LMStudioMessageDelta: Decodable {
@@ -562,6 +677,26 @@ private struct OpenAIUsage: Decodable {
     enum CodingKeys: String, CodingKey {
         case promptTokens = "prompt_tokens"
         case completionTokens = "completion_tokens"
+    }
+}
+
+private extension ChatAttachment {
+    var isImage: Bool {
+        let normalizedType = type.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let normalizedMimeType = mimeType.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return normalizedType == "image" || normalizedMimeType.hasPrefix("image/")
+    }
+
+    var imageDataURL: String? {
+        guard isImage,
+              let dataBase64 = dataBase64?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !dataBase64.isEmpty
+        else {
+            return nil
+        }
+        let normalizedMimeType = mimeType.trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedMimeType = normalizedMimeType.isEmpty ? "image/png" : normalizedMimeType
+        return "data:\(resolvedMimeType);base64,\(dataBase64)"
     }
 }
 

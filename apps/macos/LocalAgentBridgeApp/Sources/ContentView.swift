@@ -18,7 +18,7 @@ struct ContentView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("AetherLink")
                             .font(.headline.weight(.semibold))
-                        Text("Desktop Runtime")
+                        Text("Runtime")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }

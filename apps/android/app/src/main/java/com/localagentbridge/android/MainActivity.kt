@@ -10,7 +10,6 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.annotation.StringRes
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -35,12 +34,10 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Unarchive
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -79,7 +76,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalConfiguration
@@ -103,6 +99,7 @@ import com.localagentbridge.android.runtime.isChatModel
 import com.localagentbridge.android.ui.ChatScreen
 import com.localagentbridge.android.ui.PairingScreen
 import com.localagentbridge.android.ui.SettingsScreen
+import com.localagentbridge.android.ui.runtimeProviderDisplayName
 import kotlinx.coroutines.launch
 import java.util.Locale
 
@@ -166,9 +163,18 @@ private fun LocalAgentBridgeApp() {
                 viewModel.addAttachments(uris)
             }
 
-            LaunchedEffect(state.trustedMac?.deviceId) {
-                if (state.trustedMac != null && destination == AppDestination.Pairing) {
-                    destination = AppDestination.Chat
+            LaunchedEffect(
+                destination,
+                state.trustedRuntime?.deviceId,
+                state.pairingOnboardingCompleted,
+            ) {
+                val resolved = resolveAppDestination(
+                    current = destination,
+                    hasTrustedRuntime = state.trustedRuntime != null,
+                    pairingOnboardingCompleted = state.pairingOnboardingCompleted,
+                )
+                if (resolved != destination) {
+                    destination = resolved
                 }
             }
 
@@ -322,6 +328,7 @@ private fun LocalAgentBridgeApp() {
                                 destination = AppDestination.Settings,
                                 selected = destination == AppDestination.Settings,
                                 onClick = {
+                                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
                                     destination = AppDestination.Settings
                                     scope.launch { drawerState.close() }
                                 },
@@ -351,6 +358,7 @@ private fun LocalAgentBridgeApp() {
                             navigationIcon = {
                                 IconButton(
                                     onClick = {
+                                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
                                         scope.launch { drawerState.open() }
                                     },
                                 ) {
@@ -401,12 +409,12 @@ private fun LocalAgentBridgeApp() {
                             state = state,
                             onStartDiscovery = viewModel::startDiscovery,
                             onStopDiscovery = viewModel::stopDiscovery,
-                            onUseDiscoveredMac = viewModel::useDiscoveredMac,
-                            onForgetTrustedMac = viewModel::forgetTrustedMac,
+                            onUseDiscoveredRuntime = viewModel::useDiscoveredRuntime,
+                            onForgetTrustedRuntime = viewModel::forgetTrustedRuntime,
                             onScanPairingQr = {
                                 startPairingQrScanner(
                                     context = context,
-                                    onResult = viewModel::trustMacFromPairingQr,
+                                    onResult = viewModel::trustRuntimeFromPairingQr,
                                     onFailure = viewModel::showQrScanFailed,
                                 )
                             },
@@ -423,12 +431,12 @@ private fun LocalAgentBridgeApp() {
                             onUseEmulator = viewModel::useEmulatorEndpoint,
                             onStartDiscovery = viewModel::startDiscovery,
                             onStopDiscovery = viewModel::stopDiscovery,
-                            onUseDiscoveredMac = viewModel::useDiscoveredMac,
-                            onForgetTrustedMac = viewModel::forgetTrustedMac,
+                            onUseDiscoveredRuntime = viewModel::useDiscoveredRuntime,
+                            onForgetTrustedRuntime = viewModel::forgetTrustedRuntime,
                             onScanPairingQr = {
                                 startPairingQrScanner(
                                     context = context,
-                                    onResult = viewModel::trustMacFromPairingQr,
+                                    onResult = viewModel::trustRuntimeFromPairingQr,
                                     onFailure = viewModel::showQrScanFailed,
                                 )
                             },
@@ -436,11 +444,13 @@ private fun LocalAgentBridgeApp() {
                             onRefreshHealth = viewModel::requestRuntimeHealth,
                             onRequestModels = viewModel::requestModels,
                             onDisconnect = viewModel::disconnect,
+                            onSetAutoReconnectEnabled = viewModel::setTrustedRuntimeAutoReconnectEnabled,
                             onSetLanguageTag = viewModel::setAppLanguageTag,
                             onSelectEmbeddingModel = viewModel::selectEmbeddingModel,
                             onAddMemoryEntry = viewModel::addMemoryEntry,
                             onRemoveMemoryEntry = viewModel::removeMemoryEntry,
                             onSetMemoryEntryEnabled = viewModel::setMemoryEntryEnabled,
+                            showDeveloperDiagnostics = BuildConfig.DEBUG,
                             modifier = Modifier
                                 .fillMaxSize()
                                 .padding(padding),
@@ -557,18 +567,22 @@ private fun ChatModelTopBarMenu(
     val hapticFeedback = LocalHapticFeedback.current
     val chatModels = state.models.filter { it.isChatModel() }
     val selectedModel = chatModels.firstOrNull { it.id == state.selectedModelId }
-    val selectedModelUnavailable = state.isConnected && state.selectedModelId != null && selectedModel == null
+    val selectedModelUnavailable = state.selectedModelId != null && selectedModel == null
+    val selectedModelRecoveryMessage = when {
+        state.isLoadingModels -> stringResource(R.string.selected_model_restoring)
+        state.isConnected -> stringResource(R.string.selected_model_unavailable)
+        else -> stringResource(R.string.selected_model_restoring)
+    }
     val selectedLabel = when {
-        state.isConnected && selectedModel != null -> selectedModel.name
+        selectedModel != null -> selectedModel.name
         state.isLoadingModels -> stringResource(R.string.loading_models)
-        selectedModelUnavailable -> stringResource(R.string.model_unavailable)
         else -> stringResource(R.string.choose_model)
     }
     val modelPickerStateDescription = when {
+        selectedModel != null -> selectedModel.name
+        selectedModelUnavailable -> selectedModelRecoveryMessage
         state.isLoadingModels -> stringResource(R.string.loading_models)
         !state.isConnected -> stringResource(R.string.chat_status_disconnected)
-        selectedModelUnavailable -> stringResource(R.string.selected_model_unavailable)
-        selectedModel != null -> selectedModel.name
         else -> stringResource(R.string.chat_hint_select_model)
     }
     val trimmedModelSearchQuery = modelSearchQuery.trim()
@@ -582,6 +596,7 @@ private fun ChatModelTopBarMenu(
     Box {
         TextButton(
             onClick = {
+                hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
                 isExpanded = true
                 if (state.isConnected && chatModels.isEmpty() && !state.isLoadingModels) {
                     onRequestModels()
@@ -624,7 +639,10 @@ private fun ChatModelTopBarMenu(
                         )
                         Text(
                             text = selectedModel?.let { model ->
-                                stringResource(R.string.model_provider_value, model.provider)
+                                stringResource(
+                                    R.string.model_provider_value,
+                                    runtimeProviderDisplayName(model.provider),
+                                )
                             } ?: if (state.isConnected) {
                                 stringResource(R.string.chat_status_connected)
                             } else {
@@ -648,11 +666,20 @@ private fun ChatModelTopBarMenu(
             if (selectedModelUnavailable) {
                 DropdownMenuItem(
                     text = {
-                        Text(
-                            text = stringResource(R.string.selected_model_unavailable),
-                            maxLines = 3,
-                            overflow = TextOverflow.Ellipsis,
-                        )
+                        Column {
+                            Text(
+                                text = stringResource(R.string.selected_model_unavailable),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text(
+                                text = selectedModelRecoveryMessage,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 3,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
                     },
                     enabled = false,
                     onClick = {},
@@ -787,7 +814,7 @@ private fun modelMenuStatusLine(model: RuntimeModel, installing: Boolean): Strin
         model.running -> stringResource(R.string.model_running)
         else -> stringResource(R.string.model_installed)
     }
-    return "${model.provider} - $availability"
+    return "${runtimeProviderDisplayName(model.provider)} - $availability"
 }
 
 private fun RuntimeModel.matchesModelQuery(query: String): Boolean {
@@ -868,6 +895,7 @@ private fun ChatSessionDrawerItem(
     onDelete: () -> Unit,
 ) {
     var isMenuExpanded by rememberSaveable(session.id) { mutableStateOf(false) }
+    val hapticFeedback = LocalHapticFeedback.current
     val title = session.title.ifBlank { stringResource(R.string.untitled_chat) }
     val subtitle = when {
         session.archivedAtMillis != null -> stringResource(R.string.archived_chat)
@@ -880,6 +908,7 @@ private fun ChatSessionDrawerItem(
         selected = selected,
         onClick = {
             if (enabled) {
+                hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
                 onClick()
             }
         },
@@ -914,6 +943,7 @@ private fun ChatSessionDrawerItem(
                 }
                 IconButton(
                     onClick = {
+                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
                         isMenuExpanded = true
                     },
                     enabled = enabled,
@@ -1258,13 +1288,4 @@ private fun startPairingQrScanner(
         .addOnFailureListener { error ->
             onFailure(error.message)
         }
-}
-
-private enum class AppDestination(
-    @param:StringRes val labelRes: Int,
-    val icon: ImageVector,
-) {
-    Chat(R.string.tab_chat, Icons.AutoMirrored.Filled.Chat),
-    Pairing(R.string.tab_pairing, Icons.Filled.Link),
-    Settings(R.string.tab_settings, Icons.Filled.Settings),
 }

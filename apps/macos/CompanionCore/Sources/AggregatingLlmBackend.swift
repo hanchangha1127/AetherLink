@@ -89,7 +89,7 @@ public final class AggregatingLlmBackend: LlmBackend, @unchecked Sendable {
             throw BackendError(
                 provider: .lmStudio,
                 code: "unsupported_operation",
-                message: "LM Studio model downloads are managed on the Mac through LM Studio or lms.",
+                message: "LM Studio model downloads are managed on the runtime host through LM Studio or lms.",
                 retryable: false
             )
         }

@@ -14,7 +14,7 @@ class PeerSocketClient(
 ) : Closeable {
     private var socket: SSLSocket? = null
 
-    suspend fun connect(peer: DiscoveredMac) = withContext(Dispatchers.IO) {
+    suspend fun connect(peer: DiscoveredRuntime) = withContext(Dispatchers.IO) {
         val connected = socketFactory.createSocket(peer.host, peer.port) as SSLSocket
         connected.startHandshake()
         socket = connected

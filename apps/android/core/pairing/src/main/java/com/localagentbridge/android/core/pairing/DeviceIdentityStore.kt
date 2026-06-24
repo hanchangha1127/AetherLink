@@ -67,7 +67,7 @@ class DeviceIdentityStore(private val context: Context) {
         return listOf(manufacturer, model)
             .filter { it.isNotBlank() }
             .joinToString(" ")
-            .ifBlank { "Android Device" }
+            .ifBlank { "AetherLink Client" }
     }
 
     private object Keys {

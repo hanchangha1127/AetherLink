@@ -4,20 +4,21 @@ import java.net.URI
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
 
-data class MacPairingPayload(
+data class RuntimePairingPayload(
     val pairingNonce: String,
     val pairingCode: String,
-    val macDeviceId: String,
-    val macName: String,
+    val runtimeDeviceId: String,
+    val runtimeName: String,
     val fingerprint: String,
+    val runtimePublicKeyBase64: String?,
     val routeToken: String?,
     val host: String?,
     val port: Int?,
     val serviceType: String?,
 )
 
-object MacPairingPayloadParser {
-    fun parse(rawValue: String): MacPairingPayload {
+object RuntimePairingPayloadParser {
+    fun parse(rawValue: String): RuntimePairingPayload {
         val uri = URI(rawValue.trim())
         val scheme = uri.scheme?.lowercase()
         require(scheme == "aetherlink" || scheme == "lab") {
@@ -32,9 +33,10 @@ object MacPairingPayloadParser {
         val query = parseQuery(uri.rawQuery)
         val pairingNonce = query["pairing_nonce"] ?: query["nonce"]
         val pairingCode = query["pairing_code"] ?: query["code"]
-        val macDeviceId = query["mac_device_id"] ?: query["device_id"]
-        val macName = query["mac_name"] ?: query["name"] ?: "AetherLink Mac"
-        val fingerprint = query["fingerprint"] ?: query["cert_fingerprint"]
+        val runtimeDeviceId = query["runtime_device_id"] ?: query["mac_device_id"] ?: query["device_id"]
+        val runtimeName = query["runtime_name"] ?: query["mac_name"] ?: query["name"] ?: "AetherLink Runtime"
+        val fingerprint = query["runtime_key_fingerprint"] ?: query["fingerprint"] ?: query["cert_fingerprint"]
+        val runtimePublicKeyBase64 = query["runtime_public_key"] ?: query["mac_public_key"]
         val routeToken = query["route_token"] ?: query["discovery_token"]
         val host = (query["host"] ?: query["runtime_host"])?.takeIf { it.isNotBlank() }
         val rawPort = (query["port"] ?: query["runtime_port"])?.takeIf { it.isNotBlank() }
@@ -43,19 +45,20 @@ object MacPairingPayloadParser {
         require(!pairingNonce.isNullOrBlank()) { "Missing pairing nonce" }
         require(!pairingCode.isNullOrBlank()) { "Missing pairing code" }
         require(pairingCode.matches(Regex("\\d{6}"))) { "Invalid pairing code" }
-        require(!macDeviceId.isNullOrBlank()) { "Missing Mac device id" }
-        require(!fingerprint.isNullOrBlank()) { "Missing Mac fingerprint" }
+        require(!runtimeDeviceId.isNullOrBlank()) { "Missing runtime device id" }
+        require(!fingerprint.isNullOrBlank()) { "Missing runtime fingerprint" }
         if (host != null || rawPort != null) {
-            require(host != null) { "Missing Mac runtime host" }
-            require(port != null && port in 1..65535) { "Invalid Mac runtime port" }
+            require(host != null) { "Missing runtime host" }
+            require(port != null && port in 1..65535) { "Invalid runtime port" }
         }
 
-        return MacPairingPayload(
+        return RuntimePairingPayload(
             pairingNonce = pairingNonce,
             pairingCode = pairingCode,
-            macDeviceId = macDeviceId,
-            macName = macName,
+            runtimeDeviceId = runtimeDeviceId,
+            runtimeName = runtimeName,
             fingerprint = fingerprint,
+            runtimePublicKeyBase64 = runtimePublicKeyBase64?.takeIf { it.isNotBlank() },
             routeToken = routeToken?.takeIf { it.isNotBlank() },
             host = host,
             port = port,

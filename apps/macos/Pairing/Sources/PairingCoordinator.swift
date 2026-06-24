@@ -9,6 +9,7 @@ public struct PairingSession: Identifiable, Equatable, Sendable {
     public var macDeviceID: String
     public var macName: String
     public var fingerprint: String
+    public var runtimePublicKeyBase64: String?
     public var routeToken: String?
     public var host: String?
     public var port: Int?
@@ -27,6 +28,10 @@ public struct PairingSession: Identifiable, Equatable, Sendable {
             URLQueryItem(name: "fingerprint", value: fingerprint),
             URLQueryItem(name: "service_type", value: serviceType)
         ]
+        if let runtimePublicKeyBase64, !runtimePublicKeyBase64.isEmpty {
+            queryItems.append(URLQueryItem(name: "runtime_public_key", value: runtimePublicKeyBase64))
+            queryItems.append(URLQueryItem(name: "runtime_key_fingerprint", value: fingerprint))
+        }
         if let routeToken, !routeToken.isEmpty {
             queryItems.append(URLQueryItem(name: "route_token", value: routeToken))
         }
@@ -67,6 +72,8 @@ public struct PairingValidationResult: Equatable, Sendable {
     public var trustedDevice: TrustedDevice
     public var macDeviceID: String
     public var macName: String
+    public var runtimePublicKeyBase64: String?
+    public var runtimeKeyFingerprint: String
 }
 
 public enum PairingRejectionReason: String, Equatable, Sendable {
@@ -108,8 +115,9 @@ public final class PairingCoordinator: @unchecked Sendable {
     public func beginPairing(
         validFor seconds: TimeInterval = 300,
         macDeviceID: String,
-        macName: String = "AetherLink Mac",
+        macName: String = "AetherLink Runtime",
         fingerprint: String,
+        runtimePublicKeyBase64: String? = nil,
         routeToken: String? = nil,
         host: String? = nil,
         port: Int? = nil,
@@ -124,6 +132,7 @@ public final class PairingCoordinator: @unchecked Sendable {
             macDeviceID: macDeviceID,
             macName: macName,
             fingerprint: fingerprint,
+            runtimePublicKeyBase64: runtimePublicKeyBase64,
             routeToken: routeToken,
             host: host,
             port: port,
@@ -152,7 +161,7 @@ public final class PairingCoordinator: @unchecked Sendable {
                 failedAttempts = 0
                 return .rejected(rejection(
                     reason: .expired,
-                    message: "Pairing session expired. Start pairing again on the Mac.",
+                    message: "Pairing session expired. Start pairing again on the runtime host.",
                     retryable: false,
                     failedAttempts: 0,
                     remainingAttempts: 0
@@ -164,7 +173,7 @@ public final class PairingCoordinator: @unchecked Sendable {
                 guard failedAttempts < maxFailedAttempts else {
                     let rejection = rejection(
                         reason: .attemptsExceeded,
-                        message: "Too many invalid pairing attempts. Start pairing again on the Mac.",
+                        message: "Too many invalid pairing attempts. Start pairing again on the runtime host.",
                         retryable: false,
                         failedAttempts: failedAttempts,
                         remainingAttempts: remainingAttempts
@@ -190,7 +199,9 @@ public final class PairingCoordinator: @unchecked Sendable {
                     publicKeyBase64: request.publicKeyBase64
                 ),
                 macDeviceID: session.macDeviceID,
-                macName: session.macName
+                macName: session.macName,
+                runtimePublicKeyBase64: session.runtimePublicKeyBase64,
+                runtimeKeyFingerprint: session.fingerprint
             ))
         }
     }

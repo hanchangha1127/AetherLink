@@ -55,9 +55,9 @@ struct RuntimeDevServer {
         print("[runtime] AetherLink dev server listening on 127.0.0.1:\(port)")
         print("[runtime] Backend: \(useMockBackend ? "dev mock" : "Ollama + LM Studio")")
         print("[runtime] Advertising _aetherlink._tcp.local. on port \(port)")
-        print("[runtime] For a USB-connected Android phone, run:")
+        print("[runtime] For a USB-connected client device, run:")
         print("[runtime]   adb reverse tcp:\(port) tcp:\(port)")
-        print("[runtime] Then connect Android to 127.0.0.1:\(port)")
+        print("[runtime] Then connect the client app to 127.0.0.1:\(port)")
 
         if environment["AETHERLINK_DEV_PAIRING"] == "1" {
             startDevelopmentPairing(
@@ -81,7 +81,7 @@ struct RuntimeDevServer {
     private static func startDevelopmentPairing(
         coordinator: PairingCoordinator,
         port: UInt16,
-        identity: RuntimeIdentity,
+        identity: DevRuntimeIdentity,
         environment: [String: String]
     ) {
         let session = coordinator.beginPairing(
@@ -89,6 +89,7 @@ struct RuntimeDevServer {
             macDeviceID: identity.deviceID,
             macName: identity.name,
             fingerprint: identity.fingerprint,
+            runtimePublicKeyBase64: identity.publicKeyBase64.isEmpty ? nil : identity.publicKeyBase64,
             routeToken: identity.routeToken,
             host: environment["AETHERLINK_DEV_PAIRING_HOST"] ?? "127.0.0.1",
             port: Int(port)
@@ -109,6 +110,10 @@ struct RuntimeDevServer {
             "service_type": session.serviceType,
             "expires_at": ISO8601DateFormatter().string(from: session.expiresAt)
         ]
+        if let runtimePublicKey = session.runtimePublicKeyBase64 {
+            info["runtime_public_key"] = runtimePublicKey
+            info["runtime_key_fingerprint"] = session.fingerprint
+        }
         if let routeToken = session.routeToken {
             info["route_token"] = routeToken
         }
@@ -128,25 +133,54 @@ struct RuntimeDevServer {
         print("[runtime] AETHERLINK_DEV_PAIRING_INFO \(json)")
     }
 
-    private static func runtimeIdentity(environment: [String: String]) -> RuntimeIdentity {
-        RuntimeIdentity(
+    private static func runtimeIdentity(environment: [String: String]) -> DevRuntimeIdentity {
+        let deviceID = environment["AETHERLINK_DEV_MAC_DEVICE_ID"] ?? "aetherlink-dev-mac"
+        let identityKey = loadDevelopmentRuntimeIdentityKey(
+            deviceID: deviceID,
+            environment: environment
+        )
+        return DevRuntimeIdentity(
             deviceID: environment["AETHERLINK_DEV_MAC_DEVICE_ID"] ?? "aetherlink-dev-mac",
-            name: environment["AETHERLINK_DEV_MAC_NAME"] ?? "AetherLink Dev Mac",
-            fingerprint: environment["AETHERLINK_DEV_MAC_FINGERPRINT"] ?? "dev-aetherlink-local",
+            name: environment["AETHERLINK_DEV_RUNTIME_NAME"] ?? environment["AETHERLINK_DEV_MAC_NAME"] ?? "AetherLink Dev Runtime",
+            publicKeyBase64: identityKey.publicKeyBase64,
+            fingerprint: environment["AETHERLINK_DEV_MAC_FINGERPRINT"] ?? identityKey.fingerprint,
             routeToken: environment["AETHERLINK_DEV_ROUTE_TOKEN"] ?? "dev-aetherlink-route"
         )
     }
+
+    private static func loadDevelopmentRuntimeIdentityKey(
+        deviceID: String,
+        environment: [String: String]
+    ) -> RuntimeIdentityKey {
+        if let publicKey = environment["AETHERLINK_DEV_RUNTIME_PUBLIC_KEY"], !publicKey.isEmpty {
+            return RuntimeIdentityKey(
+                publicKeyBase64: publicKey,
+                fingerprint: environment["AETHERLINK_DEV_RUNTIME_KEY_FINGERPRINT"] ?? "dev-\(deviceID)"
+            )
+        }
+        do {
+            return try RuntimeIdentityKeyStore(
+                service: environment["AETHERLINK_DEV_RUNTIME_KEYCHAIN_SERVICE"] ?? "dev.aetherlink.runtime-dev-server",
+                account: environment["AETHERLINK_DEV_RUNTIME_KEYCHAIN_ACCOUNT"] ?? deviceID
+            ).loadOrCreate()
+        } catch {
+            return RuntimeIdentityKey(publicKeyBase64: "", fingerprint: "dev-\(deviceID)")
+        }
+    }
 }
 
-private struct RuntimeIdentity {
+private struct DevRuntimeIdentity {
     var deviceID: String
     var name: String
+    var publicKeyBase64: String
     var fingerprint: String
     var routeToken: String
 
     var advertisementMetadata: RuntimeAdvertisementMetadata {
         RuntimeAdvertisementMetadata(
-            routeToken: routeToken
+            routeToken: routeToken,
+            deviceID: deviceID,
+            fingerprint: fingerprint
         )
     }
 }

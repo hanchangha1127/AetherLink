@@ -43,6 +43,8 @@ data class PersistedRuntimeData(
     val activeSessionId: String? = null,
     val selectedModelId: String? = null,
     val selectedEmbeddingModelId: String? = null,
+    val trustedRuntimeAutoReconnectEnabled: Boolean = true,
+    val pairingOnboardingCompleted: Boolean = false,
     val sessions: List<PersistedChatSession> = emptyList(),
     val memoryEntries: List<PersistedMemoryEntry> = emptyList(),
     val appLanguageTag: String = RuntimeAppLanguage.English.languageTag,
@@ -97,6 +99,8 @@ internal fun PersistedRuntimeData.sanitized(): PersistedRuntimeData {
         },
         selectedModelId = selectedModelId?.trim()?.takeIf(String::isNotBlank),
         selectedEmbeddingModelId = selectedEmbeddingModelId?.trim()?.takeIf(String::isNotBlank),
+        trustedRuntimeAutoReconnectEnabled = trustedRuntimeAutoReconnectEnabled,
+        pairingOnboardingCompleted = pairingOnboardingCompleted,
         sessions = cleanSessions.sortedByDescending { it.updatedAtMillis },
         memoryEntries = cleanMemory.sortedByDescending { it.updatedAtMillis },
         appLanguageTag = RuntimeAppLanguage.normalizeLanguageTag(appLanguageTag),
@@ -109,6 +113,14 @@ internal fun PersistedRuntimeData.withSelectedModelId(modelId: String?): Persist
 
 internal fun PersistedRuntimeData.withSelectedEmbeddingModelId(modelId: String?): PersistedRuntimeData {
     return copy(selectedEmbeddingModelId = modelId?.trim()?.takeIf(String::isNotBlank)).sanitized()
+}
+
+internal fun PersistedRuntimeData.withTrustedRuntimeAutoReconnectEnabled(enabled: Boolean): PersistedRuntimeData {
+    return copy(trustedRuntimeAutoReconnectEnabled = enabled).sanitized()
+}
+
+internal fun PersistedRuntimeData.withPairingOnboardingCompleted(): PersistedRuntimeData {
+    return copy(pairingOnboardingCompleted = true).sanitized()
 }
 
 internal fun PersistedRuntimeData.withAppLanguageTag(languageTag: String): PersistedRuntimeData {

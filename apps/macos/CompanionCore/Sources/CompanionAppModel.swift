@@ -110,6 +110,8 @@ public final class CompanionAppModel: ObservableObject {
     private let peerServer: any RuntimeTransport
     private let advertiser: any RuntimeAdvertiser
     private let macDeviceID: String
+    private let runtimeIdentityKey: RuntimeIdentityKey
+    private let runtimeIdentityWarning: String?
     private var runtimePort: UInt16 = 43170
 
     public init(
@@ -121,7 +123,11 @@ public final class CompanionAppModel: ObservableObject {
         self.providerStatuses = Self.initialProviderStatuses(for: backend)
         self.peerServer = peerServer
         self.advertiser = advertiser
-        self.macDeviceID = Self.loadOrCreateMacDeviceID()
+        let macDeviceID = Self.loadOrCreateMacDeviceID()
+        let runtimeIdentity = Self.loadOrCreateRuntimeIdentityKey(deviceID: macDeviceID)
+        self.macDeviceID = macDeviceID
+        self.runtimeIdentityKey = runtimeIdentity.key
+        self.runtimeIdentityWarning = runtimeIdentity.warning
         self.discoveryRouteToken = Self.loadOrCreateDiscoveryRouteToken()
         self.runtimeRouter = LocalRuntimeMessageRouter(
             backend: backend,
@@ -136,6 +142,9 @@ public final class CompanionAppModel: ObservableObject {
             }
         )
         configureResidencyEventsIfAvailable()
+        if let runtimeIdentityWarning {
+            log(runtimeIdentityWarning)
+        }
     }
 
     public func start(port: UInt16 = 43170) {
@@ -225,9 +234,8 @@ public final class CompanionAppModel: ObservableObject {
         pairingSession = pairingCoordinator.beginPairing(
             macDeviceID: macDeviceID,
             fingerprint: macFingerprint,
-            routeToken: discoveryRouteToken,
-            host: Self.primaryLocalIPv4Address(),
-            port: Int(runtimePort)
+            runtimePublicKeyBase64: macPublicKeyBase64,
+            routeToken: discoveryRouteToken
         )
         log("Pairing code generated")
     }
@@ -282,14 +290,20 @@ public final class CompanionAppModel: ObservableObject {
     }
 
     private var macFingerprint: String {
-        "dev-\(macDeviceID)"
+        runtimeIdentityKey.fingerprint
+    }
+
+    private var macPublicKeyBase64: String? {
+        runtimeIdentityKey.publicKeyBase64.takeIfNotEmpty()
     }
 
     private let discoveryRouteToken: String
 
     private var runtimeAdvertisementMetadata: RuntimeAdvertisementMetadata {
         RuntimeAdvertisementMetadata(
-            routeToken: discoveryRouteToken
+            routeToken: discoveryRouteToken,
+            deviceID: macDeviceID,
+            fingerprint: macFingerprint
         )
     }
 
@@ -347,13 +361,17 @@ public final class CompanionAppModel: ObservableObject {
         return token
     }
 
-    private static func primaryLocalIPv4Address() -> String {
-        Host.current().addresses.first { address in
-            address.contains(".")
-                && !address.hasPrefix("127.")
-                && !address.hasPrefix("169.254.")
-        } ?? "127.0.0.1"
+    private static func loadOrCreateRuntimeIdentityKey(deviceID: String) -> (key: RuntimeIdentityKey, warning: String?) {
+        do {
+            return (try RuntimeIdentityKeyStore().loadOrCreate(), nil)
+        } catch {
+            return (
+                RuntimeIdentityKey(publicKeyBase64: "", fingerprint: "dev-\(deviceID)"),
+                "Runtime identity Keychain unavailable; using development fingerprint fallback."
+            )
+        }
     }
+
 }
 
 public struct CompanionModelResidencyStatus: Equatable, Sendable {
@@ -433,5 +451,11 @@ private extension RuntimeModelResidencyUnloadReason {
         case .idleTimeout:
             return "idle timeout"
         }
+    }
+}
+
+private extension String {
+    func takeIfNotEmpty() -> String? {
+        isEmpty ? nil : self
     }
 }

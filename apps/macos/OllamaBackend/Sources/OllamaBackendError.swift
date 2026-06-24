@@ -72,21 +72,21 @@ public enum OllamaBackendError: Error, Equatable, LocalizedError, Sendable {
             return BackendError(
                 provider: .ollama,
                 code: "backend_unavailable",
-                message: "Ollama is not reachable from the Mac runtime.",
+                message: "Ollama is not reachable from the runtime host.",
                 retryable: true
             )
         case .httpStatus(_, let statusCode, _):
             return BackendError(
                 provider: .ollama,
                 code: "backend_unavailable",
-                message: "Ollama returned HTTP \(statusCode) to the Mac runtime.",
+                message: "Ollama returned HTTP \(statusCode) to the runtime host.",
                 retryable: true
             )
         case .transport:
             return BackendError(
                 provider: .ollama,
                 code: "transport_error",
-                message: "The Mac runtime lost communication with Ollama.",
+                message: "The runtime host lost communication with Ollama.",
                 retryable: true
             )
         case .generationNotFound(let generationID):
@@ -107,21 +107,21 @@ public enum OllamaBackendError: Error, Equatable, LocalizedError, Sendable {
             return BackendError(
                 provider: .ollama,
                 code: "internal_error",
-                message: "The Mac runtime could not encode the Ollama request.",
+                message: "The runtime host could not encode the Ollama request.",
                 retryable: false
             )
         case .responseDecoding:
             return BackendError(
                 provider: .ollama,
                 code: "bad_backend_response",
-                message: "The Mac runtime could not decode the Ollama response.",
+                message: "The runtime host could not decode the Ollama response.",
                 retryable: false
             )
         case .streamDecoding:
             return BackendError(
                 provider: .ollama,
                 code: "bad_backend_response",
-                message: "The Mac runtime could not decode the Ollama stream.",
+                message: "The runtime host could not decode the Ollama stream.",
                 retryable: false
             )
         }

@@ -6,11 +6,11 @@
 "Logs" = "Journaux";
 "Open AetherLink" = "Ouvrir AetherLink";
 "Refresh" = "Actualiser";
-"Companion: %@" = "Companion : %@";
+"Runtime: %@" = "Runtime : %@";
 "Backend: %@" = "Backend : %@";
 "Quit" = "Quitter";
 
-"AetherLink Companion" = "Runtime AetherLink";
+"AetherLink Runtime" = "Runtime AetherLink";
 "Bridge trusted client devices to this local runtime." = "Relie les appareils clients approuvés à ce runtime local.";
 "Bridge trusted client devices through this local runtime to local models." = "Relie les appareils clients approuvés aux modèles locaux via ce runtime local.";
 "Runtime" = "Runtime";
@@ -26,7 +26,7 @@
 "Runtime listener" = "Écouteur du runtime";
 "Runtime listener failed" = "Échec de l’écouteur du runtime";
 "Runtime listener could not start." = "Impossible de démarrer l’écouteur du runtime.";
-"Listening for authenticated runtime sessions." = "En écoute des sessions de runtime authentifiées.";
+"Accepting authenticated runtime sessions." = "Accepte les sessions de runtime authentifiées.";
 "Start the companion runtime listener." = "Démarrez l’écouteur du runtime Companion.";
 "Local backend availability" = "Disponibilité du backend local";
 "Trusted device pairing" = "Jumelage d’appareil approuvé";
@@ -47,7 +47,7 @@
 "Unavailable" = "Indisponible";
 "Ollama available" = "Ollama disponible";
 "LM Studio available" = "LM Studio disponible";
-"Listening on port %@" = "Écoute sur le port %@";
+"Route ready" = "Route prête";
 "Ollama unavailable" = "Ollama indisponible";
 "LM Studio unavailable" = "LM Studio indisponible";
 "Ollama returned an error" = "Ollama a renvoyé une erreur";
@@ -56,7 +56,7 @@
 "LM Studio response could not be read" = "La réponse de LM Studio n’a pas pu être lue";
 "Ollama connection error" = "Erreur de connexion Ollama";
 "LM Studio connection error" = "Erreur de connexion LM Studio";
-"Ready for trusted client devices." = "Prêt pour les appareils clients approuvés.";
+"Trusted devices can resolve the current local route after pairing." = "Les appareils approuvés peuvent résoudre la route locale actuelle après le jumelage.";
 "The local runtime listener is not active." = "L’écouteur du runtime local n’est pas actif.";
 "Local model backend is responding." = "Le backend de modèle local répond.";
 "Local backend is responding." = "Le backend local répond.";
@@ -71,6 +71,13 @@
 "Local" = "Local";
 "Cloud" = "Cloud";
 "Running" = "En cours";
+"Model Residency" = "Résidence du modèle";
+"Not managed" = "Non gérée";
+"Idle" = "Inactif";
+"Active" = "Actif";
+"Model residency is not managed by this backend." = "La résidence du modèle n’est pas gérée par ce backend.";
+"%@ %@ active. Idle unload after %d minute(s)." = "%@ %@ actif. Déchargement après %d minute(s) d’inactivité.";
+"No active model is resident through the runtime policy." = "Aucun modèle actif n’est résident via la stratégie du runtime.";
 "Run a check to verify local backends before connecting a client device." = "Lancez une vérification des backends locaux avant de connecter un appareil client.";
 "Open a local model provider on this runtime host, then check again." = "Ouvrez un fournisseur de modèles local sur cet hôte de runtime, puis vérifiez à nouveau.";
 "%d trusted device(s)" = "%d appareil(s) approuvé(s)";
@@ -85,14 +92,14 @@
 "Load local models" = "Charger les modèles locaux";
 "Load models so client devices can choose an installed chat model through this local runtime." = "Chargez les modèles pour que les appareils clients puissent choisir un modèle de chat installé via ce runtime local.";
 "Ready for Client Devices" = "Prêt pour les appareils clients";
-"This runtime host is listening, a local backend is responding, and trusted devices can request chat." = "Cet hôte de runtime écoute, un backend local répond, et les appareils approuvés peuvent demander un chat.";
+"Runtime route is ready, a local backend is responding, and trusted devices can request chat." = "La route du runtime est prête, un backend local répond, et les appareils approuvés peuvent demander un chat.";
 "Client requests stay mediated by this local runtime. Ollama and LM Studio are never exposed directly to client devices." = "Les requêtes clientes restent médiées par ce runtime local. Ollama et LM Studio ne sont jamais exposés directement aux appareils clients.";
 "Pairing creates a trusted-device record so the client device can reconnect without entering backend URLs." = "Le jumelage crée un appareil approuvé afin que l’appareil client puisse se reconnecter sans saisir d’URL de backend.";
 "Chat and embedding model choices are managed separately so each workflow uses the right model." = "Les modèles de chat et d’embedding sont gérés séparément afin que chaque flux utilise le modèle adapté.";
 "The client device remains a controller; all model access stays on the runtime host." = "L’appareil client reste un contrôleur ; tout accès aux modèles reste sur l’hôte de runtime.";
 
 "Pair a Client Device" = "Jumeler un appareil client";
-"Create a one-time QR code for the AetherLink client app." = "Créer un QR code à usage unique pour l’app cliente AetherLink.";
+"Scan once from the AetherLink client app to trust this runtime identity." = "Scannez une fois depuis l’app cliente AetherLink pour approuver l’identité de ce runtime.";
 "Pairing Code" = "Code de jumelage";
 "No active pairing code" = "Aucun code de jumelage actif";
 "Start pairing when the client app is ready to scan." = "Lancez le jumelage lorsque l’app cliente est prête à scanner.";
@@ -104,7 +111,8 @@
 "Copy Code" = "Copier le code";
 "Code Copied" = "Code copié";
 "Scan the QR code or enter the code in the AetherLink client app." = "Scannez le QR code ou saisissez le code dans l’app cliente AetherLink.";
-"If the system asks for local network permission, allow it so client devices can discover and pair with this runtime host." = "Si le système demande l’autorisation de réseau local, acceptez afin que les appareils clients puissent découvrir cet hôte de runtime et s’y jumeler.";
+"The QR code identifies this runtime; client apps resolve the current route after scanning." = "Le QR code identifie ce runtime ; les apps clientes résolvent la route actuelle après le scan.";
+"Local Network permission enables the current local discovery path; pairing trust stays tied to this runtime identity." = "L’autorisation Réseau local active le chemin de découverte local actuel ; la confiance du jumelage reste liée à cette identité de runtime.";
 "Keep this runtime host awake until pairing completes." = "Gardez cet hôte de runtime actif jusqu’à la fin du jumelage.";
 "Client devices connect to this local runtime, not directly to Ollama or LM Studio." = "Les appareils clients se connectent à ce runtime local, pas directement à Ollama ni à LM Studio.";
 "Expires in %d min %02d sec" = "Expire dans %d min %02d s";
@@ -142,7 +150,7 @@
 "Open Companion" = "Ouvrir Companion";
 "Companion Status" = "État de Companion";
 "Transport" = "Transport";
-"Advertising _aetherlink._tcp.local. on port %@" = "Annonce de _aetherlink._tcp.local. sur le port %@";
+"Advertising _aetherlink._tcp.local. on port %@" = "Service de jumelage disponible sur le port %@";
 "Load Models" = "Charger les modèles";
 "No models loaded" = "Aucun modèle chargé";
 "Pair Client Device" = "Jumeler un appareil client";

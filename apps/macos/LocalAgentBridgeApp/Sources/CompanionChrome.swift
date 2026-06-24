@@ -130,10 +130,7 @@ func localizedTransportStatus(_ status: CompanionTransportStatus) -> String {
     case .stopped:
         return NSLocalizedString("Stopped", comment: "")
     case .advertising:
-        if let port = status.port {
-            return String(format: NSLocalizedString("Listening on port %@", comment: ""), "\(port)")
-        }
-        return NSLocalizedString("Ready for trusted client devices.", comment: "")
+        return NSLocalizedString("Route ready", comment: "")
     case .failed:
         return NSLocalizedString("Runtime listener failed", comment: "")
     }

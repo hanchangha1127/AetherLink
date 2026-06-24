@@ -142,6 +142,8 @@ final class LMStudioBackendTests: XCTestCase {
                 XCTAssertEqual(posted.model, "qwen-local")
                 XCTAssertTrue(posted.stream)
                 XCTAssertFalse(posted.store)
+                XCTAssertEqual(posted.input.map(\.type), ["message"])
+                XCTAssertEqual(posted.input.map(\.role), ["user"])
                 XCTAssertEqual(posted.input.map(\.content), ["Hi"])
                 return self.response(
                     statusCode: 200,
@@ -231,6 +233,165 @@ final class LMStudioBackendTests: XCTestCase {
         ])
     }
 
+    func testChatWithImageAttachmentUsesNativeImageInput() async throws {
+        var paths: [String] = []
+        var postedRequest: PostedNativeChatRequest?
+        let backend = makeBackend { request in
+            paths.append(request.url?.path ?? "")
+            switch request.url?.path {
+            case "/api/v1/models":
+                return self.response(
+                    statusCode: 200,
+                    body: #"{"models":[{"type":"vision","key":"vision-local","loaded_instances":[]}]}"#
+                )
+            case "/api/v1/chat":
+                let body = try self.requestBodyData(from: request)
+                postedRequest = try JSONDecoder().decode(PostedNativeChatRequest.self, from: body)
+                return self.response(
+                    statusCode: 200,
+                    body: """
+                    event: chat.start
+                    data: {"type":"chat.start","model_instance_id":"vision-local"}
+
+                    event: message.delta
+                    data: {"type":"message.delta","content":"Vision"}
+
+                    event: chat.end
+                    data: {"type":"chat.end","result":{"model_instance_id":"vision-local","output":[{"type":"message","content":"Vision"}],"stats":{"input_tokens":5,"total_output_tokens":1}}}
+
+                    """
+                )
+            default:
+                XCTFail("Unexpected path: \(request.url?.path ?? "nil")")
+                return self.response(statusCode: 500, body: "{}")
+            }
+        }
+
+        let request = ChatRequest(
+            generationID: "lm-generation-vision",
+            sessionID: "session-1",
+            model: "vision-local",
+            messages: [
+                ChatMessage(
+                    role: "user",
+                    content: "Describe this image.",
+                    attachments: [
+                        ChatAttachment(
+                            type: "image",
+                            mimeType: "image/png",
+                            name: "diagram.png",
+                            dataBase64: "iVBORw0KGgo="
+                        )
+                    ]
+                )
+            ]
+        )
+
+        var events: [ChatStreamEvent] = []
+        for try await event in backend.chat(request: request) {
+            events.append(event)
+        }
+
+        XCTAssertEqual(paths, ["/api/v1/models", "/api/v1/chat"])
+        XCTAssertEqual(events, [
+            .delta("Vision"),
+            .done(inputTokens: 5, outputTokens: 1)
+        ])
+
+        let payload = try XCTUnwrap(postedRequest)
+        XCTAssertEqual(payload.model, "vision-local")
+        XCTAssertTrue(payload.stream)
+        XCTAssertFalse(payload.store)
+        XCTAssertEqual(payload.input.count, 2)
+        XCTAssertEqual(payload.input[0].type, "message")
+        XCTAssertEqual(payload.input[0].role, "user")
+        XCTAssertEqual(payload.input[0].content, "Describe this image.")
+        XCTAssertNil(payload.input[0].dataURL)
+        XCTAssertEqual(payload.input[1].type, "image")
+        XCTAssertNil(payload.input[1].role)
+        XCTAssertNil(payload.input[1].content)
+        XCTAssertEqual(payload.input[1].dataURL, "data:image/png;base64,iVBORw0KGgo=")
+    }
+
+    func testChatWithImageAttachmentFallsBackToOpenAICompatibleVisionContentWhenNativeRejects() async throws {
+        var paths: [String] = []
+        var postedPayload: [String: Any]?
+        let backend = makeBackend { request in
+            paths.append(request.url?.path ?? "")
+            switch request.url?.path {
+            case "/api/v1/models":
+                return self.response(
+                    statusCode: 200,
+                    body: #"{"models":[{"type":"vision","key":"vision-local","loaded_instances":[]}]}"#
+                )
+            case "/api/v1/chat":
+                return self.response(statusCode: 422, body: "native rejected")
+            case "/v1/chat/completions":
+                let body = try self.requestBodyData(from: request)
+                postedPayload = try JSONSerialization.jsonObject(with: body) as? [String: Any]
+                return self.response(
+                    statusCode: 200,
+                    body: """
+                    data: {"choices":[{"delta":{"content":"Vision"},"finish_reason":null}]}
+                    data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":5,"completion_tokens":1}}
+                    data: [DONE]
+
+                    """
+                )
+            default:
+                XCTFail("Unexpected path: \(request.url?.path ?? "nil")")
+                return self.response(statusCode: 500, body: "{}")
+            }
+        }
+
+        let request = ChatRequest(
+            generationID: "lm-generation-vision-fallback",
+            sessionID: "session-1",
+            model: "vision-local",
+            messages: [
+                ChatMessage(
+                    role: "user",
+                    content: "Describe this image.",
+                    attachments: [
+                        ChatAttachment(
+                            type: "image",
+                            mimeType: "image/png",
+                            name: "diagram.png",
+                            dataBase64: "iVBORw0KGgo="
+                        )
+                    ]
+                )
+            ]
+        )
+
+        var events: [ChatStreamEvent] = []
+        for try await event in backend.chat(request: request) {
+            events.append(event)
+        }
+
+        XCTAssertEqual(paths, ["/api/v1/models", "/api/v1/chat", "/v1/chat/completions"])
+        XCTAssertEqual(events, [
+            .delta("Vision"),
+            .done(inputTokens: 5, outputTokens: 1)
+        ])
+
+        let payload = try XCTUnwrap(postedPayload)
+        XCTAssertEqual(payload["model"] as? String, "vision-local")
+        XCTAssertEqual(payload["stream"] as? Bool, true)
+        let messages = try XCTUnwrap(payload["messages"] as? [[String: Any]])
+        let message = try XCTUnwrap(messages.first)
+        XCTAssertNil(message["attachments"])
+        XCTAssertEqual(message["role"] as? String, "user")
+
+        let content = try XCTUnwrap(message["content"] as? [[String: Any]])
+        XCTAssertEqual(content.count, 2)
+        XCTAssertEqual(content[0]["type"] as? String, "text")
+        XCTAssertEqual(content[0]["text"] as? String, "Describe this image.")
+        XCTAssertEqual(content[1]["type"] as? String, "image_url")
+        let imageURL = try XCTUnwrap(content[1]["image_url"] as? [String: Any])
+        XCTAssertEqual(imageURL["url"] as? String, "data:image/png;base64,iVBORw0KGgo=")
+    }
+
     func testChatWithoutModelsReturnsStructuredNoModelsError() async {
         let backend = makeBackend { request in
             XCTAssertEqual(request.url?.path, "/api/v1/models")
@@ -313,8 +474,17 @@ private struct PostedNativeChatRequest: Decodable {
 }
 
 private struct PostedNativeInput: Decodable {
-    var role: String
-    var content: String
+    var type: String?
+    var role: String?
+    var content: String?
+    var dataURL: String?
+
+    enum CodingKeys: String, CodingKey {
+        case type
+        case role
+        case content
+        case dataURL = "data_url"
+    }
 }
 
 private struct PostedUnloadRequest: Decodable {

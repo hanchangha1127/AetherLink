@@ -105,15 +105,23 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                 markAuthenticated(connectionID: sink.connectionID, deviceID: validation.trustedDevice.id)
                 onPairingAccepted?(validation.trustedDevice)
 
+                var payload: [String: JSONValue] = [
+                    "accepted": .bool(true),
+                    "mac_device_id": .string(validation.macDeviceID),
+                    "runtime_device_id": .string(validation.macDeviceID),
+                    "runtime_key_fingerprint": .string(validation.runtimeKeyFingerprint),
+                    "trusted_device_id": .string(validation.trustedDevice.id),
+                    "message": .string("\(validation.trustedDevice.name) is now trusted by \(validation.macName).")
+                ]
+                if let runtimePublicKeyBase64 = validation.runtimePublicKeyBase64,
+                   !runtimePublicKeyBase64.isEmpty {
+                    payload["runtime_public_key"] = .string(runtimePublicKeyBase64)
+                }
+
                 sink.send(ProtocolEnvelope(
                     type: MessageType.pairingResult,
                     requestID: envelope.requestID,
-                    payload: [
-                        "accepted": .bool(true),
-                        "mac_device_id": .string(validation.macDeviceID),
-                        "trusted_device_id": .string(validation.trustedDevice.id),
-                        "message": .string("\(validation.trustedDevice.name) is now trusted by \(validation.macName).")
-                    ]
+                    payload: payload
                 ))
             case .rejected(let rejection):
                 sink.send(ProtocolEnvelope(
@@ -138,7 +146,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
     private func handleChatSuggestionsRequest(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) async {
         do {
             let parsedRequest = try chatSuggestionsRequest(from: envelope)
-            try await requireInstalledModel(parsedRequest.request.model)
+            _ = try await resolvedInstalledModel(parsedRequest.request.model)
 
             var generatedText = ""
             for try await event in backend.chat(request: parsedRequest.request) {
@@ -317,9 +325,6 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                         if let remoteModel = model.remoteModel, !remoteModel.isEmpty {
                             payload["remote_model"] = .string(remoteModel)
                         }
-                        if let remoteHost = model.remoteHost, !remoteHost.isEmpty {
-                            payload["remote_host"] = .string(remoteHost)
-                        }
                         return .object(payload)
                     })
                 ]
@@ -353,7 +358,8 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
     private func handleChatSend(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) async {
         do {
             let request = try chatRequest(from: envelope)
-            try await requireInstalledModel(request.model)
+            let model = try await resolvedInstalledModel(request.model)
+            try validateAttachments(in: request, for: model)
             for try await event in backend.chat(request: request) {
                 switch event {
                 case .delta(let text):
@@ -405,10 +411,10 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         }
     }
 
-    private func requireInstalledModel(_ requestedModel: String) async throws {
+    private func resolvedInstalledModel(_ requestedModel: String) async throws -> ResolvedRuntimeModel {
         let models = try await backend.listModels()
         if let resolved = ModelProvider.splitQualifiedModelID(requestedModel) {
-            let isInstalled = models.contains { model in
+            if let model = models.first(where: { model in
                 model.installed
                     && model.provider == resolved.provider
                     && (
@@ -418,15 +424,14 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                             || Self.canonicalModelName(model.id) == Self.canonicalModelName(resolved.modelID)
                             || Self.canonicalModelName(model.providerModelID) == Self.canonicalModelName(resolved.modelID)
                     )
+            }) {
+                return ResolvedRuntimeModel(provider: model.provider, capabilities: model.capabilities)
             }
-            guard isInstalled else {
-                throw LocalRuntimeRouterError.modelNotInstalled(requestedModel)
-            }
-            return
+            throw LocalRuntimeRouterError.modelNotInstalled(requestedModel)
         }
 
         let requestedCanonicalName = Self.canonicalModelName(requestedModel)
-        let isInstalled = models.contains { model in
+        if let model = models.first(where: { model in
             model.installed && (
                 model.id == requestedModel
                     || model.name == requestedModel
@@ -435,9 +440,21 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                     || Self.canonicalModelName(model.name) == requestedCanonicalName
                     || Self.canonicalModelName(model.providerModelID) == requestedCanonicalName
             )
+        }) {
+            return ResolvedRuntimeModel(provider: model.provider, capabilities: model.capabilities)
         }
-        guard isInstalled else {
-            throw LocalRuntimeRouterError.modelNotInstalled(requestedModel)
+        throw LocalRuntimeRouterError.modelNotInstalled(requestedModel)
+    }
+
+    private func validateAttachments(in request: ChatRequest, for model: ResolvedRuntimeModel) throws {
+        guard request.messages.contains(where: { message in
+            message.attachments.contains { $0.isImage }
+        }) else { return }
+
+        guard model.supportsImageAttachments else {
+            throw LocalRuntimeRouterError.unsupportedAttachment(
+                "Image attachments require a vision-capable model."
+            )
         }
     }
 
@@ -682,18 +699,8 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
             if let result = try? decoder.decode(ChatSuggestionsResult.self, from: data) {
                 return result.suggestions.cleanedSuggestions(maxCount: maxSuggestions)
             }
-            if let result = try? decoder.decode([String].self, from: data) {
-                return result.cleanedSuggestions(maxCount: maxSuggestions)
-            }
         }
-
-        return trimmedText
-            .split(whereSeparator: { $0.isNewline })
-            .map { line in
-                line.trimmingCharacters(in: .whitespacesAndNewlines)
-                    .trimmingCharacters(in: CharacterSet(charactersIn: "-*0123456789. )\"'"))
-            }
-            .cleanedSuggestions(maxCount: maxSuggestions)
+        return []
     }
 
     private static func verifySignature(
@@ -888,6 +895,20 @@ private extension ChatAttachment {
         let normalizedType = type.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let normalizedMimeType = mimeType.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         return normalizedType == "image" || normalizedMimeType.hasPrefix("image/")
+    }
+}
+
+private struct ResolvedRuntimeModel {
+    var provider: ModelProvider
+    var capabilities: [String]
+}
+
+private extension ResolvedRuntimeModel {
+    var supportsImageAttachments: Bool {
+        capabilities.contains { capability in
+            let normalized = capability.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            return normalized == "vision" || normalized == "image" || normalized == "multimodal"
+        }
     }
 }
 

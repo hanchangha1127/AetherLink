@@ -11,7 +11,7 @@ struct StatusView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 CompanionPageHeader(
-                    title: "AetherLink Companion",
+                    title: "AetherLink Runtime",
                     subtitle: "Bridge trusted client devices through this local runtime to local models.",
                     systemImage: "bolt.horizontal.circle.fill"
                 )
@@ -118,7 +118,7 @@ struct StatusView: View {
     private var runtimeDetail: String {
         switch model.transportState.state {
         case .advertising:
-            return NSLocalizedString("Ready for trusted client devices.", comment: "")
+            return NSLocalizedString("Trusted devices can resolve the current local route after pairing.", comment: "")
         case .failed:
             return model.transportState.failureMessage
                 ?? NSLocalizedString("Runtime listener could not start.", comment: "")
@@ -249,7 +249,7 @@ struct StatusView: View {
     private var runtimeReadinessDetail: String {
         switch model.transportState.state {
         case .advertising:
-            return NSLocalizedString("Listening for authenticated runtime sessions.", comment: "")
+            return NSLocalizedString("Accepting authenticated runtime sessions.", comment: "")
         case .failed:
             return model.transportState.failureMessage
                 ?? NSLocalizedString("Runtime listener could not start.", comment: "")
@@ -297,7 +297,7 @@ struct StatusView: View {
 
         return RuntimeOverview(
             title: NSLocalizedString("Ready for Client Devices", comment: ""),
-            detail: NSLocalizedString("This runtime host is listening, a local backend is responding, and trusted devices can request chat.", comment: ""),
+            detail: NSLocalizedString("Runtime route is ready, a local backend is responding, and trusted devices can request chat.", comment: ""),
             footnote: NSLocalizedString("The client device remains a controller; all model access stays on the runtime host.", comment: ""),
             tone: .ready
         )

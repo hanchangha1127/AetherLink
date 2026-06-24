@@ -5,9 +5,11 @@ import com.localagentbridge.android.core.protocol.ChatDeltaPayload
 import com.localagentbridge.android.core.protocol.ChatDonePayload
 import com.localagentbridge.android.core.protocol.ErrorPayload
 import com.localagentbridge.android.core.protocol.MessageType
+import com.localagentbridge.android.core.protocol.PairingResultPayload
 import com.localagentbridge.android.core.protocol.ProtocolEnvelope
 import com.localagentbridge.android.core.protocol.RuntimeBackendStatusPayload
 import com.localagentbridge.android.core.protocol.RuntimeHealthPayload
+import com.localagentbridge.android.core.pairing.RuntimePairingPayload
 import com.localagentbridge.android.core.transport.PairedRuntimeIdentity
 import com.localagentbridge.android.core.transport.RuntimeConnectionFailure
 import com.localagentbridge.android.core.transport.RuntimeConnectionFailureReason
@@ -26,6 +28,7 @@ import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertThrows
@@ -36,11 +39,11 @@ class RuntimeClientViewModelTest {
     @Test
     fun trustedRuntimeConnectionTargetUsesTrustedLastKnownEndpointInsteadOfManualHostFields() {
         val state = RuntimeUiState(
-            macHost = "127.0.0.1",
-            macPort = "43169",
-            trustedMac = RuntimeTrustedMac(
+            runtimeHost = "127.0.0.1",
+            runtimePort = "43169",
+            trustedRuntime = RuntimeTrustedRuntime(
                 deviceId = "mac-1",
-                name = "AetherLink Mac",
+                name = "AetherLink Runtime",
                 endpointHint = RuntimeEndpointHint(
                     host = "192.168.1.20",
                     port = 43170,
@@ -52,7 +55,7 @@ class RuntimeClientViewModelTest {
         val target = trustedRuntimeConnectionTarget(state)
 
         assertEquals("mac-1", target?.identity?.deviceId)
-        assertEquals("AetherLink Mac", target?.identity?.name)
+        assertEquals("AetherLink Runtime", target?.identity?.name)
         assertEquals("192.168.1.20", target?.endpointHint?.host)
         assertEquals(43170, target?.endpointHint?.port)
         assertEquals(RuntimeEndpointSource.TrustedLastKnown, target?.endpointHint?.source)
@@ -61,11 +64,11 @@ class RuntimeClientViewModelTest {
     @Test
     fun trustedRuntimeConnectionTargetAllowsTrustedIdentityWithoutEndpointHint() {
         val state = RuntimeUiState(
-            macHost = "127.0.0.1",
-            macPort = "43170",
-            trustedMac = RuntimeTrustedMac(
+            runtimeHost = "127.0.0.1",
+            runtimePort = "43170",
+            trustedRuntime = RuntimeTrustedRuntime(
                 deviceId = "mac-identity-only",
-                name = "AetherLink Mac",
+                name = "AetherLink Runtime",
                 fingerprint = "fingerprint",
                 endpointHint = null,
             ),
@@ -74,9 +77,309 @@ class RuntimeClientViewModelTest {
         val target = trustedRuntimeConnectionTarget(state)
 
         assertEquals("mac-identity-only", target?.identity?.deviceId)
-        assertEquals("AetherLink Mac", target?.identity?.name)
+        assertEquals("AetherLink Runtime", target?.identity?.name)
         assertEquals("fingerprint", target?.identity?.fingerprint)
         assertNull(target?.endpointHint)
+    }
+
+    @Test
+    fun trustedRuntimeRestoreShouldStartDiscoveryEvenWithoutEndpointHint() {
+        val state = RuntimeUiState(
+            trustedRuntime = RuntimeTrustedRuntime(
+                deviceId = "runtime-identity-only",
+                name = "AetherLink Runtime",
+                fingerprint = "fingerprint",
+                endpointHint = null,
+            ),
+        )
+
+        assertTrue(state.shouldDiscoverTrustedRuntimeRoute())
+    }
+
+    @Test
+    fun trustedRuntimeRestoreDoesNotStartDiscoveryWhenAlreadyBusyOrUnpaired() {
+        val trusted = RuntimeTrustedRuntime(
+            deviceId = "runtime-1",
+            name = "AetherLink Runtime",
+            fingerprint = "fingerprint",
+            endpointHint = null,
+        )
+
+        assertFalse(RuntimeUiState(trustedRuntime = null).shouldDiscoverTrustedRuntimeRoute())
+        assertFalse(RuntimeUiState(trustedRuntime = trusted, isConnected = true).shouldDiscoverTrustedRuntimeRoute())
+        assertFalse(RuntimeUiState(trustedRuntime = trusted, isConnecting = true).shouldDiscoverTrustedRuntimeRoute())
+    }
+
+    @Test
+    fun pendingPairingStateShowsIdentityOnlyQrWaitingForRoute() {
+        val state = RuntimeUiState(
+            runtimeStatus = "disconnected",
+        )
+        val payload = RuntimePairingPayload(
+            pairingNonce = "nonce-1",
+            pairingCode = "123456",
+            runtimeDeviceId = "runtime-identity-only",
+            runtimeName = "AetherLink Runtime",
+            fingerprint = "fingerprint",
+            runtimePublicKeyBase64 = "runtime-public-key",
+            routeToken = "route-token",
+            host = null,
+            port = null,
+            serviceType = "_aetherlink._tcp.local.",
+        )
+
+        val pending = state.withPendingPairing(payload)
+
+        assertEquals("123456", pending.pairingCode)
+        assertEquals("AetherLink Runtime", pending.pendingPairingRuntimeName)
+        assertTrue(pending.isPairingAwaitingRoute)
+        assertEquals("pairing", pending.runtimeStatus)
+        assertEquals("", pending.runtimeHost)
+        assertEquals("", pending.runtimePort)
+
+        val cleared = pending.withClearedPendingPairing()
+
+        assertNull(cleared.pendingPairingRuntimeName)
+        assertFalse(cleared.isPairingAwaitingRoute)
+        assertEquals("disconnected", cleared.runtimeStatus)
+    }
+
+    @Test
+    fun pendingPairingStateUsesEndpointHintWhenQrHasDevelopmentRoute() {
+        val state = RuntimeUiState(
+            runtimeHost = "127.0.0.1",
+            runtimePort = "43170",
+            runtimeStatus = "disconnected",
+        )
+        val payload = RuntimePairingPayload(
+            pairingNonce = "nonce-1",
+            pairingCode = "123456",
+            runtimeDeviceId = "runtime-1",
+            runtimeName = "AetherLink Runtime",
+            fingerprint = "fingerprint",
+            runtimePublicKeyBase64 = "runtime-public-key",
+            routeToken = "route-token",
+            host = "192.168.1.44",
+            port = 43170,
+            serviceType = "_aetherlink._tcp.local.",
+        )
+
+        val pending = state.withPendingPairing(payload)
+
+        assertEquals("123456", pending.pairingCode)
+        assertEquals("AetherLink Runtime", pending.pendingPairingRuntimeName)
+        assertFalse(pending.isPairingAwaitingRoute)
+        assertEquals("disconnected", pending.runtimeStatus)
+        assertEquals("192.168.1.44", pending.runtimeHost)
+        assertEquals("43170", pending.runtimePort)
+        assertEquals(RuntimeEndpointSource.PairingQr, pending.runtimeEndpointSource)
+    }
+
+    @Test
+    fun identityOnlyPairingPayloadBuildsIdentityOnlyTarget() {
+        val payload = RuntimePairingPayload(
+            pairingNonce = "nonce-1",
+            pairingCode = "123456",
+            runtimeDeviceId = "runtime-identity-only",
+            runtimeName = "AetherLink Runtime",
+            fingerprint = "fingerprint",
+            runtimePublicKeyBase64 = "runtime-public-key",
+            routeToken = "route-token",
+            host = null,
+            port = null,
+            serviceType = "_aetherlink._tcp.local.",
+        )
+
+        val target = payload.toConnectionTarget()
+
+        assertEquals("runtime-identity-only", target.identity?.deviceId)
+        assertEquals("AetherLink Runtime", target.identity?.name)
+        assertEquals("fingerprint", target.identity?.fingerprint)
+        assertEquals("runtime-public-key", target.identity?.publicKeyBase64)
+        assertEquals("route-token", target.identity?.routeToken)
+        assertNull(target.endpointHint)
+    }
+
+    @Test
+    fun pairingRuntimeTargetWaitsForDiscoveryWhenQrHasNoEndpoint() {
+        val payload = RuntimePairingPayload(
+            pairingNonce = "nonce-1",
+            pairingCode = "123456",
+            runtimeDeviceId = "runtime-identity-only",
+            runtimeName = "AetherLink Runtime",
+            fingerprint = "fingerprint",
+            runtimePublicKeyBase64 = "runtime-public-key",
+            routeToken = "route-token",
+            host = null,
+            port = null,
+            serviceType = "_aetherlink._tcp.local.",
+        )
+
+        assertNull(pairingRuntimeConnectionTarget(RuntimeUiState(), payload))
+    }
+
+    @Test
+    fun pairingRuntimeTargetResolvesIdentityOnlyQrFromMatchingDiscovery() {
+        val payload = RuntimePairingPayload(
+            pairingNonce = "nonce-1",
+            pairingCode = "123456",
+            runtimeDeviceId = "runtime-identity-only",
+            runtimeName = "AetherLink Runtime",
+            fingerprint = "fingerprint",
+            runtimePublicKeyBase64 = "runtime-public-key",
+            routeToken = "route-token",
+            host = null,
+            port = null,
+            serviceType = "_aetherlink._tcp.local.",
+        )
+        val state = RuntimeUiState(
+            discoveredRuntimes = listOf(
+                RuntimeDiscoveredRuntime(
+                    serviceName = "AetherLink",
+                    host = "192.168.1.44",
+                    port = 43170,
+                    routeToken = "route-token",
+                    deviceId = "runtime-identity-only",
+                    fingerprint = "fingerprint",
+                )
+            )
+        )
+
+        val target = pairingRuntimeConnectionTarget(state, payload)
+        assertNotNull(target)
+
+        assertEquals("runtime-identity-only", target?.identity?.deviceId)
+        assertEquals("192.168.1.44", target?.endpointHint?.host)
+        assertEquals(43170, target?.endpointHint?.port)
+        assertEquals(RuntimeEndpointSource.BonjourDiscovery, target?.endpointHint?.source)
+    }
+
+    @Test
+    fun trustedRuntimeRestoreHonorsManualDisconnectFlag() {
+        val trusted = RuntimeTrustedRuntime(
+            deviceId = "runtime-1",
+            name = "AetherLink Runtime",
+            fingerprint = "fingerprint",
+            endpointHint = RuntimeEndpointHint(
+                host = "192.168.1.20",
+                port = 43170,
+                source = RuntimeEndpointSource.TrustedLastKnown,
+            ),
+        )
+
+        assertTrue(
+            shouldAttemptTrustedRuntimeRestore(
+                restoreEnabled = true,
+                state = RuntimeUiState(trustedRuntime = trusted),
+            )
+        )
+        assertFalse(
+            shouldAttemptTrustedRuntimeRestore(
+                restoreEnabled = false,
+                state = RuntimeUiState(trustedRuntime = trusted),
+            )
+        )
+        assertFalse(
+            shouldAttemptTrustedRuntimeRestore(
+                restoreEnabled = true,
+                state = RuntimeUiState(trustedRuntime = null),
+            )
+        )
+        assertFalse(
+            shouldAttemptTrustedRuntimeRestore(
+                restoreEnabled = true,
+                state = RuntimeUiState(trustedRuntime = trusted, isConnected = true),
+            )
+        )
+        assertFalse(
+            shouldAttemptTrustedRuntimeRestore(
+                restoreEnabled = true,
+                state = RuntimeUiState(trustedRuntime = trusted, isConnecting = true),
+            )
+        )
+    }
+
+    @Test
+    fun acceptedPairingResultCreatesIdentityOnlyTrustedRuntimeFromMatchingRuntimeIdentity() {
+        val pending = runtimePairingPayload()
+        val trusted = trustedRuntimeFromAcceptedPairing(
+            pending = pending,
+            payload = PairingResultPayload(
+                accepted = true,
+                runtimeDeviceIdV2 = "runtime-1",
+                runtimePublicKey = "runtime-public-key",
+                runtimeKeyFingerprint = "runtime-fingerprint",
+                trustedDeviceId = "client-1",
+                message = "trusted",
+            ),
+        )
+
+        assertEquals("runtime-1", trusted?.deviceId)
+        assertEquals("AetherLink Runtime", trusted?.name)
+        assertEquals("runtime-fingerprint", trusted?.fingerprint)
+        assertEquals("runtime-public-key", trusted?.publicKeyBase64)
+        assertEquals("route-1", trusted?.routeToken)
+        assertNull(trusted?.host)
+        assertNull(trusted?.port)
+    }
+
+    @Test
+    fun acceptedPairingResultRejectsMismatchedRuntimeIdentity() {
+        val pending = runtimePairingPayload()
+
+        assertNull(
+            trustedRuntimeFromAcceptedPairing(
+                pending = pending,
+                payload = PairingResultPayload(
+                    accepted = true,
+                    runtimeDeviceIdV2 = "other-runtime",
+                    runtimePublicKey = "runtime-public-key",
+                    runtimeKeyFingerprint = "runtime-fingerprint",
+                    message = "trusted",
+                ),
+            )
+        )
+        assertNull(
+            trustedRuntimeFromAcceptedPairing(
+                pending = pending,
+                payload = PairingResultPayload(
+                    accepted = true,
+                    runtimeDeviceIdV2 = "runtime-1",
+                    runtimePublicKey = "runtime-public-key",
+                    runtimeKeyFingerprint = "other-fingerprint",
+                    message = "trusted",
+                ),
+            )
+        )
+        assertNull(
+            trustedRuntimeFromAcceptedPairing(
+                pending = pending,
+                payload = PairingResultPayload(
+                    accepted = true,
+                    runtimeDeviceIdV2 = "runtime-1",
+                    runtimePublicKey = "other-public-key",
+                    runtimeKeyFingerprint = "runtime-fingerprint",
+                    message = "trusted",
+                ),
+            )
+        )
+    }
+
+    @Test
+    fun acceptedPairingResultKeepsLegacyPairingWithoutRuntimePublicKey() {
+        val pending = runtimePairingPayload(runtimePublicKeyBase64 = null)
+        val trusted = trustedRuntimeFromAcceptedPairing(
+            pending = pending,
+            payload = PairingResultPayload(
+                accepted = true,
+                runtimeDeviceId = "runtime-1",
+                message = "trusted",
+            ),
+        )
+
+        assertEquals("runtime-1", trusted?.deviceId)
+        assertEquals("runtime-fingerprint", trusted?.fingerprint)
+        assertNull(trusted?.publicKeyBase64)
     }
 
     @Test
@@ -87,15 +390,15 @@ class RuntimeClientViewModelTest {
             source = RuntimeEndpointSource.TrustedLastKnown,
         )
         val state = RuntimeUiState(
-            macHost = "127.0.0.1",
-            macPort = "43170",
-            trustedMac = RuntimeTrustedMac(
+            runtimeHost = "127.0.0.1",
+            runtimePort = "43170",
+            trustedRuntime = RuntimeTrustedRuntime(
                 deviceId = "mac-1",
-                name = "AetherLink Mac",
+                name = "AetherLink Runtime",
                 endpointHint = staleTrustedEndpoint,
             ),
-            discoveredMacs = listOf(
-                RuntimeDiscoveredMac(
+            discoveredRuntimes = listOf(
+                RuntimeDiscoveredRuntime(
                     serviceName = "AetherLink._localagentbridge._tcp.local.",
                     host = "192.168.1.44",
                     port = 43170,
@@ -125,14 +428,14 @@ class RuntimeClientViewModelTest {
             source = RuntimeEndpointSource.TrustedLastKnown,
         )
         val state = RuntimeUiState(
-            trustedMac = RuntimeTrustedMac(
+            trustedRuntime = RuntimeTrustedRuntime(
                 deviceId = "mac-1",
-                name = "AetherLink Mac",
+                name = "AetherLink Runtime",
                 fingerprint = "trusted-fingerprint",
                 endpointHint = staleTrustedEndpoint,
             ),
-            discoveredMacs = listOf(
-                RuntimeDiscoveredMac(
+            discoveredRuntimes = listOf(
+                RuntimeDiscoveredRuntime(
                     serviceName = "Metadata-less AetherLink",
                     host = "192.168.1.44",
                     port = 43170,
@@ -157,14 +460,14 @@ class RuntimeClientViewModelTest {
             source = RuntimeEndpointSource.TrustedLastKnown,
         )
         val state = RuntimeUiState(
-            trustedMac = RuntimeTrustedMac(
+            trustedRuntime = RuntimeTrustedRuntime(
                 deviceId = "mac-1",
-                name = "AetherLink Mac",
+                name = "AetherLink Runtime",
                 fingerprint = "trusted-fingerprint",
                 endpointHint = staleTrustedEndpoint,
             ),
-            discoveredMacs = listOf(
-                RuntimeDiscoveredMac(
+            discoveredRuntimes = listOf(
+                RuntimeDiscoveredRuntime(
                     serviceName = "AetherLink",
                     host = "192.168.1.44",
                     port = 43170,
@@ -173,7 +476,7 @@ class RuntimeClientViewModelTest {
                     app = "AetherLink",
                     version = "0.1.0",
                 ),
-                RuntimeDiscoveredMac(
+                RuntimeDiscoveredRuntime(
                     serviceName = "AetherLink Fingerprint",
                     host = "192.168.1.45",
                     port = 43170,
@@ -195,15 +498,15 @@ class RuntimeClientViewModelTest {
     @Test
     fun runtimeRouteCandidatesUseRouteTokenBeforeLegacyIdentityMetadata() {
         val state = RuntimeUiState(
-            trustedMac = RuntimeTrustedMac(
+            trustedRuntime = RuntimeTrustedRuntime(
                 deviceId = "mac-1",
                 name = "AetherLink Runtime",
                 fingerprint = "trusted-fingerprint",
                 routeToken = "paired-route-token",
                 endpointHint = null,
             ),
-            discoveredMacs = listOf(
-                RuntimeDiscoveredMac(
+            discoveredRuntimes = listOf(
+                RuntimeDiscoveredRuntime(
                     serviceName = "AetherLink Route Token",
                     host = "192.168.1.88",
                     port = 43170,
@@ -231,15 +534,15 @@ class RuntimeClientViewModelTest {
             source = RuntimeEndpointSource.TrustedLastKnown,
         )
         val state = RuntimeUiState(
-            trustedMac = RuntimeTrustedMac(
+            trustedRuntime = RuntimeTrustedRuntime(
                 deviceId = "mac-1",
                 name = "AetherLink Runtime",
                 fingerprint = "trusted-fingerprint",
                 routeToken = "trusted-route-token",
                 endpointHint = staleTrustedEndpoint,
             ),
-            discoveredMacs = listOf(
-                RuntimeDiscoveredMac(
+            discoveredRuntimes = listOf(
+                RuntimeDiscoveredRuntime(
                     serviceName = "AetherLink Wrong Route Token",
                     host = "192.168.1.89",
                     port = 43170,
@@ -260,6 +563,121 @@ class RuntimeClientViewModelTest {
     }
 
     @Test
+    fun trustedDiscoveredRuntimeConnectionTargetRequiresMatchingDiscoveryIdentity() {
+        val state = RuntimeUiState(
+            trustedRuntime = RuntimeTrustedRuntime(
+                deviceId = "runtime-1",
+                name = "AetherLink Runtime",
+                routeToken = "trusted-route-token",
+                endpointHint = null,
+            ),
+            discoveredRuntimes = listOf(
+                RuntimeDiscoveredRuntime(
+                    serviceName = "AetherLink Runtime",
+                    host = "192.168.1.88",
+                    port = 43170,
+                    routeToken = "trusted-route-token",
+                ),
+            ),
+        )
+
+        val target = trustedDiscoveredRuntimeConnectionTarget(state)
+
+        assertEquals("runtime-1", target?.identity?.deviceId)
+        assertEquals("trusted-route-token", target?.identity?.routeToken)
+        assertEquals("192.168.1.88", target?.endpointHint?.host)
+        assertEquals(43170, target?.endpointHint?.port)
+        assertEquals(RuntimeEndpointSource.BonjourDiscovery, target?.endpointHint?.source)
+    }
+
+    @Test
+    fun trustedDiscoveredRuntimeConnectionTargetRejectsMetadataLessDiscovery() {
+        val state = RuntimeUiState(
+            trustedRuntime = RuntimeTrustedRuntime(
+                deviceId = "runtime-1",
+                name = "AetherLink Runtime",
+                routeToken = "trusted-route-token",
+                endpointHint = null,
+            ),
+            discoveredRuntimes = listOf(
+                RuntimeDiscoveredRuntime(
+                    serviceName = "Metadata-less Runtime",
+                    host = "192.168.1.88",
+                    port = 43170,
+                ),
+            ),
+        )
+
+        assertNull(trustedDiscoveredRuntimeConnectionTarget(state))
+    }
+
+    @Test
+    fun autoReconnectTrustedRuntimeTargetPrefersMatchingDiscoveredEndpoint() {
+        val state = RuntimeUiState(
+            trustedRuntime = RuntimeTrustedRuntime(
+                deviceId = "runtime-1",
+                name = "AetherLink Runtime",
+                routeToken = "trusted-route-token",
+                endpointHint = RuntimeEndpointHint(
+                    host = "192.168.1.20",
+                    port = 43170,
+                    source = RuntimeEndpointSource.TrustedLastKnown,
+                ),
+            ),
+            discoveredRuntimes = listOf(
+                RuntimeDiscoveredRuntime(
+                    serviceName = "AetherLink Runtime",
+                    host = "192.168.1.88",
+                    port = 43170,
+                    routeToken = "trusted-route-token",
+                ),
+            ),
+        )
+
+        val target = autoReconnectTrustedRuntimeConnectionTarget(state)
+
+        assertEquals("runtime-1", target?.identity?.deviceId)
+        assertEquals("192.168.1.88", target?.endpointHint?.host)
+        assertEquals(RuntimeEndpointSource.BonjourDiscovery, target?.endpointHint?.source)
+    }
+
+    @Test
+    fun autoReconnectTrustedRuntimeTargetFallsBackToTrustedLastKnownEndpoint() {
+        val state = RuntimeUiState(
+            trustedRuntime = RuntimeTrustedRuntime(
+                deviceId = "runtime-1",
+                name = "AetherLink Runtime",
+                routeToken = "trusted-route-token",
+                endpointHint = RuntimeEndpointHint(
+                    host = "192.168.1.20",
+                    port = 43170,
+                    source = RuntimeEndpointSource.TrustedLastKnown,
+                ),
+            ),
+        )
+
+        val target = autoReconnectTrustedRuntimeConnectionTarget(state)
+
+        assertEquals("runtime-1", target?.identity?.deviceId)
+        assertEquals("192.168.1.20", target?.endpointHint?.host)
+        assertEquals(RuntimeEndpointSource.TrustedLastKnown, target?.endpointHint?.source)
+    }
+
+    @Test
+    fun autoReconnectTrustedRuntimeTargetWaitsForRouteWhenIdentityOnly() {
+        val state = RuntimeUiState(
+            trustedRuntime = RuntimeTrustedRuntime(
+                deviceId = "runtime-1",
+                name = "AetherLink Runtime",
+                routeToken = "trusted-route-token",
+                endpointHint = null,
+            ),
+        )
+
+        assertNull(autoReconnectTrustedRuntimeConnectionTarget(state))
+    }
+
+    @Test
     fun runtimeRouteCandidatesIgnoreDiscoveredEndpointWithMismatchedIdentityMetadata() {
         val staleTrustedEndpoint = RuntimeEndpointHint(
             host = "192.168.1.20",
@@ -267,14 +685,14 @@ class RuntimeClientViewModelTest {
             source = RuntimeEndpointSource.TrustedLastKnown,
         )
         val state = RuntimeUiState(
-            trustedMac = RuntimeTrustedMac(
+            trustedRuntime = RuntimeTrustedRuntime(
                 deviceId = "mac-1",
-                name = "AetherLink Mac",
+                name = "AetherLink Runtime",
                 fingerprint = "trusted-fingerprint",
                 endpointHint = staleTrustedEndpoint,
             ),
-            discoveredMacs = listOf(
-                RuntimeDiscoveredMac(
+            discoveredRuntimes = listOf(
+                RuntimeDiscoveredRuntime(
                     serviceName = "Other AetherLink",
                     host = "192.168.1.44",
                     port = 43170,
@@ -301,17 +719,17 @@ class RuntimeClientViewModelTest {
             source = RuntimeEndpointSource.TrustedLastKnown,
         )
         val state = RuntimeUiState(
-            macHost = "192.168.1.44",
-            macPort = "43170",
-            macEndpointSource = RuntimeEndpointSource.BonjourDiscovery,
-            trustedMac = RuntimeTrustedMac(
+            runtimeHost = "192.168.1.44",
+            runtimePort = "43170",
+            runtimeEndpointSource = RuntimeEndpointSource.BonjourDiscovery,
+            trustedRuntime = RuntimeTrustedRuntime(
                 deviceId = "mac-1",
-                name = "AetherLink Mac",
+                name = "AetherLink Runtime",
                 fingerprint = "trusted-fingerprint",
                 endpointHint = staleTrustedEndpoint,
             ),
-            discoveredMacs = listOf(
-                RuntimeDiscoveredMac(
+            discoveredRuntimes = listOf(
+                RuntimeDiscoveredRuntime(
                     serviceName = "Other AetherLink",
                     host = "192.168.1.44",
                     port = 43170,
@@ -333,17 +751,17 @@ class RuntimeClientViewModelTest {
     @Test
     fun runtimeRouteCandidatesAllowMetadataLessSelectedBonjourEndpoint() {
         val state = RuntimeUiState(
-            macHost = "192.168.1.99",
-            macPort = "43170",
-            macEndpointSource = RuntimeEndpointSource.BonjourDiscovery,
-            trustedMac = RuntimeTrustedMac(
+            runtimeHost = "192.168.1.99",
+            runtimePort = "43170",
+            runtimeEndpointSource = RuntimeEndpointSource.BonjourDiscovery,
+            trustedRuntime = RuntimeTrustedRuntime(
                 deviceId = "mac-1",
-                name = "AetherLink Mac",
+                name = "AetherLink Runtime",
                 fingerprint = "trusted-fingerprint",
                 endpointHint = null,
             ),
-            discoveredMacs = listOf(
-                RuntimeDiscoveredMac(
+            discoveredRuntimes = listOf(
+                RuntimeDiscoveredRuntime(
                     serviceName = "Dev AetherLink",
                     host = "192.168.1.99",
                     port = 43170,
@@ -368,22 +786,22 @@ class RuntimeClientViewModelTest {
             source = RuntimeEndpointSource.TrustedLastKnown,
         )
         val state = RuntimeUiState(
-            macHost = "192.168.1.99",
-            macPort = "43170",
-            macEndpointSource = RuntimeEndpointSource.BonjourDiscovery,
-            trustedMac = RuntimeTrustedMac(
+            runtimeHost = "192.168.1.99",
+            runtimePort = "43170",
+            runtimeEndpointSource = RuntimeEndpointSource.BonjourDiscovery,
+            trustedRuntime = RuntimeTrustedRuntime(
                 deviceId = "mac-1",
-                name = "AetherLink Mac",
+                name = "AetherLink Runtime",
                 endpointHint = staleTrustedEndpoint,
             ),
-            discoveredMacs = listOf(
-                RuntimeDiscoveredMac(
+            discoveredRuntimes = listOf(
+                RuntimeDiscoveredRuntime(
                     serviceName = "Other AetherLink",
                     host = "192.168.1.44",
                     port = 43170,
                     deviceId = "mac-1",
                 ),
-                RuntimeDiscoveredMac(
+                RuntimeDiscoveredRuntime(
                     serviceName = "Selected AetherLink",
                     host = "192.168.1.99",
                     port = 43170,
@@ -406,12 +824,12 @@ class RuntimeClientViewModelTest {
     @Test
     fun runtimeRouteCandidatesUseExplicitUsbReverseEndpointForTrustedIdentity() {
         val state = RuntimeUiState(
-            macHost = "127.0.0.1",
-            macPort = "43170",
-            macEndpointSource = RuntimeEndpointSource.UsbReverse,
-            trustedMac = RuntimeTrustedMac(
+            runtimeHost = "127.0.0.1",
+            runtimePort = "43170",
+            runtimeEndpointSource = RuntimeEndpointSource.UsbReverse,
+            trustedRuntime = RuntimeTrustedRuntime(
                 deviceId = "mac-identity-only",
-                name = "AetherLink Mac",
+                name = "AetherLink Runtime",
                 endpointHint = null,
             ),
         )
@@ -430,14 +848,14 @@ class RuntimeClientViewModelTest {
     @Test
     fun identityOnlyTrustedRuntimeWithoutDiscoveredEndpointReturnsNoConnectableRoute() {
         val state = RuntimeUiState(
-            macHost = "127.0.0.1",
-            macPort = "43170",
-            trustedMac = RuntimeTrustedMac(
+            runtimeHost = "127.0.0.1",
+            runtimePort = "43170",
+            trustedRuntime = RuntimeTrustedRuntime(
                 deviceId = "mac-identity-only",
-                name = "AetherLink Mac",
+                name = "AetherLink Runtime",
                 endpointHint = null,
             ),
-            discoveredMacs = emptyList(),
+            discoveredRuntimes = emptyList(),
         )
         val target = trustedRuntimeConnectionTarget(state) ?: error("Expected trusted target")
         val calls = mutableListOf<Pair<String, Int>>()
@@ -464,10 +882,11 @@ class RuntimeClientViewModelTest {
         val identityOnlyTarget = RuntimeConnectionTarget(
             identity = PairedRuntimeIdentity(
                 deviceId = "mac-identity-only",
-                name = "AetherLink Mac",
+                name = "AetherLink Runtime",
             ),
             endpointHint = null,
         )
+        val identity = identityOnlyTarget.identity ?: error("Expected identity")
 
         val noRoute = RuntimeConnectionFailure(
             reason = RuntimeConnectionFailureReason.NoRoutesResolved,
@@ -479,9 +898,24 @@ class RuntimeClientViewModelTest {
             target = identityOnlyTarget,
             routes = emptyList(),
         ).toRuntimeUiError()
+        val remoteRoutesUnavailable = RuntimeConnectionFailure(
+            reason = RuntimeConnectionFailureReason.NoConnectableRoute,
+            target = identityOnlyTarget,
+            routes = listOf(
+                RuntimeRouteCandidate.LocalDirect(identity),
+                RuntimeRouteCandidate.PeerToPeer(identity),
+                RuntimeRouteCandidate.Relay(identity),
+            ),
+        ).toRuntimeUiError()
 
         assertEquals("no_route", noRoute.code)
         assertEquals("no_connectable_route", noConnectableRoute.code)
+        assertNull(noConnectableRoute.diagnosticCode)
+        assertEquals("remote_routes_unavailable", remoteRoutesUnavailable.code)
+        assertEquals(
+            "route_diagnostic_local_missing_remote_pending",
+            remoteRoutesUnavailable.diagnosticCode,
+        )
     }
 
     @Test
@@ -490,11 +924,11 @@ class RuntimeClientViewModelTest {
             status = "ok",
             ollama = RuntimeBackendStatusPayload(
                 available = true,
-                message = "Ollama is reachable from the Mac runtime",
+                message = "Ollama is reachable from the runtime host",
             ),
             lmStudio = RuntimeBackendStatusPayload(
                 available = false,
-                message = "LM Studio is not reachable from the Mac runtime",
+                message = "LM Studio is not reachable from the runtime host",
                 code = "backend_unavailable",
                 retryable = true,
             ),
@@ -503,13 +937,13 @@ class RuntimeClientViewModelTest {
         val statuses = runtimeProviderStatuses(payload)
 
         assertEquals(2, statuses.size)
-        assertEquals(RuntimeProviderStatus("ollama", "Ollama", true, "Ollama is reachable from the Mac runtime"), statuses[0])
+        assertEquals(RuntimeProviderStatus("ollama", "Ollama", true, "Ollama is reachable from the runtime host"), statuses[0])
         assertEquals(
             RuntimeProviderStatus(
                 id = "lm_studio",
                 name = "LM Studio",
                 available = false,
-                message = "LM Studio is not reachable from the Mac runtime",
+                message = "LM Studio is not reachable from the runtime host",
                 code = "backend_unavailable",
                 retryable = true,
             ),
@@ -578,6 +1012,137 @@ class RuntimeClientViewModelTest {
     }
 
     @Test
+    fun modelSelectionReconciliationKeepsMissingPersistedSelectionsTypedAcrossRefresh() {
+        val selections = reconcileModelSelections(
+            currentSelectedModelId = "ollama:qwen3:8b",
+            currentSelectedEmbeddingModelId = "ollama:nomic-embed-text",
+            models = listOf(
+                RuntimeModel(
+                    id = "ollama:llama3",
+                    name = "Llama 3",
+                    modelKind = MODEL_KIND_CHAT,
+                    capabilities = listOf("chat"),
+                    installed = true,
+                ),
+                RuntimeModel(
+                    id = "ollama:mxbai-embed-large",
+                    name = "mxbai-embed-large",
+                    modelKind = MODEL_KIND_EMBEDDING,
+                    capabilities = listOf("embedding"),
+                    installed = true,
+                ),
+            ),
+        )
+
+        assertEquals("ollama:qwen3:8b", selections.selectedModelId)
+        assertEquals("ollama:nomic-embed-text", selections.selectedEmbeddingModelId)
+    }
+
+    @Test
+    fun modelSelectionReconciliationClearsSelectionsWhenRefreshedModelHasWrongKind() {
+        val selections = reconcileModelSelections(
+            currentSelectedModelId = "ollama:nomic-embed-text",
+            currentSelectedEmbeddingModelId = "ollama:qwen3:8b",
+            models = listOf(
+                RuntimeModel(
+                    id = "ollama:nomic-embed-text",
+                    name = "nomic-embed-text",
+                    modelKind = MODEL_KIND_EMBEDDING,
+                    capabilities = listOf("embedding"),
+                    installed = true,
+                ),
+                RuntimeModel(
+                    id = "ollama:qwen3:8b",
+                    name = "Qwen3 8B",
+                    modelKind = MODEL_KIND_CHAT,
+                    capabilities = listOf("chat"),
+                    installed = true,
+                ),
+            ),
+        )
+
+        assertNull(selections.selectedModelId)
+        assertNull(selections.selectedEmbeddingModelId)
+    }
+
+    @Test
+    fun modelSelectionReconciliationOnlyAutoSelectsChatWhenSelectionIsEmpty() {
+        val models = listOf(
+            RuntimeModel(
+                id = "ollama:qwen3:8b",
+                name = "Qwen3 8B",
+                modelKind = MODEL_KIND_CHAT,
+                capabilities = listOf("chat"),
+                installed = true,
+            ),
+            RuntimeModel(
+                id = "ollama:nomic-embed-text",
+                name = "nomic-embed-text",
+                modelKind = MODEL_KIND_EMBEDDING,
+                capabilities = listOf("embedding"),
+                installed = true,
+            ),
+        )
+
+        val selections = reconcileModelSelections(
+            currentSelectedModelId = null,
+            currentSelectedEmbeddingModelId = null,
+            models = models,
+        )
+
+        assertEquals("ollama:qwen3:8b", selections.selectedModelId)
+        assertNull(selections.selectedEmbeddingModelId)
+    }
+
+    @Test
+    fun modelSelectionReconciliationKeepsExplicitEmbeddingSelection() {
+        val selections = reconcileModelSelections(
+            currentSelectedModelId = null,
+            currentSelectedEmbeddingModelId = "ollama:nomic-embed-text",
+            models = listOf(
+                RuntimeModel(
+                    id = "ollama:qwen3:8b",
+                    name = "Qwen3 8B",
+                    modelKind = MODEL_KIND_CHAT,
+                    capabilities = listOf("chat"),
+                    installed = true,
+                ),
+                RuntimeModel(
+                    id = "ollama:nomic-embed-text",
+                    name = "nomic-embed-text",
+                    modelKind = MODEL_KIND_EMBEDDING,
+                    capabilities = listOf("embedding"),
+                    installed = true,
+                ),
+            ),
+        )
+
+        assertEquals("ollama:qwen3:8b", selections.selectedModelId)
+        assertEquals("ollama:nomic-embed-text", selections.selectedEmbeddingModelId)
+    }
+
+    @Test
+    fun modelSelectionReconciliationSelectsInstalledChatTargetAfterRefresh() {
+        val selections = reconcileModelSelections(
+            currentSelectedModelId = "ollama:llama3",
+            currentSelectedEmbeddingModelId = null,
+            installTargetModelId = "ollama:qwen3:8b",
+            models = listOf(
+                RuntimeModel(
+                    id = "ollama:qwen3:8b",
+                    name = "Qwen3 8B",
+                    modelKind = MODEL_KIND_CHAT,
+                    capabilities = listOf("chat"),
+                    installed = true,
+                ),
+            ),
+        )
+
+        assertEquals("ollama:qwen3:8b", selections.selectedModelId)
+        assertEquals("ollama:qwen3:8b", selections.installedTargetModelId)
+    }
+
+    @Test
     fun modelKindNormalizationSeparatesChatAndEmbeddingModels() {
         assertEquals(
             MODEL_KIND_EMBEDDING,
@@ -606,6 +1171,20 @@ class RuntimeClientViewModelTest {
                 name = "Qwen Local",
             ),
         )
+    }
+
+    @Test
+    fun embeddingCapabilityPreventsModelFromBeingTreatedAsChat() {
+        val mixedModel = RuntimeModel(
+            id = "lm_studio:mixed-embedding",
+            name = "Mixed embedding",
+            modelKind = MODEL_KIND_CHAT,
+            capabilities = listOf("chat", "embedding"),
+            installed = true,
+        )
+
+        assertTrue(mixedModel.isEmbeddingModel())
+        assertFalse(mixedModel.isChatModel())
     }
 
     @Test
@@ -1205,11 +1784,15 @@ class RuntimeClientViewModelTest {
     fun appLanguageTagHelperNormalizesSupportedAndInvalidTags() {
         val korean = PersistedRuntimeData().withAppLanguageTag(" KO ")
         val simplifiedChinese = korean.withAppLanguageTag("zh-cn")
-        val invalid = simplifiedChinese.withAppLanguageTag("unknown")
+        val simplifiedChineseHans = simplifiedChinese.withAppLanguageTag("zh-Hans")
+        val simplifiedChineseAndroidQualifier = simplifiedChineseHans.withAppLanguageTag("zh-rCN")
+        val invalid = simplifiedChineseAndroidQualifier.withAppLanguageTag("unknown")
         val system = invalid.withAppLanguageTag(RuntimeAppLanguage.System.languageTag)
 
         assertEquals(RuntimeAppLanguage.Korean.languageTag, korean.appLanguageTag)
         assertEquals(RuntimeAppLanguage.SimplifiedChinese.languageTag, simplifiedChinese.appLanguageTag)
+        assertEquals(RuntimeAppLanguage.SimplifiedChinese.languageTag, simplifiedChineseHans.appLanguageTag)
+        assertEquals(RuntimeAppLanguage.SimplifiedChinese.languageTag, simplifiedChineseAndroidQualifier.appLanguageTag)
         assertEquals(RuntimeAppLanguage.System.languageTag, invalid.appLanguageTag)
         assertEquals(RuntimeAppLanguage.System.languageTag, system.appLanguageTag)
     }
@@ -1222,6 +1805,27 @@ class RuntimeClientViewModelTest {
 
         assertEquals("ollama:qwen3:8b", data.selectedModelId)
         assertEquals("ollama:nomic-embed-text", data.selectedEmbeddingModelId)
+    }
+
+    @Test
+    fun persistedRuntimeDataDefaultsAutoReconnectOnAndCanDisableIt() {
+        val disabled = PersistedRuntimeData()
+            .withTrustedRuntimeAutoReconnectEnabled(false)
+        val reEnabled = disabled.withTrustedRuntimeAutoReconnectEnabled(true)
+
+        assertTrue(PersistedRuntimeData().trustedRuntimeAutoReconnectEnabled)
+        assertFalse(disabled.trustedRuntimeAutoReconnectEnabled)
+        assertTrue(reEnabled.trustedRuntimeAutoReconnectEnabled)
+        assertFalse(disabled.sanitized().trustedRuntimeAutoReconnectEnabled)
+    }
+
+    @Test
+    fun persistedRuntimeDataTracksPairingOnboardingCompletion() {
+        val completed = PersistedRuntimeData().withPairingOnboardingCompleted()
+
+        assertFalse(PersistedRuntimeData().pairingOnboardingCompleted)
+        assertTrue(completed.pairingOnboardingCompleted)
+        assertTrue(completed.sanitized().pairingOnboardingCompleted)
     }
 
     @Test
@@ -1287,6 +1891,23 @@ class RuntimeClientViewModelTest {
             type = type,
             requestId = requestId,
             payload = json.encodeToJsonElement(serializer, payload).jsonObject,
+        )
+    }
+
+    private fun runtimePairingPayload(
+        runtimePublicKeyBase64: String? = "runtime-public-key",
+    ): RuntimePairingPayload {
+        return RuntimePairingPayload(
+            pairingNonce = "nonce-1",
+            pairingCode = "123456",
+            runtimeDeviceId = "runtime-1",
+            runtimeName = "AetherLink Runtime",
+            fingerprint = "runtime-fingerprint",
+            runtimePublicKeyBase64 = runtimePublicKeyBase64,
+            routeToken = "route-1",
+            host = "192.168.1.10",
+            port = 43170,
+            serviceType = "_aetherlink._tcp.local.",
         )
     }
 

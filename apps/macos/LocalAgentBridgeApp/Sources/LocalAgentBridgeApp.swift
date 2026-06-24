@@ -28,7 +28,7 @@ struct LocalAgentBridgeApp: App {
         MenuBarExtra("AetherLink", systemImage: "bolt.horizontal.circle") {
             Text(
                 String(
-                    format: NSLocalizedString("Companion: %@", comment: ""),
+                    format: NSLocalizedString("Runtime: %@", comment: ""),
                     localizedTransportStatus(model.transportState)
                 )
             )

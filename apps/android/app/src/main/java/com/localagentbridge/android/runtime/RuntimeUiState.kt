@@ -5,12 +5,14 @@ import com.localagentbridge.android.core.transport.RuntimeEndpointSource
 import java.util.UUID
 
 data class RuntimeUiState(
-    val macHost: String = "127.0.0.1",
-    val macPort: String = "43170",
-    val macEndpointSource: RuntimeEndpointSource = RuntimeEndpointSource.Manual,
-    val trustedMac: RuntimeTrustedMac? = null,
-    val discoveredMacs: List<RuntimeDiscoveredMac> = emptyList(),
+    val runtimeHost: String = "",
+    val runtimePort: String = "",
+    val runtimeEndpointSource: RuntimeEndpointSource = RuntimeEndpointSource.Manual,
+    val trustedRuntime: RuntimeTrustedRuntime? = null,
+    val discoveredRuntimes: List<RuntimeDiscoveredRuntime> = emptyList(),
     val isDiscovering: Boolean = false,
+    val pendingPairingRuntimeName: String? = null,
+    val isPairingAwaitingRoute: Boolean = false,
     val pairingCode: String = "",
     val isConnected: Boolean = false,
     val isConnecting: Boolean = false,
@@ -34,6 +36,8 @@ data class RuntimeUiState(
     val activeRequestId: String? = null,
     val memoryEntries: List<RuntimeMemoryEntry> = emptyList(),
     val selectedLanguageTag: String = RuntimeAppLanguage.English.languageTag,
+    val trustedRuntimeAutoReconnectEnabled: Boolean = true,
+    val pairingOnboardingCompleted: Boolean = false,
     val error: RuntimeUiError? = null,
 )
 
@@ -49,17 +53,29 @@ enum class RuntimeAppLanguage(val languageTag: String) {
         val supportedLanguageTags: Set<String> = entries.map { it.languageTag }.toSet()
 
         fun normalizeLanguageTag(languageTag: String): String {
-            val trimmed = languageTag.trim()
-            return supportedLanguageTags.firstOrNull { it.equals(trimmed, ignoreCase = true) }
+            val normalized = languageTag.trim().replace('_', '-')
+            if (normalized.isBlank()) return System.languageTag
+            if (
+                normalized.equals("zh-CN", ignoreCase = true) ||
+                normalized.equals("zh-Hans", ignoreCase = true) ||
+                normalized.equals("zh-rCN", ignoreCase = true) ||
+                normalized.equals("zh-Hans-CN", ignoreCase = true)
+            ) {
+                return SimplifiedChinese.languageTag
+            }
+            return entries
+                .firstOrNull { it.languageTag.equals(normalized, ignoreCase = true) }
+                ?.languageTag
                 ?: System.languageTag
         }
     }
 }
 
-data class RuntimeTrustedMac(
+data class RuntimeTrustedRuntime(
     val deviceId: String,
     val name: String,
     val fingerprint: String? = null,
+    val publicKeyBase64: String? = null,
     val routeToken: String? = null,
     val endpointHint: RuntimeEndpointHint? = null,
 ) {
@@ -67,7 +83,7 @@ data class RuntimeTrustedMac(
         get() = requireNotNull(endpointHint) { "Trusted runtime endpoint hint is not available" }
 }
 
-data class RuntimeDiscoveredMac(
+data class RuntimeDiscoveredRuntime(
     val serviceName: String,
     val host: String,
     val port: Int,
@@ -141,4 +157,5 @@ data class RuntimeMemoryEntry(
 data class RuntimeUiError(
     val code: String,
     val detail: String? = null,
+    val diagnosticCode: String? = null,
 )

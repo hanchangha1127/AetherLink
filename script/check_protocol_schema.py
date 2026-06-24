@@ -66,6 +66,38 @@ def main() -> int:
                 f"as active v0.1 {unsupported_tool_types}"
             )
 
+        payload_contract_types = set()
+        for rule in schema.get("allOf", []):
+            if not isinstance(rule, dict):
+                continue
+            condition_type = (
+                rule.get("if", {})
+                .get("properties", {})
+                .get("type", {})
+                .get("const")
+            )
+            payload_schema = (
+                rule.get("then", {})
+                .get("properties", {})
+                .get("payload")
+            )
+            if isinstance(condition_type, str) and isinstance(payload_schema, dict):
+                payload_contract_types.add(condition_type)
+
+        missing_payload_contracts = sorted(set(message_enum) - payload_contract_types)
+        if missing_payload_contracts:
+            failures.append(
+                "active message types missing payload contracts "
+                f"{missing_payload_contracts}"
+            )
+
+        unknown_payload_contracts = sorted(payload_contract_types - set(message_enum))
+        if unknown_payload_contracts:
+            failures.append(
+                "payload contracts defined for non-active message types "
+                f"{unknown_payload_contracts}"
+            )
+
     request_id_schema = schema.get("properties", {}).get("request_id", {})
     if not isinstance(request_id_schema, dict):
         failures.append("properties.request_id must be an object schema")

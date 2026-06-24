@@ -31,5 +31,397 @@
     "timestamp": { "type": "string", "format": "date-time" },
     "payload": { "type": "object" }
   },
+  "allOf": [
+    {
+      "if": { "properties": { "type": { "const": "hello" } }, "required": ["type"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/helloPayload" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "auth.challenge" } }, "required": ["type"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/authChallengePayload" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "auth.response" } }, "required": ["type"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/authResponsePayload" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "pairing.request" } }, "required": ["type"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/pairingRequestPayload" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "pairing.result" } }, "required": ["type"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/pairingResultPayload" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "runtime.health" } }, "required": ["type"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/runtimeHealthPayload" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "models.list" } }, "required": ["type"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/modelsListPayload" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "models.result" } }, "required": ["type"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/modelsResultPayload" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "models.pull" } }, "required": ["type"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/modelsPullPayload" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "chat.send" } }, "required": ["type"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/chatSendPayload" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "chat.delta" } }, "required": ["type"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/chatDeltaPayload" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "chat.done" } }, "required": ["type"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/chatDonePayload" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "chat.cancel" } }, "required": ["type"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/chatCancelPayload" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "chat.suggestions.request" } }, "required": ["type"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/chatSuggestionsRequestPayload" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "chat.suggestions.result" } }, "required": ["type"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/chatSuggestionsResultPayload" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "error" } }, "required": ["type"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/errorPayload" } } }
+    }
+  ],
+  "$defs": {
+    "emptyPayload": {
+      "type": "object",
+      "maxProperties": 0
+    },
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1
+    },
+    "helloPayload": {
+      "type": "object",
+      "required": ["device_id", "device_name", "client_capabilities"],
+      "properties": {
+        "device_id": { "$ref": "#/$defs/nonEmptyString" },
+        "device_name": { "$ref": "#/$defs/nonEmptyString" },
+        "client_capabilities": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/nonEmptyString" },
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "authChallengePayload": {
+      "type": "object",
+      "required": ["device_id", "nonce"],
+      "properties": {
+        "device_id": { "$ref": "#/$defs/nonEmptyString" },
+        "nonce": { "$ref": "#/$defs/nonEmptyString" }
+      },
+      "additionalProperties": false
+    },
+    "authResponsePayload": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["device_id", "nonce", "signature"],
+          "properties": {
+            "device_id": { "$ref": "#/$defs/nonEmptyString" },
+            "nonce": { "$ref": "#/$defs/nonEmptyString" },
+            "signature": { "$ref": "#/$defs/nonEmptyString" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["accepted", "device_id"],
+          "properties": {
+            "accepted": { "type": "boolean" },
+            "device_id": { "$ref": "#/$defs/nonEmptyString" }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "pairingRequestPayload": {
+      "type": "object",
+      "required": ["pairing_nonce", "pairing_code", "device_id", "device_name", "public_key"],
+      "properties": {
+        "pairing_nonce": { "$ref": "#/$defs/nonEmptyString" },
+        "pairing_code": { "$ref": "#/$defs/nonEmptyString" },
+        "device_id": { "$ref": "#/$defs/nonEmptyString" },
+        "device_name": { "$ref": "#/$defs/nonEmptyString" },
+        "public_key": { "$ref": "#/$defs/nonEmptyString" }
+      },
+      "additionalProperties": false
+    },
+    "pairingResultPayload": {
+      "type": "object",
+      "required": ["accepted"],
+      "properties": {
+        "accepted": { "type": "boolean" },
+        "mac_device_id": { "type": "string" },
+        "runtime_device_id": { "type": "string" },
+        "runtime_public_key": { "type": "string" },
+        "runtime_key_fingerprint": { "type": "string" },
+        "trusted_device_id": { "type": "string" },
+        "message": { "type": "string" },
+        "code": { "type": "string" },
+        "retryable": { "type": "boolean" },
+        "failed_attempts": { "type": "number", "minimum": 0 },
+        "max_failed_attempts": { "type": "number", "minimum": 0 },
+        "remaining_attempts": { "type": "number", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "backendHealth": {
+      "type": "object",
+      "required": ["available"],
+      "properties": {
+        "available": { "type": "boolean" },
+        "message": { "type": "string" },
+        "code": { "type": "string" },
+        "retryable": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+    "runtimeHealthPayload": {
+      "oneOf": [
+        { "$ref": "#/$defs/emptyPayload" },
+        {
+          "type": "object",
+          "required": ["status"],
+          "properties": {
+            "status": { "enum": ["ok", "degraded", "unavailable"] },
+            "ollama": { "$ref": "#/$defs/backendHealth" },
+            "lm_studio": { "$ref": "#/$defs/backendHealth" }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "modelInfo": {
+      "type": "object",
+      "required": ["id", "name"],
+      "properties": {
+        "id": { "$ref": "#/$defs/nonEmptyString" },
+        "name": { "$ref": "#/$defs/nonEmptyString" },
+        "backend": { "enum": ["ollama", "lm_studio"] },
+        "provider": { "enum": ["ollama", "lm_studio"] },
+        "provider_model_id": { "type": "string" },
+        "qualified_id": { "type": "string" },
+        "model_kind": { "enum": ["chat", "embedding"] },
+        "capabilities": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true
+        },
+        "size_bytes": { "type": "integer", "minimum": 0 },
+        "modified_at": { "type": "string", "format": "date-time" },
+        "installed": { "type": "boolean" },
+        "running": { "type": "boolean" },
+        "source": { "enum": ["local", "cloud"] },
+        "remote_model": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "modelsListPayload": {
+      "oneOf": [
+        { "$ref": "#/$defs/emptyPayload" },
+        { "$ref": "#/$defs/modelsResultPayload" }
+      ]
+    },
+    "modelsResultPayload": {
+      "type": "object",
+      "required": ["models"],
+      "properties": {
+        "models": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/modelInfo" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "modelsPullPayload": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["model"],
+          "properties": {
+            "model": { "$ref": "#/$defs/nonEmptyString" },
+            "backend": { "enum": ["ollama"] }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["model", "status"],
+          "properties": {
+            "model": { "$ref": "#/$defs/nonEmptyString" },
+            "backend": { "enum": ["ollama"] },
+            "provider": { "enum": ["ollama"] },
+            "status": { "enum": ["success", "failed"] },
+            "installed": { "type": "boolean" }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "chatMessage": {
+      "type": "object",
+      "required": ["role", "content"],
+      "properties": {
+        "role": { "enum": ["system", "user", "assistant"] },
+        "content": { "type": "string" },
+        "attachments": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/chatAttachment" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "chatAttachment": {
+      "type": "object",
+      "required": ["type", "mime_type"],
+      "properties": {
+        "type": { "enum": ["image", "document", "file"] },
+        "mime_type": { "$ref": "#/$defs/nonEmptyString" },
+        "name": { "type": "string" },
+        "data_base64": { "type": "string" },
+        "text": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "chatSendPayload": {
+      "type": "object",
+      "required": ["session_id", "model", "messages"],
+      "properties": {
+        "session_id": { "$ref": "#/$defs/nonEmptyString" },
+        "model": { "$ref": "#/$defs/nonEmptyString" },
+        "messages": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/chatMessage" },
+          "minItems": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "chatDeltaPayload": {
+      "type": "object",
+      "properties": {
+        "delta": { "type": "string" },
+        "reasoning_delta": { "type": "string" }
+      },
+      "anyOf": [
+        { "required": ["delta"] },
+        { "required": ["reasoning_delta"] }
+      ],
+      "additionalProperties": false
+    },
+    "chatDonePayload": {
+      "type": "object",
+      "properties": {
+        "finish_reason": { "enum": ["stop", "cancelled", "error"] },
+        "usage": {
+          "type": "object",
+          "properties": {
+            "input_tokens": { "type": "integer", "minimum": 0 },
+            "output_tokens": { "type": "integer", "minimum": 0 }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "chatCancelPayload": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["target_request_id"],
+          "properties": {
+            "target_request_id": { "$ref": "#/$defs/nonEmptyString" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["target_request_id", "cancelled"],
+          "properties": {
+            "target_request_id": { "$ref": "#/$defs/nonEmptyString" },
+            "cancelled": { "type": "boolean" }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "chatSuggestionsRequestPayload": {
+      "type": "object",
+      "required": ["session_id", "model", "messages"],
+      "properties": {
+        "session_id": { "$ref": "#/$defs/nonEmptyString" },
+        "model": { "$ref": "#/$defs/nonEmptyString" },
+        "max_suggestions": { "type": "integer", "minimum": 1, "maximum": 5 },
+        "locale": { "type": "string" },
+        "messages": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/chatMessage" },
+          "minItems": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "chatSuggestionsResultPayload": {
+      "type": "object",
+      "required": ["suggestions"],
+      "properties": {
+        "suggestions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/nonEmptyString" },
+          "maxItems": 5
+        }
+      },
+      "additionalProperties": false
+    },
+    "errorPayload": {
+      "type": "object",
+      "required": ["code", "message", "retryable"],
+      "properties": {
+        "code": {
+          "enum": [
+            "unknown_message_type",
+            "invalid_payload",
+            "not_connected",
+            "pairing_required",
+            "authentication_required",
+            "authentication_failed",
+            "backend_unavailable",
+            "bad_backend_response",
+            "no_models",
+            "model_not_found",
+            "model_not_installed",
+            "generation_not_found",
+            "generation_cancelled",
+            "unsupported_operation",
+            "unsupported_attachment",
+            "unreadable_attachment",
+            "transport_error",
+            "internal_error"
+          ]
+        },
+        "message": { "type": "string" },
+        "retryable": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    }
+  },
   "additionalProperties": false
 }

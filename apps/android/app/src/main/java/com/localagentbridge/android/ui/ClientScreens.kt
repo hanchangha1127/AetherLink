@@ -1,5 +1,6 @@
 package com.localagentbridge.android.ui
 
+import android.content.ClipData
 import android.widget.Toast
 import androidx.annotation.StringRes
 import androidx.compose.foundation.clickable
@@ -66,11 +67,13 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.ClipEntry
+import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -78,34 +81,36 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.localagentbridge.android.R
+import com.localagentbridge.android.core.transport.RuntimeEndpointSource
 import com.localagentbridge.android.runtime.RuntimeAppLanguage
 import com.localagentbridge.android.runtime.RuntimeChatMessage
-import com.localagentbridge.android.runtime.RuntimeDiscoveredMac
+import com.localagentbridge.android.runtime.RuntimeDiscoveredRuntime
 import com.localagentbridge.android.runtime.RuntimeMemoryEntry
 import com.localagentbridge.android.runtime.RuntimeModel
 import com.localagentbridge.android.runtime.RuntimePendingAttachment
 import com.localagentbridge.android.runtime.RuntimeProviderStatus
-import com.localagentbridge.android.runtime.RuntimeTrustedMac
+import com.localagentbridge.android.runtime.RuntimeTrustedRuntime
 import com.localagentbridge.android.runtime.RuntimeUiError
 import com.localagentbridge.android.runtime.RuntimeUiState
 import com.localagentbridge.android.runtime.isChatModel
 import com.localagentbridge.android.runtime.isEmbeddingModel
 import com.localagentbridge.android.runtime.supportsImageInput
+import kotlinx.coroutines.launch
+import java.util.Locale
 
 @Composable
 fun PairingScreen(
     state: RuntimeUiState,
     onStartDiscovery: () -> Unit,
     onStopDiscovery: () -> Unit,
-    onUseDiscoveredMac: (RuntimeDiscoveredMac) -> Unit,
-    onForgetTrustedMac: () -> Unit,
+    onUseDiscoveredRuntime: (RuntimeDiscoveredRuntime) -> Unit,
+    onForgetTrustedRuntime: () -> Unit,
     onScanPairingQr: () -> Unit,
     onConnect: () -> Unit,
     modifier: Modifier = Modifier,
@@ -119,14 +124,17 @@ fun PairingScreen(
         }
         item {
             QrPairingPanel(
-                isConnecting = state.isConnecting,
+                state = state,
                 onScanPairingQr = onScanPairingQr,
             )
         }
+        if (state.isPairingAwaitingRoute) {
+            item { PendingPairingRouteStatus(state = state) }
+        }
         item {
-            TrustedMacPanel(
+            TrustedRuntimePanel(
                 state = state,
-                onForgetTrustedMac = onForgetTrustedMac,
+                onForgetTrustedRuntime = onForgetTrustedRuntime,
             )
         }
         item {
@@ -135,7 +143,7 @@ fun PairingScreen(
                 onConnect = onConnect,
             )
         }
-        if (state.trustedMac == null) {
+        if (state.trustedRuntime == null) {
             item {
                 EmptyState(text = stringResource(R.string.connect_requires_pairing))
             }
@@ -145,7 +153,7 @@ fun PairingScreen(
                 state = state,
                 onStartDiscovery = onStartDiscovery,
                 onStopDiscovery = onStopDiscovery,
-                onUseDiscoveredMac = onUseDiscoveredMac,
+                onUseDiscoveredRuntime = onUseDiscoveredRuntime,
             )
         }
         item { ErrorText(state.error) }
@@ -154,7 +162,7 @@ fun PairingScreen(
 
 @Composable
 private fun QrPairingPanel(
-    isConnecting: Boolean,
+    state: RuntimeUiState,
     onScanPairingQr: () -> Unit,
 ) {
     val hapticFeedback = LocalHapticFeedback.current
@@ -179,7 +187,7 @@ private fun QrPairingPanel(
                     hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
                     onScanPairingQr()
                 },
-                enabled = !isConnecting,
+                enabled = !state.isConnecting && !state.isPairingAwaitingRoute,
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Icon(
@@ -199,6 +207,55 @@ private fun QrPairingPanel(
 }
 
 @Composable
+private fun PendingPairingRouteStatus(state: RuntimeUiState) {
+    val runtimeName = state.pendingPairingRuntimeName
+        ?.takeIf { it.isNotBlank() }
+        ?: stringResource(R.string.trusted_runtime)
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.secondaryContainer,
+    ) {
+        Row(
+            modifier = Modifier.padding(14.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.Top,
+        ) {
+            Icon(
+                Icons.Filled.Search,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                modifier = Modifier.size(22.dp),
+            )
+            Column(
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+                modifier = Modifier.weight(1f),
+            ) {
+                Text(
+                    text = stringResource(R.string.pending_pairing_route_title),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                )
+                Text(
+                    text = stringResource(R.string.pending_pairing_route_detail, runtimeName),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                )
+                if (state.isDiscovering) {
+                    LinearProgressIndicator(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 6.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun PairingConnectButton(
     state: RuntimeUiState,
     onConnect: () -> Unit,
@@ -210,7 +267,7 @@ private fun PairingConnectButton(
             hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
             onConnect()
         },
-        enabled = state.trustedMac != null && !state.isConnecting,
+        enabled = state.trustedRuntime != null && !state.isConnecting,
         modifier = Modifier.fillMaxWidth(),
     ) {
         Icon(
@@ -270,6 +327,17 @@ private fun ConnectionStatusPanel(state: RuntimeUiState) {
                 label = stringResource(R.string.runtime),
                 value = runtimeStatusLabel(state.runtimeStatus),
             )
+            if (state.isPairingAwaitingRoute) {
+                StatusLine(
+                    label = stringResource(R.string.pairing_title),
+                    value = stringResource(
+                        R.string.pending_pairing_route_status,
+                        state.pendingPairingRuntimeName
+                            ?.takeIf { it.isNotBlank() }
+                            ?: stringResource(R.string.trusted_runtime),
+                    ),
+                )
+            }
             StatusLine(
                 label = stringResource(R.string.backend),
                 value = backendStatusLabel(state.backendAvailable),
@@ -280,16 +348,61 @@ private fun ConnectionStatusPanel(state: RuntimeUiState) {
             )
             ProviderStatusRows(providers = state.providerStatuses)
             StatusLine(
-                label = stringResource(R.string.endpoint),
-                value = state.trustedMac?.endpointHint?.let { endpoint -> "${endpoint.host}:${endpoint.port}" }
-                    ?: "${state.macHost}:${state.macPort}",
+                label = stringResource(R.string.runtime_route),
+                value = runtimeRouteDisplayLabel(state),
             )
             StatusLine(
                 label = stringResource(R.string.connected),
                 value = if (state.isConnected) stringResource(R.string.yes) else stringResource(R.string.no),
             )
+            StatusLine(
+                label = stringResource(R.string.auto_reconnect),
+                value = if (state.trustedRuntimeAutoReconnectEnabled) {
+                    stringResource(R.string.yes)
+                } else {
+                    stringResource(R.string.no)
+                },
+            )
+            if (state.trustedRuntime != null && !state.trustedRuntimeAutoReconnectEnabled && !state.isConnected) {
+                Text(
+                    text = stringResource(R.string.auto_reconnect_paused),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.secondary,
+                )
+            }
         }
     }
+}
+
+@Composable
+private fun runtimeRouteDisplayLabel(state: RuntimeUiState): String {
+    state.trustedRuntime?.endpointHint?.let {
+        return stringResource(R.string.runtime_route_saved_hint)
+    }
+    if (state.isPairingAwaitingRoute) {
+        val runtimeName = state.pendingPairingRuntimeName
+            ?.takeIf { it.isNotBlank() }
+            ?: stringResource(R.string.trusted_runtime)
+        return stringResource(R.string.pending_pairing_route_status, runtimeName)
+    }
+    if (state.trustedRuntime != null) {
+        return stringResource(R.string.runtime_route_resolving)
+    }
+    if (state.runtimeEndpointSource != RuntimeEndpointSource.Manual) {
+        val host = state.runtimeHost.takeIf { it.isNotBlank() }
+        val port = state.runtimePort.takeIf { it.isNotBlank() }
+        if (host != null && port != null) {
+            return when (state.runtimeEndpointSource) {
+                RuntimeEndpointSource.BonjourDiscovery -> stringResource(R.string.runtime_route_local_discovery)
+                RuntimeEndpointSource.UsbReverse,
+                RuntimeEndpointSource.Emulator,
+                RuntimeEndpointSource.PairingQr -> stringResource(R.string.runtime_route_development)
+                RuntimeEndpointSource.TrustedLastKnown -> stringResource(R.string.runtime_route_saved_hint)
+                RuntimeEndpointSource.Manual -> stringResource(R.string.runtime_route_diagnostics)
+            }
+        }
+    }
+    return stringResource(R.string.runtime_route_pair_first)
 }
 
 @Composable
@@ -406,7 +519,7 @@ private fun ProviderStatusRow(provider: RuntimeProviderStatus) {
             )
             provider.message.takeIf { it.isNotBlank() }?.let { message ->
                 Text(
-                    text = stringResource(R.string.provider_mac_detail, message),
+                    text = stringResource(R.string.provider_host_detail, message),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.secondary,
                 )
@@ -466,7 +579,7 @@ fun ChatScreen(
             .fillMaxSize()
             .padding(horizontal = 14.dp, vertical = 8.dp),
     ) {
-        if (state.messages.isEmpty()) {
+        if (state.messages.isEmpty() && shouldShowChatEmptyState(state)) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -522,6 +635,7 @@ fun ChatScreen(
                 value = state.chatInput,
                 attachments = state.pendingAttachments,
                 enabled = !state.isStreaming,
+                imageAttachmentsSupported = !hasUnsupportedImageAttachment,
                 canSend = canSend,
                 isStreaming = state.isStreaming,
                 hint = chatInputHint(state),
@@ -533,6 +647,12 @@ fun ChatScreen(
             )
         }
     }
+}
+
+private fun shouldShowChatEmptyState(state: RuntimeUiState): Boolean {
+    return !state.isConnected ||
+        state.isStreaming ||
+        !selectedModelIsUsable(state)
 }
 
 @Composable
@@ -610,18 +730,20 @@ fun SettingsScreen(
     onUseEmulator: () -> Unit,
     onStartDiscovery: () -> Unit,
     onStopDiscovery: () -> Unit,
-    onUseDiscoveredMac: (RuntimeDiscoveredMac) -> Unit,
-    onForgetTrustedMac: () -> Unit,
+    onUseDiscoveredRuntime: (RuntimeDiscoveredRuntime) -> Unit,
+    onForgetTrustedRuntime: () -> Unit,
     onScanPairingQr: () -> Unit,
     onConnect: () -> Unit,
     onRefreshHealth: () -> Unit,
     onRequestModels: () -> Unit,
     onDisconnect: () -> Unit,
+    onSetAutoReconnectEnabled: (Boolean) -> Unit,
     onSetLanguageTag: (String) -> Unit,
     onSelectEmbeddingModel: (String) -> Unit,
     onAddMemoryEntry: (String) -> Unit,
     onRemoveMemoryEntry: (String) -> Unit,
     onSetMemoryEntryEnabled: (String, Boolean) -> Unit,
+    showDeveloperDiagnostics: Boolean,
     modifier: Modifier = Modifier,
 ) {
     ScreenList(modifier) {
@@ -659,18 +781,21 @@ fun SettingsScreen(
             ) {
                 CompanionOnlyPanel()
                 QrPairingPanel(
-                    isConnecting = state.isConnecting,
+                    state = state,
                     onScanPairingQr = onScanPairingQr,
                 )
-                TrustedMacPanel(
+                if (state.isPairingAwaitingRoute) {
+                    PendingPairingRouteStatus(state = state)
+                }
+                TrustedRuntimePanel(
                     state = state,
-                    onForgetTrustedMac = onForgetTrustedMac,
+                    onForgetTrustedRuntime = onForgetTrustedRuntime,
                 )
                 PairingConnectButton(
                     state = state,
                     onConnect = onConnect,
                 )
-                if (state.trustedMac == null) {
+                if (state.trustedRuntime == null) {
                     EmptyState(text = stringResource(R.string.connect_requires_pairing))
                 }
                 ConnectionStatusPanel(state = state)
@@ -678,6 +803,11 @@ fun SettingsScreen(
                     state = state,
                     onRefreshHealth = onRefreshHealth,
                     onDisconnect = onDisconnect,
+                )
+                AutoReconnectSettingRow(
+                    enabled = state.trustedRuntimeAutoReconnectEnabled,
+                    canChange = state.trustedRuntime != null,
+                    onSetAutoReconnectEnabled = onSetAutoReconnectEnabled,
                 )
             }
         }
@@ -690,19 +820,63 @@ fun SettingsScreen(
                     state = state,
                     onStartDiscovery = onStartDiscovery,
                     onStopDiscovery = onStopDiscovery,
-                    onUseDiscoveredMac = onUseDiscoveredMac,
+                    onUseDiscoveredRuntime = onUseDiscoveredRuntime,
                 )
-                EndpointPanel(
-                    state = state,
-                    onHostChange = onHostChange,
-                    onPortChange = onPortChange,
-                    onUseUsbReverse = onUseUsbReverse,
-                    onUseEmulator = onUseEmulator,
-                    title = R.string.runtime_endpoint,
-                )
+                if (showDeveloperDiagnostics) {
+                    DeveloperDiagnosticsPanel(
+                        state = state,
+                        onHostChange = onHostChange,
+                        onPortChange = onPortChange,
+                        onUseUsbReverse = onUseUsbReverse,
+                        onUseEmulator = onUseEmulator,
+                    )
+                }
             }
         }
         item { ErrorText(state.error) }
+    }
+}
+
+@Composable
+private fun AutoReconnectSettingRow(
+    enabled: Boolean,
+    canChange: Boolean,
+    onSetAutoReconnectEnabled: (Boolean) -> Unit,
+) {
+    val hapticFeedback = LocalHapticFeedback.current
+
+    OutlinedCard(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.auto_reconnect),
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = stringResource(R.string.auto_reconnect_detail),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.secondary,
+                )
+            }
+            Switch(
+                checked = enabled,
+                onCheckedChange = { checked ->
+                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onSetAutoReconnectEnabled(checked)
+                },
+                enabled = canChange,
+            )
+        }
     }
 }
 
@@ -750,7 +924,18 @@ private fun SettingsExpandableSection(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val isExpanded = rememberSaveable { mutableStateOf(initiallyExpanded) }
-    val toggleExpanded = { isExpanded.value = !isExpanded.value }
+    val hapticFeedback = LocalHapticFeedback.current
+    val toggleExpanded = {
+        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+        isExpanded.value = !isExpanded.value
+    }
+    val toggleContentDescription = stringResource(
+        if (isExpanded.value) {
+            R.string.collapse_section
+        } else {
+            R.string.expand_section
+        },
+    )
 
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -788,7 +973,7 @@ private fun SettingsExpandableSection(
                     } else {
                         Icons.Filled.KeyboardArrowDown
                     },
-                    contentDescription = null,
+                    contentDescription = toggleContentDescription,
                 )
             }
         }
@@ -808,9 +993,9 @@ private fun SettingsExpandableSection(
 }
 
 @Composable
-private fun TrustedMacPanel(
+private fun TrustedRuntimePanel(
     state: RuntimeUiState,
-    onForgetTrustedMac: () -> Unit,
+    onForgetTrustedRuntime: () -> Unit,
 ) {
     val hapticFeedback = LocalHapticFeedback.current
 
@@ -821,13 +1006,13 @@ private fun TrustedMacPanel(
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
-                    imageVector = if (state.trustedMac != null) Icons.Filled.CheckCircle else Icons.Filled.Link,
-                    contentDescription = if (state.trustedMac != null) {
-                        stringResource(R.string.trusted_mac)
+                    imageVector = if (state.trustedRuntime != null) Icons.Filled.CheckCircle else Icons.Filled.Link,
+                    contentDescription = if (state.trustedRuntime != null) {
+                        stringResource(R.string.trusted_runtime)
                     } else {
-                        stringResource(R.string.no_trusted_mac)
+                        stringResource(R.string.no_trusted_runtime)
                     },
-                    tint = if (state.trustedMac != null) {
+                    tint = if (state.trustedRuntime != null) {
                         MaterialTheme.colorScheme.primary
                     } else {
                         MaterialTheme.colorScheme.secondary
@@ -836,12 +1021,12 @@ private fun TrustedMacPanel(
                 Spacer(Modifier.width(8.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = stringResource(R.string.trusted_mac),
+                        text = stringResource(R.string.trusted_runtime),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.secondary,
                     )
                     Text(
-                        text = state.trustedMac?.name ?: stringResource(R.string.no_trusted_mac),
+                        text = state.trustedRuntime?.name ?: stringResource(R.string.no_trusted_runtime),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Medium,
                         maxLines = 2,
@@ -849,17 +1034,20 @@ private fun TrustedMacPanel(
                     )
                 }
             }
-            state.trustedMac?.let { trusted ->
+            state.trustedRuntime?.let { trusted ->
                 Text(
-                    text = trusted.endpointHint?.let { endpoint -> "${endpoint.host}:${endpoint.port}" }
-                        ?: stringResource(R.string.status_unknown),
+                    text = if (trusted.endpointHint != null) {
+                        stringResource(R.string.runtime_route_saved_hint)
+                    } else {
+                        stringResource(R.string.runtime_route_resolving)
+                    },
                     color = MaterialTheme.colorScheme.secondary,
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 OutlinedButton(
                     onClick = {
                         hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                        onForgetTrustedMac()
+                        onForgetTrustedRuntime()
                     },
                     modifier = Modifier.fillMaxWidth(),
                 ) {
@@ -868,10 +1056,70 @@ private fun TrustedMacPanel(
                     Text(stringResource(R.string.forget))
                 }
             } ?: Text(
-                text = stringResource(R.string.trusted_mac_detail),
+                text = stringResource(R.string.trusted_runtime_detail),
                 color = MaterialTheme.colorScheme.secondary,
                 style = MaterialTheme.typography.bodyMedium,
             )
+        }
+    }
+}
+
+@Composable
+private fun DeveloperDiagnosticsPanel(
+    state: RuntimeUiState,
+    onHostChange: (String) -> Unit,
+    onPortChange: (String) -> Unit,
+    onUseUsbReverse: () -> Unit,
+    onUseEmulator: () -> Unit,
+) {
+    val isEnabled = rememberSaveable { mutableStateOf(false) }
+    val hapticFeedback = LocalHapticFeedback.current
+
+    OutlinedCard(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text(
+                        text = stringResource(R.string.developer_routes_title),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Medium,
+                    )
+                    Text(
+                        text = stringResource(R.string.developer_routes_detail),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.secondary,
+                    )
+                }
+                Switch(
+                    checked = isEnabled.value,
+                    onCheckedChange = { checked ->
+                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                        isEnabled.value = checked
+                    },
+                )
+            }
+            if (isEnabled.value) {
+                EndpointPanel(
+                    state = state,
+                    onHostChange = onHostChange,
+                    onPortChange = onPortChange,
+                    onUseUsbReverse = onUseUsbReverse,
+                    onUseEmulator = onUseEmulator,
+                    title = R.string.runtime_endpoint,
+                )
+            }
         }
     }
 }
@@ -888,6 +1136,7 @@ private fun EndpointPanel(
     val isExpanded = rememberSaveable { mutableStateOf(false) }
     val hapticFeedback = LocalHapticFeedback.current
     val toggleExpanded = {
+        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
         isExpanded.value = !isExpanded.value
     }
 
@@ -972,16 +1221,16 @@ private fun EndpointPanel(
                     }
                 }
                 OutlinedTextField(
-                    value = state.macHost,
+                    value = state.runtimeHost,
                     onValueChange = onHostChange,
-                    label = { Text(stringResource(R.string.mac_runtime_host)) },
+                    label = { Text(stringResource(R.string.runtime_host)) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
                 )
                 OutlinedTextField(
-                    value = state.macPort,
+                    value = state.runtimePort,
                     onValueChange = onPortChange,
-                    label = { Text(stringResource(R.string.mac_runtime_port)) },
+                    label = { Text(stringResource(R.string.runtime_port)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
@@ -996,7 +1245,7 @@ private fun DiscoveryPanel(
     state: RuntimeUiState,
     onStartDiscovery: () -> Unit,
     onStopDiscovery: () -> Unit,
-    onUseDiscoveredMac: (RuntimeDiscoveredMac) -> Unit,
+    onUseDiscoveredRuntime: (RuntimeDiscoveredRuntime) -> Unit,
 ) {
     val hapticFeedback = LocalHapticFeedback.current
 
@@ -1006,7 +1255,7 @@ private fun DiscoveryPanel(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(
-                text = stringResource(R.string.discovered_macs),
+                text = stringResource(R.string.discovered_runtimes),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Medium,
             )
@@ -1028,9 +1277,9 @@ private fun DiscoveryPanel(
                     Spacer(Modifier.width(8.dp))
                     Text(
                         text = if (state.isDiscovering) {
-                            stringResource(R.string.discovering_macs)
+                            stringResource(R.string.discovering_runtimes)
                         } else {
-                            stringResource(R.string.discover_macs)
+                            stringResource(R.string.discover_runtimes)
                         },
                     )
                 }
@@ -1050,18 +1299,18 @@ private fun DiscoveryPanel(
             if (state.isDiscovering) {
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
             }
-            if (state.discoveredMacs.isEmpty()) {
-                EmptyState(text = stringResource(R.string.no_discovered_macs))
+            if (state.discoveredRuntimes.isEmpty()) {
+                EmptyState(text = stringResource(R.string.no_discovered_runtimes))
             } else {
                 LazyColumn(
                     modifier = Modifier.heightIn(max = 220.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    items(state.discoveredMacs) { peer ->
-                        DiscoveredMacRow(
+                    items(state.discoveredRuntimes) { peer ->
+                        DiscoveredRuntimeRow(
                             peer = peer,
-                            trustedMac = state.trustedMac,
-                            onUse = onUseDiscoveredMac,
+                            trustedRuntime = state.trustedRuntime,
+                            onUse = onUseDiscoveredRuntime,
                         )
                     }
                 }
@@ -1071,15 +1320,15 @@ private fun DiscoveryPanel(
 }
 
 @Composable
-private fun DiscoveredMacRow(
-    peer: RuntimeDiscoveredMac,
-    trustedMac: RuntimeTrustedMac?,
-    onUse: (RuntimeDiscoveredMac) -> Unit,
+private fun DiscoveredRuntimeRow(
+    peer: RuntimeDiscoveredRuntime,
+    trustedRuntime: RuntimeTrustedRuntime?,
+    onUse: (RuntimeDiscoveredRuntime) -> Unit,
 ) {
     val hapticFeedback = LocalHapticFeedback.current
-    val identityStatus = peer.identityStatus(trustedMac)
+    val identityStatus = peer.identityStatus(trustedRuntime)
     val hasAdvertisedIdentity = peer.hasAdvertisedIdentity()
-    val isKnownMismatch = identityStatus == DiscoveredMacIdentityStatus.DifferentTrustedRuntime
+    val isKnownMismatch = identityStatus == DiscoveredRuntimeIdentityStatus.DifferentTrustedRuntime
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -1101,7 +1350,7 @@ private fun DiscoveredMacRow(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = "${peer.host}:${peer.port}",
+                    text = stringResource(R.string.runtime_route_local_discovery),
                     color = MaterialTheme.colorScheme.secondary,
                     style = MaterialTheme.typography.bodySmall,
                     maxLines = 1,
@@ -1110,9 +1359,9 @@ private fun DiscoveredMacRow(
                 Text(
                     text = stringResource(identityStatus.labelRes(hasAdvertisedIdentity)),
                     color = when (identityStatus) {
-                        DiscoveredMacIdentityStatus.TrustedMatch -> MaterialTheme.colorScheme.primary
-                        DiscoveredMacIdentityStatus.DifferentTrustedRuntime -> MaterialTheme.colorScheme.error
-                        DiscoveredMacIdentityStatus.Unknown -> MaterialTheme.colorScheme.secondary
+                        DiscoveredRuntimeIdentityStatus.TrustedMatch -> MaterialTheme.colorScheme.primary
+                        DiscoveredRuntimeIdentityStatus.DifferentTrustedRuntime -> MaterialTheme.colorScheme.error
+                        DiscoveredRuntimeIdentityStatus.Unknown -> MaterialTheme.colorScheme.secondary
                     },
                     style = MaterialTheme.typography.labelSmall,
                     maxLines = 1,
@@ -1132,7 +1381,7 @@ private fun DiscoveredMacRow(
     }
 }
 
-private enum class DiscoveredMacIdentityStatus {
+private enum class DiscoveredRuntimeIdentityStatus {
     TrustedMatch,
     Unknown,
     DifferentTrustedRuntime;
@@ -1149,21 +1398,21 @@ private enum class DiscoveredMacIdentityStatus {
     }
 }
 
-private fun RuntimeDiscoveredMac.identityStatus(trustedMac: RuntimeTrustedMac?): DiscoveredMacIdentityStatus {
+private fun RuntimeDiscoveredRuntime.identityStatus(trustedRuntime: RuntimeTrustedRuntime?): DiscoveredRuntimeIdentityStatus {
     val discoveredRouteToken = routeToken.normalizedIdentityValue()
     val discoveredDeviceId = deviceId.normalizedIdentityValue()
     val discoveredFingerprint = fingerprint.normalizedIdentityValue()
 
     if (discoveredRouteToken == null && discoveredDeviceId == null && discoveredFingerprint == null) {
-        return DiscoveredMacIdentityStatus.Unknown
+        return DiscoveredRuntimeIdentityStatus.Unknown
     }
-    if (trustedMac == null) {
-        return DiscoveredMacIdentityStatus.Unknown
+    if (trustedRuntime == null) {
+        return DiscoveredRuntimeIdentityStatus.Unknown
     }
 
-    val trustedRouteToken = trustedMac.routeToken.normalizedIdentityValue()
-    val trustedDeviceId = trustedMac.deviceId.normalizedIdentityValue()
-    val trustedFingerprint = trustedMac.fingerprint.normalizedIdentityValue()
+    val trustedRouteToken = trustedRuntime.routeToken.normalizedIdentityValue()
+    val trustedDeviceId = trustedRuntime.deviceId.normalizedIdentityValue()
+    val trustedFingerprint = trustedRuntime.fingerprint.normalizedIdentityValue()
     val routeTokenMatches = discoveredRouteToken != null && discoveredRouteToken == trustedRouteToken
     val deviceIdMatches = discoveredDeviceId != null && discoveredDeviceId == trustedDeviceId
     val fingerprintMatches = discoveredFingerprint != null && discoveredFingerprint == trustedFingerprint
@@ -1176,17 +1425,17 @@ private fun RuntimeDiscoveredMac.identityStatus(trustedMac: RuntimeTrustedMac?):
         discoveredFingerprint != trustedFingerprint
 
     return when {
-        routeTokenMatches -> DiscoveredMacIdentityStatus.TrustedMatch
-        routeTokenDiffers -> DiscoveredMacIdentityStatus.DifferentTrustedRuntime
+        routeTokenMatches -> DiscoveredRuntimeIdentityStatus.TrustedMatch
+        routeTokenDiffers -> DiscoveredRuntimeIdentityStatus.DifferentTrustedRuntime
         (deviceIdMatches || fingerprintMatches) && !routeTokenDiffers && !fingerprintDiffers && !deviceIdDiffers -> {
-            DiscoveredMacIdentityStatus.TrustedMatch
+            DiscoveredRuntimeIdentityStatus.TrustedMatch
         }
-        deviceIdDiffers || fingerprintDiffers -> DiscoveredMacIdentityStatus.DifferentTrustedRuntime
-        else -> DiscoveredMacIdentityStatus.Unknown
+        deviceIdDiffers || fingerprintDiffers -> DiscoveredRuntimeIdentityStatus.DifferentTrustedRuntime
+        else -> DiscoveredRuntimeIdentityStatus.Unknown
     }
 }
 
-private fun RuntimeDiscoveredMac.hasAdvertisedIdentity(): Boolean =
+private fun RuntimeDiscoveredRuntime.hasAdvertisedIdentity(): Boolean =
     routeToken.normalizedIdentityValue() != null ||
         deviceId.normalizedIdentityValue() != null ||
         fingerprint.normalizedIdentityValue() != null
@@ -1256,7 +1505,7 @@ private fun ChatEmptyState(
                 horizontalAlignment = Alignment.Start,
             ) {
                 Text(
-                    text = stringResource(R.string.chat_select_model_from_mac),
+                    text = stringResource(R.string.chat_select_model_from_runtime),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.secondary,
                     maxLines = 2,
@@ -1269,7 +1518,7 @@ private fun ChatEmptyState(
                 )
             }
         }
-        if (!state.isConnected && state.trustedMac != null) {
+        if (!state.isConnected && state.trustedRuntime != null) {
             Button(
                 onClick = {
                     hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -1629,16 +1878,19 @@ private fun CodeBlock(
 
 @Composable
 private fun MessageCopyButton(textToCopy: String) {
-    val clipboardManager = LocalClipboardManager.current
+    val clipboard = LocalClipboard.current
     val context = LocalContext.current
     val hapticFeedback = LocalHapticFeedback.current
+    val scope = rememberCoroutineScope()
     val copiedMessage = stringResource(R.string.message_copied)
 
     TextButton(
         onClick = {
             hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-            clipboardManager.setText(AnnotatedString(textToCopy))
-            Toast.makeText(context, copiedMessage, Toast.LENGTH_SHORT).show()
+            scope.launch {
+                clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("AetherLink", textToCopy)))
+                Toast.makeText(context, copiedMessage, Toast.LENGTH_SHORT).show()
+            }
         },
         enabled = textToCopy.isNotBlank(),
         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
@@ -1724,10 +1976,19 @@ private fun AssistantReasoning(
     expanded: Boolean,
     onExpandedChange: (Boolean) -> Unit,
 ) {
+    val hapticFeedback = LocalHapticFeedback.current
+    val toggleLabel = stringResource(
+        if (expanded) {
+            R.string.assistant_reasoning_hide
+        } else {
+            R.string.assistant_reasoning_show
+        }
+    )
+
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(8.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
         contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
     ) {
         Column(
@@ -1747,9 +2008,13 @@ private fun AssistantReasoning(
                 )
                 TextButton(
                     onClick = {
+                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
                         onExpandedChange(!expanded)
                     },
                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                    modifier = Modifier.semantics {
+                        stateDescription = toggleLabel
+                    },
                 ) {
                     Icon(
                         imageVector = if (expanded) {
@@ -1762,13 +2027,7 @@ private fun AssistantReasoning(
                     )
                     Spacer(modifier = Modifier.width(2.dp))
                     Text(
-                        text = stringResource(
-                            if (expanded) {
-                                R.string.assistant_reasoning_hide
-                            } else {
-                                R.string.assistant_reasoning_show
-                            }
-                        ),
+                        text = toggleLabel,
                         style = MaterialTheme.typography.labelMedium,
                     )
                 }
@@ -1776,8 +2035,8 @@ private fun AssistantReasoning(
             Text(
                 text = reasoning,
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
-                maxLines = if (expanded) Int.MAX_VALUE else 2,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.62f),
+                maxLines = if (expanded) Int.MAX_VALUE else 1,
                 overflow = TextOverflow.Ellipsis,
             )
         }
@@ -1807,6 +2066,7 @@ private fun ChatComposer(
     value: String,
     attachments: List<RuntimePendingAttachment>,
     enabled: Boolean,
+    imageAttachmentsSupported: Boolean,
     canSend: Boolean,
     isStreaming: Boolean,
     hint: String,
@@ -1835,6 +2095,7 @@ private fun ChatComposer(
             AttachmentChips(
                 attachments = attachments,
                 enabled = enabled,
+                imageAttachmentsSupported = imageAttachmentsSupported,
                 onRemoveAttachment = onRemoveAttachment,
             )
             BasicTextField(
@@ -1941,6 +2202,7 @@ private fun ChatComposer(
 private fun AttachmentChips(
     attachments: List<RuntimePendingAttachment>,
     enabled: Boolean,
+    imageAttachmentsSupported: Boolean,
     onRemoveAttachment: (String) -> Unit,
 ) {
     if (attachments.isEmpty()) return
@@ -1955,6 +2217,7 @@ private fun AttachmentChips(
             AttachmentChip(
                 attachment = attachment,
                 enabled = enabled,
+                imageAttachmentsSupported = imageAttachmentsSupported,
                 onRemoveAttachment = onRemoveAttachment,
             )
         }
@@ -1965,25 +2228,50 @@ private fun AttachmentChips(
 private fun AttachmentChip(
     attachment: RuntimePendingAttachment,
     enabled: Boolean,
+    imageAttachmentsSupported: Boolean,
     onRemoveAttachment: (String) -> Unit,
 ) {
+    val isUnsupportedImage = attachment.type == "image" && !imageAttachmentsSupported
+    val metadata = attachmentMetadataLabel(attachment)
     Surface(
         shape = RoundedCornerShape(999.dp),
-        color = MaterialTheme.colorScheme.secondaryContainer,
-        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        color = if (isUnsupportedImage) {
+            MaterialTheme.colorScheme.errorContainer
+        } else {
+            MaterialTheme.colorScheme.secondaryContainer
+        },
+        contentColor = if (isUnsupportedImage) {
+            MaterialTheme.colorScheme.onErrorContainer
+        } else {
+            MaterialTheme.colorScheme.onSecondaryContainer
+        },
     ) {
         Row(
             modifier = Modifier.padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            Text(
-                text = attachment.name,
-                style = MaterialTheme.typography.labelMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.widthIn(max = 180.dp),
-            )
+            Column(
+                modifier = Modifier.widthIn(max = 190.dp),
+                verticalArrangement = Arrangement.spacedBy(1.dp),
+            ) {
+                Text(
+                    text = attachment.name,
+                    style = MaterialTheme.typography.labelMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = if (isUnsupportedImage) {
+                        stringResource(R.string.attachment_requires_vision_model)
+                    } else {
+                        metadata
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
             IconButton(
                 onClick = { onRemoveAttachment(attachment.id) },
                 enabled = enabled,
@@ -1996,6 +2284,28 @@ private fun AttachmentChip(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun attachmentMetadataLabel(attachment: RuntimePendingAttachment): String {
+    val typeLabel = if (attachment.type == "image") {
+        stringResource(R.string.attachment_type_image)
+    } else {
+        stringResource(R.string.attachment_type_document)
+    }
+    val sizeLabel = formatAttachmentSize(attachment.sizeBytes)
+    return if (sizeLabel.isBlank()) typeLabel else "$typeLabel - $sizeLabel"
+}
+
+private fun formatAttachmentSize(sizeBytes: Long): String {
+    if (sizeBytes <= 0L) return ""
+    val kib = 1024.0
+    val mib = kib * 1024.0
+    return when {
+        sizeBytes >= mib -> String.format(Locale.US, "%.1f MB", sizeBytes / mib)
+        sizeBytes >= kib -> String.format(Locale.US, "%.1f KB", sizeBytes / kib)
+        else -> "$sizeBytes B"
     }
 }
 
@@ -2040,21 +2350,65 @@ private fun AppPreferencesPanel(
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
             )
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                StatusLine(
-                    label = stringResource(R.string.appearance_title),
-                    value = stringResource(R.string.appearance_system),
-                )
-                Text(
-                    text = stringResource(R.string.appearance_system_detail),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.secondary,
-                )
-            }
+            AppearanceStatus()
             LanguagePreferenceSelector(
                 selectedLanguageTag = selectedLanguageTag,
                 onSetLanguageTag = onSetLanguageTag,
             )
+        }
+    }
+}
+
+@Composable
+private fun AppearanceStatus() {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Settings,
+                contentDescription = null,
+                modifier = Modifier.size(20.dp),
+                tint = MaterialTheme.colorScheme.primary,
+            )
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Text(
+                    text = stringResource(R.string.appearance_title),
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    text = stringResource(R.string.appearance_system_detail),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Surface(
+                shape = RoundedCornerShape(999.dp),
+                color = MaterialTheme.colorScheme.primaryContainer,
+            ) {
+                Text(
+                    text = stringResource(R.string.appearance_system),
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }
@@ -2070,11 +2424,19 @@ private fun EmbeddingModelPanel(
         .filter { it.isEmbeddingModel() }
         .sortedWith(compareBy<RuntimeModel> { !it.installed }.thenBy { it.name.lowercase() })
     val selectedEmbeddingModel = embeddingModels.firstOrNull { it.id == state.selectedEmbeddingModelId }
+    val selectedEmbeddingModelUnavailable =
+        state.selectedEmbeddingModelId != null && selectedEmbeddingModel == null
     val selectedEmbeddingModelLabel = selectedEmbeddingModel?.name
         ?: state.selectedEmbeddingModelId
             ?.substringAfter(':')
             ?.takeIf(String::isNotBlank)
         ?: stringResource(R.string.model_none)
+    val selectedEmbeddingModelRecoveryMessage = when {
+        !selectedEmbeddingModelUnavailable -> null
+        state.isLoadingModels -> stringResource(R.string.selected_embedding_model_restoring)
+        state.isConnected -> stringResource(R.string.selected_embedding_model_unavailable)
+        else -> stringResource(R.string.selected_embedding_model_restoring)
+    }
 
     OutlinedCard(modifier = Modifier.fillMaxWidth()) {
         Column(
@@ -2097,6 +2459,13 @@ private fun EmbeddingModelPanel(
                 label = stringResource(R.string.selected_embedding_model),
                 value = selectedEmbeddingModelLabel,
             )
+            if (selectedEmbeddingModelRecoveryMessage != null) {
+                Text(
+                    text = selectedEmbeddingModelRecoveryMessage,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.secondary,
+                )
+            }
             Button(
                 onClick = {
                     hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -2169,7 +2538,7 @@ private fun EmbeddingModelRow(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = "${model.provider} - ${quickModelStatus(model = model, installing = false)}",
+                    text = "${runtimeProviderDisplayName(model.provider)} - ${quickModelStatus(model = model, installing = false)}",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.secondary,
                     maxLines = 1,
@@ -2443,44 +2812,115 @@ private fun EmptyState(text: String) {
 
 @Composable
 private fun ErrorText(error: RuntimeUiError?) {
-    if (error != null) {
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(8.dp),
-            color = MaterialTheme.colorScheme.errorContainer,
+    if (error == null) return
+
+    if (error.isRouteAvailabilityNotice()) {
+        RouteAvailabilityNotice(error)
+        return
+    }
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.errorContainer,
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(
-                modifier = Modifier.padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(
-                    Icons.Filled.Error,
-                    contentDescription = stringResource(R.string.content_desc_error),
-                    tint = MaterialTheme.colorScheme.onErrorContainer,
+            Icon(
+                Icons.Filled.Error,
+                contentDescription = stringResource(R.string.content_desc_error),
+                tint = MaterialTheme.colorScheme.onErrorContainer,
+            )
+            Spacer(Modifier.width(8.dp))
+            Column {
+                Text(
+                    text = stringResource(R.string.error_title),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onErrorContainer,
                 )
-                Spacer(Modifier.width(8.dp))
-                Column {
+                Text(
+                    text = runtimeErrorLabel(error),
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                )
+                error.detail?.takeIf { it.isNotBlank() }?.let { detail ->
                     Text(
-                        text = stringResource(R.string.error_title),
-                        style = MaterialTheme.typography.labelMedium,
+                        text = stringResource(R.string.error_detail, detail),
+                        style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onErrorContainer,
                     )
+                }
+                runtimeErrorDiagnosticLabel(error)?.let { diagnostic ->
                     Text(
-                        text = runtimeErrorLabel(error),
+                        text = diagnostic,
+                        style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onErrorContainer,
                     )
-                    error.detail?.takeIf { it.isNotBlank() }?.let { detail ->
-                        Text(
-                            text = stringResource(R.string.error_detail, detail),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onErrorContainer,
-                        )
-                    }
                 }
             }
         }
     }
 }
+
+@Composable
+private fun RouteAvailabilityNotice(error: RuntimeUiError) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                Icons.Filled.Link,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.secondary,
+            )
+            Spacer(Modifier.width(10.dp))
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    text = stringResource(R.string.route_notice_title),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.secondary,
+                )
+                Text(
+                    text = runtimeErrorLabel(error),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                runtimeErrorDiagnosticLabel(error)?.let { diagnostic ->
+                    Text(
+                        text = diagnostic,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.secondary,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun RuntimeUiError.isRouteAvailabilityNotice(): Boolean {
+    return code in ROUTE_AVAILABILITY_NOTICE_CODES || diagnosticCode in ROUTE_AVAILABILITY_DIAGNOSTIC_CODES
+}
+
+private val ROUTE_AVAILABILITY_NOTICE_CODES = setOf(
+    "no_route",
+    "no_connectable_route",
+    "remote_routes_unavailable",
+)
+
+private val ROUTE_AVAILABILITY_DIAGNOSTIC_CODES = setOf(
+    "route_diagnostic_local_missing_remote_pending",
+    "route_diagnostic_direct_failed_remote_pending",
+    "route_diagnostic_remote_pending",
+)
 
 private fun selectedModelIsUsable(state: RuntimeUiState): Boolean {
     val selectedId = state.selectedModelId ?: return false
@@ -2519,8 +2959,7 @@ private fun chatEmptyTitle(state: RuntimeUiState): String {
     return when {
         !state.isConnected -> stringResource(R.string.empty_chat_disconnected_title)
         state.isStreaming -> stringResource(R.string.empty_chat_streaming_title)
-        !selectedModelIsUsable(state) -> stringResource(R.string.empty_chat_no_model_title)
-        else -> stringResource(R.string.empty_chat_ready_title)
+        else -> stringResource(R.string.empty_chat_no_model_title)
     }
 }
 
@@ -2530,8 +2969,7 @@ private fun chatEmptyText(state: RuntimeUiState): String {
         !state.isConnected -> stringResource(R.string.empty_chat_disconnected)
         state.isStreaming -> stringResource(R.string.empty_chat_streaming)
         selectedModelIsMissingFromRuntime(state) -> stringResource(R.string.selected_model_unavailable)
-        !selectedModelIsUsable(state) -> stringResource(R.string.empty_chat_no_model)
-        else -> stringResource(R.string.empty_chat_ready)
+        else -> stringResource(R.string.empty_chat_no_model)
     }
 }
 
@@ -2542,6 +2980,7 @@ private fun runtimeErrorLabel(error: RuntimeUiError): String {
         "connection_failed" -> stringResource(R.string.error_connection_failed)
         "no_route" -> stringResource(R.string.error_no_runtime_route)
         "no_connectable_route" -> stringResource(R.string.error_no_connectable_runtime_route)
+        "remote_routes_unavailable" -> stringResource(R.string.error_remote_routes_unavailable)
         "discovery_failed" -> stringResource(R.string.error_discovery_failed)
         "invalid_pairing_qr" -> stringResource(R.string.error_invalid_pairing_qr)
         "pairing_endpoint_unavailable" -> stringResource(R.string.error_pairing_endpoint_unavailable)
@@ -2549,6 +2988,7 @@ private fun runtimeErrorLabel(error: RuntimeUiError): String {
         "pair_first" -> stringResource(R.string.error_pair_first)
         "pairing_required" -> stringResource(R.string.error_pairing_required)
         "pairing_rejected" -> stringResource(R.string.error_pairing_rejected)
+        "runtime_identity_mismatch" -> stringResource(R.string.error_runtime_identity_mismatch)
         "authentication_required" -> stringResource(R.string.error_authentication_required)
         "authentication_failed" -> stringResource(R.string.error_authentication_failed)
         "device_identity_failed" -> stringResource(R.string.error_device_identity_failed)
@@ -2575,6 +3015,19 @@ private fun runtimeErrorLabel(error: RuntimeUiError): String {
         "transport_error" -> stringResource(R.string.error_transport_error)
         "internal_error" -> stringResource(R.string.error_internal_error)
         else -> stringResource(R.string.error_unknown)
+    }
+}
+
+@Composable
+private fun runtimeErrorDiagnosticLabel(error: RuntimeUiError): String? {
+    return when (error.diagnosticCode) {
+        "route_diagnostic_local_missing_remote_pending" ->
+            stringResource(R.string.route_diagnostic_local_missing_remote_pending)
+        "route_diagnostic_direct_failed_remote_pending" ->
+            stringResource(R.string.route_diagnostic_direct_failed_remote_pending)
+        "route_diagnostic_remote_pending" ->
+            stringResource(R.string.route_diagnostic_remote_pending)
+        else -> null
     }
 }
 
@@ -2609,6 +3062,7 @@ private fun runtimeStatusLabel(status: String): String {
         "disconnected" -> stringResource(R.string.status_disconnected)
         "connecting" -> stringResource(R.string.status_connecting)
         "connected" -> stringResource(R.string.status_connected)
+        "pairing" -> stringResource(R.string.status_pairing)
         "authenticated" -> stringResource(R.string.status_authenticated)
         "failed" -> stringResource(R.string.status_failed)
         "ok" -> stringResource(R.string.status_ok)

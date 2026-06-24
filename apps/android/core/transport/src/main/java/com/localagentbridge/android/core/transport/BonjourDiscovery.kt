@@ -14,8 +14,8 @@ class BonjourDiscovery(context: Context) {
     private val nsdManager = appContext.getSystemService(Context.NSD_SERVICE) as NsdManager
     private val wifiManager = appContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
 
-    fun discover(): Flow<List<DiscoveredMac>> = callbackFlow {
-        val peers = linkedMapOf<String, DiscoveredMac>()
+    fun discover(): Flow<List<DiscoveredRuntime>> = callbackFlow {
+        val peers = linkedMapOf<String, DiscoveredRuntime>()
         val multicastLock = wifiManager
             ?.createMulticastLock("aetherlink-mdns")
             ?.also {
@@ -45,7 +45,7 @@ class BonjourDiscovery(context: Context) {
                     override fun onServiceResolved(resolved: NsdServiceInfo) {
                         val host = resolved.host?.hostAddress ?: return
                         val attributes = resolved.attributes
-                        peers[resolved.serviceName] = DiscoveredMac(
+                        peers[resolved.serviceName] = DiscoveredRuntime(
                             serviceName = resolved.serviceName,
                             host = host,
                             port = resolved.port,

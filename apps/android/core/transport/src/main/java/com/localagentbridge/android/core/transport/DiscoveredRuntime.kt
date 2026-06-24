@@ -1,6 +1,6 @@
 package com.localagentbridge.android.core.transport
 
-data class DiscoveredMac(
+data class DiscoveredRuntime(
     val serviceName: String,
     val host: String,
     val port: Int,
@@ -14,7 +14,7 @@ data class DiscoveredMac(
 sealed interface ConnectionState {
     data object Idle : ConnectionState
     data object Discovering : ConnectionState
-    data class Discovered(val peers: List<DiscoveredMac>) : ConnectionState
-    data class Connected(val peer: DiscoveredMac) : ConnectionState
+    data class Discovered(val peers: List<DiscoveredRuntime>) : ConnectionState
+    data class Connected(val peer: DiscoveredRuntime) : ConnectionState
     data class Failed(val message: String) : ConnectionState
 }

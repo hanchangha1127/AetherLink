@@ -35,6 +35,13 @@ class RuntimeConnectionManagerTest {
             PairedRuntimeIdentity(
                 deviceId = "runtime-1",
                 name = "AetherLink",
+                publicKeyBase64 = "",
+            )
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            PairedRuntimeIdentity(
+                deviceId = "runtime-1",
+                name = "AetherLink",
                 routeToken = "",
             )
         }
@@ -51,6 +58,31 @@ class RuntimeConnectionManagerTest {
 
         assertEquals("runtime-1", identity.deviceId)
         assertEquals("pairing-route-token", identity.routeToken)
+    }
+
+    @Test
+    fun remoteRouteSecurityContextRejectsMissingOrExpiredRouteMetadata() {
+        assertThrows(IllegalArgumentException::class.java) {
+            RemoteRouteSecurityContext(
+                rendezvousToken = "",
+                expiresAtEpochMillis = 1_000,
+                antiReplayNonce = "nonce-1",
+            )
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            RemoteRouteSecurityContext(
+                rendezvousToken = "token-1",
+                expiresAtEpochMillis = 0,
+                antiReplayNonce = "nonce-1",
+            )
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            RemoteRouteSecurityContext(
+                rendezvousToken = "token-1",
+                expiresAtEpochMillis = 1_000,
+                antiReplayNonce = "",
+            )
+        }
     }
 
     @Test
@@ -255,10 +287,12 @@ class RuntimeConnectionManagerTest {
                 PreparedRemoteRuntimeRoute.PeerToPeer(
                     identity = pairedRuntime,
                     sessionId = requireNotNull(pairedRuntime.routeToken),
+                    security = securityContext(pairedRuntime.routeToken),
                 ),
                 PreparedRemoteRuntimeRoute.Relay(
                     identity = pairedRuntime,
                     relayId = "relay-${pairedRuntime.routeToken}",
+                    security = securityContext("relay-${pairedRuntime.routeToken}"),
                 ),
             )
         }
@@ -279,10 +313,12 @@ class RuntimeConnectionManagerTest {
         val peerToPeerRoute = PreparedRemoteRuntimeRoute.PeerToPeer(
             identity = identity,
             sessionId = "p2p-session-1",
+            security = securityContext("p2p-session-1"),
         )
         val relayRoute = PreparedRemoteRuntimeRoute.Relay(
             identity = identity,
             relayId = "relay-route-1",
+            security = securityContext("relay-route-1"),
         )
         val manager = RuntimeConnectionManager(
             connector = RuntimeTransportConnector { host, port, timeoutMillis ->
@@ -325,12 +361,91 @@ class RuntimeConnectionManagerTest {
         assertEquals(emptyList<ConnectCall>(), calls)
     }
 
+    @Test
+    fun remoteRoutePreparerCanConnectIdentityOnlyTargetThroughPeerToPeerConnector() = runBlocking {
+        val directCalls = mutableListOf<ConnectCall>()
+        val peerCalls = mutableListOf<PreparedRemoteRuntimeRoute.PeerToPeer>()
+        val identity = pairedIdentity(routeToken = "route-token")
+        val manager = RuntimeConnectionManager(
+            connector = RuntimeTransportConnector { host, port, timeoutMillis ->
+                directCalls += ConnectCall(host, port, timeoutMillis)
+            },
+            routeResolver = RuntimeRouteResolver { emptyList() },
+            remoteRoutePreparer = RuntimeRemoteRoutePreparer { pairedRuntime ->
+                listOf(
+                    PreparedRemoteRuntimeRoute.PeerToPeer(
+                        identity = pairedRuntime,
+                        sessionId = "p2p-${pairedRuntime.routeToken}",
+                        security = securityContext("p2p-${pairedRuntime.routeToken}"),
+                    )
+                )
+            },
+            peerToPeerConnector = RuntimePeerToPeerConnector { route, timeoutMillis ->
+                peerCalls += route
+                assertEquals(900, timeoutMillis)
+            },
+        )
+
+        manager.connect(RuntimeConnectionTarget(identity = identity), timeoutMillis = 900)
+
+        assertEquals(emptyList<ConnectCall>(), directCalls)
+        assertEquals("p2p-route-token", peerCalls.single().sessionId)
+        assertEquals(identity, peerCalls.single().identity)
+    }
+
+    @Test
+    fun relayConnectorCanFallbackAfterPreparedPeerToPeerRouteFails() = runBlocking {
+        val identity = pairedIdentity(routeToken = "route-token")
+        val peerCalls = mutableListOf<String>()
+        val relayCalls = mutableListOf<String>()
+        val manager = RuntimeConnectionManager(
+            connector = RuntimeTransportConnector { _, _, _ ->
+                error("Direct TCP should not be used for this identity-only target")
+            },
+            routeResolver = RuntimeRouteResolver { emptyList() },
+            remoteRoutePreparer = RuntimeRemoteRoutePreparer { pairedRuntime ->
+                listOf(
+                    PreparedRemoteRuntimeRoute.PeerToPeer(
+                        identity = pairedRuntime,
+                        sessionId = "p2p-session",
+                        security = securityContext("p2p-session"),
+                    ),
+                    PreparedRemoteRuntimeRoute.Relay(
+                        identity = pairedRuntime,
+                        relayId = "relay-session",
+                        security = securityContext("relay-session"),
+                    ),
+                )
+            },
+            peerToPeerConnector = RuntimePeerToPeerConnector { route, _ ->
+                peerCalls += route.sessionId
+                throw IllegalStateException("hole punching failed")
+            },
+            relayConnector = RuntimeRelayConnector { route, timeoutMillis ->
+                relayCalls += "${route.relayId}:$timeoutMillis"
+            },
+        )
+
+        manager.connect(RuntimeConnectionTarget(identity = identity), timeoutMillis = 1_500)
+
+        assertEquals(listOf("p2p-session"), peerCalls)
+        assertEquals(listOf("relay-session:1500"), relayCalls)
+    }
+
     private fun pairedIdentity(routeToken: String? = null): PairedRuntimeIdentity {
         return PairedRuntimeIdentity(
             deviceId = "runtime-1",
             name = "AetherLink",
             fingerprint = "fingerprint",
             routeToken = routeToken,
+        )
+    }
+
+    private fun securityContext(token: String): RemoteRouteSecurityContext {
+        return RemoteRouteSecurityContext(
+            rendezvousToken = token,
+            expiresAtEpochMillis = 1_893_456_000_000,
+            antiReplayNonce = "nonce-$token",
         )
     }
 

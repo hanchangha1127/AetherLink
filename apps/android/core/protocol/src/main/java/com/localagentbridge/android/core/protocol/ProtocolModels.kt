@@ -40,6 +40,7 @@ object MessageType {
 data class HelloPayload(
     @SerialName("device_id") val deviceId: String,
     @SerialName("device_name") val deviceName: String,
+    @SerialName("client_capabilities")
     val capabilities: List<String>,
 )
 
@@ -69,7 +70,10 @@ data class PairingRequestPayload(
 @Serializable
 data class PairingResultPayload(
     val accepted: Boolean,
-    @SerialName("mac_device_id") val macDeviceId: String? = null,
+    @SerialName("mac_device_id") val runtimeDeviceId: String? = null,
+    @SerialName("runtime_device_id") val runtimeDeviceIdV2: String? = null,
+    @SerialName("runtime_public_key") val runtimePublicKey: String? = null,
+    @SerialName("runtime_key_fingerprint") val runtimeKeyFingerprint: String? = null,
     @SerialName("trusted_device_id") val trustedDeviceId: String? = null,
     val message: String,
 )
@@ -92,7 +96,6 @@ data class ModelInfoPayload(
     @SerialName("size_bytes") val sizeBytes: Long? = null,
     @SerialName("modified_at") val modifiedAt: String? = null,
     @SerialName("remote_model") val remoteModel: String? = null,
-    @SerialName("remote_host") val remoteHost: String? = null,
 )
 
 @Serializable

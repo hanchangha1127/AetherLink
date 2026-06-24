@@ -34,7 +34,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         let router = makeRouter(backend: MockBackend(status: .unavailable(BackendError(
             provider: .ollama,
             code: "backend_unavailable",
-            message: "Ollama is not reachable from the Mac runtime.",
+            message: "Ollama is not reachable from the runtime host.",
             retryable: true
         ))))
 
@@ -59,7 +59,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
             MockBackend(provider: .lmStudio, status: .unavailable(BackendError(
                 provider: .lmStudio,
                 code: "backend_unavailable",
-                message: "LM Studio is not reachable from the Mac runtime.",
+                message: "LM Studio is not reachable from the runtime host.",
                 retryable: true
             )))
         ])
@@ -130,7 +130,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(cloudModel["installed"], .bool(true))
         XCTAssertEqual(cloudModel["source"], .string("cloud"))
         XCTAssertEqual(cloudModel["remote_model"], .string("deepseek-v4-pro"))
-        XCTAssertEqual(cloudModel["remote_host"], .string("https://ollama.com:443"))
+        XCTAssertNil(cloudModel["remote_host"])
     }
 
     func testModelsListBackendErrorUsesProtocolErrorCodeWithoutBackendURL() async throws {
@@ -234,7 +234,14 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         let sink = RecordingSink()
         let capturedRequest = LockedBox<ChatRequest?>(nil)
         let router = makeRouter(backend: MockBackend(
-            models: [ModelInfo(id: "llama3.2-vision", name: "llama3.2-vision", installed: true)],
+            models: [
+                ModelInfo(
+                    id: "llama3.2-vision",
+                    name: "llama3.2-vision",
+                    capabilities: ["chat", "vision"],
+                    installed: true
+                )
+            ],
             chatEvents: [.done(inputTokens: 1, outputTokens: 1)],
             onChatRequest: { request in
                 capturedRequest.value = request
@@ -289,6 +296,99 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
                 dataBase64: imageDataBase64
             )
         ])
+    }
+
+    func testChatSendImageAttachmentRequiresVisionCapableModel() async throws {
+        let sink = RecordingSink()
+        let capturedRequest = LockedBox<ChatRequest?>(nil)
+        let router = makeRouter(backend: MockBackend(
+            models: [ModelInfo(id: "llama3.1:8b", name: "llama3.1:8b", installed: true)],
+            onChatRequest: { request in
+                capturedRequest.value = request
+            }
+        ))
+        let envelope = ProtocolEnvelope(
+            type: MessageType.chatSend,
+            requestID: "chat-image-non-vision",
+            payload: [
+                "session_id": .string("session-1"),
+                "model": .string("llama3.1:8b"),
+                "messages": .array([
+                    .object([
+                        "role": .string("user"),
+                        "content": .string("Describe this image."),
+                        "attachments": .array([
+                            .object([
+                                "type": .string("image"),
+                                "mime_type": .string("image/png"),
+                                "name": .string("photo.png"),
+                                "data_base64": .string("iVBORw0KGgo=")
+                            ])
+                        ])
+                    ])
+                ])
+            ]
+        )
+
+        router.handle(envelope, sink: sink)
+
+        let message = try await sink.waitForMessages(count: 1).first
+        XCTAssertEqual(message?.type, MessageType.error)
+        XCTAssertEqual(message?.requestID, "chat-image-non-vision")
+        XCTAssertEqual(message?.payload["code"], .string("unsupported_attachment"))
+        XCTAssertNil(capturedRequest.value)
+    }
+
+    func testChatSendAllowsLMStudioImageAttachmentsForVisionCapableModel() async throws {
+        let sink = RecordingSink()
+        let capturedRequest = LockedBox<ChatRequest?>(nil)
+        let router = makeRouter(backend: MockBackend(
+            provider: .lmStudio,
+            models: [
+                ModelInfo(
+                    id: "local-vision",
+                    name: "Local Vision",
+                    provider: .lmStudio,
+                    capabilities: ["chat", "vision"],
+                    installed: true
+                )
+            ],
+            chatEvents: [.done(inputTokens: 1, outputTokens: 1)],
+            onChatRequest: { request in
+                capturedRequest.value = request
+            }
+        ))
+        let envelope = ProtocolEnvelope(
+            type: MessageType.chatSend,
+            requestID: "chat-lmstudio-image",
+            payload: [
+                "session_id": .string("session-1"),
+                "model": .string("lm_studio:local-vision"),
+                "messages": .array([
+                    .object([
+                        "role": .string("user"),
+                        "content": .string("Describe this image."),
+                        "attachments": .array([
+                            .object([
+                                "type": .string("image"),
+                                "mime_type": .string("image/png"),
+                                "name": .string("photo.png"),
+                                "data_base64": .string("iVBORw0KGgo=")
+                            ])
+                        ])
+                    ])
+                ])
+            ]
+        )
+
+        router.handle(envelope, sink: sink)
+
+        let message = try await sink.waitForMessages(count: 1).first
+        XCTAssertEqual(message?.type, MessageType.chatDone)
+        XCTAssertEqual(message?.requestID, "chat-lmstudio-image")
+        let forwardedRequest = try XCTUnwrap(capturedRequest.value)
+        let forwardedMessage = try XCTUnwrap(forwardedRequest.messages.first)
+        XCTAssertEqual(forwardedMessage.attachments.first?.dataBase64, "iVBORw0KGgo=")
     }
 
     func testChatSendUnsupportedDocumentAttachmentReturnsStructuredError() async throws {
@@ -497,6 +597,42 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertTrue(request.messages.first?.content.contains("strict JSON") == true)
     }
 
+    func testChatSuggestionsRequestReturnsEmptySuggestionsForInvalidJSON() async throws {
+        let sink = RecordingSink()
+        let router = makeRouter(backend: MockBackend(
+            models: [ModelInfo(id: "llama3.1:8b", name: "llama3.1:8b", installed: true)],
+            chatEvents: [
+                .delta("1. Ask about follow-up work\n2. Compare alternatives"),
+                .done(inputTokens: 4, outputTokens: 12)
+            ]
+        ))
+        let envelope = ProtocolEnvelope(
+            type: MessageType.chatSuggestionsRequest,
+            requestID: "suggestions-invalid-json",
+            payload: [
+                "session_id": .string("session-1"),
+                "model": .string("llama3.1:8b"),
+                "messages": .array([
+                    .object([
+                        "role": .string("user"),
+                        "content": .string("Explain the transport.")
+                    ]),
+                    .object([
+                        "role": .string("assistant"),
+                        "content": .string("The runtime mediates all backend access.")
+                    ])
+                ])
+            ]
+        )
+
+        router.handle(envelope, sink: sink)
+
+        let message = try await sink.waitForMessages(count: 1).first
+        XCTAssertEqual(message?.type, MessageType.chatSuggestionsResult)
+        XCTAssertEqual(message?.requestID, "suggestions-invalid-json")
+        XCTAssertEqual(message?.payload["suggestions"], .array([]))
+    }
+
     func testChatSendNonInstalledModelReturnsModelNotInstalled() async throws {
         let sink = RecordingSink()
         let router = makeRouter(backend: MockBackend(
@@ -599,8 +735,9 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         let coordinator = PairingCoordinator()
         let session = coordinator.beginPairing(
             macDeviceID: "mac-1",
-            macName: "AetherLink Mac",
+            macName: "AetherLink Runtime",
             fingerprint: "fp-1",
+            runtimePublicKeyBase64: "runtime-public-key",
             routeToken: "route-1"
         )
 
@@ -615,8 +752,10 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(queryItems["pairing_nonce"], session.nonce)
         XCTAssertEqual(queryItems["pairing_code"], session.code)
         XCTAssertEqual(queryItems["mac_device_id"], "mac-1")
-        XCTAssertEqual(queryItems["mac_name"], "AetherLink Mac")
+        XCTAssertEqual(queryItems["mac_name"], "AetherLink Runtime")
         XCTAssertEqual(queryItems["fingerprint"], "fp-1")
+        XCTAssertEqual(queryItems["runtime_public_key"], "runtime-public-key")
+        XCTAssertEqual(queryItems["runtime_key_fingerprint"], "fp-1")
         XCTAssertEqual(queryItems["route_token"], "route-1")
         XCTAssertEqual(queryItems["service_type"], "_aetherlink._tcp.local.")
         XCTAssertNil(queryItems["host"])
@@ -629,6 +768,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         let session = coordinator.beginPairing(
             macDeviceID: "mac-1",
             fingerprint: "fp-1",
+            runtimePublicKeyBase64: "runtime-public-key",
             host: "192.168.1.10",
             port: 43170
         )
@@ -660,6 +800,9 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(message?.requestID, "pair-1")
         XCTAssertEqual(message?.payload["accepted"], .bool(true))
         XCTAssertEqual(message?.payload["mac_device_id"], .string("mac-1"))
+        XCTAssertEqual(message?.payload["runtime_device_id"], .string("mac-1"))
+        XCTAssertEqual(message?.payload["runtime_public_key"], .string("runtime-public-key"))
+        XCTAssertEqual(message?.payload["runtime_key_fingerprint"], .string("fp-1"))
         XCTAssertEqual(message?.payload["trusted_device_id"], .string("android-1"))
 
         let devices = try await store.load()
@@ -888,6 +1031,33 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
     }
 
     @MainActor
+    func testCompanionAppModelGeneratesIdentityOnlyPairingQRCode() throws {
+        let model = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: FakeRuntimeTransport(),
+            advertiser: FakeRuntimeAdvertiser()
+        )
+
+        model.beginPairing()
+
+        let session = try XCTUnwrap(model.pairingSession)
+        let components = try XCTUnwrap(URLComponents(string: session.qrPayload))
+        let queryItems = try XCTUnwrap(components.queryItems).reduce(into: [String: String]()) { result, item in
+            result[item.name] = item.value
+        }
+
+        XCTAssertEqual(components.scheme, "aetherlink")
+        XCTAssertEqual(components.host, "pair")
+        XCTAssertEqual(queryItems["pairing_nonce"], session.nonce)
+        XCTAssertEqual(queryItems["pairing_code"], session.code)
+        XCTAssertFalse(queryItems["mac_device_id"]?.isEmpty ?? true)
+        XCTAssertFalse(queryItems["fingerprint"]?.isEmpty ?? true)
+        XCTAssertFalse(queryItems["route_token"]?.isEmpty ?? true)
+        XCTAssertNil(queryItems["host"])
+        XCTAssertNil(queryItems["port"])
+    }
+
+    @MainActor
     func testCompanionAppModelStartsReplaceableTransportAndStopsIt() async throws {
         let transport = FakeRuntimeTransport()
         let advertiser = FakeRuntimeAdvertiser()
@@ -904,8 +1074,8 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(advertiser.startedMetadata?.version, "1")
         XCTAssertEqual(advertiser.startedMetadata?.app, "AetherLink")
         XCTAssertFalse(advertiser.startedMetadata?.routeToken?.isEmpty ?? true)
-        XCTAssertNil(advertiser.startedMetadata?.deviceID)
-        XCTAssertNil(advertiser.startedMetadata?.fingerprint)
+        XCTAssertFalse(advertiser.startedMetadata?.deviceID?.isEmpty ?? true)
+        XCTAssertFalse(advertiser.startedMetadata?.fingerprint?.isEmpty ?? true)
         XCTAssertEqual(model.transportState.state, .advertising)
         XCTAssertEqual(model.transportState.serviceName, "_aetherlink._tcp.local.")
         XCTAssertEqual(model.transportState.port, 43210)
@@ -955,7 +1125,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
             MockBackend(provider: .lmStudio, status: .unavailable(BackendError(
                 provider: .lmStudio,
                 code: "backend_unavailable",
-                message: "LM Studio is not reachable from the Mac runtime.",
+                message: "LM Studio is not reachable from the runtime host.",
                 retryable: true
             )))
         ])

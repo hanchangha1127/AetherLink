@@ -24,12 +24,14 @@ data class PairedRuntimeIdentity(
     val deviceId: String,
     val name: String,
     val fingerprint: String? = null,
+    val publicKeyBase64: String? = null,
     val routeToken: String? = null,
 ) {
     init {
         require(deviceId.isNotBlank()) { "Runtime device id must not be blank" }
         require(name.isNotBlank()) { "Runtime name must not be blank" }
         require(fingerprint?.isNotBlank() != false) { "Runtime fingerprint must not be blank" }
+        require(publicKeyBase64?.isNotBlank() != false) { "Runtime public key must not be blank" }
         require(routeToken?.isNotBlank() != false) { "Runtime route token must not be blank" }
     }
 }
@@ -94,10 +96,12 @@ enum class RuntimeRouteCapability {
 sealed class PreparedRemoteRuntimeRoute {
     abstract val identity: PairedRuntimeIdentity
     abstract val capability: RuntimeRouteCapability
+    abstract val security: RemoteRouteSecurityContext
 
     data class PeerToPeer(
         override val identity: PairedRuntimeIdentity,
         val sessionId: String,
+        override val security: RemoteRouteSecurityContext,
     ) : PreparedRemoteRuntimeRoute() {
         init {
             require(sessionId.isNotBlank()) { "Peer-to-peer session id must not be blank" }
@@ -109,6 +113,7 @@ sealed class PreparedRemoteRuntimeRoute {
     data class Relay(
         override val identity: PairedRuntimeIdentity,
         val relayId: String,
+        override val security: RemoteRouteSecurityContext,
     ) : PreparedRemoteRuntimeRoute() {
         init {
             require(relayId.isNotBlank()) { "Relay id must not be blank" }
@@ -118,8 +123,28 @@ sealed class PreparedRemoteRuntimeRoute {
     }
 }
 
+data class RemoteRouteSecurityContext(
+    val rendezvousToken: String,
+    val expiresAtEpochMillis: Long,
+    val antiReplayNonce: String,
+) {
+    init {
+        require(rendezvousToken.isNotBlank()) { "Remote route rendezvous token must not be blank" }
+        require(expiresAtEpochMillis > 0L) { "Remote route expiration must be positive" }
+        require(antiReplayNonce.isNotBlank()) { "Remote route anti-replay nonce must not be blank" }
+    }
+}
+
 fun interface RuntimeRemoteRoutePreparer {
     fun prepareRemoteRoutes(identity: PairedRuntimeIdentity): List<PreparedRemoteRuntimeRoute>
+}
+
+fun interface RuntimePeerToPeerConnector {
+    suspend fun connect(route: PreparedRemoteRuntimeRoute.PeerToPeer, timeoutMillis: Int)
+}
+
+fun interface RuntimeRelayConnector {
+    suspend fun connect(route: PreparedRemoteRuntimeRoute.Relay, timeoutMillis: Int)
 }
 
 enum class RuntimeRouteRejectionReason {
@@ -134,12 +159,21 @@ data class RuntimeRouteRejection(
     val reason: RuntimeRouteRejectionReason,
 )
 
-private fun RuntimeRouteCandidate.directTcpRejection(): RuntimeRouteRejection? {
+private fun RuntimeRouteCandidate.connectabilityRejection(
+    peerToPeerConnector: RuntimePeerToPeerConnector?,
+    relayConnector: RuntimeRelayConnector?,
+): RuntimeRouteRejection? {
     val reason = when (this) {
         is RuntimeRouteCandidate.DirectTcp -> return null
         is RuntimeRouteCandidate.LocalDirect -> RuntimeRouteRejectionReason.DirectTcpEndpointNotPrepared
-        is RuntimeRouteCandidate.PeerToPeer -> RuntimeRouteRejectionReason.PeerToPeerConnectorNotAvailable
-        is RuntimeRouteCandidate.Relay -> RuntimeRouteRejectionReason.RelayConnectorNotAvailable
+        is RuntimeRouteCandidate.PeerToPeer -> {
+            if (preparedRoute != null && peerToPeerConnector != null) return null
+            RuntimeRouteRejectionReason.PeerToPeerConnectorNotAvailable
+        }
+        is RuntimeRouteCandidate.Relay -> {
+            if (preparedRoute != null && relayConnector != null) return null
+            RuntimeRouteRejectionReason.RelayConnectorNotAvailable
+        }
     }
     return RuntimeRouteRejection(
         route = this,
@@ -169,7 +203,7 @@ enum class RuntimeConnectionFailureReason {
 }
 
 data class RuntimeRouteAttemptFailure(
-    val route: RuntimeRouteCandidate.DirectTcp,
+    val route: RuntimeRouteCandidate,
     val cause: Throwable,
 )
 
@@ -177,7 +211,9 @@ class RuntimeConnectionFailure(
     val reason: RuntimeConnectionFailureReason,
     val target: RuntimeConnectionTarget,
     val routes: List<RuntimeRouteCandidate>,
-    val routeRejections: List<RuntimeRouteRejection> = routes.mapNotNull { it.directTcpRejection() },
+    val routeRejections: List<RuntimeRouteRejection> = routes.mapNotNull {
+        it.connectabilityRejection(peerToPeerConnector = null, relayConnector = null)
+    },
     val attemptFailures: List<RuntimeRouteAttemptFailure> = emptyList(),
 ) : IllegalArgumentException(
     when (reason) {
@@ -198,15 +234,18 @@ fun interface RuntimeTransportConnector {
 class RuntimeConnectionManager(
     private val connector: RuntimeTransportConnector,
     private val routeResolver: RuntimeRouteResolver = DefaultRuntimeRouteResolver,
+    private val remoteRoutePreparer: RuntimeRemoteRoutePreparer? = null,
+    private val peerToPeerConnector: RuntimePeerToPeerConnector? = null,
+    private val relayConnector: RuntimeRelayConnector? = null,
 ) {
-    constructor(transportClient: MacRuntimeTransportClient) : this(
+    constructor(transportClient: RuntimeTransportClient) : this(
         RuntimeTransportConnector { host, port, timeoutMillis ->
             transportClient.connect(host = host, port = port, timeoutMillis = timeoutMillis)
         },
     )
 
     suspend fun connect(target: RuntimeConnectionTarget, timeoutMillis: Int = DEFAULT_TIMEOUT_MILLIS) {
-        val routes = routeResolver.resolveRoutes(target)
+        val routes = resolveRoutes(target)
         if (routes.isEmpty()) {
             throw RuntimeConnectionFailure(
                 reason = RuntimeConnectionFailureReason.NoRoutesResolved,
@@ -215,9 +254,13 @@ class RuntimeConnectionManager(
             )
         }
 
-        val directTcpRoutes = routes.filterIsInstance<RuntimeRouteCandidate.DirectTcp>()
-        val routeRejections = routes.mapNotNull { it.directTcpRejection() }
-        if (directTcpRoutes.isEmpty()) {
+        val routeRejections = routes.mapNotNull {
+            it.connectabilityRejection(peerToPeerConnector, relayConnector)
+        }
+        val connectableRoutes = routes.filter { route ->
+            route.connectabilityRejection(peerToPeerConnector, relayConnector) == null
+        }
+        if (connectableRoutes.isEmpty()) {
             throw RuntimeConnectionFailure(
                 reason = RuntimeConnectionFailureReason.NoConnectableRoute,
                 target = target,
@@ -227,13 +270,9 @@ class RuntimeConnectionManager(
         }
 
         val failures = mutableListOf<RuntimeRouteAttemptFailure>()
-        directTcpRoutes.forEach { route ->
+        connectableRoutes.forEach { route ->
             runCatching {
-                connector.connect(
-                    host = route.hint.host,
-                    port = route.hint.port,
-                    timeoutMillis = timeoutMillis,
-                )
+                connect(route, timeoutMillis)
             }.onSuccess {
                 return
             }.onFailure { error ->
@@ -248,6 +287,46 @@ class RuntimeConnectionManager(
             routeRejections = routeRejections,
             attemptFailures = failures,
         )
+    }
+
+    private fun resolveRoutes(target: RuntimeConnectionTarget): List<RuntimeRouteCandidate> {
+        val routes = routeResolver.resolveRoutes(target).toMutableList()
+        val identity = target.identity ?: return routes
+        val preparedRoutes = remoteRoutePreparer?.prepareRemoteRoutes(identity).orEmpty()
+        preparedRoutes.forEach { preparedRoute ->
+            routes += when (preparedRoute) {
+                is PreparedRemoteRuntimeRoute.PeerToPeer ->
+                    RuntimeRouteCandidate.PeerToPeer(
+                        identity = preparedRoute.identity,
+                        preparedRoute = preparedRoute,
+                    )
+                is PreparedRemoteRuntimeRoute.Relay ->
+                    RuntimeRouteCandidate.Relay(
+                        identity = preparedRoute.identity,
+                        preparedRoute = preparedRoute,
+                    )
+            }
+        }
+        return routes
+    }
+
+    private suspend fun connect(route: RuntimeRouteCandidate, timeoutMillis: Int) {
+        when (route) {
+            is RuntimeRouteCandidate.DirectTcp ->
+                connector.connect(
+                    host = route.hint.host,
+                    port = route.hint.port,
+                    timeoutMillis = timeoutMillis,
+                )
+            is RuntimeRouteCandidate.PeerToPeer ->
+                requireNotNull(peerToPeerConnector)
+                    .connect(requireNotNull(route.preparedRoute), timeoutMillis)
+            is RuntimeRouteCandidate.Relay ->
+                requireNotNull(relayConnector)
+                    .connect(requireNotNull(route.preparedRoute), timeoutMillis)
+            is RuntimeRouteCandidate.LocalDirect ->
+                error("Local direct route is not prepared as a concrete transport endpoint")
+        }
     }
 
     companion object {

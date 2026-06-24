@@ -6,11 +6,11 @@
 "Logs" = "Logs";
 "Open AetherLink" = "Open AetherLink";
 "Refresh" = "Refresh";
-"Companion: %@" = "Companion: %@";
+"Runtime: %@" = "Runtime: %@";
 "Backend: %@" = "Backend: %@";
 "Quit" = "Quit";
 
-"AetherLink Companion" = "AetherLink Runtime";
+"AetherLink Runtime" = "AetherLink Runtime";
 "Bridge trusted client devices to this local runtime." = "Bridge trusted client devices to this local runtime.";
 "Bridge trusted client devices through this local runtime to local models." = "Bridge trusted client devices through this local runtime to local models.";
 "Runtime" = "Runtime";
@@ -26,7 +26,7 @@
 "Runtime listener" = "Runtime listener";
 "Runtime listener failed" = "Runtime listener failed";
 "Runtime listener could not start." = "Runtime listener could not start.";
-"Listening for authenticated runtime sessions." = "Listening for authenticated runtime sessions.";
+"Accepting authenticated runtime sessions." = "Accepting authenticated runtime sessions.";
 "Start the companion runtime listener." = "Start the companion runtime listener.";
 "Local backend availability" = "Local backend availability";
 "Trusted device pairing" = "Trusted device pairing";
@@ -47,7 +47,7 @@
 "Unavailable" = "Unavailable";
 "Ollama available" = "Ollama available";
 "LM Studio available" = "LM Studio available";
-"Listening on port %@" = "Listening on port %@";
+"Route ready" = "Route ready";
 "Ollama unavailable" = "Ollama unavailable";
 "LM Studio unavailable" = "LM Studio unavailable";
 "Ollama returned an error" = "Ollama returned an error";
@@ -56,7 +56,7 @@
 "LM Studio response could not be read" = "LM Studio response could not be read";
 "Ollama connection error" = "Ollama connection error";
 "LM Studio connection error" = "LM Studio connection error";
-"Ready for trusted client devices." = "Ready for trusted client devices.";
+"Trusted devices can resolve the current local route after pairing." = "Trusted devices can resolve the current local route after pairing.";
 "The local runtime listener is not active." = "The local runtime listener is not active.";
 "Local model backend is responding." = "Local model backend is responding.";
 "Local backend is responding." = "Local backend is responding.";
@@ -71,6 +71,13 @@
 "Local" = "Local";
 "Cloud" = "Cloud";
 "Running" = "Running";
+"Model Residency" = "Model Residency";
+"Not managed" = "Not managed";
+"Idle" = "Idle";
+"Active" = "Active";
+"Model residency is not managed by this backend." = "Model residency is not managed by this backend.";
+"%@ %@ active. Idle unload after %d minute(s)." = "%@ %@ active. Idle unload after %d minute(s).";
+"No active model is resident through the runtime policy." = "No active model is resident through the runtime policy.";
 "Run a check to verify local backends before connecting a client device." = "Run a check to verify local backends before connecting a client device.";
 "Open a local model provider on this runtime host, then check again." = "Open a local model provider on this runtime host, then check again.";
 "%d trusted device(s)" = "%d trusted device(s)";
@@ -85,14 +92,14 @@
 "Load local models" = "Load local models";
 "Load models so client devices can choose an installed chat model through this local runtime." = "Load models so client devices can choose an installed chat model through this local runtime.";
 "Ready for Client Devices" = "Ready for Client Devices";
-"This runtime host is listening, a local backend is responding, and trusted devices can request chat." = "This runtime host is listening, a local backend is responding, and trusted devices can request chat.";
+"Runtime route is ready, a local backend is responding, and trusted devices can request chat." = "Runtime route is ready, a local backend is responding, and trusted devices can request chat.";
 "Client requests stay mediated by this local runtime. Ollama and LM Studio are never exposed directly to client devices." = "Client requests stay mediated by this local runtime. Ollama and LM Studio are never exposed directly to client devices.";
 "Pairing creates a trusted-device record so the client device can reconnect without entering backend URLs." = "Pairing creates a trusted-device record so the client device can reconnect without entering backend URLs.";
 "Chat and embedding model choices are managed separately so each workflow uses the right model." = "Chat and embedding model choices are managed separately so each workflow uses the right model.";
 "The client device remains a controller; all model access stays on the runtime host." = "The client device remains a controller; all model access stays on the runtime host.";
 
 "Pair a Client Device" = "Pair a Client Device";
-"Create a one-time QR code for the AetherLink client app." = "Create a one-time QR code for the AetherLink client app.";
+"Scan once from the AetherLink client app to trust this runtime identity." = "Scan once from the AetherLink client app to trust this runtime identity.";
 "Pairing Code" = "Pairing Code";
 "No active pairing code" = "No active pairing code";
 "Start pairing when the client app is ready to scan." = "Start pairing when the client app is ready to scan.";
@@ -104,7 +111,8 @@
 "Copy Code" = "Copy Code";
 "Code Copied" = "Code Copied";
 "Scan the QR code or enter the code in the AetherLink client app." = "Scan the QR code or enter the code in the AetherLink client app.";
-"If the system asks for local network permission, allow it so client devices can discover and pair with this runtime host." = "If the system asks for local network permission, allow it so client devices can discover and pair with this runtime host.";
+"The QR code identifies this runtime; client apps resolve the current route after scanning." = "The QR code identifies this runtime; client apps resolve the current route after scanning.";
+"Local Network permission enables the current local discovery path; pairing trust stays tied to this runtime identity." = "Local Network permission enables the current local discovery path; pairing trust stays tied to this runtime identity.";
 "Keep this runtime host awake until pairing completes." = "Keep this runtime host awake until pairing completes.";
 "Client devices connect to this local runtime, not directly to Ollama or LM Studio." = "Client devices connect to this local runtime, not directly to Ollama or LM Studio.";
 "Expires in %d min %02d sec" = "Expires in %d min %02d sec";
@@ -142,7 +150,7 @@
 "Open Companion" = "Open Companion";
 "Companion Status" = "Companion Status";
 "Transport" = "Transport";
-"Advertising _aetherlink._tcp.local. on port %@" = "Advertising _aetherlink._tcp.local. on port %@";
+"Advertising _aetherlink._tcp.local. on port %@" = "Pairing service available on port %@";
 "Load Models" = "Load Models";
 "No models loaded" = "No models loaded";
 "Pair Client Device" = "Pair Client Device";

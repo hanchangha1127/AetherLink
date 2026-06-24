@@ -6,11 +6,11 @@
 "Logs" = "ログ";
 "Open AetherLink" = "AetherLink を開く";
 "Refresh" = "更新";
-"Companion: %@" = "Companion: %@";
+"Runtime: %@" = "ランタイム: %@";
 "Backend: %@" = "バックエンド: %@";
 "Quit" = "終了";
 
-"AetherLink Companion" = "AetherLink ランタイム";
+"AetherLink Runtime" = "AetherLink ランタイム";
 "Bridge trusted client devices to this local runtime." = "信頼済みのクライアントデバイスをこのローカルランタイムに接続します。";
 "Bridge trusted client devices through this local runtime to local models." = "信頼済みのクライアントデバイスをこのローカルランタイム経由でローカルモデルに接続します。";
 "Runtime" = "ランタイム";
@@ -26,7 +26,7 @@
 "Runtime listener" = "ランタイムリスナー";
 "Runtime listener failed" = "ランタイムリスナーが失敗しました";
 "Runtime listener could not start." = "ランタイムリスナーを開始できませんでした。";
-"Listening for authenticated runtime sessions." = "認証済みランタイムセッションを待機しています。";
+"Accepting authenticated runtime sessions." = "認証済みランタイムセッションを受け付けています。";
 "Start the companion runtime listener." = "Companion ランタイムリスナーを開始してください。";
 "Local backend availability" = "ローカルバックエンドの可用性";
 "Trusted device pairing" = "信頼済みデバイスのペアリング";
@@ -47,7 +47,7 @@
 "Unavailable" = "利用不可";
 "Ollama available" = "Ollama は利用可能";
 "LM Studio available" = "LM Studio は利用可能";
-"Listening on port %@" = "ポート %@ で待機中";
+"Route ready" = "経路の準備完了";
 "Ollama unavailable" = "Ollama は利用できません";
 "LM Studio unavailable" = "LM Studio は利用できません";
 "Ollama returned an error" = "Ollama がエラーを返しました";
@@ -56,7 +56,7 @@
 "LM Studio response could not be read" = "LM Studio の応答を読み取れませんでした";
 "Ollama connection error" = "Ollama 接続エラー";
 "LM Studio connection error" = "LM Studio 接続エラー";
-"Ready for trusted client devices." = "信頼済みクライアントデバイスを受け入れる準備ができています。";
+"Trusted devices can resolve the current local route after pairing." = "信頼済みデバイスはペアリング後に現在のローカル経路を解決できます。";
 "The local runtime listener is not active." = "ローカルランタイムのリスナーは有効ではありません。";
 "Local model backend is responding." = "ローカルモデルバックエンドが応答しています。";
 "Local backend is responding." = "ローカルバックエンドが応答しています。";
@@ -71,6 +71,13 @@
 "Local" = "ローカル";
 "Cloud" = "クラウド";
 "Running" = "実行中";
+"Model Residency" = "モデル常駐";
+"Not managed" = "未管理";
+"Idle" = "アイドル";
+"Active" = "アクティブ";
+"Model residency is not managed by this backend." = "このバックエンドではモデル常駐を管理していません。";
+"%@ %@ active. Idle unload after %d minute(s)." = "%@ %@ がアクティブです。%d分アイドル状態が続くとアンロードします。";
+"No active model is resident through the runtime policy." = "ランタイムポリシーで常駐しているアクティブなモデルはありません。";
 "Run a check to verify local backends before connecting a client device." = "クライアントデバイスを接続する前に、ローカルバックエンドを確認してください。";
 "Open a local model provider on this runtime host, then check again." = "このランタイムホストでローカルモデルプロバイダーを開いてから、もう一度確認してください。";
 "%d trusted device(s)" = "信頼済みデバイス %d 台";
@@ -85,14 +92,14 @@
 "Load local models" = "ローカルモデルを読み込む";
 "Load models so client devices can choose an installed chat model through this local runtime." = "クライアントデバイスがこのローカルランタイム経由でインストール済みチャットモデルを選択できるよう、モデルを読み込んでください。";
 "Ready for Client Devices" = "クライアントデバイスの準備完了";
-"This runtime host is listening, a local backend is responding, and trusted devices can request chat." = "このランタイムホストは待機中で、ローカルバックエンドが応答しており、信頼済みデバイスがチャットを要求できます。";
+"Runtime route is ready, a local backend is responding, and trusted devices can request chat." = "ランタイム経路の準備が整い、ローカルバックエンドが応答しており、信頼済みデバイスがチャットを要求できます。";
 "Client requests stay mediated by this local runtime. Ollama and LM Studio are never exposed directly to client devices." = "クライアントリクエストはこのローカルランタイムが仲介します。Ollama と LM Studio がクライアントデバイスに直接公開されることはありません。";
 "Pairing creates a trusted-device record so the client device can reconnect without entering backend URLs." = "ペアリングにより信頼済みデバイス記録が作成され、クライアントデバイスはバックエンド URL を入力せずに再接続できます。";
 "Chat and embedding model choices are managed separately so each workflow uses the right model." = "チャットモデルと埋め込みモデルは、それぞれの作業に適したモデルを使えるよう個別に管理されます。";
 "The client device remains a controller; all model access stays on the runtime host." = "クライアントデバイスはコントローラーのままで、すべてのモデルアクセスはランタイムホストに留まります。";
 
 "Pair a Client Device" = "クライアントデバイスをペアリング";
-"Create a one-time QR code for the AetherLink client app." = "AetherLink クライアントアプリ用に一度だけ使える QR コードを作成します。";
+"Scan once from the AetherLink client app to trust this runtime identity." = "AetherLink クライアントアプリで一度スキャンして、このランタイム ID を信頼します。";
 "Pairing Code" = "ペアリングコード";
 "No active pairing code" = "有効なペアリングコードはありません";
 "Start pairing when the client app is ready to scan." = "クライアントアプリでスキャンする準備ができたら、ペアリングを開始してください。";
@@ -104,7 +111,8 @@
 "Copy Code" = "コードをコピー";
 "Code Copied" = "コードをコピーしました";
 "Scan the QR code or enter the code in the AetherLink client app." = "AetherLink クライアントアプリで QR コードをスキャンするか、コードを入力してください。";
-"If the system asks for local network permission, allow it so client devices can discover and pair with this runtime host." = "システムがローカルネットワーク権限を求めた場合は、クライアントデバイスがこのランタイムホストを検出してペアリングできるよう許可してください。";
+"The QR code identifies this runtime; client apps resolve the current route after scanning." = "QR コードはこのランタイムを識別します。クライアントアプリはスキャン後に現在の経路を解決します。";
+"Local Network permission enables the current local discovery path; pairing trust stays tied to this runtime identity." = "ローカルネットワーク権限は現在のローカル検出経路を有効にします。ペアリングの信頼はこのランタイム ID に紐づいたままです。";
 "Keep this runtime host awake until pairing completes." = "ペアリングが完了するまで、このランタイムホストをスリープさせないでください。";
 "Client devices connect to this local runtime, not directly to Ollama or LM Studio." = "クライアントデバイスは Ollama や LM Studio へ直接ではなく、このローカルランタイムに接続します。";
 "Expires in %d min %02d sec" = "あと%d分%02d秒で期限切れ";
@@ -142,7 +150,7 @@
 "Open Companion" = "Companion を開く";
 "Companion Status" = "Companion ステータス";
 "Transport" = "トランスポート";
-"Advertising _aetherlink._tcp.local. on port %@" = "ポート %@ で _aetherlink._tcp.local. を通知中";
+"Advertising _aetherlink._tcp.local. on port %@" = "ペアリングサービスをポート %@ で利用できます";
 "Load Models" = "モデルを読み込む";
 "No models loaded" = "読み込まれたモデルはありません";
 "Pair Client Device" = "クライアントデバイスをペアリング";

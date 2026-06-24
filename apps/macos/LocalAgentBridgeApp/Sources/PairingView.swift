@@ -11,7 +11,7 @@ struct PairingView: View {
             VStack(alignment: .leading, spacing: 18) {
                 CompanionPageHeader(
                     title: "Pair a Client Device",
-                    subtitle: "Create a one-time QR code for the AetherLink client app.",
+                    subtitle: "Scan once from the AetherLink client app to trust this runtime identity.",
                     systemImage: "qrcode"
                 )
 
@@ -132,7 +132,8 @@ private struct ActivePairingCard: View {
 
             VStack(alignment: .leading, spacing: 7) {
                 Label("Scan the QR code or enter the code in the AetherLink client app.", systemImage: "qrcode.viewfinder")
-                Label("If the system asks for local network permission, allow it so client devices can discover and pair with this runtime host.", systemImage: "network")
+                Label("The QR code identifies this runtime; client apps resolve the current route after scanning.", systemImage: "point.3.connected.trianglepath.dotted")
+                Label("Local Network permission enables the current local discovery path; pairing trust stays tied to this runtime identity.", systemImage: "network")
                 TimelineView(.periodic(from: Date(), by: 1)) { timeline in
                     Label(expirationText(at: timeline.date), systemImage: expirationSystemImage(at: timeline.date))
                         .foregroundStyle(expiresAt <= timeline.date ? .orange : .secondary)

@@ -37,10 +37,11 @@ object DeviceIdentityFactory {
     }
 }
 
-data class TrustedMac(
+data class TrustedRuntime(
     val deviceId: String,
     val name: String,
     val fingerprint: String,
+    val publicKeyBase64: String? = null,
     val routeToken: String? = null,
     val host: String? = null,
     val port: Int? = null,
