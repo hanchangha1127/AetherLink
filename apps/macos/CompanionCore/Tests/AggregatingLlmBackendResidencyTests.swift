@@ -130,6 +130,36 @@ final class AggregatingLlmBackendResidencyTests: XCTestCase {
         }
     }
 
+    func testInstalledCloudChatModelIsNotRoutedAsChat() async throws {
+        let ollama = ResidencyTestBackend(
+            provider: .ollama,
+            models: [
+                ModelInfo(
+                    id: "deepseek-v4-pro:cloud",
+                    name: "deepseek-v4-pro:cloud",
+                    provider: .ollama,
+                    installed: true,
+                    source: .cloud,
+                    remoteModel: "deepseek-v4-pro",
+                    remoteHost: "https://ollama.com:443"
+                )
+            ]
+        )
+        let backend = AggregatingLlmBackend([ollama])
+
+        do {
+            _ = try await collect(backend.chat(request: chatRequest(model: "ollama:deepseek-v4-pro:cloud")))
+            XCTFail("Expected cloud model to be rejected for chat routing")
+        } catch let error as BackendError {
+            XCTAssertEqual(error.provider, .ollama)
+            XCTAssertEqual(error.code, "model_not_installed")
+            XCTAssertFalse(error.retryable)
+            XCTAssertTrue(ollama.routedModels.isEmpty)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
     private func chatRequest(model: String) -> ChatRequest {
         ChatRequest(
             generationID: UUID().uuidString,

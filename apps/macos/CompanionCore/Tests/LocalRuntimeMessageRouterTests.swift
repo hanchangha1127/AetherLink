@@ -221,6 +221,8 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
     func testRouteRefreshReturnsFreshRelayMaterialFromRuntimeProvider() async throws {
         let sink = RecordingSink()
         let routeRefresher = FakeRuntimeRouteRefresher(result: RuntimeRouteRefreshResult(
+            runtimeDeviceID: "runtime-1",
+            runtimeKeyFingerprint: "runtime-fingerprint",
             relayHost: "relay.example.test",
             relayPort: 43171,
             relayID: "relay-id-1",
@@ -239,6 +241,8 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         let message = try await sink.waitForMessages(count: 1).first
         XCTAssertEqual(message?.type, MessageType.routeRefresh)
         XCTAssertEqual(message?.requestID, "route-refresh-1")
+        XCTAssertEqual(message?.payload["runtime_device_id"], .string("runtime-1"))
+        XCTAssertEqual(message?.payload["runtime_key_fingerprint"], .string("runtime-fingerprint"))
         XCTAssertEqual(message?.payload["relay_host"], .string("relay.example.test"))
         XCTAssertEqual(message?.payload["relay_port"], .number(43171))
         XCTAssertEqual(message?.payload["relay_id"], .string("relay-id-1"))
@@ -840,6 +844,35 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         ))
     }
 
+    func testRuntimeChatStoreReportsCorruptJSONLLineInsteadOfDroppingIt() throws {
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathComponent("runtime-chat-events.jsonl")
+        let store = JSONLRuntimeChatEventStore(fileURL: fileURL)
+        try store.append(RuntimeChatStoredEvent(
+            timestamp: Date(timeIntervalSince1970: 320),
+            kind: .request,
+            requestID: "turn-corrupt",
+            sessionID: "session-corrupt",
+            model: "llama3.1:8b",
+            messages: [ChatMessage(role: "user", content: "This valid turn must not be silently hidden.")]
+        ))
+        try appendRawChatEventLogLine(
+            #"{"secret_prompt":"should-not-leak","broken":}"#,
+            to: fileURL
+        )
+
+        XCTAssertThrowsError(try store.listSessions(limit: 10, includeArchived: true)) { error in
+            guard case RuntimeChatEventStoreError.corruptEventLog(let line, let reason) = error else {
+                XCTFail("Expected corrupt event log error, got \(error)")
+                return
+            }
+            XCTAssertEqual(line, 2)
+            XCTAssertFalse(reason.isEmpty)
+            XCTAssertFalse(error.localizedDescription.contains("should-not-leak"))
+        }
+    }
+
     func testRuntimeChatHistoryMessagesAreAuthenticatedAndReturnedFromStore() async throws {
         let sink = RecordingSink()
         let store = RecordingRuntimeChatEventStore(
@@ -937,6 +970,47 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(assistant["role"], .string("assistant"))
         XCTAssertEqual(assistant["content"], .string("Hello"))
         XCTAssertEqual(assistant["reasoning"], .string("Short thought"))
+    }
+
+    func testRuntimeChatHistoryCorruptStoreReturnsStructuredError() async throws {
+        let sink = RecordingSink()
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathComponent("runtime-chat-events.jsonl")
+        let store = JSONLRuntimeChatEventStore(fileURL: fileURL)
+        try store.append(RuntimeChatStoredEvent(
+            timestamp: Date(timeIntervalSince1970: 330),
+            kind: .request,
+            requestID: "turn-corrupt-route",
+            sessionID: "session-corrupt-route",
+            model: "llama3.1:8b",
+            messages: [ChatMessage(role: "user", content: "Keep runtime history reliable.")]
+        ))
+        try appendRawChatEventLogLine(
+            #"{"secret_prompt":"should-not-leak","broken":}"#,
+            to: fileURL
+        )
+        let router = makeRouter(
+            backend: MockBackend(),
+            chatEventStore: store
+        )
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionsList,
+            requestID: "sessions-corrupt",
+            payload: ["limit": .number(20)]
+        ), sink: sink)
+
+        let response = try await sink.waitForMessages(count: 1).first
+        XCTAssertEqual(response?.type, MessageType.error)
+        XCTAssertEqual(response?.requestID, "sessions-corrupt")
+        XCTAssertEqual(response?.payload["code"], .string("chat_store_unavailable"))
+        if case .string(let message)? = response?.payload["message"] {
+            XCTAssertTrue(message.contains("corrupt at line 2"))
+            XCTAssertFalse(message.contains("should-not-leak"))
+        } else {
+            XCTFail("Expected structured chat-store error message")
+        }
     }
 
     func testRuntimeChatSessionLifecycleMessagesMutateRuntimeStore() async throws {
@@ -1610,8 +1684,9 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(messages[1].payload["delta"], .string("Visible"))
     }
 
-    func testChatSendInstalledCloudModelIsSelectable() async throws {
+    func testChatSendInstalledCloudModelReturnsModelNotInstalled() async throws {
         let sink = RecordingSink()
+        let store = RecordingRuntimeChatEventStore()
         let router = makeRouter(backend: MockBackend(
             models: [
                 ModelInfo(
@@ -1624,7 +1699,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
                 )
             ],
             chatEvents: [.done(inputTokens: 1, outputTokens: 1)]
-        ))
+        ), chatEventStore: store)
         let envelope = ProtocolEnvelope(
             type: MessageType.chatSend,
             requestID: "chat-cloud",
@@ -1643,9 +1718,12 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         router.handle(envelope, sink: sink)
 
         let message = try await sink.waitForMessages(count: 1).first
-        XCTAssertEqual(message?.type, MessageType.chatDone)
+        XCTAssertEqual(message?.type, MessageType.error)
         XCTAssertEqual(message?.requestID, "chat-cloud")
-        XCTAssertEqual(message?.payload["finish_reason"], .string("stop"))
+        XCTAssertEqual(message?.payload["code"], .string("model_not_installed"))
+        XCTAssertEqual(message?.payload["retryable"], .bool(false))
+        XCTAssertEqual(store.events.map(\.kind), [.request, .error])
+        XCTAssertEqual(store.events.last?.error?.code, "model_not_installed")
     }
 
     func testChatSendRoutesQualifiedLMStudioModelThroughAggregateBackend() async throws {
@@ -1737,6 +1815,48 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(request.generationID, "suggestions-1")
         XCTAssertEqual(request.model, "llama3.1:8b")
         XCTAssertTrue(request.messages.first?.content.contains("strict JSON") == true)
+    }
+
+    func testChatSuggestionsRequestNormalizesBlankDuplicateAndExcessSuggestions() async throws {
+        let sink = RecordingSink()
+        let router = makeRouter(backend: MockBackend(
+            models: [ModelInfo(id: "llama3.1:8b", name: "llama3.1:8b", installed: true)],
+            chatEvents: [
+                .delta(#"{"suggestions":["  1. What   should\nwe verify next?  ","what should we verify next?","   ","Résumé details?","Resume details?","How do archived chats affect memory?","How is relay lease renewed?","Should not appear?"]}"#),
+                .done(inputTokens: 4, outputTokens: 12)
+            ]
+        ))
+        let envelope = ProtocolEnvelope(
+            type: MessageType.chatSuggestionsRequest,
+            requestID: "suggestions-normalized",
+            payload: [
+                "session_id": .string("session-1"),
+                "model": .string("llama3.1:8b"),
+                "max_suggestions": .number(5),
+                "messages": .array([
+                    .object([
+                        "role": .string("user"),
+                        "content": .string("Explain the transport.")
+                    ]),
+                    .object([
+                        "role": .string("assistant"),
+                        "content": .string("The runtime mediates all backend access.")
+                    ])
+                ])
+            ]
+        )
+
+        router.handle(envelope, sink: sink)
+
+        let message = try await sink.waitForMessages(count: 1).first
+        XCTAssertEqual(message?.type, MessageType.chatSuggestionsResult)
+        XCTAssertEqual(message?.requestID, "suggestions-normalized")
+        XCTAssertEqual(message?.payload["suggestions"], .array([
+            .string("What should we verify next?"),
+            .string("Résumé details?"),
+            .string("How do archived chats affect memory?"),
+            .string("How is relay lease renewed?")
+        ]))
     }
 
     func testChatSuggestionsRequestAcceptsFencedStructuredSuggestions() async throws {
@@ -2685,6 +2805,8 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         let router = LocalRuntimeMessageRouter(
             backend: MockBackend(status: .available),
             routeRefresher: FakeRuntimeRouteRefresher(result: RuntimeRouteRefreshResult(
+                runtimeDeviceID: "runtime-1",
+                runtimeKeyFingerprint: "runtime-fingerprint",
                 relayHost: "relay.example.test",
                 relayPort: 43171,
                 relayID: "relay-id-1",
@@ -3992,6 +4114,45 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
     }
 
     @MainActor
+    func testCompanionAppModelKeepsLeasePreparationIssueWhenRelayIsReadyWithoutLease() async throws {
+        let relayClient = FakeRelayPeerClient()
+        let serviceAllocator = FakeRelayServiceRouteAllocator(allocation: nil)
+        let model = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: FakeRuntimeTransport(),
+            advertiser: FakeRuntimeAdvertiser(),
+            relayClient: relayClient,
+            relayServiceRouteAllocator: serviceAllocator,
+            userDefaults: try isolatedDefaults()
+        )
+
+        model.configureDevelopmentRelay(host: "relay.example.test", port: 43171, relaySecret: "secret-1")
+        model.start(port: 43210)
+        relayClient.emit(.waitingForPeer)
+        await Task.yield()
+
+        model.beginPairing()
+
+        XCTAssertNil(model.pairingSession)
+        XCTAssertEqual(serviceAllocator.calls.count, 1)
+        XCTAssertEqual(model.remoteRoutePreparationIssue?.kind, .routeLeaseRefreshFailed)
+        XCTAssertEqual(model.remoteRoutePreparationIssue?.endpoint, "relay.example.test:43171")
+        XCTAssertEqual(model.remoteRoutePreparationIssue?.message, "Remote route allocation response was invalid.")
+        XCTAssertFalse(model.isDevelopmentRelayRoutePreparedForQRCode)
+        XCTAssertFalse(model.isDevelopmentRelayQRCodeReady)
+        XCTAssertTrue(model.logs.contains(
+            "Remote pairing QR not generated: Remote route allocation response was invalid."
+        ))
+
+        relayClient.emit(.ready)
+        await Task.yield()
+
+        XCTAssertNil(model.pairingSession)
+        XCTAssertEqual(model.remoteRoutePreparationIssue?.kind, .routeLeaseRefreshFailed)
+        XCTAssertTrue(model.logs.contains("Remote route ready: relay.example.test:43171"))
+    }
+
+    @MainActor
     func testCompanionAppModelRequiresRemoteQRCodeForLoopbackSavedRelayHost() async throws {
         let relayClient = FakeRelayPeerClient()
         let model = CompanionAppModel(
@@ -4624,6 +4785,13 @@ private func makeRouter(
         routeRefresher: routeRefresher,
         runtimeChallengeSigner: runtimeChallengeSigner
     )
+}
+
+private func appendRawChatEventLogLine(_ line: String, to fileURL: URL) throws {
+    let handle = try FileHandle(forWritingTo: fileURL)
+    defer { try? handle.close() }
+    try handle.seekToEnd()
+    try handle.write(contentsOf: Data((line + "\n").utf8))
 }
 
 @MainActor

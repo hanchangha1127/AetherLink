@@ -344,6 +344,8 @@
         {
           "type": "object",
           "required": [
+            "runtime_device_id",
+            "runtime_key_fingerprint",
             "relay_host",
             "relay_port",
             "relay_id",
@@ -352,6 +354,8 @@
             "relay_nonce"
           ],
           "properties": {
+            "runtime_device_id": { "$ref": "#/$defs/nonEmptyString" },
+            "runtime_key_fingerprint": { "$ref": "#/$defs/nonEmptyString" },
             "relay_host": { "$ref": "#/$defs/nonEmptyString" },
             "relay_port": { "type": "integer", "minimum": 1, "maximum": 65535 },
             "relay_id": { "$ref": "#/$defs/nonEmptyString" },

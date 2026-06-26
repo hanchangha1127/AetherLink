@@ -107,6 +107,8 @@ import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -341,117 +343,52 @@ private fun LocalAgentBridgeApp(
             ModalNavigationDrawer(
                 drawerState = drawerState,
                 drawerContent = {
-                    ModalDrawerSheet {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(vertical = 12.dp),
-                        ) {
-                            Text(
-                                text = stringResource(R.string.app_name),
-                                style = MaterialTheme.typography.titleLarge,
-                                modifier = Modifier.padding(horizontal = 28.dp, vertical = 12.dp),
-                            )
-                            DrawerRuntimeSummary(state = state)
-                            Button(
-                                onClick = {
-                                    hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
-                                    viewModel.startNewChat()
-                                    destination = AppDestination.Chat
-                                    scope.launch { drawerState.close() }
-                                },
-                                enabled = !state.isStreaming,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                            ) {
-                                Icon(Icons.Filled.Add, contentDescription = null)
-                                Spacer(Modifier.size(8.dp))
-                                Text(stringResource(R.string.new_chat))
-                            }
-                            Column(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .verticalScroll(rememberScrollState()),
-                            ) {
-                                DrawerSectionLabel(text = stringResource(R.string.previous_chats))
-                                if (hasAnyChatSessions) {
-                                    ChatHistorySearchField(
-                                        query = chatSearchQuery,
-                                        onQueryChange = { chatSearchQuery = it },
-                                        onClear = {
-                                            hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
-                                            chatSearchQuery = ""
-                                        },
-                                    )
-                                }
-                                if (hasChatSearchQuery && !hasChatSearchResults) {
-                                    Text(
-                                        text = stringResource(R.string.no_chat_search_results),
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.padding(horizontal = 28.dp, vertical = 8.dp),
-                                    )
-                                } else if (!hasChatSearchQuery && state.chatSessions.isEmpty()) {
-                                    Text(
-                                        text = stringResource(R.string.no_previous_chats),
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.padding(horizontal = 28.dp, vertical = 8.dp),
-                                    )
-                                } else {
-                                    filteredChatSessions.forEach { session ->
-                                        ChatSessionDrawerItem(
-                                            session = session,
-                                            selected = effectiveDestination == AppDestination.Chat &&
-                                                session.id == state.activeChatSessionId,
-                                            enabled = !state.isStreaming,
-                                            onClick = {
-                                                viewModel.selectChatSession(session.id)
-                                                destination = AppDestination.Chat
-                                                scope.launch { drawerState.close() }
-                                            },
-                                            onRename = {
-                                                hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
-                                                renamingSessionId = session.id
-                                                renameDraft = session.editableTitle()
-                                            },
-                                            onArchive = {
-                                                hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Destructive)
-                                                val archivedSessionId = session.id
-                                                viewModel.archiveChatSession(archivedSessionId)
-                                                scope.launch {
-                                                    drawerState.close()
-                                                    val result = snackbarHostState.showSnackbar(
-                                                        message = chatArchivedSnackbar,
-                                                        actionLabel = undoAction,
-                                                        withDismissAction = true,
-                                                    )
-                                                    if (result == SnackbarResult.ActionPerformed) {
-                                                        viewModel.unarchiveChatSession(archivedSessionId)
-                                                    }
-                                                }
-                                            },
-                                            onRestore = null,
-                                            onDelete = null,
-                                        )
-                                    }
+                    AetherLinkNavigationDrawerContent(
+                        state = state,
+                        effectiveDestination = effectiveDestination,
+                        chatSearchQuery = chatSearchQuery,
+                        hasAnyChatSessions = hasAnyChatSessions,
+                        hasChatSearchQuery = hasChatSearchQuery,
+                        hasChatSearchResults = hasChatSearchResults,
+                        filteredChatSessions = filteredChatSessions,
+                        onChatSearchQueryChange = { chatSearchQuery = it },
+                        onClearChatSearch = { chatSearchQuery = "" },
+                        onNewChat = {
+                            viewModel.startNewChat()
+                            destination = AppDestination.Chat
+                            scope.launch { drawerState.close() }
+                        },
+                        onSelectChatSession = { session ->
+                            viewModel.selectChatSession(session.id)
+                            destination = AppDestination.Chat
+                            scope.launch { drawerState.close() }
+                        },
+                        onRenameChatSession = { session ->
+                            renamingSessionId = session.id
+                            renameDraft = session.editableTitle()
+                        },
+                        onArchiveChatSession = { session ->
+                            val archivedSessionId = session.id
+                            viewModel.archiveChatSession(archivedSessionId)
+                            scope.launch {
+                                drawerState.close()
+                                val result = snackbarHostState.showSnackbar(
+                                    message = chatArchivedSnackbar,
+                                    actionLabel = undoAction,
+                                    withDismissAction = true,
+                                )
+                                if (result == SnackbarResult.ActionPerformed) {
+                                    viewModel.unarchiveChatSession(archivedSessionId)
                                 }
                             }
-                            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-                            DrawerDestinationItem(
-                                destination = AppDestination.Settings,
-                                selected = effectiveDestination == AppDestination.Settings,
-                                onClick = {
-                                    hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.SelectionChange)
-                                    returnToChatAfterPairing = false
-                                    settingsOpenedForPairingOnboarding = false
-                                    destination = AppDestination.Settings
-                                    scope.launch { drawerState.close() }
-                                },
-                            )
-                        }
-                    }
+                        },
+                        onSelectSettings = {
+                            returnToChatAfterPairing = false
+                            settingsOpenedForPairingOnboarding = false
+                            destination = AppDestination.Settings
+                            scope.launch { drawerState.close() }
+                        },
+                    )
                 },
             ) {
                 Row(modifier = Modifier.fillMaxSize()) {
@@ -478,59 +415,21 @@ private fun LocalAgentBridgeApp(
                             .fillMaxHeight(),
                         snackbarHost = { SnackbarHost(snackbarHostState) },
                         topBar = {
-                            Column {
-                                TopAppBar(
-                                    colors = TopAppBarDefaults.topAppBarColors(
-                                        containerColor = MaterialTheme.colorScheme.background,
-                                        scrolledContainerColor = MaterialTheme.colorScheme.surface,
-                                    ),
-                                    title = {
-                                        if (effectiveDestination == AppDestination.Chat) {
-                                            ChatTopAppBarTitle(
-                                                state = state,
-                                                onRequestModels = viewModel::requestModels,
-                                                onSelectModel = viewModel::selectModel,
-                                                onSelectEmbeddingModel = viewModel::selectEmbeddingModel,
-                                            )
-                                        } else {
-                                            Text(destinationTitle)
-                                        }
-                                    },
-                                    navigationIcon = {
-                                        IconButton(
-                                            onClick = {
-                                                hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
-                                                scope.launch { drawerState.open() }
-                                            },
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Filled.Menu,
-                                                contentDescription = stringResource(R.string.content_desc_open_navigation),
-                                            )
-                                        }
-                                    },
-                                    actions = {
-                                        if (effectiveDestination == AppDestination.Chat) {
-                                            IconButton(
-                                                onClick = {
-                                                    hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
-                                                    viewModel.startNewChat()
-                                                    destination = AppDestination.Chat
-                                                },
-                                                enabled = !state.isStreaming,
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Filled.Edit,
-                                                    contentDescription = stringResource(R.string.new_chat),
-                                                )
-                                            }
-                                        }
-                                    },
-                                )
-                                HorizontalDivider(
-                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.36f),
-                                )
-                            }
+                            AetherLinkTopAppBar(
+                                state = state,
+                                effectiveDestination = effectiveDestination,
+                                destinationTitle = destinationTitle,
+                                onOpenNavigation = {
+                                    scope.launch { drawerState.open() }
+                                },
+                                onStartNewChat = {
+                                    viewModel.startNewChat()
+                                    destination = AppDestination.Chat
+                                },
+                                onRequestModels = viewModel::requestModels,
+                                onSelectModel = viewModel::selectModel,
+                                onSelectEmbeddingModel = viewModel::selectEmbeddingModel,
+                            )
                         },
                     ) { padding ->
                         when (effectiveDestination) {
@@ -608,6 +507,74 @@ private fun LocalAgentBridgeApp(
 
             }
         }
+    }
+}
+
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+internal fun AetherLinkTopAppBar(
+    state: RuntimeUiState,
+    effectiveDestination: AppDestination,
+    destinationTitle: String,
+    onOpenNavigation: () -> Unit,
+    onStartNewChat: () -> Unit,
+    onRequestModels: () -> Unit,
+    onSelectModel: (String) -> Unit,
+    onSelectEmbeddingModel: (String?) -> Unit,
+) {
+    val hapticFeedback = LocalHapticFeedback.current
+
+    Column {
+        TopAppBar(
+            colors = TopAppBarDefaults.topAppBarColors(
+                containerColor = MaterialTheme.colorScheme.background,
+                scrolledContainerColor = MaterialTheme.colorScheme.surface,
+            ),
+            title = {
+                if (effectiveDestination == AppDestination.Chat) {
+                    ChatTopAppBarTitle(
+                        state = state,
+                        onRequestModels = onRequestModels,
+                        onSelectModel = onSelectModel,
+                        onSelectEmbeddingModel = onSelectEmbeddingModel,
+                    )
+                } else {
+                    Text(destinationTitle)
+                }
+            },
+            navigationIcon = {
+                IconButton(
+                    onClick = {
+                        hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
+                        onOpenNavigation()
+                    },
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Menu,
+                        contentDescription = stringResource(R.string.content_desc_open_navigation),
+                    )
+                }
+            },
+            actions = {
+                if (effectiveDestination == AppDestination.Chat) {
+                    IconButton(
+                        onClick = {
+                            hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
+                            onStartNewChat()
+                        },
+                        enabled = !state.isStreaming,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Edit,
+                            contentDescription = stringResource(R.string.new_chat),
+                        )
+                    }
+                }
+            },
+        )
+        HorizontalDivider(
+            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.36f),
+        )
     }
 }
 
@@ -1169,7 +1136,11 @@ private fun modelMenuStatusLine(model: RuntimeModel, installing: Boolean): Strin
         model.running -> stringResource(R.string.model_running)
         else -> stringResource(R.string.model_installed)
     }
-    return "${runtimeProviderDisplayName(model.provider)} - $availability"
+    return stringResource(
+        R.string.model_status_value,
+        runtimeProviderDisplayName(model.provider),
+        availability,
+    )
 }
 
 internal fun chatModelMenuModels(
@@ -1311,11 +1282,21 @@ internal fun chatModelPickerClosedLabel(
 ): String {
     val selectedModel = chatModelMenuModels(state.models)
         .firstOrNull { it.id == state.selectedModelId }
+    val fallbackDisplayName = chatModelPickerFallbackDisplayName(state)
     return when {
         selectedModel != null -> selectedModel.name
-        state.selectedModelId != null -> savedModelDisplayName(state.selectedModelId)
+        fallbackDisplayName != null -> fallbackDisplayName
         state.isLoadingModels -> loadingModelsLabel
         else -> chooseModelLabel
+    }
+}
+
+internal fun chatModelPickerFallbackDisplayName(state: RuntimeUiState): String? {
+    val selectedId = state.selectedModelId ?: return null
+    return if (state.isLoadingModels || state.models.isEmpty()) {
+        savedModelDisplayName(selectedId)
+    } else {
+        null
     }
 }
 
@@ -1327,13 +1308,129 @@ private val modelDisplayProviderPrefixes = setOf(
     "runtime",
 )
 
+internal const val DRAWER_HISTORY_TEST_TAG = "aetherlink_drawer_history"
+internal const val DRAWER_SETTINGS_FOOTER_TEST_TAG = "aetherlink_drawer_settings_footer"
+
+@Composable
+internal fun AetherLinkNavigationDrawerContent(
+    state: RuntimeUiState,
+    effectiveDestination: AppDestination,
+    chatSearchQuery: String,
+    hasAnyChatSessions: Boolean,
+    hasChatSearchQuery: Boolean,
+    hasChatSearchResults: Boolean,
+    filteredChatSessions: List<RuntimeChatSession>,
+    onChatSearchQueryChange: (String) -> Unit,
+    onClearChatSearch: () -> Unit,
+    onNewChat: () -> Unit,
+    onSelectChatSession: (RuntimeChatSession) -> Unit,
+    onRenameChatSession: (RuntimeChatSession) -> Unit,
+    onArchiveChatSession: (RuntimeChatSession) -> Unit,
+    onSelectSettings: () -> Unit,
+) {
+    val hapticFeedback = LocalHapticFeedback.current
+
+    ModalDrawerSheet {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(vertical = 12.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.app_name),
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.padding(horizontal = 28.dp, vertical = 12.dp),
+            )
+            DrawerRuntimeSummary(state = state)
+            Button(
+                onClick = {
+                    hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
+                    onNewChat()
+                },
+                enabled = !state.isStreaming,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+            ) {
+                Icon(Icons.Filled.Add, contentDescription = null)
+                Spacer(Modifier.size(8.dp))
+                Text(stringResource(R.string.new_chat))
+            }
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState())
+                    .testTag(DRAWER_HISTORY_TEST_TAG),
+            ) {
+                DrawerSectionLabel(text = stringResource(R.string.previous_chats))
+                if (hasAnyChatSessions) {
+                    ChatHistorySearchField(
+                        query = chatSearchQuery,
+                        onQueryChange = onChatSearchQueryChange,
+                        onClear = {
+                            hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
+                            onClearChatSearch()
+                        },
+                    )
+                }
+                if (hasChatSearchQuery && !hasChatSearchResults) {
+                    Text(
+                        text = stringResource(R.string.no_chat_search_results),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 28.dp, vertical = 8.dp),
+                    )
+                } else if (!hasChatSearchQuery && state.chatSessions.isEmpty()) {
+                    Text(
+                        text = stringResource(R.string.no_previous_chats),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 28.dp, vertical = 8.dp),
+                    )
+                } else {
+                    filteredChatSessions.forEach { session ->
+                        ChatSessionDrawerItem(
+                            session = session,
+                            selected = effectiveDestination == AppDestination.Chat &&
+                                session.id == state.activeChatSessionId,
+                            enabled = !state.isStreaming,
+                            onClick = { onSelectChatSession(session) },
+                            onRename = {
+                                hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
+                                onRenameChatSession(session)
+                            },
+                            onArchive = {
+                                hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Destructive)
+                                onArchiveChatSession(session)
+                            },
+                            onRestore = null,
+                            onDelete = null,
+                        )
+                    }
+                }
+            }
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+            Box(modifier = Modifier.testTag(DRAWER_SETTINGS_FOOTER_TEST_TAG)) {
+                DrawerDestinationItem(
+                    destination = AppDestination.Settings,
+                    selected = effectiveDestination == AppDestination.Settings,
+                    onClick = {
+                        hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.SelectionChange)
+                        onSelectSettings()
+                    },
+                )
+            }
+        }
+    }
+}
+
 @Composable
 private fun DrawerRuntimeSummary(state: RuntimeUiState) {
     val chatModels = chatModelMenuModels(state.models)
     val selectedModel = chatModels.firstOrNull { it.id == state.selectedModelId }
     val runtimeName = state.trustedRuntime?.name ?: stringResource(R.string.no_trusted_runtime)
     val modelName = selectedModel?.name
-        ?: state.selectedModelId?.let(::savedModelDisplayName)
+        ?: chatModelPickerFallbackDisplayName(state)
         ?: stringResource(R.string.model_none)
     val connectionLabel = when {
         state.isConnected -> stringResource(R.string.status_connected)
@@ -1473,7 +1570,11 @@ internal fun ChatSessionDrawerItem(
     val title = session.localizedTitle(stringResource(R.string.untitled_chat))
     val baseSubtitle = when {
         session.archivedAtMillis != null -> stringResource(R.string.archived_chat)
-        session.messageCount > 0 -> stringResource(R.string.chat_message_count, session.messageCount)
+        session.messageCount > 0 -> pluralStringResource(
+            R.plurals.chat_message_count,
+            session.messageCount,
+            session.messageCount,
+        )
         session.updatedAtMillis > 0L -> stringResource(R.string.new_chat)
         else -> ""
     }

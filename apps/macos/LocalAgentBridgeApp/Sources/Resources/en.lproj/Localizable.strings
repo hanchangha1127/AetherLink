@@ -34,7 +34,8 @@
 "Trusted device pairing" = "Trusted device pairing";
 "Model list loaded" = "Model list loaded";
 "Load models to show what AetherLink Runtime can offer." = "Load models to show what AetherLink Runtime can offer.";
-"%d model(s) loaded" = "%d model(s) loaded";
+"1 model loaded" = "1 model loaded";
+"%d models loaded" = "%d models loaded";
 "Ready" = "Ready";
 "Needs attention" = "Needs attention";
 "Not ready" = "Not ready";
@@ -64,7 +65,8 @@
 "Connected to %@ and waiting for relay acknowledgement." = "Connected to %@ and waiting for route acknowledgement.";
 "Model provider status has not been checked yet." = "Model provider status has not been checked yet.";
 "%d of %d available" = "%d of %d available";
-"%d model provider(s) available" = "%d model provider(s) available";
+"1 model provider available" = "1 model provider available";
+"%d model providers available" = "%d model providers available";
 "At least one model provider is responding." = "At least one model provider is responding.";
 "No model provider is responding." = "No model provider is responding.";
 "Model providers are checked by AetherLink Runtime." = "Model providers are checked by AetherLink Runtime.";
@@ -73,7 +75,8 @@
 "Provider managed" = "Provider managed";
 "Chat Models" = "Chat Models";
 "Embedding Models" = "Embedding Models";
-"%d model(s)" = "%d model(s)";
+"1 model" = "1 model";
+"%d models" = "%d models";
 "Chat" = "Chat";
 "Embedding" = "Embedding";
 "Running" = "Running";
@@ -83,12 +86,14 @@
 "Idle" = "Idle";
 "Active" = "Active";
 "Model residency is not managed by this provider." = "Model residency is not managed by this provider.";
-"%@ %@ active. Idle unload after %d minute(s)." = "%@ %@ active. Idle unload after %d minute(s).";
+"%@ %@ active. Idle unload after 1 minute." = "%@ %@ active. Idle unload after 1 minute.";
+"%@ %@ active. Idle unload after %d minutes." = "%@ %@ active. Idle unload after %d minutes.";
 "No active model is resident through the runtime policy." = "No active model is resident through the runtime policy.";
 "Model unload requested by runtime policy." = "Model unload requested by runtime policy.";
 "Model unloaded by runtime policy." = "Model unloaded by runtime policy.";
 "Open a model provider for AetherLink Runtime, then check again." = "Open a model provider for AetherLink Runtime, then check again.";
-"%d trusted device(s)" = "%d trusted device(s)";
+"1 trusted device" = "1 trusted device";
+"%d trusted devices" = "%d trusted devices";
 "Pair a device before allowing runtime requests." = "Pair a device before allowing runtime requests.";
 "Authenticated devices can request runtime sessions." = "Authenticated devices can request runtime sessions.";
 "Setup needed" = "Setup needed";
@@ -149,7 +154,8 @@
 "Trusted %@" = "Trusted %@";
 "Removed %@" = "Removed %@";
 "Received device runtime request" = "Received device runtime request";
-"Loaded %@ local model(s)" = "Loaded %@ model(s)";
+"Loaded 1 model" = "Loaded 1 model";
+"Loaded %@ models" = "Loaded %@ models";
 "Could not load local models: %@" = "Could not load models: %@";
 "Could not remove trusted device: %@" = "Could not remove trusted device: %@";
 "Could not load trusted devices: %@" = "Could not load trusted devices: %@";

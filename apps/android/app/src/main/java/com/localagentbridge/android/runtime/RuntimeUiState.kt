@@ -135,7 +135,7 @@ data class RuntimeModel(
     val providerModelId: String? = null,
     val installed: Boolean = true,
     val running: Boolean = false,
-    val source: String? = null,
+    val source: String? = "local",
     val description: String? = null,
     val sizeBytes: Long? = null,
 )

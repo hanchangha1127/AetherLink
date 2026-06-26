@@ -33,6 +33,30 @@ REQUIRED_RELAY_QR_FIELDS = {
     "relay_expires_at",
     "relay_nonce",
 }
+REMOTE_RELAY_QR_FIELDS = {
+    "remote_host",
+    "remote_port",
+    "remote_id",
+    "remote_secret",
+    "remote_expires_at",
+    "remote_nonce",
+}
+ROUTE_RELAY_QR_FIELDS = {
+    "route_host",
+    "route_port",
+    "route_id",
+    "route_secret",
+    "route_expires_at",
+    "route_nonce",
+}
+RENDEZVOUS_RELAY_QR_FIELDS = {
+    "rendezvous_host",
+    "rendezvous_port",
+    "rendezvous_id",
+    "rendezvous_secret",
+    "rendezvous_expires_at",
+    "rendezvous_nonce",
+}
 PRIVATE_RELAY_HOST_FIELDS = {
     "relay_host",
     "remote_host",
@@ -309,6 +333,15 @@ def check_pairing_qr_schema(schema: dict) -> list[str]:
     for field in REQUIRED_RELAY_QR_FIELDS:
         if field not in properties:
             failures.append(f"pairing QR schema missing relay property {field}")
+    for field in REMOTE_RELAY_QR_FIELDS:
+        if field not in properties:
+            failures.append(f"pairing QR schema missing remote relay alias property {field}")
+    for field in ROUTE_RELAY_QR_FIELDS:
+        if field not in properties:
+            failures.append(f"pairing QR schema missing route relay alias property {field}")
+    for field in RENDEZVOUS_RELAY_QR_FIELDS:
+        if field not in properties:
+            failures.append(f"pairing QR schema missing rendezvous relay alias property {field}")
     for field in COMPACT_RELAY_QR_FIELDS:
         if field not in properties:
             failures.append(f"pairing QR schema missing compact relay property {field}")
@@ -343,6 +376,18 @@ def check_pairing_qr_schema(schema: dict) -> list[str]:
             failures.append(
                 f"pairing QR schema must require compact {missing} when {field} is present"
             )
+    for label, fields in [
+        ("remote relay alias", REMOTE_RELAY_QR_FIELDS),
+        ("route relay alias", ROUTE_RELAY_QR_FIELDS),
+        ("rendezvous relay alias", RENDEZVOUS_RELAY_QR_FIELDS),
+    ]:
+        for field in fields:
+            dependencies = set(dependent_required.get(field, []))
+            missing = sorted((fields - {field}) - dependencies)
+            if missing:
+                failures.append(
+                    f"pairing QR schema must require {label} {missing} when {field} is present"
+                )
 
     relay_host = properties.get("relay_host", {})
     relay_ref = relay_host.get("$ref")

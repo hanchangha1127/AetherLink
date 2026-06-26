@@ -463,6 +463,21 @@ def check_no_raw_swiftui_visible_literals() -> list[str]:
     return failures
 
 
+def check_no_parenthetical_plural_resources() -> list[str]:
+    failures: list[str] = []
+
+    for locale in LOCALES:
+        path = strings_path(locale)
+        relative_path = path.relative_to(ROOT)
+        for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if "(s)" in line:
+                failures.append(
+                    f"{relative_path}:{line_number}: avoid parenthetical plural copy in localized UI resources."
+                )
+
+    return failures
+
+
 def check_remote_connection_destructive_confirmation() -> list[str]:
     return missing_source_snippets(
         REMOTE_RELAY_ROUTE_PANEL_SOURCE,
@@ -662,6 +677,7 @@ def main() -> int:
     failures.extend(check_app_appearance_selector())
     failures.extend(check_app_appearance_wiring())
     failures.extend(check_no_raw_swiftui_visible_literals())
+    failures.extend(check_no_parenthetical_plural_resources())
     failures.extend(check_remote_connection_destructive_confirmation())
     failures.extend(check_activity_log_redaction())
     failures.extend(check_provider_status_redaction())

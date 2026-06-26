@@ -12,7 +12,10 @@
     <string name="clear_chat_search">Effacer la recherche de chats</string>
     <string name="no_chat_search_results">Aucun chat correspondant.</string>
     <string name="untitled_chat">Chat sans titre</string>
-    <string name="chat_message_count">%1$d messages</string>
+    <plurals name="chat_message_count">
+        <item quantity="one">%1$d message</item>
+        <item quantity="other">%1$d messages</item>
+    </plurals>
     <string name="chat_session_status_value">%1$s - %2$s</string>
     <string name="chat_session_status_completed">Terminé</string>
     <string name="chat_session_status_cancelled">Annulé</string>
@@ -181,6 +184,7 @@
     <string name="models_from_runtime">Les modèles sont chargés via AetherLink Runtime, pas directement depuis cette app.</string>
     <string name="models_need_connection">Connectez-vous au runtime de confiance avant de charger les modèles.</string>
     <string name="model_backend_value">Service de modèles : %1$s</string>
+    <string name="model_status_value">%1$s - %2$s</string>
     <string name="model_installed">Installé</string>
     <string name="model_running">En cours</string>
     <string name="model_not_installed">Non installé</string>
@@ -219,6 +223,8 @@
     <string name="attachment_type_document">Document</string>
     <string name="attachment_metadata_with_size">%1$s · %2$s</string>
     <string name="attachment_requires_vision_model">Modèle vision requis</string>
+    <string name="empty_chat_pairing_title">Scannez le QR pour démarrer</string>
+    <string name="empty_chat_pairing">Jumelez d’abord AetherLink Runtime. Les fournisseurs de modèles restent privés derrière le runtime de confiance.</string>
     <string name="empty_chat_disconnected_title">Connectez-vous pour continuer</string>
     <string name="empty_chat_disconnected">Connectez-vous au runtime de confiance avant de discuter.</string>
     <string name="empty_chat_no_model_title">Choisissez un modèle</string>
@@ -235,6 +241,7 @@
     <string name="chat_backend_unavailable_title">Le service de modèles demande une vérification</string>
     <string name="chat_backend_unavailable_detail">Vérifiez le service de modèles dans AetherLink Runtime, puis actualisez l’état.</string>
     <string name="refresh_health">Actualiser l’état</string>
+    <string name="chat_hint_pairing">Scannez le QR de jumelage avant l’envoi.</string>
     <string name="chat_hint_connect">Connectez-vous d’abord au runtime de confiance.</string>
     <string name="chat_hint_select_model">Sélectionnez un modèle avant l’envoi.</string>
     <string name="chat_hint_model_unavailable">Actualisez les modèles ou choisissez-en un autre avant l’envoi.</string>

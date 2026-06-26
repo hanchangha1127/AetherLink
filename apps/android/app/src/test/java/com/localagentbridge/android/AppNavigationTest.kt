@@ -15,16 +15,19 @@ import com.localagentbridge.android.runtime.RuntimeUiError
 import com.localagentbridge.android.runtime.RuntimeUiState
 import com.localagentbridge.android.ui.AetherLinkInteractionFeedback
 import com.localagentbridge.android.ui.aetherLinkHapticFeedbackType
+import com.localagentbridge.android.ui.appLanguagePreferenceOptionSelected
 import com.localagentbridge.android.ui.appLanguagePreferenceOptions
 import com.localagentbridge.android.ui.appThemePreferenceOptions
 import com.localagentbridge.android.ui.assistantShowsTypingPlaceholder
 import com.localagentbridge.android.ui.CHAT_COMPOSER_CONTAINER_ALPHA
 import com.localagentbridge.android.ui.CHAT_COMPOSER_CONTAINER_CORNER_RADIUS_DP
 import com.localagentbridge.android.ui.ChatEmptyPrimaryAction
+import com.localagentbridge.android.ui.chatComposerCanEdit
 import com.localagentbridge.android.ui.chatComposerCanSend
 import com.localagentbridge.android.ui.chatComposerHasSendableContent
 import com.localagentbridge.android.ui.chatComposerHasUnsupportedImageAttachment
 import com.localagentbridge.android.ui.chatComposerInputContentDescriptionRes
+import com.localagentbridge.android.ui.chatComposerShouldShowStatus
 import com.localagentbridge.android.ui.chatComposerVisualPlaceholderRes
 import com.localagentbridge.android.ui.chatEmptyPrimaryAction
 import com.localagentbridge.android.ui.chatHistoryArchiveAllEnabled
@@ -47,6 +50,7 @@ import com.localagentbridge.android.ui.memoryEmptyStateTextRes
 import com.localagentbridge.android.ui.memoryLockNoticeTextRes
 import com.localagentbridge.android.ui.MessageContentPart
 import com.localagentbridge.android.ui.newUserMessageAddedSince
+import com.localagentbridge.android.ui.normalizedSuggestedQuestions
 import com.localagentbridge.android.ui.parseMessageContent
 import com.localagentbridge.android.ui.providerDiagnosticCode
 import com.localagentbridge.android.ui.providerDiagnosticMessage
@@ -72,6 +76,7 @@ import com.localagentbridge.android.ui.shouldShowChatEmptyState
 import com.localagentbridge.android.ui.shouldShowJumpToLatestChatButton
 import com.localagentbridge.android.ui.shouldScanLatestQrFromEmptyChat
 import com.localagentbridge.android.ui.shouldPerformSelectionChangeHaptic
+import com.localagentbridge.android.ui.SUGGESTED_QUESTION_MAX_ITEMS
 import com.localagentbridge.android.ui.settingsPrimaryConnectionSectionInitiallyExpanded
 import com.localagentbridge.android.ui.settingsPrimaryConnectionSectionSubtitleRes
 import com.localagentbridge.android.ui.settingsPrimaryConnectionSectionTitleRes
@@ -322,6 +327,31 @@ class AppNavigationTest {
                 RuntimeAppLanguage.French to R.string.language_french,
             ),
             appLanguagePreferenceOptions(),
+        )
+    }
+
+    @Test
+    fun settingsLanguageSelectionNormalizesStoredAliases() {
+        assertEquals(
+            true,
+            appLanguagePreferenceOptionSelected(
+                selectedLanguageTag = "zh-Hans",
+                language = RuntimeAppLanguage.SimplifiedChinese,
+            ),
+        )
+        assertEquals(
+            true,
+            appLanguagePreferenceOptionSelected(
+                selectedLanguageTag = " zh_rCN ",
+                language = RuntimeAppLanguage.SimplifiedChinese,
+            ),
+        )
+        assertEquals(
+            false,
+            appLanguagePreferenceOptionSelected(
+                selectedLanguageTag = "zh-Hans",
+                language = RuntimeAppLanguage.English,
+            ),
         )
     }
 
@@ -615,6 +645,7 @@ class AppNavigationTest {
     fun chatComposerAllowsAttachmentOnlySendWhenConnectedModelIsUsable() {
         val state = RuntimeUiState(
             isConnected = true,
+            trustedRuntime = RuntimeTrustedRuntime(deviceId = "runtime-1", name = "AetherLink Runtime"),
             selectedModelId = "chat-1",
             models = listOf(
                 RuntimeModel(
@@ -631,13 +662,80 @@ class AppNavigationTest {
 
         assertEquals(true, chatComposerHasSendableContent(state))
         assertEquals(false, chatComposerHasUnsupportedImageAttachment(state))
+        assertEquals(true, chatComposerCanEdit(state))
         assertEquals(true, chatComposerCanSend(state))
+    }
+
+    @Test
+    fun chatComposerEditingRequiresTrustedConnectedUsableModel() {
+        val readyState = RuntimeUiState(
+            isConnected = true,
+            trustedRuntime = RuntimeTrustedRuntime(deviceId = "runtime-1", name = "AetherLink Runtime"),
+            selectedModelId = "chat-1",
+            models = listOf(
+                RuntimeModel(
+                    id = "chat-1",
+                    name = "Local Chat",
+                    modelKind = "chat",
+                    capabilities = listOf("chat"),
+                    installed = true,
+                )
+            ),
+        )
+
+        assertEquals(false, chatComposerCanEdit(RuntimeUiState()))
+        assertEquals(false, chatComposerCanEdit(readyState.copy(trustedRuntime = null)))
+        assertEquals(false, chatComposerCanEdit(readyState.copy(isConnected = false)))
+        assertEquals(false, chatComposerCanEdit(readyState.copy(selectedModelId = null)))
+        assertEquals(false, chatComposerCanEdit(readyState.copy(isStreaming = true)))
+        assertEquals(true, chatComposerCanEdit(readyState))
+    }
+
+    @Test
+    fun chatComposerStatusShowsReadinessHintsWhenInputIsLocked() {
+        assertEquals(
+            true,
+            chatComposerShouldShowStatus(
+                enabled = false,
+                isStreaming = false,
+                hint = "Select a model before sending.",
+                hasWarning = false,
+            ),
+        )
+        assertEquals(
+            true,
+            chatComposerShouldShowStatus(
+                enabled = true,
+                isStreaming = false,
+                hint = "Choose a vision-capable model before sending an image.",
+                hasWarning = true,
+            ),
+        )
+        assertEquals(
+            false,
+            chatComposerShouldShowStatus(
+                enabled = true,
+                isStreaming = false,
+                hint = "Ready to send.",
+                hasWarning = false,
+            ),
+        )
+        assertEquals(
+            false,
+            chatComposerShouldShowStatus(
+                enabled = false,
+                isStreaming = true,
+                hint = "Wait for the current response or cancel it.",
+                hasWarning = false,
+            ),
+        )
     }
 
     @Test
     fun chatComposerBlocksImageAttachmentUntilSelectedModelSupportsVision() {
         val textOnlyState = RuntimeUiState(
             isConnected = true,
+            trustedRuntime = RuntimeTrustedRuntime(deviceId = "runtime-1", name = "AetherLink Runtime"),
             selectedModelId = "chat-1",
             models = listOf(
                 RuntimeModel(
@@ -748,6 +846,7 @@ class AppNavigationTest {
                     name = "Qwen3 8B",
                     modelKind = "chat",
                     capabilities = listOf("chat"),
+                    source = "local",
                 )
             ),
         )
@@ -778,13 +877,14 @@ class AppNavigationTest {
         )
 
         assertEquals(
-            "qwen3:8b",
+            "Choose model",
             chatModelPickerClosedLabel(
                 state = state,
                 loadingModelsLabel = "Loading models",
                 chooseModelLabel = "Choose model",
             ),
         )
+        assertEquals(null, chatModelPickerFallbackDisplayName(state))
         assertEquals(emptyList<RuntimeModel>(), chatModelMenuModels(state.models))
     }
 
@@ -806,6 +906,10 @@ class AppNavigationTest {
             id = "chat-provider-managed",
             source = "cloud",
         )
+        val unknownSourceModel = installedModel.copy(
+            id = "chat-unknown-source",
+            source = null,
+        )
         val embeddingModel = installedModel.copy(
             id = "embedding-1",
             modelKind = "embedding",
@@ -818,6 +922,7 @@ class AppNavigationTest {
         assertEquals(true, chatModelMenuItemEnabled(notInstalledModel, installing = false))
         assertEquals(false, chatModelMenuItemEnabled(notInstalledModel, installing = true))
         assertEquals(false, chatModelMenuItemEnabled(providerManagedModel, installing = false))
+        assertEquals(false, chatModelMenuItemEnabled(unknownSourceModel, installing = false))
         assertEquals(false, chatModelMenuItemEnabled(embeddingModel, installing = false))
     }
 
@@ -840,6 +945,11 @@ class AppNavigationTest {
             installed = true,
             running = true,
             source = "cloud",
+        )
+        val unknownSourceChatModel = providerManagedChatModel.copy(
+            id = "chat-unknown-source",
+            name = "Unknown Source Chat",
+            source = null,
         )
         val embeddingModel = RuntimeModel(
             id = "embedding-1",
@@ -874,6 +984,7 @@ class AppNavigationTest {
                 listOf(
                     unavailableChatModel,
                     providerManagedChatModel,
+                    unknownSourceChatModel,
                     embeddingModel,
                     installedChatModel,
                     runningChatModel,
@@ -1033,6 +1144,7 @@ class AppNavigationTest {
             capabilities = listOf("chat"),
             installed = true,
             running = false,
+            source = "local",
         )
         val runningModel = selectedInstalledModel.copy(
             id = "chat-running",
@@ -2389,6 +2501,54 @@ class AppNavigationTest {
         )
 
         assertEquals(false, shouldShowAssistantSuggestionsForMessage(state, reasoningOnlyAssistant))
+    }
+
+    @Test
+    fun assistantSuggestionsNormalizeBlankDuplicatesAndMaximumRows() {
+        val suggestions = listOf(
+            "  Follow up?  ",
+            "",
+            "follow   up?",
+            "Compare options?",
+            "Summarize this\nagain?",
+            "Draft next step?",
+            "Extra row should be hidden",
+        )
+
+        assertEquals(
+            listOf(
+                "Follow up?",
+                "Compare options?",
+                "Summarize this again?",
+                "Draft next step?",
+            ),
+            normalizedSuggestedQuestions(suggestions),
+        )
+        assertEquals(SUGGESTED_QUESTION_MAX_ITEMS, normalizedSuggestedQuestions(suggestions).size)
+    }
+
+    @Test
+    fun assistantSuggestionsHideWhenRowsNormalizeToBlank() {
+        assertEquals(
+            false,
+            shouldShowAssistantSuggestions(
+                isLatestAssistant = true,
+                hasAssistantOutput = true,
+                isStreaming = false,
+                isLoadingSuggestions = false,
+                suggestions = listOf(" ", "\n\t"),
+            ),
+        )
+        assertEquals(
+            true,
+            shouldShowAssistantSuggestions(
+                isLatestAssistant = true,
+                hasAssistantOutput = true,
+                isStreaming = false,
+                isLoadingSuggestions = true,
+                suggestions = listOf(" ", "\n\t"),
+            ),
+        )
     }
 
     private fun trustedRuntime(

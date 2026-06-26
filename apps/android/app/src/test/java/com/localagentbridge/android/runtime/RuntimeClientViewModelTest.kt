@@ -1526,6 +1526,9 @@ class RuntimeClientViewModelTest {
             val channel = CapturingRuntimeProtocolChannel()
             var directConnectionAttempts = 0
             var capturedRelayRoute: PreparedRemoteRuntimeRoute.Relay? = null
+            val localStore = FakeRuntimeLocalDataStore(
+                initialData = PersistedRuntimeData(trustedRuntimeAutoReconnectEnabled = false),
+            )
             val viewModel = RuntimeClientViewModel(
                 application = Application(),
                 dependencies = RuntimeClientViewModelDependencies(
@@ -1542,7 +1545,7 @@ class RuntimeClientViewModelTest {
                     discovery = EmptyRuntimeDiscoverySource,
                     trustedRuntimeStore = FakeTrustedRuntimeStore(),
                     deviceIdentityProvider = FakeDeviceIdentityProvider(testDeviceIdentity()),
-                    localDataStore = FakeRuntimeLocalDataStore(),
+                    localDataStore = localStore,
                     lifecycleCallbacksRegistrar = NoopRuntimeLifecycleCallbacksRegistrar,
                     currentTimeMillis = { 1_000L },
                 ),
@@ -1568,6 +1571,145 @@ class RuntimeClientViewModelTest {
             assertEquals("client-1", pairingPayload.deviceId)
             assertEquals("AetherLink Test Client", pairingPayload.deviceName)
             assertEquals("client-public-key", pairingPayload.publicKey)
+            assertTrue(localStore.data.trustedRuntimeAutoReconnectEnabled)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun compactRelayQrPairingResultPersistsTrustedRelayAndClearsPendingRoute() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val rawUri = "aetherlink://pair?v=1&n=nonce-accepted&c=135790" +
+                "&rid=runtime-accepted&rn=AetherLink%20Runtime&rf=runtime-fingerprint" +
+                "&rk=runtime-public-key&rt=route-accepted" +
+                "&rh=relay-accepted.example.test&rp=443&ri=relay-accepted&rs=secret-accepted" +
+                "&rx=4102444800000&rrn=nonce-route-accepted&rsc=remote"
+            val channel = ScriptedRuntimeProtocolChannel()
+            val trustedRuntimeStore = FakeTrustedRuntimeStore()
+            val localStore = FakeRuntimeLocalDataStore(
+                initialData = PersistedRuntimeData(trustedRuntimeAutoReconnectEnabled = false),
+            )
+            var directConnectionAttempts = 0
+            var relayConnectionAttempts = 0
+            val viewModel = RuntimeClientViewModel(
+                application = Application(),
+                dependencies = RuntimeClientViewModelDependencies(
+                    json = json,
+                    transportClient = RuntimeTransportClient(),
+                    transportConnector = RuntimeTransportConnector { _, _, _ ->
+                        directConnectionAttempts += 1
+                        error("Direct TCP should not be used for compact relay QR pairing")
+                    },
+                    relayConnector = RuntimeRelayConnector { route, _ ->
+                        relayConnectionAttempts += 1
+                        assertEquals("relay-accepted.example.test", route.host)
+                        assertEquals("relay-accepted", route.relayId)
+                        assertEquals("secret-accepted", route.relayFrameSecret)
+                        assertEquals("nonce-route-accepted", route.security.antiReplayNonce)
+                        channel
+                    },
+                    discovery = EmptyRuntimeDiscoverySource,
+                    trustedRuntimeStore = trustedRuntimeStore,
+                    deviceIdentityProvider = FakeDeviceIdentityProvider(testDeviceIdentity()),
+                    localDataStore = localStore,
+                    lifecycleCallbacksRegistrar = NoopRuntimeLifecycleCallbacksRegistrar,
+                    currentTimeMillis = { 1_000L },
+                ),
+            )
+
+            viewModel.trustRuntimeFromPairingQr(rawUri)
+            advanceUntilIdle()
+
+            assertNotNull(localStore.data.pendingPairingRoute)
+            val pairingRequest = channel.sentEnvelopes.single { it.type == MessageType.PairingRequest }
+            channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.PairingResult,
+                    requestId = pairingRequest.requestId,
+                    payload = json.encodeToJsonElement(
+                        PairingResultPayload.serializer(),
+                        PairingResultPayload(
+                            accepted = true,
+                            runtimeDeviceIdV2 = "runtime-accepted",
+                            runtimePublicKey = "runtime-public-key",
+                            runtimeKeyFingerprint = "runtime-fingerprint",
+                            trustedDeviceId = "client-1",
+                            message = "trusted",
+                        ),
+                    ).jsonObject,
+                )
+            )
+            advanceUntilIdle()
+
+            val trusted = requireNotNull(trustedRuntimeStore.trusted)
+            assertEquals(0, directConnectionAttempts)
+            assertEquals(1, relayConnectionAttempts)
+            assertEquals("runtime-accepted", trusted.deviceId)
+            assertEquals("route-accepted", trusted.routeToken)
+            assertNull(trusted.host)
+            assertNull(trusted.port)
+            assertEquals("relay-accepted.example.test", trusted.relayHost)
+            assertEquals(443, trusted.relayPort)
+            assertEquals("relay-accepted", trusted.relayId)
+            assertEquals("secret-accepted", trusted.relaySecret)
+            assertEquals(4102444800000L, trusted.relayExpiresAtEpochMillis)
+            assertEquals("nonce-route-accepted", trusted.relayNonce)
+            assertEquals("remote", trusted.relayScope)
+            assertNull(localStore.data.pendingPairingRoute)
+            assertTrue(localStore.data.trustedRuntimeAutoReconnectEnabled)
+            assertTrue(localStore.data.pairingOnboardingCompleted)
+            assertEquals("relay-accepted.example.test", viewModel.state.value.trustedRuntime?.relayHost)
+            assertEquals(RuntimeActiveRouteKind.Relay, viewModel.state.value.activeRouteKind)
+            assertNull(viewModel.state.value.error)
+            assertTrue(channel.sentEnvelopes.any { it.type == MessageType.RouteRefresh })
+            assertTrue(channel.sentEnvelopes.any { it.type == MessageType.RuntimeHealth })
+            assertTrue(channel.sentEnvelopes.any { it.type == MessageType.ChatSessionsList })
+            assertTrue(channel.sentEnvelopes.any { it.type == MessageType.MemoryList })
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun invalidPairingQrDoesNotEnableTrustedRuntimeAutoReconnect() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val localStore = FakeRuntimeLocalDataStore(
+                initialData = PersistedRuntimeData(trustedRuntimeAutoReconnectEnabled = false),
+            )
+            val viewModel = RuntimeClientViewModel(
+                application = Application(),
+                dependencies = RuntimeClientViewModelDependencies(
+                    json = json,
+                    transportClient = RuntimeTransportClient(),
+                    transportConnector = RuntimeTransportConnector { _, _, _ ->
+                        error("Invalid QR must not start a runtime connection")
+                    },
+                    relayConnector = RuntimeRelayConnector { _, _ ->
+                        error("Invalid QR must not start a relay connection")
+                    },
+                    discovery = EmptyRuntimeDiscoverySource,
+                    trustedRuntimeStore = FakeTrustedRuntimeStore(),
+                    deviceIdentityProvider = FakeDeviceIdentityProvider(testDeviceIdentity()),
+                    localDataStore = localStore,
+                    lifecycleCallbacksRegistrar = NoopRuntimeLifecycleCallbacksRegistrar,
+                    currentTimeMillis = { 1_000L },
+                ),
+            )
+
+            viewModel.trustRuntimeFromPairingQr("aetherlink://pair?pairing_code=123456")
+            advanceUntilIdle()
+
+            assertFalse(localStore.data.trustedRuntimeAutoReconnectEnabled)
+            assertFalse(viewModel.state.value.trustedRuntimeAutoReconnectEnabled)
+            assertEquals("invalid_pairing_qr", viewModel.state.value.error?.code)
+            assertNull(localStore.data.pendingPairingRoute)
         } finally {
             Dispatchers.resetMain()
         }
@@ -2070,6 +2212,8 @@ class RuntimeClientViewModelTest {
                     type = MessageType.RouteRefresh,
                     serializer = RouteRefreshPayload.serializer(),
                     payload = RouteRefreshPayload(
+                        runtimeDeviceId = "runtime-1",
+                        runtimeKeyFingerprint = "runtime-fingerprint",
                         relayHost = "fresh-relay.example.test",
                         relayPort = 43171,
                         relayId = "fresh-relay",
@@ -2220,6 +2364,8 @@ class RuntimeClientViewModelTest {
                     type = MessageType.RouteRefresh,
                     serializer = RouteRefreshPayload.serializer(),
                     payload = RouteRefreshPayload(
+                        runtimeDeviceId = "runtime-1",
+                        runtimeKeyFingerprint = "runtime-fingerprint",
                         relayHost = "fresh-relay.example.test",
                         relayPort = 43171,
                         relayId = "fresh-relay",
@@ -2336,6 +2482,100 @@ class RuntimeClientViewModelTest {
             assertTrue(routeRefreshRequests[1].requestId != routeRefreshRequests[0].requestId)
             assertNull(viewModel.state.value.error)
             assertEquals("relay.example.test", trustedStore.trusted?.relayHost)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun authenticatedTrustedRuntimeRetriesRejectedRouteRefreshPayloadBeforeLeaseExpiry() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            var currentTimeMillis = 1_000L
+            val channel = ScriptedRuntimeProtocolChannel()
+            val trustedStore = FakeEmittingTrustedRuntimeStore(
+                TrustedRuntime(
+                    deviceId = "runtime-1",
+                    name = "AetherLink Runtime",
+                    fingerprint = "runtime-fingerprint",
+                    publicKeyBase64 = "runtime-public-key",
+                    routeToken = "route-token-1",
+                    relayHost = "relay.example.test",
+                    relayPort = 443,
+                    relayId = "relay-1",
+                    relaySecret = "secret-1",
+                    relayExpiresAtEpochMillis = currentTimeMillis + 180_000L,
+                    relayNonce = "nonce-route-1",
+                    relayScope = "remote",
+                ),
+            )
+            val viewModel = RuntimeClientViewModel(
+                application = Application(),
+                dependencies = RuntimeClientViewModelDependencies(
+                    json = json,
+                    transportClient = RuntimeTransportClient(),
+                    transportConnector = RuntimeTransportConnector { _, _, _ ->
+                        error("Direct TCP should not be used for route-refresh retry")
+                    },
+                    relayConnector = RuntimeRelayConnector { _, _ -> channel },
+                    discovery = EmptyRuntimeDiscoverySource,
+                    trustedRuntimeStore = trustedStore,
+                    deviceIdentityProvider = FakeDeviceIdentityProvider(testDeviceIdentity()),
+                    localDataStore = FakeRuntimeLocalDataStore(
+                        initialData = PersistedRuntimeData(trustedRuntimeAutoReconnectEnabled = false),
+                    ),
+                    lifecycleCallbacksRegistrar = NoopRuntimeLifecycleCallbacksRegistrar,
+                    currentTimeMillis = { currentTimeMillis },
+                ),
+            )
+            advanceUntilIdle()
+
+            viewModel.connectToTrustedRuntime()
+            advanceUntilIdle()
+            channel.enqueue(
+                envelope(
+                    type = MessageType.AuthResponse,
+                    serializer = AuthResponsePayload.serializer(),
+                    payload = AuthResponsePayload(accepted = true),
+                    requestId = "auth-accepted",
+                ),
+            )
+            runCurrent()
+
+            val firstRouteRefresh = channel.sentEnvelopes.single { it.type == MessageType.RouteRefresh }
+            channel.enqueue(
+                envelope(
+                    type = MessageType.RouteRefresh,
+                    serializer = RouteRefreshPayload.serializer(),
+                    payload = RouteRefreshPayload(
+                        runtimeDeviceId = "other-runtime",
+                        runtimeKeyFingerprint = "runtime-fingerprint",
+                        relayHost = "fresh-relay.example.test",
+                        relayPort = 43171,
+                        relayId = "fresh-relay",
+                        relaySecret = "fresh-secret",
+                        relayExpiresAtEpochMillis = currentTimeMillis + 180_000L,
+                        relayNonce = "fresh-nonce",
+                        relayScope = "remote",
+                    ),
+                    requestId = firstRouteRefresh.requestId,
+                ),
+            )
+            runCurrent()
+
+            assertEquals("relay.example.test", trustedStore.trusted?.relayHost)
+            assertNull(viewModel.state.value.error)
+            assertEquals(1, channel.sentEnvelopes.count { it.type == MessageType.RouteRefresh })
+
+            advanceTimeBy(ROUTE_REFRESH_RETRY_DELAY_MS)
+            currentTimeMillis += ROUTE_REFRESH_RETRY_DELAY_MS
+            runCurrent()
+
+            val routeRefreshRequests = channel.sentEnvelopes.filter { it.type == MessageType.RouteRefresh }
+            assertEquals(2, routeRefreshRequests.size)
+            assertTrue(routeRefreshRequests[1].requestId != routeRefreshRequests[0].requestId)
         } finally {
             Dispatchers.resetMain()
         }
@@ -2852,6 +3092,8 @@ class RuntimeClientViewModelTest {
         val refreshed = trustedRuntimeFromRouteRefreshPayload(
             current = current,
             payload = RouteRefreshPayload(
+                runtimeDeviceId = "runtime-1",
+                runtimeKeyFingerprint = "runtime-fingerprint",
                 relayHost = "fresh-relay.example.test",
                 relayPort = 43171,
                 relayId = "fresh-relay",
@@ -2892,6 +3134,8 @@ class RuntimeClientViewModelTest {
             trustedRuntimeFromRouteRefreshPayload(
                 current = current,
                 payload = RouteRefreshPayload(
+                    runtimeDeviceId = "runtime-1",
+                    runtimeKeyFingerprint = "runtime-fingerprint",
                     relayHost = "fresh-relay.example.test",
                     relayPort = 43171,
                     relayId = "fresh-relay",
@@ -2907,10 +3151,73 @@ class RuntimeClientViewModelTest {
             trustedRuntimeFromRouteRefreshPayload(
                 current = current,
                 payload = RouteRefreshPayload(
+                    runtimeDeviceId = "runtime-1",
+                    runtimeKeyFingerprint = "runtime-fingerprint",
                     relayHost = "fresh-relay.example.test",
                     relayPort = 43171,
                     relayId = "fresh-relay",
                     relaySecret = null,
+                    relayExpiresAtEpochMillis = 4_102_444_800_000L,
+                    relayNonce = "fresh-nonce",
+                    relayScope = "remote",
+                ),
+                nowEpochMillis = 1_000L,
+            ),
+        )
+    }
+
+    @Test
+    fun routeRefreshPayloadRejectsMismatchedRuntimeIdentity() {
+        val current = RuntimeTrustedRuntime(
+            deviceId = "runtime-1",
+            name = "AetherLink Runtime",
+            fingerprint = "runtime-fingerprint",
+            publicKeyBase64 = "runtime-public-key",
+            routeToken = "route-token-1",
+        )
+
+        assertNull(
+            trustedRuntimeFromRouteRefreshPayload(
+                current = current,
+                payload = RouteRefreshPayload(
+                    runtimeDeviceId = "other-runtime",
+                    runtimeKeyFingerprint = "runtime-fingerprint",
+                    relayHost = "fresh-relay.example.test",
+                    relayPort = 43171,
+                    relayId = "fresh-relay",
+                    relaySecret = "fresh-secret",
+                    relayExpiresAtEpochMillis = 4_102_444_800_000L,
+                    relayNonce = "fresh-nonce",
+                    relayScope = "remote",
+                ),
+                nowEpochMillis = 1_000L,
+            ),
+        )
+        assertNull(
+            trustedRuntimeFromRouteRefreshPayload(
+                current = current,
+                payload = RouteRefreshPayload(
+                    runtimeDeviceId = "runtime-1",
+                    runtimeKeyFingerprint = "other-fingerprint",
+                    relayHost = "fresh-relay.example.test",
+                    relayPort = 43171,
+                    relayId = "fresh-relay",
+                    relaySecret = "fresh-secret",
+                    relayExpiresAtEpochMillis = 4_102_444_800_000L,
+                    relayNonce = "fresh-nonce",
+                    relayScope = "remote",
+                ),
+                nowEpochMillis = 1_000L,
+            ),
+        )
+        assertNull(
+            trustedRuntimeFromRouteRefreshPayload(
+                current = current,
+                payload = RouteRefreshPayload(
+                    relayHost = "fresh-relay.example.test",
+                    relayPort = 43171,
+                    relayId = "fresh-relay",
+                    relaySecret = "fresh-secret",
                     relayExpiresAtEpochMillis = 4_102_444_800_000L,
                     relayNonce = "fresh-nonce",
                     relayScope = "remote",
@@ -4328,6 +4635,87 @@ class RuntimeClientViewModelTest {
 
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
+    fun modelsResultMissingInstalledOrSourceDoesNotBecomeSelectableChatModel() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val modelId = "ollama:metadata-missing"
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = emptyList(),
+                modelPayloads = listOf(
+                    ModelInfoPayload(
+                        id = "metadata-missing",
+                        name = "Metadata Missing",
+                        provider = "ollama",
+                        modelKind = MODEL_KIND_CHAT,
+                        capabilities = listOf("chat"),
+                        qualifiedId = modelId,
+                    ),
+                ),
+                selectedModelId = modelId,
+            )
+
+            val parsedModel = fixture.viewModel.state.value.models.single()
+            assertEquals(modelId, parsedModel.id)
+            assertEquals(false, parsedModel.installed)
+            assertNull(parsedModel.source)
+            assertNull(fixture.viewModel.state.value.selectedModelId)
+            assertEquals(
+                SelectedModelSendState.Missing,
+                fixture.viewModel.state.value.copy(selectedModelId = modelId).selectedModelSendState(),
+            )
+
+            fixture.viewModel.selectModel(modelId)
+
+            assertNull(fixture.viewModel.state.value.selectedModelId)
+            assertEquals("select_chat_model", fixture.viewModel.state.value.error?.code)
+            assertFalse(fixture.channel.sentEnvelopes.any { it.type == MessageType.ModelsPull })
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun selectModelRejectsProviderManagedOrUnknownSourceChatModelWithoutPersisting() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val localModel = textChatModel()
+            val providerManagedModel = localModel.copy(
+                id = "ollama:provider-managed",
+                name = "Provider Managed",
+                source = "cloud",
+            )
+            val unknownSourceModel = localModel.copy(
+                id = "ollama:unknown-source",
+                name = "Unknown Source",
+                source = null,
+            )
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(localModel, providerManagedModel, unknownSourceModel),
+                selectedModelId = localModel.id,
+            )
+
+            fixture.viewModel.selectModel(providerManagedModel.id)
+
+            assertEquals(localModel.id, fixture.viewModel.state.value.selectedModelId)
+            assertEquals(localModel.id, fixture.localStore.data.selectedModelId)
+            assertEquals("select_chat_model", fixture.viewModel.state.value.error?.code)
+
+            fixture.viewModel.selectModel(unknownSourceModel.id)
+
+            assertEquals(localModel.id, fixture.viewModel.state.value.selectedModelId)
+            assertEquals(localModel.id, fixture.localStore.data.selectedModelId)
+            assertEquals("select_chat_model", fixture.viewModel.state.value.error?.code)
+            assertFalse(fixture.channel.sentEnvelopes.any { it.type == MessageType.ModelsPull })
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
     fun selectEmbeddingModelRejectsUninstalledRuntimeModelWithoutChangingSelection() = runTest {
         val mainDispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(mainDispatcher)
@@ -4411,6 +4799,7 @@ class RuntimeClientViewModelTest {
                                 capabilities = listOf("chat"),
                                 qualifiedId = "ollama:llama3.1:8b",
                                 installed = true,
+                                source = "local",
                             ),
                             ModelInfoPayload(
                                 id = "nomic-embed-text",
@@ -4420,6 +4809,7 @@ class RuntimeClientViewModelTest {
                                 capabilities = listOf("embedding"),
                                 qualifiedId = existingEmbeddingModelId,
                                 installed = true,
+                                source = "local",
                             ),
                             ModelInfoPayload(
                                 id = "mxbai-embed-large",
@@ -4429,6 +4819,7 @@ class RuntimeClientViewModelTest {
                                 capabilities = listOf("embedding"),
                                 qualifiedId = uninstalledEmbeddingModelId,
                                 installed = false,
+                                source = "local",
                             ),
                         ),
                     ),
@@ -5411,6 +5802,54 @@ class RuntimeClientViewModelTest {
         )
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun useSuggestedQuestionFillsComposerWithoutSending() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val channel = ScriptedRuntimeProtocolChannel()
+            val viewModel = RuntimeClientViewModel(
+                application = Application(),
+                dependencies = RuntimeClientViewModelDependencies(
+                    json = json,
+                    transportClient = RuntimeTransportClient(),
+                    transportConnector = RuntimeTransportConnector { _, _, _ ->
+                        error("Suggested question should not open direct transport")
+                    },
+                    relayConnector = RuntimeRelayConnector { _, _ ->
+                        error("Suggested question should not open relay transport")
+                    },
+                    discovery = EmptyRuntimeDiscoverySource,
+                    trustedRuntimeStore = FakeTrustedRuntimeStore(),
+                    deviceIdentityProvider = FakeDeviceIdentityProvider(testDeviceIdentity()),
+                    localDataStore = FakeRuntimeLocalDataStore(),
+                    lifecycleCallbacksRegistrar = NoopRuntimeLifecycleCallbacksRegistrar,
+                ),
+            )
+            advanceUntilIdle()
+            viewModel.replaceStateForTest {
+                it.copy(
+                    chatInput = "old draft",
+                    error = RuntimeUiError("previous_error"),
+                )
+            }
+
+            viewModel.useSuggestedQuestion("  Summarize again?  ")
+
+            assertEquals("Summarize again?", viewModel.state.value.chatInput)
+            assertNull(viewModel.state.value.error)
+            assertTrue(channel.sentEnvelopes.isEmpty())
+
+            viewModel.useSuggestedQuestion("   ")
+
+            assertEquals("Summarize again?", viewModel.state.value.chatInput)
+            assertTrue(channel.sentEnvelopes.isEmpty())
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
     @Test
     fun staleReasoningDeltaForDifferentRequestIdIsIgnored() {
         val state = RuntimeUiState(
@@ -6340,6 +6779,96 @@ class RuntimeClientViewModelTest {
                 viewModel.state.value.error?.diagnosticCode,
             )
             assertEquals("relay.example.test", viewModel.state.value.trustedRuntime?.relayHost)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun freshCompactRelayQrRefreshesExpiredTrustedRelayRouteAndReconnectsViaRelay() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val rawUri = "aetherlink://pair?v=1&n=nonce-refresh&c=654321" +
+                "&rid=runtime-1&rn=AetherLink%20Runtime&rf=runtime-fingerprint" +
+                "&rk=runtime-public-key&rt=route-token-1" +
+                "&rh=fresh-relay.example.test&rp=43171&ri=fresh-relay&rs=fresh-secret" +
+                "&rx=4102444800000&rrn=fresh-nonce&rsc=remote"
+            val channel = ScriptedRuntimeProtocolChannel()
+            val localStore = FakeRuntimeLocalDataStore(
+                initialData = PersistedRuntimeData(trustedRuntimeAutoReconnectEnabled = true),
+            )
+            val trustedStore = FakeEmittingTrustedRuntimeStore(
+                trustedRuntimeForViewModelTests().copy(
+                    relayHost = "expired-relay.example.test",
+                    relayPort = 443,
+                    relayId = "expired-relay",
+                    relaySecret = "expired-secret",
+                    relayExpiresAtEpochMillis = 2_000L,
+                    relayNonce = "expired-nonce",
+                    relayScope = "remote",
+                ),
+            )
+            var directConnectionAttempts = 0
+            var relayConnectionAttempts = 0
+            var capturedRelayRoute: PreparedRemoteRuntimeRoute.Relay? = null
+            val viewModel = RuntimeClientViewModel(
+                application = Application(),
+                dependencies = RuntimeClientViewModelDependencies(
+                    json = json,
+                    transportClient = RuntimeTransportClient(),
+                    transportConnector = RuntimeTransportConnector { _, _, _ ->
+                        directConnectionAttempts += 1
+                        error("Direct TCP should not be used when refreshing an expired relay route")
+                    },
+                    relayConnector = RuntimeRelayConnector { route, _ ->
+                        relayConnectionAttempts += 1
+                        capturedRelayRoute = route
+                        channel
+                    },
+                    discovery = EmptyRuntimeDiscoverySource,
+                    trustedRuntimeStore = trustedStore,
+                    deviceIdentityProvider = FakeDeviceIdentityProvider(testDeviceIdentity()),
+                    localDataStore = localStore,
+                    lifecycleCallbacksRegistrar = NoopRuntimeLifecycleCallbacksRegistrar,
+                    currentTimeMillis = { 3_000L },
+                ),
+            )
+            advanceUntilIdle()
+
+            assertEquals("remote_route_expired", viewModel.state.value.error?.code)
+            assertEquals("expired-relay.example.test", viewModel.state.value.trustedRuntime?.relayHost)
+            assertEquals(0, directConnectionAttempts)
+            assertEquals(0, relayConnectionAttempts)
+
+            viewModel.trustRuntimeFromPairingQr(rawUri)
+            advanceUntilIdle()
+
+            val trusted = trustedStore.trusted ?: error("Expected trusted route refresh to persist")
+            val relayRoute = requireNotNull(capturedRelayRoute)
+            assertEquals(0, directConnectionAttempts)
+            assertEquals(1, relayConnectionAttempts)
+            assertEquals("fresh-relay.example.test", relayRoute.host)
+            assertEquals(43171, relayRoute.port)
+            assertEquals("fresh-relay", relayRoute.relayId)
+            assertEquals("fresh-secret", relayRoute.relayFrameSecret)
+            assertEquals("fresh-nonce", relayRoute.security.antiReplayNonce)
+            assertEquals("fresh-relay.example.test", trusted.relayHost)
+            assertEquals(43171, trusted.relayPort)
+            assertEquals("fresh-relay", trusted.relayId)
+            assertEquals("fresh-secret", trusted.relaySecret)
+            assertEquals(4102444800000L, trusted.relayExpiresAtEpochMillis)
+            assertEquals("fresh-nonce", trusted.relayNonce)
+            assertEquals("remote", trusted.relayScope)
+            assertNull(trusted.host)
+            assertNull(trusted.port)
+            assertNull(viewModel.state.value.error)
+            assertEquals("fresh-relay.example.test", viewModel.state.value.trustedRuntime?.relayHost)
+            assertEquals(4102444800000L, viewModel.state.value.trustedRuntime?.relayExpiresAtEpochMillis)
+            assertEquals(RuntimeActiveRouteKind.Relay, viewModel.state.value.activeRouteKind)
+            assertEquals("AetherLink Runtime", viewModel.state.value.routeRefreshNoticeRuntimeName)
+            assertTrue(channel.sentEnvelopes.any { it.type == MessageType.Hello })
         } finally {
             Dispatchers.resetMain()
         }
@@ -7279,6 +7808,79 @@ class RuntimeClientViewModelTest {
 
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
+    fun streamingRuntimeOwnedChatRendersInMemoryButRedactsDeviceStorage() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedBodiesOnSave = true,
+            )
+            fixture.viewModel.replaceStateForTest {
+                it.copy(chatInput = "Explain runtime-owned chat storage")
+            }
+
+            fixture.viewModel.sendChatMessage()
+            advanceUntilIdle()
+
+            val sendEnvelope = fixture.channel.sentEnvelopes.last { it.type == MessageType.ChatSend }
+            val sessionId = requireNotNull(fixture.viewModel.state.value.activeChatSessionId)
+            val savedAfterSend = fixture.localStore.data.sessions.single { it.id == sessionId }
+            assertTrue(savedAfterSend.runtimeOwned)
+            assertTrue(savedAfterSend.messages.isEmpty())
+            assertEquals(2, savedAfterSend.runtimeMessageCount)
+            assertEquals(
+                listOf("Explain runtime-owned chat storage", ""),
+                fixture.viewModel.state.value.messages.map { it.content },
+            )
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatDelta,
+                    serializer = ChatDeltaPayload.serializer(),
+                    payload = ChatDeltaPayload(
+                        delta = "Runtime-owned answer",
+                        reasoningDelta = "Server-side reasoning",
+                    ),
+                    requestId = sendEnvelope.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            val streamedAssistant = fixture.viewModel.state.value.messages.last()
+            assertEquals("Runtime-owned answer", streamedAssistant.content)
+            assertEquals("Server-side reasoning", streamedAssistant.reasoning)
+            val savedAfterDelta = fixture.localStore.data.sessions.single { it.id == sessionId }
+            assertTrue(savedAfterDelta.runtimeOwned)
+            assertTrue(savedAfterDelta.messages.isEmpty())
+            assertEquals(2, savedAfterDelta.runtimeMessageCount)
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatDone,
+                    serializer = ChatDonePayload.serializer(),
+                    payload = ChatDonePayload(),
+                    requestId = sendEnvelope.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            assertFalse(fixture.viewModel.state.value.isStreaming)
+            assertEquals(
+                listOf("Explain runtime-owned chat storage", "Runtime-owned answer"),
+                fixture.viewModel.state.value.messages.map { it.content },
+            )
+            val savedAfterDone = fixture.localStore.data.sessions.single { it.id == sessionId }
+            assertTrue(savedAfterDone.runtimeOwned)
+            assertTrue(savedAfterDone.messages.isEmpty())
+            assertEquals(2, savedAfterDone.runtimeMessageCount)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
     fun attachmentSendAttachesMetadataOnlyToFinalUserPayloadMessage() = runTest {
         val mainDispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(mainDispatcher)
@@ -8122,8 +8724,10 @@ class RuntimeClientViewModelTest {
     @OptIn(ExperimentalCoroutinesApi::class)
     private suspend fun TestScope.createAuthenticatedRuntimeClientFixture(
         models: List<RuntimeModel>,
+        modelPayloads: List<ModelInfoPayload> = models.map { it.toModelInfoPayload() },
         selectedModelId: String = models.first().id,
         attachmentReader: RuntimeAttachmentReader? = null,
+        redactRuntimeOwnedBodiesOnSave: Boolean = false,
     ): RuntimeClientFixture {
         val channel = ScriptedRuntimeProtocolChannel()
         val localStore = FakeRuntimeLocalDataStore(
@@ -8131,6 +8735,7 @@ class RuntimeClientViewModelTest {
                 selectedModelId = selectedModelId,
                 trustedRuntimeAutoReconnectEnabled = false,
             ),
+            redactRuntimeOwnedBodiesOnSave = redactRuntimeOwnedBodiesOnSave,
         )
         val trustedStore = FakeEmittingTrustedRuntimeStore(trustedRuntimeForViewModelTests())
         val viewModel = RuntimeClientViewModel(
@@ -8179,7 +8784,7 @@ class RuntimeClientViewModelTest {
                 type = MessageType.ModelsResult,
                 serializer = ModelsResultPayload.serializer(),
                 payload = ModelsResultPayload(
-                    models = models.map { it.toModelInfoPayload() },
+                    models = modelPayloads,
                 ),
                 requestId = modelsRequest.requestId,
             ),
@@ -8202,6 +8807,7 @@ class RuntimeClientViewModelTest {
             capabilities = capabilities,
             qualifiedId = id,
             installed = installed,
+            source = source,
         )
     }
 

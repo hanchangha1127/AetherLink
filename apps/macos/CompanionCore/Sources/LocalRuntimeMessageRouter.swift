@@ -471,6 +471,8 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                 return
             }
             var payload: [String: JSONValue] = [
+                "runtime_device_id": .string(route.runtimeDeviceID),
+                "runtime_key_fingerprint": .string(route.runtimeKeyFingerprint),
                 "relay_host": .string(route.relayHost),
                 "relay_port": .number(Double(route.relayPort)),
                 "relay_id": .string(route.relayID),
@@ -697,6 +699,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         if let resolved = ModelProvider.splitQualifiedModelID(requestedModel) {
             if let model = models.first(where: { model in
                 model.installed
+                    && model.source == .local
                     && model.provider == resolved.provider
                     && (
                         model.id == resolved.modelID
@@ -718,7 +721,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
 
         let requestedCanonicalName = Self.canonicalModelName(requestedModel)
         if let model = models.first(where: { model in
-            model.installed && (
+            model.installed && model.source == .local && (
                 model.id == requestedModel
                     || model.name == requestedModel
                     || model.providerModelID == requestedModel
@@ -1036,7 +1039,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
     private func chatSuggestionsRequest(from envelope: ProtocolEnvelope) throws -> ChatSuggestionRuntimeRequest {
         let baseRequest = try chatRequest(from: envelope)
         let maxSuggestions = optionalInt("max_suggestions", in: envelope.payload)
-            .map { min(max($0, 1), 5) }
+            .map { min(max($0, 1), Self.maxChatSuggestionCount) }
             ?? 3
         let locale = optionalString("locale", in: envelope.payload)
         let recentMessages = Array(baseRequest.messages.suffix(8))
@@ -1109,6 +1112,18 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                 message: error.message,
                 retryable: error.retryable
             )
+        }
+        if let error = error as? RuntimeChatEventStoreError {
+            let mappedError: LocalRuntimeRouterError
+            switch error {
+            case .sessionNotFound(let sessionID):
+                mappedError = .chatSessionNotFound(sessionID)
+            case .sessionMustBeArchivedBeforeDelete(let sessionID):
+                mappedError = .chatSessionMustBeArchivedBeforeDelete(sessionID)
+            case .corruptEventLog:
+                mappedError = .chatStoreUnavailable(error.localizedDescription)
+            }
+            return errorEnvelope(requestID: requestID, error: mappedError)
         }
         if let error = error as? LocalRuntimeRouterError {
             return errorEnvelope(
@@ -1389,6 +1404,8 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         """
     )
 
+    private static let maxChatSuggestionCount = 4
+
     private static func suggestions(from rawText: String, maxSuggestions: Int) -> [String] {
         let trimmedText = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
         let decoder = JSONDecoder()
@@ -1595,7 +1612,7 @@ private enum LocalRuntimeRouterError: Error, LocalizedError {
         case .chatSessionMustBeArchivedBeforeDelete(let sessionID):
             return "Archive this chat before permanently deleting it: \(sessionID)"
         case .chatStoreUnavailable(let message):
-            return "The runtime could not save chat processing information on this host: \(message)"
+            return "The runtime could not access chat history on this host: \(message)"
         case .memoryStoreUnavailable(let message):
             return "The runtime could not save memory information on this host: \(message)"
         }
@@ -1977,7 +1994,7 @@ private extension Array where Element == String {
         for suggestion in self {
             let cleaned = suggestion.cleanedSuggestion()
             guard !cleaned.isEmpty else { continue }
-            let key = cleaned.lowercased()
+            let key = cleaned.suggestionDedupeKey
             guard !seen.contains(key) else { continue }
             seen.insert(key)
             result.append(cleaned)
@@ -2007,7 +2024,20 @@ private extension String {
         return cleaned
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .trimmingCharacters(in: CharacterSet(charactersIn: "\"'`"))
+            .collapsedSuggestionWhitespace()
             .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var suggestionDedupeKey: String {
+        collapsedSuggestionWhitespace()
+            .folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], locale: .current)
+            .lowercased()
+    }
+
+    func collapsedSuggestionWhitespace() -> String {
+        components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
     }
 
     var isPlaceholderChatTitle: Bool {

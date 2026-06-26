@@ -34,7 +34,8 @@
 "Trusted device pairing" = "Jumelage d’appareil approuvé";
 "Model list loaded" = "Liste des modèles chargée";
 "Load models to show what AetherLink Runtime can offer." = "Chargez les modèles pour afficher ce qu’AetherLink Runtime peut proposer.";
-"%d model(s) loaded" = "%d modèle(s) chargé(s)";
+"1 model loaded" = "1 modèle chargé";
+"%d models loaded" = "%d modèles chargés";
 "Ready" = "Prêt";
 "Needs attention" = "Attention requise";
 "Not ready" = "Pas prêt";
@@ -64,7 +65,8 @@
 "Connected to %@ and waiting for relay acknowledgement." = "Connecté à %@, en attente de l’accusé de réception de route.";
 "Model provider status has not been checked yet." = "L’état des fournisseurs de modèles n’a pas encore été vérifié.";
 "%d of %d available" = "%d sur %d disponibles";
-"%d model provider(s) available" = "%d fournisseur(s) de modèles disponible(s)";
+"1 model provider available" = "1 fournisseur de modèles disponible";
+"%d model providers available" = "%d fournisseurs de modèles disponibles";
 "At least one model provider is responding." = "Au moins un fournisseur de modèles répond.";
 "No model provider is responding." = "Aucun fournisseur de modèles ne répond.";
 "Model providers are checked by AetherLink Runtime." = "AetherLink Runtime vérifie les fournisseurs de modèles.";
@@ -73,7 +75,8 @@
 "Provider managed" = "Géré par le fournisseur";
 "Chat Models" = "Modèles de chat";
 "Embedding Models" = "Modèles d’embedding";
-"%d model(s)" = "%d modèle(s)";
+"1 model" = "1 modèle";
+"%d models" = "%d modèles";
 "Chat" = "Chat";
 "Embedding" = "Embedding";
 "Running" = "En cours";
@@ -83,12 +86,14 @@
 "Idle" = "Inactif";
 "Active" = "Actif";
 "Model residency is not managed by this provider." = "La résidence du modèle n’est pas gérée par ce fournisseur.";
-"%@ %@ active. Idle unload after %d minute(s)." = "%@ %@ actif. Déchargement après %d minute(s) d’inactivité.";
+"%@ %@ active. Idle unload after 1 minute." = "%@ %@ actif. Déchargement après 1 minute d’inactivité.";
+"%@ %@ active. Idle unload after %d minutes." = "%@ %@ actif. Déchargement après %d minutes d’inactivité.";
 "No active model is resident through the runtime policy." = "Aucun modèle actif n’est résident via la stratégie du runtime.";
 "Model unload requested by runtime policy." = "La stratégie du runtime a demandé le déchargement du modèle.";
 "Model unloaded by runtime policy." = "Le modèle a été déchargé par la stratégie du runtime.";
 "Open a model provider for AetherLink Runtime, then check again." = "Ouvrez un fournisseur de modèles pour AetherLink Runtime, puis vérifiez à nouveau.";
-"%d trusted device(s)" = "%d appareil(s) approuvé(s)";
+"1 trusted device" = "1 appareil approuvé";
+"%d trusted devices" = "%d appareils approuvés";
 "Pair a device before allowing runtime requests." = "Jumelez un appareil avant d’autoriser les requêtes du runtime.";
 "Authenticated devices can request runtime sessions." = "Les appareils authentifiés peuvent demander des sessions de runtime.";
 "Setup needed" = "Configuration requise";
@@ -149,7 +154,8 @@
 "Trusted %@" = "%@ approuvé";
 "Removed %@" = "%@ retiré";
 "Received device runtime request" = "Requête runtime d’appareil reçue";
-"Loaded %@ local model(s)" = "%@ modèle(s) chargé(s)";
+"Loaded 1 model" = "1 modèle chargé";
+"Loaded %@ models" = "%@ modèles chargés";
 "Could not load local models: %@" = "Impossible de charger les modèles : %@";
 "Could not remove trusted device: %@" = "Impossible de retirer l’appareil approuvé : %@";
 "Could not load trusted devices: %@" = "Impossible de charger les appareils approuvés : %@";

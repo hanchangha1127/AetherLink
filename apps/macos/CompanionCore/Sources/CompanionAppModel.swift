@@ -730,7 +730,10 @@ public final class CompanionAppModel: ObservableObject {
         if routePolicy == .remoteRequired && pairingRelayConfiguration == nil {
             pairingSession = nil
             if let endpoint = developmentRelaySettings.endpointLabel {
-                if isDevelopmentRelayRouteEligibleForQRCode {
+                if let issue = remoteRoutePreparationIssue {
+                    shouldGenerateRemotePairingQRCodeWhenRelayReady = false
+                    log("Remote pairing QR not generated: \(issue.message)")
+                } else if isDevelopmentRelayRouteEligibleForQRCode {
                     shouldGenerateRemotePairingQRCodeWhenRelayReady = true
                     log("Remote pairing QR not generated: remote route \(endpoint) is not ready")
                 } else {
@@ -1172,11 +1175,11 @@ public final class CompanionAppModel: ObservableObject {
         refreshTransportStatusText()
         switch status {
         case .ready:
-            remoteRoutePreparationIssue = nil
+            clearRelayConnectionIssueIfRouteIsUsable()
             log("Remote route ready: \(endpoint)")
             generatePendingRemotePairingQRCodeIfReady()
         case .waitingForPeer:
-            remoteRoutePreparationIssue = nil
+            clearRelayConnectionIssueIfRouteIsUsable()
             generatePendingRemotePairingQRCodeIfReady()
         case .failed(let message):
             remoteRoutePreparationIssue = CompanionRemoteRoutePreparationIssue(
@@ -1194,6 +1197,16 @@ public final class CompanionAppModel: ObservableObject {
             }
         default:
             break
+        }
+    }
+
+    private func clearRelayConnectionIssueIfRouteIsUsable() {
+        if isDevelopmentRelayRoutePreparedForQRCode {
+            remoteRoutePreparationIssue = nil
+            return
+        }
+        if remoteRoutePreparationIssue?.kind == .relayConnectionFailed {
+            remoteRoutePreparationIssue = nil
         }
     }
 
@@ -1597,6 +1610,8 @@ extension CompanionAppModel: RuntimeRouteRefreshing {
             return nil
         }
         return RuntimeRouteRefreshResult(
+            runtimeDeviceID: macDeviceID,
+            runtimeKeyFingerprint: macFingerprint,
             relayHost: relayConfiguration.host,
             relayPort: Int(relayConfiguration.port),
             relayID: relayConfiguration.relayID,

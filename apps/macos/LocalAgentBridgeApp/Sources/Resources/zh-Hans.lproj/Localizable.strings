@@ -34,7 +34,8 @@
 "Trusted device pairing" = "受信任设备配对";
 "Model list loaded" = "模型列表已加载";
 "Load models to show what AetherLink Runtime can offer." = "加载模型以显示 AetherLink Runtime 可提供的内容。";
-"%d model(s) loaded" = "已加载 %d 个模型";
+"1 model loaded" = "已加载 1 个模型";
+"%d models loaded" = "已加载 %d 个模型";
 "Ready" = "就绪";
 "Needs attention" = "需要注意";
 "Not ready" = "未就绪";
@@ -64,7 +65,8 @@
 "Connected to %@ and waiting for relay acknowledgement." = "已连接到 %@，正在等待路径确认。";
 "Model provider status has not been checked yet." = "尚未检查模型提供方状态。";
 "%d of %d available" = "%d/%d 可用";
-"%d model provider(s) available" = "%d 个模型提供方可用";
+"1 model provider available" = "1 个模型提供方可用";
+"%d model providers available" = "%d 个模型提供方可用";
 "At least one model provider is responding." = "至少一个模型提供方正在响应。";
 "No model provider is responding." = "没有模型提供方正在响应。";
 "Model providers are checked by AetherLink Runtime." = "AetherLink Runtime 会检查模型提供方。";
@@ -73,7 +75,8 @@
 "Provider managed" = "由提供方管理";
 "Chat Models" = "聊天模型";
 "Embedding Models" = "嵌入模型";
-"%d model(s)" = "%d 个模型";
+"1 model" = "1 个模型";
+"%d models" = "%d 个模型";
 "Chat" = "聊天";
 "Embedding" = "嵌入";
 "Running" = "运行中";
@@ -83,12 +86,14 @@
 "Idle" = "空闲";
 "Active" = "活动";
 "Model residency is not managed by this provider." = "此提供方不管理模型驻留。";
-"%@ %@ active. Idle unload after %d minute(s)." = "%@ %@ 处于活动状态。空闲 %d 分钟后卸载。";
+"%@ %@ active. Idle unload after 1 minute." = "%@ %@ 处于活动状态。空闲 1 分钟后卸载。";
+"%@ %@ active. Idle unload after %d minutes." = "%@ %@ 处于活动状态。空闲 %d 分钟后卸载。";
 "No active model is resident through the runtime policy." = "当前没有通过运行时策略驻留的活动模型。";
 "Model unload requested by runtime policy." = "运行时策略已请求卸载模型。";
 "Model unloaded by runtime policy." = "已通过运行时策略卸载模型。";
 "Open a model provider for AetherLink Runtime, then check again." = "打开供 AetherLink Runtime 使用的模型提供方，然后再次检查。";
-"%d trusted device(s)" = "%d 台受信任设备";
+"1 trusted device" = "1 台受信任设备";
+"%d trusted devices" = "%d 台受信任设备";
 "Pair a device before allowing runtime requests." = "允许运行时请求前，请先配对设备。";
 "Authenticated devices can request runtime sessions." = "已认证设备可以请求运行时会话。";
 "Setup needed" = "需要设置";
@@ -149,7 +154,8 @@
 "Trusted %@" = "已信任 %@";
 "Removed %@" = "已移除 %@";
 "Received device runtime request" = "已收到设备运行时请求";
-"Loaded %@ local model(s)" = "已加载 %@ 个模型";
+"Loaded 1 model" = "已加载 1 个模型";
+"Loaded %@ models" = "已加载 %@ 个模型";
 "Could not load local models: %@" = "无法加载模型：%@";
 "Could not remove trusted device: %@" = "无法移除受信任设备：%@";
 "Could not load trusted devices: %@" = "无法加载受信任设备：%@";

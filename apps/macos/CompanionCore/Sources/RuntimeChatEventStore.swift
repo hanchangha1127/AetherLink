@@ -35,6 +35,7 @@ public struct RuntimeChatSessionMutationResult: Equatable, Sendable {
 public enum RuntimeChatEventStoreError: Error, LocalizedError, Equatable {
     case sessionNotFound(String)
     case sessionMustBeArchivedBeforeDelete(String)
+    case corruptEventLog(line: Int, reason: String)
 
     public var errorDescription: String? {
         switch self {
@@ -42,6 +43,8 @@ public enum RuntimeChatEventStoreError: Error, LocalizedError, Equatable {
             return "Chat session not found: \(sessionID)"
         case .sessionMustBeArchivedBeforeDelete(let sessionID):
             return "Chat session must be archived before deletion: \(sessionID)"
+        case .corruptEventLog(let line, let reason):
+            return "Runtime chat event log is corrupt at line \(line): \(reason)"
         }
     }
 }
@@ -311,13 +314,42 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
         guard !data.isEmpty else { return [] }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        return String(decoding: data, as: UTF8.self)
-            .split(separator: "\n")
-            .compactMap { line in
-                guard let lineData = line.data(using: .utf8) else { return nil }
-                return try? decoder.decode(RuntimeChatStoredEvent.self, from: lineData)
+        let lines = String(decoding: data, as: UTF8.self)
+            .components(separatedBy: .newlines)
+        var events: [RuntimeChatStoredEvent] = []
+        for (index, line) in lines.enumerated() {
+            guard !line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                continue
             }
-            .sorted { $0.timestamp < $1.timestamp }
+            let lineData = Data(line.utf8)
+            do {
+                events.append(try decoder.decode(RuntimeChatStoredEvent.self, from: lineData))
+            } catch {
+                throw RuntimeChatEventStoreError.corruptEventLog(
+                    line: index + 1,
+                    reason: Self.decodeFailureReason(error)
+                )
+            }
+        }
+        return events.sorted { $0.timestamp < $1.timestamp }
+    }
+
+    private static func decodeFailureReason(_ error: Error) -> String {
+        if let decodingError = error as? DecodingError {
+            switch decodingError {
+            case .dataCorrupted:
+                return "data corrupted"
+            case .keyNotFound(let key, _):
+                return "missing key '\(key.stringValue)'"
+            case .typeMismatch(let type, _):
+                return "type mismatch for \(type)"
+            case .valueNotFound(let type, _):
+                return "missing value for \(type)"
+            @unknown default:
+                return "decode failed"
+            }
+        }
+        return "decode failed"
     }
 
     private func appendUnlocked(_ event: RuntimeChatStoredEvent) throws {

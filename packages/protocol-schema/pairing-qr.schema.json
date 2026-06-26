@@ -180,6 +180,11 @@
       "minLength": 1,
       "pattern": "^\\S+$"
     },
+    "rendezvous_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^\\S+$"
+    },
     "network_id": {
       "type": "string",
       "minLength": 1,
@@ -193,6 +198,7 @@
     "relay_secret": { "$ref": "#/$defs/nonEmptyString" },
     "remote_secret": { "$ref": "#/$defs/nonEmptyString" },
     "route_secret": { "$ref": "#/$defs/nonEmptyString" },
+    "rendezvous_secret": { "$ref": "#/$defs/nonEmptyString" },
     "rs": { "$ref": "#/$defs/nonEmptyString" },
     "relay_expires_at": {
       "$ref": "#/$defs/epochMillisValue"
@@ -249,6 +255,24 @@
     "relay_secret": ["relay_host", "relay_port", "relay_id", "relay_expires_at", "relay_nonce"],
     "relay_expires_at": ["relay_host", "relay_port", "relay_id", "relay_secret", "relay_nonce"],
     "relay_nonce": ["relay_host", "relay_port", "relay_id", "relay_secret", "relay_expires_at"],
+    "remote_host": ["remote_port", "remote_id", "remote_secret", "remote_expires_at", "remote_nonce"],
+    "remote_port": ["remote_host", "remote_id", "remote_secret", "remote_expires_at", "remote_nonce"],
+    "remote_id": ["remote_host", "remote_port", "remote_secret", "remote_expires_at", "remote_nonce"],
+    "remote_secret": ["remote_host", "remote_port", "remote_id", "remote_expires_at", "remote_nonce"],
+    "remote_expires_at": ["remote_host", "remote_port", "remote_id", "remote_secret", "remote_nonce"],
+    "remote_nonce": ["remote_host", "remote_port", "remote_id", "remote_secret", "remote_expires_at"],
+    "route_host": ["route_port", "route_id", "route_secret", "route_expires_at", "route_nonce"],
+    "route_port": ["route_host", "route_id", "route_secret", "route_expires_at", "route_nonce"],
+    "route_id": ["route_host", "route_port", "route_secret", "route_expires_at", "route_nonce"],
+    "route_secret": ["route_host", "route_port", "route_id", "route_expires_at", "route_nonce"],
+    "route_expires_at": ["route_host", "route_port", "route_id", "route_secret", "route_nonce"],
+    "route_nonce": ["route_host", "route_port", "route_id", "route_secret", "route_expires_at"],
+    "rendezvous_host": ["rendezvous_port", "rendezvous_id", "rendezvous_secret", "rendezvous_expires_at", "rendezvous_nonce"],
+    "rendezvous_port": ["rendezvous_host", "rendezvous_id", "rendezvous_secret", "rendezvous_expires_at", "rendezvous_nonce"],
+    "rendezvous_id": ["rendezvous_host", "rendezvous_port", "rendezvous_secret", "rendezvous_expires_at", "rendezvous_nonce"],
+    "rendezvous_secret": ["rendezvous_host", "rendezvous_port", "rendezvous_id", "rendezvous_expires_at", "rendezvous_nonce"],
+    "rendezvous_expires_at": ["rendezvous_host", "rendezvous_port", "rendezvous_id", "rendezvous_secret", "rendezvous_nonce"],
+    "rendezvous_nonce": ["rendezvous_host", "rendezvous_port", "rendezvous_id", "rendezvous_secret", "rendezvous_expires_at"],
     "rh": ["rp", "ri", "rs", "rx", "rrn"],
     "rp": ["rh", "ri", "rs", "rx", "rrn"],
     "ri": ["rh", "rp", "rs", "rx", "rrn"],

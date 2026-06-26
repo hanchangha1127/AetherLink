@@ -135,6 +135,8 @@ data class ModelPullResultPayload(
 
 @Serializable
 data class RouteRefreshPayload(
+    @SerialName("runtime_device_id") val runtimeDeviceId: String? = null,
+    @SerialName("runtime_key_fingerprint") val runtimeKeyFingerprint: String? = null,
     @SerialName("relay_host") val relayHost: String? = null,
     @SerialName("relay_port") val relayPort: Int? = null,
     @SerialName("relay_id") val relayId: String? = null,

@@ -85,10 +85,7 @@ struct TrustedDevicesView: View {
     }
 
     private var deviceCountText: String {
-        String(
-            format: NSLocalizedString("%d trusted device(s)", comment: ""),
-            model.trustedDevices.count
-        )
+        localizedTrustedDeviceCount(model.trustedDevices.count)
     }
 }
 

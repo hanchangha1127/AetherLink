@@ -12,7 +12,10 @@
     <string name="clear_chat_search">Clear chat search</string>
     <string name="no_chat_search_results">No matching chats.</string>
     <string name="untitled_chat">Untitled chat</string>
-    <string name="chat_message_count">%1$d messages</string>
+    <plurals name="chat_message_count">
+        <item quantity="one">%1$d message</item>
+        <item quantity="other">%1$d messages</item>
+    </plurals>
     <string name="chat_session_status_value">%1$s - %2$s</string>
     <string name="chat_session_status_completed">Completed</string>
     <string name="chat_session_status_cancelled">Cancelled</string>
@@ -181,6 +184,7 @@
     <string name="models_from_runtime">Models are loaded through AetherLink Runtime, not directly from this app.</string>
     <string name="models_need_connection">Connect to the trusted runtime before loading models.</string>
     <string name="model_backend_value">Model service: %1$s</string>
+    <string name="model_status_value">%1$s - %2$s</string>
     <string name="model_installed">Installed</string>
     <string name="model_running">Running</string>
     <string name="model_not_installed">Not installed</string>
@@ -219,6 +223,8 @@
     <string name="attachment_type_document">Document</string>
     <string name="attachment_metadata_with_size">%1$s · %2$s</string>
     <string name="attachment_requires_vision_model">Vision model required</string>
+    <string name="empty_chat_pairing_title">Scan QR to start</string>
+    <string name="empty_chat_pairing">Pair with AetherLink Runtime first. Model providers stay private behind the trusted runtime.</string>
     <string name="empty_chat_disconnected_title">Connect to continue</string>
     <string name="empty_chat_disconnected">Connect to the trusted runtime before chatting.</string>
     <string name="empty_chat_no_model_title">Choose a model</string>
@@ -235,6 +241,7 @@
     <string name="chat_backend_unavailable_title">Model service needs attention</string>
     <string name="chat_backend_unavailable_detail">Check the model service in AetherLink Runtime, then refresh health.</string>
     <string name="refresh_health">Refresh health</string>
+    <string name="chat_hint_pairing">Scan the pairing QR before sending.</string>
     <string name="chat_hint_connect">Connect to the trusted runtime first.</string>
     <string name="chat_hint_select_model">Select a model before sending.</string>
     <string name="chat_hint_model_unavailable">Refresh models or choose another model before sending.</string>

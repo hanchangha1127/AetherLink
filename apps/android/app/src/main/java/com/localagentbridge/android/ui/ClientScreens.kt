@@ -96,6 +96,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -1147,6 +1148,7 @@ fun ChatScreen(
     val scope = rememberCoroutineScope()
     val hasSendableContent = chatComposerHasSendableContent(state)
     val hasUnsupportedImageAttachment = chatComposerHasUnsupportedImageAttachment(state)
+    val canEditComposer = chatComposerCanEdit(state)
     val canSend = chatComposerCanSend(state)
     val density = LocalDensity.current
     val keyboardDockPadding = if (WindowInsets.ime.getBottom(density) > 0) 64.dp else 0.dp
@@ -1289,7 +1291,7 @@ fun ChatScreen(
             ChatComposer(
                 value = state.chatInput,
                 attachments = state.pendingAttachments,
-                enabled = !state.isStreaming,
+                enabled = canEditComposer,
                 imageAttachmentsSupported = !hasUnsupportedImageAttachment,
                 canSend = canSend,
                 hasSendableContent = hasSendableContent,
@@ -2332,7 +2334,7 @@ private fun ChatEmptyState(
                 Text(
                     text = when (primaryAction) {
                         ChatEmptyPrimaryAction.Connect -> connectRuntimeActionLabel(state)
-                        ChatEmptyPrimaryAction.ScanQr -> stringResource(R.string.route_notice_action_scan_qr)
+                        ChatEmptyPrimaryAction.ScanQr -> stringResource(chatEmptyScanActionLabelRes(state))
                     },
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -2461,7 +2463,8 @@ private fun SuggestedQuestions(
     isLoading: Boolean,
     onSuggestionClick: (String) -> Unit,
 ) {
-    if (suggestions.isEmpty() && !isLoading) return
+    val visibleSuggestions = normalizedSuggestedQuestions(suggestions)
+    if (visibleSuggestions.isEmpty() && !isLoading) return
 
     val hapticFeedback = LocalHapticFeedback.current
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -2472,7 +2475,7 @@ private fun SuggestedQuestions(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
-        if (isLoading && suggestions.isEmpty()) {
+        if (isLoading && visibleSuggestions.isEmpty()) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -2488,13 +2491,13 @@ private fun SuggestedQuestions(
                 )
             }
         }
-        if (suggestions.isNotEmpty()) {
+        if (visibleSuggestions.isNotEmpty()) {
             FlowRow(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                suggestions.forEach { suggestion ->
+                visibleSuggestions.forEach { suggestion ->
                     SuggestedQuestionChip(
                         text = suggestion,
                         onClick = {
@@ -2535,6 +2538,22 @@ private fun SuggestedQuestionChip(
 }
 
 internal fun suggestedQuestionMaxLines(): Int = SUGGESTED_QUESTION_MAX_LINES
+
+internal fun normalizedSuggestedQuestions(
+    suggestions: List<String>,
+    maxItems: Int = SUGGESTED_QUESTION_MAX_ITEMS,
+): List<String> {
+    val seen = linkedSetOf<String>()
+    return suggestions
+        .asSequence()
+        .map { suggestion ->
+            suggestion.trim().replace(Regex("\\s+"), " ")
+        }
+        .filter { it.isNotBlank() }
+        .filter { seen.add(it.lowercase(Locale.ROOT)) }
+        .take(maxItems)
+        .toList()
+}
 
 @Composable
 private fun MessageContent(
@@ -2919,6 +2938,7 @@ internal const val REASONING_PREVIEW_MAX_CHARS = 180
 internal const val REASONING_COLLAPSED_ALPHA = 0.42f
 internal const val REASONING_EXPANDED_ALPHA = 0.58f
 private const val REASONING_SINGLE_PARAGRAPH_PREVIEW_CHARS = REASONING_PREVIEW_MAX_CHARS
+internal const val SUGGESTED_QUESTION_MAX_ITEMS = 4
 private const val SUGGESTED_QUESTION_MAX_LINES = 2
 internal const val CHAT_COMPOSER_CONTAINER_CORNER_RADIUS_DP = 28
 internal const val CHAT_COMPOSER_CONTAINER_ALPHA = 0.98f
@@ -2957,7 +2977,12 @@ private fun ChatComposer(
 ) {
     val hapticFeedback = LocalHapticFeedback.current
     val showComposerWarning = !imageAttachmentsSupported && attachments.any { it.type == "image" }
-    val showComposerStatus = !isStreaming && showComposerWarning && hint.isNotBlank()
+    val showComposerStatus = chatComposerShouldShowStatus(
+        enabled = enabled,
+        isStreaming = isStreaming,
+        hint = hint,
+        hasWarning = showComposerWarning,
+    )
     val inputContentDescription = stringResource(chatComposerInputContentDescriptionRes())
     val sendStateDescription = when {
         hint.isNotBlank() -> hint
@@ -3622,7 +3647,11 @@ private fun EmbeddingModelRow(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = "${runtimeProviderDisplayName(model.provider)} - ${quickModelStatus(model = model, installing = false)}",
+                    text = stringResource(
+                        R.string.model_status_value,
+                        runtimeProviderDisplayName(model.provider),
+                        quickModelStatus(model = model, installing = false),
+                    ),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.secondary,
                     maxLines = 1,
@@ -3651,7 +3680,7 @@ private fun LanguagePreferenceSelector(
             color = MaterialTheme.colorScheme.secondary,
         )
         options.forEach { (language, labelRes) ->
-            val selected = language.languageTag == selectedLanguageTag
+            val selected = appLanguagePreferenceOptionSelected(selectedLanguageTag, language)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -3681,6 +3710,13 @@ private fun LanguagePreferenceSelector(
             }
         }
     }
+}
+
+internal fun appLanguagePreferenceOptionSelected(
+    selectedLanguageTag: String,
+    language: RuntimeAppLanguage,
+): Boolean {
+    return RuntimeAppLanguage.normalizeLanguageTag(selectedLanguageTag) == language.languageTag
 }
 
 internal fun appLanguagePreferenceOptions(): List<Pair<RuntimeAppLanguage, Int>> {
@@ -3978,7 +4014,11 @@ private fun ChatHistorySettingsRow(
     val baseStatusText = if (isArchived) {
         stringResource(R.string.archived_chat)
     } else {
-        stringResource(R.string.chat_message_count, session.messageCount)
+        pluralStringResource(
+            R.plurals.chat_message_count,
+            session.messageCount,
+            session.messageCount,
+        )
     }
     val statusText = statusRes?.let { status ->
         stringResource(R.string.chat_session_status_value, baseStatusText, stringResource(status))
@@ -4671,12 +4711,28 @@ internal fun chatComposerHasUnsupportedImageAttachment(state: RuntimeUiState): B
     return selectedModel?.supportsImageInput() != true
 }
 
-internal fun chatComposerCanSend(state: RuntimeUiState): Boolean {
+internal fun chatComposerCanEdit(state: RuntimeUiState): Boolean {
     return state.isConnected &&
+        state.trustedRuntime != null &&
         !state.isStreaming &&
-        selectedModelIsUsable(state) &&
+        selectedModelIsUsable(state)
+}
+
+internal fun chatComposerCanSend(state: RuntimeUiState): Boolean {
+    return chatComposerCanEdit(state) &&
         chatComposerHasSendableContent(state) &&
         !chatComposerHasUnsupportedImageAttachment(state)
+}
+
+internal fun chatComposerShouldShowStatus(
+    enabled: Boolean,
+    isStreaming: Boolean,
+    hint: String,
+    hasWarning: Boolean,
+): Boolean {
+    return !isStreaming &&
+        hint.isNotBlank() &&
+        (!enabled || hasWarning)
 }
 
 internal fun shouldAutoScrollChat(
@@ -4723,6 +4779,7 @@ internal fun shouldShowJumpToLatestChatButton(
 @Composable
 private fun chatInputHint(state: RuntimeUiState): String {
     return when {
+        state.trustedRuntime == null -> stringResource(R.string.chat_hint_pairing)
         !state.isConnected -> stringResource(R.string.chat_hint_connect)
         state.selectedModelId == null -> stringResource(R.string.chat_hint_select_model)
         selectedModelIsMissingFromRuntime(state) -> stringResource(R.string.chat_hint_model_unavailable)
@@ -4737,6 +4794,7 @@ private fun chatInputHint(state: RuntimeUiState): String {
 private fun chatEmptyTitle(state: RuntimeUiState, preferQrRouteRefresh: Boolean = false): String {
     return when {
         preferQrRouteRefresh -> stringResource(R.string.status_route_needed_title)
+        state.trustedRuntime == null -> stringResource(R.string.empty_chat_pairing_title)
         !state.isConnected -> stringResource(R.string.empty_chat_disconnected_title)
         state.isStreaming -> stringResource(R.string.empty_chat_streaming_title)
         else -> stringResource(R.string.empty_chat_no_model_title)
@@ -4747,6 +4805,7 @@ private fun chatEmptyTitle(state: RuntimeUiState, preferQrRouteRefresh: Boolean 
 private fun chatEmptyText(state: RuntimeUiState, preferQrRouteRefresh: Boolean = false): String {
     return when {
         preferQrRouteRefresh -> stringResource(R.string.route_notice_short_relay_needed)
+        state.trustedRuntime == null -> stringResource(R.string.empty_chat_pairing)
         !state.isConnected -> stringResource(R.string.empty_chat_disconnected)
         state.isStreaming -> stringResource(R.string.empty_chat_streaming)
         selectedModelIsMissingFromRuntime(state) -> stringResource(R.string.selected_model_unavailable)
@@ -4768,6 +4827,15 @@ internal fun shouldShowChatBottomError(state: RuntimeUiState): Boolean {
 internal enum class ChatEmptyPrimaryAction {
     Connect,
     ScanQr,
+}
+
+@StringRes
+internal fun chatEmptyScanActionLabelRes(state: RuntimeUiState): Int {
+    return if (state.trustedRuntime == null) {
+        R.string.scan_qr
+    } else {
+        R.string.route_notice_action_scan_qr
+    }
 }
 
 internal fun chatEmptyPrimaryAction(state: RuntimeUiState): ChatEmptyPrimaryAction? {
@@ -4818,7 +4886,7 @@ internal fun shouldShowAssistantSuggestions(
     suggestions: List<String>,
 ): Boolean {
     if (!isLatestAssistant || !hasAssistantOutput || isStreaming) return false
-    return suggestions.isNotEmpty() || isLoadingSuggestions
+    return normalizedSuggestedQuestions(suggestions).isNotEmpty() || isLoadingSuggestions
 }
 
 internal fun shouldShowAssistantSuggestionsForMessage(

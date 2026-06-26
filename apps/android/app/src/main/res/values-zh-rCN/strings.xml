@@ -12,7 +12,10 @@
     <string name="clear_chat_search">清除聊天搜索</string>
     <string name="no_chat_search_results">没有匹配的聊天。</string>
     <string name="untitled_chat">未命名聊天</string>
-    <string name="chat_message_count">%1$d 条消息</string>
+    <plurals name="chat_message_count">
+        <item quantity="one">%1$d 条消息</item>
+        <item quantity="other">%1$d 条消息</item>
+    </plurals>
     <string name="chat_session_status_value">%1$s - %2$s</string>
     <string name="chat_session_status_completed">已完成</string>
     <string name="chat_session_status_cancelled">已取消</string>
@@ -181,6 +184,7 @@
     <string name="models_from_runtime">模型通过 AetherLink Runtime 加载，而不是直接从此应用加载。</string>
     <string name="models_need_connection">加载模型前，请连接到受信任的运行时。</string>
     <string name="model_backend_value">模型服务：%1$s</string>
+    <string name="model_status_value">%1$s - %2$s</string>
     <string name="model_installed">已安装</string>
     <string name="model_running">运行中</string>
     <string name="model_not_installed">未安装</string>
@@ -219,6 +223,8 @@
     <string name="attachment_type_document">文档</string>
     <string name="attachment_metadata_with_size">%1$s · %2$s</string>
     <string name="attachment_requires_vision_model">需要视觉模型</string>
+    <string name="empty_chat_pairing_title">扫描 QR 开始</string>
+    <string name="empty_chat_pairing">请先与 AetherLink Runtime 配对。模型提供方会保留在受信任运行时之后，不会直接暴露。</string>
     <string name="empty_chat_disconnected_title">连接后继续</string>
     <string name="empty_chat_disconnected">聊天前，请连接到受信任的运行时。</string>
     <string name="empty_chat_no_model_title">选择模型</string>
@@ -235,6 +241,7 @@
     <string name="chat_backend_unavailable_title">模型服务需要处理</string>
     <string name="chat_backend_unavailable_detail">请在 AetherLink Runtime 中检查模型服务状态，然后刷新健康状态。</string>
     <string name="refresh_health">刷新健康状态</string>
+    <string name="chat_hint_pairing">发送前请扫描配对 QR。</string>
     <string name="chat_hint_connect">请先连接到受信任的运行时。</string>
     <string name="chat_hint_select_model">发送前请选择模型。</string>
     <string name="chat_hint_model_unavailable">发送前请刷新模型或选择其他模型。</string>

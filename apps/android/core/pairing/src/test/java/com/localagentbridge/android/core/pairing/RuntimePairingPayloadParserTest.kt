@@ -352,6 +352,47 @@ class RuntimePairingPayloadParserTest {
     }
 
     @Test
+    fun parsesRendezvousRouteAliasesFromQrPayload() {
+        val payload = RuntimePairingPayloadParser.parse(
+            "aetherlink://pair?version=1&pairing_nonce=nonce-1&pairing_code=123456" +
+                "&runtime_device_id=runtime-1&runtime_name=AetherLink+Runtime" +
+                "&runtime_key_fingerprint=fp-1&rendezvous_host=relay.example.test" +
+                "&rendezvous_port=443&rendezvous_id=relay-1&rendezvous_secret=secret-1" +
+                "&rendezvous_expires_at=4102444800000&rendezvous_nonce=nonce-route-1"
+        )
+
+        assertEquals("relay.example.test", payload.relayHost)
+        assertEquals(443, payload.relayPort)
+        assertEquals("relay-1", payload.relayId)
+        assertEquals("secret-1", payload.relaySecret)
+        assertEquals(4102444800000L, payload.relayExpiresAtEpochMillis)
+        assertEquals("nonce-route-1", payload.relayNonce)
+    }
+
+    @Test
+    fun rejectsIncompleteRelayAliasFamiliesFromQrPayload() {
+        listOf(
+            "remote_host=relay.example.test&remote_port=443&remote_id=relay-1" +
+                "&remote_expires_at=4102444800000&remote_nonce=nonce-route-1",
+            "route_host=relay.example.test&route_port=443&route_id=relay-1" +
+                "&route_secret=secret-1&route_nonce=nonce-route-1",
+            "rendezvous_host=relay.example.test&rendezvous_port=443&rendezvous_id=relay-1" +
+                "&rendezvous_secret=secret-1&rendezvous_expires_at=4102444800000",
+        ).forEach { routeFields ->
+            try {
+                RuntimePairingPayloadParser.parse(
+                    "aetherlink://pair?version=1&pairing_nonce=nonce-1&pairing_code=123456" +
+                        "&runtime_device_id=runtime-1&runtime_name=AetherLink+Runtime" +
+                        "&runtime_key_fingerprint=fp-1&$routeFields"
+                )
+                fail("Expected incomplete relay alias family to throw")
+            } catch (error: IllegalArgumentException) {
+                // Expected.
+            }
+        }
+    }
+
+    @Test
     fun rejectsRelayHostsThatCannotWorkAcrossNetworks() {
         listOf(
             "127.0.0.1",

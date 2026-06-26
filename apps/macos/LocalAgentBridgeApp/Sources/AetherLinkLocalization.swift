@@ -111,12 +111,65 @@ enum AetherLinkAppAppearance: String, CaseIterable, Identifiable {
 
 func NSLocalizedString(_ key: String, comment: String) -> String {
     let language = AetherLinkAppLanguage.selected
-    if let localizedBundleURL = Bundle.module.url(
-        forResource: language.localeIdentifier,
-        withExtension: "lproj"
-    ),
-       let localizedBundle = Bundle(url: localizedBundleURL) {
-        return localizedBundle.localizedString(forKey: key, value: key, table: nil)
+    let resourceCandidates = [language.localeIdentifier, language.localeIdentifier.lowercased()]
+    for resourceName in resourceCandidates {
+        if let localizedBundleURL = Bundle.module.url(
+            forResource: resourceName,
+            withExtension: "lproj"
+        ),
+           let localizedBundle = Bundle(url: localizedBundleURL) {
+            return localizedBundle.localizedString(forKey: key, value: key, table: nil)
+        }
     }
     return Bundle.module.localizedString(forKey: key, value: key, table: nil)
+}
+
+func localizedTrustedDeviceCount(_ count: Int) -> String {
+    localizedCount(count, singularKey: "1 trusted device", pluralKey: "%d trusted devices")
+}
+
+func localizedModelCount(_ count: Int) -> String {
+    localizedCount(count, singularKey: "1 model", pluralKey: "%d models")
+}
+
+func localizedLoadedModelCount(_ count: Int) -> String {
+    localizedCount(count, singularKey: "1 model loaded", pluralKey: "%d models loaded")
+}
+
+func localizedAvailableModelProviderCount(_ count: Int) -> String {
+    localizedCount(count, singularKey: "1 model provider available", pluralKey: "%d model providers available")
+}
+
+func localizedLoadedLocalModelLogCount(_ countText: String) -> String {
+    if Int(countText.trimmingCharacters(in: .whitespacesAndNewlines)) == 1 {
+        return NSLocalizedString("Loaded 1 model", comment: "")
+    }
+    return String(format: NSLocalizedString("Loaded %@ models", comment: ""), countText)
+}
+
+func localizedModelResidencyActiveDetail(
+    providerName: String,
+    modelID: String,
+    idleUnloadMinutes: Int
+) -> String {
+    if idleUnloadMinutes == 1 {
+        return String(
+            format: NSLocalizedString("%@ %@ active. Idle unload after 1 minute.", comment: ""),
+            providerName,
+            modelID
+        )
+    }
+    return String(
+        format: NSLocalizedString("%@ %@ active. Idle unload after %d minutes.", comment: ""),
+        providerName,
+        modelID,
+        idleUnloadMinutes
+    )
+}
+
+private func localizedCount(_ count: Int, singularKey: String, pluralKey: String) -> String {
+    if count == 1 {
+        return NSLocalizedString(singularKey, comment: "")
+    }
+    return String(format: NSLocalizedString(pluralKey, comment: ""), count)
 }

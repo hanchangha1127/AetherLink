@@ -83,7 +83,7 @@ The active runtime socket message schema is `packages/protocol-schema/protocol.s
 aetherlink://pair?version=1&pairing_nonce=<nonce>&pairing_code=<6-digit-code>&runtime_device_id=<stable-runtime-id>&runtime_name=AetherLink%20Runtime&runtime_key_fingerprint=<runtime-key-fingerprint>&runtime_public_key=<base64-runtime-public-key>&route_token=<paired-route-token>
 ```
 
-Canonical field names remain the documentation/debugging form. App-displayed camera QR codes may use compact aliases to reduce QR density and improve optical scanning reliability. For example, `pairing_nonce`/`pairing_code`/`runtime_device_id`/`runtime_name`/`runtime_key_fingerprint`/`runtime_public_key`/`route_token` may be encoded as `n`/`c`/`rid`/`rn`/`rf`/`rk`/`rt`, and relay route material may be encoded as `rh`/`rp`/`ri`/`rs`/`rx`/`rrn` for `relay_host`/`relay_port`/`relay_id`/`relay_secret`/`relay_expires_at`/`relay_nonce`. The client accepts canonical names, compact aliases, and earlier compatibility aliases such as `mac_device_id`, `mac_name`, and `fingerprint`. Semantically, all QR identity fields identify the trusted runtime host.
+Canonical field names remain the documentation/debugging form. App-displayed camera QR codes may use compact aliases to reduce QR density and improve optical scanning reliability. For example, `pairing_nonce`/`pairing_code`/`runtime_device_id`/`runtime_name`/`runtime_key_fingerprint`/`runtime_public_key`/`route_token` may be encoded as `n`/`c`/`rid`/`rn`/`rf`/`rk`/`rt`, and relay route material may be encoded as `rh`/`rp`/`ri`/`rs`/`rx`/`rrn` for `relay_host`/`relay_port`/`relay_id`/`relay_secret`/`relay_expires_at`/`relay_nonce`. The client accepts canonical names, compact aliases, and earlier compatibility aliases such as `mac_device_id`, `mac_name`, and `fingerprint`. It also accepts complete `remote_*`, `route_*`, and `rendezvous_*` relay alias families; each family must include host, port, id, secret, expiration, and nonce together so partial QR route material is rejected before connection setup. Semantically, all QR identity fields identify the trusted runtime host.
 
 The fingerprint identifies the runtime identity that the client app pins after a successful pairing result. QR payloads include `runtime_key_fingerprint` and may include `runtime_public_key`; the accepted `pairing.result` must confirm the same runtime identity metadata before the client stores trust. `service_type`, when present from legacy or diagnostic emitters, is a discovery hint only. The trusted runtime record stores identity/key material and `route_token` first. Normal client pairing does not persist QR `host`/`port` as a trusted reconnect route. Local direct endpoint hints are accepted only by explicit diagnostic tooling and are never the trusted identity or product address.
 
@@ -156,6 +156,8 @@ Successful response payload:
   "request_id": "req_route_refresh_001",
   "timestamp": "2026-06-25T12:00:01Z",
   "payload": {
+    "runtime_device_id": "stable-runtime-id",
+    "runtime_key_fingerprint": "runtime-key-fingerprint",
     "relay_host": "relay.example.test",
     "relay_port": 43171,
     "relay_id": "opaque-relay-id",
@@ -167,7 +169,7 @@ Successful response payload:
 }
 ```
 
-The runtime may return `route_refresh_unavailable` when no refreshable route is configured, allocation fails, or the route is not QR-eligible. The client should keep the existing trusted runtime identity and fall back to scanning a fresh QR when refresh fails. `relay_scope = private_overlay` is allowed only for explicit VPN, tunnel, or private-overlay routes that both devices can reach; scope-less private relay literals stay invalid.
+The runtime must bind successful refresh material to the paired runtime identity with `runtime_device_id` and `runtime_key_fingerprint`. The client must reject a refresh response whose identity fields are missing or do not match the pinned trusted runtime. The runtime may return `route_refresh_unavailable` when no refreshable route is configured, allocation fails, or the route is not QR-eligible. The client should keep the existing trusted runtime identity and fall back to scanning a fresh QR when refresh fails. `relay_scope = private_overlay` is allowed only for explicit VPN, tunnel, or private-overlay routes that both devices can reach; scope-less private relay literals stay invalid.
 
 ## `pairing.request`
 

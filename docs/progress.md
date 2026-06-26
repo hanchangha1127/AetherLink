@@ -2028,6 +2028,100 @@ Verified after this change:
 Verified after this change:
 
 - `./script/runtime_authenticated_mock_smoke.swift --relay`
+
+## 2026-06-26 Android Raw Visible String Localization Guard
+
+- Continued under the no-Spark constraint. A GPT-5.5 read-only explorer recommended Android raw visible-string localization coverage as the next highest-value no-device improvement, then was closed. GPT-5.3-Codex-Spark was not used.
+- Strengthened `script/check_android_string_parity.py` so it now scans Android Kotlin UI sources for raw visible Compose/accessibility string literals such as `Text("...")`, raw `contentDescription`, raw `placeholder`, raw `label`, raw `Toast.makeText`, and raw `showSnackbar` text.
+- The guard keeps Android aligned with the existing macOS raw SwiftUI visible-literal guard: new UI polish must use `stringResource` or resource ids so English, Korean, Japanese, Simplified Chinese, and French stay covered.
+- Updated `script/check_copy_hygiene.py` so the raw Compose visible-string guard cannot silently be removed from Android string parity, and updated `script/check_no_device_quality.sh` coverage output to name this localization boundary.
+- The Android phone was disconnected during this pass, so this is source/script evidence only. It does not prove physical rendering, physical language switching, IME behavior, haptic feel, optical QR scan, or real different-network connectivity.
+
+Verified after this change:
+
+- `python3 -m py_compile script/check_android_string_parity.py script/check_copy_hygiene.py && python3 script/check_android_string_parity.py && python3 script/check_copy_hygiene.py`
+- `bash -n script/check_no_device_quality.sh`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- script/check_android_string_parity.py script/check_copy_hygiene.py script/check_no_device_quality.sh docs/progress.md docs/qa-evidence.md`
+- `./script/check_no_device_quality.sh`
+
+## 2026-06-26 Android Real Relay Client Pairing Regression
+
+- Continued under the no-Spark constraint. A GPT-5.5 worker was spawned for the relay-client test slice, but it was closed after running too long and leaving an environment-dependent draft. GPT-5.3-Codex-Spark was not used.
+- Added `RuntimeClientViewModelRelayIntegrationTest`, a no-device Android JVM regression that drives compact relay QR pairing through the real `RuntimeRelayTcpClient` instead of a fake `RuntimeRelayConnector`.
+- The fake relay/runtime accepts the actual `AETHERLINK_RELAY client <relayId>` handshake, returns `AETHERLINK_RELAY ready`, decrypts the client relay frame with the same AES-GCM relay-frame contract, verifies the runtime received `pairing.request`, returns encrypted `pairing.result`, and proves Android persists the trusted relay route.
+- The test keeps direct TCP blocked, uses a debug-only `usb_reverse` loopback relay route for local JVM safety, and verifies pending pairing state is cleared, auto reconnect stays enabled, onboarding completes, and the active route kind is relay.
+- Added this regression to `script/check_no_device_quality.sh` and `script/check_copy_hygiene.py` so the default no-device gate now covers the Android app's real relay-client pairing path.
+- The Android phone was disconnected during this pass, so this is Android JVM/source/script evidence only. It does not prove optical QR scan, physical reconnect, real haptic output, live provider-backed chat/cancel, or real different-network relay reachability.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelRelayIntegrationTest.compactRelayQrPairingUsesRealRelayTcpClientAndPersistsTrustedRelay -Pkotlin.incremental=false`
+- `python3 -m py_compile script/check_protocol_schema.py script/check_copy_hygiene.py && python3 script/check_protocol_schema.py && python3 script/check_copy_hygiene.py`
+- `bash -n script/check_no_device_quality.sh && python3 script/check_docs_hygiene.py`
+- `git diff --check -- apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelRelayIntegrationTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md`
+- `./script/check_no_device_quality.sh`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_protocol_schema.py && python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md`
+- `./script/check_no_device_quality.sh`
+
+## 2026-06-26 Route Refresh Retry And QR Alias Contract
+
+- Continued while the Android phone was disconnected. This pass used two GPT-5.5 read-only subagents for Android UI and QR/relay audits; GPT-5.3-Codex-Spark was not used, and both subagents were closed after reporting.
+- Hardened Android route renewal after authenticated `route.refresh`: if a refresh response decodes but is rejected because the runtime identity or relay material does not match the pinned trusted runtime, the ViewModel now keeps the existing trusted relay lease and schedules a bounded retry while the lease is still active instead of silently dropping renewal.
+- Added `RuntimeClientViewModelTest.authenticatedTrustedRuntimeRetriesRejectedRouteRefreshPayloadBeforeLeaseExpiry` and included it in `script/check_no_device_quality.sh`.
+- Closed a QR schema/parser mismatch found by audit. Android already accepted `remote_*`, `route_*`, and partial `rendezvous_*` relay aliases; the shared `pairing-qr.schema.json` now requires complete host/port/id/secret/expiration/nonce families for `remote_*`, `route_*`, and `rendezvous_*`, and the Android parser now accepts `rendezvous_id` plus `rendezvous_secret`.
+- Extended `script/check_protocol_schema.py` so schema checks fail if any relay alias family is missing fields or completeness dependencies.
+- Updated `docs/protocol.md` to state that `remote_*`, `route_*`, and `rendezvous_*` relay alias families are accepted only when complete.
+- This remains no-device evidence. It does not prove physical QR scanning, camera permission flow, physical reconnect, real device haptics, or real different-network relay reachability.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.authenticatedTrustedRuntimeRetriesRejectedRouteRefreshPayloadBeforeLeaseExpiry -Pkotlin.incremental=false`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew --no-daemon :core:pairing:testDebugUnitTest --tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.parsesRendezvousRouteAliasesFromQrPayload --tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.rejectsIncompleteRelayAliasFamiliesFromQrPayload -Pkotlin.incremental=false`
+- `python3 -m py_compile script/check_protocol_schema.py && python3 script/check_protocol_schema.py`
+- `python3 -m json.tool packages/protocol-schema/pairing-qr.schema.json >/dev/null`
+- `python3 -m py_compile script/check_protocol_schema.py script/check_copy_hygiene.py && python3 script/check_protocol_schema.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt apps/android/core/pairing/src/main/java/com/localagentbridge/android/core/pairing/RuntimePairingPayload.kt apps/android/core/pairing/src/test/java/com/localagentbridge/android/core/pairing/RuntimePairingPayloadParserTest.kt packages/protocol-schema/pairing-qr.schema.json script/check_protocol_schema.py script/check_no_device_quality.sh docs/protocol.md docs/progress.md docs/qa-evidence.md`
+- `./script/check_no_device_quality.sh`
+
+## 2026-06-26 Pairing Store And Suggested Question Handoff Coverage
+
+- Continued while the Android phone was disconnected. No subagents were used in this pass, and GPT-5.3-Codex-Spark was not used.
+- Added real Android `PairingStore` persistence coverage for complete relay route storage, incomplete relay route stripping on read, and relay route removal through `forgetRuntime()`. This moves relay trust evidence beyond fake ViewModel stores and into the actual DataStore-backed pairing path.
+- Added ViewModel coverage that tapping a generated suggested question trims/fills the composer, clears stale error state, and does not send any runtime message or open transport by itself.
+- Added no-device Compose coverage that a suggested-question chip fills the chat composer state, leaves send untouched until the user explicitly sends, and enables the send affordance after the handoff.
+- Added the new ViewModel test to `script/check_no_device_quality.sh`; the new PairingStore and Compose checks are covered by the script's existing `PairingStoreTest` and `ClientScreensNoDeviceComposeTest` selections.
+- This remains no-device evidence. It does not prove physical tapping, IME behavior, real haptic output, physical QR scanning, physical reconnect, live provider-backed chat/cancel, or real different-network relay reachability.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew --no-daemon :core:pairing:testDebugUnitTest --tests com.localagentbridge.android.core.pairing.PairingStoreTest -Pkotlin.incremental=false`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.useSuggestedQuestionFillsComposerWithoutSending -Pkotlin.incremental=false`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenSuggestionClickFillsComposerWithoutSending -Pkotlin.incremental=false`
+- `bash -n script/check_no_device_quality.sh && python3 script/check_docs_hygiene.py`
+- `python3 -m py_compile script/check_protocol_schema.py script/check_copy_hygiene.py && python3 script/check_protocol_schema.py && python3 script/check_copy_hygiene.py`
+- `git diff --check -- apps/android/core/pairing/build.gradle.kts apps/android/core/pairing/src/test/java/com/localagentbridge/android/core/pairing/PairingStoreTest.kt apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt script/check_no_device_quality.sh docs/progress.md docs/qa-evidence.md`
+- `./script/check_no_device_quality.sh`
+
+## 2026-06-26 Android Navigation Drawer Shell Coverage
+
+- Continued while the Android phone was disconnected. One GPT-5.5 read-only subagent audited the real `RuntimeRelayTcpClient` ViewModel integration-test path; GPT-5.3-Codex-Spark was not used, and the subagent was closed after reporting.
+- Extracted the Android drawer content into `AetherLinkNavigationDrawerContent` so the actual ChatGPT-like drawer shell can be rendered in no-device Compose tests without launching the full Activity/ViewModel stack.
+- Added stable test tags for the chat-history region and settings footer, then added a Compose regression proving Settings stays below chat history as the drawer footer and still invokes the settings selection callback.
+- Recorded the relay integration audit result: a no-device JVM test with the real `RuntimeRelayTcpClient` is feasible using a loopback fake relay/runtime, but the app test needs either a small test-local AES-GCM decrypt helper mirroring `RelayFrameBodyCryptor` or a deliberate test visibility change. That remains the next transport-confidence improvement, not a product blocker.
+- This remains no-device evidence. It does not prove physical drawer gestures, real device font metrics, physical haptics, physical QR scan, physical reconnect, live provider-backed chat/cancel, or real different-network relay reachability.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.navigationDrawerKeepsSettingsAsFooterBelowChatHistory -Pkotlin.incremental=false`
+- `bash -n script/check_no_device_quality.sh && python3 script/check_docs_hygiene.py`
+- `python3 -m py_compile script/check_protocol_schema.py script/check_copy_hygiene.py && python3 script/check_protocol_schema.py && python3 script/check_copy_hygiene.py`
+- `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/MainActivity.kt apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md`
+- `./script/check_no_device_quality.sh`
 - `script/android_pairing_deeplink_smoke.sh --relay` on physical Android device `R3CXC0M76VM`
 - `swift test --filter RelayAllocationTests --filter RelayHandshakeTests --filter RelayMatcherTests --filter LocalRuntimeMessageRouterTests --filter RuntimeIdentityKeyStoreTests`
 - `swift build --product RuntimeDevServer`
@@ -5046,3 +5140,315 @@ Verified after this change:
 Verified after this change:
 
 - `swift test --package-path apps/macos --filter AetherLinkLocalizationTests`
+
+## 2026-06-26 Android Drawer Status, Settings Reopen, and Language Alias Guard
+
+- Kept the no-Spark constraint for this session. A GPT-5.5 read-only subagent audited the small gaps and was closed; GPT-5.3-Codex-Spark was not used.
+- Updated the Android previous-chat drawer rows to show runtime-owned processing state in the subtitle, so sessions with pending work, cancellation, completion, or failed runtime work are visible when browsing older chats.
+- Updated the Android Settings primary pairing/connection section so it reopens when the runtime trust state changes back to pairing-required or route-refresh pending. This prevents the QR pairing entry point from staying hidden after reconnect state changes.
+- Normalized selected language tags before comparing Settings language radio options, so persisted aliases such as `zh-Hans` and Android-style `zh_rCN` still show Simplified Chinese as selected after restart.
+- The Android phone was disconnected during this pass, so this is source/JVM/Robolectric Compose evidence only. It does not prove physical drawer tapping, physical Settings behavior, optical QR scanning, haptic feel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew --no-daemon :app:testDebugUnitTest --tests 'com.localagentbridge.android.AppNavigationTest.settingsLanguageSelectionNormalizesStoredAliases' --tests 'com.localagentbridge.android.AppNavigationTest.settingsLanguageOptionsKeepCurrentLaunchLanguageSetAndOrder' --tests 'com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatDrawerItemsShowRuntimeProcessingStatus' --tests 'com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsPrimaryConnectionSectionReopensWhenPairingBecomesRequired' -Pkotlin.incremental=false`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_android_string_parity.py`
+- `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/MainActivity.kt apps/android/app/src/main/java/com/localagentbridge/android/ui/ClientScreens.kt apps/android/app/src/test/java/com/localagentbridge/android/AppNavigationTest.kt apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt docs/progress.md docs/qa-evidence.md script/check_no_device_quality.sh`
+- `./script/check_no_device_quality.sh`
+
+## 2026-06-26 macOS Natural Count and Plural Copy
+
+- Replaced macOS UI strings that displayed `model(s)`, `device(s)`, `provider(s)`, or `minute(s)` with localized singular/plural helpers for the Status, Trusted Devices, menu-bar status, and Activity log surfaces.
+- Kept legacy Activity log parsing for older raw runtime messages such as `Loaded ... local model(s)`, but the visible summary now uses natural localized copy.
+- Added localized count helper tests across English, Korean, and French, including model residency idle-unload copy and Activity log summaries.
+- Extended `script/check_macos_localization.py` so localized UI resources fail the gate if parenthetical plural copy returns.
+- The Android phone was disconnected during this pass, so this is macOS source/resource/unit/script evidence only. It does not prove physical Android pairing, optical QR scanning, real device haptics, or different-network runtime connectivity.
+
+Verified after this change:
+
+- `python3 script/check_macos_localization.py`
+- `python3 -m py_compile script/check_macos_localization.py`
+- `swift test --package-path apps/macos --filter AetherLinkLocalizationTests/testLocalizedCountHelpersUseNaturalSingularAndPluralCopy`
+- `swift test --package-path apps/macos --filter AetherLinkLocalizationTests`
+- `./script/check_no_device_quality.sh`
+
+## 2026-06-26 Android Natural Message Count Plurals
+
+- Replaced the Android `chat_message_count` string with a localized `plurals` resource in the default, English, Korean, Japanese, Simplified Chinese, and French resource sets.
+- Updated the Android chat drawer and Settings chat-history row to use `pluralStringResource`, so English and French show `1 message` instead of `1 messages` while the other launch languages keep their natural count phrasing.
+- Extended `script/check_android_string_parity.py` to compare plural resource names, quantities, and placeholders across all supported Android locale files.
+- Added no-device Compose coverage for both visible drawer singular message count and Settings chat-history singular message count semantics.
+- The Android phone was disconnected during this pass, so this is Android source/resource/JVM/Robolectric evidence only. It does not prove physical drawer scrolling, real device font metrics, haptic feel, optical QR scanning, or different-network runtime connectivity.
+
+Verified after this change:
+
+- `python3 script/check_android_string_parity.py`
+- `python3 -m py_compile script/check_android_string_parity.py`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew --no-daemon :app:testDebugUnitTest --tests 'com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatDrawerItemsShowRuntimeProcessingStatus' --tests 'com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsScreenKeepsBulkChatHistoryActionsHiddenAndTwoStepConfirmed' -Pkotlin.incremental=false`
+- `./script/check_no_device_quality.sh`
+
+## 2026-06-26 Localized Model Status and macOS zh-Hans Fallback
+
+- Used a GPT-5.5 read-only subagent to audit the next no-device-verifiable UI/localization gaps, then closed it. GPT-5.3-Codex-Spark was not used.
+- Added Android `model_status_value` across the default, English, Korean, Japanese, Simplified Chinese, and French resources, then updated chat model and Memory indexing model rows to format provider/status copy through that resource instead of hard-coded interpolation.
+- Added Android no-device resource coverage proving French model-status formatting resolves to `Ollama - Installé`.
+- Strengthened `script/check_copy_hygiene.py` so Android chat top-bar model rows and embedding rows must keep using the localized model-status resource and must not reintroduce hard-coded dash-formatted provider/status copy.
+- Fixed macOS selected-language lookup for Simplified Chinese in SwiftPM bundles by trying the lowercased `.lproj` resource name when the canonical locale identifier is not found. This prevents `zh-Hans` from falling back to the system locale.
+- Added macOS localization coverage for visible sidebar/settings anchors in all five launch languages, including Simplified Chinese.
+- The Android phone was disconnected during this pass, so this is source/resource/JVM/Robolectric/macOS unit evidence only. It does not prove physical model-menu tapping, real device font metrics, optical QR scanning, haptic feel, physical reconnect, or different-network runtime connectivity.
+
+Verified after this change:
+
+- `python3 script/check_android_string_parity.py`
+- `python3 -m py_compile script/check_copy_hygiene.py && python3 script/check_copy_hygiene.py`
+- `python3 script/check_macos_localization.py`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatTopBarModelPickerStatusLineUsesLocalizedResources -Pkotlin.incremental=false`
+- `swift test --package-path apps/macos --filter AetherLinkLocalizationTests/testLocalizedVisibleAnchorsAcrossInitialLanguages`
+- `swift test --package-path apps/macos --filter AetherLinkLocalizationTests`
+
+## 2026-06-26 Provider-Managed Model Visibility Guard
+
+- Used a GPT-5.5 read-only subagent to audit remaining no-device-verifiable model visibility gaps, then closed it. GPT-5.3-Codex-Spark was not used.
+- Tightened the Android closed chat model picker fallback so provider-managed/cloud or wrong-kind selections are not displayed after the runtime model list has loaded. Saved model labels are still shown while the model list is empty or actively restoring.
+- Reused the same fallback policy in the Android drawer runtime summary, preventing hidden provider-managed selections from appearing in the drawer after refresh.
+- Tightened the macOS Status Models panel so normal Chat Models and Embedding Models sections show installed local models only. Provider-managed/cloud and uninstalled models remain backend metadata, not normal visible model choices.
+- Updated the macOS readiness count to match visible installed local model groups instead of counting hidden provider-managed entries.
+- Strengthened `script/check_copy_hygiene.py` so Android closed-label fallback policy and macOS visible model grouping cannot silently drift.
+- The Android phone was disconnected during this pass, so this is source/JVM/macOS unit/script evidence only. It does not prove physical model menu tapping, physical drawer rendering, optical QR scanning, haptic feel, live streamed chat/cancel, or different-network runtime connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.AppNavigationTest.chatModelPickerClosedLabelIgnoresProviderManagedChatModel -Pkotlin.incremental=false`
+- `swift test --package-path apps/macos --filter AetherLinkLocalizationTests/testVisibleModelGroupsShowOnlyInstalledLocalModels`
+- `python3 -m py_compile script/check_copy_hygiene.py && python3 script/check_copy_hygiene.py`
+
+## 2026-06-26 Android Strict Local Model Metadata Guard
+
+- Used the same no-Spark session constraint. A GPT-5.5 read-only subagent identified that Android still treated missing model metadata too permissively; the subagent was closed after the audit.
+- Tightened Android `models.result` parsing so a missing `installed` field no longer defaults to installed. Runtime model payloads must explicitly say `installed = true` before the model can be selected or used.
+- Tightened Android model source filtering so missing `source` metadata is no longer treated as local. Normal chat and Memory indexing model selection now require explicit runtime-host-local source metadata.
+- Hardened `selectModel`, `requestModelInstall`, and `selectEmbeddingModel` so provider-managed or unknown-source models cannot be selected through stale IDs or direct ViewModel calls, even if they are not visible in the menu.
+- Added Android unit coverage for missing `installed`/`source` metadata, provider-managed model rejection, unknown-source model rejection, and menu-level unknown-source hiding.
+- Strengthened `script/check_copy_hygiene.py` so the strict installed/local metadata policy and its regressions cannot silently drift.
+- The Android phone was disconnected during this pass, so this is Android source/JVM/script evidence only. It does not prove physical model-menu tapping, real device reconnect, optical QR scanning, haptic feel, live streamed chat/cancel, or different-network runtime connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.AppNavigationTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest -Pkotlin.incremental=false`
+- `python3 -m py_compile script/check_copy_hygiene.py && python3 script/check_copy_hygiene.py`
+
+## 2026-06-26 macOS Runtime Chat Store Corruption Guard
+
+- Continued under the no-Spark constraint. No GPT-5.3-Codex-Spark subagent was used.
+- Hardened `JSONLRuntimeChatEventStore` so corrupt JSONL lines are not silently skipped. The store now throws `RuntimeChatEventStoreError.corruptEventLog(line:reason:)` with a line number and sanitized decode reason.
+- Updated runtime protocol error mapping so corrupt runtime-side chat history surfaces as structured `chat_store_unavailable` instead of being hidden as partial history or flattened into a generic internal error.
+- Updated the chat-store unavailable message to cover both loading and saving runtime-side chat history.
+- Added tests proving corrupt lines do not drop valid sessions silently, do not leak raw prompt/log content into error messages, and return a structured protocol error through `chat.sessions.list`.
+- Strengthened `script/check_copy_hygiene.py` and the no-device gate so the JSONL reader cannot regress to `try?`/`compactMap` silent dropping.
+- The Android phone was disconnected during this pass, so this is macOS source/unit/script evidence only. It does not prove physical Android history UI, optical QR scanning, live streamed chat/cancel, or different-network runtime connectivity.
+
+Verified after this change:
+
+- `swift test --package-path apps/macos --filter 'LocalRuntimeMessageRouterTests/testRuntimeChatStoreReportsCorruptJSONLLineInsteadOfDroppingIt|LocalRuntimeMessageRouterTests/testRuntimeChatHistoryCorruptStoreReturnsStructuredError'`
+- `swift test --package-path apps/macos --filter LocalRuntimeMessageRouterTests`
+
+## 2026-06-26 macOS Runtime Local Chat Routing Guard
+
+- Continued under the no-Spark constraint. A GPT-5.5 worker subagent handled the narrow macOS runtime routing code/test patch; GPT-5.3-Codex-Spark was not used.
+- Tightened runtime-host chat routing so provider-managed/cloud model metadata cannot be used as a normal `chat.send` target even if a backend reports the model as installed.
+- Updated the aggregate backend resolver and local runtime router to require installed, chat-capable, runtime-host-local model metadata before routing generation.
+- Added Swift regressions proving installed cloud/provider-managed model entries return `model_not_installed` and are not routed to the backend.
+- Strengthened the no-device quality gate and copy hygiene script so UI-only hiding cannot drift away from runtime-side rejection.
+- The Android phone was disconnected during this pass, so this is macOS source/unit/script evidence only. It does not prove physical QR scanning, physical reconnect, live streamed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `swift test --package-path apps/macos --filter 'LocalRuntimeMessageRouterTests/testChatSendInstalledCloudModelReturnsModelNotInstalled|AggregatingLlmBackendResidencyTests/testInstalledCloudChatModelIsNotRoutedAsChat'`
+- `python3 -m py_compile script/check_copy_hygiene.py && python3 script/check_copy_hygiene.py`
+- `./script/check_no_device_quality.sh`
+
+## 2026-06-26 Android Invalid QR Auto-Reconnect Guard
+
+- Kept the no-Spark constraint. No GPT-5.3-Codex-Spark subagent was used.
+- Moved Android trusted-runtime auto-reconnect persistence so it happens only after the scanned or pasted pairing QR has parsed into an accepted v1 pairing payload.
+- Invalid, incomplete, or unsupported `aetherlink://pair` payloads still surface structured QR errors, but they no longer flip the saved trusted-runtime auto-reconnect setting from off to on.
+- Preserved the existing valid compact relay QR behavior: a valid relay QR still enables reconnect, dials the relay route, and sends `pairing.request` without direct TCP fallback.
+- Added this regression to the default no-device quality gate and copy hygiene guard.
+- The Android phone was disconnected during this pass, so this is Android JVM/source/script evidence only. It does not prove optical QR scan, completed pairing, haptic feel, physical reconnect, live streamed chat/cancel, or different-network runtime connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.invalidPairingQrDoesNotEnableTrustedRuntimeAutoReconnect --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustRuntimeFromPairingQrWithCompactRelayUriConnectsRelayAndSendsPairingRequest -Pkotlin.incremental=false`
+- `python3 -m py_compile script/check_copy_hygiene.py && python3 script/check_copy_hygiene.py`
+- `./script/check_no_device_quality.sh`
+
+## 2026-06-26 Android Suggested Question Polish
+
+- Kept the no-Spark constraint. No GPT-5.3-Codex-Spark subagent was used.
+- Normalized AI-generated suggested next questions before rendering or deciding whether to show the suggestions section.
+- Blank suggestions are removed, multiline/extra-space suggestions collapse into one clean line, case-insensitive duplicates are removed, and the chip row is capped at four suggestions.
+- This keeps the ChatGPT-style follow-up row compact and prevents backend-generated noise from expanding the chat surface.
+- Added helper and Compose regressions, then pinned the policy in copy hygiene and the no-device gate.
+- The Android phone was disconnected during this pass, so this is Android JVM/Robolectric/source/script evidence only. It does not prove physical touch, physical font metrics, haptics, optical QR scan, live streamed chat/cancel, or different-network runtime connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.AppNavigationTest.assistantSuggestionsNormalizeBlankDuplicatesAndMaximumRows --tests com.localagentbridge.android.AppNavigationTest.assistantSuggestionsHideWhenRowsNormalizeToBlank --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenNormalizesSuggestedQuestionChips -Pkotlin.incremental=false`
+- `python3 -m py_compile script/check_copy_hygiene.py && python3 script/check_copy_hygiene.py`
+- `./script/check_no_device_quality.sh`
+
+## 2026-06-26 macOS Runtime Suggested Question Normalization
+
+- Continued under the no-Spark constraint. No GPT-5.3-Codex-Spark subagent was used.
+- Tightened the runtime-host `chat.suggestions.request` path so generated next-question suggestions are normalized before they are returned to any client.
+- Runtime suggestions now drop blank rows, collapse repeated whitespace and newlines into one line, remove case/diacritic/width-insensitive duplicates, and cap results to the compact four-chip row.
+- Added a Swift regression proving a noisy structured JSON suggestions payload is cleaned and capped before `chat.suggestions.result` is emitted.
+- Strengthened `script/check_copy_hygiene.py` and the no-device quality gate so the macOS runtime policy cannot drift away from the Android visible-chip policy.
+- The Android phone was disconnected during this pass, so this is macOS source/unit/script evidence only. It does not prove physical touch, physical font metrics, haptics, optical QR scan, live streamed chat/cancel, or different-network runtime connectivity.
+
+Verified after this change:
+
+- `swift test --package-path apps/macos --filter 'LocalRuntimeMessageRouterTests/testChatSuggestionsRequestNormalizesBlankDuplicateAndExcessSuggestions|LocalRuntimeMessageRouterTests/testChatSuggestionsRequestReturnsStructuredSuggestions|LocalRuntimeMessageRouterTests/testChatSuggestionsRequestFallsBackToNumberedLocalizedList'`
+- `python3 -m py_compile script/check_copy_hygiene.py && python3 script/check_copy_hygiene.py`
+- `./script/check_no_device_quality.sh`
+
+## 2026-06-26 macOS Remote QR Lease Failure Visibility
+
+- Continued under the no-Spark constraint. A GPT-5.5 read-only subagent audited the current QR pairing path and was closed after reporting that macOS remote QR generation can look stuck when a saved relay route has no current allocation lease.
+- Tightened `CompanionAppModel.beginPairing` so an existing route-preparation issue prevents the runtime from waiting on relay readiness alone and logs the concrete lease/allocation failure message.
+- Tightened relay status handling so `waitingForPeer` or `ready` no longer clears lease-preparation failures unless QR-ready lease material is actually available. This prevents the UI from falling back to vague “connection details are being prepared” copy when the relay is connected but QR route material is still missing.
+- Added a Swift regression proving a configured relay that is `waitingForPeer` but cannot allocate route lease material does not emit a pairing QR, keeps the `.routeLeaseRefreshFailed` issue after `ready`, and logs the concrete allocation failure.
+- Strengthened `script/check_copy_hygiene.py` and the no-device quality gate so this remote QR lease failure visibility cannot silently regress.
+- The Android phone was disconnected during this pass, so this is macOS source/unit/script evidence only. It does not prove optical QR scanning, completed pairing, physical reconnect, live streamed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `swift test --package-path apps/macos --filter 'LocalRuntimeMessageRouterTests/testCompanionAppModelKeepsLeasePreparationIssueWhenRelayIsReadyWithoutLease|LocalRuntimeMessageRouterTests/testCompanionAppModelDefaultPairingUsesRemoteRouteAllocator|LocalRuntimeMessageRouterTests/testCompanionAppModelPublishesRelayConnectionStatus'`
+- `python3 -m py_compile script/check_copy_hygiene.py && python3 script/check_copy_hygiene.py`
+
+## 2026-06-26 Android Relay QR Completion Persistence
+
+- Continued under the no-Spark constraint. No GPT-5.3-Codex-Spark subagent was used.
+- Added Android ViewModel coverage for the full no-device relay QR completion boundary: compact relay QR scan, relay connection, `pairing.request`, runtime `pairing.result`, trusted runtime persistence, pending-route cleanup, onboarding completion, and follow-up runtime requests.
+- The regression proves successful relay QR pairing stores relay host, port, id, secret, expiration, nonce, route scope, and route token into the trusted runtime record while suppressing stale direct host/port fields.
+- The test also proves the saved trusted-runtime auto-reconnect preference remains enabled after valid QR pairing and that runtime health/history/memory refresh requests are issued after pairing acceptance.
+- Strengthened `script/check_copy_hygiene.py` and the no-device quality gate so QR completion cannot silently regress to “request sent but trust not saved.”
+- The Android phone was disconnected during this pass, so this is Android JVM/source/script evidence only. It does not prove optical QR scanning, physical reconnect, live streamed chat/cancel, real haptic output, or real different-network relay reachability.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.compactRelayQrPairingResultPersistsTrustedRelayAndClearsPendingRoute -Pkotlin.incremental=false`
+
+## 2026-06-26 Android Runtime-Owned Streaming Storage Boundary
+
+- Continued under the no-Spark constraint. No GPT-5.3-Codex-Spark subagent was used.
+- Added Android ViewModel coverage for the runtime-owned chat storage boundary during live streaming.
+- The regression proves a `chat.send` flow can render the user prompt, assistant delta, and reasoning delta in the in-memory UI while the saved device snapshot keeps only runtime-owned session metadata and message count, with message bodies redacted after send, delta, and done.
+- This reinforces the source-of-truth rule: chat processing and durable transcript content are owned by AetherLink Runtime, while the Android client acts as controller plus ephemeral UI/cache.
+- Strengthened `script/check_copy_hygiene.py` and the no-device quality gate so this streaming redaction boundary cannot silently fall out of the default verification path.
+- The Android phone was disconnected during this pass, so this is Android JVM/source/script evidence only. It does not prove physical install, optical QR scan, physical reconnect, live runtime streaming, real haptics, or real different-network relay reachability.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.streamingRuntimeOwnedChatRendersInMemoryButRedactsDeviceStorage -Pkotlin.incremental=false`
+
+## 2026-06-26 QR Relay Recovery And Route Refresh Identity Binding
+
+- Continued under the no-Spark constraint. GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer audited the cross-network QR/relay gaps, and a GPT-5.5 worker added the Android expired-lease fresh-QR regression; both agents were closed after completion.
+- Added Android ViewModel coverage for the user-facing QR recovery path: when the saved trusted relay lease is expired and the app is in `remote_route_expired`, scanning a fresh compact relay QR for the same pinned runtime replaces the expired relay host/id/secret/lease/nonce, clears the expired-route error, avoids direct TCP, and attempts a relay reconnect.
+- Tightened `route.refresh` so successful refresh payloads are explicitly bound to the paired runtime identity. macOS now emits `runtime_device_id` and `runtime_key_fingerprint` with refreshed relay material, the protocol schema/docs require those fields, and Android rejects refresh payloads whose identity fields are missing or do not match the pinned trusted runtime.
+- Added the fresh-QR recovery and route-refresh identity regressions to copy hygiene and the default no-device quality gate.
+- The Android phone was disconnected during this pass, so this is Android JVM/macOS unit/source/schema/script evidence only. It does not prove physical install, optical QR scan, physical reconnect, live runtime streaming/cancel, real haptics, or real different-network relay reachability.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.freshCompactRelayQrRefreshesExpiredTrustedRelayRouteAndReconnectsViaRelay -Pkotlin.incremental=false`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.authenticatedTrustedRuntimeRefreshesRelayRouteMaterial --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshPayloadAddsFreshRelayRouteToCurrentTrustedRuntime --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshPayloadRejectsExpiredOrIncompleteRelayMaterial --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshPayloadRejectsMismatchedRuntimeIdentity --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.freshCompactRelayQrRefreshesExpiredTrustedRelayRouteAndReconnectsViaRelay -Pkotlin.incremental=false`
+- `swift test --package-path apps/macos --filter 'LocalRuntimeMessageRouterTests/testRouteRefreshReturnsFreshRelayMaterialFromRuntimeProvider|LocalRuntimeMessageRouterTests/testRouteRefreshRequiresAuthenticatedConnectionByDefault'`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_protocol_schema.py && python3 script/check_protocol_schema.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `./script/check_no_device_quality.sh`
+
+## 2026-06-26 Default No-Device Relay E2E Gate
+
+- Continued under the no-Spark constraint. No GPT-5.3-Codex-Spark subagent was used.
+- Added the authenticated development relay E2E smoke to the default no-device quality gate. `check_no_device_quality.sh` now runs `./script/runtime_authenticated_mock_smoke.swift --relay` after QR artifact generation/PNG decode checks.
+- This makes the default gate cover the headless relay path end to end: runtime relay allocation, QR route material parsing, encrypted relay frames, pairing, P-256 challenge-response authentication, `runtime.health`, `models.list`, `models.pull`, streaming `chat.send`, `chat.cancel`, and trusted relay reconnect.
+- Added a copy-hygiene guard so the no-device gate fails if the authenticated relay E2E smoke is removed from the default check.
+- The Android phone was disconnected during this pass, so this is headless macOS/script evidence only. It does not prove physical install, optical QR scan, physical reconnect, real device haptics, live provider-backed chat/cancel, or real different-network relay reachability.
+
+Verified after this change:
+
+- `./script/runtime_authenticated_mock_smoke.swift --relay`
+
+## 2026-06-26 Android App Top Bar Shell Chrome Coverage
+
+- Continued under the no-Spark constraint. The prior GPT-5.5 read-only app-shell audit was closed; GPT-5.3-Codex-Spark was not used.
+- Extracted the Android app top bar into `AetherLinkTopAppBar` so the real app-shell chrome can be rendered and tested without launching the full Activity stack.
+- Added a no-device Compose regression proving the top bar keeps the navigation drawer action, selected chat-model picker, new-chat action, and embedded Memory indexing model selection wired through the same shell surface.
+- The regression also asserts the old generic chat placeholders stay absent from the app chrome while the model picker remains available next to the drawer entry point.
+- Strengthened copy hygiene and the no-device quality gate coverage summary so this app top-bar shell coverage cannot silently fall out of the default verification path.
+- The Android phone was disconnected during this pass, so this is JVM/Robolectric/source/script evidence only. It does not prove physical tapping, camera QR pairing, real haptic output, physical reconnect, live streamed chat/cancel, or real different-network relay reachability.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.appTopBarKeepsNavigationModelPickerAndNewChatChrome -Pkotlin.incremental=false`
+- `python3 -m py_compile script/check_android_string_parity.py script/check_copy_hygiene.py && python3 script/check_android_string_parity.py && python3 script/check_copy_hygiene.py`
+- `bash -n script/check_no_device_quality.sh && python3 script/check_docs_hygiene.py`
+- `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/MainActivity.kt apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md`
+- `./script/check_no_device_quality.sh`
+
+## 2026-06-26 Android QR-First Chat Empty State
+
+- Continued under the no-Spark constraint. GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer audited the untrusted ChatScreen path, confirmed the same QR-first gap, and was closed after reporting.
+- Updated the empty Chat screen for `trustedRuntime == null` so first-use chat no longer reads as a generic connection problem. It now shows QR-first copy, explains that model providers stay behind AetherLink Runtime, and uses the normal `Scan QR` action instead of `Scan latest QR`.
+- Added localized `empty_chat_pairing_title`, `empty_chat_pairing`, and `chat_hint_pairing` strings for English, Korean, Japanese, Simplified Chinese, and French.
+- Added no-device Compose regressions proving a fresh untrusted ChatScreen renders the QR-first title/detail/action, invokes `onScanPairingQr`, does not call `onConnect`, does not show old connection-first/manual-route copy, and renders the QR-first title/action in English, Korean, Japanese, Simplified Chinese, and French.
+- Strengthened copy hygiene and the no-device quality gate coverage summary so the QR-first Chat empty state cannot silently regress.
+- The Android phone was disconnected during this pass, so this is JVM/Robolectric/source/resource/script evidence only. It does not prove optical QR scanning, camera permission behavior, physical haptic output, physical reconnect, live streamed chat/cancel, or real different-network relay reachability.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenUntrustedRuntimeShowsQrFirstPairingCallToAction -Pkotlin.incremental=false`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenUntrustedRuntimeUsesLocalizedQrFirstCopy -Pkotlin.incremental=false`
+- `python3 -m py_compile script/check_android_string_parity.py script/check_copy_hygiene.py && python3 script/check_android_string_parity.py && python3 script/check_copy_hygiene.py`
+- `bash -n script/check_no_device_quality.sh && python3 script/check_docs_hygiene.py`
+- `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/ui/ClientScreens.kt apps/android/app/src/main/res/values/strings.xml apps/android/app/src/main/res/values-en/strings.xml apps/android/app/src/main/res/values-ko/strings.xml apps/android/app/src/main/res/values-ja/strings.xml apps/android/app/src/main/res/values-zh-rCN/strings.xml apps/android/app/src/main/res/values-fr/strings.xml apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md`
+- `./script/check_no_device_quality.sh`
+
+## 2026-06-26 Android Trusted Composer Readiness Lock
+
+- Continued under the no-Spark constraint. GPT-5.3-Codex-Spark was not used.
+- Added `chatComposerCanEdit` so the chat input and attachment button open only after a trusted runtime is connected, the current response is not streaming, and a usable chat model is selected.
+- Kept `chatComposerCanSend` as the stricter send gate on top of editability, sendable content, and attachment capability checks.
+- Extended the QR-first ChatScreen regression so a fresh untrusted screen proves the message field and attachment button are disabled while the Scan QR call to action remains available.
+- Added helper coverage proving composer editability rejects untrusted, disconnected, streaming, and no-model states while accepting a trusted connected usable model.
+- Strengthened copy hygiene and the no-device quality summary so this composer readiness policy cannot silently regress.
+- The Android phone was disconnected during this pass, so this is Android JVM/Robolectric/source/script evidence only. It does not prove physical keyboard behavior, real touch feel, IME behavior, actual haptic output, optical QR scanning, live streamed chat/cancel, or real different-network relay reachability.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenUntrustedRuntimeShowsQrFirstPairingCallToAction --tests com.localagentbridge.android.AppNavigationTest.chatComposerEditingRequiresTrustedConnectedUsableModel --tests com.localagentbridge.android.AppNavigationTest.chatComposerAllowsAttachmentOnlySendWhenConnectedModelIsUsable -Pkotlin.incremental=false`
+- `python3 -m py_compile script/check_android_string_parity.py script/check_copy_hygiene.py && python3 script/check_android_string_parity.py && python3 script/check_copy_hygiene.py`
+- `bash -n script/check_no_device_quality.sh && python3 script/check_docs_hygiene.py`
+- `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/ui/ClientScreens.kt apps/android/app/src/test/java/com/localagentbridge/android/AppNavigationTest.kt apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md`
+- `./script/check_no_device_quality.sh`
+
+## 2026-06-26 Android Composer Readiness Hint
+
+- Continued under the no-Spark constraint. GPT-5.3-Codex-Spark was not used.
+- Extended `ChatComposer` so non-streaming readiness hints are visible when the composer is disabled, while still keeping warning-only status for active image/vision mismatches and suppressing extra status during streaming.
+- Added `chatComposerShouldShowStatus` helper coverage for disabled readiness hints, active warning hints, normal ready state, and streaming suppression.
+- Added a Compose regression for previous-chat screens: when messages are visible but no chat model is selected, the disabled composer now shows `Select a model before sending.` instead of silently locking the input.
+- Strengthened copy hygiene and the no-device quality summary so the readiness hint policy cannot silently regress.
+- The Android phone was disconnected during this pass, so this is Android JVM/Robolectric/source/script evidence only. It does not prove physical keyboard behavior, IME layout, real touch feel, actual haptic output, optical QR scanning, live streamed chat/cancel, or real different-network relay reachability.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenShowsComposerReadinessHintWhenPreviousChatCannotSend --tests com.localagentbridge.android.AppNavigationTest.chatComposerStatusShowsReadinessHintsWhenInputIsLocked -Pkotlin.incremental=false`
+- `python3 -m py_compile script/check_android_string_parity.py script/check_copy_hygiene.py && python3 script/check_android_string_parity.py && python3 script/check_copy_hygiene.py`
+- `bash -n script/check_no_device_quality.sh && python3 script/check_docs_hygiene.py`
+- `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/ui/ClientScreens.kt apps/android/app/src/test/java/com/localagentbridge/android/AppNavigationTest.kt apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md`
+- `./script/check_no_device_quality.sh`

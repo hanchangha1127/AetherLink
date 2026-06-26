@@ -834,7 +834,6 @@ class RuntimeClientViewModel internal constructor(
     }
 
     fun trustRuntimeFromPairingQr(rawValue: String) {
-        persistTrustedRuntimeAutoReconnectEnabled(true)
         viewModelScope.launch {
             cancelPendingPairingRetry()
             mutableState.update { it.copy(routeRefreshNoticeRuntimeName = null) }
@@ -860,6 +859,7 @@ class RuntimeClientViewModel internal constructor(
                 }
             }
 
+            persistTrustedRuntimeAutoReconnectEnabled(true)
             val refreshedTrustedRuntime = trustedRuntimeFromRouteRefreshQr(
                 current = state.value.trustedRuntime,
                 payload = payload,
@@ -1371,6 +1371,10 @@ class RuntimeClientViewModel internal constructor(
             showError("select_chat_model")
             return
         }
+        if (model != null && !model.isRuntimeHostLocalModel()) {
+            showError("select_chat_model")
+            return
+        }
         if (model != null && !model.installed) {
             requestModelInstall(modelId)
             return
@@ -1388,7 +1392,7 @@ class RuntimeClientViewModel internal constructor(
             showError("select_embedding_model")
             return
         }
-        if (!model.installed) {
+        if (!model.installed || !model.isRuntimeHostLocalModel()) {
             showError("select_embedding_model")
             return
         }
@@ -1403,6 +1407,10 @@ class RuntimeClientViewModel internal constructor(
 
         val model = state.value.models.firstOrNull { it.id == modelId }
         if (model != null && !model.isChatModel()) {
+            showError("select_chat_model")
+            return
+        }
+        if (model != null && !model.isRuntimeHostLocalModel()) {
             showError("select_chat_model")
             return
         }
@@ -1877,7 +1885,10 @@ class RuntimeClientViewModel internal constructor(
             current = current,
             payload = payload,
             nowEpochMillis = nowMillis(),
-        ) ?: return
+        ) ?: run {
+            scheduleRuntimeRouteRefreshRetry()
+            return
+        }
         viewModelScope.launch {
             pairingStore.trustRuntime(trusted)
             val runtime = trusted.toRuntimeTrustedRuntime()
@@ -1992,7 +2003,7 @@ class RuntimeClientViewModel internal constructor(
                 modelKind = modelKind,
                 capabilities = capabilities.ifEmpty { defaultCapabilitiesForModelKind(modelKind) },
                 providerModelId = providerModelId,
-                installed = it.installed ?: true,
+                installed = it.installed == true,
                 running = it.running ?: false,
                 source = it.source,
                 description = it.description,
@@ -3371,6 +3382,8 @@ internal fun trustedRuntimeFromRouteRefreshPayload(
 ): TrustedRuntime? {
     current ?: return null
     val fingerprint = current.fingerprint ?: return null
+    if (payload.runtimeDeviceId != current.deviceId) return null
+    if (payload.runtimeKeyFingerprint != fingerprint) return null
     val candidateRuntime = current.copy(
         endpointHint = null,
         relayHost = payload.relayHost,
@@ -3654,12 +3667,14 @@ internal fun reconcileModelSelections(
         installedTarget != null -> installedTarget.id
         currentSelectedModelId == null -> chatModels.firstOrNull { it.installed }?.id
         models.any { it.id == currentSelectedModelId && !it.isChatModel() } -> null
+        models.any { it.id == currentSelectedModelId && !it.isRuntimeHostLocalModel() } -> null
         else -> currentSelectedModelId
     }
     val selectedEmbeddingModelId = when {
         currentSelectedEmbeddingModelId == null -> null
         models.any { it.id == currentSelectedEmbeddingModelId && !it.isEmbeddingModel() } -> null
         models.any { it.id == currentSelectedEmbeddingModelId && it.isEmbeddingModel() && !it.installed } -> null
+        models.any { it.id == currentSelectedEmbeddingModelId && it.isEmbeddingModel() && !it.isRuntimeHostLocalModel() } -> null
         else -> currentSelectedEmbeddingModelId
     }
     return ReconciledModelSelections(
@@ -3684,7 +3699,7 @@ internal fun RuntimeModel.supportsImageInput(): Boolean {
 
 internal fun RuntimeModel.isRuntimeHostLocalModel(): Boolean {
     val normalizedSource = source?.trim()?.lowercase()
-    return normalizedSource == null || normalizedSource == "local"
+    return normalizedSource == "local"
 }
 
 internal fun normalizeModelKind(

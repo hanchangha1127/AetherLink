@@ -328,6 +328,7 @@ public final class AggregatingLlmBackend: LlmBackend, @unchecked Sendable {
         let requestedCanonical = canonicalModelName(requestedModel)
         return models.first { candidate in
             guard candidate.installed else { return false }
+            guard candidate.source == .local else { return false }
             guard candidate.kind == .chat else { return false }
             if let requestedProvider, candidate.provider != requestedProvider {
                 return false

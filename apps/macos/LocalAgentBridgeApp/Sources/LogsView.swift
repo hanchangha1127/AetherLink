@@ -187,19 +187,13 @@ func localizedLogDisplay(_ line: String) -> LogDisplay {
         if line.hasPrefix("Loaded "), line.hasSuffix(" local model(s)") {
             let count = String(line.dropFirst("Loaded ".count).dropLast(" local model(s)".count))
             return LogDisplay(
-                summary: String(
-                    format: NSLocalizedString("Loaded %@ local model(s)", comment: ""),
-                    count
-                )
+                summary: localizedLoadedLocalModelLogCount(count)
             )
         }
         if line.hasPrefix("Loaded "), line.hasSuffix(" Ollama model(s)") {
             let count = String(line.dropFirst("Loaded ".count).dropLast(" Ollama model(s)".count))
             return LogDisplay(
-                summary: String(
-                    format: NSLocalizedString("Loaded %@ local model(s)", comment: ""),
-                    count
-                )
+                summary: localizedLoadedLocalModelLogCount(count)
             )
         }
         if let detail = detail(after: "Model list failed: ", in: line) {

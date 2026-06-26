@@ -254,20 +254,15 @@ struct StatusView: View {
     }
 
     private var modelGroups: [ModelGroup] {
-        let chatModels = model.models.filter { $0.kind == .chat }
-        let embeddingModels = model.models.filter { $0.kind == .embedding }
+        visibleModelGroups(for: model.models)
+    }
 
-        return [
-            ModelGroup(kind: .chat, models: chatModels),
-            ModelGroup(kind: .embedding, models: embeddingModels)
-        ].filter { !$0.models.isEmpty }
+    private var visibleModelCount: Int {
+        modelGroups.reduce(0) { count, group in count + group.models.count }
     }
 
     private var trustedDeviceCount: String {
-        String(
-            format: NSLocalizedString("%d trusted device(s)", comment: ""),
-            model.trustedDevices.count
-        )
+        localizedTrustedDeviceCount(model.trustedDevices.count)
     }
 
     private var trustedDeviceDetail: String {
@@ -292,11 +287,10 @@ struct StatusView: View {
         if let activeModelID = model.modelResidency.activeModelID,
            let activeProvider = model.modelResidency.activeProvider {
             let minutes = max(1, model.modelResidency.idleUnloadDelaySeconds / 60)
-            return String(
-                format: NSLocalizedString("%@ %@ active. Idle unload after %d minute(s).", comment: ""),
-                localizedProviderName(activeProvider),
-                activeModelID,
-                minutes
+            return localizedModelResidencyActiveDetail(
+                providerName: localizedProviderName(activeProvider),
+                modelID: activeModelID,
+                idleUnloadMinutes: minutes
             )
         }
         return model.modelResidency.lastEvent
@@ -359,10 +353,10 @@ struct StatusView: View {
             ReadinessItem(
                 id: "model-list-loaded",
                 title: NSLocalizedString("Model list loaded", comment: ""),
-                detail: model.models.isEmpty
+                detail: visibleModelCount == 0
                     ? NSLocalizedString("Load models to show what AetherLink Runtime can offer.", comment: "")
-                    : String(format: NSLocalizedString("%d model(s) loaded", comment: ""), model.models.count),
-                tone: model.models.isEmpty ? .inactive : .ready
+                    : localizedLoadedModelCount(visibleModelCount),
+                tone: visibleModelCount == 0 ? .inactive : .ready
             )
         ]
     }
@@ -632,7 +626,7 @@ private struct ModelGroupSection: View {
     }
 }
 
-private struct ModelGroup: Identifiable {
+struct ModelGroup: Identifiable {
     let kind: ModelKind
     let models: [ModelInfo]
 
@@ -650,7 +644,7 @@ private struct ModelGroup: Identifiable {
     }
 
     var countText: String {
-        String(format: NSLocalizedString("%d model(s)", comment: ""), models.count)
+        localizedModelCount(models.count)
     }
 
     var systemImage: String {
@@ -660,6 +654,24 @@ private struct ModelGroup: Identifiable {
         case .embedding:
             return "text.magnifyingglass"
         }
+    }
+}
+
+internal func visibleModelGroups(for models: [ModelInfo]) -> [ModelGroup] {
+    let chatModels = visibleModels(for: models, kind: .chat)
+    let embeddingModels = visibleModels(for: models, kind: .embedding)
+
+    return [
+        ModelGroup(kind: .chat, models: chatModels),
+        ModelGroup(kind: .embedding, models: embeddingModels)
+    ].filter { !$0.models.isEmpty }
+}
+
+private func visibleModels(for models: [ModelInfo], kind: ModelKind) -> [ModelInfo] {
+    models.filter { model in
+        model.kind == kind &&
+            model.installed &&
+            model.source == .local
     }
 }
 

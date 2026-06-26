@@ -19,7 +19,9 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertWidthIsAtLeast
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasStateDescription
 import androidx.compose.ui.test.hasText
@@ -39,9 +41,16 @@ import androidx.compose.ui.test.swipeUp
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
+import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.localagentbridge.android.AetherLinkNavigationDrawerContent
+import com.localagentbridge.android.AetherLinkTopAppBar
+import com.localagentbridge.android.AppDestination
 import com.localagentbridge.android.ChatSessionDrawerItem
 import com.localagentbridge.android.ChatTopAppBarTitle
+import com.localagentbridge.android.DRAWER_HISTORY_TEST_TAG
+import com.localagentbridge.android.DRAWER_SETTINGS_FOOTER_TEST_TAG
+import com.localagentbridge.android.R
 import com.localagentbridge.android.runtime.MODEL_KIND_CHAT
 import com.localagentbridge.android.runtime.MODEL_KIND_EMBEDDING
 import com.localagentbridge.android.runtime.RuntimeAppTheme
@@ -51,6 +60,7 @@ import com.localagentbridge.android.runtime.RuntimeModel
 import com.localagentbridge.android.runtime.RuntimeTrustedRuntime
 import com.localagentbridge.android.runtime.RuntimeUiState
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -109,6 +119,143 @@ class ClientScreensNoDeviceComposeTest {
         compose.onAllNodesWithText("Scan QR").onFirst().performClick()
 
         assertEquals(1, scanClicks)
+    }
+
+    @Test
+    fun navigationDrawerKeepsSettingsAsFooterBelowChatHistory() {
+        var settingsClicks = 0
+        val sessions = listOf(
+            RuntimeChatSession(
+                id = "session-1",
+                title = "Runtime pairing notes",
+                modelId = "ollama:qwen3:8b",
+                updatedAtMillis = 2_000L,
+                messageCount = 4,
+            ),
+            RuntimeChatSession(
+                id = "session-2",
+                title = "Travel plan",
+                modelId = "ollama:llama3.1:8b",
+                updatedAtMillis = 1_000L,
+                messageCount = 2,
+            ),
+        )
+        val state = RuntimeUiState(
+            isConnected = true,
+            runtimeStatus = "authenticated",
+            trustedRuntime = RuntimeTrustedRuntime(
+                deviceId = "runtime-1",
+                name = "AetherLink Runtime",
+            ),
+            chatSessions = sessions,
+            activeChatSessionId = "session-1",
+        )
+
+        compose.setContent {
+            MaterialTheme {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    AetherLinkNavigationDrawerContent(
+                        state = state,
+                        effectiveDestination = AppDestination.Chat,
+                        chatSearchQuery = "",
+                        hasAnyChatSessions = sessions.isNotEmpty(),
+                        hasChatSearchQuery = false,
+                        hasChatSearchResults = true,
+                        filteredChatSessions = sessions,
+                        onChatSearchQueryChange = {},
+                        onClearChatSearch = {},
+                        onNewChat = {},
+                        onSelectChatSession = {},
+                        onRenameChatSession = {},
+                        onArchiveChatSession = {},
+                        onSelectSettings = { settingsClicks += 1 },
+                    )
+                }
+            }
+        }
+
+        val historyTop = compose
+            .onNodeWithTag(DRAWER_HISTORY_TEST_TAG)
+            .getUnclippedBoundsInRoot()
+            .top
+        val settingsTop = compose
+            .onNodeWithTag(DRAWER_SETTINGS_FOOTER_TEST_TAG)
+            .getUnclippedBoundsInRoot()
+            .top
+
+        assertTrue(settingsTop > historyTop)
+        compose.onNodeWithText("Settings").assertIsDisplayed().performClick()
+        assertEquals(1, settingsClicks)
+    }
+
+    @Test
+    fun appTopBarKeepsNavigationModelPickerAndNewChatChrome() {
+        var navigationClicks = 0
+        var newChatClicks = 0
+        var requestModelClicks = 0
+        val selectedModels = mutableListOf<String>()
+        val selectedEmbeddingModels = mutableListOf<String?>()
+        val chatModel = RuntimeModel(
+            id = "ollama:qwen3:8b",
+            name = "Qwen3 8B",
+            modelKind = MODEL_KIND_CHAT,
+            capabilities = listOf("chat"),
+            installed = true,
+            source = "local",
+        )
+        val embeddingModel = RuntimeModel(
+            id = "ollama:nomic-embed-text",
+            name = "Nomic Embed Text",
+            modelKind = MODEL_KIND_EMBEDDING,
+            capabilities = listOf("embedding"),
+            installed = true,
+            source = "local",
+        )
+
+        compose.setContent {
+            MaterialTheme {
+                Surface {
+                    AetherLinkTopAppBar(
+                        state = RuntimeUiState(
+                            isConnected = true,
+                            runtimeStatus = "authenticated",
+                            backendAvailable = true,
+                            trustedRuntime = RuntimeTrustedRuntime(
+                                deviceId = "runtime-1",
+                                name = "AetherLink Runtime",
+                            ),
+                            selectedModelId = chatModel.id,
+                            models = listOf(chatModel, embeddingModel),
+                        ),
+                        effectiveDestination = AppDestination.Chat,
+                        destinationTitle = "Chat",
+                        onOpenNavigation = { navigationClicks += 1 },
+                        onStartNewChat = { newChatClicks += 1 },
+                        onRequestModels = { requestModelClicks += 1 },
+                        onSelectModel = { selectedModels += it },
+                        onSelectEmbeddingModel = { selectedEmbeddingModels += it },
+                    )
+                }
+            }
+        }
+
+        compose.onNodeWithContentDescription("Open navigation menu").assertIsDisplayed().performClick()
+        compose.onNodeWithText("Qwen3 8B").assertIsDisplayed()
+        compose.onNodeWithContentDescription("New Chat").assertIsDisplayed().performClick()
+        compose.onNodeWithText("Qwen3 8B").performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("Memory indexing model").assertIsDisplayed()
+        compose.onNode(hasText("Nomic Embed Text") and hasClickAction())
+            .performScrollTo()
+            .performClick()
+
+        assertEquals(1, navigationClicks)
+        assertEquals(1, newChatClicks)
+        assertEquals(0, requestModelClicks)
+        assertEquals(emptyList<String>(), selectedModels)
+        assertEquals(listOf("ollama:nomic-embed-text"), selectedEmbeddingModels)
+        assertNoVisibleText("Enter a message to send.")
+        assertNoVisibleText("Ask anything")
     }
 
     @Test
@@ -340,7 +487,7 @@ class ClientScreensNoDeviceComposeTest {
                             RuntimeChatSession(
                                 id = "active-chat",
                                 title = "Active project chat",
-                                messageCount = 4,
+                                messageCount = 1,
                                 updatedAtMillis = 2_000L,
                             ),
                         ),
@@ -394,6 +541,7 @@ class ClientScreensNoDeviceComposeTest {
             .assertIsDisplayed()
             .performClick()
         compose.waitForIdle()
+        compose.onNodeWithText("1 message", useUnmergedTree = true).assertExists()
         scrollUntilTextIsVisible("Manage all chats")
 
         compose.onNodeWithText("Manage all chats")
@@ -477,6 +625,21 @@ class ClientScreensNoDeviceComposeTest {
                         onRestore = null,
                         onDelete = null,
                     )
+                    ChatSessionDrawerItem(
+                        session = RuntimeChatSession(
+                            id = "single-message-chat",
+                            title = "One note",
+                            updatedAtMillis = 4_000L,
+                            messageCount = 1,
+                        ),
+                        selected = false,
+                        enabled = true,
+                        onClick = {},
+                        onRename = null,
+                        onArchive = null,
+                        onRestore = null,
+                        onDelete = null,
+                    )
                 }
             }
         }
@@ -485,6 +648,8 @@ class ClientScreensNoDeviceComposeTest {
         compose.onNodeWithText("3 messages - Needs attention").assertIsDisplayed()
         compose.onNodeWithText("Connection notes").assertIsDisplayed()
         compose.onNodeWithText("2 messages - In progress").assertIsDisplayed()
+        compose.onNodeWithText("One note").assertIsDisplayed()
+        compose.onNodeWithText("1 message").assertIsDisplayed()
     }
 
     @Test
@@ -544,6 +709,148 @@ class ClientScreensNoDeviceComposeTest {
         assertEquals("Hello", state.value.chatInput)
         assertEquals(1, sendClicks)
         assertEquals(listOf(HapticFeedbackType.TextHandleMove), hapticFeedback.events)
+    }
+
+    @Test
+    fun chatScreenUntrustedRuntimeShowsQrFirstPairingCallToAction() {
+        var scanQrClicks = 0
+        var connectClicks = 0
+
+        compose.setContent {
+            MaterialTheme {
+                ChatScreen(
+                    state = RuntimeUiState(),
+                    onInputChange = {},
+                    onSend = {},
+                    onCancel = {},
+                    onConnect = { connectClicks += 1 },
+                    onScanPairingQr = { scanQrClicks += 1 },
+                    onRefreshHealth = {},
+                    onAttachFiles = {},
+                    onRemoveAttachment = {},
+                    onSuggestionClick = {},
+                    onScanLatestQr = {},
+                )
+            }
+        }
+
+        compose.onNodeWithText("Scan QR to start").assertIsDisplayed()
+        compose
+            .onNodeWithText("Pair with AetherLink Runtime first. Model providers stay private behind the trusted runtime.")
+            .assertIsDisplayed()
+        compose.onNodeWithContentDescription("Message").assertIsNotEnabled()
+        compose.onNodeWithContentDescription("Attach files").assertIsNotEnabled()
+        compose.onNodeWithText("Scan QR").assertIsDisplayed().performClick()
+
+        assertEquals(1, scanQrClicks)
+        assertEquals(0, connectClicks)
+        assertNoVisibleText("Connect to continue")
+        assertNoVisibleText("Connect to the trusted runtime before chatting.")
+        assertNoVisibleText("Scan latest QR")
+        assertNoVisibleText("Connection address")
+    }
+
+    @Test
+    fun chatScreenUntrustedRuntimeUsesLocalizedQrFirstCopy() {
+        val localizedQrFirstCopy = listOf(
+            Triple("en", "Scan QR to start", "Scan QR"),
+            Triple("ko", "QR 스캔으로 시작", "QR 스캔"),
+            Triple("ja", "QR スキャンで開始", "QR をスキャン"),
+            Triple("zh-Hans", "扫描 QR 开始", "扫描 QR"),
+            Triple("fr", "Scannez le QR pour démarrer", "Scanner le QR"),
+        )
+        val language = mutableStateOf(localizedQrFirstCopy.first())
+
+        compose.setContent {
+            MaterialTheme {
+                val (languageTag, _, _) = language.value
+                LocalizedTestContent(languageTag = languageTag) {
+                    ChatScreen(
+                        state = RuntimeUiState(selectedLanguageTag = languageTag),
+                        onInputChange = {},
+                        onSend = {},
+                        onCancel = {},
+                        onConnect = {},
+                        onScanPairingQr = {},
+                        onRefreshHealth = {},
+                        onAttachFiles = {},
+                        onRemoveAttachment = {},
+                        onSuggestionClick = {},
+                        onScanLatestQr = {},
+                    )
+                }
+            }
+        }
+
+        localizedQrFirstCopy.forEach { expectedCopy ->
+            compose.runOnUiThread {
+                language.value = expectedCopy
+            }
+            compose.waitForIdle()
+            compose.onNodeWithText(expectedCopy.second).assertIsDisplayed()
+            compose.onNodeWithText(expectedCopy.third).assertIsDisplayed()
+        }
+    }
+
+    @Test
+    fun chatScreenShowsComposerReadinessHintWhenPreviousChatCannotSend() {
+        var attachmentClicks = 0
+        val chatModel = RuntimeModel(
+            id = "ollama:qwen3:8b",
+            name = "Qwen3 8B",
+            modelKind = MODEL_KIND_CHAT,
+            capabilities = listOf("chat"),
+            installed = true,
+            source = "local",
+        )
+
+        compose.setContent {
+            MaterialTheme {
+                ChatScreen(
+                    state = RuntimeUiState(
+                        isConnected = true,
+                        runtimeStatus = "authenticated",
+                        trustedRuntime = RuntimeTrustedRuntime(
+                            deviceId = "runtime-1",
+                            name = "AetherLink Runtime",
+                        ),
+                        backendAvailable = true,
+                        selectedModelId = null,
+                        models = listOf(chatModel),
+                        messages = listOf(
+                            RuntimeChatMessage(
+                                id = "user-1",
+                                role = "user",
+                                content = "Summarize the route status.",
+                            ),
+                            RuntimeChatMessage(
+                                id = "assistant-1",
+                                role = "assistant",
+                                content = "The runtime route needs a selected model before continuing.",
+                            ),
+                        ),
+                    ),
+                    onInputChange = {},
+                    onSend = {},
+                    onCancel = {},
+                    onConnect = {},
+                    onScanPairingQr = {},
+                    onRefreshHealth = {},
+                    onAttachFiles = { attachmentClicks += 1 },
+                    onRemoveAttachment = {},
+                    onSuggestionClick = {},
+                    onScanLatestQr = {},
+                )
+            }
+        }
+
+        compose.onNodeWithText("The runtime route needs a selected model before continuing.").assertIsDisplayed()
+        compose.onNodeWithText("Select a model before sending.").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Message").assertIsNotEnabled()
+        compose.onNodeWithContentDescription("Attach files").assertIsNotEnabled()
+        compose.onNodeWithContentDescription("Send message").assertIsNotEnabled()
+
+        assertEquals(0, attachmentClicks)
     }
 
     @Test
@@ -858,6 +1165,22 @@ class ClientScreensNoDeviceComposeTest {
     }
 
     @Test
+    fun chatTopBarModelPickerStatusLineUsesLocalizedResources() {
+        val context = ApplicationProvider
+            .getApplicationContext<Context>()
+            .localizedContext("fr")
+
+        assertEquals(
+            "Ollama - Installé",
+            context.getString(
+                R.string.model_status_value,
+                "Ollama",
+                context.getString(R.string.model_installed),
+            )
+        )
+    }
+
+    @Test
     fun primaryScreensRenderAcrossLocaleThemeSurfaceMatrix() {
         val renderCase = mutableStateOf(
             RenderSmokeCase(
@@ -1025,6 +1348,144 @@ class ClientScreensNoDeviceComposeTest {
             compose.onNodeWithText(requireNotNull(nextCase.visibleAnchor))
                 .assertIsDisplayed()
         }
+    }
+
+    @Test
+    fun chatScreenNormalizesSuggestedQuestionChips() {
+        val clickedSuggestions = mutableListOf<String>()
+        val chatModel = RuntimeModel(
+            id = "ollama:qwen3:8b",
+            name = "Qwen3 8B",
+            modelKind = MODEL_KIND_CHAT,
+            capabilities = listOf("chat"),
+            installed = true,
+            source = "local",
+        )
+
+        compose.setContent {
+            MaterialTheme {
+                ChatScreen(
+                    state = RuntimeUiState(
+                        isConnected = true,
+                        runtimeStatus = "authenticated",
+                        trustedRuntime = RuntimeTrustedRuntime(
+                            deviceId = "runtime-1",
+                            name = "AetherLink Runtime",
+                        ),
+                        backendAvailable = true,
+                        selectedModelId = chatModel.id,
+                        models = listOf(chatModel),
+                        messages = listOf(
+                            RuntimeChatMessage(
+                                id = "user-1",
+                                role = "user",
+                                content = "Plan the next step.",
+                            ),
+                            RuntimeChatMessage(
+                                id = "assistant-1",
+                                role = "assistant",
+                                content = "The next step is to verify QR pairing.",
+                                suggestions = listOf(
+                                    "  Follow up?  ",
+                                    "",
+                                    "follow   up?",
+                                    "Summarize\nagain?",
+                                    "Check route status",
+                                    "Draft a test plan",
+                                    "Hidden extra suggestion",
+                                ),
+                            ),
+                        ),
+                    ),
+                    onInputChange = {},
+                    onSend = {},
+                    onCancel = {},
+                    onConnect = {},
+                    onScanPairingQr = {},
+                    onRefreshHealth = {},
+                    onAttachFiles = {},
+                    onRemoveAttachment = {},
+                    onSuggestionClick = { clickedSuggestions += it },
+                    onScanLatestQr = {},
+                )
+            }
+        }
+
+        compose.onNodeWithText("Follow up?").assertIsDisplayed()
+        compose.onNodeWithText("Summarize again?").assertIsDisplayed()
+        compose.onNodeWithText("Check route status").assertIsDisplayed()
+        compose.onNodeWithText("Draft a test plan").assertIsDisplayed()
+        assertNoVisibleText("follow up?")
+        assertNoVisibleText("Hidden extra suggestion")
+
+        compose.onNodeWithText("Summarize again?").performClick()
+
+        assertEquals(listOf("Summarize again?"), clickedSuggestions)
+    }
+
+    @Test
+    fun chatScreenSuggestionClickFillsComposerWithoutSending() {
+        var sendClicks = 0
+        val chatModel = RuntimeModel(
+            id = "ollama:qwen3:8b",
+            name = "Qwen3 8B",
+            modelKind = MODEL_KIND_CHAT,
+            capabilities = listOf("chat"),
+            installed = true,
+            source = "local",
+        )
+        val state = mutableStateOf(
+            RuntimeUiState(
+                isConnected = true,
+                runtimeStatus = "authenticated",
+                trustedRuntime = RuntimeTrustedRuntime(
+                    deviceId = "runtime-1",
+                    name = "AetherLink Runtime",
+                ),
+                backendAvailable = true,
+                selectedModelId = chatModel.id,
+                models = listOf(chatModel),
+                messages = listOf(
+                    RuntimeChatMessage(
+                        id = "user-1",
+                        role = "user",
+                        content = "Plan the next step.",
+                    ),
+                    RuntimeChatMessage(
+                        id = "assistant-1",
+                        role = "assistant",
+                        content = "Use the latest QR route.",
+                        suggestions = listOf("Check route status"),
+                    ),
+                ),
+            ),
+        )
+
+        compose.setContent {
+            MaterialTheme {
+                ChatScreen(
+                    state = state.value,
+                    onInputChange = { text -> state.value = state.value.copy(chatInput = text) },
+                    onSend = { sendClicks += 1 },
+                    onCancel = {},
+                    onConnect = {},
+                    onScanPairingQr = {},
+                    onRefreshHealth = {},
+                    onAttachFiles = {},
+                    onRemoveAttachment = {},
+                    onSuggestionClick = { suggestion ->
+                        state.value = state.value.copy(chatInput = suggestion)
+                    },
+                    onScanLatestQr = {},
+                )
+            }
+        }
+
+        compose.onNodeWithText("Check route status").assertIsDisplayed().performClick()
+
+        assertEquals("Check route status", state.value.chatInput)
+        assertEquals(0, sendClicks)
+        compose.onNodeWithContentDescription("Send message").assertIsEnabled()
     }
 
     @Composable

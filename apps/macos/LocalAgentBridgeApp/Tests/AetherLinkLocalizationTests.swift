@@ -1,5 +1,6 @@
 import XCTest
 import CompanionCore
+import OllamaBackend
 @testable import LocalAgentBridge
 import TrustedDevices
 
@@ -48,6 +49,134 @@ final class AetherLinkLocalizationTests: XCTestCase {
         }
     }
 
+    func testLocalizedVisibleAnchorsAcrossInitialLanguages() {
+        let expectations: [(String, [String: String])] = [
+            (
+                "en",
+                [
+                    "Status": "Status",
+                    "Pairing": "Pairing",
+                    "Trusted Devices": "Trusted Devices",
+                    "Activity": "Activity",
+                    "Language": "Language",
+                    "Appearance": "Appearance",
+                ]
+            ),
+            (
+                "ko",
+                [
+                    "Status": "상태",
+                    "Pairing": "페어링",
+                    "Trusted Devices": "신뢰 기기",
+                    "Activity": "활동",
+                    "Language": "언어",
+                    "Appearance": "외관",
+                ]
+            ),
+            (
+                "ja",
+                [
+                    "Status": "ステータス",
+                    "Pairing": "ペアリング",
+                    "Trusted Devices": "信頼済みデバイス",
+                    "Activity": "アクティビティ",
+                    "Language": "言語",
+                    "Appearance": "外観",
+                ]
+            ),
+            (
+                "zh-Hans",
+                [
+                    "Status": "状态",
+                    "Pairing": "配对",
+                    "Trusted Devices": "受信任设备",
+                    "Activity": "活动",
+                    "Language": "语言",
+                    "Appearance": "外观",
+                ]
+            ),
+            (
+                "fr",
+                [
+                    "Status": "État",
+                    "Pairing": "Jumelage",
+                    "Trusted Devices": "Appareils approuvés",
+                    "Activity": "Activité",
+                    "Language": "Langue",
+                    "Appearance": "Apparence",
+                ]
+            ),
+        ]
+
+        XCTAssertEqual(expectations.map(\.0), AetherLinkAppLanguage.allCases.map(\.rawValue))
+
+        for (languageTag, anchors) in expectations {
+            withStoredAppLanguage(languageTag) {
+                for (key, expectedValue) in anchors {
+                    XCTAssertEqual(
+                        NSLocalizedString(key, comment: ""),
+                        expectedValue,
+                        "\(languageTag) \(key)"
+                    )
+                }
+            }
+        }
+    }
+
+    func testVisibleModelGroupsShowOnlyInstalledLocalModels() {
+        let groups = visibleModelGroups(for: [
+            ModelInfo(
+                id: "local-chat",
+                name: "Local Chat",
+                kind: .chat,
+                installed: true,
+                source: .local
+            ),
+            ModelInfo(
+                id: "provider-managed-chat",
+                name: "Provider Managed Chat",
+                kind: .chat,
+                installed: true,
+                source: .cloud,
+                remoteModel: "remote-chat"
+            ),
+            ModelInfo(
+                id: "uninstalled-chat",
+                name: "Uninstalled Chat",
+                kind: .chat,
+                installed: false,
+                source: .local
+            ),
+            ModelInfo(
+                id: "local-embedding",
+                name: "Local Embedding",
+                kind: .embedding,
+                installed: true,
+                source: .local
+            ),
+            ModelInfo(
+                id: "provider-managed-embedding",
+                name: "Provider Managed Embedding",
+                kind: .embedding,
+                installed: true,
+                source: .cloud,
+                remoteModel: "remote-embedding"
+            ),
+            ModelInfo(
+                id: "uninstalled-embedding",
+                name: "Uninstalled Embedding",
+                kind: .embedding,
+                installed: false,
+                source: .local
+            ),
+        ])
+
+        XCTAssertEqual(groups.map(\.kind), [.chat, .embedding])
+        XCTAssertEqual(groups.first(where: { $0.kind == .chat })?.models.map(\.id), ["local-chat"])
+        XCTAssertEqual(groups.first(where: { $0.kind == .embedding })?.models.map(\.id), ["local-embedding"])
+        XCTAssertFalse(groups.flatMap(\.models).contains { $0.source == .cloud || !$0.installed })
+    }
+
     func testLocalizedStringDefaultsToEnglishForUnsupportedStoredLanguage() {
         withStoredAppLanguage("unsupported") {
             XCTAssertEqual(AetherLinkAppLanguage.selected, .english)
@@ -59,6 +188,52 @@ final class AetherLinkLocalizationTests: XCTestCase {
     func testLocalizedStringFallsBackToKeyWhenMissing() {
         withStoredAppLanguage("ko") {
             XCTAssertEqual(NSLocalizedString("Missing Test Key", comment: ""), "Missing Test Key")
+        }
+    }
+
+    func testLocalizedCountHelpersUseNaturalSingularAndPluralCopy() {
+        withStoredAppLanguage("en") {
+            let copy = [
+                localizedTrustedDeviceCount(1),
+                localizedTrustedDeviceCount(2),
+                localizedModelCount(1),
+                localizedModelCount(4),
+                localizedLoadedModelCount(1),
+                localizedLoadedModelCount(3),
+                localizedAvailableModelProviderCount(1),
+                localizedAvailableModelProviderCount(2),
+                localizedLoadedLocalModelLogCount("1"),
+                localizedLoadedLocalModelLogCount("2"),
+                localizedModelResidencyActiveDetail(providerName: "Ollama", modelID: "llama3.1", idleUnloadMinutes: 1),
+                localizedModelResidencyActiveDetail(providerName: "Ollama", modelID: "llama3.1", idleUnloadMinutes: 10),
+            ]
+
+            XCTAssertEqual(copy[0], "1 trusted device")
+            XCTAssertEqual(copy[1], "2 trusted devices")
+            XCTAssertEqual(copy[2], "1 model")
+            XCTAssertEqual(copy[3], "4 models")
+            XCTAssertEqual(copy[4], "1 model loaded")
+            XCTAssertEqual(copy[5], "3 models loaded")
+            XCTAssertEqual(copy[6], "1 model provider available")
+            XCTAssertEqual(copy[7], "2 model providers available")
+            XCTAssertEqual(copy[8], "Loaded 1 model")
+            XCTAssertEqual(copy[9], "Loaded 2 models")
+            XCTAssertEqual(copy[10], "Ollama llama3.1 active. Idle unload after 1 minute.")
+            XCTAssertEqual(copy[11], "Ollama llama3.1 active. Idle unload after 10 minutes.")
+            XCTAssertFalse(copy.contains { $0.contains("(s)") })
+        }
+
+        withStoredAppLanguage("ko") {
+            XCTAssertEqual(localizedTrustedDeviceCount(2), "신뢰 기기 2대")
+            XCTAssertEqual(localizedLoadedModelCount(2), "모델 2개 불러옴")
+            XCTAssertEqual(localizedLoadedLocalModelLogCount("2"), "모델 2개 불러옴")
+        }
+
+        withStoredAppLanguage("fr") {
+            XCTAssertEqual(localizedTrustedDeviceCount(1), "1 appareil approuvé")
+            XCTAssertEqual(localizedTrustedDeviceCount(2), "2 appareils approuvés")
+            XCTAssertEqual(localizedAvailableModelProviderCount(1), "1 fournisseur de modèles disponible")
+            XCTAssertEqual(localizedAvailableModelProviderCount(2), "2 fournisseurs de modèles disponibles")
         }
     }
 

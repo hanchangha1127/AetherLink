@@ -1,6 +1,8 @@
 import Foundation
 
 public struct RuntimeRouteRefreshResult: Equatable, Sendable {
+    public var runtimeDeviceID: String
+    public var runtimeKeyFingerprint: String
     public var relayHost: String
     public var relayPort: Int
     public var relayID: String
@@ -10,6 +12,8 @@ public struct RuntimeRouteRefreshResult: Equatable, Sendable {
     public var relayScope: String?
 
     public init(
+        runtimeDeviceID: String,
+        runtimeKeyFingerprint: String,
         relayHost: String,
         relayPort: Int,
         relayID: String,
@@ -18,6 +22,8 @@ public struct RuntimeRouteRefreshResult: Equatable, Sendable {
         relayNonce: String,
         relayScope: String? = nil
     ) {
+        self.runtimeDeviceID = runtimeDeviceID
+        self.runtimeKeyFingerprint = runtimeKeyFingerprint
         self.relayHost = relayHost
         self.relayPort = relayPort
         self.relayID = relayID

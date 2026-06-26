@@ -34,7 +34,8 @@
 "Trusted device pairing" = "信頼済みデバイスのペアリング";
 "Model list loaded" = "モデル一覧を読み込み済み";
 "Load models to show what AetherLink Runtime can offer." = "AetherLink Runtime が提供できるモデルを表示するには、モデルを読み込んでください。";
-"%d model(s) loaded" = "%d 個のモデルを読み込み済み";
+"1 model loaded" = "1 個のモデルを読み込み済み";
+"%d models loaded" = "%d 個のモデルを読み込み済み";
 "Ready" = "準備完了";
 "Needs attention" = "確認が必要";
 "Not ready" = "未準備";
@@ -64,7 +65,8 @@
 "Connected to %@ and waiting for relay acknowledgement." = "%@ に接続し、経路の応答を待っています。";
 "Model provider status has not been checked yet." = "モデルプロバイダーのステータスはまだ確認されていません。";
 "%d of %d available" = "%d/%d 利用可能";
-"%d model provider(s) available" = "%d 個のモデルプロバイダーが利用可能";
+"1 model provider available" = "1 個のモデルプロバイダーが利用可能";
+"%d model providers available" = "%d 個のモデルプロバイダーが利用可能";
 "At least one model provider is responding." = "少なくとも 1 つのモデルプロバイダーが応答しています。";
 "No model provider is responding." = "応答しているモデルプロバイダーはありません。";
 "Model providers are checked by AetherLink Runtime." = "AetherLink Runtime がモデルプロバイダーを確認します。";
@@ -73,7 +75,8 @@
 "Provider managed" = "プロバイダー管理";
 "Chat Models" = "チャットモデル";
 "Embedding Models" = "埋め込みモデル";
-"%d model(s)" = "%d 件のモデル";
+"1 model" = "1 件のモデル";
+"%d models" = "%d 件のモデル";
 "Chat" = "チャット";
 "Embedding" = "埋め込み";
 "Running" = "実行中";
@@ -83,12 +86,14 @@
 "Idle" = "アイドル";
 "Active" = "アクティブ";
 "Model residency is not managed by this provider." = "このプロバイダーではモデル常駐を管理していません。";
-"%@ %@ active. Idle unload after %d minute(s)." = "%@ %@ がアクティブです。%d分アイドル状態が続くとアンロードします。";
+"%@ %@ active. Idle unload after 1 minute." = "%@ %@ がアクティブです。1分アイドル状態が続くとアンロードします。";
+"%@ %@ active. Idle unload after %d minutes." = "%@ %@ がアクティブです。%d分アイドル状態が続くとアンロードします。";
 "No active model is resident through the runtime policy." = "ランタイムポリシーで常駐しているアクティブなモデルはありません。";
 "Model unload requested by runtime policy." = "ランタイムポリシーがモデルのアンロードを要求しました。";
 "Model unloaded by runtime policy." = "ランタイムポリシーによりモデルをアンロードしました。";
 "Open a model provider for AetherLink Runtime, then check again." = "AetherLink Runtime 用のモデルプロバイダーを開いてから、もう一度確認してください。";
-"%d trusted device(s)" = "信頼済みデバイス %d 台";
+"1 trusted device" = "信頼済みデバイス 1 台";
+"%d trusted devices" = "信頼済みデバイス %d 台";
 "Pair a device before allowing runtime requests." = "ランタイムリクエストを許可する前に、デバイスをペアリングしてください。";
 "Authenticated devices can request runtime sessions." = "認証済みデバイスはランタイムセッションをリクエストできます。";
 "Setup needed" = "設定が必要";
@@ -149,7 +154,8 @@
 "Trusted %@" = "%@ を信頼しました";
 "Removed %@" = "%@ を削除しました";
 "Received device runtime request" = "デバイスランタイムリクエストを受信しました";
-"Loaded %@ local model(s)" = "%@ 個のモデルを読み込みました";
+"Loaded 1 model" = "1 個のモデルを読み込みました";
+"Loaded %@ models" = "%@ 個のモデルを読み込みました";
 "Could not load local models: %@" = "モデルを読み込めませんでした: %@";
 "Could not remove trusted device: %@" = "信頼済みデバイスを削除できませんでした: %@";
 "Could not load trusted devices: %@" = "信頼済みデバイスを読み込めませんでした: %@";

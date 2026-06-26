@@ -1,9 +1,19 @@
 package com.localagentbridge.android.core.pairing
 
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.test.core.app.ApplicationProvider
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 
+@RunWith(RobolectricTestRunner::class)
 class PairingStoreTest {
     @Test
     fun trustedRuntimeDirectEndpointPreservesValidQrHostAndPort() {
@@ -157,6 +167,78 @@ class PairingStoreTest {
         assertEquals(43170, endpoint?.port)
     }
 
+    @Test
+    fun pairingStorePersistsCompleteRelayRoute() = runTest {
+        val store = pairingStore()
+        store.forgetRuntime()
+
+        store.trustRuntime(completeRelayRuntime())
+
+        val trusted = store.trustedRuntime.first()
+        assertEquals("runtime-1", trusted?.deviceId)
+        assertEquals("AetherLink Runtime", trusted?.name)
+        assertEquals("runtime-fingerprint", trusted?.fingerprint)
+        assertEquals("runtime-public-key", trusted?.publicKeyBase64)
+        assertEquals("route-token", trusted?.routeToken)
+        assertNull(trusted?.host)
+        assertNull(trusted?.port)
+        assertEquals("relay.example.test", trusted?.relayHost)
+        assertEquals(443, trusted?.relayPort)
+        assertEquals("relay-1", trusted?.relayId)
+        assertEquals("secret-1", trusted?.relaySecret)
+        assertEquals(4102444800000L, trusted?.relayExpiresAtEpochMillis)
+        assertEquals("nonce-route-1", trusted?.relayNonce)
+        assertEquals("remote", trusted?.relayScope)
+
+        store.forgetRuntime()
+    }
+
+    @Test
+    fun pairingStoreDropsIncompleteRelayRouteOnRead() = runTest {
+        val store = pairingStore()
+        store.forgetRuntime()
+
+        ApplicationProvider.getApplicationContext<android.content.Context>()
+            .localAgentBridgeDataStore
+            .edit { prefs ->
+                prefs[stringPreferencesKey("runtime_device_id")] = "runtime-1"
+                prefs[stringPreferencesKey("runtime_name")] = "AetherLink Runtime"
+                prefs[stringPreferencesKey("runtime_fingerprint")] = "runtime-fingerprint"
+                prefs[stringPreferencesKey("runtime_public_key")] = "runtime-public-key"
+                prefs[stringPreferencesKey("runtime_route_token")] = "route-token"
+                prefs[stringPreferencesKey("runtime_relay_host")] = "relay.example.test"
+                prefs[intPreferencesKey("runtime_relay_port")] = 443
+                prefs[stringPreferencesKey("runtime_relay_id")] = "relay-1"
+                prefs[longPreferencesKey("runtime_relay_expires_at_epoch_millis")] = 4102444800000L
+                prefs[stringPreferencesKey("runtime_relay_nonce")] = "nonce-route-1"
+                prefs[stringPreferencesKey("runtime_relay_scope")] = "remote"
+            }
+
+        val trusted = store.trustedRuntime.first()
+        assertEquals("runtime-1", trusted?.deviceId)
+        assertEquals("runtime-fingerprint", trusted?.fingerprint)
+        assertNull(trusted?.relayHost)
+        assertNull(trusted?.relayPort)
+        assertNull(trusted?.relayId)
+        assertNull(trusted?.relaySecret)
+        assertNull(trusted?.relayExpiresAtEpochMillis)
+        assertNull(trusted?.relayNonce)
+        assertNull(trusted?.relayScope)
+
+        store.forgetRuntime()
+    }
+
+    @Test
+    fun pairingStoreForgetRuntimeClearsRelayRoute() = runTest {
+        val store = pairingStore()
+        store.forgetRuntime()
+        store.trustRuntime(completeRelayRuntime())
+
+        store.forgetRuntime()
+
+        assertNull(store.trustedRuntime.first())
+    }
+
     private fun trustedRuntime(
         host: String?,
         port: Int?,
@@ -170,5 +252,21 @@ class PairingStoreTest {
             host = host,
             port = port,
         )
+    }
+
+    private fun completeRelayRuntime(): TrustedRuntime {
+        return trustedRuntime(host = "192.168.1.10", port = 43170).copy(
+            relayHost = "relay.example.test",
+            relayPort = 443,
+            relayId = "relay-1",
+            relaySecret = "secret-1",
+            relayExpiresAtEpochMillis = 4102444800000L,
+            relayNonce = "nonce-route-1",
+            relayScope = "remote",
+        )
+    }
+
+    private fun pairingStore(): PairingStore {
+        return PairingStore(ApplicationProvider.getApplicationContext())
     }
 }

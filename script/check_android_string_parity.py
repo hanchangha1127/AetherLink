@@ -53,6 +53,7 @@ CLIENT_SCREENS_SOURCE = (
     / "ui"
     / "ClientScreens.kt"
 )
+ANDROID_KOTLIN_SOURCE_ROOT = ANDROID_APP_ROOT / "src" / "main" / "java"
 LOCALE_DIRS = ("values-en", "values-ko", "values-ja", "values-zh-rCN", "values-fr")
 EXPECTED_RUNTIME_LANGUAGES = {
     "English": "en",
@@ -232,6 +233,28 @@ RUNTIME_THEME_ENUM_RE = re.compile(
     re.DOTALL,
 )
 RUNTIME_THEME_RE = re.compile(r"^\s*([A-Za-z][A-Za-z0-9]*)\(\"([^\"]*)\"\)[,;]?\s*$", re.MULTILINE)
+RAW_COMPOSE_VISIBLE_LITERAL_RE = re.compile(
+    r"""
+    \b
+    (?:
+        Text|BasicText|Button|OutlinedButton|TextButton|FilledTonalButton|
+        AssistChip|FilterChip|SuggestionChip|ElevatedButton|FloatingActionButton|
+        TextField|OutlinedTextField|SecureField|AlertDialog|DropdownMenuItem
+    )
+    \s*\(\s*"
+    |
+    \b
+    (?:
+        contentDescription|placeholder|label|title
+    )
+    \s*=\s*"
+    |
+    \bToast\s*\.\s*makeText\s*\([^,\n]+,\s*"
+    |
+    \bshowSnackbar\s*\(\s*"
+    """,
+    re.VERBOSE,
+)
 
 
 def string_entries(path: Path) -> list[tuple[str, str]]:
@@ -247,6 +270,17 @@ def string_entries(path: Path) -> list[tuple[str, str]]:
 
 def string_names(path: Path) -> list[str]:
     return [name for name, _ in string_entries(path)]
+
+
+def plural_entries(path: Path) -> list[tuple[str, dict[str, str]]]:
+    root = ET.parse(path).getroot()
+    entries: list[tuple[str, dict[str, str]]] = []
+    for node in root.findall("plurals"):
+        quantities: dict[str, str] = {}
+        for item in node.findall("item"):
+            quantities[item.attrib["quantity"]] = "".join(item.itertext())
+        entries.append((node.attrib["name"], quantities))
+    return entries
 
 
 def duplicate_names(names: list[str]) -> list[str]:
@@ -398,6 +432,21 @@ def check_runtime_theme_selector(default_names: list[str]) -> list[str]:
     return failures
 
 
+def check_no_raw_compose_visible_literals() -> list[str]:
+    failures: list[str] = []
+
+    for path in sorted(ANDROID_KOTLIN_SOURCE_ROOT.glob("**/*.kt")):
+        relative_path = path.relative_to(ROOT)
+        for line_number, line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
+            if RAW_COMPOSE_VISIBLE_LITERAL_RE.search(line):
+                failures.append(
+                    f"{relative_path}:{line_number}: visible Compose/accessibility text must use "
+                    "stringResource or a localized resource id so all five launch languages stay covered."
+                )
+
+    return failures
+
+
 def main() -> int:
     failures: list[str] = []
     default_files = sorted(
@@ -413,12 +462,18 @@ def main() -> int:
         default_entries = string_entries(default_file)
         default_names = [name for name, _ in default_entries]
         default_values = dict(default_entries)
+        default_plural_entries = plural_entries(default_file)
+        default_plural_names = [name for name, _ in default_plural_entries]
+        default_plural_values = dict(default_plural_entries)
         res_dir = default_file.parents[1]
         module = default_file.relative_to(ROOT)
 
         duplicates = duplicate_names(default_names)
         if duplicates:
             failures.append(f"{module}: duplicate keys {duplicates}")
+        plural_duplicates = duplicate_names(default_plural_names)
+        if plural_duplicates:
+            failures.append(f"{module}: duplicate plural keys {plural_duplicates}")
 
         stale_names = [name for name in FORBIDDEN_STALE_STRING_NAMES if name in default_names]
         if stale_names:
@@ -438,11 +493,17 @@ def main() -> int:
             locale_entries = string_entries(locale_file)
             locale_names = [name for name, _ in locale_entries]
             locale_values = dict(locale_entries)
+            locale_plural_entries = plural_entries(locale_file)
+            locale_plural_names = [name for name, _ in locale_plural_entries]
+            locale_plural_values = dict(locale_plural_entries)
             locale_relative = locale_file.relative_to(ROOT)
 
             duplicates = duplicate_names(locale_names)
             if duplicates:
                 failures.append(f"{locale_relative}: duplicate keys {duplicates}")
+            plural_duplicates = duplicate_names(locale_plural_names)
+            if plural_duplicates:
+                failures.append(f"{locale_relative}: duplicate plural keys {plural_duplicates}")
 
             stale_names = [name for name in FORBIDDEN_STALE_STRING_NAMES if name in locale_names]
             if stale_names:
@@ -471,8 +532,37 @@ def main() -> int:
                         f"(default={default_placeholders}, locale={locale_placeholders})"
                     )
 
+            if locale_plural_names != default_plural_names:
+                missing = [name for name in default_plural_names if name not in locale_plural_names]
+                extra = [name for name in locale_plural_names if name not in default_plural_names]
+                failures.append(
+                    f"{locale_relative}: plural key order/parity mismatch "
+                    f"(missing={missing}, extra={extra})"
+                )
+                continue
+
+            for name in default_plural_names:
+                default_quantities = default_plural_values[name]
+                locale_quantities = locale_plural_values[name]
+                if list(locale_quantities.keys()) != list(default_quantities.keys()):
+                    failures.append(
+                        f"{locale_relative}: plural quantity mismatch for {name!r} "
+                        f"(default={list(default_quantities.keys())}, locale={list(locale_quantities.keys())})"
+                    )
+                    continue
+                for quantity in default_quantities:
+                    default_placeholders = placeholders(default_quantities[quantity])
+                    locale_placeholders = placeholders(locale_quantities[quantity])
+                    if locale_placeholders != default_placeholders:
+                        failures.append(
+                            f"{locale_relative}: plural placeholder mismatch for {name!r}/{quantity} "
+                            f"(default={default_placeholders}, locale={locale_placeholders})"
+                        )
+
         failures.extend(check_runtime_language_selector(default_names))
         failures.extend(check_runtime_theme_selector(default_names))
+
+    failures.extend(check_no_raw_compose_visible_literals())
 
     if failures:
         print("Android string parity check failed:", file=sys.stderr)
@@ -487,7 +577,8 @@ def main() -> int:
         "Android string parity OK for "
         f"{module_count} module resource set(s), "
         f"{locale_count} locale(s), "
-        f"{localized_resource_count} localized strings.xml file(s)."
+        f"{localized_resource_count} localized strings.xml file(s), "
+        "including plural resources and raw Compose visible-string guards."
     )
     return 0
 

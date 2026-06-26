@@ -73,6 +73,7 @@ object RuntimePairingPayloadParser {
             query["relay_id"]
                 ?: query["remote_id"]
                 ?: query["route_id"]
+                ?: query["rendezvous_id"]
                 ?: query["network_id"]
                 ?: query["ri"]
             )?.takeIf { it.isNotBlank() }
@@ -81,6 +82,7 @@ object RuntimePairingPayloadParser {
             query["relay_secret"]
                 ?: query["remote_secret"]
                 ?: query["route_secret"]
+                ?: query["rendezvous_secret"]
                 ?: query["rs"]
             )?.takeIf { it.isNotBlank() }
         val rawRelayExpiresAt = query["relay_expires_at"]

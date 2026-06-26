@@ -12,7 +12,10 @@
     <string name="clear_chat_search">チャット検索をクリア</string>
     <string name="no_chat_search_results">一致するチャットはありません。</string>
     <string name="untitled_chat">無題のチャット</string>
-    <string name="chat_message_count">メッセージ %1$d 件</string>
+    <plurals name="chat_message_count">
+        <item quantity="one">メッセージ %1$d 件</item>
+        <item quantity="other">メッセージ %1$d 件</item>
+    </plurals>
     <string name="chat_session_status_value">%1$s - %2$s</string>
     <string name="chat_session_status_completed">完了</string>
     <string name="chat_session_status_cancelled">キャンセル済み</string>
@@ -181,6 +184,7 @@
     <string name="models_from_runtime">モデルはこのアプリから直接ではなく、AetherLink Runtime を通じて読み込まれます。</string>
     <string name="models_need_connection">モデルを読み込む前に、信頼済みランタイムに接続してください。</string>
     <string name="model_backend_value">モデルサービス: %1$s</string>
+    <string name="model_status_value">%1$s - %2$s</string>
     <string name="model_installed">インストール済み</string>
     <string name="model_running">実行中</string>
     <string name="model_not_installed">未インストール</string>
@@ -219,6 +223,8 @@
     <string name="attachment_type_document">ドキュメント</string>
     <string name="attachment_metadata_with_size">%1$s · %2$s</string>
     <string name="attachment_requires_vision_model">ビジョンモデルが必要です</string>
+    <string name="empty_chat_pairing_title">QR スキャンで開始</string>
+    <string name="empty_chat_pairing">先に AetherLink Runtime とペアリングしてください。モデルプロバイダーは信頼済みランタイムの背後で非公開のままです。</string>
     <string name="empty_chat_disconnected_title">続けるには接続してください</string>
     <string name="empty_chat_disconnected">チャットする前に、信頼済みランタイムに接続してください。</string>
     <string name="empty_chat_no_model_title">モデルを選択</string>
@@ -235,6 +241,7 @@
     <string name="chat_backend_unavailable_title">モデルサービスの確認が必要です</string>
     <string name="chat_backend_unavailable_detail">AetherLink Runtime でモデルサービスの状態を確認し、ヘルスを更新してください。</string>
     <string name="refresh_health">ヘルスを更新</string>
+    <string name="chat_hint_pairing">送信する前にペアリング QR をスキャンしてください。</string>
     <string name="chat_hint_connect">先に信頼済みランタイムに接続してください。</string>
     <string name="chat_hint_select_model">送信する前にモデルを選択してください。</string>
     <string name="chat_hint_model_unavailable">送信する前にモデルを更新するか、別のモデルを選択してください。</string>
