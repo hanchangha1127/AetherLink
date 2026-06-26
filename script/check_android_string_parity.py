@@ -75,6 +75,13 @@ REQUIRED_LANGUAGE_KEYS = (
     "language_simplified_chinese",
     "language_french",
 )
+EXPECTED_NATIVE_LANGUAGE_LABELS = {
+    "language_english": "English",
+    "language_korean": "한국어",
+    "language_japanese": "日本語",
+    "language_simplified_chinese": "简体中文",
+    "language_french": "Français",
+}
 REQUIRED_APPEARANCE_KEYS = (
     "appearance_title",
     "appearance_system",
@@ -241,7 +248,11 @@ RAW_COMPOSE_VISIBLE_LITERAL_RE = re.compile(
         AssistChip|FilterChip|SuggestionChip|ElevatedButton|FloatingActionButton|
         TextField|OutlinedTextField|SecureField|AlertDialog|DropdownMenuItem
     )
-    \s*\(\s*"
+    \s*\(\s*
+    (?:
+        text\s*=\s*
+    )?
+    "
     |
     \b
     (?:
@@ -316,6 +327,18 @@ def release_copy_value_failures(resource_dir_name: str, values: dict[str, str], 
         if actual_value != expected_value:
             failures.append(
                 f"{relative_path}: release copy mismatch for {name!r} "
+                f"(expected={expected_value!r}, actual={actual_value!r})"
+            )
+    return failures
+
+
+def native_language_label_failures(values: dict[str, str], relative_path: Path) -> list[str]:
+    failures: list[str] = []
+    for name, expected_value in EXPECTED_NATIVE_LANGUAGE_LABELS.items():
+        actual_value = values.get(name)
+        if actual_value != expected_value:
+            failures.append(
+                f"{relative_path}: language picker label mismatch for {name!r} "
                 f"(expected={expected_value!r}, actual={actual_value!r})"
             )
     return failures
@@ -421,6 +444,7 @@ def check_runtime_theme_selector(default_names: list[str]) -> list[str]:
             MAIN_ACTIVITY_SOURCE,
             (
                 "AetherLinkTheme(theme = state.selectedTheme)",
+                "internal fun AetherLinkTheme(theme: RuntimeAppTheme, content: @Composable () -> Unit)",
                 "RuntimeAppTheme.System -> systemDarkTheme",
                 "RuntimeAppTheme.Light -> false",
                 "RuntimeAppTheme.Dark -> true",
@@ -437,12 +461,59 @@ def check_no_raw_compose_visible_literals() -> list[str]:
 
     for path in sorted(ANDROID_KOTLIN_SOURCE_ROOT.glob("**/*.kt")):
         relative_path = path.relative_to(ROOT)
-        for line_number, line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
-            if RAW_COMPOSE_VISIBLE_LITERAL_RE.search(line):
+        text = path.read_text(encoding="utf-8", errors="replace")
+        for match in RAW_COMPOSE_VISIBLE_LITERAL_RE.finditer(text):
+            line_number = text.count("\n", 0, match.start()) + 1
+            failures.append(
+                f"{relative_path}:{line_number}: visible Compose/accessibility text must use "
+                "stringResource or a localized resource id so all five launch languages stay covered."
+            )
+
+    return failures
+
+
+def raw_compose_visible_literal_matcher_self_test_failures() -> list[str]:
+    failures: list[str] = []
+    unsafe_samples = (
+        ("positional Text", 'Text("Raw visible copy")'),
+        ("named Text argument", 'Text(text = "Raw visible copy")'),
+        ("multiline Text positional text", 'val x = 1\nText(\n    "Raw visible copy"\n)'),
+        ("multiline Text named argument", 'val x = 1\nText(\n    text = "Raw visible copy"\n)'),
+        ("multiline Button positional text", 'Button(\n    "Raw action",\n    onClick = {}\n)'),
+        ("multiline content description", 'Icon(\n    imageVector = Icons.Filled.Close,\n    contentDescription = "Raw close"\n)'),
+        ("raw toast", 'Toast.makeText(context, "Raw toast", Toast.LENGTH_SHORT)'),
+        ("raw snackbar", 'snackbarHostState.showSnackbar("Raw snackbar")'),
+    )
+    safe_samples = (
+        ("string resource Text", "Text(stringResource(R.string.app_name))"),
+        (
+            "string resource content description",
+            'Icon(imageVector = Icons.Filled.Close, contentDescription = stringResource(R.string.content_desc_close))',
+        ),
+    )
+
+    for label, sample in unsafe_samples:
+        matches = list(RAW_COMPOSE_VISIBLE_LITERAL_RE.finditer(sample))
+        if not matches:
+            failures.append(
+                "raw Compose visible-string matcher missed required sample "
+                f"{label}: {sample!r}"
+            )
+            continue
+        if label == "multiline Text named argument":
+            line_number = sample.count("\n", 0, matches[0].start()) + 1
+            if line_number != 2:
                 failures.append(
-                    f"{relative_path}:{line_number}: visible Compose/accessibility text must use "
-                    "stringResource or a localized resource id so all five launch languages stay covered."
+                    "raw Compose visible-string matcher reported "
+                    f"line {line_number} for {label}, expected 2"
                 )
+
+    for label, sample in safe_samples:
+        if RAW_COMPOSE_VISIBLE_LITERAL_RE.search(sample) is not None:
+            failures.append(
+                "raw Compose visible-string matcher rejected localized sample "
+                f"{label}: {sample!r}"
+            )
 
     return failures
 
@@ -483,6 +554,7 @@ def main() -> int:
             failures.append(f"{module}: {stale_value}")
 
         failures.extend(release_copy_value_failures("values", default_values, module))
+        failures.extend(native_language_label_failures(default_values, module))
 
         for locale_dir_name in LOCALE_DIRS:
             locale_file = res_dir / locale_dir_name / "strings.xml"
@@ -513,6 +585,7 @@ def main() -> int:
                 failures.append(f"{locale_relative}: {stale_value}")
 
             failures.extend(release_copy_value_failures(locale_dir_name, locale_values, locale_relative))
+            failures.extend(native_language_label_failures(locale_values, locale_relative))
 
             if locale_names != default_names:
                 missing = [name for name in default_names if name not in locale_names]
@@ -562,6 +635,7 @@ def main() -> int:
         failures.extend(check_runtime_language_selector(default_names))
         failures.extend(check_runtime_theme_selector(default_names))
 
+    failures.extend(raw_compose_visible_literal_matcher_self_test_failures())
     failures.extend(check_no_raw_compose_visible_literals())
 
     if failures:

@@ -75,7 +75,7 @@ class PairingStore(private val context: Context) {
             val relayId = runtime.relayId
             val relaySecret = runtime.relaySecret
             val relayScope = runtime.relayScope
-            if (runtime.hasValidRelayRoute()) {
+            if (runtime.hasCompleteRelayRoute()) {
                 prefs[Keys.runtimeRelayHost] = requireNotNull(relayHost)
                 prefs[Keys.runtimeRelayPort] = requireNotNull(relayPort)
                 prefs[Keys.runtimeRelayId] = requireNotNull(relayId)

@@ -114,11 +114,17 @@ public final class RelayServer: @unchecked Sendable {
             requestedRelaySecret: request.requestedRelaySecret,
             validFor: configuration.allocationTTLSeconds
         )
-        allocationRegistry.store(allocation)
+        if request.shouldPersistAllocation {
+            allocationRegistry.store(allocation)
+        }
         guard writeAll(socket: socket, data: try allocation.responseLine()) else {
             throw RelayServerError.allocationWriteFailed
         }
-        log("allocated relay_id=\(shortID(allocation.relayID)) route_token=\(shortID(request.routeToken))")
+        if request.isPreflight {
+            log("preflight allocation route_token=\(shortID(request.routeToken))")
+        } else {
+            log("allocated relay_id=\(shortID(allocation.relayID)) route_token=\(shortID(request.routeToken))")
+        }
     }
 
     private func isAllocationAuthorized(_ request: RelayAllocationRequest) -> Bool {

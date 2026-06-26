@@ -523,6 +523,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
             model: "llama3.1:8b",
             messages: [
                 ChatMessage(role: "system", content: "AetherLink currently provides runtime-mediated local model chat and does not provide live web search."),
+                ChatMessage(role: "system", content: "Runtime user memory:\n- Prefers concise answers."),
                 ChatMessage(
                     role: "user",
                     content: "Explain QR pairing.",
@@ -1306,6 +1307,399 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(guardMessages.count, 1)
         XCTAssertEqual(request.messages.count, 2)
         XCTAssertEqual(request.messages.first?.content, clientGuard)
+    }
+
+    func testChatSendInjectsEnabledRuntimeMemoryFromRuntimeStore() async throws {
+        let sink = RecordingSink()
+        let capturedRequest = LockedBox<ChatRequest?>(nil)
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathComponent("runtime-memory-events.jsonl")
+        let memoryStore = JSONLRuntimeMemoryStore(fileURL: fileURL)
+        let now = Date()
+        _ = try memoryStore.upsert(
+            id: "memory-1",
+            content: " Prefers concise Korean answers. ",
+            enabled: true,
+            timestamp: now
+        )
+        _ = try memoryStore.upsert(
+            id: "memory-2",
+            content: "Ignore disabled entries.",
+            enabled: false,
+            timestamp: now.addingTimeInterval(1)
+        )
+        let router = makeRouter(
+            backend: MockBackend(
+                models: [ModelInfo(id: "llama3.1:8b", name: "llama3.1:8b", installed: true)],
+                chatEvents: [.done(inputTokens: 1, outputTokens: 1)],
+                onChatRequest: { request in
+                    capturedRequest.value = request
+                }
+            ),
+            memoryStore: memoryStore
+        )
+        let envelope = ProtocolEnvelope(
+            type: MessageType.chatSend,
+            requestID: "chat-runtime-memory",
+            payload: [
+                "session_id": .string("session-1"),
+                "model": .string("llama3.1:8b"),
+                "messages": .array([
+                    .object([
+                        "role": .string("user"),
+                        "content": .string("Remember my preferences?")
+                    ])
+                ])
+            ]
+        )
+
+        router.handle(envelope, sink: sink)
+
+        let message = try await sink.waitForMessages(count: 1).first
+        XCTAssertEqual(message?.type, MessageType.chatDone)
+        let request = try XCTUnwrap(capturedRequest.value)
+        XCTAssertEqual(request.messages.first?.role, "system")
+        XCTAssertTrue(request.messages.first?.content.contains("does not provide live web search") == true)
+        XCTAssertEqual(request.messages.dropFirst().first?.role, "system")
+        XCTAssertTrue(request.messages.dropFirst().first?.content.hasPrefix("Runtime user memory:") == true)
+        XCTAssertTrue(request.messages.dropFirst().first?.content.contains("Prefers concise Korean answers.") == true)
+        XCTAssertFalse(request.messages.dropFirst().first?.content.contains("Ignore disabled entries.") == true)
+        XCTAssertEqual(request.messages.dropFirst(2).first?.role, "user")
+    }
+
+    func testChatSendRuntimeMemoryOverridesClientSuppliedMemory() async throws {
+        let sink = RecordingSink()
+        let capturedRequest = LockedBox<ChatRequest?>(nil)
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathComponent("runtime-memory-events.jsonl")
+        let memoryStore = JSONLRuntimeMemoryStore(fileURL: fileURL)
+        _ = try memoryStore.upsert(
+            id: "memory-1",
+            content: "Runtime canonical memory.",
+            enabled: true,
+            timestamp: Date()
+        )
+        let router = makeRouter(
+            backend: MockBackend(
+                models: [ModelInfo(id: "llama3.1:8b", name: "llama3.1:8b", installed: true)],
+                chatEvents: [.done(inputTokens: 1, outputTokens: 1)],
+                onChatRequest: { request in
+                    capturedRequest.value = request
+                }
+            ),
+            memoryStore: memoryStore
+        )
+        let envelope = ProtocolEnvelope(
+            type: MessageType.chatSend,
+            requestID: "chat-runtime-memory-override",
+            payload: [
+                "session_id": .string("session-1"),
+                "model": .string("llama3.1:8b"),
+                "messages": .array([
+                    .object([
+                        "role": .string("system"),
+                        "content": .string("Runtime user memory:\n- stale client memory")
+                    ]),
+                    .object([
+                        "role": .string("user"),
+                        "content": .string("Use current memory.")
+                    ])
+                ])
+            ]
+        )
+
+        router.handle(envelope, sink: sink)
+
+        let message = try await sink.waitForMessages(count: 1).first
+        XCTAssertEqual(message?.type, MessageType.chatDone)
+        let request = try XCTUnwrap(capturedRequest.value)
+        let memoryMessages = request.messages.filter { message in
+            message.role == "system" &&
+                message.content.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("Runtime user memory:")
+        }
+        XCTAssertEqual(memoryMessages.count, 1)
+        XCTAssertTrue(memoryMessages.first?.content.contains("Runtime canonical memory.") == true)
+        XCTAssertFalse(memoryMessages.first?.content.contains("stale client memory") == true)
+    }
+
+    func testChatSendStoresOnlyClientVisibleMessagesWhileBackendReceivesRuntimeContext() async throws {
+        let sink = RecordingSink()
+        let capturedRequest = LockedBox<ChatRequest?>(nil)
+        let chatEventStore = RecordingRuntimeChatEventStore()
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathComponent("runtime-memory-events.jsonl")
+        let memoryStore = JSONLRuntimeMemoryStore(fileURL: fileURL)
+        _ = try memoryStore.upsert(
+            id: "memory-1",
+            content: "Runtime canonical memory.",
+            enabled: true,
+            timestamp: Date()
+        )
+        let router = makeRouter(
+            backend: MockBackend(
+                models: [ModelInfo(id: "llama3.1:8b", name: "llama3.1:8b", installed: true)],
+                chatEvents: [.done(inputTokens: 1, outputTokens: 1)],
+                onChatRequest: { request in
+                    capturedRequest.value = request
+                }
+            ),
+            chatEventStore: chatEventStore,
+            memoryStore: memoryStore
+        )
+        let envelope = ProtocolEnvelope(
+            type: MessageType.chatSend,
+            requestID: "chat-runtime-memory-storage",
+            payload: [
+                "session_id": .string("session-1"),
+                "model": .string("llama3.1:8b"),
+                "messages": .array([
+                    .object([
+                        "role": .string("system"),
+                        "content": .string("Runtime user memory:\n- stale client memory")
+                    ]),
+                    .object([
+                        "role": .string("user"),
+                        "content": .string("Use current memory.")
+                    ])
+                ])
+            ]
+        )
+
+        router.handle(envelope, sink: sink)
+
+        let message = try await sink.waitForMessages(count: 1).first
+        XCTAssertEqual(message?.type, MessageType.chatDone)
+        let backendRequest = try XCTUnwrap(capturedRequest.value)
+        XCTAssertTrue(backendRequest.messages.contains { message in
+            message.role == "system" &&
+                message.content.lowercased().contains("does not provide live web search")
+        })
+        XCTAssertTrue(backendRequest.messages.contains { message in
+            message.role == "system" &&
+                message.content.contains("Runtime canonical memory.")
+        })
+        let requestEvent = try XCTUnwrap(chatEventStore.events.first { $0.kind == .request })
+        XCTAssertEqual(requestEvent.messages?.map(\.role), ["user"])
+        XCTAssertEqual(requestEvent.messages?.first?.content, "Use current memory.")
+        XCTAssertFalse(requestEvent.messages?.contains { message in
+            message.content.lowercased().contains("does not provide live web search") ||
+                message.content.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("Runtime user memory:")
+        } == true)
+    }
+
+    func testChatSendDoesNotCompactShortConversation() async throws {
+        let sink = RecordingSink()
+        let capturedRequest = LockedBox<ChatRequest?>(nil)
+        let router = makeRouter(backend: MockBackend(
+            models: [ModelInfo(id: "llama3.1:8b", name: "llama3.1:8b", installed: true)],
+            chatEvents: [.done(inputTokens: 1, outputTokens: 1)],
+            onChatRequest: { request in
+                capturedRequest.value = request
+            }
+        ))
+        let envelope = ProtocolEnvelope(
+            type: MessageType.chatSend,
+            requestID: "chat-no-compaction",
+            payload: [
+                "session_id": .string("session-compact"),
+                "model": .string("llama3.1:8b"),
+                "messages": .array([
+                    .object([
+                        "role": .string("user"),
+                        "content": .string("Summarize the pairing flow.")
+                    ]),
+                    .object([
+                        "role": .string("assistant"),
+                        "content": .string("Pair with a QR code, then keep the runtime trusted.")
+                    ]),
+                    .object([
+                        "role": .string("user"),
+                        "content": .string("Keep it brief.")
+                    ])
+                ])
+            ]
+        )
+
+        router.handle(envelope, sink: sink)
+
+        let message = try await sink.waitForMessages(count: 1).first
+        XCTAssertEqual(message?.type, MessageType.chatDone)
+        let request = try XCTUnwrap(capturedRequest.value)
+        XCTAssertFalse(request.messages.contains { $0.content.hasPrefix("Runtime conversation summary:") })
+        XCTAssertEqual(request.messages.filter(\.isConversationTurnForTests).map(\.content), [
+            "Summarize the pairing flow.",
+            "Pair with a QR code, then keep the runtime trusted.",
+            "Keep it brief."
+        ])
+    }
+
+    func testChatSendCompactsOlderTurnsBeforeBackendRequestWhenContextIsLarge() async throws {
+        let sink = RecordingSink()
+        let capturedRequest = LockedBox<ChatRequest?>(nil)
+        let chatEventStore = RecordingRuntimeChatEventStore()
+        let olderUserContent = "old user turn 0 " + String(repeating: "A", count: 2_000)
+        let olderAssistantContent = "old assistant turn 0 " + String(repeating: "B", count: 2_000)
+        let recentUserContent = "recent user turn 8 must remain verbatim"
+        let recentAssistantContent = "recent assistant turn 8 must remain verbatim"
+        var messagePayloads: [JSONValue] = [
+            .object([
+                "role": .string("user"),
+                "content": .string(olderUserContent)
+            ]),
+            .object([
+                "role": .string("assistant"),
+                "content": .string(olderAssistantContent)
+            ])
+        ]
+        for index in 1...7 {
+            messagePayloads.append(.object([
+                "role": .string("user"),
+                "content": .string("old user turn \(index) " + String(repeating: "U", count: 2_000))
+            ]))
+            messagePayloads.append(.object([
+                "role": .string("assistant"),
+                "content": .string("old assistant turn \(index) " + String(repeating: "A", count: 2_000))
+            ]))
+        }
+        messagePayloads.append(.object([
+            "role": .string("user"),
+            "content": .string(recentUserContent)
+        ]))
+        messagePayloads.append(.object([
+            "role": .string("assistant"),
+            "content": .string(recentAssistantContent)
+        ]))
+        let router = makeRouter(
+            backend: MockBackend(
+                models: [ModelInfo(id: "llama3.1:8b", name: "llama3.1:8b", installed: true)],
+                chatEvents: [.done(inputTokens: 1, outputTokens: 1)],
+                onChatRequest: { request in
+                    capturedRequest.value = request
+                }
+            ),
+            chatEventStore: chatEventStore
+        )
+        let envelope = ProtocolEnvelope(
+            type: MessageType.chatSend,
+            requestID: "chat-compaction-large",
+            payload: [
+                "session_id": .string("session-compact"),
+                "model": .string("llama3.1:8b"),
+                "messages": .array(messagePayloads)
+            ]
+        )
+
+        router.handle(envelope, sink: sink)
+
+        let message = try await sink.waitForMessages(count: 1).first
+        XCTAssertEqual(message?.type, MessageType.chatDone)
+        let request = try XCTUnwrap(capturedRequest.value)
+        let summaryMessage = try XCTUnwrap(request.messages.first { $0.content.hasPrefix("Runtime conversation summary:") })
+        XCTAssertEqual(summaryMessage.role, "system")
+        XCTAssertTrue(summaryMessage.content.contains("Backend-only summary of older turns"))
+        XCTAssertTrue(summaryMessage.content.contains("old user turn 0"))
+        XCTAssertFalse(request.messages.contains { $0.content == olderUserContent })
+        XCTAssertFalse(request.messages.contains { $0.content == olderAssistantContent })
+        XCTAssertTrue(request.messages.contains { $0.content == recentUserContent })
+        XCTAssertTrue(request.messages.contains { $0.content == recentAssistantContent })
+        XCTAssertEqual(request.messages.filter(\.isConversationTurnForTests).count, 12)
+
+        let requestEvent = try XCTUnwrap(chatEventStore.events.first { $0.kind == .request })
+        XCTAssertEqual(requestEvent.messages?.count, messagePayloads.count)
+        XCTAssertTrue(requestEvent.messages?.contains { $0.content == olderUserContent } == true)
+        XCTAssertFalse(requestEvent.messages?.contains { $0.content.hasPrefix("Runtime conversation summary:") } == true)
+    }
+
+    func testChatSendCompactionKeepsRuntimeMemoryAndCapabilityGuardSeparate() async throws {
+        let sink = RecordingSink()
+        let capturedRequest = LockedBox<ChatRequest?>(nil)
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathComponent("runtime-memory-events.jsonl")
+        let memoryStore = JSONLRuntimeMemoryStore(fileURL: fileURL)
+        _ = try memoryStore.upsert(
+            id: "memory-1",
+            content: "Always answer with concise bilingual summaries.",
+            enabled: true,
+            timestamp: Date()
+        )
+        var messagePayloads: [JSONValue] = []
+        for index in 0..<18 {
+            messagePayloads.append(.object([
+                "role": .string(index.isMultiple(of: 2) ? "user" : "assistant"),
+                "content": .string("memory separation turn \(index) " + String(repeating: "M", count: 1_600))
+            ]))
+        }
+        let router = makeRouter(
+            backend: MockBackend(
+                models: [ModelInfo(id: "llama3.1:8b", name: "llama3.1:8b", installed: true)],
+                chatEvents: [.done(inputTokens: 1, outputTokens: 1)],
+                onChatRequest: { request in
+                    capturedRequest.value = request
+                }
+            ),
+            memoryStore: memoryStore
+        )
+        let envelope = ProtocolEnvelope(
+            type: MessageType.chatSend,
+            requestID: "chat-compaction-memory",
+            payload: [
+                "session_id": .string("session-compact"),
+                "model": .string("llama3.1:8b"),
+                "messages": .array(messagePayloads)
+            ]
+        )
+
+        router.handle(envelope, sink: sink)
+
+        let message = try await sink.waitForMessages(count: 1).first
+        XCTAssertEqual(message?.type, MessageType.chatDone)
+        let request = try XCTUnwrap(capturedRequest.value)
+        XCTAssertTrue(request.messages.first?.content.contains("does not provide live web search") == true)
+        XCTAssertTrue(request.messages.dropFirst().first?.content.hasPrefix("Runtime user memory:") == true)
+        XCTAssertTrue(request.messages.dropFirst(2).first?.content.hasPrefix("Runtime conversation summary:") == true)
+        XCTAssertEqual(request.messages.filter { $0.content.hasPrefix("Runtime user memory:") }.count, 1)
+        XCTAssertEqual(request.messages.filter { $0.content.hasPrefix("Runtime conversation summary:") }.count, 1)
+    }
+
+    func testChatSendReturnsStructuredErrorWhenRuntimeMemoryCannotLoad() async throws {
+        let sink = RecordingSink()
+        let capturedRequest = LockedBox<ChatRequest?>(nil)
+        let router = makeRouter(
+            backend: MockBackend(
+                models: [ModelInfo(id: "llama3.1:8b", name: "llama3.1:8b", installed: true)],
+                chatEvents: [.done(inputTokens: 1, outputTokens: 1)],
+                onChatRequest: { request in
+                    capturedRequest.value = request
+                }
+            ),
+            memoryStore: FailingRuntimeMemoryStore()
+        )
+        let envelope = ProtocolEnvelope(
+            type: MessageType.chatSend,
+            requestID: "chat-runtime-memory-error",
+            payload: [
+                "session_id": .string("session-1"),
+                "model": .string("llama3.1:8b"),
+                "messages": .array([
+                    .object([
+                        "role": .string("user"),
+                        "content": .string("Hello")
+                    ])
+                ])
+            ]
+        )
+
+        router.handle(envelope, sink: sink)
+
+        let message = try await sink.waitForMessages(count: 1).first
+        XCTAssertEqual(message?.type, MessageType.error)
+        XCTAssertEqual(message?.payload["code"], .string("memory_store_unavailable"))
+        XCTAssertEqual(message?.payload["retryable"], .bool(false))
+        XCTAssertNil(capturedRequest.value)
     }
 
     func testChatSendAppendsDocumentAttachmentTextAndPreservesImageAttachment() async throws {
@@ -3094,6 +3488,165 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
     }
 
     @MainActor
+    func testCompanionAppModelDefaultPairingFallsBackAcrossBootstrapRelayEndpointsBeforeQRCode() async throws {
+        let defaults = try isolatedDefaults()
+        let relayClient = FakeRelayPeerClient()
+        let environment = [
+            "AETHERLINK_BOOTSTRAP_RELAY_ENDPOINTS": "relay-dead.test:8443,relay-good.test:443"
+        ]
+        let serviceAllocator = FakeRelayServiceRouteAllocator(
+            allocations: [
+                nil,
+                CompanionRemoteRelayRouteAllocation(
+                    configuration: RelayPeerConfiguration(
+                        host: "relay-good.test",
+                        port: 443,
+                        relayID: "relay-good-id",
+                        relaySecret: "relay-good-secret"
+                    ),
+                    lease: CompanionRemoteRouteLease(
+                        expiresAtEpochMillis: 4_102_444_800_000,
+                        nonce: "relay-good-nonce"
+                    )
+                )
+            ]
+        )
+        let allocator = EnvironmentRemoteRelayRouteAllocator(
+            environment: environment,
+            relayServiceAllocator: serviceAllocator
+        )
+        let model = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: FakeRuntimeTransport(),
+            advertiser: FakeRuntimeAdvertiser(),
+            relayClient: relayClient,
+            remoteRelayRouteAllocator: allocator,
+            environment: environment,
+            userDefaults: defaults,
+            runtimeRouteHostProvider: { "192.168.1.44" }
+        )
+
+        model.beginPairing()
+
+        XCTAssertNil(model.pairingSession)
+        XCTAssertEqual(serviceAllocator.calls, [
+            FakeRelayServiceRouteAllocator.Call(
+                host: "relay-dead.test",
+                port: 8443,
+                routeToken: try XCTUnwrap(defaults.string(forKey: "aetherlink.discovery_route_token")),
+                relaySecret: nil,
+                allocationToken: nil
+            ),
+            FakeRelayServiceRouteAllocator.Call(
+                host: "relay-good.test",
+                port: 443,
+                routeToken: try XCTUnwrap(defaults.string(forKey: "aetherlink.discovery_route_token")),
+                relaySecret: nil,
+                allocationToken: nil
+            )
+        ])
+        XCTAssertEqual(relayClient.startedConfiguration?.host, "relay-good.test")
+        XCTAssertEqual(relayClient.startedConfiguration?.port, 443)
+        XCTAssertEqual(relayClient.startedConfiguration?.relayID, "relay-good-id")
+        XCTAssertEqual(relayClient.startedConfiguration?.relaySecret, "relay-good-secret")
+        XCTAssertEqual(relayClient.startedConfiguration?.relayNonce, "relay-good-nonce")
+        XCTAssertEqual(defaults.string(forKey: "aetherlink.relay.host"), "relay-good.test")
+        XCTAssertEqual(defaults.integer(forKey: "aetherlink.relay.port"), 443)
+
+        relayClient.emit(.waitingForPeer)
+        await Task.yield()
+
+        let session = try XCTUnwrap(model.pairingSession)
+        let qrItems = try queryItems(from: session.qrPayload)
+        XCTAssertEqual(qrItems["relay_host"], "relay-good.test")
+        XCTAssertEqual(qrItems["relay_port"], "443")
+        XCTAssertEqual(qrItems["relay_id"], "relay-good-id")
+        XCTAssertEqual(qrItems["relay_secret"], "relay-good-secret")
+        XCTAssertEqual(qrItems["relay_expires_at"], "4102444800000")
+        XCTAssertEqual(qrItems["relay_nonce"], "relay-good-nonce")
+        XCTAssertNil(qrItems["host"])
+        XCTAssertNil(qrItems["port"])
+    }
+
+    @MainActor
+    func testCompanionAppModelDefaultPairingUsesSavedBootstrapRelayEndpointBeforeQRCode() async throws {
+        let defaults = try isolatedDefaults()
+        defaults.set("relay-saved-dead.test:8443, relay-saved-good.test:443", forKey: "aetherlink.bootstrap_relay.endpoints")
+        defaults.set("stored-allocation-token", forKey: "aetherlink.bootstrap_relay.allocation_token")
+        let relayClient = FakeRelayPeerClient()
+        let serviceAllocator = FakeRelayServiceRouteAllocator(
+            allocations: [
+                nil,
+                CompanionRemoteRelayRouteAllocation(
+                    configuration: RelayPeerConfiguration(
+                        host: "relay-saved-good.test",
+                        port: 443,
+                        relayID: "relay-saved-id",
+                        relaySecret: "relay-saved-secret"
+                    ),
+                    lease: CompanionRemoteRouteLease(
+                        expiresAtEpochMillis: 4_102_444_800_000,
+                        nonce: "relay-saved-nonce"
+                    )
+                )
+            ]
+        )
+        let model = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: FakeRuntimeTransport(),
+            advertiser: FakeRuntimeAdvertiser(),
+            relayClient: relayClient,
+            relayServiceRouteAllocator: serviceAllocator,
+            environment: [:],
+            userDefaults: defaults,
+            runtimeRouteHostProvider: { "192.168.1.44" }
+        )
+
+        XCTAssertTrue(model.bootstrapRelaySettings.isEnabled)
+        XCTAssertTrue(model.canPrepareRemoteRelayRouteAutomatically)
+
+        model.beginPairing()
+
+        XCTAssertNil(model.pairingSession)
+        XCTAssertEqual(serviceAllocator.calls, [
+            FakeRelayServiceRouteAllocator.Call(
+                host: "relay-saved-dead.test",
+                port: 8443,
+                routeToken: try XCTUnwrap(defaults.string(forKey: "aetherlink.discovery_route_token")),
+                relaySecret: nil,
+                allocationToken: "stored-allocation-token"
+            ),
+            FakeRelayServiceRouteAllocator.Call(
+                host: "relay-saved-good.test",
+                port: 443,
+                routeToken: try XCTUnwrap(defaults.string(forKey: "aetherlink.discovery_route_token")),
+                relaySecret: nil,
+                allocationToken: "stored-allocation-token"
+            )
+        ])
+        XCTAssertEqual(relayClient.startedConfiguration?.host, "relay-saved-good.test")
+        XCTAssertEqual(relayClient.startedConfiguration?.relayID, "relay-saved-id")
+        XCTAssertEqual(relayClient.startedConfiguration?.relaySecret, "relay-saved-secret")
+        XCTAssertEqual(relayClient.startedConfiguration?.relayNonce, "relay-saved-nonce")
+
+        relayClient.emit(.waitingForPeer)
+        await Task.yield()
+
+        let session = try XCTUnwrap(model.pairingSession)
+        let qrItems = try queryItems(from: session.qrPayload)
+        XCTAssertEqual(qrItems["relay_host"], "relay-saved-good.test")
+        XCTAssertEqual(qrItems["relay_port"], "443")
+        XCTAssertEqual(qrItems["relay_id"], "relay-saved-id")
+        XCTAssertEqual(qrItems["relay_secret"], "relay-saved-secret")
+        XCTAssertEqual(qrItems["relay_expires_at"], "4102444800000")
+        XCTAssertEqual(qrItems["relay_nonce"], "relay-saved-nonce")
+        XCTAssertEqual(qrItems["relay_scope"], "remote")
+        XCTAssertNil(qrItems["allocation_token"])
+        XCTAssertNil(qrItems["host"])
+        XCTAssertNil(qrItems["port"])
+    }
+
+    @MainActor
     func testCompanionAppModelReplacesReadyStaleRelayBeforeGeneratingAllocatedRouteQRCode() async throws {
         let defaults = try isolatedDefaults()
         let relayClient = FakeRelayPeerClient()
@@ -3456,6 +4009,62 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         )
 
         XCTAssertEqual(serviceAllocator.calls.first?.allocationToken, "allocation-token-1")
+    }
+
+    func testEnvironmentRemoteRelayRouteAllocatorUsesStoredBootstrapSettingsWhenEnvironmentIsEmpty() throws {
+        let serviceAllocator = FakeRelayServiceRouteAllocator(
+            allocations: [
+                nil,
+                CompanionRemoteRelayRouteAllocation(
+                    configuration: RelayPeerConfiguration(
+                        host: "relay-saved-good.test",
+                        port: 443,
+                        relayID: "allocated-relay",
+                        relaySecret: "allocated-secret"
+                    ),
+                    lease: CompanionRemoteRouteLease(
+                        expiresAtEpochMillis: 4_102_444_800_000,
+                        nonce: "allocated-nonce"
+                    )
+                )
+            ]
+        )
+        let allocator = EnvironmentRemoteRelayRouteAllocator(
+            environment: [:],
+            storedBootstrapRelaySettings: CompanionBootstrapRelaySettings(
+                isEnabled: true,
+                endpoints: "relay-saved-dead.test:8443, relay-saved-good.test:443",
+                allocationToken: "stored-allocation-token"
+            ),
+            relayServiceAllocator: serviceAllocator
+        )
+
+        XCTAssertTrue(allocator.canAllocateRemoteRelayRoute)
+        let allocation = try allocator.allocateRemoteRelayRoute(
+            runtimeDeviceID: "runtime-1",
+            routeToken: "route-token-1",
+            preferredRelaySecret: "preferred-secret-1"
+        )
+
+        XCTAssertEqual(allocation?.configuration.host, "relay-saved-good.test")
+        XCTAssertEqual(allocation?.configuration.port, 443)
+        XCTAssertEqual(allocation?.lease?.nonce, "allocated-nonce")
+        XCTAssertEqual(serviceAllocator.calls, [
+            FakeRelayServiceRouteAllocator.Call(
+                host: "relay-saved-dead.test",
+                port: 8443,
+                routeToken: "route-token-1",
+                relaySecret: "preferred-secret-1",
+                allocationToken: "stored-allocation-token"
+            ),
+            FakeRelayServiceRouteAllocator.Call(
+                host: "relay-saved-good.test",
+                port: 443,
+                routeToken: "route-token-1",
+                relaySecret: "preferred-secret-1",
+                allocationToken: "stored-allocation-token"
+            )
+        ])
     }
 
     func testEnvironmentRemoteRelayRouteAllocatorReportsAutomaticAvailabilityFromBootstrapEnvironment() throws {
@@ -3831,6 +4440,55 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(defaults.string(forKey: "aetherlink.relay.secret"), "allocated-secret")
         XCTAssertEqual(defaults.integer(forKey: "aetherlink.relay.lease_expires_at"), Int(lease.expiresAtEpochMillis))
         XCTAssertEqual(defaults.string(forKey: "aetherlink.relay.lease_nonce"), "allocated-nonce")
+    }
+
+    @MainActor
+    func testCompanionAppModelSavesBootstrapRelaySettingsAndAllocatesRoute() throws {
+        let defaults = try isolatedDefaults()
+        let serviceAllocator = FakeRelayServiceRouteAllocator(
+            allocation: CompanionRemoteRelayRouteAllocation(
+                configuration: RelayPeerConfiguration(
+                    host: "relay-bootstrap-saved.test",
+                    port: 443,
+                    relayID: "saved-bootstrap-relay",
+                    relaySecret: "saved-bootstrap-secret"
+                ),
+                lease: CompanionRemoteRouteLease(
+                    expiresAtEpochMillis: 4_102_444_800_000,
+                    nonce: "saved-bootstrap-nonce"
+                )
+            )
+        )
+        let model = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: FakeRuntimeTransport(),
+            advertiser: FakeRuntimeAdvertiser(),
+            relayServiceRouteAllocator: serviceAllocator,
+            environment: [:],
+            userDefaults: defaults
+        )
+
+        let result = model.configureBootstrapRelay(
+            endpoints: " relay-bootstrap-saved.test:443 ",
+            allocationToken: " stored-bootstrap-token ",
+            allowsPrivateOverlay: true
+        )
+
+        XCTAssertEqual(result, .allocated(endpoint: "relay-bootstrap-saved.test:443"))
+        XCTAssertTrue(model.bootstrapRelaySettings.isEnabled)
+        XCTAssertEqual(model.bootstrapRelaySettings.endpoints, "relay-bootstrap-saved.test:443")
+        XCTAssertEqual(model.bootstrapRelaySettings.allocationToken, "stored-bootstrap-token")
+        XCTAssertTrue(model.bootstrapRelaySettings.allowsPrivateOverlay)
+        XCTAssertEqual(defaults.string(forKey: "aetherlink.bootstrap_relay.endpoints"), "relay-bootstrap-saved.test:443")
+        XCTAssertEqual(defaults.string(forKey: "aetherlink.bootstrap_relay.allocation_token"), "stored-bootstrap-token")
+        XCTAssertTrue(defaults.bool(forKey: "aetherlink.bootstrap_relay.allows_private_overlay"))
+        XCTAssertEqual(serviceAllocator.calls.first?.host, "relay-bootstrap-saved.test")
+        XCTAssertEqual(serviceAllocator.calls.first?.port, 443)
+        XCTAssertEqual(serviceAllocator.calls.first?.allocationToken, "stored-bootstrap-token")
+        XCTAssertEqual(defaults.string(forKey: "aetherlink.relay.id"), "saved-bootstrap-relay")
+        XCTAssertEqual(defaults.string(forKey: "aetherlink.relay.secret"), "saved-bootstrap-secret")
+        XCTAssertEqual(defaults.integer(forKey: "aetherlink.relay.lease_expires_at"), 4_102_444_800_000)
+        XCTAssertEqual(defaults.string(forKey: "aetherlink.relay.lease_nonce"), "saved-bootstrap-nonce")
     }
 
     @MainActor
@@ -4826,6 +5484,32 @@ private struct TestRuntimeChallengeSigner: RuntimeChallengeSigning {
     }
 }
 
+private struct FailingRuntimeMemoryStore: RuntimeMemoryStore {
+    func list() throws -> [RuntimeMemoryEntry] {
+        throw NSError(
+            domain: "AetherLinkTests",
+            code: 1,
+            userInfo: [NSLocalizedDescriptionKey: "memory store read failed"]
+        )
+    }
+
+    func upsert(id: String?, content: String, enabled: Bool?, timestamp: Date) throws -> RuntimeMemoryEntry {
+        throw NSError(
+            domain: "AetherLinkTests",
+            code: 2,
+            userInfo: [NSLocalizedDescriptionKey: "memory store write failed"]
+        )
+    }
+
+    func delete(id: String, timestamp: Date) throws -> RuntimeMemoryDeleteResult {
+        throw NSError(
+            domain: "AetherLinkTests",
+            code: 3,
+            userInfo: [NSLocalizedDescriptionKey: "memory store delete failed"]
+        )
+    }
+}
+
 private final class FakeRemoteRelayRouteAllocator: CompanionRemoteRelayRouteAllocating, @unchecked Sendable {
     struct Call: Equatable {
         var runtimeDeviceID: String
@@ -5169,6 +5853,13 @@ private extension RuntimeChatSessionMutation {
         case .delete:
             return .deleted
         }
+    }
+}
+
+private extension ChatMessage {
+    var isConversationTurnForTests: Bool {
+        let normalizedRole = role.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return normalizedRole == "user" || normalizedRole == "assistant"
     }
 }
 

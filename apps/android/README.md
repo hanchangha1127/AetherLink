@@ -36,6 +36,37 @@ For QR/deeplink pairing smoke tests, use:
 JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./script/android_pairing_deeplink_smoke.sh --relay
 ```
 
+To extend that physical-device smoke through chat streaming, generation cancel,
+and saved-route reconnect, use:
+
+```bash
+JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" \
+  ./script/android_pairing_deeplink_smoke.sh \
+  --relay \
+  --expect-chat-cancel \
+  --expect-reconnect
+```
+
+This still injects the QR URI through Android's VIEW intent. It validates the
+post-scan app path on a physical device, not optical camera recognition.
+
+To run the same physical UI path against real Mac-side Ollama + LM Studio
+providers instead of the fast development mock backend, add `--live-backend`
+and allow a longer first-token wait:
+
+```bash
+JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" \
+  ./script/android_pairing_deeplink_smoke.sh \
+  --relay \
+  --live-backend \
+  --expect-chat-cancel \
+  --expect-reconnect \
+  --chat-delta-timeout 180
+```
+
+Android still connects only to AetherLink Runtime. Ollama and LM Studio remain
+hidden behind the runtime host.
+
 For a closer different-network smoke, provide a relay that the phone can reach
 without `adb reverse`:
 

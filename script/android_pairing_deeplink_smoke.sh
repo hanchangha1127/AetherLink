@@ -15,11 +15,16 @@ ALLOCATION_TOKEN="${AETHERLINK_BOOTSTRAP_RELAY_ALLOCATION_TOKEN:-${AETHERLINK_RE
 ALLOW_DIRECT_FALLBACK=0
 ALLOW_PRIVATE_RELAY=0
 EXPECT_RECONNECT=0
+EXPECT_CHAT_CANCEL=0
+LIVE_BACKEND=0
+PROBE_EXTERNAL_RELAY_FROM_DEVICE=0
+CHAT_TEXT="${AETHERLINK_ANDROID_CHAT_SMOKE_TEXT:-AetherLink_physical_cancel_smoke}"
+CHAT_DELTA_TIMEOUT="${AETHERLINK_ANDROID_CHAT_DELTA_TIMEOUT_SECONDS:-15}"
 
 usage() {
   cat <<'USAGE'
-Usage: script/android_pairing_deeplink_smoke.sh [--relay|--direct] [--skip-install] [--keep-app-data] [--expect-reconnect]
-       script/android_pairing_deeplink_smoke.sh --relay --external-relay-host <host> [--external-relay-port <port>] [--allocation-token <token>] [--allow-private-relay] [--allow-direct-fallback]
+Usage: script/android_pairing_deeplink_smoke.sh [--relay|--direct] [--skip-install] [--keep-app-data] [--expect-reconnect] [--expect-chat-cancel] [--live-backend] [--chat-text <text>] [--chat-delta-timeout <seconds>]
+       script/android_pairing_deeplink_smoke.sh --relay --external-relay-host <host> [--external-relay-port <port>] [--allocation-token <token>] [--allow-private-relay] [--allow-direct-fallback] [--probe-external-relay-from-device]
 
 Runs a physical-device smoke for the QR result path by injecting an
 aetherlink://pair URI through Android's VIEW intent. Default mode is --relay:
@@ -32,6 +37,17 @@ Use --expect-reconnect to force-stop and relaunch the Android app after the
 first runtime.health without clearing app data, then wait for a second
 runtime.health that proves the saved trusted relay route reconnects.
 
+Use --expect-chat-cancel to drive the physical Android UI after pairing:
+tap the chat input, type a short smoke message, tap Send, wait for streamed
+chat.delta, tap Cancel generation, and verify chat.cancel reaches the runtime.
+This validates physical UI wiring through the runtime. It still injects the
+pairing URI rather than optically scanning a camera QR.
+
+Use --live-backend to start RuntimeDevServer against real Ollama + LM Studio
+providers instead of the fast dev mock backend. Android still talks only to
+AetherLink Runtime. Live model first-token latency can be much higher, so pair
+it with --chat-delta-timeout when running chat/cancel proof.
+
 This validates the app behavior after QR scan/deep-link delivery. It is still a
 development smoke and does not replace a real different-network public/tunnel
 relay test.
@@ -41,10 +57,16 @@ and does not configure adb reverse for the relay. The host:port must already be
 an allocation-capable AetherLinkRelay reachable from both the runtime host and
 the Android device. This is the closer different-network smoke path.
 
+Use --probe-external-relay-from-device with --external-relay-host to make the
+connected Android device open a raw TCP probe to the relay endpoint before the
+pairing URI is injected. This catches unreachable private/VPN/tunnel routes
+before they are confused with QR, pairing, or model-provider failures.
+
 Use --allocation-token, AETHERLINK_BOOTSTRAP_RELAY_ALLOCATION_TOKEN, or
 AETHERLINK_RELAY_ALLOCATION_TOKEN when the development relay requires a token.
 The token is checked during relay allocation preflight and passed to
-RuntimeDevServer for QR route allocation.
+RuntimeDevServer for QR route allocation. The allocation preflight is marked
+preflight=1 so it does not persist a throwaway relay lease in the relay store.
 
 By default relay mode verifies that the generated QR route is relay-only. Use
 --allow-direct-fallback only for explicit mixed-route diagnostics where the QR
@@ -159,6 +181,34 @@ while [[ $# -gt 0 ]]; do
       EXPECT_RECONNECT=1
       shift
       ;;
+    --expect-chat-cancel)
+      EXPECT_CHAT_CANCEL=1
+      shift
+      ;;
+    --live-backend)
+      LIVE_BACKEND=1
+      shift
+      ;;
+    --probe-external-relay-from-device)
+      PROBE_EXTERNAL_RELAY_FROM_DEVICE=1
+      shift
+      ;;
+    --chat-text)
+      if [[ $# -lt 2 ]]; then
+        echo "--chat-text requires a value." >&2
+        exit 2
+      fi
+      CHAT_TEXT="$2"
+      shift 2
+      ;;
+    --chat-delta-timeout)
+      if [[ $# -lt 2 ]]; then
+        echo "--chat-delta-timeout requires a value." >&2
+        exit 2
+      fi
+      CHAT_DELTA_TIMEOUT="$2"
+      shift 2
+      ;;
     -h|--help)
       usage
       exit 0
@@ -196,6 +246,11 @@ if [[ -n "$EXTERNAL_RELAY_HOST" ]]; then
     echo "--external-relay-port must be an integer in 1..65535." >&2
     exit 2
   fi
+fi
+
+if ! [[ "$CHAT_DELTA_TIMEOUT" =~ ^[0-9]+$ ]] || (( CHAT_DELTA_TIMEOUT < 1 || CHAT_DELTA_TIMEOUT > 600 )); then
+  echo "--chat-delta-timeout must be an integer in 1..600 seconds." >&2
+  exit 2
 fi
 
 free_port() {
@@ -288,53 +343,17 @@ check_relay_allocation() {
   local port="$2"
   local token="$3"
   local timeout="${4:-5}"
-  python3 - "$host" "$port" "$token" "$timeout" <<'PY'
-import json
-import socket
-import sys
-import uuid
-
-host = sys.argv[1]
-port = int(sys.argv[2])
-allocation_token = sys.argv[3].strip()
-timeout = float(sys.argv[4])
-route_token = f"aetherlink-preflight-{uuid.uuid4()}"
-prefix = "AETHERLINK_RELAY allocation "
-parts = ["AETHERLINK_RELAY", "allocate", route_token]
-if allocation_token:
-    parts.append(f"allocation_token={allocation_token}")
-
-try:
-    with socket.create_connection((host, port), timeout=timeout) as sock:
-        sock.settimeout(timeout)
-        sock.sendall((" ".join(parts) + "\n").encode("utf-8"))
-        buffer = b""
-        while not buffer.endswith(b"\n") and len(buffer) < 8192:
-            chunk = sock.recv(1024)
-            if not chunk:
-                break
-            buffer += chunk
-except OSError as error:
-    print(f"Could not allocate relay route from {host}:{port}: {error}", file=sys.stderr)
-    raise SystemExit(1)
-
-line = buffer.decode("utf-8", errors="replace").strip()
-if not line.startswith(prefix):
-    print(f"Relay {host}:{port} did not return an allocation response: {line!r}", file=sys.stderr)
-    raise SystemExit(1)
-
-try:
-    payload = json.loads(line[len(prefix):])
-except json.JSONDecodeError as error:
-    print(f"Relay {host}:{port} returned invalid allocation JSON: {error}", file=sys.stderr)
-    raise SystemExit(1)
-
-required = ["relay_id", "relay_secret", "relay_expires_at", "relay_nonce"]
-missing = [key for key in required if not payload.get(key)]
-if missing:
-    print(f"Relay {host}:{port} allocation response missing: {', '.join(missing)}", file=sys.stderr)
-    raise SystemExit(1)
-PY
+  local args=(
+    python3 script/relay_allocation_preflight.py
+    --host "$host"
+    --port "$port"
+    --timeout "$timeout"
+    --quiet
+  )
+  if [[ -n "$token" ]]; then
+    args+=(--allocation-token "$token")
+  fi
+  "${args[@]}"
 }
 
 diagnose_pairing_failure() {
@@ -413,11 +432,145 @@ print("'" + value.replace("'", "'\\''") + "'")
 PY
 }
 
+dump_ui_xml() {
+  local prefix="$1"
+  local remote_path="/sdcard/aetherlink-${prefix}.xml"
+  local local_path="$WORK_DIR/${prefix}.xml"
+
+  "$ADB" -s "$SERIAL" shell "uiautomator dump $remote_path" >/dev/null 2>&1
+  "$ADB" -s "$SERIAL" pull "$remote_path" "$local_path" >/dev/null 2>&1
+  printf '%s\n' "$local_path"
+}
+
+node_center_by_content_description() {
+  local xml_path="$1"
+  local content_description="$2"
+  python3 - "$xml_path" "$content_description" <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+
+xml_path, expected = sys.argv[1], sys.argv[2]
+try:
+    root = ET.parse(xml_path).getroot()
+except Exception:
+    raise SystemExit(1)
+
+bounds_pattern = re.compile(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]")
+for node in root.iter("node"):
+    if node.attrib.get("content-desc") != expected:
+        continue
+    bounds = node.attrib.get("bounds", "")
+    match = bounds_pattern.fullmatch(bounds)
+    if not match:
+        continue
+    left, top, right, bottom = map(int, match.groups())
+    print(f"{(left + right) // 2} {(top + bottom) // 2}")
+    raise SystemExit(0)
+raise SystemExit(1)
+PY
+}
+
+tap_content_description() {
+  local content_description="$1"
+  local timeout="${2:-10}"
+  local start
+  local xml_path
+  local coordinates
+  start="$(date +%s)"
+
+  while true; do
+    xml_path="$(dump_ui_xml "ui-$(date +%s)-$RANDOM")"
+    if coordinates="$(node_center_by_content_description "$xml_path" "$content_description" 2>/dev/null)"; then
+      echo "Tapping '$content_description' at $coordinates"
+      "$ADB" -s "$SERIAL" shell "input tap $coordinates"
+      return 0
+    fi
+    if (( $(date +%s) - start >= timeout )); then
+      echo "Timed out waiting for Android UI node with content description '$content_description'" >&2
+      echo "Last UI XML: $xml_path" >&2
+      return 1
+    fi
+    sleep 0.25
+  done
+}
+
+adb_input_text() {
+  local text="$1"
+  local escaped
+  escaped="$(python3 - "$text" <<'PY'
+import sys
+
+value = sys.argv[1]
+value = value.replace("%", "%25")
+value = value.replace(" ", "%s")
+value = value.replace("'", "")
+value = value.replace('"', "")
+print(value)
+PY
+)"
+  "$ADB" -s "$SERIAL" shell "input text '$escaped'"
+}
+
+run_chat_cancel_smoke() {
+  echo "Running physical Android chat send/cancel UI smoke"
+
+  if ! wait_for_log "$RUNTIME_LOG" "models.list" 30; then
+    dump_android_artifacts "chat-models-list-missing"
+    exit 13
+  fi
+
+  if ! tap_content_description "Message" 15; then
+    dump_android_artifacts "chat-input-missing"
+    exit 14
+  fi
+  adb_input_text "$CHAT_TEXT"
+  sleep 0.25
+
+  if ! tap_content_description "Send message" 10; then
+    dump_android_artifacts "chat-send-missing"
+    exit 15
+  fi
+  if ! wait_for_log "$RUNTIME_LOG" "chat.send" 15; then
+    dump_android_artifacts "chat-send-not-observed"
+    exit 16
+  fi
+  if ! wait_for_log "$RUNTIME_LOG" "chat.delta" "$CHAT_DELTA_TIMEOUT"; then
+    dump_android_artifacts "chat-delta-not-observed"
+    exit 17
+  fi
+  if ! tap_content_description "Cancel generation" 5; then
+    dump_android_artifacts "chat-cancel-button-missing"
+    exit 18
+  fi
+  if ! wait_for_log "$RUNTIME_LOG" "chat.cancel" 15; then
+    dump_android_artifacts "chat-cancel-not-observed"
+    exit 19
+  fi
+  if ! wait_for_log "$RUNTIME_LOG" "chat.done" 15; then
+    dump_android_artifacts "chat-done-not-observed"
+    exit 20
+  fi
+
+  CHAT_SCREENSHOT="$WORK_DIR/aetherlink-chat-cancel-smoke.png"
+  "$ADB" -s "$SERIAL" exec-out screencap -p >"$CHAT_SCREENSHOT" || true
+  echo "Chat/cancel screenshot: $CHAT_SCREENSHOT"
+}
+
 relaunch_android_app_without_clearing_data() {
   local relaunch_log="$WORK_DIR/reconnect-relaunch.txt"
 
   echo "Force-stopping Android app without clearing data"
   "$ADB" -s "$SERIAL" shell "am force-stop $PACKAGE_NAME" >/dev/null
+
+  if [[ "$REVERSE_RUNTIME" -eq 1 ]]; then
+    echo "Refreshing adb reverse for runtime port $PORT before relaunch"
+    "$ADB" -s "$SERIAL" reverse "tcp:$PORT" "tcp:$PORT" >/dev/null
+  fi
+  if [[ "$REVERSE_RELAY" -eq 1 ]]; then
+    echo "Refreshing adb reverse for relay port $RELAY_PORT before relaunch"
+    "$ADB" -s "$SERIAL" reverse "tcp:$RELAY_PORT" "tcp:$RELAY_PORT" >/dev/null
+  fi
 
   echo "Relaunching Android app to verify saved trusted route reconnect"
   if ! "$ADB" -s "$SERIAL" shell \
@@ -518,18 +671,37 @@ elif [[ "$MODE" == "relay" ]]; then
     echo "External relay is reachable but did not accept AetherLink allocation. Start AetherLinkRelay --require-allocation, pass the required --allocation-token, or use the correct relay endpoint." >&2
     exit 10
   fi
+  if [[ "$PROBE_EXTERNAL_RELAY_FROM_DEVICE" -eq 1 ]]; then
+    echo "Checking Android-device TCP reachability to external relay without adb reverse"
+    DEVICE_RELAY_PROBE_JSON="$WORK_DIR/android-relay-reachability.json"
+    if ! script/android_relay_reachability_probe.sh \
+      --serial "$SERIAL" \
+      --host "$EXTERNAL_RELAY_HOST" \
+      --port "$RELAY_PORT" \
+      --timeout 5 \
+      --json "$DEVICE_RELAY_PROBE_JSON" \
+      --include-network-summary; then
+      echo "Android cannot reach the external relay directly. Fix the public/VPN/tunnel/private-overlay route before treating this as a QR pairing failure." >&2
+      exit 21
+    fi
+  fi
 fi
 
 echo "Starting RuntimeDevServer for $MODE QR mode on local diagnostic port $PORT"
 RUNTIME_ENV=(
   "LOCAL_AGENT_BRIDGE_PORT=$PORT"
-  "LOCAL_AGENT_BRIDGE_MOCK_BACKEND=1"
   "AETHERLINK_DEV_PAIRING=1"
   "AETHERLINK_DEV_PAIRING_TTL_SECONDS=180"
   "AETHERLINK_DEV_TRUSTED_DEVICES_FILE=$TRUSTED_DEVICES_FILE"
   "AETHERLINK_DEV_RUNTIME_IDENTITY_FILE=$RUNTIME_IDENTITY_FILE"
   "AETHERLINK_DEV_DISABLE_BONJOUR=1"
 )
+if [[ "$LIVE_BACKEND" -eq 0 ]]; then
+  RUNTIME_ENV+=("LOCAL_AGENT_BRIDGE_MOCK_BACKEND=1")
+fi
+if [[ "$EXPECT_CHAT_CANCEL" -eq 1 && "$LIVE_BACKEND" -eq 0 ]]; then
+  RUNTIME_ENV+=("AETHERLINK_DEV_MOCK_CHUNK_DELAY_MS=5000")
+fi
 if [[ "$MODE" == "relay" ]]; then
   RELAY_HOST="${EXTERNAL_RELAY_HOST:-127.0.0.1}"
   RUNTIME_ENV+=(
@@ -711,6 +883,10 @@ if ! wait_for_log "$RUNTIME_LOG" "runtime.health" 30; then
   exit 8
 fi
 
+if [[ "$EXPECT_CHAT_CANCEL" -eq 1 ]]; then
+  run_chat_cancel_smoke
+fi
+
 if [[ "$EXPECT_RECONNECT" -eq 1 ]]; then
   FIRST_HEALTH_COUNT="$(count_log_matches "$RUNTIME_LOG" "runtime.health")"
   EXPECTED_HEALTH_COUNT=$(( FIRST_HEALTH_COUNT + 1 ))
@@ -727,6 +903,9 @@ SCREENSHOT="$WORK_DIR/aetherlink-pairing-smoke.png"
 echo "OK: Android pairing deeplink smoke passed in $MODE mode."
 if [[ "$EXPECT_RECONNECT" -eq 1 ]]; then
   echo "Reconnect check: observed a second runtime.health after app relaunch."
+fi
+if [[ "$EXPECT_CHAT_CANCEL" -eq 1 ]]; then
+  echo "Chat/cancel check: observed chat.send, chat.delta, chat.cancel, and chat.done through the physical Android UI."
 fi
 echo "Runtime log: $RUNTIME_LOG"
 if [[ "$MODE" == "relay" ]]; then

@@ -10,11 +10,13 @@ TEMP_DIRS=()
 
 cleanup_temp_dirs() {
   local temp_dir
+  set +u
   for temp_dir in "${TEMP_DIRS[@]}"; do
     if [[ -d "$temp_dir" && "$(basename "$temp_dir")" == aetherlink-no-device-qr.* ]]; then
       rm -rf "$temp_dir"
     fi
   done
+  set -u
 }
 
 trap cleanup_temp_dirs EXIT
@@ -44,6 +46,161 @@ check_legacy_relay_guard() {
   fi
 }
 
+check_link_local_relay_guard() {
+  local output
+  local summary_path
+  local status_code
+
+  summary_path="$(mktemp "${TMPDIR:-/tmp}/aetherlink-link-local-summary.XXXXXX")"
+  set +e
+  output="$(script/run_different_network_dev_runtime.sh --relay-host 169.254.10.20 --relay-port 43171 --allow-private-relay --preflight-only --summary-json "$summary_path" 2>&1 >/dev/null)"
+  status_code=$?
+  set -e
+  if [[ "$status_code" -ne 2 ]]; then
+    echo "Different-network runtime preflight should reject link-local relay hosts even with --allow-private-relay, got $status_code" >&2
+    echo "$output" >&2
+    exit 1
+  fi
+  if [[ "$output" != *"link-local and multicast addresses cannot be used as QR relay routes"* ]]; then
+    echo "Different-network runtime preflight did not explain the link-local relay limitation." >&2
+    echo "$output" >&2
+    exit 1
+  fi
+  python3 - "$summary_path" <<'PY'
+import json
+import sys
+
+summary = json.load(open(sys.argv[1], encoding="utf-8"))
+assert summary["exit_status"] == 2, summary
+assert summary["relay"]["endpoints"][0]["host"] == "169.254.10.20", summary
+assert "relay_bootstrap_preflight_failed" in summary["caveats"], summary
+assert "link-local" in summary["failure_detail"], summary
+PY
+  rm -f "$summary_path"
+
+  set +e
+  output="$(script/no_adb_external_relay_pairing_smoke.sh --relay-host 169.254.10.20 --relay-port 43171 --allow-private-relay --emit-only 2>&1 >/dev/null)"
+  status_code=$?
+  set -e
+  if [[ "$status_code" -ne 2 ]]; then
+    echo "No-ADB QR smoke should reject link-local relay hosts even with --allow-private-relay, got $status_code" >&2
+    echo "$output" >&2
+    exit 1
+  fi
+  if [[ "$output" != *"private, link-local, CGNAT, loopback, and multicast IP literals are invalid"* ]]; then
+    echo "No-ADB QR smoke did not explain the link-local relay limitation." >&2
+    echo "$output" >&2
+    exit 1
+  fi
+}
+
+check_different_network_preflight_summary_guard() {
+  local port
+  local summary_path
+
+  port="$(free_tcp_port)"
+  summary_path="$(mktemp "${TMPDIR:-/tmp}/aetherlink-runtime-preflight-summary.XXXXXX")"
+  script/run_different_network_dev_runtime.sh \
+    --relay-host 127.0.0.1 \
+    --relay-port "$port" \
+    --start-local-relay \
+    --preflight-only \
+    --summary-json "$summary_path" \
+    >/dev/null
+  python3 - "$summary_path" "$port" <<'PY'
+import json
+import sys
+
+summary = json.load(open(sys.argv[1], encoding="utf-8"))
+port = int(sys.argv[2])
+assert summary["exit_status"] == 0, summary
+assert summary["mode"]["preflight_only"] is True, summary
+assert summary["relay"]["success_endpoint"] == f"127.0.0.1:{port}", summary
+assert summary["relay"]["start_local_relay"] is True, summary
+assert summary["allocation"]["required_fields_present"] is True, summary
+assert summary["allocation"]["preflight_non_persistent"] is True, summary
+assert "runtime_host_preflight_only_not_phone_reachability_proof" in summary["caveats"], summary
+assert "local_relay_only_unless_advertised_host_is_public_vpn_tunnel_or_overlay" in summary["caveats"], summary
+PY
+  rm -f "$summary_path"
+}
+
+check_relay_preflight_allocation_guard() {
+  local relay_bin
+  local port
+  local work_dir
+  local store
+  local relay_pid
+
+  swift build --product AetherLinkRelay >/dev/null
+  relay_bin="$(swift build --show-bin-path)/AetherLinkRelay"
+  port="$(free_tcp_port)"
+  work_dir="$(mktemp -d "${TMPDIR:-/tmp}/aetherlink-relay-preflight.XXXXXX")"
+  store="$work_dir/allocations.json"
+  relay_pid=""
+
+  "$relay_bin" \
+    --host 127.0.0.1 \
+    --port "$port" \
+    --require-allocation \
+    --allocation-store "$store" \
+    >"$work_dir/relay.log" 2>&1 &
+  relay_pid="$!"
+
+  set +e
+  python3 script/relay_allocation_preflight.py \
+    --host 127.0.0.1 \
+    --port "$port" \
+    --route-token preflight-route \
+    --quiet
+  local preflight_status=$?
+  sleep 0.2
+  python3 - "$store" <<'PY'
+import sys
+from pathlib import Path
+
+store = Path(sys.argv[1])
+contents = store.read_text(encoding="utf-8") if store.exists() else ""
+assert "preflight-route" not in contents, contents
+PY
+  local preflight_store_status=$?
+  python3 script/relay_allocation_preflight.py \
+    --host 127.0.0.1 \
+    --port "$port" \
+    --route-token normal-route \
+    --persist \
+    --quiet
+  local normal_status=$?
+  sleep 0.2
+  python3 - "$store" <<'PY'
+import sys
+from pathlib import Path
+
+contents = Path(sys.argv[1]).read_text(encoding="utf-8")
+assert "normal-route" in contents, contents
+assert "preflight-route" not in contents, contents
+PY
+  local normal_store_status=$?
+  local status_code=$?
+  set -e
+  if [[ "$preflight_status" -ne 0 ]]; then
+    status_code="$preflight_status"
+  elif [[ "$preflight_store_status" -ne 0 ]]; then
+    status_code="$preflight_store_status"
+  elif [[ "$normal_status" -ne 0 ]]; then
+    status_code="$normal_status"
+  else
+    status_code="$normal_store_status"
+  fi
+
+  if [[ -n "$relay_pid" ]]; then
+    kill "$relay_pid" >/dev/null 2>&1 || true
+    wait "$relay_pid" >/dev/null 2>&1 || true
+  fi
+  rm -rf "$work_dir"
+  return "$status_code"
+}
+
 free_tcp_port() {
   python3 - <<'PY'
 import socket
@@ -69,10 +226,14 @@ run python3 -m py_compile \
   script/check_docs_hygiene.py \
   script/check_license.py \
   script/check_app_icons.py \
+  script/relay_allocation_preflight.py \
   script/aetherlink_relay.py
 
 run bash -n script/*.sh
 run check_legacy_relay_guard
+run check_link_local_relay_guard
+run check_different_network_preflight_summary_guard
+run check_relay_preflight_allocation_guard
 run git diff --check
 
 run python3 script/check_android_string_parity.py
@@ -123,6 +284,8 @@ run ./gradlew --no-daemon \
 	  :app:compileDebugKotlin \
 	  :app:testDebugUnitTest \
 	  --tests com.localagentbridge.android.AppNavigationTest \
+	  --tests com.localagentbridge.android.AetherLinkThemeNoDeviceComposeTest \
+	  --tests com.localagentbridge.android.PairingQrScannerChromeNoDeviceComposeTest \
 	  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest \
 	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedRelayRestoreMarksConnectingBeforeRelayDialCompletes \
 	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.viewModelAutoReconnectsTrustedRelayOnInitAndRefreshesRuntimeState \
@@ -135,6 +298,7 @@ run ./gradlew --no-daemon \
   --tests com.localagentbridge.android.runtime.RuntimeClientViewModelRelayIntegrationTest.compactRelayQrPairingUsesRealRelayTcpClientAndPersistsTrustedRelay \
   --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.freshCompactRelayQrRefreshesExpiredTrustedRelayRouteAndReconnectsViaRelay \
   --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.invalidPairingQrDoesNotEnableTrustedRuntimeAutoReconnect \
+  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.identityOnlyPairingQrTimesOutWhenNoDiscoveryRouteAppears \
   --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustRuntimeFromMacosPrivateOverlayQrConnectsRelayAndSendsPairingRequest \
   --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.relayPairingQrPersistsPendingRouteAfterInitialConnectionFailure \
   --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.relayPairingQrRetriesAndSendsPairingRequestAfterRelayBecomesReady \
@@ -202,9 +366,9 @@ run swift test --filter AetherLinkRenderSmokeTests
 run swift test --filter DocumentTextExtractorTests
 run swift test --filter 'OllamaBackendTests/testListModelsUsesShowCapabilitiesToSeparateEmbeddingModels|LMStudioBackendTests/testListModelsParsesNativeLocalLLMAndEmbeddingModelsSeparately|LMStudioBackendTests/testListModelsFallsBackToOpenAICompatibleModels|AggregatingLlmBackendResidencyTests/testInstalledEmbeddingModelIsNotRoutedAsChat|AggregatingLlmBackendResidencyTests/testInstalledCloudChatModelIsNotRoutedAsChat'
 run swift test --filter 'LocalRuntimeMessageRouterTests/testChatSendAppendsDocumentAttachmentTextAndPreservesImageAttachment|LocalRuntimeMessageRouterTests/testChatSendExtractsMimeOnlyStructuredTextDocumentAttachment|LocalRuntimeMessageRouterTests/testChatSendImageAttachmentRequiresVisionCapableModel|LocalRuntimeMessageRouterTests/testChatSendAllowsLMStudioImageAttachmentsForVisionCapableModel|LocalRuntimeMessageRouterTests/testChatSendUnsupportedDocumentAttachmentReturnsStructuredError|LocalRuntimeMessageRouterTests/testChatSendRoutesQualifiedLMStudioModelThroughAggregateBackend'
-run swift test --filter 'LocalRuntimeMessageRouterTests/testCompactPairingQRCodePayloadMatchesSharedRelayFixture|LocalRuntimeMessageRouterTests/testCompactPairingQRCodePayloadMatchesSharedPrivateOverlayRelayFixture|LocalRuntimeMessageRouterTests/testCompanionAppModelRefreshRuntimeRouteReturnsNilWithoutFreshRelayLease|LocalRuntimeMessageRouterTests/testCompanionAppModelRefreshRuntimeRouteAllocatesFreshRelayMaterial|LocalRuntimeMessageRouterTests/testCompanionAppModelKeepsLeasePreparationIssueWhenRelayIsReadyWithoutLease|LocalRuntimeMessageRouterTests/testRouteRefreshReturnsFreshRelayMaterialFromRuntimeProvider|LocalRuntimeMessageRouterTests/testChatSendStoresRuntimeSideProcessingEvents|LocalRuntimeMessageRouterTests/testRuntimeChatHistoryMessagesAreAuthenticatedAndReturnedFromStore|LocalRuntimeMessageRouterTests/testRuntimeChatStoreAppliesArchiveRestoreAndDeleteLifecycle|LocalRuntimeMessageRouterTests/testRuntimeChatStoreReportsCorruptJSONLLineInsteadOfDroppingIt|LocalRuntimeMessageRouterTests/testRuntimeChatHistoryCorruptStoreReturnsStructuredError|LocalRuntimeMessageRouterTests/testRuntimeChatSessionLifecycleMessagesMutateRuntimeStore|LocalRuntimeMessageRouterTests/testRuntimeMemoryMessagesMutateRuntimeStore|LocalRuntimeMessageRouterTests/testChatSendStreamsReasoningDeltaSeparatelyFromAnswerDelta|LocalRuntimeMessageRouterTests/testChatSendSplitsInlineThinkTagsBeforeStreamingAnswer|LocalRuntimeMessageRouterTests/testChatSendInstalledEmbeddingModelReturnsModelNotInstalled|LocalRuntimeMessageRouterTests/testChatSendInstalledCloudModelReturnsModelNotInstalled|LocalRuntimeMessageRouterTests/testChatSendGeneratesRuntimeTitleAfterFirstAssistantResponse|LocalRuntimeMessageRouterTests/testChatSendGeneratedRuntimeTitleStripsInlineThinking|LocalRuntimeMessageRouterTests/testChatSendTitleGenerationUsesDeterministicFallbackWhenBackendTitleIsInvalid|LocalRuntimeMessageRouterTests/testChatSuggestionsRequestReturnsStructuredSuggestions|LocalRuntimeMessageRouterTests/testChatSuggestionsRequestNormalizesBlankDuplicateAndExcessSuggestions|LocalRuntimeMessageRouterTests/testChatSuggestionsRequestAcceptsFencedStructuredSuggestions|LocalRuntimeMessageRouterTests/testChatSuggestionsRequestReturnsEmptySuggestionsForInvalidJSON|LocalRuntimeMessageRouterTests/testChatSuggestionsRequestFallsBackToNumberedLocalizedList'
+run swift test --filter 'LocalRuntimeMessageRouterTests/testCompactPairingQRCodePayloadMatchesSharedRelayFixture|LocalRuntimeMessageRouterTests/testCompactPairingQRCodePayloadMatchesSharedPrivateOverlayRelayFixture|LocalRuntimeMessageRouterTests/testEnvironmentRemoteRelayRouteAllocatorUsesStoredBootstrapSettingsWhenEnvironmentIsEmpty|LocalRuntimeMessageRouterTests/testCompanionAppModelDefaultPairingFallsBackAcrossBootstrapRelayEndpointsBeforeQRCode|LocalRuntimeMessageRouterTests/testCompanionAppModelDefaultPairingUsesSavedBootstrapRelayEndpointBeforeQRCode|LocalRuntimeMessageRouterTests/testCompanionAppModelStartRenewsSavedBootstrapRelayRouteBeforeRelayStart|LocalRuntimeMessageRouterTests/testCompanionAppModelRenewsBootstrapRelayRouteAfterRelayFailure|LocalRuntimeMessageRouterTests/testCompanionAppModelSavesBootstrapRelaySettingsAndAllocatesRoute|LocalRuntimeMessageRouterTests/testCompanionAppModelPersistsBootstrapAllocationLeaseForRestoredQRCode|LocalRuntimeMessageRouterTests/testCompanionAppModelRegeneratesBootstrapQRCodeWithExpiredSavedLease|LocalRuntimeMessageRouterTests/testCompanionAppModelRequiresRemoteQRCodeForLoopbackSavedRelayHost|LocalRuntimeMessageRouterTests/testCompanionAppModelAllowsEnvironmentPrivateOverlayRelayButWaitsForLease|LocalRuntimeMessageRouterTests/testCompanionAppModelWaitsForLeaseBeforeUsingCGNATPrivateOverlayRelayQRCode|LocalRuntimeMessageRouterTests/testCompanionAppModelRefreshRuntimeRouteReturnsNilWithoutFreshRelayLease|LocalRuntimeMessageRouterTests/testCompanionAppModelRefreshRuntimeRouteAllocatesFreshRelayMaterial|LocalRuntimeMessageRouterTests/testCompanionAppModelKeepsLeasePreparationIssueWhenRelayIsReadyWithoutLease|LocalRuntimeMessageRouterTests/testRouteRefreshReturnsFreshRelayMaterialFromRuntimeProvider|LocalRuntimeMessageRouterTests/testChatSendStoresRuntimeSideProcessingEvents|LocalRuntimeMessageRouterTests/testRuntimeChatHistoryMessagesAreAuthenticatedAndReturnedFromStore|LocalRuntimeMessageRouterTests/testRuntimeChatStoreAppliesArchiveRestoreAndDeleteLifecycle|LocalRuntimeMessageRouterTests/testRuntimeChatStoreReportsCorruptJSONLLineInsteadOfDroppingIt|LocalRuntimeMessageRouterTests/testRuntimeChatHistoryCorruptStoreReturnsStructuredError|LocalRuntimeMessageRouterTests/testRuntimeChatSessionLifecycleMessagesMutateRuntimeStore|LocalRuntimeMessageRouterTests/testRuntimeMemoryMessagesMutateRuntimeStore|LocalRuntimeMessageRouterTests/testChatSendInjectsEnabledRuntimeMemoryFromRuntimeStore|LocalRuntimeMessageRouterTests/testChatSendRuntimeMemoryOverridesClientSuppliedMemory|LocalRuntimeMessageRouterTests/testChatSendStoresOnlyClientVisibleMessagesWhileBackendReceivesRuntimeContext|LocalRuntimeMessageRouterTests/testChatSendDoesNotCompactShortConversation|LocalRuntimeMessageRouterTests/testChatSendCompactsOlderTurnsBeforeBackendRequestWhenContextIsLarge|LocalRuntimeMessageRouterTests/testChatSendCompactionKeepsRuntimeMemoryAndCapabilityGuardSeparate|LocalRuntimeMessageRouterTests/testChatSendReturnsStructuredErrorWhenRuntimeMemoryCannotLoad|LocalRuntimeMessageRouterTests/testChatSendStreamsReasoningDeltaSeparatelyFromAnswerDelta|LocalRuntimeMessageRouterTests/testChatSendSplitsInlineThinkTagsBeforeStreamingAnswer|LocalRuntimeMessageRouterTests/testChatSendInstalledEmbeddingModelReturnsModelNotInstalled|LocalRuntimeMessageRouterTests/testChatSendInstalledCloudModelReturnsModelNotInstalled|LocalRuntimeMessageRouterTests/testChatSendGeneratesRuntimeTitleAfterFirstAssistantResponse|LocalRuntimeMessageRouterTests/testChatSendGeneratedRuntimeTitleStripsInlineThinking|LocalRuntimeMessageRouterTests/testChatSendTitleGenerationUsesDeterministicFallbackWhenBackendTitleIsInvalid|LocalRuntimeMessageRouterTests/testChatSuggestionsRequestReturnsStructuredSuggestions|LocalRuntimeMessageRouterTests/testChatSuggestionsRequestNormalizesBlankDuplicateAndExcessSuggestions|LocalRuntimeMessageRouterTests/testChatSuggestionsRequestAcceptsFencedStructuredSuggestions|LocalRuntimeMessageRouterTests/testChatSuggestionsRequestReturnsEmptySuggestionsForInvalidJSON|LocalRuntimeMessageRouterTests/testChatSuggestionsRequestFallsBackToNumberedLocalizedList'
 
 echo
 echo "No-device quality checks passed."
-echo "Covered: local emit-only pairing QR artifact generation, QR PNG decode, canonical pairing URI policy, authenticated mock relay E2E, QR candidate structured-error routing, public relay remote-scope QR contract, private-overlay relay scope schema guard, QR relay alias-family completeness, release-mode diagnostic direct-route rejection, invalid QR auto-reconnect state guard, relay-route payload validation, PairingStore relay-route persistence, relay preparation host eligibility guard, expired relay lease reconnect guard, fresh relay QR recovery, route.refresh runtime-identity binding, route.refresh rejected-payload retry, cross-network QR readiness copy, diagnostic QR text fallback copy, macOS remote QR lease failure visibility, macOS first-launch pairing priority, macOS natural count/plural copy guard, macOS visible localization anchors with zh-Hans bundle fallback, macOS installed-local model visibility, macOS runtime-local chat routing, macOS runtime suggested-question normalization, macOS corrupt chat-store visibility, Android natural message-count plural resources, Android raw Compose visible-string localization guard, Android localized model-status resources, Android provider-managed model label suppression, Android strict local model metadata guard, Android drawer runtime session status, Android drawer settings footer layout, Android app top-bar shell chrome, Android QR-first chat empty state, Android trusted composer readiness lock, Android composer readiness hint, Settings pairing section resync, language alias selection normalization, legacy Python relay allocation-guard, Android no-device Compose screen smoke with five-language pairing copy, Settings diagnostic endpoint visibility guard, chat history bulk action hiding and two-step confirmation, full five-language light/dark Chat/Settings layout matrix, reasoning toggle, suggested-question normalization, suggested-question composer handoff, chat top-bar model/embedding picker separation, fake haptic callback dispatch, runtime-owned streaming storage redaction, pending relay QR retry, relay QR completion persistence, real RuntimeRelayTcpClient app pairing path, relay-before-Bonjour fallback, and trusted relay app-init auto-reconnect."
+echo "Covered: local emit-only pairing QR artifact generation, QR PNG decode, canonical pairing URI policy, authenticated mock relay E2E, QR candidate structured-error routing, identity-only QR discovery timeout, public relay remote-scope QR contract, private-overlay relay scope schema guard, link-local relay preflight rejection, relay preflight allocation non-persistence, bootstrap relay endpoint failover before QR generation, saved bootstrap relay endpoint allocation, remote relay lease renewal and QR eligibility, QR relay alias-family completeness, release-mode diagnostic direct-route rejection, invalid QR auto-reconnect state guard, relay-route payload validation, PairingStore complete and expired relay-route persistence, relay preparation host eligibility guard, expired relay lease reconnect guard, fresh relay QR recovery, route.refresh runtime-identity binding, route.refresh rejected-payload retry, cross-network QR readiness copy, diagnostic QR text fallback copy, macOS remote QR lease failure visibility, macOS first-launch pairing priority, macOS first-run diagnostics hiding, macOS Pairing QR accessibility state, macOS global QR generation availability gate, macOS app-language date formatting, macOS app-language byte-count formatting, macOS trusted-device remove accessibility labels, macOS trusted-device row accessibility labels, macOS trusted-device removal confirmation localization, macOS connection disable accessibility label, macOS Activity technical-details accessibility labels, macOS provider technical-details accessibility labels, macOS provider status pill accessibility labels, macOS runtime overview accessibility labels, macOS status card accessibility labels, macOS model row accessibility labels, macOS relay status row accessibility labels, macOS route diagnostic technical-details accessibility labels, macOS readiness row accessibility labels, macOS natural count/plural copy guard, macOS visible localization anchors with zh-Hans bundle fallback, macOS raw SwiftUI visible-string localization guard, macOS five-language system/light/dark detail render smoke including Connection Recovery, macOS native language picker labels, macOS installed-local model visibility, macOS runtime-local chat routing, macOS runtime suggested-question normalization, macOS corrupt chat-store visibility, macOS runtime-owned memory injection, stale-client-memory replacement, runtime-only context history filtering, and heuristic runtime chat context compaction, Android natural message-count plural resources, Android raw Compose visible-string localization guard, platform-neutral app copy guard, Android native language picker labels, Android app System/Light/Dark theme path, Android refresh-health action copy, Android localized model-status resources, Android provider-managed model label suppression, Android strict local model metadata guard, Android drawer runtime session status, Android drawer settings footer layout, Android app top-bar shell chrome, Android chat top-bar install action cue, Android drawer chat options contextual accessibility, Android drawer chat row accessibility summaries, Android QR scanner permission/torch/cancel chrome, QR scanner torch state accessibility, Android QR-first chat empty state, Android trusted composer readiness lock, Android composer readiness hint, Android composer attach action accessibility state, Android streaming cancel Compose action, Android attachment chip accessibility state, Android attachment size locale formatting, Android message attachment accessibility state, Android suggested-question accessibility labels, Android jump-to-latest Compose interaction, Settings expandable section accessibility state, Settings diagnostic endpoint expander accessibility state, Settings connection switch state accessibility, Settings discovered route contextual action accessibility, Settings memory contextual action accessibility, Settings memory destructive confirmation haptic timing, chat history destructive confirmation haptic timing, confirmation-open lightweight haptic timing, Settings expired-route primary QR action, Android connected Settings redundant-connect guard, Android trusted-runtime forget confirmation, Settings pairing section resync, language alias selection normalization, legacy Python relay allocation-guard, Android no-device Compose screen smoke with five-language pairing copy, Settings diagnostic endpoint visibility guard, chat history bulk action hiding and two-step confirmation, chat history bulk expander accessibility state, chat history per-chat contextual action accessibility, full five-language light/dark Chat/Settings/Connection layout matrix, reasoning toggle, suggested-question normalization, suggested-question composer handoff, chat top-bar model/embedding picker separation, selected model-picker plus Settings preference and embedding-model accessibility state, fake haptic callback dispatch, connection notice haptic callback dispatch, runtime-owned streaming storage redaction, pending relay QR retry, relay QR completion persistence, real RuntimeRelayTcpClient app pairing path, relay-before-Bonjour fallback, and trusted relay app-init auto-reconnect."
 echo "Not covered: physical install, camera QR scan, real device haptics, launcher/Dock screenshots, physical/live-backend streamed chat/cancel, and real different-network runtime connectivity."

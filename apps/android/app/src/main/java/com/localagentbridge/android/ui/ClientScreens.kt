@@ -99,6 +99,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.ui.semantics.semantics
@@ -388,13 +389,19 @@ private fun PendingPairingRouteStatus(state: RuntimeUiState) {
 private fun PairingConnectButton(
     state: RuntimeUiState,
     onConnect: () -> Unit,
+    onScanLatestQr: () -> Unit,
 ) {
     val hapticFeedback = LocalHapticFeedback.current
+    val action = pairingConnectPrimaryAction(state)
 
     Button(
         onClick = {
             hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
-            onConnect()
+            when (action) {
+                RouteNoticePrimaryAction.ScanLatestQr -> onScanLatestQr()
+                RouteNoticePrimaryAction.Connect,
+                null -> onConnect()
+            }
         },
         enabled = state.trustedRuntime != null && !state.isConnecting,
         modifier = Modifier.fillMaxWidth(),
@@ -404,7 +411,31 @@ private fun PairingConnectButton(
             contentDescription = null,
         )
         Spacer(Modifier.width(8.dp))
-        Text(connectRuntimeActionLabel(state))
+        Text(pairingConnectButtonLabel(state, action))
+    }
+}
+
+@Composable
+private fun pairingConnectButtonLabel(
+    state: RuntimeUiState,
+    action: RouteNoticePrimaryAction?,
+): String {
+    return when (action) {
+        RouteNoticePrimaryAction.ScanLatestQr -> stringResource(routeNoticeActionLabelRes(action))
+        RouteNoticePrimaryAction.Connect,
+        null -> connectRuntimeActionLabel(state)
+    }
+}
+
+internal fun pairingConnectPrimaryAction(state: RuntimeUiState): RouteNoticePrimaryAction? {
+    return when {
+        state.isConnecting || state.isConnected -> null
+        state.trustedRuntime == null -> null
+        runtimeRouteNotice(state, state.trustedRuntime)?.action == RouteNoticePrimaryAction.ScanLatestQr ->
+            RouteNoticePrimaryAction.ScanLatestQr
+        routeNoticePrimaryAction(state) == RouteNoticePrimaryAction.ScanLatestQr ->
+            RouteNoticePrimaryAction.ScanLatestQr
+        else -> RouteNoticePrimaryAction.Connect
     }
 }
 
@@ -706,10 +737,14 @@ private fun RuntimeRouteNotice(
         RouteNoticePrimaryAction.ScanLatestQr -> onScanLatestQr
         null -> null
     }
+    val statusDescription = stringResource(notice.statusRes)
 
     Surface(
         modifier = Modifier
             .fillMaxWidth()
+            .semantics {
+                stateDescription = statusDescription
+            }
             .let { base ->
                 if (actionHandler == null) {
                     base
@@ -739,14 +774,22 @@ private fun RuntimeRouteNotice(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                Text(
-                    text = stringResource(R.string.route_notice_title),
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = notice.contentColor(),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = stringResource(R.string.route_notice_title),
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = notice.contentColor(),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    RouteNoticeStatusPill(notice)
+                }
                 Text(
                     text = stringResource(notice.detailRes),
                     style = MaterialTheme.typography.bodySmall,
@@ -767,7 +810,26 @@ private fun RuntimeRouteNotice(
     }
 }
 
+@Composable
+private fun RouteNoticeStatusPill(notice: RuntimeRouteNoticeState) {
+    Surface(
+        shape = RoundedCornerShape(999.dp),
+        color = notice.contentColor().copy(alpha = 0.10f),
+        contentColor = notice.contentColor(),
+    ) {
+        Text(
+            text = stringResource(notice.statusRes),
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
 internal data class RuntimeRouteNoticeState(
+    @param:StringRes val statusRes: Int,
     @param:StringRes val detailRes: Int,
     val tone: RuntimeRouteNoticeTone,
     val icon: androidx.compose.ui.graphics.vector.ImageVector,
@@ -849,11 +911,13 @@ internal fun runtimeRouteNotice(
     if (state.isConnected) {
         when (state.activeRouteKind) {
             RuntimeActiveRouteKind.Relay -> return RuntimeRouteNoticeState(
+                statusRes = R.string.route_notice_status_connected,
                 detailRes = R.string.route_notice_relay_active,
                 tone = RuntimeRouteNoticeTone.Ready,
                 icon = Icons.Filled.CheckCircle,
             )
             RuntimeActiveRouteKind.PeerToPeer -> return RuntimeRouteNoticeState(
+                statusRes = R.string.route_notice_status_connected,
                 detailRes = R.string.route_notice_p2p_active,
                 tone = RuntimeRouteNoticeTone.Ready,
                 icon = Icons.Filled.CheckCircle,
@@ -864,6 +928,7 @@ internal fun runtimeRouteNotice(
             RuntimeEndpointSource.BonjourDiscovery,
             RuntimeEndpointSource.PairingQr,
             RuntimeEndpointSource.TrustedLastKnown -> RuntimeRouteNoticeState(
+                statusRes = R.string.route_notice_status_connected,
                 detailRes = R.string.route_notice_local_route,
                 tone = RuntimeRouteNoticeTone.Ready,
                 icon = Icons.Filled.CheckCircle,
@@ -871,6 +936,7 @@ internal fun runtimeRouteNotice(
             RuntimeEndpointSource.UsbReverse,
             RuntimeEndpointSource.Emulator,
             RuntimeEndpointSource.Manual -> RuntimeRouteNoticeState(
+                statusRes = R.string.route_notice_status_diagnostics,
                 detailRes = R.string.route_notice_development_route,
                 tone = RuntimeRouteNoticeTone.Neutral,
                 icon = Icons.Filled.Link,
@@ -879,6 +945,7 @@ internal fun runtimeRouteNotice(
     }
     if (trustedRuntime.hasRelayRouteWithoutSecret()) {
         return RuntimeRouteNoticeState(
+            statusRes = R.string.route_notice_status_refresh_needed,
             detailRes = R.string.route_notice_relay_without_secret,
             tone = RuntimeRouteNoticeTone.Warning,
             icon = Icons.Filled.Error,
@@ -887,6 +954,7 @@ internal fun runtimeRouteNotice(
     }
     if (trustedRuntime.hasUnusableRelayRouteHint()) {
         return RuntimeRouteNoticeState(
+            statusRes = R.string.route_notice_status_refresh_needed,
             detailRes = R.string.route_notice_relay_unusable,
             tone = RuntimeRouteNoticeTone.Warning,
             icon = Icons.Filled.Error,
@@ -896,6 +964,7 @@ internal fun runtimeRouteNotice(
     if (trustedRuntime.hasRelayRouteMaterial()) {
         return if (trustedRuntime.isRelayRouteExpired()) {
             RuntimeRouteNoticeState(
+                statusRes = R.string.route_notice_status_refresh_needed,
                 detailRes = R.string.route_notice_relay_expired,
                 tone = RuntimeRouteNoticeTone.Warning,
                 icon = Icons.Filled.Error,
@@ -903,6 +972,7 @@ internal fun runtimeRouteNotice(
             )
         } else {
             RuntimeRouteNoticeState(
+                statusRes = R.string.route_notice_status_saved_connection,
                 detailRes = R.string.route_notice_relay_encrypted,
                 tone = RuntimeRouteNoticeTone.Neutral,
                 icon = Icons.Filled.Link,
@@ -912,6 +982,7 @@ internal fun runtimeRouteNotice(
     }
     if (state.runtimeEndpointSource == RuntimeEndpointSource.BonjourDiscovery) {
         return RuntimeRouteNoticeState(
+            statusRes = R.string.route_notice_status_nearby,
             detailRes = R.string.route_notice_local_route,
             tone = RuntimeRouteNoticeTone.Ready,
             icon = Icons.Filled.CheckCircle,
@@ -919,6 +990,7 @@ internal fun runtimeRouteNotice(
     }
     if (state.runtimeEndpointSource != RuntimeEndpointSource.Manual && state.runtimeHost.isNotBlank()) {
         return RuntimeRouteNoticeState(
+            statusRes = R.string.route_notice_status_diagnostics,
             detailRes = R.string.route_notice_development_route,
             tone = RuntimeRouteNoticeTone.Neutral,
             icon = Icons.Filled.Link,
@@ -926,6 +998,7 @@ internal fun runtimeRouteNotice(
         )
     }
     return RuntimeRouteNoticeState(
+        statusRes = R.string.route_notice_status_scan_qr,
         detailRes = R.string.route_notice_remote_pending,
         tone = RuntimeRouteNoticeTone.Neutral,
         icon = Icons.Filled.Search,
@@ -968,7 +1041,7 @@ private fun ConnectionStatusActions(
                 contentDescription = null,
             )
             Spacer(Modifier.width(8.dp))
-            Text(stringResource(R.string.health))
+            Text(stringResource(R.string.refresh_health))
         }
         OutlinedButton(
             onClick = {
@@ -1220,7 +1293,8 @@ fun ChatScreen(
                     .align(Alignment.TopCenter)
                     .widthIn(max = 840.dp)
                     .fillMaxWidth()
-                    .fillMaxHeight(),
+                    .fillMaxHeight()
+                    .testTag(CHAT_MESSAGE_LIST_TEST_TAG),
                 verticalArrangement = Arrangement.spacedBy(20.dp),
                 contentPadding = PaddingValues(
                     start = 4.dp,
@@ -1415,12 +1489,12 @@ fun SettingsScreen(
             }
         }
         item {
-	            SettingsExpandableSection(
-	                title = settingsPrimaryConnectionSectionTitleRes(state),
-	                subtitle = settingsPrimaryConnectionSectionSubtitleRes(state),
-	                initiallyExpanded = settingsPrimaryConnectionSectionInitiallyExpanded(state),
-	                expandWhenKey = settingsPrimaryConnectionSectionExpansionKey(state),
-	            ) {
+                SettingsExpandableSection(
+                    title = settingsPrimaryConnectionSectionTitleRes(state),
+                    subtitle = settingsPrimaryConnectionSectionSubtitleRes(state),
+                    initiallyExpanded = settingsPrimaryConnectionSectionInitiallyExpanded(state),
+                    expandWhenKey = settingsPrimaryConnectionSectionExpansionKey(state),
+                ) {
                 QrPairingPanel(
                     state = state,
                     onScanPairingQr = onScanPairingQr,
@@ -1433,10 +1507,13 @@ fun SettingsScreen(
                     state = state,
                     onForgetTrustedRuntime = onForgetTrustedRuntime,
                 )
-                PairingConnectButton(
-                    state = state,
-                    onConnect = onConnect,
-                )
+                if (settingsShowsPairingConnectButton(state)) {
+                    PairingConnectButton(
+                        state = state,
+                        onConnect = onConnect,
+                        onScanLatestQr = onScanPairingQr,
+                    )
+                }
                 if (state.trustedRuntime == null) {
                     EmptyState(text = stringResource(R.string.connect_requires_pairing))
                 }
@@ -1584,6 +1661,14 @@ internal fun settingsPrimaryConnectionSectionExpansionKey(state: RuntimeUiState)
     }
 }
 
+internal fun settingsShowsPairingConnectButton(state: RuntimeUiState): Boolean {
+    return !state.isConnected && state.trustedRuntime != null
+}
+
+internal fun settingsSectionExpandedStateDescriptionRes(): Int = R.string.section_state_expanded
+
+internal fun settingsSectionCollapsedStateDescriptionRes(): Int = R.string.section_state_collapsed
+
 internal fun settingsLowerPrioritySectionInitiallyExpanded(): Boolean = false
 
 internal fun settingsScreenShowsTroubleshootingSection(showDeveloperDiagnostics: Boolean): Boolean {
@@ -1597,6 +1682,14 @@ private fun AutoReconnectSettingRow(
     onSetAutoReconnectEnabled: (Boolean) -> Unit,
 ) {
     val hapticFeedback = LocalHapticFeedback.current
+    val autoReconnectContentDescription = stringResource(R.string.auto_reconnect)
+    val autoReconnectStateDescription = stringResource(
+        if (enabled) {
+            R.string.setting_state_on
+        } else {
+            R.string.setting_state_off
+        },
+    )
 
     OutlinedCard(modifier = Modifier.fillMaxWidth()) {
         Row(
@@ -1628,6 +1721,10 @@ private fun AutoReconnectSettingRow(
                     onSetAutoReconnectEnabled(checked)
                 },
                 enabled = canChange,
+                modifier = Modifier.semantics {
+                    contentDescription = autoReconnectContentDescription
+                    stateDescription = autoReconnectStateDescription
+                },
             )
         }
     }
@@ -1695,6 +1792,13 @@ private fun SettingsExpandableSection(
             R.string.expand_section
         },
     )
+    val toggleStateDescription = stringResource(
+        if (isExpanded.value) {
+            settingsSectionExpandedStateDescriptionRes()
+        } else {
+            settingsSectionCollapsedStateDescriptionRes()
+        },
+    )
 
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -1704,7 +1808,13 @@ private fun SettingsExpandableSection(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { toggleExpanded() }
+                .clickable(
+                    role = Role.Button,
+                    onClick = { toggleExpanded() },
+                )
+                .semantics(mergeDescendants = true) {
+                    stateDescription = toggleStateDescription
+                }
                 .padding(vertical = 4.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
@@ -1757,6 +1867,37 @@ private fun TrustedRuntimePanel(
     onForgetTrustedRuntime: () -> Unit,
 ) {
     val hapticFeedback = LocalHapticFeedback.current
+    var showForgetConfirmation by rememberSaveable { mutableStateOf(false) }
+    val trustedRuntime = state.trustedRuntime
+
+    if (trustedRuntime != null && showForgetConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showForgetConfirmation = false },
+            title = { Text(stringResource(R.string.forget_trusted_runtime_confirm_title)) },
+            text = { Text(stringResource(R.string.forget_trusted_runtime_confirm_message)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Destructive)
+                        showForgetConfirmation = false
+                        onForgetTrustedRuntime()
+                    },
+                ) {
+                    Text(stringResource(R.string.forget_trusted_runtime_confirm_action))
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Toggle)
+                        showForgetConfirmation = false
+                    },
+                ) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
+        )
+    }
 
     OutlinedCard(modifier = Modifier.fillMaxWidth()) {
         Column(
@@ -1796,8 +1937,8 @@ private fun TrustedRuntimePanel(
             state.trustedRuntime?.let {
                 OutlinedButton(
                     onClick = {
-                        hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Destructive)
-                        onForgetTrustedRuntime()
+                        hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
+                        showForgetConfirmation = true
                     },
                     modifier = Modifier.fillMaxWidth(),
                 ) {
@@ -1826,10 +1967,18 @@ private fun DeveloperDiagnosticsPanel(
     val isEnabled = rememberSaveable { mutableStateOf(false) }
     var showManualPayloadDialog by rememberSaveable { mutableStateOf(false) }
     val hapticFeedback = LocalHapticFeedback.current
+    val diagnosticsContentDescription = stringResource(R.string.developer_routes_title)
     val toggleDeveloperDiagnostics = {
         hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Toggle)
         isEnabled.value = !isEnabled.value
     }
+    val diagnosticsStateDescription = stringResource(
+        if (isEnabled.value) {
+            R.string.setting_state_on
+        } else {
+            R.string.setting_state_off
+        },
+    )
 
     OutlinedCard(modifier = Modifier.fillMaxWidth()) {
         Column(
@@ -1862,13 +2011,18 @@ private fun DeveloperDiagnosticsPanel(
                     )
                 }
                 Switch(
-                    modifier = Modifier.testTag(
-                        if (isEnabled.value) {
-                            DEVELOPER_DIAGNOSTICS_SWITCH_ENABLED_TAG
-                        } else {
-                            DEVELOPER_DIAGNOSTICS_SWITCH_DISABLED_TAG
+                    modifier = Modifier
+                        .testTag(
+                            if (isEnabled.value) {
+                                DEVELOPER_DIAGNOSTICS_SWITCH_ENABLED_TAG
+                            } else {
+                                DEVELOPER_DIAGNOSTICS_SWITCH_DISABLED_TAG
+                            },
+                        )
+                        .semantics {
+                            contentDescription = diagnosticsContentDescription
+                            stateDescription = diagnosticsStateDescription
                         },
-                    ),
                     checked = isEnabled.value,
                     onCheckedChange = { checked ->
                         hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Toggle)
@@ -1929,6 +2083,14 @@ private fun EndpointPanel(
         hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Toggle)
         isExpanded.value = !isExpanded.value
     }
+    val toggleContentDescription = stringResource(title)
+    val toggleStateDescription = stringResource(
+        if (isExpanded.value) {
+            settingsSectionExpandedStateDescriptionRes()
+        } else {
+            settingsSectionCollapsedStateDescriptionRes()
+        },
+    )
 
     OutlinedCard(modifier = Modifier.fillMaxWidth()) {
         Column(
@@ -1940,7 +2102,14 @@ private fun EndpointPanel(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { toggleExpanded() },
+                    .clickable(
+                        role = Role.Button,
+                        onClick = { toggleExpanded() },
+                    )
+                    .semantics(mergeDescendants = true) {
+                        contentDescription = toggleContentDescription
+                        stateDescription = toggleStateDescription
+                    },
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -1962,6 +2131,7 @@ private fun EndpointPanel(
                 Spacer(Modifier.width(12.dp))
                 FilledTonalIconButton(
                     onClick = { toggleExpanded() },
+                    modifier = Modifier.clearAndSetSemantics {},
                 ) {
                     Icon(
                         imageVector = if (isExpanded.value) {
@@ -1969,13 +2139,7 @@ private fun EndpointPanel(
                         } else {
                             Icons.Filled.KeyboardArrowDown
                         },
-                        contentDescription = stringResource(
-                            if (isExpanded.value) {
-                                R.string.hide_advanced_connection
-                            } else {
-                                R.string.show_advanced_connection
-                            },
-                        ),
+                        contentDescription = null,
                     )
                 }
             }
@@ -2119,6 +2283,10 @@ private fun DiscoveredRuntimeRow(
     val identityStatus = peer.identityStatus(trustedRuntime)
     val hasAdvertisedIdentity = peer.hasAdvertisedIdentity()
     val canUseDiscoveredRoute = discoveredRuntimeSelectable(peer, trustedRuntime)
+    val discoveredRuntimeActionContentDescription = stringResource(
+        R.string.use_trusted_connection_named,
+        peer.serviceName,
+    )
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -2163,6 +2331,9 @@ private fun DiscoveredRuntimeRow(
                     onClick = {
                         hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
                         onUse(peer)
+                    },
+                    modifier = Modifier.semantics {
+                        contentDescription = discoveredRuntimeActionContentDescription
                     },
                 ) {
                     Text(stringResource(discoveredRuntimeActionLabelRes(peer, trustedRuntime)))
@@ -2516,13 +2687,17 @@ private fun SuggestedQuestionChip(
     text: String,
     onClick: () -> Unit,
 ) {
+    val suggestionContentDescription = stringResource(R.string.content_desc_suggested_question, text)
     Surface(
         modifier = Modifier
             .widthIn(min = 120.dp, max = 360.dp)
             .clickable(
                 role = Role.Button,
                 onClick = onClick,
-            ),
+            )
+            .semantics {
+                contentDescription = suggestionContentDescription
+            },
         shape = RoundedCornerShape(18.dp),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.58f),
         contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -2780,6 +2955,13 @@ private fun AssistantReasoning(
             R.string.assistant_reasoning_show
         }
     )
+    val stateDescriptionText = stringResource(
+        if (expanded) {
+            R.string.section_state_expanded
+        } else {
+            R.string.section_state_collapsed
+        }
+    )
     val toggleExpanded = {
         hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Toggle)
         onExpandedChange(!expanded)
@@ -2787,7 +2969,7 @@ private fun AssistantReasoning(
     val rowModifier = if (isExpandable) {
         Modifier
             .semantics {
-                stateDescription = toggleLabel
+                stateDescription = stateDescriptionText
             }
             .clickable(
                 role = Role.Button,
@@ -2989,6 +3171,11 @@ private fun ChatComposer(
         hasSendableContent -> stringResource(R.string.chat_hint_ready)
         else -> stringResource(R.string.chat_hint_enter_message)
     }
+    val attachFilesStateDescription = when {
+        enabled -> stringResource(R.string.attach_files_state_ready)
+        hint.isNotBlank() -> hint
+        else -> stringResource(R.string.attach_files_state_unavailable)
+    }
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(CHAT_COMPOSER_CONTAINER_CORNER_RADIUS_DP.dp),
@@ -3022,7 +3209,11 @@ private fun ChatComposer(
                         onAttachFiles()
                     },
                     enabled = enabled,
-                    modifier = Modifier.size(40.dp),
+                    modifier = Modifier
+                        .size(40.dp)
+                        .semantics {
+                            stateDescription = attachFilesStateDescription
+                        },
                 ) {
                     Icon(
                         Icons.Filled.Add,
@@ -3162,13 +3353,24 @@ private fun ReadOnlyAttachmentChips(
 
 @Composable
 private fun ReadOnlyAttachmentChip(attachment: RuntimeMessageAttachment) {
+    val attachmentTypeDescription = attachmentTypeLabel(attachment.type)
+    val attachmentContentDescription = stringResource(
+        R.string.content_desc_attachment_chip,
+        attachment.name,
+        attachmentTypeDescription,
+    )
     Surface(
         shape = RoundedCornerShape(999.dp),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.62f),
         contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 11.dp, vertical = 6.dp),
+            modifier = Modifier
+                .padding(horizontal = 11.dp, vertical = 6.dp)
+                .semantics {
+                    contentDescription = attachmentContentDescription
+                    stateDescription = attachmentTypeDescription
+                },
             verticalArrangement = Arrangement.spacedBy(1.dp),
         ) {
             Text(
@@ -3178,7 +3380,7 @@ private fun ReadOnlyAttachmentChip(attachment: RuntimeMessageAttachment) {
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = attachmentTypeLabel(attachment.type),
+                text = attachmentTypeDescription,
                 style = MaterialTheme.typography.labelSmall,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -3232,6 +3434,16 @@ private fun AttachmentChip(
     val hapticFeedback = LocalHapticFeedback.current
     val isUnsupportedImage = attachment.type == "image" && !imageAttachmentsSupported
     val metadata = attachmentMetadataLabel(attachment)
+    val attachmentStateDescription = if (isUnsupportedImage) {
+        stringResource(R.string.attachment_requires_vision_model)
+    } else {
+        metadata
+    }
+    val attachmentContentDescription = stringResource(
+        R.string.content_desc_attachment_chip,
+        attachment.name,
+        attachmentStateDescription,
+    )
     Surface(
         shape = RoundedCornerShape(999.dp),
         color = if (isUnsupportedImage) {
@@ -3251,7 +3463,12 @@ private fun AttachmentChip(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Column(
-                modifier = Modifier.widthIn(max = 190.dp),
+                modifier = Modifier
+                    .widthIn(max = 190.dp)
+                    .semantics {
+                        contentDescription = attachmentContentDescription
+                        stateDescription = attachmentStateDescription
+                    },
                 verticalArrangement = Arrangement.spacedBy(1.dp),
             ) {
                 Text(
@@ -3371,6 +3588,7 @@ private fun AppearancePreferenceSelector(
 ) {
     val hapticFeedback = LocalHapticFeedback.current
     val options = appThemePreferenceOptions()
+    val selectedStateDescription = stringResource(R.string.selection_state_selected)
 
     Column(
         modifier = Modifier.selectableGroup(),
@@ -3395,6 +3613,7 @@ private fun AppearancePreferenceSelector(
                         }
                         onSetTheme(theme)
                     }
+                    .selectedPreferenceOptionState(selected, selectedStateDescription)
                     .padding(vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -3420,6 +3639,16 @@ internal fun appThemePreferenceOptions(): List<Pair<RuntimeAppTheme, Int>> {
         RuntimeAppTheme.Light to R.string.appearance_light,
         RuntimeAppTheme.Dark to R.string.appearance_dark,
     )
+}
+
+private fun Modifier.selectedPreferenceOptionState(
+    selected: Boolean,
+    selectedStateDescription: String,
+): Modifier {
+    if (!selected) return this
+    return semantics {
+        stateDescription = selectedStateDescription
+    }
 }
 
 @Composable
@@ -3577,7 +3806,7 @@ private fun EmbeddingModelNoneRow(
             }
             onSelectEmbeddingModel(null)
         },
-        modifier = Modifier.fillMaxWidth(),
+        modifier = selectedEmbeddingModelRowModifier(selected),
         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
     ) {
         Row(
@@ -3625,7 +3854,7 @@ private fun EmbeddingModelRow(
             onSelectEmbeddingModel(model.id)
         },
         enabled = model.installed,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = selectedEmbeddingModelRowModifier(selected),
         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
     ) {
         Row(
@@ -3663,12 +3892,24 @@ private fun EmbeddingModelRow(
 }
 
 @Composable
+private fun selectedEmbeddingModelRowModifier(selected: Boolean): Modifier {
+    if (!selected) return Modifier.fillMaxWidth()
+    val selectedStateDescription = stringResource(R.string.selection_state_selected)
+    return Modifier
+        .fillMaxWidth()
+        .semantics {
+            stateDescription = selectedStateDescription
+        }
+}
+
+@Composable
 private fun LanguagePreferenceSelector(
     selectedLanguageTag: String,
     onSetLanguageTag: (String) -> Unit,
 ) {
     val hapticFeedback = LocalHapticFeedback.current
     val options = appLanguagePreferenceOptions()
+    val selectedStateDescription = stringResource(R.string.selection_state_selected)
 
     Column(
         modifier = Modifier.selectableGroup(),
@@ -3693,6 +3934,7 @@ private fun LanguagePreferenceSelector(
                         }
                         onSetLanguageTag(language.languageTag)
                     }
+                    .selectedPreferenceOptionState(selected, selectedStateDescription)
                     .padding(vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -3849,12 +4091,23 @@ private fun ChatHistorySettingsPanel(
                 },
             )
             if (hasBulkActions) {
+                val bulkActionsStateDescription = stringResource(
+                    if (showBulkActions) {
+                        R.string.section_state_expanded
+                    } else {
+                        R.string.section_state_collapsed
+                    },
+                )
                 OutlinedButton(
                         onClick = {
                             hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Toggle)
                             showBulkActions = !showBulkActions
                         },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .semantics {
+                            stateDescription = bulkActionsStateDescription
+                        },
                 ) {
                     Icon(
                         imageVector = if (showBulkActions) {
@@ -3879,7 +4132,7 @@ private fun ChatHistorySettingsPanel(
                     )
                     OutlinedButton(
                         onClick = {
-                            hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Destructive)
+                            hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
                             bulkArchiveConfirmStep.value = 1
                         },
                         enabled = canArchiveAll,
@@ -3895,7 +4148,7 @@ private fun ChatHistorySettingsPanel(
                     }
                     OutlinedButton(
                         onClick = {
-                            hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Destructive)
+                            hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
                             bulkDeleteConfirmStep.value = 1
                         },
                         enabled = canPermanentlyDeleteArchived,
@@ -4023,6 +4276,10 @@ private fun ChatHistorySettingsRow(
     val statusText = statusRes?.let { status ->
         stringResource(R.string.chat_session_status_value, baseStatusText, stringResource(status))
     } ?: baseStatusText
+    val archiveActionContentDescription = stringResource(R.string.archive_chat_named, title)
+    val restoreActionContentDescription = stringResource(R.string.restore_chat_named, title)
+    val permanentlyDeleteActionContentDescription =
+        stringResource(R.string.permanently_delete_chat_named, title)
     val statusColor = when (statusRes) {
         R.string.chat_session_status_failed -> MaterialTheme.colorScheme.error
         R.string.chat_session_status_in_progress -> MaterialTheme.colorScheme.primary
@@ -4089,7 +4346,11 @@ private fun ChatHistorySettingsRow(
                             onRestoreChatSession(session.id)
                         },
                         enabled = isActionEnabled,
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier
+                            .weight(1f)
+                            .semantics {
+                                contentDescription = restoreActionContentDescription
+                            },
                     ) {
                         Icon(Icons.Filled.Unarchive, contentDescription = null)
                         Spacer(Modifier.width(6.dp))
@@ -4101,11 +4362,15 @@ private fun ChatHistorySettingsRow(
                     }
                     OutlinedButton(
                         onClick = {
-                            hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Destructive)
+                            hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
                             deleteConfirmStep.value = 1
                         },
                         enabled = isActionEnabled,
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier
+                            .weight(1f)
+                            .semantics {
+                                contentDescription = permanentlyDeleteActionContentDescription
+                            },
                     ) {
                         Icon(Icons.Filled.Delete, contentDescription = null)
                         Spacer(Modifier.width(6.dp))
@@ -4118,11 +4383,15 @@ private fun ChatHistorySettingsRow(
                 } else {
                     OutlinedButton(
                         onClick = {
-                            hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Destructive)
+                            hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
                             onArchiveChatSession(session.id)
                         },
                         enabled = isActionEnabled,
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .semantics {
+                                contentDescription = archiveActionContentDescription
+                            },
                     ) {
                         Icon(Icons.Filled.Archive, contentDescription = null)
                         Spacer(Modifier.width(8.dp))
@@ -4346,6 +4615,23 @@ private fun MemoryEntryRow(
 ) {
     val hapticFeedback = LocalHapticFeedback.current
     val showDeleteConfirmation = rememberSaveable(entry.id) { mutableStateOf(false) }
+    val memoryActionLabel = entry.content.trim().ifBlank { stringResource(R.string.memory_title) }
+    val memoryStateDescription = stringResource(
+        if (entry.enabled) {
+            R.string.memory_enabled
+        } else {
+            R.string.memory_paused
+        },
+    )
+    val memoryToggleContentDescription = stringResource(
+        if (entry.enabled) {
+            R.string.memory_pause_named
+        } else {
+            R.string.memory_enable_named
+        },
+        memoryActionLabel,
+    )
+    val memoryRemoveContentDescription = stringResource(R.string.memory_remove_named, memoryActionLabel)
 
     if (showDeleteConfirmation.value) {
         AlertDialog(
@@ -4425,18 +4711,26 @@ private fun MemoryEntryRow(
                     onSetMemoryEntryEnabled(entry.id, enabled)
                 },
                 enabled = actionsEnabled,
+                modifier = Modifier.semantics {
+                    contentDescription = memoryToggleContentDescription
+                    stateDescription = memoryStateDescription
+                },
             )
             FilledTonalIconButton(
                 onClick = {
-                    hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Destructive)
+                    hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
                     showDeleteConfirmation.value = true
                 },
                 enabled = actionsEnabled,
-                modifier = Modifier.size(40.dp),
+                modifier = Modifier
+                    .size(40.dp)
+                    .semantics {
+                        contentDescription = memoryRemoveContentDescription
+                    },
             ) {
                 Icon(
                     imageVector = Icons.Filled.Delete,
-                    contentDescription = stringResource(R.string.memory_remove),
+                    contentDescription = null,
                 )
             }
         }
@@ -4609,28 +4903,28 @@ private fun RouteAvailabilityNotice(
 
 @Composable
 private fun routeAvailabilityCompactLabel(error: RuntimeUiError): String {
+    return stringResource(routeAvailabilityCompactLabelRes(error))
+}
+
+@StringRes
+internal fun routeAvailabilityCompactLabelRes(error: RuntimeUiError): Int {
     return when (error.diagnosticCode) {
-        "route_diagnostic_relay_failed" -> stringResource(R.string.route_diagnostic_relay_failed)
-        "route_diagnostic_relay_auth_failed" ->
-            stringResource(R.string.route_diagnostic_relay_auth_failed)
-        "route_diagnostic_remote_route_expired" ->
-            stringResource(R.string.route_diagnostic_remote_route_expired)
-        "route_diagnostic_direct_qr_rejected" ->
-            stringResource(R.string.route_diagnostic_direct_qr_rejected)
-        "route_diagnostic_relay_qr_unreachable" ->
-            stringResource(R.string.route_diagnostic_relay_qr_unreachable)
+        "route_diagnostic_relay_failed" -> R.string.route_diagnostic_relay_failed
+        "route_diagnostic_relay_auth_failed" -> R.string.route_diagnostic_relay_auth_failed
+        "route_diagnostic_remote_route_expired" -> R.string.route_diagnostic_remote_route_expired
+        "route_diagnostic_direct_qr_rejected" -> R.string.route_diagnostic_direct_qr_rejected
+        "route_diagnostic_relay_qr_unreachable" -> R.string.route_diagnostic_relay_qr_unreachable
         else -> when {
-        error.code == "remote_route_unreachable" ->
-            stringResource(R.string.error_remote_route_unreachable)
-        error.code == "remote_routes_unavailable" ||
-            error.code == "remote_route_expired" ||
-            error.code == "pairing_route_retrying" ||
-            error.code == "pairing_direct_route_rejected" ||
-            error.code == "pairing_relay_route_rejected" ||
-            error.code == "pairing_endpoint_unavailable" ||
-            error.diagnosticCode in RELAY_ROUTE_NEEDED_DIAGNOSTIC_CODES ->
-            stringResource(R.string.route_notice_short_relay_needed)
-        else -> stringResource(R.string.route_notice_short_unavailable)
+            error.code == "remote_route_unreachable" -> R.string.error_remote_route_unreachable
+            error.code == "pairing_endpoint_unavailable" -> R.string.route_notice_pairing_endpoint_unavailable
+            error.code == "remote_routes_unavailable" ||
+                error.code == "remote_route_expired" ||
+                error.code == "pairing_route_retrying" ||
+                error.code == "pairing_direct_route_rejected" ||
+                error.code == "pairing_relay_route_rejected" ||
+                error.diagnosticCode in RELAY_ROUTE_NEEDED_DIAGNOSTIC_CODES ->
+                R.string.route_notice_short_relay_needed
+            else -> R.string.route_notice_short_unavailable
         }
     }
 }
@@ -4643,13 +4937,13 @@ private val ROUTE_AVAILABILITY_NOTICE_CODES = setOf(
     "no_route",
     "no_connectable_route",
     "remote_routes_unavailable",
-        "remote_route_unreachable",
-        "remote_route_expired",
-        "pairing_required",
-        "authentication_required",
-        "pairing_route_retrying",
-        "pairing_endpoint_unavailable",
-        "pairing_direct_route_rejected",
+    "remote_route_unreachable",
+    "remote_route_expired",
+    "pairing_required",
+    "authentication_required",
+    "pairing_route_retrying",
+    "pairing_endpoint_unavailable",
+    "pairing_direct_route_rejected",
     "pairing_relay_route_rejected",
 )
 
@@ -4688,6 +4982,8 @@ private val QR_REFRESH_EMPTY_CHAT_ERROR_CODES = setOf(
 )
 
 private val QR_REFRESH_EMPTY_CHAT_DIAGNOSTIC_CODES = RELAY_ROUTE_NEEDED_DIAGNOSTIC_CODES
+
+internal const val CHAT_MESSAGE_LIST_TEST_TAG = "aetherlink_chat_message_list"
 
 private fun selectedModelIsUsable(state: RuntimeUiState): Boolean {
     val selectedId = state.selectedModelId ?: return false
@@ -4803,13 +5099,29 @@ private fun chatEmptyTitle(state: RuntimeUiState, preferQrRouteRefresh: Boolean 
 
 @Composable
 private fun chatEmptyText(state: RuntimeUiState, preferQrRouteRefresh: Boolean = false): String {
+    return stringResource(chatEmptyTextRes(state, preferQrRouteRefresh))
+}
+
+@StringRes
+internal fun chatEmptyTextRes(state: RuntimeUiState, preferQrRouteRefresh: Boolean = false): Int {
+    val error = state.error
     return when {
-        preferQrRouteRefresh -> stringResource(R.string.route_notice_short_relay_needed)
-        state.trustedRuntime == null -> stringResource(R.string.empty_chat_pairing)
-        !state.isConnected -> stringResource(R.string.empty_chat_disconnected)
-        state.isStreaming -> stringResource(R.string.empty_chat_streaming)
-        selectedModelIsMissingFromRuntime(state) -> stringResource(R.string.selected_model_unavailable)
-        else -> stringResource(R.string.empty_chat_no_model)
+        preferQrRouteRefresh && (
+            error?.diagnosticCode == "route_diagnostic_relay_failed" ||
+                error?.code == "remote_route_unreachable"
+        ) -> R.string.empty_chat_relay_route_unreachable
+        preferQrRouteRefresh && (
+            error?.diagnosticCode == "route_diagnostic_relay_qr_unreachable" ||
+                error?.code == "pairing_relay_route_rejected"
+        ) -> R.string.empty_chat_relay_qr_unreachable
+        preferQrRouteRefresh && error?.code == "pairing_endpoint_unavailable" ->
+            R.string.route_notice_pairing_endpoint_unavailable
+        preferQrRouteRefresh -> R.string.route_notice_short_relay_needed
+        state.trustedRuntime == null -> R.string.empty_chat_pairing
+        !state.isConnected -> R.string.empty_chat_disconnected
+        state.isStreaming -> R.string.empty_chat_streaming
+        selectedModelIsMissingFromRuntime(state) -> R.string.selected_model_unavailable
+        else -> R.string.empty_chat_no_model
     }
 }
 

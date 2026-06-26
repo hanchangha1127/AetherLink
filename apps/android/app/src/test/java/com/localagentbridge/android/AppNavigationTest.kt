@@ -1,6 +1,7 @@
 package com.localagentbridge.android
 
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import com.localagentbridge.android.core.transport.RuntimeEndpointSource
 import com.localagentbridge.android.runtime.RuntimeActiveRouteKind
 import com.localagentbridge.android.runtime.RuntimeDiscoveredRuntime
 import com.localagentbridge.android.runtime.RuntimeAppLanguage
@@ -30,6 +31,7 @@ import com.localagentbridge.android.ui.chatComposerInputContentDescriptionRes
 import com.localagentbridge.android.ui.chatComposerShouldShowStatus
 import com.localagentbridge.android.ui.chatComposerVisualPlaceholderRes
 import com.localagentbridge.android.ui.chatEmptyPrimaryAction
+import com.localagentbridge.android.ui.chatEmptyTextRes
 import com.localagentbridge.android.ui.chatHistoryArchiveAllEnabled
 import com.localagentbridge.android.ui.chatHistoryBulkActionsAvailable
 import com.localagentbridge.android.ui.chatHistoryPermanentDeleteArchivedEnabled
@@ -66,6 +68,7 @@ import com.localagentbridge.android.ui.runtimeVisibleErrorDetail
 import com.localagentbridge.android.ui.runtimeRouteNotice
 import com.localagentbridge.android.ui.RouteNoticePrimaryAction
 import com.localagentbridge.android.ui.RuntimeRouteNoticeTone
+import com.localagentbridge.android.ui.routeAvailabilityCompactLabelRes
 import com.localagentbridge.android.ui.routeNoticeActionLabelRes
 import com.localagentbridge.android.ui.routeNoticePrimaryAction
 import com.localagentbridge.android.ui.shouldAutoScrollChat
@@ -994,97 +997,7 @@ class AppNavigationTest {
     }
 
     @Test
-    fun embeddingModelMenuShowsOnlyInstalledLocalEmbeddingModelsAndPinsSelection() {
-        val installedEmbedding = RuntimeModel(
-            id = "embedding-installed",
-            name = "Installed Embedding",
-            modelKind = "embedding",
-            capabilities = listOf("embedding"),
-            installed = true,
-            running = false,
-            source = "local",
-        )
-        val selectedEmbedding = installedEmbedding.copy(
-            id = "embedding-selected",
-            name = "Selected Embedding",
-        )
-        val unavailableEmbedding = installedEmbedding.copy(
-            id = "embedding-unavailable",
-            installed = false,
-        )
-        val providerManagedEmbedding = installedEmbedding.copy(
-            id = "embedding-provider-managed",
-            source = "cloud",
-        )
-        val chatModel = installedEmbedding.copy(
-            id = "chat-installed",
-            modelKind = "chat",
-            capabilities = listOf("chat"),
-        )
-
-        assertEquals(true, embeddingModelMenuItemEnabled(installedEmbedding))
-        assertEquals(false, embeddingModelMenuItemEnabled(unavailableEmbedding))
-        assertEquals(false, embeddingModelMenuItemEnabled(providerManagedEmbedding))
-        assertEquals(false, embeddingModelMenuItemEnabled(chatModel))
-        assertEquals(
-            listOf("embedding-selected", "embedding-installed"),
-            embeddingModelMenuModels(
-                models = listOf(
-                    installedEmbedding,
-                    unavailableEmbedding,
-                    providerManagedEmbedding,
-                    chatModel,
-                    selectedEmbedding,
-                ),
-                selectedEmbeddingModelId = "embedding-selected",
-            ).map { it.id },
-        )
-    }
-
-    @Test
-    fun embeddingModelMenuSearchMatchesModelIdentityProviderAndSource() {
-        val ollamaEmbedding = RuntimeModel(
-            id = "ollama:nomic-embed-text",
-            name = "Nomic Embed Text",
-            backend = "ollama",
-            provider = "ollama",
-            modelKind = "embedding",
-            capabilities = listOf("embedding"),
-            providerModelId = "nomic-embed-text",
-            source = "local",
-            description = "Memory indexing",
-        )
-        val lmStudioEmbedding = RuntimeModel(
-            id = "lm_studio:text-embedding-nomic",
-            name = "Text Embedding Nomic",
-            backend = "openai_compatible",
-            provider = "lm_studio",
-            modelKind = "embedding",
-            capabilities = listOf("embedding"),
-            providerModelId = "text-embedding-nomic",
-            source = "local",
-            description = "Retrieval embedding",
-        )
-
-        assertEquals(
-            listOf("ollama:nomic-embed-text"),
-            embeddingModelMenuModels(listOf(ollamaEmbedding, lmStudioEmbedding), query = "ollama")
-                .map { it.id },
-        )
-        assertEquals(
-            listOf("lm_studio:text-embedding-nomic"),
-            embeddingModelMenuModels(listOf(ollamaEmbedding, lmStudioEmbedding), query = "retrieval")
-                .map { it.id },
-        )
-        assertEquals(
-            listOf("ollama:nomic-embed-text", "lm_studio:text-embedding-nomic"),
-            embeddingModelMenuModels(listOf(ollamaEmbedding, lmStudioEmbedding), query = "local")
-                .map { it.id },
-        )
-    }
-
-    @Test
-    fun modelMenuSearchStaysAvailableForEmbeddingOrInstallableChatModels() {
+    fun chatModelMenuSearchAvailabilityUsesChatModelsOnly() {
         val embeddingModel = RuntimeModel(
             id = "embedding-only",
             name = "Embedding Only",
@@ -1102,37 +1015,9 @@ class AppNavigationTest {
             source = "local",
         )
 
-        assertEquals(true, modelMenuSearchAvailable(listOf(embeddingModel)))
+        assertEquals(false, modelMenuSearchAvailable(listOf(embeddingModel)))
         assertEquals(true, modelMenuSearchAvailable(listOf(embeddingModel, unavailableChatModel)))
         assertEquals(true, modelMenuSearchAvailable(listOf(unavailableChatModel)))
-    }
-
-    @Test
-    fun embeddingModelMenuEmptyTextDistinguishesSearchFromUnavailableModels() {
-        assertEquals(
-            R.string.no_model_search_results,
-            embeddingModelMenuEmptyTextRes(
-                isConnected = true,
-                hasEmbeddingModels = true,
-                hasSearchQuery = true,
-            ),
-        )
-        assertEquals(
-            R.string.embedding_model_empty,
-            embeddingModelMenuEmptyTextRes(
-                isConnected = true,
-                hasEmbeddingModels = false,
-                hasSearchQuery = true,
-            ),
-        )
-        assertEquals(
-            R.string.embedding_model_connect_first,
-            embeddingModelMenuEmptyTextRes(
-                isConnected = false,
-                hasEmbeddingModels = false,
-                hasSearchQuery = true,
-            ),
-        )
     }
 
     @Test
@@ -1240,41 +1125,6 @@ class AppNavigationTest {
                 models = listOf(matchingModel, selectedModel),
                 query = "deepseek",
                 selectedModelId = "ollama:qwen3:8b",
-            ).map { it.id },
-        )
-    }
-
-    @Test
-    fun embeddingModelMenuKeepsSelectedModelVisibleDuringSearch() {
-        val selectedEmbedding = RuntimeModel(
-            id = "ollama:nomic-embed-text",
-            name = "Nomic Embed Text",
-            backend = "ollama",
-            provider = "ollama",
-            providerModelId = "nomic-embed-text",
-            source = "local",
-            installed = true,
-            modelKind = "embedding",
-            capabilities = listOf("embedding"),
-        )
-        val matchingEmbedding = RuntimeModel(
-            id = "lm_studio:bge-m3",
-            name = "BGE M3",
-            backend = "openai_compatible",
-            provider = "lm_studio",
-            providerModelId = "bge-m3",
-            source = "local",
-            installed = true,
-            modelKind = "embedding",
-            capabilities = listOf("embedding"),
-        )
-
-        assertEquals(
-            listOf("ollama:nomic-embed-text", "lm_studio:bge-m3"),
-            embeddingModelMenuModels(
-                models = listOf(matchingEmbedding, selectedEmbedding),
-                query = "bge",
-                selectedEmbeddingModelId = "ollama:nomic-embed-text",
             ).map { it.id },
         )
     }
@@ -1755,8 +1605,60 @@ class AppNavigationTest {
 
         assertNull(routeNoticePrimaryAction(state))
         assertEquals(R.string.route_notice_relay_active, notice?.detailRes)
+        assertEquals(R.string.route_notice_status_connected, notice?.statusRes)
         assertEquals(RuntimeRouteNoticeTone.Ready, notice?.tone)
         assertNull(notice?.action)
+    }
+
+    @Test
+    fun routeNoticeStatusLabelsDistinguishSavedRefreshDiagnosticsAndQrStates() {
+        val savedConnection = RuntimeUiState(
+            trustedRuntime = trustedRuntime(
+                relayExpiresAtEpochMillis = Long.MAX_VALUE,
+                relayNonce = "nonce-1",
+            ),
+        )
+        val expiredConnection = RuntimeUiState(
+            trustedRuntime = trustedRuntime(
+                relayExpiresAtEpochMillis = 1L,
+                relayNonce = "nonce-1",
+            ),
+        )
+        val diagnosticRoute = RuntimeUiState(
+            trustedRuntime = trustedRuntime(
+                relayHost = null,
+                relayPort = null,
+                relayId = null,
+                relaySecret = null,
+            ),
+            runtimeHost = "127.0.0.1",
+            runtimeEndpointSource = RuntimeEndpointSource.UsbReverse,
+        )
+        val scanQr = RuntimeUiState(
+            trustedRuntime = trustedRuntime(
+                relayHost = null,
+                relayPort = null,
+                relayId = null,
+                relaySecret = null,
+            ),
+        )
+
+        assertEquals(
+            R.string.route_notice_status_saved_connection,
+            runtimeRouteNotice(savedConnection, savedConnection.trustedRuntime)?.statusRes,
+        )
+        assertEquals(
+            R.string.route_notice_status_refresh_needed,
+            runtimeRouteNotice(expiredConnection, expiredConnection.trustedRuntime)?.statusRes,
+        )
+        assertEquals(
+            R.string.route_notice_status_diagnostics,
+            runtimeRouteNotice(diagnosticRoute, diagnosticRoute.trustedRuntime)?.statusRes,
+        )
+        assertEquals(
+            R.string.route_notice_status_scan_qr,
+            runtimeRouteNotice(scanQr, scanQr.trustedRuntime)?.statusRes,
+        )
     }
 
     @Test
@@ -1773,6 +1675,41 @@ class AppNavigationTest {
         )
 
         assertEquals(RouteNoticePrimaryAction.ScanLatestQr, routeNoticePrimaryAction(state))
+        assertEquals(
+            R.string.route_diagnostic_relay_failed,
+            routeAvailabilityCompactLabelRes(requireNotNull(state.error)),
+        )
+    }
+
+    @Test
+    fun routeAvailabilityNoticeExplainsIdentityOnlyQrNeedsConnectionRoute() {
+        val state = RuntimeUiState(
+            trustedRuntime = trustedRuntime(),
+            error = RuntimeUiError(code = "pairing_endpoint_unavailable"),
+        )
+
+        assertEquals(RouteNoticePrimaryAction.ScanLatestQr, routeNoticePrimaryAction(state))
+        assertEquals(
+            R.string.route_notice_pairing_endpoint_unavailable,
+            routeAvailabilityCompactLabelRes(requireNotNull(state.error)),
+        )
+    }
+
+    @Test
+    fun routeAvailabilityNoticeExplainsUnreachableRelayQrRoute() {
+        val state = RuntimeUiState(
+            trustedRuntime = trustedRuntime(),
+            error = RuntimeUiError(
+                code = "pairing_relay_route_rejected",
+                diagnosticCode = "route_diagnostic_relay_qr_unreachable",
+            ),
+        )
+
+        assertEquals(RouteNoticePrimaryAction.ScanLatestQr, routeNoticePrimaryAction(state))
+        assertEquals(
+            R.string.route_diagnostic_relay_qr_unreachable,
+            routeAvailabilityCompactLabelRes(requireNotNull(state.error)),
+        )
     }
 
     @Test
@@ -2030,6 +1967,10 @@ class AppNavigationTest {
 
         assertEquals(true, shouldScanLatestQrFromEmptyChat(state))
         assertEquals(false, shouldShowChatBottomError(state))
+        assertEquals(
+            R.string.empty_chat_relay_route_unreachable,
+            chatEmptyTextRes(state, preferQrRouteRefresh = true),
+        )
     }
 
     @Test
@@ -2041,6 +1982,10 @@ class AppNavigationTest {
         )
 
         assertEquals(true, shouldScanLatestQrFromEmptyChat(state))
+        assertEquals(
+            R.string.route_notice_pairing_endpoint_unavailable,
+            chatEmptyTextRes(state, preferQrRouteRefresh = true),
+        )
     }
 
     @Test
@@ -2071,6 +2016,10 @@ class AppNavigationTest {
 
         assertEquals(true, shouldScanLatestQrFromEmptyChat(state))
         assertEquals(false, shouldShowChatBottomError(state))
+        assertEquals(
+            R.string.empty_chat_relay_qr_unreachable,
+            chatEmptyTextRes(state, preferQrRouteRefresh = true),
+        )
     }
 
     @Test

@@ -40,6 +40,13 @@ EXPECTED_APP_LANGUAGES = {
     "simplifiedChinese": "zh-Hans",
     "french": "fr",
 }
+EXPECTED_APP_LANGUAGE_TITLES = {
+    "english": "English",
+    "korean": "한국어",
+    "japanese": "日本語",
+    "simplifiedChinese": "简体中文",
+    "french": "Français",
+}
 EXPECTED_APP_APPEARANCES = ("system", "light", "dark")
 REQUIRED_LANGUAGE_KEYS = (
     "Language",
@@ -57,6 +64,7 @@ REQUIRED_APPEARANCE_KEYS = (
 )
 REQUIRED_CONNECTION_SAFETY_KEYS = (
     "Disable saved connection details?",
+    "Disable saved connection details for %@",
     "Saved connection details will be removed. Devices on another network may need a fresh pairing QR before they can reconnect.",
 )
 REQUIRED_ACTIVITY_REDACTION_KEYS = (
@@ -69,6 +77,10 @@ REQUIRED_TRUSTED_DEVICE_KEYS = (
     "Selected device",
 )
 REQUIRED_REMOTE_ROUTE_PREPARATION_KEYS = (
+    "Connection setup result",
+    "Connection health",
+    "Connection preparation",
+    "Connection diagnostics",
     "AetherLink could not get connection details from the route service. Check Advanced Connection Setup, then generate a fresh QR.",
     "Connection details for %@ cannot be used from another network. Use a public, VPN, or relay address, then generate a fresh QR.",
     "Connection details cannot be used from another network. Use a public, VPN, or relay address, then generate a fresh QR.",
@@ -216,7 +228,11 @@ RAW_SWIFTUI_VISIBLE_LITERAL_RE = re.compile(
         Text|Button|Label|Picker|Toggle|Section|NavigationLink|Menu|
         TextField|SecureField
     )
-    \s*\(\s*"
+    \s*\(\s*
+    (?:
+        title\s*:\s*
+    )?
+    "
     |
     \.
     (?:
@@ -348,6 +364,13 @@ def check_app_language_selector() -> list[str]:
     if 'let AetherLinkAppLanguageStorageKey = "aetherlink.appLanguageTag"' not in source:
         failures.append(f"{relative_path}: app language storage key changed unexpectedly")
 
+    for case_name, title in EXPECTED_APP_LANGUAGE_TITLES.items():
+        expected_snippet = f"case .{case_name}:\n            return \"{title}\""
+        if expected_snippet not in source:
+            failures.append(
+                f"{relative_path}: language picker case {case_name!r} must use native label {title!r}"
+            )
+
     for locale in EXPECTED_APP_LANGUAGES.values():
         if locale not in LOCALES:
             failures.append(f"{relative_path}: app language {locale!r} is not in LOCALES")
@@ -453,12 +476,57 @@ def check_no_raw_swiftui_visible_literals() -> list[str]:
 
     for path in sorted(SOURCE_ROOT.glob("*.swift")):
         relative_path = path.relative_to(ROOT)
-        for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-            if RAW_SWIFTUI_VISIBLE_LITERAL_RE.search(line):
+        text = path.read_text(encoding="utf-8")
+        for match in RAW_SWIFTUI_VISIBLE_LITERAL_RE.finditer(text):
+            line_number = text.count("\n", 0, match.start()) + 1
+            failures.append(
+                f"{relative_path}:{line_number}: visible SwiftUI text must use "
+                "NSLocalizedString so the in-app language setting applies."
+            )
+
+    return failures
+
+
+def raw_swiftui_visible_literal_matcher_self_test_failures() -> list[str]:
+    failures: list[str] = []
+    unsafe_samples = (
+        ("positional Text", 'Text("Raw visible copy")'),
+        ("multiline Text", 'let value = 1\nText(\n    "Raw visible copy"\n)'),
+        ("positional Button", 'Button("Raw action") {}'),
+        ("multiline Button", 'Button(\n    "Raw action"\n) {}'),
+        ("raw Label", 'Label("Raw label", systemImage: "bolt")'),
+        ("raw Picker title", 'Picker(title: "Raw picker", selection: $selection) {}'),
+        ("raw alert", '.alert("Raw alert", isPresented: $isPresented) {}'),
+        ("multiline alert", '.alert(\n    "Raw alert",\n    isPresented: $isPresented\n) {}'),
+        ("multiline confirmation dialog", '.confirmationDialog(\n    "Raw confirmation",\n    isPresented: $isPresented\n) {}'),
+    )
+    safe_samples = (
+        ("localized Text", 'Text(NSLocalizedString("app.name", comment: ""))'),
+        ("localized Button", 'Button(NSLocalizedString("Save", comment: "")) {}'),
+    )
+
+    for label, sample in unsafe_samples:
+        matches = list(RAW_SWIFTUI_VISIBLE_LITERAL_RE.finditer(sample))
+        if not matches:
+            failures.append(
+                "raw SwiftUI visible-string matcher missed required sample "
+                f"{label}: {sample!r}"
+            )
+            continue
+        if label == "multiline Text":
+            line_number = sample.count("\n", 0, matches[0].start()) + 1
+            if line_number != 2:
                 failures.append(
-                    f"{relative_path}:{line_number}: visible SwiftUI text must use "
-                    "NSLocalizedString so the in-app language setting applies."
+                    "raw SwiftUI visible-string matcher reported "
+                    f"line {line_number} for {label}, expected 2"
                 )
+
+    for label, sample in safe_samples:
+        if RAW_SWIFTUI_VISIBLE_LITERAL_RE.search(sample) is not None:
+            failures.append(
+                "raw SwiftUI visible-string matcher rejected localized sample "
+                f"{label}: {sample!r}"
+            )
 
     return failures
 
@@ -479,7 +547,8 @@ def check_no_parenthetical_plural_resources() -> list[str]:
 
 
 def check_remote_connection_destructive_confirmation() -> list[str]:
-    return missing_source_snippets(
+    failures: list[str] = []
+    failures.extend(missing_source_snippets(
         REMOTE_RELAY_ROUTE_PANEL_SOURCE,
         (
             "@State private var isDisableConnectionConfirmationPresented = false",
@@ -487,11 +556,36 @@ def check_remote_connection_destructive_confirmation() -> list[str]:
             '.confirmationDialog(\n            NSLocalizedString("Disable saved connection details?", comment: "")',
             "model.clearDevelopmentRelay()",
             'Button(NSLocalizedString("Disable Connection", comment: ""), role: .destructive)',
+            ".accessibilityLabel(Text(disableConnectionAccessibilityLabel(endpoint: settings.endpointLabel)))",
+            "func disableConnectionAccessibilityLabel(endpoint: String?) -> String",
+            "Disable saved connection details for %@",
             'Button(NSLocalizedString("Cancel", comment: ""), role: .cancel)',
             'Text(NSLocalizedString("Saved connection details will be removed. Devices on another network may need a fresh pairing QR before they can reconnect.", comment: ""))',
         ),
         "macOS remote connection destructive confirmation",
-    )
+    ))
+    failures.extend(missing_source_snippets(
+        REMOTE_RELAY_ROUTE_PANEL_SOURCE,
+        (
+            "accessibilityContext: NSLocalizedString(\"Connection setup result\", comment: \"\")",
+            "accessibilityContext: NSLocalizedString(\"Connection health\", comment: \"\")",
+            "accessibilityContext: NSLocalizedString(\"Connection preparation\", comment: \"\")",
+            "routeDiagnosticDisclosureAccessibilityLabel(context: accessibilityContext)",
+            "func routeDiagnosticDisclosureAccessibilityLabel(context: String) -> String",
+            "Connection diagnostics",
+            "Technical details for %@",
+            "RelayStatusRow(",
+            ".accessibilityElement(children: .ignore)",
+            "relayStatusRowAccessibilityLabel(title: title, value: value, detail: detail)",
+            "func relayStatusRowAccessibilityLabel(title: String, value: String, detail: String) -> String",
+            "Connection route",
+            "Connection setting",
+            "No details available.",
+            "Connection setting %@. Status %@. %@",
+        ),
+        "macOS connection recovery accessibility labels",
+    ))
+    return failures
 
 
 def check_activity_log_redaction() -> list[str]:
@@ -522,6 +616,15 @@ def check_activity_log_redaction() -> list[str]:
         ),
         "macOS companion log storage endpoint redaction",
     ))
+    failures.extend(missing_source_snippets(
+        ACTIVITY_LOGS_SOURCE,
+        (
+            "logTechnicalDetailsAccessibilityLabel(summary: display.summary)",
+            "func logTechnicalDetailsAccessibilityLabel(summary: String) -> String",
+            "Technical details for %@",
+        ),
+        "macOS activity technical-details accessibility label",
+    ))
     return failures
 
 
@@ -532,10 +635,28 @@ def check_provider_status_redaction() -> list[str]:
             "providerStatusDiagnosticDetail(",
             "sanitizedTechnicalDiagnostic(message)",
             "sanitizedProviderStatusCode",
+            "readinessRowAccessibilityLabel(",
+            "func readinessRowAccessibilityLabel(title: String, status: String, detail: String) -> String",
+            "Readiness %@. Status %@. %@",
+            "runtimeOverviewAccessibilityLabel(",
+            "func runtimeOverviewAccessibilityLabel(title: String, status: String, detail: String, footnote: String) -> String",
+            "Runtime overview %@. Status %@. %@ %@",
+            "statusCardAccessibilityLabel(",
+            "func statusCardAccessibilityLabel(title: String, value: String, detail: String) -> String",
+            "Status %@. Current state %@. %@",
+            "modelRowAccessibilityLabel(",
+            "func modelRowAccessibilityLabel(",
+            "Model %@. ID %@. Type %@. Provider %@. Source %@. State %@. Size %@",
+            "providerStatusTechnicalDetailsAccessibilityLabel(providerName: status.name)",
+            "func providerStatusTechnicalDetailsAccessibilityLabel(providerName: String) -> String",
+            "Model provider",
             'lines.append("code=\\(code)")',
             'lines.append("retryable=\\(retryable ? "true" : "false")")',
+            "providerStatusPillAccessibilityLabel(",
+            "func providerStatusPillAccessibilityLabel(providerName: String, status: String) -> String",
+            "Provider %@ status %@",
         ),
-        "macOS Model Providers technical-details endpoint redaction",
+        "macOS Status readiness and Model Providers technical-details accessibility labels",
     )
 
 
@@ -547,8 +668,16 @@ def check_trusted_device_identity_display() -> list[str]:
             "func trustedDeviceKeyFingerprint(_ publicKeyBase64: String) -> String",
             "SHA256.hash(data: keyData)",
             "Key fingerprint %@",
+            ".accessibilityHidden(true)",
+            "trustedDeviceRowAccessibilityLabel(",
+            "func trustedDeviceRowAccessibilityLabel(name: String, pairedSummary: String, keyFingerprint: String) -> String",
+            "Pairing details unavailable.",
+            "Trusted device %@. %@. Key fingerprint %@",
             "trustedDeviceRemovalMessage(for: pendingRemovalDevice)",
             "%@ will need to pair again before it can use AetherLink Runtime. Key fingerprint %@",
+            "trustedDeviceRemoveAccessibilityLabel(name: name, keyFingerprint: keyFingerprint)",
+            "func trustedDeviceRemoveAccessibilityLabel(name: String, keyFingerprint: String) -> String",
+            "Remove trust for %@. Key fingerprint %@",
         ),
         "macOS trusted-device identity display",
     )
@@ -676,6 +805,7 @@ def main() -> int:
     failures.extend(check_app_language_selector())
     failures.extend(check_app_appearance_selector())
     failures.extend(check_app_appearance_wiring())
+    failures.extend(raw_swiftui_visible_literal_matcher_self_test_failures())
     failures.extend(check_no_raw_swiftui_visible_literals())
     failures.extend(check_no_parenthetical_plural_resources())
     failures.extend(check_remote_connection_destructive_confirmation())

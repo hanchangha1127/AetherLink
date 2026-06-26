@@ -213,6 +213,32 @@ public struct CompanionDevelopmentRelaySettings: Equatable, Sendable {
     }
 }
 
+public struct CompanionBootstrapRelaySettings: Equatable, Sendable {
+    public var isEnabled: Bool
+    public var endpoints: String
+    public var allocationToken: String?
+    public var allowsPrivateOverlay: Bool
+
+    public init(
+        isEnabled: Bool,
+        endpoints: String = "",
+        allocationToken: String? = nil,
+        allowsPrivateOverlay: Bool = false
+    ) {
+        self.isEnabled = isEnabled
+        self.endpoints = endpoints
+        self.allocationToken = allocationToken?.takeIfNotEmpty()
+        self.allowsPrivateOverlay = allowsPrivateOverlay
+    }
+
+    public static let disabled = CompanionBootstrapRelaySettings(isEnabled: false)
+
+    public var endpointLabel: String? {
+        guard isEnabled, !endpoints.isEmpty else { return nil }
+        return endpoints
+    }
+}
+
 private extension String {
     func isPrivateOrLocalIPv4RelayLiteral() -> Bool {
         let octets = split(separator: ".", omittingEmptySubsequences: false)
@@ -345,20 +371,23 @@ public extension CompanionRemoteRelayRouteAllocating {
 
 public struct EnvironmentRemoteRelayRouteAllocator: CompanionRemoteRelayRouteAllocating {
     public var environment: [String: String]
+    public var storedBootstrapRelaySettings: CompanionBootstrapRelaySettings
     private let relayServiceAllocator: any RelayServiceRouteAllocating
     private static let defaultBootstrapRelayPort: UInt16 = 43171
 
     public init(
         environment: [String: String] = ProcessInfo.processInfo.environment,
+        storedBootstrapRelaySettings: CompanionBootstrapRelaySettings = .disabled,
         relayServiceAllocator: any RelayServiceRouteAllocating = TCPRelayServiceRouteAllocator()
     ) {
         self.environment = environment
+        self.storedBootstrapRelaySettings = storedBootstrapRelaySettings
         self.relayServiceAllocator = relayServiceAllocator
     }
 
     public var canAllocateRemoteRelayRoute: Bool {
         let defaultPort = Self.bootstrapRelayDefaultPort(from: environment)
-        guard !Self.bootstrapRelayEndpoints(from: environment, defaultPort: defaultPort).isEmpty else {
+        guard !bootstrapRelayEndpoints(defaultPort: defaultPort).isEmpty else {
             return false
         }
         let explicitRelayID = environment["AETHERLINK_BOOTSTRAP_RELAY_ID"]?.takeIfNotEmpty()
@@ -375,7 +404,7 @@ public struct EnvironmentRemoteRelayRouteAllocator: CompanionRemoteRelayRouteAll
         preferredRelaySecret: String? = nil
     ) throws -> CompanionRemoteRelayRouteAllocation? {
         let defaultPort = Self.bootstrapRelayDefaultPort(from: environment)
-        let endpoints = Self.bootstrapRelayEndpoints(from: environment, defaultPort: defaultPort)
+        let endpoints = bootstrapRelayEndpoints(defaultPort: defaultPort)
         guard let firstEndpoint = endpoints.first else {
             return nil
         }
@@ -397,6 +426,7 @@ public struct EnvironmentRemoteRelayRouteAllocator: CompanionRemoteRelayRouteAll
         var lastError: Error?
         let allocationToken = environment["AETHERLINK_BOOTSTRAP_RELAY_ALLOCATION_TOKEN"]?.takeIfNotEmpty()
             ?? environment["AETHERLINK_RELAY_ALLOCATION_TOKEN"]?.takeIfNotEmpty()
+            ?? storedBootstrapRelaySettings.allocationToken?.takeIfNotEmpty()
         for endpoint in endpoints {
             do {
                 return try relayServiceAllocator.allocateRelayRoute(
@@ -417,6 +447,15 @@ public struct EnvironmentRemoteRelayRouteAllocator: CompanionRemoteRelayRouteAll
         return nil
     }
 
+    private func bootstrapRelayEndpoints(defaultPort: UInt16) -> [BootstrapRelayEndpoint] {
+        let environmentEndpoints = Self.bootstrapRelayEndpoints(from: environment, defaultPort: defaultPort)
+        if !environmentEndpoints.isEmpty {
+            return environmentEndpoints
+        }
+        guard storedBootstrapRelaySettings.isEnabled else { return [] }
+        return Self.bootstrapRelayEndpoints(from: storedBootstrapRelaySettings.endpoints, defaultPort: defaultPort)
+    }
+
     private static func bootstrapRelayDefaultPort(from environment: [String: String]) -> UInt16 {
         UInt16(environment["AETHERLINK_BOOTSTRAP_RELAY_PORT"] ?? "") ?? defaultBootstrapRelayPort
     }
@@ -426,14 +465,21 @@ public struct EnvironmentRemoteRelayRouteAllocator: CompanionRemoteRelayRouteAll
         defaultPort: UInt16
     ) -> [BootstrapRelayEndpoint] {
         if let endpointList = environment["AETHERLINK_BOOTSTRAP_RELAY_ENDPOINTS"]?.takeIfNotEmpty() {
-            return endpointList
-                .split(separator: ",", omittingEmptySubsequences: true)
-                .compactMap { parseBootstrapRelayEndpoint(String($0), defaultPort: defaultPort) }
+            return bootstrapRelayEndpoints(from: endpointList, defaultPort: defaultPort)
         }
         guard let host = environment["AETHERLINK_BOOTSTRAP_RELAY_HOST"]?.takeIfNotEmpty() else {
             return []
         }
         return [BootstrapRelayEndpoint(host: host, port: defaultPort)]
+    }
+
+    private static func bootstrapRelayEndpoints(
+        from endpointList: String,
+        defaultPort: UInt16
+    ) -> [BootstrapRelayEndpoint] {
+        endpointList
+            .split(separator: ",", omittingEmptySubsequences: true)
+            .compactMap { parseBootstrapRelayEndpoint(String($0), defaultPort: defaultPort) }
     }
 
     private static func parseBootstrapRelayEndpoint(
@@ -483,6 +529,7 @@ public final class CompanionAppModel: ObservableObject {
     @Published public private(set) var transportStatus = "Stopped"
     @Published public private(set) var transportState: CompanionTransportStatus = .stopped
     @Published public private(set) var providerStatuses: [CompanionProviderStatus]
+    @Published public private(set) var bootstrapRelaySettings: CompanionBootstrapRelaySettings = .disabled
     @Published public private(set) var developmentRelaySettings: CompanionDevelopmentRelaySettings = .disabled
     @Published public private(set) var developmentRelayConnectionStatus: CompanionDevelopmentRelayStatus = .stopped
     @Published public private(set) var remoteRoutePreparationIssue: CompanionRemoteRoutePreparationIssue?
@@ -500,7 +547,7 @@ public final class CompanionAppModel: ObservableObject {
     private let peerServer: any RuntimeTransport
     private let advertiser: any RuntimeAdvertiser
     private let relayClient: any RelayPeerTransport
-    private let remoteRelayRouteAllocator: any CompanionRemoteRelayRouteAllocating
+    private var remoteRelayRouteAllocator: any CompanionRemoteRelayRouteAllocating
     private let relayServiceRouteAllocator: any RelayServiceRouteAllocating
     private let environment: [String: String]
     private let runtimeRouteHostProvider: () -> String?
@@ -554,7 +601,7 @@ public final class CompanionAppModel: ObservableObject {
     }
 
     public var canPrepareRemoteRelayRouteAutomatically: Bool {
-        remoteRelayRouteAllocator.canAllocateRemoteRelayRoute
+        canAttemptAutomaticRemoteRouteAllocation
     }
 
     private var hasCurrentRelayRouteLeaseForQRCode: Bool {
@@ -569,21 +616,27 @@ public final class CompanionAppModel: ObservableObject {
         peerServer: any RuntimeTransport = LocalPeerServer(),
         advertiser: any RuntimeAdvertiser = BonjourAdvertiser(),
         relayClient: any RelayPeerTransport = RelayPeerClient(),
-        remoteRelayRouteAllocator: any CompanionRemoteRelayRouteAllocating = EnvironmentRemoteRelayRouteAllocator(),
+        remoteRelayRouteAllocator: (any CompanionRemoteRelayRouteAllocating)? = nil,
         relayServiceRouteAllocator: any RelayServiceRouteAllocating = TCPRelayServiceRouteAllocator(),
         environment: [String: String] = ProcessInfo.processInfo.environment,
         userDefaults: UserDefaults = .standard,
         runtimeRouteHostProvider: (() -> String?)? = nil
     ) {
+        let loadedBootstrapRelaySettings = Self.loadBootstrapRelaySettings(defaults: userDefaults)
         self.backend = backend
         self.providerStatuses = Self.initialProviderStatuses(for: backend)
         self.peerServer = peerServer
         self.advertiser = advertiser
-        self.relayClient = relayClient
-        self.remoteRelayRouteAllocator = remoteRelayRouteAllocator
         self.relayServiceRouteAllocator = relayServiceRouteAllocator
         self.environment = environment
         self.userDefaults = userDefaults
+        self.bootstrapRelaySettings = loadedBootstrapRelaySettings
+        self.relayClient = relayClient
+        self.remoteRelayRouteAllocator = remoteRelayRouteAllocator ?? Self.makeRemoteRelayRouteAllocator(
+            environment: environment,
+            bootstrapRelaySettings: loadedBootstrapRelaySettings,
+            relayServiceRouteAllocator: relayServiceRouteAllocator
+        )
         self.runtimeRouteHostProvider = runtimeRouteHostProvider ?? Self.defaultRuntimeRouteHost
         let macDeviceID = Self.loadOrCreateMacDeviceID(defaults: userDefaults)
         let runtimeIdentity = Self.loadOrCreateRuntimeIdentityKey(deviceID: macDeviceID)
@@ -871,6 +924,61 @@ public final class CompanionAppModel: ObservableObject {
         log("Remote route disabled")
     }
 
+    @discardableResult
+    public func configureBootstrapRelay(
+        endpoints: String,
+        allocationToken: String? = nil,
+        allowsPrivateOverlay: Bool = false
+    ) -> CompanionRelayConfigurationResult {
+        let trimmedEndpoints = endpoints.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedEndpoints.isEmpty else {
+            clearBootstrapRelay()
+            return .disabled
+        }
+
+        let settings = CompanionBootstrapRelaySettings(
+            isEnabled: true,
+            endpoints: trimmedEndpoints,
+            allocationToken: allocationToken?.trimmingCharacters(in: .whitespacesAndNewlines),
+            allowsPrivateOverlay: allowsPrivateOverlay
+        )
+        Self.saveBootstrapRelaySettings(settings, defaults: userDefaults)
+        bootstrapRelaySettings = settings
+        remoteRelayRouteAllocator = Self.makeRemoteRelayRouteAllocator(
+            environment: environment,
+            bootstrapRelaySettings: settings,
+            relayServiceRouteAllocator: relayServiceRouteAllocator
+        )
+        remoteRoutePreparationIssue = nil
+        allocateRemoteRelayRouteIfAvailable()
+
+        if let issue = remoteRoutePreparationIssue {
+            return .allocationFailed(endpoint: settings.endpointLabel ?? trimmedEndpoints, message: issue.message)
+        }
+        if let endpoint = developmentRelayEndpoint {
+            return .allocated(endpoint: endpoint)
+        }
+        let message = "Connection preparation did not return route details."
+        remoteRoutePreparationIssue = CompanionRemoteRoutePreparationIssue(
+            kind: .automaticPreparationUnavailable,
+            endpoint: settings.endpointLabel,
+            message: message
+        )
+        return .allocationFailed(endpoint: settings.endpointLabel ?? trimmedEndpoints, message: message)
+    }
+
+    public func clearBootstrapRelay() {
+        Self.clearSavedBootstrapRelaySettings(defaults: userDefaults)
+        bootstrapRelaySettings = .disabled
+        remoteRelayRouteAllocator = Self.makeRemoteRelayRouteAllocator(
+            environment: environment,
+            bootstrapRelaySettings: .disabled,
+            relayServiceRouteAllocator: relayServiceRouteAllocator
+        )
+        remoteRoutePreparationIssue = nil
+        log("Bootstrap route disabled")
+    }
+
     public func regenerateDevelopmentRelaySecret() {
         guard developmentRelaySettings.isEnabled else { return }
         let settings = CompanionDevelopmentRelaySettings(
@@ -967,12 +1075,18 @@ public final class CompanionAppModel: ObservableObject {
     }
 
     private func prepareRemoteRelayRouteForPairing() {
-        if Self.hasDynamicRelayAllocationEnvironment(environment) {
+        if canAttemptAutomaticRemoteRouteAllocation {
             allocateRemoteRelayRouteIfAvailable()
             return
         }
         guard relayConfiguration != nil else {
             allocateRemoteRelayRouteIfAvailable()
+            return
+        }
+        guard isDevelopmentRelayRouteEligibleForQRCode else {
+            return
+        }
+        guard shouldRefreshConfiguredRelayRouteLeaseForPairing else {
             return
         }
         if allocatedRemoteRouteLease?.isExpired(renewalMarginSeconds: 0) == true {
@@ -1057,7 +1171,7 @@ public final class CompanionAppModel: ObservableObject {
     private func renewSavedBootstrapRelayRouteIfNeeded() {
         guard developmentRelaySettings.isEnabled else { return }
         guard relayConfiguration != nil else { return }
-        guard Self.hasDynamicRelayAllocationEnvironment(environment) else { return }
+        guard canAttemptAutomaticRemoteRouteAllocation else { return }
         allocateRemoteRelayRouteIfAvailable(restartRelayClientIfRunning: false)
     }
 
@@ -1068,7 +1182,19 @@ public final class CompanionAppModel: ObservableObject {
 
     private var allowsPrivateOverlayRelay: Bool {
         developmentRelaySettings.allowsPrivateOverlay ||
+            bootstrapRelaySettings.allowsPrivateOverlay ||
             Self.allowsPrivateOverlayRelayEnvironment(environment)
+    }
+
+    private var canAttemptAutomaticRemoteRouteAllocation: Bool {
+        remoteRelayRouteAllocator.canAllocateRemoteRelayRoute ||
+            Self.hasDynamicRelayAllocationEnvironment(environment) ||
+            bootstrapRelaySettings.isEnabled
+    }
+
+    private var shouldRefreshConfiguredRelayRouteLeaseForPairing: Bool {
+        guard let relayConfiguration else { return false }
+        return CompanionDevelopmentRelaySettings.hostReachabilityWarning(for: relayConfiguration.host) == nil
     }
 
     private static func relayScope(
@@ -1213,7 +1339,7 @@ public final class CompanionAppModel: ObservableObject {
     private func renewRelayRouteAfterFailureIfNeeded(endpoint: String) {
         guard isRuntimeStarted else { return }
         guard relayConfiguration != nil, developmentRelaySettings.endpointLabel == endpoint else { return }
-        guard Self.hasDynamicRelayAllocationEnvironment(environment) else { return }
+        guard canAttemptAutomaticRemoteRouteAllocation else { return }
         allocateRemoteRelayRouteIfAvailable(restartRelayClientIfRunning: true)
     }
 
@@ -1374,6 +1500,18 @@ public final class CompanionAppModel: ObservableObject {
             environment["AETHERLINK_ALLOW_PRIVATE_OVERLAY_RELAY"]?.isTruthyEnvironmentValue == true
     }
 
+    private static func makeRemoteRelayRouteAllocator(
+        environment: [String: String],
+        bootstrapRelaySettings: CompanionBootstrapRelaySettings,
+        relayServiceRouteAllocator: any RelayServiceRouteAllocating
+    ) -> EnvironmentRemoteRelayRouteAllocator {
+        EnvironmentRemoteRelayRouteAllocator(
+            environment: environment,
+            storedBootstrapRelaySettings: bootstrapRelaySettings,
+            relayServiceAllocator: relayServiceRouteAllocator
+        )
+    }
+
     private static func hasBootstrapRelayEnvironment(_ environment: [String: String]) -> Bool {
         environment["AETHERLINK_BOOTSTRAP_RELAY_ENDPOINTS"]?.takeIfNotEmpty() != nil ||
             environment["AETHERLINK_BOOTSTRAP_RELAY_HOST"]?.takeIfNotEmpty() != nil
@@ -1432,6 +1570,37 @@ public final class CompanionAppModel: ObservableObject {
         defaults.removeObject(forKey: RelayDefaults.leaseNonce)
     }
 
+    private static func loadBootstrapRelaySettings(defaults: UserDefaults) -> CompanionBootstrapRelaySettings {
+        guard let endpoints = defaults.string(forKey: BootstrapRelayDefaults.endpoints)?.takeIfNotEmpty() else {
+            return .disabled
+        }
+        return CompanionBootstrapRelaySettings(
+            isEnabled: true,
+            endpoints: endpoints,
+            allocationToken: defaults.string(forKey: BootstrapRelayDefaults.allocationToken)?.takeIfNotEmpty(),
+            allowsPrivateOverlay: defaults.bool(forKey: BootstrapRelayDefaults.allowsPrivateOverlay)
+        )
+    }
+
+    private static func saveBootstrapRelaySettings(
+        _ settings: CompanionBootstrapRelaySettings,
+        defaults: UserDefaults
+    ) {
+        defaults.set(settings.endpoints, forKey: BootstrapRelayDefaults.endpoints)
+        defaults.set(settings.allowsPrivateOverlay, forKey: BootstrapRelayDefaults.allowsPrivateOverlay)
+        if let allocationToken = settings.allocationToken?.takeIfNotEmpty() {
+            defaults.set(allocationToken, forKey: BootstrapRelayDefaults.allocationToken)
+        } else {
+            defaults.removeObject(forKey: BootstrapRelayDefaults.allocationToken)
+        }
+    }
+
+    private static func clearSavedBootstrapRelaySettings(defaults: UserDefaults) {
+        defaults.removeObject(forKey: BootstrapRelayDefaults.endpoints)
+        defaults.removeObject(forKey: BootstrapRelayDefaults.allocationToken)
+        defaults.removeObject(forKey: BootstrapRelayDefaults.allowsPrivateOverlay)
+    }
+
     private static func generateRelaySecret() -> String {
         let bytes = (0..<32).map { _ in UInt8.random(in: 0...255) }
         return Data(bytes).base64EncodedString()
@@ -1445,6 +1614,12 @@ public final class CompanionAppModel: ObservableObject {
         static let allowsPrivateOverlay = "aetherlink.relay.allows_private_overlay"
         static let leaseExpiresAt = "aetherlink.relay.lease_expires_at"
         static let leaseNonce = "aetherlink.relay.lease_nonce"
+    }
+
+    private enum BootstrapRelayDefaults {
+        static let endpoints = "aetherlink.bootstrap_relay.endpoints"
+        static let allocationToken = "aetherlink.bootstrap_relay.allocation_token"
+        static let allowsPrivateOverlay = "aetherlink.bootstrap_relay.allows_private_overlay"
     }
 
     private static func initialProviderStatuses(for backend: any LlmBackend) -> [CompanionProviderStatus] {

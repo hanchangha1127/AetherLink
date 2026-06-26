@@ -133,11 +133,13 @@ class RuntimeClientViewModelRelayIntegrationTest {
                 assertNull(localStore.data.pendingPairingRoute)
                 assertTrue(localStore.data.trustedRuntimeAutoReconnectEnabled)
                 assertTrue(localStore.data.pairingOnboardingCompleted)
-                assertEquals("127.0.0.1", viewModel.state.value.trustedRuntime?.relayHost)
-                assertEquals(RuntimeActiveRouteKind.Relay, viewModel.state.value.activeRouteKind)
+                val connectedState = awaitActiveRouteKind(viewModel, RuntimeActiveRouteKind.Relay)
+                assertEquals("127.0.0.1", connectedState.trustedRuntime?.relayHost)
+                assertEquals(RuntimeActiveRouteKind.Relay, connectedState.activeRouteKind)
                 assertNull(relay.closedWithoutServerError())
             } finally {
                 viewModel?.stopForTest()
+                Thread.sleep(100)
                 advanceUntilIdle()
                 Dispatchers.resetMain()
             }
@@ -155,6 +157,22 @@ class RuntimeClientViewModelRelayIntegrationTest {
         return future.get(1, TimeUnit.SECONDS)
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private fun TestScope.awaitActiveRouteKind(
+        viewModel: RuntimeClientViewModel,
+        expected: RuntimeActiveRouteKind,
+    ): RuntimeUiState {
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(4)
+        while (System.nanoTime() < deadline) {
+            advanceUntilIdle()
+            val state = viewModel.state.value
+            if (state.activeRouteKind == expected) return state
+            Thread.sleep(10)
+        }
+        advanceUntilIdle()
+        return viewModel.state.value
+    }
+
     private class FakeRelayRuntimeServer(
         private val json: Json,
         private val relayId: String,
@@ -170,6 +188,7 @@ class RuntimeClientViewModelRelayIntegrationTest {
         val port: Int = server.localPort
         val handshakeLine: CompletableFuture<String> = CompletableFuture()
         val pairingRequest: CompletableFuture<ProtocolEnvelope> = CompletableFuture()
+        private val releaseConnection: CompletableFuture<Unit> = CompletableFuture()
         private val worker = thread(start = true, isDaemon = true) {
             runCatching {
                 server.accept().use { socket ->
@@ -205,6 +224,7 @@ class RuntimeClientViewModelRelayIntegrationTest {
                     )
                     output.write(codec.encodeFrameBody(cryptor.encryptRuntimeFrameBody(codec.encodeBody(response))))
                     output.flush()
+                    releaseConnection.get(4, TimeUnit.SECONDS)
                 }
                 serverError.complete(null)
             }.onFailure { error ->
@@ -215,12 +235,14 @@ class RuntimeClientViewModelRelayIntegrationTest {
         }
 
         fun closedWithoutServerError(): Throwable? {
+            releaseConnection.complete(Unit)
             val error = serverError.get(2, TimeUnit.SECONDS)
             worker.join(1_000)
             return error
         }
 
         override fun close() {
+            releaseConnection.complete(Unit)
             runCatching { server.close() }
             worker.join(1_000)
         }

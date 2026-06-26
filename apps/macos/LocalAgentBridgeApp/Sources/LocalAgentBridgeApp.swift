@@ -61,6 +61,7 @@ struct LocalAgentBridgeApp: App {
                 openWindow(id: "main")
                 NSApp.activate(ignoringOtherApps: true)
             }
+            .disabled(!canGeneratePairingQR)
             Divider()
             Button(NSLocalizedString("Quit", comment: "")) {
                 NSApp.terminate(nil)
@@ -74,6 +75,13 @@ struct LocalAgentBridgeApp: App {
 
     private var currentAppAppearance: AetherLinkAppAppearance {
         AetherLinkAppAppearance.normalized(appAppearance)
+    }
+
+    private var canGeneratePairingQR: Bool {
+        pairingQRGenerationCommandAvailable(
+            canPrepareAutomatically: model.canPrepareRemoteRelayRouteAutomatically,
+            isRouteEligibleForQRCode: model.isDevelopmentRelayRouteEligibleForQRCode
+        )
     }
 }
 

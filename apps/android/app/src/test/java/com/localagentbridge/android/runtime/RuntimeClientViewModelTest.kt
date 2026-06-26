@@ -1513,6 +1513,64 @@ class RuntimeClientViewModelTest {
 
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
+    fun identityOnlyPairingQrTimesOutWhenNoDiscoveryRouteAppears() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        var viewModel: RuntimeClientViewModel? = null
+        try {
+            val rawUri = "aetherlink://pair?v=1&n=nonce-timeout&c=123456" +
+                "&rid=runtime-timeout&rn=AetherLink%20Runtime&rf=runtime-fingerprint" +
+                "&rk=runtime-public-key&rt=route-timeout"
+            val localStore = FakeRuntimeLocalDataStore()
+            viewModel = RuntimeClientViewModel(
+                application = Application(),
+                dependencies = RuntimeClientViewModelDependencies(
+                    json = json,
+                    transportClient = RuntimeTransportClient(),
+                    transportConnector = RuntimeTransportConnector { _, _, _ ->
+                        error("Identity-only QR must wait for discovery before direct TCP")
+                    },
+                    relayConnector = RuntimeRelayConnector { _, _ ->
+                        error("Identity-only QR without relay metadata must not use relay")
+                    },
+                    discovery = EmptyRuntimeDiscoverySource,
+                    trustedRuntimeStore = FakeTrustedRuntimeStore(),
+                    deviceIdentityProvider = FakeDeviceIdentityProvider(testDeviceIdentity()),
+                    localDataStore = localStore,
+                    lifecycleCallbacksRegistrar = NoopRuntimeLifecycleCallbacksRegistrar,
+                    currentTimeMillis = { 1_000L },
+                ),
+            )
+
+            viewModel.trustRuntimeFromPairingQr(rawUri)
+            runCurrent()
+
+            assertEquals("123456", viewModel.state.value.pairingCode)
+            assertEquals("AetherLink Runtime", viewModel.state.value.pendingPairingRuntimeName)
+            assertTrue(viewModel.state.value.isPairingAwaitingRoute)
+
+            advanceTimeBy(15_000L)
+            runCurrent()
+
+            assertFalse(viewModel.state.value.isPairingAwaitingRoute)
+            assertNull(viewModel.state.value.pendingPairingRuntimeName)
+            assertNull(localStore.data.pendingPairingRoute)
+            assertEquals("pairing_endpoint_unavailable", viewModel.state.value.error?.code)
+            assertEquals(
+                "route_diagnostic_remote_pending",
+                viewModel.state.value.error?.diagnosticCode,
+            )
+            viewModel.clearForTest()
+            viewModel = null
+            advanceUntilIdle()
+        } finally {
+            viewModel?.clearForTest()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
     fun trustRuntimeFromPairingQrWithCompactRelayUriConnectsRelayAndSendsPairingRequest() = runTest {
         val mainDispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(mainDispatcher)
@@ -2481,6 +2539,96 @@ class RuntimeClientViewModelTest {
             assertEquals(2, routeRefreshRequests.size)
             assertTrue(routeRefreshRequests[1].requestId != routeRefreshRequests[0].requestId)
             assertNull(viewModel.state.value.error)
+            assertEquals("relay.example.test", trustedStore.trusted?.relayHost)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun authenticatedTrustedRuntimeMarksRouteExpiredWhenRefreshErrorCannotRetryBeforeLeaseExpiry() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            var currentTimeMillis = 1_000L
+            val channel = ScriptedRuntimeProtocolChannel()
+            val trustedStore = FakeEmittingTrustedRuntimeStore(
+                TrustedRuntime(
+                    deviceId = "runtime-1",
+                    name = "AetherLink Runtime",
+                    fingerprint = "runtime-fingerprint",
+                    publicKeyBase64 = "runtime-public-key",
+                    routeToken = "route-token-1",
+                    relayHost = "relay.example.test",
+                    relayPort = 443,
+                    relayId = "relay-1",
+                    relaySecret = "secret-1",
+                    relayExpiresAtEpochMillis = currentTimeMillis + ROUTE_REFRESH_LEASE_MIN_DELAY_MS,
+                    relayNonce = "nonce-route-1",
+                    relayScope = "remote",
+                ),
+            )
+            val viewModel = RuntimeClientViewModel(
+                application = Application(),
+                dependencies = RuntimeClientViewModelDependencies(
+                    json = json,
+                    transportClient = RuntimeTransportClient(),
+                    transportConnector = RuntimeTransportConnector { _, _, _ ->
+                        error("Direct TCP should not be used for terminal route-refresh failure")
+                    },
+                    relayConnector = RuntimeRelayConnector { _, _ -> channel },
+                    discovery = EmptyRuntimeDiscoverySource,
+                    trustedRuntimeStore = trustedStore,
+                    deviceIdentityProvider = FakeDeviceIdentityProvider(testDeviceIdentity()),
+                    localDataStore = FakeRuntimeLocalDataStore(
+                        initialData = PersistedRuntimeData(trustedRuntimeAutoReconnectEnabled = false),
+                    ),
+                    lifecycleCallbacksRegistrar = NoopRuntimeLifecycleCallbacksRegistrar,
+                    currentTimeMillis = { currentTimeMillis },
+                ),
+            )
+            advanceUntilIdle()
+
+            viewModel.connectToTrustedRuntime()
+            advanceUntilIdle()
+            channel.enqueue(
+                envelope(
+                    type = MessageType.AuthResponse,
+                    serializer = AuthResponsePayload.serializer(),
+                    payload = AuthResponsePayload(accepted = true),
+                    requestId = "auth-accepted",
+                ),
+            )
+            runCurrent()
+
+            val firstRouteRefresh = channel.sentEnvelopes.single { it.type == MessageType.RouteRefresh }
+            channel.enqueue(
+                envelope(
+                    type = MessageType.Error,
+                    serializer = ErrorPayload.serializer(),
+                    payload = ErrorPayload(
+                        code = "route_refresh_unavailable",
+                        message = "Route refresh is temporarily unavailable.",
+                        retryable = true,
+                    ),
+                    requestId = firstRouteRefresh.requestId,
+                ),
+            )
+            runCurrent()
+
+            assertEquals("remote_route_expired", viewModel.state.value.error?.code)
+            assertEquals(
+                "route_diagnostic_remote_route_expired",
+                viewModel.state.value.error?.diagnosticCode,
+            )
+            assertNull(viewModel.privateField<Any>("routeRefreshLeaseJob"))
+
+            advanceTimeBy(ROUTE_REFRESH_RETRY_DELAY_MS + 1)
+            currentTimeMillis += ROUTE_REFRESH_RETRY_DELAY_MS + 1
+            runCurrent()
+
+            assertEquals(1, channel.sentEnvelopes.count { it.type == MessageType.RouteRefresh })
             assertEquals("relay.example.test", trustedStore.trusted?.relayHost)
         } finally {
             Dispatchers.resetMain()
@@ -8559,6 +8707,12 @@ class RuntimeClientViewModelTest {
             .firstOrNull { it.isFile }
             ?: error("Missing shared protocol fixture: $name")
         return fixture.readText().trim()
+    }
+
+    private fun RuntimeClientViewModel.clearForTest() {
+        val method = RuntimeClientViewModel::class.java.getDeclaredMethod("onCleared")
+        method.isAccessible = true
+        method.invoke(this)
     }
 
     private object TestRuntimeProtocolChannel : RuntimeProtocolChannel {

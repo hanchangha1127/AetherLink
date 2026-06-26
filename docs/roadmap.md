@@ -4,7 +4,7 @@
 
 See [progress.md](progress.md) for the detailed implementation record, verification commands, known limits, and next work queue.
 
-- AetherLink currently has a runtime-host-mediated local model loop, a mobile client implementation, localized client/runtime UI, Ollama and LM Studio backend adapters, QR pairing, trusted runtime persistence, model listing, streaming chat, cancellation, Ollama/LM Studio reasoning or think rendering, runtime-host chat processing event storage with narrow authenticated history reads, client-side UI cache/history, runtime-generated short chat titles, archive/delete separation, runtime-owned user memory notes, separate embedding model selection, broad runtime-side document ingestion, image/vision gating, runtime-mediated AI next-question suggestions, a first runtime-side model residency policy, identity-based route candidates, and a temporary outbound TCP development relay for different-Wi-Fi testing. QR-provisioned relay routes require `relay_secret`, `relay_expires_at`, and `relay_nonce`, so development relay frame bodies are encrypted before forwarding.
+- AetherLink currently has a runtime-host-mediated local model loop, a mobile client implementation, localized client/runtime UI, Ollama and LM Studio backend adapters, QR pairing, trusted runtime persistence, model listing, streaming chat, cancellation, Ollama/LM Studio reasoning or think rendering, runtime-host chat processing event storage with narrow authenticated history reads, client-side UI cache/history, runtime-generated short chat titles, archive/delete separation, runtime-owned user memory notes, a first heuristic runtime-side context compaction slice for oversized `chat.send` histories, separate embedding model selection, broad runtime-side document ingestion, image/vision gating, runtime-mediated AI next-question suggestions, a first runtime-side model residency policy, identity-based route candidates, and a temporary outbound TCP development relay for different-Wi-Fi testing. QR-provisioned relay routes require `relay_secret`, `relay_expires_at`, and `relay_nonce`, so development relay frame bodies are encrypted before forwarding.
 - The client implementation does not call Ollama or LM Studio directly.
 - MCP, skills, web search, advanced memory, project workspaces, automations, Python tools, additional client targets, Windows runtime targets, and DGX OS-class runtime targets remain roadmap work.
 
@@ -37,6 +37,7 @@ See [progress.md](progress.md) for the detailed implementation record, verificat
 - Client shows reasoning/think text in a muted, compact section that expands on demand.
 - Client can reopen previous local chats.
 - Client can manage user memory notes through the trusted runtime and include enabled runtime-owned notes as chat context.
+- Runtime can compact oversized active `chat.send` history before backend dispatch by preserving recent user-visible messages verbatim and injecting a backend-only system summary of older active turns.
 - Archive and delete are distinct local session actions: archived chats are retained but hidden from active memory/research/compaction inputs unless restored or explicitly selected.
 - Client can cancel generation.
 - Only trusted devices can control the runtime host.
@@ -95,7 +96,7 @@ This is not v0.1 implementation scope. Scheduling and automation should be runti
 - Client session list polish, rename, delete, and search.
 - Archive polish: archived chats remain retained but excluded from memory, reflection, research, and compaction inputs unless the user restores them or explicitly selects them as sources.
 - Preserve reasoning/think text separately from final assistant answer text in session storage.
-- Context-window-aware session compaction: when a conversation grows beyond the selected model context window, compact older turns into summaries while keeping recent messages and source pointers.
+- Context-window-aware session compaction: first heuristic runtime slice is implemented/in progress for oversized active `chat.send` histories. It uses a character budget, keeps recent messages verbatim, and injects a backend-only summary of older active turns without altering client-visible history. Tokenizer-aware budgets, LLM-generated summaries, durable source pointers, and richer context-window policies remain future work.
 - Longer-inactivity memory summarization: define inactivity criteria that summarize chat history into modern compact memory summaries. This is separate from short model-unload inactivity.
 
 ## v0.2 Runtime Resource Policy

@@ -178,7 +178,26 @@ In this mode the script does not start a local relay and does not configure
 `<relay-host>:43171` directly through public networking, VPN, or a tunnel you
 control. Loopback, `.local`, link-local, carrier-grade NAT, and private relay IP
 literals are rejected for normal QR pairing because they do not prove
-different-network reachability.
+different-network reachability. Allocation preflight probes use `preflight=1`,
+so repeated readiness checks do not persist throwaway relay leases; the runtime
+still performs a normal persisted allocation when generating the actual QR.
+Use `script/run_different_network_dev_runtime.sh --summary-json <path>` when
+you need a machine-readable preflight report for QA; the report records the
+configured relay endpoints, successful endpoint, allocation field coverage, and
+the caveat that runtime-host preflight is not proof of phone-network reachability.
+When a physical device is connected over USB for diagnostics, verify the device
+network can open the relay TCP route before treating a pairing timeout as a QR
+or app problem:
+
+```bash
+script/android_relay_reachability_probe.sh --host <relay-host> --port 43171 --json build/qa/android-relay-reachability.json
+```
+
+For the external-relay physical deeplink smoke, add
+`--probe-external-relay-from-device` to run that device-side TCP probe before
+the pairing URI is injected. This still does not call Ollama or LM Studio from
+the device; it only checks whether the relay route in the QR is reachable from
+the device network.
 
 The real-Ollama mode keeps the same development pairing/auth path, but leaves
 `LOCAL_AGENT_BRIDGE_MOCK_BACKEND` unset so RuntimeDevServer talks to the local

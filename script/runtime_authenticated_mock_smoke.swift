@@ -534,6 +534,19 @@ func requireInt(_ object: [String: Any], _ key: String, context: String) throws 
     throw SmokeFailure.message("\(context) expected integer for \(key), got \(String(describing: object[key]))")
 }
 
+func requireInt64(_ object: [String: Any], _ key: String, context: String) throws -> Int64 {
+    if let value = object[key] as? Int64 {
+        return value
+    }
+    if let value = object[key] as? Int {
+        return Int64(value)
+    }
+    if let value = object[key] as? Double, value.rounded() == value {
+        return Int64(value)
+    }
+    throw SmokeFailure.message("\(context) expected int64 for \(key), got \(String(describing: object[key]))")
+}
+
 func parsePairingURI(_ value: String) throws -> ParsedPairingURI {
     try assertNoBackendLeak(value, context: "pairing URI")
     guard let components = URLComponents(string: value),
@@ -682,6 +695,46 @@ func sendAndRead(_ client: TCPClient, type: String, requestID: String, payload: 
     let response = try client.readEnvelope()
     try assertNoBackendLeak(response, context: requestID)
     return response
+}
+
+func refreshRelayRoute(
+    client: TCPClient,
+    runtimeDeviceID: String,
+    runtimeKeyFingerprint: String,
+    expectedEndpoint: RelayEndpoint
+) throws -> RelayConfiguration {
+    print("Checking route.refresh relay renewal...")
+    let response = try sendAndRead(client, type: "route.refresh", requestID: "smoke-route-refresh")
+    try requireType(response, "route.refresh", context: "route.refresh")
+    try requireRequestID(response, "smoke-route-refresh", context: "route.refresh")
+    let routePayload = try payload(response, context: "route.refresh")
+    guard try requireString(routePayload, "runtime_device_id", context: "route.refresh") == runtimeDeviceID,
+          try requireString(routePayload, "runtime_key_fingerprint", context: "route.refresh") == runtimeKeyFingerprint
+    else {
+        throw SmokeFailure.message("route.refresh returned route material for a different runtime: \(response)")
+    }
+    let relayHost = try requireString(routePayload, "relay_host", context: "route.refresh")
+    let relayPort = try requireInt(routePayload, "relay_port", context: "route.refresh")
+    guard relayHost == expectedEndpoint.host,
+          relayPort == Int(expectedEndpoint.port)
+    else {
+        throw SmokeFailure.message("route.refresh returned a different relay endpoint: \(response)")
+    }
+    let relayExpiresAt = try requireInt64(routePayload, "relay_expires_at", context: "route.refresh")
+    guard relayExpiresAt > Int64(Date().timeIntervalSince1970 * 1000) else {
+        throw SmokeFailure.message("route.refresh returned expired route material: \(response)")
+    }
+    guard let relayPortValue = UInt16(exactly: relayPort) else {
+        throw SmokeFailure.message("route.refresh returned invalid relay port: \(response)")
+    }
+    let relayNonce = try requireString(routePayload, "relay_nonce", context: "route.refresh")
+    return RelayConfiguration(
+        relayID: try requireString(routePayload, "relay_id", context: "route.refresh"),
+        relaySecret: try requireString(routePayload, "relay_secret", context: "route.refresh"),
+        relayNonce: relayNonce,
+        host: relayHost,
+        port: relayPortValue
+    )
 }
 
 func authenticateFreshClient(
@@ -1210,6 +1263,7 @@ func main() throws {
     let pairingInfoCode = try requireString(pairingInfo, "pairing_code", context: "dev pairing info")
     let pairingInfoNonce = try requireString(pairingInfo, "pairing_nonce", context: "dev pairing info")
     let pairingInfoRuntimeDeviceID = try requireString(pairingInfo, "runtime_device_id", context: "dev pairing info")
+    let pairingInfoRuntimeKeyFingerprint = try requireString(pairingInfo, "runtime_key_fingerprint", context: "dev pairing info")
     guard pairingInfoCode == pairingCode,
           pairingInfoNonce == pairingNonce,
           pairingInfoRuntimeDeviceID == runtimeDeviceID
@@ -1320,6 +1374,22 @@ func main() throws {
             requestPrefix: "smoke"
         )
         defer { client.close() }
+
+        if options.transportMode == .relay {
+            let expectedEndpoint = bootstrapRelayEndpoint
+                ?? relayConfiguration.map { RelayEndpoint(host: $0.host, port: $0.port) }
+                ?? clientRelayConfiguration.map { RelayEndpoint(host: $0.host, port: $0.port) }
+                ?? RelayEndpoint(host: "127.0.0.1", port: 0)
+            guard expectedEndpoint.port != 0 else {
+                throw SmokeFailure.message("route.refresh smoke could not resolve expected relay endpoint")
+            }
+            clientRelayConfiguration = try refreshRelayRoute(
+                client: client,
+                runtimeDeviceID: runtimeDeviceID,
+                runtimeKeyFingerprint: pairingInfoRuntimeKeyFingerprint,
+                expectedEndpoint: expectedEndpoint
+            )
+        }
 
         switch options.backendMode {
         case .mock:

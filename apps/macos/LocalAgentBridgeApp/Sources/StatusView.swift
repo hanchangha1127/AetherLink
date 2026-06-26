@@ -544,7 +544,36 @@ private struct RuntimeOverviewPanel: View {
             RoundedRectangle(cornerRadius: 8)
                 .strokeBorder(overview.tone.color.opacity(0.22), lineWidth: 1)
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+            Text(
+                runtimeOverviewAccessibilityLabel(
+                    title: overview.title,
+                    status: overview.statusText,
+                    detail: overview.detail,
+                    footnote: overview.footnote
+                )
+            )
+        )
     }
+}
+
+func runtimeOverviewAccessibilityLabel(title: String, status: String, detail: String, footnote: String) -> String {
+    let normalizedTitle = trimmedNonEmpty(title)
+        ?? NSLocalizedString("Runtime overview", comment: "")
+    let normalizedStatus = trimmedNonEmpty(status)
+        ?? NSLocalizedString("Unknown status", comment: "")
+    let normalizedDetail = trimmedNonEmpty(detail)
+        ?? NSLocalizedString("No overview details", comment: "")
+    let normalizedFootnote = trimmedNonEmpty(footnote)
+        ?? NSLocalizedString("No additional guidance", comment: "")
+    return String(
+        format: NSLocalizedString("Runtime overview %@. Status %@. %@ %@", comment: ""),
+        normalizedTitle,
+        normalizedStatus,
+        normalizedDetail,
+        normalizedFootnote
+    )
 }
 
 private struct RuntimeOverview {
@@ -596,7 +625,31 @@ private struct StatusCard: View {
             RoundedRectangle(cornerRadius: 8)
                 .strokeBorder(.separator.opacity(0.5), lineWidth: 1)
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+            Text(statusCardAccessibilityLabel(title: title, value: value, detail: detail))
+        )
     }
+}
+
+func statusCardAccessibilityLabel(title: String, value: String, detail: String) -> String {
+    let normalizedTitle = trimmedNonEmpty(title)
+        ?? NSLocalizedString("Status item", comment: "")
+    let normalizedValue = trimmedNonEmpty(value)
+        ?? NSLocalizedString("Unknown status", comment: "")
+    let normalizedDetail = trimmedNonEmpty(detail)
+        ?? NSLocalizedString("No status details", comment: "")
+    return String(
+        format: NSLocalizedString("Status %@. Current state %@. %@", comment: ""),
+        normalizedTitle,
+        normalizedValue,
+        normalizedDetail
+    )
+}
+
+private func trimmedNonEmpty(_ value: String) -> String? {
+    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    return trimmed.isEmpty ? nil : trimmed
 }
 
 private struct ModelGroupSection: View {
@@ -704,7 +757,7 @@ private struct ModelRow: View {
             Spacer(minLength: 12)
 
             if let sizeBytes = model.sizeBytes {
-                Text(companionByteFormatter.string(fromByteCount: sizeBytes))
+                Text(localizedCompanionByteCountString(fromByteCount: sizeBytes))
                     .font(.caption.weight(.medium))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -712,6 +765,20 @@ private struct ModelRow: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 10)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+            Text(
+                modelRowAccessibilityLabel(
+                    name: model.name,
+                    identifier: model.id,
+                    kind: kindName(model.kind),
+                    provider: providerName(model.provider),
+                    source: sourceName(model.source),
+                    running: model.running,
+                    size: model.sizeBytes.map { localizedCompanionByteCountString(fromByteCount: $0) }
+                )
+            )
+        )
     }
 
     private func kindName(_ kind: ModelKind) -> String {
@@ -762,6 +829,43 @@ private struct ModelRow: View {
     }
 }
 
+func modelRowAccessibilityLabel(
+    name: String,
+    identifier: String,
+    kind: String,
+    provider: String,
+    source: String,
+    running: Bool,
+    size: String?
+) -> String {
+    let normalizedName = trimmedNonEmpty(name)
+        ?? NSLocalizedString("Unnamed model", comment: "")
+    let normalizedIdentifier = trimmedNonEmpty(identifier)
+        ?? NSLocalizedString("Unknown model ID", comment: "")
+    let normalizedKind = trimmedNonEmpty(kind)
+        ?? NSLocalizedString("Unknown model type", comment: "")
+    let normalizedProvider = trimmedNonEmpty(provider)
+        ?? NSLocalizedString("Unknown provider", comment: "")
+    let normalizedSource = trimmedNonEmpty(source)
+        ?? NSLocalizedString("Unknown source", comment: "")
+    let normalizedState = running
+        ? NSLocalizedString("Running", comment: "")
+        : NSLocalizedString("Not running", comment: "")
+    let normalizedSize = trimmedNonEmpty(size ?? "")
+        ?? NSLocalizedString("Size unknown", comment: "")
+
+    return String(
+        format: NSLocalizedString("Model %@. ID %@. Type %@. Provider %@. Source %@. State %@. Size %@", comment: ""),
+        normalizedName,
+        normalizedIdentifier,
+        normalizedKind,
+        normalizedProvider,
+        normalizedSource,
+        normalizedState,
+        normalizedSize
+    )
+}
+
 private struct ModelBadge: View {
     let text: String
     let systemImage: String
@@ -801,6 +905,16 @@ private struct ReadinessRow: View {
             StatusPill(text: item.statusText, tone: item.tone)
         }
         .padding(.vertical, 10)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+            Text(
+                readinessRowAccessibilityLabel(
+                    title: item.title,
+                    status: item.statusText,
+                    detail: item.detail
+                )
+            )
+        )
     }
 }
 
@@ -822,6 +936,15 @@ private struct ReadinessItem: Identifiable {
             return NSLocalizedString("Pending", comment: "")
         }
     }
+}
+
+func readinessRowAccessibilityLabel(title: String, status: String, detail: String) -> String {
+    String(
+        format: NSLocalizedString("Readiness %@. Status %@. %@", comment: ""),
+        title.trimmingCharacters(in: .whitespacesAndNewlines),
+        status.trimmingCharacters(in: .whitespacesAndNewlines),
+        detail.trimmingCharacters(in: .whitespacesAndNewlines)
+    )
 }
 
 private struct ProviderStatusRow: View {
@@ -859,6 +982,7 @@ private struct ProviderStatusRow: View {
                                 .font(.caption.weight(.medium))
                         }
                     )
+                    .accessibilityLabel(Text(providerStatusTechnicalDetailsAccessibilityLabel(providerName: status.name)))
                     .tint(.secondary)
                 }
             }
@@ -866,6 +990,14 @@ private struct ProviderStatusRow: View {
             Spacer(minLength: 12)
 
             StatusPill(text: status.value, tone: status.tone)
+                .accessibilityLabel(
+                    Text(
+                        providerStatusPillAccessibilityLabel(
+                            providerName: status.name,
+                            status: status.value
+                        )
+                    )
+                )
         }
         .padding(.vertical, 10)
     }
@@ -991,6 +1123,33 @@ func providerStatusDiagnosticDetail(
         lines.append("retryable=\(retryable ? "true" : "false")")
     }
     return lines.isEmpty ? nil : lines.joined(separator: "\n")
+}
+
+func providerStatusTechnicalDetailsAccessibilityLabel(providerName: String) -> String {
+    let trimmedProviderName = providerName.trimmingCharacters(in: .whitespacesAndNewlines)
+    let normalizedProviderName = trimmedProviderName.isEmpty
+        ? NSLocalizedString("Model provider", comment: "")
+        : trimmedProviderName
+    return String(
+        format: NSLocalizedString("Technical details for %@", comment: ""),
+        normalizedProviderName
+    )
+}
+
+func providerStatusPillAccessibilityLabel(providerName: String, status: String) -> String {
+    let trimmedProviderName = providerName.trimmingCharacters(in: .whitespacesAndNewlines)
+    let normalizedProviderName = trimmedProviderName.isEmpty
+        ? NSLocalizedString("Model provider", comment: "")
+        : trimmedProviderName
+    let trimmedStatus = status.trimmingCharacters(in: .whitespacesAndNewlines)
+    let normalizedStatus = trimmedStatus.isEmpty
+        ? NSLocalizedString("Not checked", comment: "")
+        : trimmedStatus
+    return String(
+        format: NSLocalizedString("Provider %@ status %@", comment: ""),
+        normalizedProviderName,
+        normalizedStatus
+    )
 }
 
 private func sanitizedProviderStatusCode(_ code: String?) -> String? {

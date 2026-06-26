@@ -481,10 +481,6 @@ Direction: Client -> Runtime.
     "locale": "en",
     "messages": [
       {
-        "role": "system",
-        "content": "Runtime user memory:\n- Prefers concise answers"
-      },
-      {
         "role": "user",
         "content": "Hello",
         "attachments": []
@@ -496,11 +492,13 @@ Direction: Client -> Runtime.
 
 The AetherLink Runtime routes provider-prefixed model ids to the selected runtime-host backend. Unprefixed model ids remain accepted for backwards compatibility, with Ollama treated as the default when the id is ambiguous. Ollama chat uses `/api/chat` with `stream = true`. LM Studio chat prefers native `/api/v1/chat` with `stream = true` and falls back to OpenAI-compatible `/v1/chat/completions` if native endpoint shape differs.
 
-The client app may prepend cached runtime-owned user memory as a `system` message in `chat.send.messages`. This does not create a direct client-to-backend path; the entire message list still goes only to the AetherLink Runtime, and only the AetherLink Runtime calls Ollama or LM Studio. Runtime-owned memory CRUD is defined separately by `memory.list`, `memory.upsert`, and `memory.delete`.
+The AetherLink Runtime is the authoritative source for runtime-owned user memory. If a compatibility client prepends cached memory as a `system` message beginning with `Runtime user memory:`, the runtime removes that stale client context and replaces it with enabled entries from its own memory store before calling a backend. If no enabled runtime entries exist, no cached client memory is forwarded. This does not create a direct client-to-backend path; the entire message list still goes only to the AetherLink Runtime, and only the AetherLink Runtime calls Ollama or LM Studio. Runtime-owned memory CRUD is defined separately by `memory.list`, `memory.upsert`, and `memory.delete`.
 
 `chat.send.locale` is optional and carries the client's normalized app-language preference for runtime-generated chat side effects, such as automatic chat titles or follow-up suggestions triggered after the response. It does not change transport routing and must not expose backend or device locale details. Current client implementations normalize this to the launch language set: English, Korean, Japanese, Simplified Chinese, and French.
 
-The AetherLink Runtime is the authoritative processing boundary for chat. After a syntactically valid `chat.send` is parsed, the runtime host stores the request metadata/messages before model resolution, attachment capability checks, or generation starts, then stores streamed answer deltas, reasoning deltas, completion usage, cancellation, and errors as processing events. Inline attachment bytes are not kept in the event log. Client-side history can exist as UI cache, but it is not the only source of processing state. Authenticated clients can read runtime-owned summaries and transcripts through `chat.sessions.list` and `chat.messages.list`.
+The AetherLink Runtime is the authoritative processing boundary for chat. After a syntactically valid `chat.send` is parsed, the runtime host stores request metadata and client-visible messages before model resolution, attachment capability checks, or generation starts, then stores streamed answer deltas, reasoning deltas, completion usage, cancellation, and errors as processing events. Runtime-only system context, including the AetherLink capability guard and `Runtime user memory:` prompt context, is backend-call context only and must not be stored or returned as user-visible chat history. Inline attachment bytes are not kept in the event log. Client-side history can exist as UI cache, but it is not the only source of processing state. Authenticated clients can read runtime-owned summaries and transcripts through `chat.sessions.list` and `chat.messages.list`.
+
+The first runtime-side context compaction slice is also backend-call context only. When the runtime's heuristic character budget says the active `chat.send` history is too large, the runtime keeps the most recent client-visible messages verbatim, summarizes older active-session turns into a backend-only `system` message, and sends that compacted input to the selected backend. The client-visible transcript, `chat.messages.list`, `chat.sessions.list`, archive state, and delete state are not rewritten by compaction. Archived sessions and deleted sessions must not be used as compaction inputs. The capability guard, runtime-owned memory prompt context, and compaction summary remain separate runtime-only system context so memory/capability guard separation is preserved.
 
 If the requested model is not installed on the AetherLink Runtime, the AetherLink Runtime returns `error` with `code = "model_not_installed"`. Clients should call `models.pull` through the AetherLink Runtime first.
 
@@ -1027,7 +1025,7 @@ Common v0.1 error codes:
 
 ## Runtime Memory Messages
 
-Basic runtime-owned memory CRUD is active after authentication. These messages store short user-managed notes on the AetherLink Runtime host so future clients can sync the same trusted-runtime memory state. They do not implement semantic search, automatic memory extraction, embedding indexes, reflection, compaction, MCP, tools, or web search.
+Basic runtime-owned memory CRUD is active after authentication. These messages store short user-managed notes on the AetherLink Runtime host so future clients can sync the same trusted-runtime memory state. They do not implement semantic search, automatic memory extraction, embedding indexes, reflection, MCP, tools, or web search. The current `chat.send` compaction slice is separate: it is a runtime-side, backend-only active-session prompt-shaping path, not memory CRUD or durable memory extraction.
 
 The client may still include cached memory context inside `chat.send.messages`, but the AetherLink Runtime is the authoritative storage boundary for memory entries created through the messages below. Archived or deleted chat sessions must not be used as memory inputs unless restored or explicitly selected by a future permissioned workflow.
 
@@ -1141,7 +1139,7 @@ Response:
 Runtime-side chat history and basic memory CRUD are active. The broader namespaces below remain reserved until their product, privacy, and permission models are designed.
 
 - Advanced memory: `memory.search`, automatic memory extraction, memory reflection, embedding-backed recall, memory compaction, and project-scoped memory. Archived sessions are retained but excluded from memory, reflection, research, and compaction inputs unless restored or explicitly selected by the user.
-- Session compaction: future messages may expose compacted session summaries, context-window budgets, transcript source pointers, and longer-inactivity compact memory summaries. This is separate from model lifecycle messages such as unload-after-10-minutes-inactive.
+- Session compaction: the first runtime-side heuristic slice can compact oversized active `chat.send` history before backend dispatch without changing client-visible history. Future messages may expose tokenizer-aware budgets, durable compacted session summaries, transcript source pointers, LLM-generated summaries, and longer-inactivity compact memory summaries. This is separate from model lifecycle messages such as unload-after-10-minutes-inactive.
 - Embeddings/research: future runtime-side semantic search, clustering, research notebook, source citation, and deep-research-like brief messages are reserved but not named yet. Embedding models must be listed and selected separately from chat/text-generation models, and retrieval/ranking/knowledge indexing must use the selected embedding model.
 - Projects/workspaces: reserve the `projects.` namespace for future project-scoped chats, files, instructions, memory, indexes, model/backend preferences, trusted-source controls, and project-level search/research. Do not add active message names until the product shape is ready.
 - Scheduling/automation: reserve the `automation.` namespace for future scheduled tasks, reminders, monitors, recurring automations, runtime-triggered jobs, permission prompts, audit logs, and mobile approval/status surfaces. Do not add active message names until the scheduler and permission model are designed.

@@ -37,12 +37,39 @@ final class RelayAllocationTests: XCTestCase {
         XCTAssertEqual(request.routeToken, "route-token-1")
         XCTAssertNil(request.requestedRelaySecret)
         XCTAssertEqual(request.allocationToken, "allocation-token-1")
+        XCTAssertFalse(request.isPreflight)
+        XCTAssertTrue(request.shouldPersistAllocation)
+    }
+
+    func testParsesPreflightAllocationRequest() throws {
+        let request = try RelayAllocationRequest.parse(
+            "AETHERLINK_RELAY allocate route-token-1 allocation_token=allocation-token-1 preflight=1\n"
+        )
+
+        XCTAssertEqual(request.routeToken, "route-token-1")
+        XCTAssertNil(request.requestedRelaySecret)
+        XCTAssertEqual(request.allocationToken, "allocation-token-1")
+        XCTAssertTrue(request.isPreflight)
+        XCTAssertFalse(request.shouldPersistAllocation)
+    }
+
+    func testParsesPreflightAllocationRequestWithRequestedSecret() throws {
+        let request = try RelayAllocationRequest.parse(
+            "AETHERLINK_RELAY allocate route-token-1 secret-1 preflight=true allocation_token=allocation-token-1\n"
+        )
+
+        XCTAssertEqual(request.routeToken, "route-token-1")
+        XCTAssertEqual(request.requestedRelaySecret, "secret-1")
+        XCTAssertEqual(request.allocationToken, "allocation-token-1")
+        XCTAssertTrue(request.isPreflight)
+        XCTAssertFalse(request.shouldPersistAllocation)
     }
 
     func testRejectsMalformedAllocationRequest() {
         XCTAssertThrowsError(try RelayAllocationRequest.parse("AETHERLINK_RELAY allocate\n"))
         XCTAssertThrowsError(try RelayAllocationRequest.parse("AETHERLINK_RELAY allocate route token extra\n"))
         XCTAssertThrowsError(try RelayAllocationRequest.parse("AETHERLINK_RELAY allocate route-token secret-1 allocation_token=one allocation_token=two\n"))
+        XCTAssertThrowsError(try RelayAllocationRequest.parse("AETHERLINK_RELAY allocate route-token preflight=1 preflight=true\n"))
         XCTAssertFalse(RelayAllocationRequest.isAllocationLine("AETHERLINK_RELAY runtime relay-1\n"))
     }
 

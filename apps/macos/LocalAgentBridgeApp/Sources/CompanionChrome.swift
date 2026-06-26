@@ -204,16 +204,23 @@ func groupedPairingCode(_ code: String) -> String {
     return "\(code[..<splitIndex]) \(code[splitIndex...])"
 }
 
-let companionDateFormatter: DateFormatter = {
+func localizedCompanionDateString(
+    from date: Date,
+    language: AetherLinkAppLanguage = .selected
+) -> String {
     let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: language.localeIdentifier)
     formatter.dateStyle = .medium
     formatter.timeStyle = .short
-    return formatter
-}()
+    return formatter.string(from: date)
+}
 
-let companionByteFormatter: ByteCountFormatter = {
-    let formatter = ByteCountFormatter()
-    formatter.countStyle = .file
-    formatter.allowedUnits = [.useGB, .useMB, .useKB]
-    return formatter
-}()
+func localizedCompanionByteCountString(
+    fromByteCount byteCount: Int64,
+    language: AetherLinkAppLanguage = .selected
+) -> String {
+    byteCount.formatted(
+        .byteCount(style: .file)
+            .locale(Locale(identifier: language.localeIdentifier))
+    )
+}

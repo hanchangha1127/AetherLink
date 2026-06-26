@@ -194,6 +194,34 @@ class PairingStoreTest {
     }
 
     @Test
+    fun pairingStorePreservesExpiredCompleteRelayRouteForReconnectDiagnostics() = runTest {
+        val store = pairingStore()
+        store.forgetRuntime()
+
+        store.trustRuntime(
+            completeRelayRuntime().copy(
+                relayExpiresAtEpochMillis = 2_000L,
+                relayNonce = "expired-nonce-1",
+            )
+        )
+
+        val trusted = store.trustedRuntime.first()
+        assertEquals("runtime-1", trusted?.deviceId)
+        assertEquals("relay.example.test", trusted?.relayHost)
+        assertEquals(443, trusted?.relayPort)
+        assertEquals("relay-1", trusted?.relayId)
+        assertEquals("secret-1", trusted?.relaySecret)
+        assertEquals(2_000L, trusted?.relayExpiresAtEpochMillis)
+        assertEquals("expired-nonce-1", trusted?.relayNonce)
+        assertEquals("remote", trusted?.relayScope)
+        assertEquals(false, trusted?.hasValidRelayRoute())
+        assertEquals(true, trusted?.hasExpiredRelayRoute(nowEpochMillis = 2_001L))
+        assertNull(trusted?.validDirectEndpointOrNull())
+
+        store.forgetRuntime()
+    }
+
+    @Test
     fun pairingStoreDropsIncompleteRelayRouteOnRead() = runTest {
         val store = pairingStore()
         store.forgetRuntime()

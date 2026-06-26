@@ -497,39 +497,52 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
     private func handleChatSend(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) async {
         var storageContext: RuntimeChatStorageContext?
         do {
-            let request = Self.chatRequestWithRuntimeCapabilityGuard(try chatRequest(from: envelope))
+            let clientRequest = try chatRequest(from: envelope)
             let locale = optionalString("locale", in: envelope.payload)
             storageContext = RuntimeChatStorageContext(
                 requestID: envelope.requestID,
-                sessionID: request.sessionID,
-                model: request.model
+                sessionID: clientRequest.sessionID,
+                model: clientRequest.model
             )
+            let storedMessages = Self.chatStorageMessages(from: clientRequest.messages)
+            let guardedRequest = Self.chatRequestWithRuntimeCapabilityGuard(clientRequest)
+            let memoryEntries: [RuntimeMemoryEntry]
+            do {
+                memoryEntries = try memoryStore.list()
+            } catch {
+                throw LocalRuntimeRouterError.memoryStoreUnavailable(error.localizedDescription)
+            }
+            let request = Self.chatRequestWithRuntimeMemory(
+                guardedRequest,
+                memoryEntries: memoryEntries
+            )
+            let backendRequest = Self.chatRequestWithRuntimeConversationCompaction(request)
             try recordChatEvent(.init(
                 kind: .request,
                 requestID: envelope.requestID,
-                sessionID: request.sessionID,
-                model: request.model,
-                messages: request.messages
+                sessionID: backendRequest.sessionID,
+                model: backendRequest.model,
+                messages: storedMessages
             ))
-            let model = try await resolvedInstalledChatModel(request.model)
-            try validateAttachments(in: request, for: model)
+            let model = try await resolvedInstalledChatModel(backendRequest.model)
+            try validateAttachments(in: backendRequest, for: model)
             var inlineReasoningSplitter = RuntimeInlineReasoningSplitter()
-            for try await event in backend.chat(request: request) {
+            for try await event in backend.chat(request: backendRequest) {
                 switch event {
                 case .delta(let text):
                     try emitChatSegments(
                         inlineReasoningSplitter.split(text),
                         requestID: envelope.requestID,
-                        sessionID: request.sessionID,
-                        model: request.model,
+                        sessionID: backendRequest.sessionID,
+                        model: backendRequest.model,
                         sink: sink
                     )
                 case .reasoningDelta(let text):
                     try recordChatEvent(.init(
                         kind: .reasoningDelta,
                         requestID: envelope.requestID,
-                        sessionID: request.sessionID,
-                        model: request.model,
+                        sessionID: backendRequest.sessionID,
+                        model: backendRequest.model,
                         reasoningDelta: text
                     ))
                     sink.send(ProtocolEnvelope(
@@ -541,15 +554,15 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                     try emitChatSegments(
                         inlineReasoningSplitter.flush(),
                         requestID: envelope.requestID,
-                        sessionID: request.sessionID,
-                        model: request.model,
+                        sessionID: backendRequest.sessionID,
+                        model: backendRequest.model,
                         sink: sink
                     )
                     try recordChatEvent(.init(
                         kind: .done,
                         requestID: envelope.requestID,
-                        sessionID: request.sessionID,
-                        model: request.model,
+                        sessionID: backendRequest.sessionID,
+                        model: backendRequest.model,
                         finishReason: "stop",
                         usage: RuntimeChatStoredUsage(inputTokens: inputTokens, outputTokens: outputTokens)
                     ))
@@ -565,8 +578,8 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                         ]
                     ))
                     scheduleChatTitleGenerationIfNeeded(
-                        sessionID: request.sessionID,
-                        model: request.model,
+                        sessionID: backendRequest.sessionID,
+                        model: backendRequest.model,
                         sourceRequestID: envelope.requestID,
                         locale: locale
                     )
@@ -1395,6 +1408,213 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         )
     }
 
+    private static func chatStorageMessages(from messages: [ChatMessage]) -> [ChatMessage] {
+        messages.filter { message in
+            !message.isAetherLinkCapabilityGuard && !message.isRuntimeUserMemoryContext
+        }
+    }
+
+    private static func chatRequestWithRuntimeMemory(
+        _ request: ChatRequest,
+        memoryEntries: [RuntimeMemoryEntry]
+    ) -> ChatRequest {
+        var messages = request.messages.filter { !$0.isRuntimeUserMemoryContext }
+        guard let memoryMessage = runtimeUserMemoryMessage(from: memoryEntries) else {
+            return ChatRequest(
+                generationID: request.generationID,
+                sessionID: request.sessionID,
+                model: request.model,
+                messages: messages
+            )
+        }
+
+        let insertIndex = messages.first?.isAetherLinkCapabilityGuard == true ? 1 : 0
+        messages.insert(memoryMessage, at: insertIndex)
+        return ChatRequest(
+            generationID: request.generationID,
+            sessionID: request.sessionID,
+            model: request.model,
+            messages: messages
+        )
+    }
+
+    private static func chatRequestWithRuntimeConversationCompaction(_ request: ChatRequest) -> ChatRequest {
+        let messages = request.messages.filter { !$0.isRuntimeConversationCompactionContext }
+        let estimatedCharacters = estimatedRuntimeContextCharacters(in: messages)
+        guard estimatedCharacters > runtimeConversationCompactionMaxContextCharacters else {
+            return ChatRequest(
+                generationID: request.generationID,
+                sessionID: request.sessionID,
+                model: request.model,
+                messages: messages
+            )
+        }
+
+        let conversationMessages = messages.enumerated().filter { $0.element.isConversationTurn }
+        guard conversationMessages.count > runtimeConversationCompactionRecentTurnCount else {
+            return ChatRequest(
+                generationID: request.generationID,
+                sessionID: request.sessionID,
+                model: request.model,
+                messages: messages
+            )
+        }
+
+        let compactedMessages = Array(conversationMessages.dropLast(runtimeConversationCompactionRecentTurnCount))
+        guard let summaryMessage = runtimeConversationCompactionMessage(
+            from: compactedMessages.map(\.element)
+        ) else {
+            return ChatRequest(
+                generationID: request.generationID,
+                sessionID: request.sessionID,
+                model: request.model,
+                messages: messages
+            )
+        }
+
+        let compactedIndices = Set(compactedMessages.map(\.offset))
+        var compactedRequestMessages: [ChatMessage] = []
+        var insertedSummary = false
+        for (index, message) in messages.enumerated() {
+            guard compactedIndices.contains(index) else {
+                compactedRequestMessages.append(message)
+                continue
+            }
+            if !insertedSummary {
+                compactedRequestMessages.append(summaryMessage)
+                insertedSummary = true
+            }
+        }
+
+        return ChatRequest(
+            generationID: request.generationID,
+            sessionID: request.sessionID,
+            model: request.model,
+            messages: compactedRequestMessages
+        )
+    }
+
+    private static func estimatedRuntimeContextCharacters(in messages: [ChatMessage]) -> Int {
+        messages.reduce(0) { partialResult, message in
+            partialResult + estimatedRuntimeContextCharacters(in: message)
+        }
+    }
+
+    private static func estimatedRuntimeContextCharacters(in message: ChatMessage) -> Int {
+        let attachmentCharacters = message.attachments.reduce(0) { partialResult, attachment in
+            partialResult +
+                (attachment.name?.count ?? 0) +
+                (attachment.text?.count ?? 0) +
+                (attachment.dataBase64?.count ?? 0)
+        }
+        return message.role.count + message.content.count + attachmentCharacters
+    }
+
+    private static func runtimeConversationCompactionMessage(from messages: [ChatMessage]) -> ChatMessage? {
+        var remainingCharacters = runtimeConversationCompactionMaxSummaryCharacters
+        var lines: [String] = [
+            runtimeConversationCompactionPrefix,
+            "Backend-only summary of older turns from this active session. The user-visible transcript is preserved separately; archived or deleted chats are not included."
+        ]
+
+        for message in messages {
+            guard remainingCharacters > 0 else { break }
+            let line = runtimeConversationCompactionLine(from: message, remainingCharacters: remainingCharacters)
+            guard !line.isEmpty else { continue }
+            lines.append(line)
+            remainingCharacters -= line.count
+            if lines.count >= runtimeConversationCompactionMaxSummaryLines {
+                break
+            }
+        }
+
+        guard lines.count > 2 else { return nil }
+        return ChatMessage(
+            role: "system",
+            content: lines.joined(separator: "\n")
+        )
+    }
+
+    private static func runtimeConversationCompactionLine(
+        from message: ChatMessage,
+        remainingCharacters: Int
+    ) -> String {
+        let role = message.normalizedRuntimeRole == "assistant" ? "Assistant" : "User"
+        var content = normalizedRuntimeSummaryContent(message.content)
+        if content.isEmpty {
+            content = runtimeAttachmentSummary(from: message.attachments)
+        }
+        guard !content.isEmpty else { return "" }
+        let prefix = "- \(role): "
+        let availableCharacters = min(
+            runtimeConversationCompactionMaxLineCharacters,
+            max(0, remainingCharacters - prefix.count)
+        )
+        guard availableCharacters > 0 else { return "" }
+        if content.count > availableCharacters {
+            content = String(content.prefix(availableCharacters))
+                .trimmingCharacters(in: .whitespacesAndNewlines) + "..."
+        }
+        return prefix + content
+    }
+
+    private static func normalizedRuntimeSummaryContent(_ content: String) -> String {
+        content
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func runtimeAttachmentSummary(from attachments: [ChatAttachment]) -> String {
+        let summaries = attachments.compactMap { attachment -> String? in
+            let name = attachment.name?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let mimeType = attachment.mimeType.trimmingCharacters(in: .whitespacesAndNewlines)
+            let label = [name, mimeType.isEmpty ? nil : mimeType].compactMap { $0 }.joined(separator: ", ")
+            guard !label.isEmpty else { return nil }
+            return "[attachment: \(label)]"
+        }
+        return summaries.joined(separator: " ")
+    }
+
+    private static func runtimeUserMemoryMessage(from memoryEntries: [RuntimeMemoryEntry]) -> ChatMessage? {
+        var remainingCharacters = runtimeUserMemoryMaxCharacters
+        var lines: [String] = []
+        for entry in memoryEntries where entry.enabled {
+            let content = normalizedRuntimeMemoryContent(entry.content)
+            guard !content.isEmpty else { continue }
+            let prefix = "- "
+            let availableCharacters = remainingCharacters - prefix.count
+            guard availableCharacters > 0 else { break }
+            let boundedContent: String
+            if content.count > availableCharacters {
+                boundedContent = String(content.prefix(availableCharacters))
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+            } else {
+                boundedContent = content
+            }
+            guard !boundedContent.isEmpty else { continue }
+            lines.append(prefix + boundedContent)
+            remainingCharacters -= prefix.count + boundedContent.count
+            if lines.count >= runtimeUserMemoryMaxEntries || remainingCharacters <= 0 {
+                break
+            }
+        }
+        guard !lines.isEmpty else { return nil }
+        return ChatMessage(
+            role: "system",
+            content: runtimeUserMemoryPrefix + "\n" + lines.joined(separator: "\n")
+        )
+    }
+
+    private static func normalizedRuntimeMemoryContent(_ content: String) -> String {
+        content
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     private static let runtimeCapabilityGuardMessage = ChatMessage(
         role: "system",
         content: """
@@ -1403,6 +1623,16 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         Do not claim that you can search the web, browse, run tools, access files, or use unavailable integrations. If asked for an unavailable capability, say it is not available in this build and offer the closest supported alternative.
         """
     )
+
+    private static let runtimeUserMemoryPrefix = "Runtime user memory:"
+    private static let runtimeUserMemoryMaxEntries = 8
+    private static let runtimeUserMemoryMaxCharacters = 1_500
+    private static let runtimeConversationCompactionPrefix = "Runtime conversation summary:"
+    private static let runtimeConversationCompactionMaxContextCharacters = 24_000
+    private static let runtimeConversationCompactionRecentTurnCount = 12
+    private static let runtimeConversationCompactionMaxSummaryCharacters = 4_000
+    private static let runtimeConversationCompactionMaxSummaryLines = 24
+    private static let runtimeConversationCompactionMaxLineCharacters = 320
 
     private static let maxChatSuggestionCount = 4
 
@@ -1766,14 +1996,42 @@ private extension ChatAttachment {
 }
 
 private extension ChatMessage {
+    var normalizedRuntimeRole: String {
+        role.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    var isConversationTurn: Bool {
+        normalizedRuntimeRole == "user" || normalizedRuntimeRole == "assistant"
+    }
+
     var isAetherLinkCapabilityGuard: Bool {
-        guard role.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "system" else {
+        guard normalizedRuntimeRole == "system" else {
             return false
         }
         let lowercasedContent = content.lowercased()
         return lowercasedContent.contains("aetherlink currently provides runtime-mediated local model chat") &&
             lowercasedContent.contains("does not provide live web search") &&
             lowercasedContent.contains("do not claim that you can search the web")
+    }
+
+    var isRuntimeUserMemoryContext: Bool {
+        guard normalizedRuntimeRole == "system" else {
+            return false
+        }
+        return content
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .hasPrefix("runtime user memory:")
+    }
+
+    var isRuntimeConversationCompactionContext: Bool {
+        guard normalizedRuntimeRole == "system" else {
+            return false
+        }
+        return content
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .hasPrefix("runtime conversation summary:")
     }
 }
 

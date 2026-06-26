@@ -73,6 +73,66 @@ func relayQRCodeReadinessText(
     }
 }
 
+func remoteRouteScopeLabel(
+    settings: CompanionDevelopmentRelaySettings,
+    bootstrapSettings: CompanionBootstrapRelaySettings,
+    canPrepareAutomatically: Bool
+) -> String {
+    if settings.isEnabled {
+        switch settings.hostReachabilityWarning {
+        case .none:
+            return NSLocalizedString("Reachable connection", comment: "")
+        case .invalidFormat:
+            return NSLocalizedString("Route needs attention", comment: "")
+        case .loopback:
+            return NSLocalizedString("Local diagnostic", comment: "")
+        case .localName:
+            return NSLocalizedString("Local network only", comment: "")
+        case .privateNetwork:
+            return settings.allowsPrivateOverlay
+                ? NSLocalizedString("Private overlay", comment: "")
+                : NSLocalizedString("Local network only", comment: "")
+        }
+    }
+
+    if bootstrapSettings.isEnabled || canPrepareAutomatically {
+        return NSLocalizedString("Automatic route", comment: "")
+    }
+    return NSLocalizedString("No route", comment: "")
+}
+
+func remoteRouteScopeDetail(
+    settings: CompanionDevelopmentRelaySettings,
+    bootstrapSettings: CompanionBootstrapRelaySettings,
+    canPrepareAutomatically: Bool
+) -> String {
+    if settings.isEnabled {
+        switch settings.hostReachabilityWarning {
+        case .none:
+            return NSLocalizedString("Connection details can be included in QR for devices outside this local network.", comment: "")
+        case .invalidFormat:
+            return NSLocalizedString("Enter only the connection address. Put the port in the Port field.", comment: "")
+        case .loopback:
+            return NSLocalizedString("Loopback routes only work on this runtime host or USB diagnostics, not from another network.", comment: "")
+        case .localName:
+            return NSLocalizedString(".local names work only on nearby local networks. Use a reachable relay, VPN, or tunnel for another network.", comment: "")
+        case .privateNetwork:
+            if settings.allowsPrivateOverlay {
+                return NSLocalizedString("Use this only when both devices can reach the same VPN, tunnel, or private overlay.", comment: "")
+            }
+            return NSLocalizedString("Private addresses usually do not cross unrelated networks. Use a reachable relay, VPN, tunnel, or private overlay.", comment: "")
+        }
+    }
+
+    if bootstrapSettings.isEnabled {
+        return NSLocalizedString("AetherLink will request fresh QR connection details from the saved bootstrap relay.", comment: "")
+    }
+    if canPrepareAutomatically {
+        return NSLocalizedString("AetherLink can prepare QR connection details when a pairing QR is generated.", comment: "")
+    }
+    return NSLocalizedString("Add a reachable route before pairing from another network.", comment: "")
+}
+
 private extension String {
     var nilIfEmpty: String? {
         isEmpty ? nil : self

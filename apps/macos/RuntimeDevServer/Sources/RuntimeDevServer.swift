@@ -28,20 +28,11 @@ struct RuntimeDevServer {
         let port = UInt16(environment["LOCAL_AGENT_BRIDGE_PORT"] ?? "") ?? 43170
         let useMockBackend = environment["LOCAL_AGENT_BRIDGE_MOCK_BACKEND"] == "1"
         let backend: any LlmBackend = useMockBackend
-            ? DevMockBackend()
+            ? DevMockBackend(environment: environment)
             : AggregatingLlmBackend(ollama: OllamaBackend(), lmStudio: LMStudioBackend())
         let pairingCoordinator = PairingCoordinator()
         let trustedDeviceStore = Self.trustedDeviceStore(environment: environment)
         let identity = Self.runtimeIdentity(environment: environment)
-        let router = LocalRuntimeMessageRouter(
-            backend: backend,
-            pairingCoordinator: pairingCoordinator,
-            trustedDeviceStore: trustedDeviceStore,
-            runtimeChallengeSigner: identity.signer,
-            onPairingAccepted: { device in
-                print("[runtime] Development pairing accepted for device_id=\(device.id) name=\"\(device.name)\"")
-            }
-        )
         let server = LocalPeerServer()
         let advertiser = BonjourAdvertiser()
         let shouldAdvertiseBonjour = environment["AETHERLINK_DEV_DISABLE_BONJOUR"] != "1"
@@ -53,15 +44,45 @@ struct RuntimeDevServer {
             relayConfigured: relayConfiguration != nil,
             relayRouteRequested: relayRouteRequested
         )
-        let relayClient = relayConfiguration == nil ? nil : RelayPeerClient()
+        let relayClient = (relayConfiguration == nil && !relayRouteRequested) ? nil : RelayPeerClient()
         let relayPairingReadiness = RelayPairingReadiness()
+        let routerBox = RuntimeRouterBox()
+        let relayMessageHandler: LocalPeerMessageHandler = { envelope, sink in
+            print("[runtime] relay received type=\(envelope.type) request_id=\(envelope.requestID)")
+            routerBox.handle(envelope, sink: LoggingSink(wrapped: sink))
+        }
+        let relayStatusHandler: @Sendable (RelayPeerStatus) -> Void = { status in
+            relayPairingReadiness.update(status)
+            print("[runtime] relay status=\(status.logLabel)")
+        }
+        let routeRefresher = DevelopmentRuntimeRouteRefresher(
+            runtimeDeviceID: identity.deviceID,
+            runtimeKeyFingerprint: identity.fingerprint,
+            allocationProvider: {
+                Self.relayRouteAllocation(environment: environment, identity: identity)
+            },
+            relayStatusHandler: relayStatusHandler,
+            relayMessageHandler: relayMessageHandler,
+            relayScopeProvider: { host in Self.relayScope(for: host) }
+        )
+        let router = LocalRuntimeMessageRouter(
+            backend: backend,
+            pairingCoordinator: pairingCoordinator,
+            trustedDeviceStore: trustedDeviceStore,
+            routeRefresher: routeRefresher,
+            runtimeChallengeSigner: identity.signer,
+            onPairingAccepted: { device in
+                print("[runtime] Development pairing accepted for device_id=\(device.id) name=\"\(device.name)\"")
+            }
+        )
+        routerBox.set(router)
         RuntimeDevServerState.server = server
         RuntimeDevServerState.advertiser = advertiser
         RuntimeDevServerState.relayClient = relayClient
 
         server.start(port: port) { envelope, sink in
             print("[runtime] received type=\(envelope.type) request_id=\(envelope.requestID)")
-            router.handle(envelope, sink: LoggingSink(wrapped: sink))
+            routerBox.handle(envelope, sink: LoggingSink(wrapped: sink))
         }
         if shouldAdvertiseBonjour {
             advertiser.start(port: Int32(port), metadata: identity.advertisementMetadata)
@@ -69,14 +90,9 @@ struct RuntimeDevServer {
         if let relayConfiguration, let relayClient {
             relayClient.start(
                 configuration: relayConfiguration,
-                onStatusChange: { status in
-                    relayPairingReadiness.update(status)
-                    print("[runtime] relay status=\(status.logLabel)")
-                }
-            ) { envelope, sink in
-                print("[runtime] relay received type=\(envelope.type) request_id=\(envelope.requestID)")
-                router.handle(envelope, sink: LoggingSink(wrapped: sink))
-            }
+                onStatusChange: relayStatusHandler,
+                onMessage: relayMessageHandler
+            )
         }
 
         print("[runtime] AetherLink dev server listening on 127.0.0.1:\(port)")
@@ -550,6 +566,80 @@ private enum RuntimeDevServerState {
     static var relayClient: RelayPeerClient?
 }
 
+private final class RuntimeRouterBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var router: LocalRuntimeMessageRouter?
+
+    func set(_ router: LocalRuntimeMessageRouter) {
+        lock.withLock {
+            self.router = router
+        }
+    }
+
+    func handle(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) {
+        let current = lock.withLock { router }
+        current?.handle(envelope, sink: sink)
+    }
+}
+
+@MainActor
+private final class DevelopmentRuntimeRouteRefresher: RuntimeRouteRefreshing {
+    private let runtimeDeviceID: String
+    private let runtimeKeyFingerprint: String
+    private let allocationProvider: () -> CompanionRemoteRelayRouteAllocation?
+    private let relayStatusHandler: @Sendable (RelayPeerStatus) -> Void
+    private let relayMessageHandler: LocalPeerMessageHandler
+    private let relayScopeProvider: (String) -> String?
+    private var refreshedRelayClient: RelayPeerClient?
+
+    init(
+        runtimeDeviceID: String,
+        runtimeKeyFingerprint: String,
+        allocationProvider: @escaping () -> CompanionRemoteRelayRouteAllocation?,
+        relayStatusHandler: @escaping @Sendable (RelayPeerStatus) -> Void,
+        relayMessageHandler: @escaping LocalPeerMessageHandler,
+        relayScopeProvider: @escaping (String) -> String?
+    ) {
+        self.runtimeDeviceID = runtimeDeviceID
+        self.runtimeKeyFingerprint = runtimeKeyFingerprint
+        self.allocationProvider = allocationProvider
+        self.relayStatusHandler = relayStatusHandler
+        self.relayMessageHandler = relayMessageHandler
+        self.relayScopeProvider = relayScopeProvider
+    }
+
+    func refreshRuntimeRoute() async throws -> RuntimeRouteRefreshResult? {
+        guard let allocation = allocationProvider() else {
+            return nil
+        }
+        let configuration = allocation.configuration
+        guard let relaySecret = configuration.relaySecret?.takeIfNotEmpty,
+              let lease = allocation.lease
+        else {
+            return nil
+        }
+        let refreshedRelayClient = RelayPeerClient()
+        self.refreshedRelayClient?.stop()
+        self.refreshedRelayClient = refreshedRelayClient
+        refreshedRelayClient.start(
+            configuration: configuration,
+            onStatusChange: relayStatusHandler,
+            onMessage: relayMessageHandler
+        )
+        return RuntimeRouteRefreshResult(
+            runtimeDeviceID: runtimeDeviceID,
+            runtimeKeyFingerprint: runtimeKeyFingerprint,
+            relayHost: configuration.host,
+            relayPort: Int(configuration.port),
+            relayID: configuration.relayID,
+            relaySecret: relaySecret,
+            relayExpiresAtEpochMillis: lease.expiresAtEpochMillis,
+            relayNonce: lease.nonce,
+            relayScope: relayScopeProvider(configuration.host)
+        )
+    }
+}
+
 private final class RelayPairingReadiness: @unchecked Sendable {
     private let condition = NSCondition()
     private var status: RelayPeerStatus = .stopped
@@ -648,9 +738,15 @@ private extension RelayPeerStatus {
 
 private final class DevMockBackend: LlmBackend, @unchecked Sendable {
     let provider = ModelProvider.ollama
+    private let chunkDelayNanoseconds: UInt64
     private let lock = NSLock()
     private var tasks: [String: Task<Void, Never>] = [:]
     private var pulledModels: [String] = []
+
+    init(environment: [String: String] = ProcessInfo.processInfo.environment) {
+        let delayMilliseconds = UInt64(environment["AETHERLINK_DEV_MOCK_CHUNK_DELAY_MS"] ?? "") ?? 350
+        chunkDelayNanoseconds = max(1, delayMilliseconds) * 1_000_000
+    }
 
     func healthCheck() async -> BackendStatus {
         .available
@@ -704,7 +800,7 @@ private final class DevMockBackend: LlmBackend, @unchecked Sendable {
                         return
                     }
                     continuation.yield(.delta(chunk))
-                    try? await Task.sleep(nanoseconds: 350_000_000)
+                    try? await Task.sleep(nanoseconds: self?.chunkDelayNanoseconds ?? 350_000_000)
                 }
                 continuation.yield(.done(inputTokens: 1, outputTokens: chunks.count))
                 continuation.finish()

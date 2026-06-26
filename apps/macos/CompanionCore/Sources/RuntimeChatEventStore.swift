@@ -591,8 +591,11 @@ private extension ChatMessage {
             return false
         }
         let lowercasedContent = content.lowercased()
-        return lowercasedContent.contains("aetherlink currently provides runtime-mediated local model chat") &&
-            lowercasedContent.contains("does not provide live web search")
+        let normalizedContent = lowercasedContent.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (
+            lowercasedContent.contains("aetherlink currently provides runtime-mediated local model chat") &&
+                lowercasedContent.contains("does not provide live web search")
+        ) || normalizedContent.hasPrefix("runtime user memory:")
     }
 }
 

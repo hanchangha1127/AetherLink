@@ -343,6 +343,7 @@ class RuntimeClientViewModel internal constructor(
     private var activeChannel: RuntimeProtocolChannel? = null
     private var pendingPairingPayload: RuntimePairingPayload? = null
     private var pendingPairingRetryJob: Job? = null
+    private var pendingPairingDiscoveryTimeoutJob: Job? = null
     private var pendingPairingRetryAttempts = 0
     private var pendingModelPullRequestId: String? = null
     private var pendingChatSessionsRequestId: String? = null
@@ -836,6 +837,7 @@ class RuntimeClientViewModel internal constructor(
     fun trustRuntimeFromPairingQr(rawValue: String) {
         viewModelScope.launch {
             cancelPendingPairingRetry()
+            cancelPendingPairingDiscoveryTimeout()
             mutableState.update { it.copy(routeRefreshNoticeRuntimeName = null) }
             val payload = when (
                 val parsed = parseRuntimePairingQrPayload(
@@ -865,6 +867,7 @@ class RuntimeClientViewModel internal constructor(
                 payload = payload,
             )
             if (refreshedTrustedRuntime != null) {
+                cancelPendingPairingDiscoveryTimeout()
                 clearPersistedPendingPairingRoute()
                 val trustedEndpoint = refreshedTrustedRuntime.lastKnownEndpointHintOrNull()
                 val runtime = refreshedTrustedRuntime.toRuntimeTrustedRuntime()
@@ -897,6 +900,7 @@ class RuntimeClientViewModel internal constructor(
             val target = plan.target
             if (target == null) {
                 if (plan.shouldWaitForDiscoveryRoute) {
+                    schedulePendingPairingDiscoveryTimeout(payload)
                     return@launch
                 }
                 pendingPairingPayload = null
@@ -925,6 +929,7 @@ class RuntimeClientViewModel internal constructor(
         runCatching { deviceIdentityStore.loadOrCreate() }
             .onSuccess { identity ->
                 cancelPendingPairingRetry()
+                cancelPendingPairingDiscoveryTimeout()
                 sendEnvelope(
                     envelope(
                         type = MessageType.PairingRequest,
@@ -941,6 +946,7 @@ class RuntimeClientViewModel internal constructor(
             }
             .onFailure { error ->
                 cancelPendingPairingRetry()
+                cancelPendingPairingDiscoveryTimeout()
                 pendingPairingPayload = null
                 clearPersistedPendingPairingRoute()
                 mutableState.update { it.withClearedPendingPairing() }
@@ -983,6 +989,7 @@ class RuntimeClientViewModel internal constructor(
 
         if (payload.shouldWaitForDiscoveryRoute()) {
             startDiscovery()
+            schedulePendingPairingDiscoveryTimeout(payload)
         }
 
         viewModelScope.launch {
@@ -1078,6 +1085,7 @@ class RuntimeClientViewModel internal constructor(
     private fun handlePendingPairingConnectionFailure(payload: RuntimePairingPayload) {
         if (payload.hasExpiredRemoteRoute()) {
             cancelPendingPairingRetry()
+            cancelPendingPairingDiscoveryTimeout()
             pendingPairingPayload = null
             clearPersistedPendingPairingRoute()
             mutableState.update {
@@ -1102,6 +1110,7 @@ class RuntimeClientViewModel internal constructor(
             return
         }
         pendingPairingPayload = null
+        cancelPendingPairingDiscoveryTimeout()
         clearPersistedPendingPairingRoute()
         mutableState.update { it.withClearedPendingPairing() }
     }
@@ -1147,6 +1156,33 @@ class RuntimeClientViewModel internal constructor(
         pendingPairingRetryAttempts = 0
     }
 
+    private fun schedulePendingPairingDiscoveryTimeout(payload: RuntimePairingPayload) {
+        if (pendingPairingPayload != payload || !payload.shouldWaitForDiscoveryRoute()) return
+        pendingPairingDiscoveryTimeoutJob?.cancel()
+        pendingPairingDiscoveryTimeoutJob = viewModelScope.launch {
+            delay(PENDING_PAIRING_DISCOVERY_TIMEOUT_MS)
+            if (pendingPairingPayload != payload) return@launch
+            val current = state.value
+            if (current.isConnected || current.isConnecting) return@launch
+            if (pairingRuntimeConnectionTarget(current, payload) != null) return@launch
+            pendingPairingPayload = null
+            clearPersistedPendingPairingRoute()
+            mutableState.update {
+                it.withClearedPendingPairing().copy(
+                    error = RuntimeUiError(
+                        code = "pairing_endpoint_unavailable",
+                        diagnosticCode = "route_diagnostic_remote_pending",
+                    ),
+                )
+            }
+        }
+    }
+
+    private fun cancelPendingPairingDiscoveryTimeout() {
+        pendingPairingDiscoveryTimeoutJob?.cancel()
+        pendingPairingDiscoveryTimeoutJob = null
+    }
+
     private suspend fun connectToDiscoveredTrustedRuntimeIfNeeded() {
         if (pendingPairingPayload != null) return
         if (!shouldRestoreTrustedRuntimeConnection) return
@@ -1160,6 +1196,7 @@ class RuntimeClientViewModel internal constructor(
         discoveryJob?.cancel()
         discoveryJob = null
         cancelPendingPairingRetry()
+        cancelPendingPairingDiscoveryTimeout()
         pendingPairingPayload = null
         clearPersistedPendingPairingRoute()
         mutableState.update {
@@ -1220,6 +1257,7 @@ class RuntimeClientViewModel internal constructor(
         activeChannel = null
         client.close()
         isSessionAuthenticated = false
+        cancelPendingPairingDiscoveryTimeout()
         pendingModelPullRequestId = null
         pendingMemoryListRequestId = null
         pendingRouteRefreshRequestId = null
@@ -1796,6 +1834,7 @@ class RuntimeClientViewModel internal constructor(
         val pending = pendingPairingPayload
         if (!payload.accepted || pending == null) {
             cancelPendingPairingRetry()
+            cancelPendingPairingDiscoveryTimeout()
             pendingPairingPayload = null
             clearPersistedPendingPairingRoute()
             mutableState.update {
@@ -1824,6 +1863,7 @@ class RuntimeClientViewModel internal constructor(
             val trustedEndpoint = trusted.lastKnownEndpointHintOrNull()
             val runtime = trusted.toRuntimeTrustedRuntime()
             cancelPendingPairingRetry()
+            cancelPendingPairingDiscoveryTimeout()
             pendingPairingPayload = null
             clearPersistedPendingPairingRoute()
             isSessionAuthenticated = true
@@ -1922,22 +1962,40 @@ class RuntimeClientViewModel internal constructor(
         }
     }
 
-    private fun scheduleRuntimeRouteRefreshRetry() {
+    private fun scheduleRuntimeRouteRefreshRetry(): Boolean {
         routeRefreshLeaseJob?.cancel()
         routeRefreshLeaseJob = null
-        if (!isSessionAuthenticated) return
-        val channel = activeChannel ?: return
-        if (!channel.isConnected) return
+        if (!isSessionAuthenticated) return false
+        val channel = activeChannel ?: return false
+        if (!channel.isConnected) return false
         val current = state.value
-        if (!current.isConnected) return
+        if (!current.isConnected) return false
         val delayMillis = runtimeRouteRefreshRetryDelayMillis(
             nowEpochMillis = nowMillis(),
             relayExpiresAtEpochMillis = current.trustedRuntime?.relayExpiresAtEpochMillis,
-        ) ?: return
+        ) ?: run {
+            publishRouteRefreshLeaseExpired(current)
+            return false
+        }
         routeRefreshLeaseJob = viewModelScope.launch {
             delay(delayMillis)
             routeRefreshLeaseJob = null
             requestRuntimeRouteRefresh()
+        }
+        return true
+    }
+
+    private fun publishRouteRefreshLeaseExpired(current: RuntimeUiState) {
+        val trustedRuntime = current.trustedRuntime ?: return
+        if (trustedRuntime.relayExpiresAtEpochMillis == null) return
+        mutableState.update {
+            it.copy(
+                routeRefreshNoticeRuntimeName = null,
+                error = RuntimeUiError(
+                    code = "remote_route_expired",
+                    diagnosticCode = "route_diagnostic_remote_route_expired",
+                ),
+            )
         }
     }
 
@@ -2640,6 +2698,7 @@ class RuntimeClientViewModel internal constructor(
         const val MAX_PENDING_ATTACHMENTS = 4
         const val RECONNECT_DELAY_MS = 750L
         const val MAX_PENDING_PAIRING_RETRY_ATTEMPTS = 120
+        const val PENDING_PAIRING_DISCOVERY_TIMEOUT_MS = 15_000L
         const val MAX_SUGGESTIONS = 3
         const val MAX_SUGGESTION_CONTEXT_MESSAGES = 8
         const val MAX_RUNTIME_CHAT_SESSIONS = 100

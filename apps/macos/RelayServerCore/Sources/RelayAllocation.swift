@@ -6,11 +6,14 @@ public struct RelayAllocationRequest: Equatable, Sendable {
     public let routeToken: String
     public let requestedRelaySecret: String?
     public let allocationToken: String?
+    public let isPreflight: Bool
+    public var shouldPersistAllocation: Bool { !isPreflight }
 
     public init(
         routeToken: String,
         requestedRelaySecret: String? = nil,
-        allocationToken: String? = nil
+        allocationToken: String? = nil,
+        isPreflight: Bool = false
     ) throws {
         guard !routeToken.isEmpty,
               routeToken.rangeOfCharacter(from: .whitespacesAndNewlines) == nil
@@ -34,13 +37,14 @@ public struct RelayAllocationRequest: Equatable, Sendable {
         self.routeToken = routeToken
         self.requestedRelaySecret = requestedRelaySecret
         self.allocationToken = allocationToken
+        self.isPreflight = isPreflight
     }
 
     public static func parse(_ line: String) throws -> RelayAllocationRequest {
         let parts = line.trimmingCharacters(in: .whitespacesAndNewlines).split(
             whereSeparator: { $0.isWhitespace }
         )
-        guard (3...5).contains(parts.count),
+        guard (3...6).contains(parts.count),
               parts[0] == Substring(RelayHandshake.prefix),
               parts[1] == Substring(action)
         else {
@@ -48,12 +52,18 @@ public struct RelayAllocationRequest: Equatable, Sendable {
         }
         var requestedRelaySecret: String?
         var allocationToken: String?
+        var isPreflight = false
         for value in parts.dropFirst(3).map(String.init) {
             if let parsedToken = parseAllocationToken(value) {
                 guard allocationToken == nil else {
                     throw RelayAllocationError.invalidFormat
                 }
                 allocationToken = parsedToken
+            } else if isPreflightOption(value) {
+                guard !isPreflight else {
+                    throw RelayAllocationError.invalidFormat
+                }
+                isPreflight = true
             } else {
                 guard requestedRelaySecret == nil else {
                     throw RelayAllocationError.invalidFormat
@@ -64,7 +74,8 @@ public struct RelayAllocationRequest: Equatable, Sendable {
         return try RelayAllocationRequest(
             routeToken: String(parts[2]),
             requestedRelaySecret: requestedRelaySecret,
-            allocationToken: allocationToken
+            allocationToken: allocationToken,
+            isPreflight: isPreflight
         )
     }
 
@@ -85,6 +96,10 @@ public struct RelayAllocationRequest: Equatable, Sendable {
             return String(value.dropFirst("auth=".count))
         }
         return nil
+    }
+
+    private static func isPreflightOption(_ value: String) -> Bool {
+        value == "preflight=1" || value == "preflight=true"
     }
 }
 

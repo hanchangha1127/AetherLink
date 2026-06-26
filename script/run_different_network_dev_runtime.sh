@@ -7,6 +7,7 @@ RELAY_HOST="${AETHERLINK_BOOTSTRAP_RELAY_HOST:-${AETHERLINK_RELAY_HOST:-}}"
 RELAY_PORT="${AETHERLINK_BOOTSTRAP_RELAY_PORT:-${AETHERLINK_RELAY_PORT:-43171}}"
 RELAY_ENDPOINTS="${AETHERLINK_BOOTSTRAP_RELAY_ENDPOINTS:-}"
 ALLOCATION_TOKEN="${AETHERLINK_BOOTSTRAP_RELAY_ALLOCATION_TOKEN:-${AETHERLINK_RELAY_ALLOCATION_TOKEN:-}}"
+PREFLIGHT_SUMMARY_JSON="${AETHERLINK_PREFLIGHT_SUMMARY_JSON:-}"
 START_LOCAL_RELAY=0
 ALLOW_PRIVATE_RELAY=0
 PREFLIGHT_ONLY=0
@@ -38,7 +39,12 @@ paired AetherLink runtime protocol; Ollama and LM Studio are never exposed direc
 
 Options:
   --preflight-only       Validate endpoint shape and allocation reachability,
-                         then exit before starting RuntimeDevServer.
+                         then exit before starting RuntimeDevServer. The
+                         allocation probe is marked preflight so it does not
+                         persist a throwaway relay lease in the bootstrap relay
+                         store.
+  --summary-json <path>  Write structured relay/bootstrap preflight status.
+                         This is useful for no-ADB or different-network QA logs.
   --allocation-token <token>
                          Send an allocation token to the development relay.
                          Required when the relay was started with
@@ -87,6 +93,14 @@ while [[ $# -gt 0 ]]; do
       ;;
     --preflight-only)
       PREFLIGHT_ONLY=1
+      ;;
+    --summary-json)
+      shift
+      PREFLIGHT_SUMMARY_JSON="${1:-}"
+      if [[ -z "$PREFLIGHT_SUMMARY_JSON" ]]; then
+        echo "--summary-json requires a value." >&2
+        exit 2
+      fi
       ;;
     --help|-h)
       usage
@@ -244,7 +258,9 @@ def classify(host):
         return "hostname"
     if address.is_loopback or address.is_unspecified:
         return "local"
-    if address.is_private or address.is_link_local:
+    if address.is_link_local or address.is_multicast:
+        return "link_local"
+    if address.is_private:
         return "private"
     return "public"
 
@@ -264,9 +280,15 @@ for item in endpoints:
             file=sys.stderr,
         )
         failed = True
+    elif kind == "link_local" and not allow_local:
+        print(
+            f"Invalid different-network relay endpoint {host}:{port}: link-local and multicast addresses cannot be used as QR relay routes, even with --allow-private-relay. Use a public/VPN/tunnel relay, or a private overlay address that both devices can reach.",
+            file=sys.stderr,
+        )
+        failed = True
     elif kind == "private" and not allow_private and not allow_local:
         print(
-            f"Invalid different-network relay endpoint {host}:{port}: private/link-local addresses usually do not cross unrelated networks. Use a public/VPN/tunnel relay, or pass --allow-private-relay only for an explicit private overlay reachable by the runtime host and trusted device.",
+            f"Invalid different-network relay endpoint {host}:{port}: private addresses usually do not cross unrelated networks. Use a public/VPN/tunnel relay, or pass --allow-private-relay only for an explicit private overlay reachable by the runtime host and trusted device.",
             file=sys.stderr,
         )
         failed = True
@@ -276,7 +298,102 @@ if failed:
 PY
 }
 
-validate_relay_endpoint_scope "$ALLOW_PRIVATE_RELAY" "$START_LOCAL_RELAY" "${RELAY_ENDPOINT_LINES[@]}"
+RELAY_PID=""
+PREFLIGHT_SUCCESS_ENDPOINT=""
+PREFLIGHT_REQUIRED_FIELDS_PRESENT=0
+PREFLIGHT_FAILURE_DETAIL=""
+
+write_preflight_summary() {
+  local exit_status="$1"
+  local endpoint_payload
+  [[ -n "$PREFLIGHT_SUMMARY_JSON" ]] || return 0
+  endpoint_payload="$(printf '%s\n' "${RELAY_ENDPOINT_LINES[@]}")"
+  python3 - \
+    "$PREFLIGHT_SUMMARY_JSON" \
+    "$exit_status" \
+    "$PREFLIGHT_ONLY" \
+    "$START_LOCAL_RELAY" \
+    "$ALLOW_PRIVATE_RELAY" \
+    "$USE_LEGACY_RELAY" \
+    "$PREFLIGHT_SUCCESS_ENDPOINT" \
+    "$PREFLIGHT_REQUIRED_FIELDS_PRESENT" \
+    "$PREFLIGHT_FAILURE_DETAIL" \
+    "$endpoint_payload" <<'PY'
+import datetime as dt
+import json
+import os
+import sys
+
+(
+    summary_path,
+    exit_status,
+    preflight_only,
+    start_local_relay,
+    allow_private_relay,
+    use_legacy_relay,
+    success_endpoint,
+    required_fields_present,
+    failure_detail,
+    endpoint_payload,
+) = sys.argv[1:]
+
+endpoints = []
+for line in endpoint_payload.splitlines():
+    if not line.strip():
+        continue
+    host, port = line.split("\t", 1)
+    endpoints.append({"host": host, "port": int(port)})
+
+caveats = ["runtime_host_preflight_only_not_phone_reachability_proof"]
+if start_local_relay == "1":
+    caveats.append("local_relay_only_unless_advertised_host_is_public_vpn_tunnel_or_overlay")
+if use_legacy_relay == "1":
+    caveats.append("legacy_manual_relay_allocation_not_checked")
+if failure_detail.strip():
+    caveats.append("relay_bootstrap_preflight_failed")
+
+summary = {
+    "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+    "exit_status": int(exit_status),
+    "mode": {
+        "preflight_only": preflight_only == "1",
+    },
+    "relay": {
+        "endpoints": endpoints,
+        "success_endpoint": success_endpoint or None,
+        "start_local_relay": start_local_relay == "1",
+        "allow_private_relay": allow_private_relay == "1",
+    },
+    "allocation": {
+        "required_fields_present": required_fields_present == "1",
+        "preflight_non_persistent": use_legacy_relay != "1",
+        "legacy_allocation_skipped": use_legacy_relay == "1",
+    },
+    "failure_detail": failure_detail.strip() or None,
+    "caveats": caveats,
+}
+
+directory = os.path.dirname(summary_path)
+if directory:
+    os.makedirs(directory, exist_ok=True)
+with open(summary_path, "w", encoding="utf-8") as handle:
+    json.dump(summary, handle, indent=2, sort_keys=True)
+    handle.write("\n")
+PY
+}
+
+set +e
+scope_validation_output="$(validate_relay_endpoint_scope "$ALLOW_PRIVATE_RELAY" "$START_LOCAL_RELAY" "${RELAY_ENDPOINT_LINES[@]}" 2>&1)"
+scope_validation_status=$?
+set -e
+if [[ "$scope_validation_status" -ne 0 ]]; then
+  PREFLIGHT_FAILURE_DETAIL="$scope_validation_output"
+  if [[ -n "$scope_validation_output" ]]; then
+    printf '%s\n' "$scope_validation_output" >&2
+  fi
+  write_preflight_summary "$scope_validation_status"
+  exit "$scope_validation_status"
+fi
 
 if [[ "$USE_LEGACY_RELAY" == "1" ]]; then
   export AETHERLINK_RELAY_HOST="$RELAY_HOST"
@@ -299,8 +416,6 @@ else
   fi
 fi
 export AETHERLINK_DEV_PAIRING="${AETHERLINK_DEV_PAIRING:-1}"
-
-RELAY_PID=""
 cleanup() {
   if [[ -n "$RELAY_PID" ]]; then
     kill "$RELAY_PID" >/dev/null 2>&1 || true
@@ -315,53 +430,17 @@ check_relay_allocation() {
   local port="$2"
   local token="$3"
   local timeout="${4:-5}"
-  python3 - "$host" "$port" "$token" "$timeout" <<'PY'
-import json
-import socket
-import sys
-import uuid
-
-host = sys.argv[1]
-port = int(sys.argv[2])
-allocation_token = sys.argv[3].strip()
-timeout = float(sys.argv[4])
-route_token = f"aetherlink-preflight-{uuid.uuid4()}"
-prefix = "AETHERLINK_RELAY allocation "
-parts = ["AETHERLINK_RELAY", "allocate", route_token]
-if allocation_token:
-    parts.append(f"allocation_token={allocation_token}")
-
-try:
-    with socket.create_connection((host, port), timeout=timeout) as sock:
-        sock.settimeout(timeout)
-        sock.sendall((" ".join(parts) + "\n").encode("utf-8"))
-        buffer = b""
-        while not buffer.endswith(b"\n") and len(buffer) < 8192:
-            chunk = sock.recv(1024)
-            if not chunk:
-                break
-            buffer += chunk
-except OSError as error:
-    print(f"Could not allocate relay route from {host}:{port}: {error}", file=sys.stderr)
-    raise SystemExit(1)
-
-line = buffer.decode("utf-8", errors="replace").strip()
-if not line.startswith(prefix):
-    print(f"Relay {host}:{port} did not return an allocation response: {line!r}", file=sys.stderr)
-    raise SystemExit(1)
-
-try:
-    payload = json.loads(line[len(prefix):])
-except json.JSONDecodeError as error:
-    print(f"Relay {host}:{port} returned invalid allocation JSON: {error}", file=sys.stderr)
-    raise SystemExit(1)
-
-required = ["relay_id", "relay_secret", "relay_expires_at", "relay_nonce"]
-missing = [key for key in required if not payload.get(key)]
-if missing:
-    print(f"Relay {host}:{port} allocation response missing: {', '.join(missing)}", file=sys.stderr)
-    raise SystemExit(1)
-PY
+  local args=(
+    python3 script/relay_allocation_preflight.py
+    --host "$host"
+    --port "$port"
+    --timeout "$timeout"
+    --quiet
+  )
+  if [[ -n "$token" ]]; then
+    args+=(--allocation-token "$token")
+  fi
+  "${args[@]}"
 }
 
 if [[ "$START_LOCAL_RELAY" == "1" ]]; then
@@ -387,18 +466,31 @@ if [[ "$USE_LEGACY_RELAY" != "1" ]]; then
     endpoint_host="${endpoint%%$'\t'*}"
     endpoint_port="${endpoint##*$'\t'}"
     echo "Checking relay allocation API at $endpoint_host:$endpoint_port"
-    if check_relay_allocation "$endpoint_host" "$endpoint_port" "$ALLOCATION_TOKEN" 5; then
+    set +e
+    allocation_preflight_output="$(check_relay_allocation "$endpoint_host" "$endpoint_port" "$ALLOCATION_TOKEN" 5 2>&1)"
+    allocation_preflight_status=$?
+    set -e
+    if [[ "$allocation_preflight_status" -eq 0 ]]; then
       allocation_preflight_succeeded=1
+      PREFLIGHT_SUCCESS_ENDPOINT="$endpoint_host:$endpoint_port"
+      PREFLIGHT_REQUIRED_FIELDS_PRESENT=1
       echo "Relay allocation preflight succeeded at $endpoint_host:$endpoint_port"
       break
+    fi
+    PREFLIGHT_FAILURE_DETAIL="$allocation_preflight_output"
+    if [[ -n "$allocation_preflight_output" ]]; then
+      printf '%s\n' "$allocation_preflight_output" >&2
     fi
     echo "Relay allocation preflight failed at $endpoint_host:$endpoint_port; trying the next endpoint if available." >&2
   done
   if [[ "$allocation_preflight_succeeded" != "1" ]]; then
     echo "Relay allocation preflight failed for every configured endpoint." >&2
     echo "A QR-only different-network pairing cannot proceed until at least one relay/bootstrap endpoint is reachable and returns allocation fields." >&2
+    write_preflight_summary 1
     exit 1
   fi
+else
+  PREFLIGHT_SUCCESS_ENDPOINT="$FIRST_RELAY_HOST:$FIRST_RELAY_PORT"
 fi
 
 if [[ "$PREFLIGHT_ONLY" == "1" ]]; then
@@ -408,8 +500,11 @@ if [[ "$PREFLIGHT_ONLY" == "1" ]]; then
   else
     echo "At least one configured endpoint accepted AETHERLINK_RELAY allocate and returned route material."
   fi
+  write_preflight_summary 0
   exit 0
 fi
+
+write_preflight_summary 0
 
 echo "Starting AetherLink Runtime on local diagnostic port $PORT"
 if [[ "$USE_ENDPOINT_LIST" == "1" ]]; then

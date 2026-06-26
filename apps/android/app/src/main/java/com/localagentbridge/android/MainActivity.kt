@@ -110,6 +110,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
@@ -128,7 +129,6 @@ import com.localagentbridge.android.runtime.RuntimeModel
 import com.localagentbridge.android.runtime.RuntimeAppTheme
 import com.localagentbridge.android.runtime.RuntimeUiState
 import com.localagentbridge.android.runtime.isChatModel
-import com.localagentbridge.android.runtime.isEmbeddingModel
 import com.localagentbridge.android.runtime.isRuntimeHostLocalModel
 import com.localagentbridge.android.runtime.supportsImageInput
 import com.localagentbridge.android.core.pairing.RuntimePairingPayloadParser
@@ -428,7 +428,6 @@ private fun LocalAgentBridgeApp(
                                 },
                                 onRequestModels = viewModel::requestModels,
                                 onSelectModel = viewModel::selectModel,
-                                onSelectEmbeddingModel = viewModel::selectEmbeddingModel,
                             )
                         },
                     ) { padding ->
@@ -520,7 +519,6 @@ internal fun AetherLinkTopAppBar(
     onStartNewChat: () -> Unit,
     onRequestModels: () -> Unit,
     onSelectModel: (String) -> Unit,
-    onSelectEmbeddingModel: (String?) -> Unit,
 ) {
     val hapticFeedback = LocalHapticFeedback.current
 
@@ -536,7 +534,6 @@ internal fun AetherLinkTopAppBar(
                         state = state,
                         onRequestModels = onRequestModels,
                         onSelectModel = onSelectModel,
-                        onSelectEmbeddingModel = onSelectEmbeddingModel,
                     )
                 } else {
                     Text(destinationTitle)
@@ -687,7 +684,6 @@ internal fun ChatTopAppBarTitle(
     state: RuntimeUiState,
     onRequestModels: () -> Unit,
     onSelectModel: (String) -> Unit,
-    onSelectEmbeddingModel: (String?) -> Unit,
 ) {
     Row(
         horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -697,7 +693,6 @@ internal fun ChatTopAppBarTitle(
             state = state,
             onRequestModels = onRequestModels,
             onSelectModel = onSelectModel,
-            onSelectEmbeddingModel = onSelectEmbeddingModel,
         )
     }
 }
@@ -707,7 +702,6 @@ private fun ChatModelTopBarMenu(
     state: RuntimeUiState,
     onRequestModels: () -> Unit,
     onSelectModel: (String) -> Unit,
-    onSelectEmbeddingModel: (String?) -> Unit,
 ) {
     var isExpanded by rememberSaveable { mutableStateOf(false) }
     var modelSearchQuery by rememberSaveable { mutableStateOf("") }
@@ -741,18 +735,6 @@ private fun ChatModelTopBarMenu(
         query = trimmedModelSearchQuery,
         selectedModelId = state.selectedModelId,
     )
-    val allEmbeddingModels = embeddingModelMenuModels(
-        models = state.models,
-        selectedEmbeddingModelId = state.selectedEmbeddingModelId,
-    )
-    val visibleEmbeddingModels = embeddingModelMenuModels(
-        models = state.models,
-        query = trimmedModelSearchQuery,
-        selectedEmbeddingModelId = state.selectedEmbeddingModelId,
-    )
-    val selectedEmbeddingModel = allEmbeddingModels.firstOrNull { it.id == state.selectedEmbeddingModelId }
-    val selectedEmbeddingModelUnavailable =
-        state.selectedEmbeddingModelId != null && selectedEmbeddingModel == null
     val hasSearchableModels = modelMenuSearchAvailable(state.models)
 
     Box {
@@ -936,82 +918,6 @@ private fun ChatModelTopBarMenu(
                     )
                 }
             }
-            HorizontalDivider()
-            DropdownInfoItem(
-                modifier = Modifier.padding(top = 2.dp, bottom = 2.dp),
-            ) {
-                Column {
-                    Text(
-                        text = stringResource(R.string.embedding_model_title),
-                        style = MaterialTheme.typography.labelLarge,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        text = selectedEmbeddingModel?.name
-                            ?: state.selectedEmbeddingModelId?.let(::savedModelDisplayName)
-                            ?: stringResource(R.string.embedding_model_none_detail),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
-            EmbeddingModelMenuItem(
-                model = null,
-                selected = state.selectedEmbeddingModelId == null,
-                onSelect = {
-                    hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.SelectionChange)
-                    onSelectEmbeddingModel(null)
-                    isExpanded = false
-                },
-            )
-            if (selectedEmbeddingModelUnavailable) {
-                DropdownInfoItem {
-                    Column {
-                        Text(
-                            text = stringResource(R.string.selected_embedding_model_unavailable),
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Text(
-                            text = stringResource(R.string.selected_embedding_model_restoring),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
-            }
-            if (visibleEmbeddingModels.isEmpty()) {
-                DropdownInfoItem {
-                    Text(
-                        text = stringResource(
-                            embeddingModelMenuEmptyTextRes(
-                                isConnected = state.isConnected,
-                                hasEmbeddingModels = allEmbeddingModels.isNotEmpty(),
-                                hasSearchQuery = trimmedModelSearchQuery.isNotEmpty(),
-                            ),
-                        ),
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            } else {
-                visibleEmbeddingModels.forEach { model ->
-                    EmbeddingModelMenuItem(
-                        model = model,
-                        selected = model.id == state.selectedEmbeddingModelId,
-                        onSelect = {
-                            hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.SelectionChange)
-                            onSelectEmbeddingModel(model.id)
-                            isExpanded = false
-                        },
-                    )
-                }
-            }
         }
     }
 }
@@ -1038,6 +944,11 @@ private fun ChatModelMenuItem(
     onSelect: () -> Unit,
 ) {
     DropdownMenuItem(
+        modifier = chatModelMenuItemSemanticsModifier(
+            model = model,
+            selected = selected,
+            installing = installing,
+        ),
         text = {
             Column {
                 Text(
@@ -1055,7 +966,16 @@ private fun ChatModelMenuItem(
             }
         },
         trailingIcon = {
-            if (selected) {
+            if (!model.installed && !installing) {
+                Text(
+                    text = stringResource(R.string.install_model),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.widthIn(max = 96.dp),
+                )
+            } else if (selected) {
                 Icon(
                     imageVector = Icons.Filled.CheckCircle,
                     contentDescription = null,
@@ -1068,64 +988,28 @@ private fun ChatModelMenuItem(
 }
 
 @Composable
-private fun EmbeddingModelMenuItem(
-    model: RuntimeModel?,
+private fun chatModelMenuItemSemanticsModifier(
+    model: RuntimeModel,
     selected: Boolean,
-    onSelect: () -> Unit,
-) {
-    DropdownMenuItem(
-        text = {
-            Column {
-                Text(
-                    text = model?.name ?: stringResource(R.string.model_none),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = model?.let { modelMenuStatusLine(model = it, installing = false) }
-                        ?: stringResource(R.string.embedding_model_none_detail),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        },
-        trailingIcon = {
-            if (selected) {
-                Icon(
-                    imageVector = Icons.Filled.CheckCircle,
-                    contentDescription = null,
-                )
-            }
-        },
-        enabled = model == null || embeddingModelMenuItemEnabled(model),
-        onClick = onSelect,
-    )
+    installing: Boolean,
+): Modifier {
+    val stateDescriptionRes = when {
+        selected -> R.string.selection_state_selected
+        !model.installed && !installing -> R.string.install_model
+        else -> null
+    } ?: return Modifier
+    val selectedStateDescription = stringResource(stateDescriptionRes)
+    return Modifier.semantics {
+        stateDescription = selectedStateDescription
+    }
 }
 
 internal fun chatModelMenuItemEnabled(model: RuntimeModel, installing: Boolean): Boolean {
     return model.isChatModel() && model.isRuntimeHostLocalModel() && !installing
 }
 
-internal fun embeddingModelMenuItemEnabled(model: RuntimeModel): Boolean {
-    return model.isEmbeddingModel() && model.installed && model.isRuntimeHostLocalModel()
-}
-
 internal fun modelMenuSearchAvailable(models: List<RuntimeModel>): Boolean {
-    return chatModelMenuModels(models).isNotEmpty() || embeddingModelMenuModels(models).isNotEmpty()
-}
-
-internal fun embeddingModelMenuEmptyTextRes(
-    isConnected: Boolean,
-    hasEmbeddingModels: Boolean,
-    hasSearchQuery: Boolean,
-): Int {
-    return when {
-        hasSearchQuery && hasEmbeddingModels -> R.string.no_model_search_results
-        isConnected -> R.string.embedding_model_empty
-        else -> R.string.embedding_model_connect_first
-    }
+    return chatModelMenuModels(models).isNotEmpty()
 }
 
 @Composable
@@ -1159,28 +1043,6 @@ internal fun chatModelMenuModels(
         }
         .sortedWith(
             compareByDescending<RuntimeModel> { it.id == selectedModelId }
-                .thenByDescending { it.running }
-                .thenBy { it.name.lowercase(Locale.US) },
-        )
-        .toList()
-}
-
-internal fun embeddingModelMenuModels(
-    models: List<RuntimeModel>,
-    query: String = "",
-    selectedEmbeddingModelId: String? = null,
-): List<RuntimeModel> {
-    val trimmedQuery = query.trim()
-    return models
-        .asSequence()
-        .filter { it.isEmbeddingModel() && it.installed && it.isRuntimeHostLocalModel() }
-        .filter { model ->
-            trimmedQuery.isEmpty() ||
-                model.id == selectedEmbeddingModelId ||
-                model.matchesModelQuery(trimmedQuery)
-        }
-        .sortedWith(
-            compareByDescending<RuntimeModel> { it.id == selectedEmbeddingModelId }
                 .thenByDescending { it.running }
                 .thenBy { it.name.lowercase(Locale.US) },
         )
@@ -1400,7 +1262,7 @@ internal fun AetherLinkNavigationDrawerContent(
                                 onRenameChatSession(session)
                             },
                             onArchive = {
-                                hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Destructive)
+                                hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
                                 onArchiveChatSession(session)
                             },
                             onRestore = null,
@@ -1568,6 +1430,7 @@ internal fun ChatSessionDrawerItem(
     var isMenuExpanded by rememberSaveable(session.id) { mutableStateOf(false) }
     val hapticFeedback = LocalHapticFeedback.current
     val title = session.localizedTitle(stringResource(R.string.untitled_chat))
+    val chatSessionOptionsContentDescription = stringResource(R.string.chat_session_more_named, title)
     val baseSubtitle = when {
         session.archivedAtMillis != null -> stringResource(R.string.archived_chat)
         session.messageCount > 0 -> pluralStringResource(
@@ -1592,6 +1455,12 @@ internal fun ChatSessionDrawerItem(
         R.string.chat_session_status_in_progress -> MaterialTheme.colorScheme.primary
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
+    val accessibleSubtitle = subtitle.ifBlank { stringResource(R.string.new_chat) }
+    val chatSessionContentDescription = if (selected) {
+        stringResource(R.string.chat_session_row_summary_selected, title, accessibleSubtitle)
+    } else {
+        stringResource(R.string.chat_session_row_summary, title, accessibleSubtitle)
+    }
 
     NavigationDrawerItem(
         selected = selected,
@@ -1615,21 +1484,21 @@ internal fun ChatSessionDrawerItem(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
-	                    Text(
-	                        text = title,
-	                        maxLines = 1,
-	                        overflow = TextOverflow.Ellipsis,
-	                    )
-	                    if (subtitle.isNotBlank()) {
-	                        Text(
-	                            text = subtitle,
-	                            style = MaterialTheme.typography.labelSmall,
-	                            color = subtitleColor,
-	                            maxLines = 1,
-	                            overflow = TextOverflow.Ellipsis,
-	                        )
-	                    }
-	                }
+                    Text(
+                        text = title,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    if (subtitle.isNotBlank()) {
+                        Text(
+                            text = subtitle,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = subtitleColor,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
                 IconButton(
                     onClick = {
                         hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
@@ -1640,7 +1509,7 @@ internal fun ChatSessionDrawerItem(
                 ) {
                     Icon(
                         imageVector = Icons.Filled.MoreVert,
-                        contentDescription = stringResource(R.string.chat_session_more),
+                        contentDescription = chatSessionOptionsContentDescription,
                     )
                 }
                 DropdownMenu(
@@ -1690,7 +1559,11 @@ internal fun ChatSessionDrawerItem(
                 }
             }
         },
-        modifier = Modifier.padding(horizontal = 12.dp),
+        modifier = Modifier
+            .padding(horizontal = 12.dp)
+            .semantics {
+                contentDescription = chatSessionContentDescription
+            },
     )
 }
 
@@ -1778,7 +1651,7 @@ private fun DrawerDestinationItem(
 }
 
 @Composable
-private fun AetherLinkTheme(theme: RuntimeAppTheme, content: @Composable () -> Unit) {
+internal fun AetherLinkTheme(theme: RuntimeAppTheme, content: @Composable () -> Unit) {
     val systemDarkTheme = isSystemInDarkTheme()
     val darkTheme = when (theme) {
         RuntimeAppTheme.System -> systemDarkTheme
@@ -1875,7 +1748,6 @@ private fun PairingQrScannerScreen(
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
-    val hapticFeedback = LocalHapticFeedback.current
     var torchEnabled by rememberSaveable { mutableStateOf(false) }
     var torchAvailable by rememberSaveable { mutableStateOf(false) }
     var hasCameraPermission by remember {
@@ -1896,6 +1768,48 @@ private fun PairingQrScannerScreen(
         }
     }
 
+    PairingQrScannerChrome(
+        hasCameraPermission = hasCameraPermission,
+        torchAvailable = torchAvailable,
+        torchEnabled = torchEnabled,
+        onTorchToggle = {
+            torchEnabled = !torchEnabled
+        },
+        onCancel = onCancel,
+        onRequestCameraPermission = {
+            permissionLauncher.launch(Manifest.permission.CAMERA)
+        },
+        modifier = modifier,
+    ) {
+        PairingQrCameraPreview(
+            onResult = onResult,
+            onFailure = onFailure,
+            torchEnabled = torchEnabled,
+            onTorchAvailabilityChanged = { available ->
+                torchAvailable = available
+                if (!available) {
+                    torchEnabled = false
+                }
+            },
+            modifier = Modifier.fillMaxSize(),
+        )
+    }
+}
+
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+internal fun PairingQrScannerChrome(
+    hasCameraPermission: Boolean,
+    torchAvailable: Boolean,
+    torchEnabled: Boolean,
+    onTorchToggle: () -> Unit,
+    onCancel: () -> Unit,
+    onRequestCameraPermission: () -> Unit,
+    modifier: Modifier = Modifier,
+    cameraContent: @Composable () -> Unit = {},
+) {
+    val hapticFeedback = LocalHapticFeedback.current
+
     Scaffold(
         modifier = modifier,
         topBar = {
@@ -1904,7 +1818,7 @@ private fun PairingQrScannerScreen(
                 navigationIcon = {
                     IconButton(
                         onClick = {
-                            hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Destructive)
+                            hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Toggle)
                             onCancel()
                         },
                     ) {
@@ -1916,11 +1830,23 @@ private fun PairingQrScannerScreen(
                 },
                 actions = {
                     if (torchAvailable) {
+                        val torchStateDescription = stringResource(
+                            if (torchEnabled) {
+                                R.string.qr_scanner_flashlight_state_on
+                            } else {
+                                R.string.qr_scanner_flashlight_state_off
+                            }
+                        )
                         IconButton(
                             onClick = {
                                 hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Toggle)
-                                torchEnabled = !torchEnabled
+                                onTorchToggle()
                             },
+                            modifier = Modifier
+                                .testTag(PAIRING_QR_FLASHLIGHT_BUTTON_TEST_TAG)
+                                .semantics {
+                                    stateDescription = torchStateDescription
+                                },
                         ) {
                             Icon(
                                 imageVector = if (torchEnabled) {
@@ -1952,18 +1878,7 @@ private fun PairingQrScannerScreen(
                     .fillMaxSize()
                     .padding(padding),
             ) {
-                PairingQrCameraPreview(
-                    onResult = onResult,
-                    onFailure = onFailure,
-                    torchEnabled = torchEnabled,
-                    onTorchAvailabilityChanged = { available ->
-                        torchAvailable = available
-                        if (!available) {
-                            torchEnabled = false
-                        }
-                    },
-                    modifier = Modifier.fillMaxSize(),
-                )
+                cameraContent()
                 Box(
                     modifier = Modifier
                         .align(Alignment.Center)
@@ -1996,7 +1911,7 @@ private fun PairingQrScannerScreen(
                         )
                         TextButton(
                             onClick = {
-                                hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Destructive)
+                                hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Toggle)
                                 onCancel()
                             },
                         ) {
@@ -2030,7 +1945,7 @@ private fun PairingQrScannerScreen(
                 Button(
                     onClick = {
                         hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
-                        permissionLauncher.launch(Manifest.permission.CAMERA)
+                        onRequestCameraPermission()
                     },
                 ) {
                     Text(stringResource(R.string.qr_scanner_permission_action))
@@ -2039,6 +1954,8 @@ private fun PairingQrScannerScreen(
         }
     }
 }
+
+internal const val PAIRING_QR_FLASHLIGHT_BUTTON_TEST_TAG = "pairing_qr_flashlight_button"
 
 @Composable
 private fun PairingQrCameraPreview(

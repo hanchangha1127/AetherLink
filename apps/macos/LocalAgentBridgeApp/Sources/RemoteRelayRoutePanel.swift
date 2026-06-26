@@ -4,13 +4,16 @@ import SwiftUI
 @MainActor
 func shouldShowRouteDiagnosticsPanel(model: CompanionAppModel) -> Bool {
     model.hasDevelopmentRelayRoute
-        || !model.canPrepareRemoteRelayRouteAutomatically
+        || model.bootstrapRelaySettings.isEnabled
         || model.remoteRoutePreparationIssue != nil
 }
 
 struct RemoteRelayRoutePanel: View {
     @ObservedObject var model: CompanionAppModel
     var onGenerateRelayQRCode: (() -> Void)?
+    @State private var bootstrapEndpoints = ""
+    @State private var bootstrapAllocationToken = ""
+    @State private var bootstrapAllowsPrivateOverlay = false
     @State private var host = ""
     @State private var port = "43171"
     @State private var relaySecret = ""
@@ -41,6 +44,7 @@ struct RemoteRelayRoutePanel: View {
                 if let diagnosticMessage {
                     DiagnosticDisclosure(
                         title: NSLocalizedString("Technical Details", comment: ""),
+                        accessibilityContext: NSLocalizedString("Connection setup result", comment: ""),
                         text: diagnosticMessage
                     )
                 }
@@ -48,6 +52,9 @@ struct RemoteRelayRoutePanel: View {
         }
         .onAppear(perform: syncFromModel)
         .onChange(of: model.developmentRelaySettings) { _, _ in
+            syncFromModel()
+        }
+        .onChange(of: model.bootstrapRelaySettings) { _, _ in
             syncFromModel()
         }
         .confirmationDialog(
@@ -100,6 +107,37 @@ struct RemoteRelayRoutePanel: View {
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
 
+                    VStack(alignment: .leading, spacing: 8) {
+                        Label(NSLocalizedString("Bootstrap Relay", comment: ""), systemImage: "point.3.connected.trianglepath.dotted")
+                            .font(.caption.weight(.semibold))
+                        Text(NSLocalizedString("Use a reachable bootstrap relay to prepare QR connection details without putting a local network address in the QR.", comment: ""))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        TextField(NSLocalizedString("Bootstrap relay endpoints", comment: ""), text: $bootstrapEndpoints)
+                            .textFieldStyle(.roundedBorder)
+                        SecureField(NSLocalizedString("Bootstrap allocation token", comment: ""), text: $bootstrapAllocationToken, prompt: Text(NSLocalizedString("Optional", comment: "")))
+                            .textFieldStyle(.roundedBorder)
+                        Toggle(isOn: $bootstrapAllowsPrivateOverlay) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(NSLocalizedString("Use Private Overlay Route", comment: ""))
+                                Text(NSLocalizedString("Enable only when this bootstrap relay is reachable through a VPN, tunnel, or private overlay shared by both devices.", comment: ""))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                        .toggleStyle(.checkbox)
+                        Button {
+                            saveBootstrapRelay()
+                        } label: {
+                            Label(NSLocalizedString("Save Bootstrap Relay", comment: ""), systemImage: "externaldrive.badge.checkmark")
+                        }
+                        .buttonStyle(.bordered)
+                    }
+
+                    Divider()
+
                     HStack(spacing: 8) {
                         TextField(NSLocalizedString("Connection address", comment: ""), text: $host)
                             .textFieldStyle(.roundedBorder)
@@ -149,6 +187,7 @@ struct RemoteRelayRoutePanel: View {
                                 Label(NSLocalizedString("Disable Connection", comment: ""), systemImage: "xmark.circle")
                             }
                             .buttonStyle(.bordered)
+                            .accessibilityLabel(Text(disableConnectionAccessibilityLabel(endpoint: settings.endpointLabel)))
                         }
                     }
                 }
@@ -176,34 +215,47 @@ struct RemoteRelayRoutePanel: View {
     @ViewBuilder
     private var relayStatus: some View {
         let settings = model.developmentRelaySettings
+        let savedConnectionStatus = settings.isEnabled
+            ? NSLocalizedString("Connection details saved", comment: "")
+            : NSLocalizedString("No connection details", comment: "")
+        let routeScopeStatus = remoteRouteScopeLabel(
+            settings: settings,
+            bootstrapSettings: model.bootstrapRelaySettings,
+            canPrepareAutomatically: model.canPrepareRemoteRelayRouteAutomatically
+        )
+        let routeScopeDetail = remoteRouteScopeDetail(
+            settings: settings,
+            bootstrapSettings: model.bootstrapRelaySettings,
+            canPrepareAutomatically: model.canPrepareRemoteRelayRouteAutomatically
+        )
+        let connectionStatus = relayConnectionLabel(model.developmentRelayConnectionStatus)
+        let connectionDetail = relayConnectionDetail(status: model.developmentRelayConnectionStatus, settings: settings)
         VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                StatusPill(
-                    text: settings.isEnabled
-                        ? NSLocalizedString("Connection details saved", comment: "")
-                        : NSLocalizedString("No connection details", comment: ""),
-                    tone: settings.isEnabled ? (settings.frameEncryptionEnabled ? .ready : .warning) : .inactive
-                )
-                Text(relayStatusText(settings: settings))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            RelayStatusRow(
+                title: NSLocalizedString("Connection Setup", comment: ""),
+                value: savedConnectionStatus,
+                detail: relayStatusText(settings: settings),
+                tone: settings.isEnabled ? (settings.frameEncryptionEnabled ? .ready : .warning) : .inactive
+            )
 
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                StatusPill(
-                    text: relayConnectionLabel(model.developmentRelayConnectionStatus),
-                    tone: relayConnectionTone(model.developmentRelayConnectionStatus, isEnabled: settings.isEnabled)
-                )
-                Text(relayConnectionDetail(status: model.developmentRelayConnectionStatus, settings: settings))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            RelayStatusRow(
+                title: NSLocalizedString("Connection route", comment: ""),
+                value: routeScopeStatus,
+                detail: routeScopeDetail,
+                tone: relayRouteScopeTone(settings: settings)
+            )
+
+            RelayStatusRow(
+                title: NSLocalizedString("Connection health", comment: ""),
+                value: connectionStatus,
+                detail: connectionDetail,
+                tone: relayConnectionTone(model.developmentRelayConnectionStatus, isEnabled: settings.isEnabled)
+            )
 
             if let diagnostic = relayConnectionDiagnostic(status: model.developmentRelayConnectionStatus) {
                 DiagnosticDisclosure(
                     title: NSLocalizedString("Technical Details", comment: ""),
+                    accessibilityContext: NSLocalizedString("Connection health", comment: ""),
                     text: diagnostic
                 )
             }
@@ -216,10 +268,27 @@ struct RemoteRelayRoutePanel: View {
                 if let diagnostic = issue.message.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty {
                     DiagnosticDisclosure(
                         title: NSLocalizedString("Technical Details", comment: ""),
+                        accessibilityContext: NSLocalizedString("Connection preparation", comment: ""),
                         text: diagnostic
                     )
                 }
             }
+        }
+    }
+
+    private func relayRouteScopeTone(settings: CompanionDevelopmentRelaySettings) -> StatusTone {
+        guard settings.isEnabled else {
+            return (model.bootstrapRelaySettings.isEnabled || model.canPrepareRemoteRelayRouteAutomatically)
+                ? .neutral
+                : .inactive
+        }
+        switch settings.hostReachabilityWarning {
+        case .none:
+            return .ready
+        case .privateNetwork:
+            return settings.allowsPrivateOverlay ? .neutral : .warning
+        case .invalidFormat, .loopback, .localName:
+            return .warning
         }
     }
 
@@ -395,11 +464,31 @@ struct RemoteRelayRoutePanel: View {
     }
 
     private func syncFromModel() {
+        let bootstrapSettings = model.bootstrapRelaySettings
+        bootstrapEndpoints = bootstrapSettings.endpoints
+        bootstrapAllocationToken = bootstrapSettings.allocationToken ?? ""
+        bootstrapAllowsPrivateOverlay = bootstrapSettings.allowsPrivateOverlay
+
         let settings = model.developmentRelaySettings
         host = settings.host
         port = settings.isEnabled ? String(settings.port) : "43171"
         relaySecret = settings.relaySecret ?? ""
         allowsPrivateOverlay = settings.allowsPrivateOverlay
+    }
+
+    private func saveBootstrapRelay() {
+        let result = model.configureBootstrapRelay(
+            endpoints: bootstrapEndpoints,
+            allocationToken: bootstrapAllocationToken,
+            allowsPrivateOverlay: bootstrapAllowsPrivateOverlay
+        )
+        syncFromModel()
+        message = relaySaveMessage(
+            for: result,
+            fallback: NSLocalizedString("Bootstrap relay saved. Generate the latest QR and scan it in AetherLink to pair or refresh connectivity.", comment: "")
+        )
+        messageTone = relaySaveTone(for: result)
+        diagnosticMessage = relaySaveDiagnostic(for: result)
     }
 
     private func relayHostWarningText(_ warning: CompanionDevelopmentRelaySettings.HostReachabilityWarning) -> String {
@@ -455,8 +544,28 @@ struct RemoteRelayRoutePanel: View {
     }
 }
 
+private struct RelayStatusRow: View {
+    let title: String
+    let value: String
+    let detail: String
+    let tone: StatusTone
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            StatusPill(text: value, tone: tone)
+            Text(detail)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(relayStatusRowAccessibilityLabel(title: title, value: value, detail: detail)))
+    }
+}
+
 private struct DiagnosticDisclosure: View {
     let title: String
+    let accessibilityContext: String
     let text: String
     @State private var isExpanded = false
 
@@ -473,7 +582,45 @@ private struct DiagnosticDisclosure: View {
                 .font(.caption.weight(.medium))
         }
         .tint(.secondary)
+        .accessibilityLabel(Text(routeDiagnosticDisclosureAccessibilityLabel(context: accessibilityContext)))
     }
+}
+
+func routeDiagnosticDisclosureAccessibilityLabel(context: String) -> String {
+    let trimmedContext = context.trimmingCharacters(in: .whitespacesAndNewlines)
+    let resolvedContext = trimmedContext.isEmpty
+        ? NSLocalizedString("Connection diagnostics", comment: "")
+        : trimmedContext
+    return String(
+        format: NSLocalizedString("Technical details for %@", comment: ""),
+        resolvedContext
+    )
+}
+
+func relayStatusRowAccessibilityLabel(title: String, value: String, detail: String) -> String {
+    let resolvedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        ?? NSLocalizedString("Connection setting", comment: "")
+    let resolvedValue = value.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        ?? NSLocalizedString("Not checked", comment: "")
+    let resolvedDetail = detail.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        ?? NSLocalizedString("No details available.", comment: "")
+    return String(
+        format: NSLocalizedString("Connection setting %@. Status %@. %@", comment: ""),
+        resolvedTitle,
+        resolvedValue,
+        resolvedDetail
+    )
+}
+
+func disableConnectionAccessibilityLabel(endpoint: String?) -> String {
+    let trimmedEndpoint = endpoint?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    let resolvedEndpoint = trimmedEndpoint.isEmpty
+        ? NSLocalizedString("saved connection", comment: "")
+        : trimmedEndpoint
+    return String(
+        format: NSLocalizedString("Disable saved connection details for %@", comment: ""),
+        resolvedEndpoint
+    )
 }
 
 func sanitizedRouteDiagnosticDisclosureText(_ diagnostic: String) -> String {

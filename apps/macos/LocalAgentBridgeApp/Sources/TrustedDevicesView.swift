@@ -97,27 +97,27 @@ private struct TrustedDeviceRow: View {
     let onRemove: () -> Void
 
     var body: some View {
+        let pairedSummary = String(
+            format: NSLocalizedString("Paired %@ · ID ending %@", comment: ""),
+            localizedCompanionDateString(from: pairedAt),
+            shortIdentifier(id)
+        )
         HStack(alignment: .center, spacing: 12) {
             Image(systemName: "person.crop.circle.badge.checkmark")
                 .font(.title3)
                 .foregroundStyle(.tint)
                 .frame(width: 28)
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(name)
                     .font(.headline)
                     .lineLimit(1)
-                Text(
-                    String(
-                        format: NSLocalizedString("Paired %@ · ID ending %@", comment: ""),
-                        companionDateFormatter.string(from: pairedAt),
-                        shortIdentifier(id)
-                    )
-                )
-                .foregroundStyle(.secondary)
-                .font(.caption)
-                .lineLimit(1)
-                .truncationMode(.middle)
+                Text(pairedSummary)
+                    .foregroundStyle(.secondary)
+                    .font(.caption)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
                 Text(
                     String(
                         format: NSLocalizedString("Key fingerprint %@", comment: ""),
@@ -129,6 +129,16 @@ private struct TrustedDeviceRow: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
             }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(
+                Text(
+                    trustedDeviceRowAccessibilityLabel(
+                        name: name,
+                        pairedSummary: pairedSummary,
+                        keyFingerprint: keyFingerprint
+                    )
+                )
+            )
 
             Spacer(minLength: 12)
 
@@ -138,6 +148,7 @@ private struct TrustedDeviceRow: View {
             .labelStyle(.titleAndIcon)
             .buttonStyle(.bordered)
             .controlSize(.small)
+            .accessibilityLabel(Text(trustedDeviceRemoveAccessibilityLabel(name: name, keyFingerprint: keyFingerprint)))
         }
     }
 }
@@ -165,5 +176,45 @@ func trustedDeviceRemovalMessage(for device: TrustedDevice?) -> String {
         format: NSLocalizedString("%@ will need to pair again before it can use AetherLink Runtime. Key fingerprint %@", comment: ""),
         name,
         keyFingerprint
+    )
+}
+
+func trustedDeviceRowAccessibilityLabel(name: String, pairedSummary: String, keyFingerprint: String) -> String {
+    let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+    let deviceName = trimmedName.isEmpty
+        ? NSLocalizedString("Selected device", comment: "")
+        : trimmedName
+    let trimmedPairedSummary = pairedSummary.trimmingCharacters(in: .whitespacesAndNewlines)
+    let resolvedPairedSummary = trimmedPairedSummary.isEmpty
+        ? NSLocalizedString("Pairing details unavailable.", comment: "")
+        : trimmedPairedSummary
+    let pairedSentence = resolvedPairedSummary
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+        .trimmingCharacters(in: CharacterSet(charactersIn: ".。"))
+    let trimmedFingerprint = keyFingerprint.trimmingCharacters(in: .whitespacesAndNewlines)
+    let fingerprint = trimmedFingerprint.isEmpty
+        ? NSLocalizedString("Unavailable", comment: "")
+        : trimmedFingerprint
+    return String(
+        format: NSLocalizedString("Trusted device %@. %@. Key fingerprint %@", comment: ""),
+        deviceName,
+        pairedSentence,
+        fingerprint
+    )
+}
+
+func trustedDeviceRemoveAccessibilityLabel(name: String, keyFingerprint: String) -> String {
+    let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+    let deviceName = trimmedName.isEmpty
+        ? NSLocalizedString("Selected device", comment: "")
+        : trimmedName
+    let trimmedFingerprint = keyFingerprint.trimmingCharacters(in: .whitespacesAndNewlines)
+    let fingerprint = trimmedFingerprint.isEmpty
+        ? NSLocalizedString("Unavailable", comment: "")
+        : trimmedFingerprint
+    return String(
+        format: NSLocalizedString("Remove trust for %@. Key fingerprint %@", comment: ""),
+        deviceName,
+        fingerprint
     )
 }

@@ -97,6 +97,8 @@ struct ContentView: View {
                         Label(NSLocalizedString("Generate New QR", comment: ""), systemImage: "arrow.triangle.2.circlepath")
                     }
                 }
+                .disabled(!canGeneratePairingQR)
+                .help(pairingQRGenerationCommandHelpText(isAvailable: canGeneratePairingQR))
             }
         }
         .onAppear {
@@ -145,6 +147,29 @@ struct ContentView: View {
             }
         )
     }
+
+    private var canGeneratePairingQR: Bool {
+        pairingQRGenerationCommandAvailable(
+            canPrepareAutomatically: model.canPrepareRemoteRelayRouteAutomatically,
+            isRouteEligibleForQRCode: model.isDevelopmentRelayRouteEligibleForQRCode
+        )
+    }
+}
+
+func pairingQRGenerationCommandAvailable(
+    canPrepareAutomatically: Bool,
+    isRouteEligibleForQRCode: Bool
+) -> Bool {
+    pairingQRGenerationAvailable(
+        canPrepareAutomatically: canPrepareAutomatically,
+        isRouteEligibleForQRCode: isRouteEligibleForQRCode
+    )
+}
+
+func pairingQRGenerationCommandHelpText(isAvailable: Bool) -> String {
+    isAvailable
+        ? NSLocalizedString("Generate Pairing QR", comment: "")
+        : NSLocalizedString("Pairing from another network needs connection details inside the pairing QR.", comment: "")
 }
 
 private struct AetherLinkAppearancePicker: View {

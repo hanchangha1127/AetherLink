@@ -15,6 +15,7 @@ USE_MOCK_BACKEND=1
 ALLOW_DIRECT_FALLBACK=0
 ALLOW_PRIVATE_RELAY=0
 EXPECT_RECONNECT=0
+REQUIRE_MANUAL_NETWORK_CONFIRMATION=0
 WORK_DIR=""
 QR_PNG_PATH=""
 PORT="${LOCAL_AGENT_BRIDGE_PORT:-}"
@@ -39,6 +40,8 @@ Requirements:
     both the runtime host and the trusted device.
   - Use script/run_allocation_relay.sh on a user-controlled public, VPN, tunnel,
     DNS, or future private-overlay route name. Do not expose Ollama or LM Studio.
+  - Relay readiness probes are marked preflight=1 so they do not persist
+    throwaway relay leases in the relay store.
 
 Options:
   --start-local-relay   Start AetherLinkRelay on the runtime host. This only proves
@@ -72,6 +75,10 @@ Options:
                         Use this for no-ADB proof that the trusted device can
                         reconnect from its saved QR route after app restart or
                         explicit reconnect.
+  --require-manual-network-confirmation
+                        Before waiting for the device, require an interactive
+                        DIFFERENT_NETWORK or CELLULAR confirmation so a local
+                        artifact run cannot be mistaken for cross-network proof.
 
 Success criteria without --emit-only:
   - Runtime reaches relay status=waiting_for_peer.
@@ -235,6 +242,10 @@ while [[ $# -gt 0 ]]; do
       EXPECT_RECONNECT=1
       shift
       ;;
+    --require-manual-network-confirmation)
+      REQUIRE_MANUAL_NETWORK_CONFIRMATION=1
+      shift
+      ;;
     -h|--help)
       usage
       exit 0
@@ -301,53 +312,18 @@ check_relay_allocation() {
   local port="$2"
   local token="$3"
   local timeout="${4:-5}"
-  python3 - "$host" "$port" "$token" "$timeout" <<'PY'
-import json
-import socket
-import sys
-import uuid
-
-host = sys.argv[1]
-port = int(sys.argv[2])
-allocation_token = sys.argv[3].strip()
-timeout = float(sys.argv[4])
-route_token = f"aetherlink-no-adb-preflight-{uuid.uuid4()}"
-prefix = "AETHERLINK_RELAY allocation "
-parts = ["AETHERLINK_RELAY", "allocate", route_token]
-if allocation_token:
-    parts.append(f"allocation_token={allocation_token}")
-
-try:
-    with socket.create_connection((host, port), timeout=timeout) as sock:
-        sock.settimeout(timeout)
-        sock.sendall((" ".join(parts) + "\n").encode("utf-8"))
-        buffer = b""
-        while not buffer.endswith(b"\n") and len(buffer) < 8192:
-            chunk = sock.recv(1024)
-            if not chunk:
-                break
-            buffer += chunk
-except OSError as error:
-    print(f"Could not allocate relay route from {host}:{port}: {error}", file=sys.stderr)
-    raise SystemExit(1)
-
-line = buffer.decode("utf-8", errors="replace").strip()
-if not line.startswith(prefix):
-    print(f"Relay {host}:{port} did not return an allocation response: {line!r}", file=sys.stderr)
-    raise SystemExit(1)
-
-try:
-    payload = json.loads(line[len(prefix):])
-except json.JSONDecodeError as error:
-    print(f"Relay {host}:{port} returned invalid allocation JSON: {error}", file=sys.stderr)
-    raise SystemExit(1)
-
-required = ["relay_id", "relay_secret", "relay_expires_at", "relay_nonce"]
-missing = [key for key in required if not payload.get(key)]
-if missing:
-    print(f"Relay {host}:{port} allocation response missing: {', '.join(missing)}", file=sys.stderr)
-    raise SystemExit(1)
-PY
+  local args=(
+    python3 script/relay_allocation_preflight.py
+    --host "$host"
+    --port "$port"
+    --timeout "$timeout"
+    --route-token-prefix aetherlink-no-adb-preflight
+    --quiet
+  )
+  if [[ -n "$token" ]]; then
+    args+=(--allocation-token "$token")
+  fi
+  "${args[@]}"
 }
 
 wait_for_log() {
@@ -509,12 +485,110 @@ TRUSTED_DEVICES_FILE="$WORK_DIR/trusted-devices.json"
 RUNTIME_IDENTITY_FILE="$WORK_DIR/runtime-identity.json"
 PAIRING_URI_FILE="$WORK_DIR/pairing-uri.txt"
 PAIRING_QR_FILE="${QR_PNG_PATH:-$WORK_DIR/pairing-qr.png}"
+SUMMARY_FILE="$WORK_DIR/summary.json"
 PORT="${PORT:-$(free_port)}"
 PAIRING_TTL_SECONDS="${PAIRING_TTL_SECONDS:-$(( TIMEOUT_SECONDS + 180 ))}"
 RUNTIME_PID=""
 RELAY_PID=""
 
+write_summary() {
+  local exit_status="${1:-0}"
+  [[ -n "${SUMMARY_FILE:-}" ]] || return 0
+  python3 - \
+    "$SUMMARY_FILE" \
+    "$exit_status" \
+    "$WORK_DIR" \
+    "$RELAY_HOST" \
+    "$RELAY_PORT" \
+    "$START_LOCAL_RELAY" \
+    "$EMIT_ONLY" \
+    "$ALLOW_PRIVATE_RELAY" \
+    "$EXPECT_RECONNECT" \
+    "$RUNTIME_LOG" \
+    "$RELAY_LOG" \
+    "$PAIRING_URI_FILE" \
+    "$PAIRING_QR_FILE" <<'PY'
+import datetime as dt
+import json
+import os
+import sys
+
+(
+    summary_path,
+    exit_status,
+    work_dir,
+    relay_host,
+    relay_port,
+    start_local_relay,
+    emit_only,
+    allow_private_relay,
+    expect_reconnect,
+    runtime_log,
+    relay_log,
+    pairing_uri_file,
+    pairing_qr_file,
+) = sys.argv[1:]
+
+def read(path):
+    try:
+        with open(path, encoding="utf-8", errors="replace") as handle:
+            return handle.read()
+    except FileNotFoundError:
+        return ""
+
+runtime_text = read(runtime_log)
+relay_text = read(relay_log)
+health_count = runtime_text.count("runtime.health")
+summary = {
+    "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+    "exit_status": int(exit_status),
+    "work_dir": work_dir,
+    "relay": {
+        "host": relay_host,
+        "port": int(relay_port),
+        "start_local_relay": start_local_relay == "1",
+        "allow_private_relay": allow_private_relay == "1",
+    },
+    "mode": {
+        "emit_only": emit_only == "1",
+        "expect_reconnect": expect_reconnect == "1",
+    },
+    "artifacts": {
+        "runtime_log": runtime_log if os.path.exists(runtime_log) else None,
+        "relay_log": relay_log if os.path.exists(relay_log) else None,
+        "pairing_uri": pairing_uri_file if os.path.exists(pairing_uri_file) else None,
+        "pairing_qr": pairing_qr_file if os.path.exists(pairing_qr_file) else None,
+    },
+    "observed": {
+        "runtime_waiting_for_peer": "relay status=waiting_for_peer" in runtime_text,
+        "relay_ready": "relay status=ready" in runtime_text,
+        "pairing_accepted": "Development pairing accepted" in runtime_text,
+        "runtime_health_count": health_count,
+        "relay_runtime_registered": "accepted role=runtime" in relay_text,
+        "relay_client_registered": "accepted role=client" in relay_text,
+    },
+}
+
+caveats = []
+if emit_only == "1":
+    caveats.append("artifact_only_emit_mode")
+if start_local_relay == "1":
+    caveats.append("local_relay_only_unless_advertised_host_is_public_vpn_tunnel_or_overlay")
+if "relay status=waiting_for_peer" in runtime_text and "relay status=ready" not in runtime_text:
+    caveats.append("runtime_reached_relay_but_trusted_device_did_not_join")
+if "relay status=ready" in runtime_text and "Development pairing accepted" not in runtime_text:
+    caveats.append("relay_matched_but_pairing_not_accepted")
+summary["caveats"] = caveats
+
+with open(summary_path, "w", encoding="utf-8") as handle:
+    json.dump(summary, handle, indent=2, sort_keys=True)
+    handle.write("\n")
+PY
+}
+
 cleanup() {
+  local exit_status=$?
+  write_summary "$exit_status" >/dev/null 2>&1 || true
   if [[ -n "$RUNTIME_PID" ]]; then
     kill "$RUNTIME_PID" >/dev/null 2>&1 || true
     wait "$RUNTIME_PID" >/dev/null 2>&1 || true
@@ -607,6 +681,7 @@ if [[ "$OPEN_QR" == "1" ]]; then
   open "$PAIRING_QR_FILE" >/dev/null 2>&1 || true
 fi
 echo "Runtime log: $RUNTIME_LOG"
+echo "Summary: $SUMMARY_FILE"
 echo "The URI file, QR image, and runtime log contain temporary pairing or relay secrets until the route expires."
 if [[ "$START_LOCAL_RELAY" == "1" ]]; then
   echo "Local relay mode generated and verified the QR artifact only."
@@ -618,6 +693,16 @@ fi
 if [[ "$EMIT_ONLY" == "1" ]]; then
   echo "Emit-only mode complete."
   exit 0
+fi
+
+if [[ "$REQUIRE_MANUAL_NETWORK_CONFIRMATION" == "1" ]]; then
+  echo "Manual network confirmation is required before waiting for the trusted device."
+  echo "Confirm that the Android device is not using the same local network path as the runtime host, and that no adb reverse/tether tunnel is being used for the relay route."
+  read -r -p "Type DIFFERENT_NETWORK or CELLULAR to continue: " NETWORK_CONFIRMATION
+  if [[ "$NETWORK_CONFIRMATION" != "DIFFERENT_NETWORK" && "$NETWORK_CONFIRMATION" != "CELLULAR" ]]; then
+    echo "Network confirmation failed; refusing to wait for a result that could be mistaken for cross-network evidence." >&2
+    exit 2
+  fi
 fi
 
 echo "Waiting up to ${TIMEOUT_SECONDS}s for relay match, pairing acceptance, and runtime.health..."

@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 import re
 import sys
+import xml.etree.ElementTree as ET
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -87,7 +88,15 @@ RULES = (
     ),
     CopyRule(
         "generic-chat-placeholder",
-        re.compile(r"\bAsk anything\b|무엇이든 부탁", re.IGNORECASE),
+        re.compile(
+            r"\b(?:Ask anything|Anything(?:\s*\.\.\.|…)?|"
+            r"Ask me anything|Message anything)\b|"
+            r"무엇이든(?:\s*(?:부탁|물어보세요|입력하세요|말해보세요))?|"
+            r"何でも(?:聞いて|入力|話して)?|"
+            r"任何(?:内容|问题|事)?|"
+            r"(?:Demandez|Posez)(?:-moi)? n[’']importe quoi",
+            re.IGNORECASE,
+        ),
         "Keep the chat composer visually quiet unless a real warning is needed.",
     ),
     CopyRule(
@@ -174,6 +183,7 @@ def target_files() -> list[Path]:
         "script/android_usb_smoke.sh",
         "script/run_runtime_dev_server.sh",
         "script/run_different_network_dev_runtime.sh",
+        "script/android_relay_reachability_probe.sh",
         "script/android_pairing_deeplink_smoke.sh",
         "script/no_adb_external_relay_pairing_smoke.sh",
         "script/run_allocation_relay.sh",
@@ -190,7 +200,7 @@ def route_diagnostics_guard_failures() -> list[str]:
     helper_signature = "@MainActor\nfunc shouldShowRouteDiagnosticsPanel(model: CompanionAppModel) -> Bool"
     helper_rule_snippets = (
         "model.hasDevelopmentRelayRoute",
-        "!model.canPrepareRemoteRelayRouteAutomatically",
+        "model.bootstrapRelaySettings.isEnabled",
         "model.remoteRoutePreparationIssue != nil",
     )
 
@@ -217,6 +227,14 @@ def route_diagnostics_guard_failures() -> list[str]:
                     f"{relative}:{line_number}: Route Diagnostics must be hidden from normal QR pairing "
                     "unless automatic remote route preparation is unavailable or a diagnostic route exists."
                 )
+
+    localization_tests_path = ROOT / "apps/macos/LocalAgentBridgeApp/Tests/AetherLinkLocalizationTests.swift"
+    localization_tests_text = localization_tests_path.read_text(encoding="utf-8", errors="replace")
+    if "testRouteDiagnosticsPanelStaysHiddenOnCleanFirstRunUntilRouteStateExists" not in localization_tests_text:
+        failures.append(
+            f"{localization_tests_path.relative_to(ROOT)}: Missing regression test that keeps "
+            "Connection Recovery hidden on clean first-run until saved route state or a route issue exists."
+        )
 
     return failures
 
@@ -330,6 +348,143 @@ def android_runtime_boundary_matcher_self_test_failures() -> list[str]:
                 "script/check_copy_hygiene.py: Android runtime-boundary matcher rejected "
                 f"safe sample {sample!r}"
             )
+
+    return failures
+
+
+def android_client_ui_resource_copy_guard_failures() -> list[str]:
+    failures: list[str] = []
+    string_paths = sorted(ROOT.glob("apps/android/app/src/main/res/values*/strings.xml"))
+    os_product_noun_re = re.compile(r"\b(?:Android|Mac|macOS|Windows|iPhone|iOS)\b")
+    direct_provider_access_re = re.compile(
+        r"\b(?:"
+        r"(?:connect|connecting|pair|pairing|load|loading|chat|chatting|send|sending|call|calling|use|using|"
+        r"reach|reaching|talk|talking)\s+(?:directly\s+)?(?:to|with|through|from)\s+(?:Ollama|LM Studio)|"
+        r"(?:connect|connecting|load|loading|chat|chatting|send|sending|call|calling|use|using)\s+"
+        r"(?:Ollama|LM Studio)|"
+        r"(?:Ollama|LM Studio)\s+(?:URL|endpoint|address|host|port|server|connection)|"
+        r"direct(?:ly)?\s+(?:from|to|with)\s+(?:Ollama|LM Studio)|"
+        r"from\s+(?:Ollama|LM Studio)\s+directly"
+        r")\b",
+        re.IGNORECASE,
+    )
+    safe_provider_context_re = re.compile(
+        r"\b(?:"
+        r"through (?:the runtime|AetherLink Runtime)|"
+        r"in AetherLink Runtime|"
+        r"via (?:the runtime|AetherLink Runtime)"
+        r")\b",
+        re.IGNORECASE,
+    )
+
+    unsafe_samples = (
+        "Open AetherLink on Android.",
+        "Open AetherLink on this Mac.",
+        "Enter the Ollama URL.",
+        "Use Ollama.",
+        "Connect directly to LM Studio.",
+        "Load models from Ollama directly.",
+    )
+    safe_samples = (
+        "Open AetherLink on this device.",
+        "Connect to the trusted runtime.",
+        "Ollama is not responding through the runtime.",
+        "Check LM Studio in AetherLink Runtime.",
+    )
+
+    for sample in unsafe_samples:
+        if not (os_product_noun_re.search(sample) or direct_provider_access_re.search(sample)):
+            failures.append(
+                "script/check_copy_hygiene.py: Android UI resource copy guard missed "
+                f"unsafe sample {sample!r}"
+            )
+    for sample in safe_samples:
+        if os_product_noun_re.search(sample):
+            failures.append(
+                "script/check_copy_hygiene.py: Android UI resource copy guard rejected "
+                f"target-neutral sample {sample!r}"
+            )
+        provider_match = direct_provider_access_re.search(sample)
+        if provider_match and not safe_provider_context_re.search(sample):
+            failures.append(
+                "script/check_copy_hygiene.py: Android UI resource copy guard rejected "
+                f"runtime-mediated provider sample {sample!r}"
+            )
+
+    for path in string_paths:
+        relative = path.relative_to(ROOT)
+        try:
+            root = ET.fromstring(path.read_text(encoding="utf-8", errors="replace"))
+        except ET.ParseError as error:
+            failures.append(f"{relative}: Android strings XML could not be parsed: {error}")
+            continue
+
+        for string_element in root.findall("string"):
+            name = string_element.attrib.get("name", "")
+            value = "".join(string_element.itertext())
+            if os_product_noun_re.search(value):
+                failures.append(
+                    f"{relative}: string {name!r} must use device, client, runtime, or runtime host wording "
+                    "instead of OS-specific product nouns."
+                )
+            provider_match = direct_provider_access_re.search(value)
+            if provider_match and not safe_provider_context_re.search(value):
+                failures.append(
+                    f"{relative}: string {name!r} must not imply direct Ollama or LM Studio access from "
+                    "the Android client; route provider access through AetherLink Runtime."
+                )
+
+    return failures
+
+
+def platform_specific_os_copy_guard_failures() -> list[str]:
+    failures: list[str] = []
+    rule = next((candidate for candidate in RULES if candidate.name == "platform-specific-os-copy"), None)
+    if rule is None:
+        return ["script/check_copy_hygiene.py: missing platform-specific-os-copy rule."]
+
+    unsafe_samples = (
+        "Scan this QR from Android.",
+        "Open AetherLink on this Mac.",
+        "Use the iPhone app to connect.",
+        "Pair from iOS.",
+        "Run the runtime on Windows.",
+        "Check macOS Settings.",
+    )
+    safe_samples = (
+        "Scan this QR from AetherLink.",
+        "Open AetherLink on this device.",
+        "Pair from a trusted device.",
+        "Run the runtime on the runtime host.",
+        "Use System appearance.",
+    )
+    app_copy_path = ROOT / "apps/android/app/src/main/res/values/strings.xml"
+    script_path = ROOT / "script/android_usb_smoke.sh"
+
+    for sample in unsafe_samples:
+        if not rule.pattern.search(sample):
+            failures.append(
+                "script/check_copy_hygiene.py: platform-specific OS copy guard missed "
+                f"unsafe sample {sample!r}"
+            )
+        if is_allowed_match(app_copy_path, sample, rule.name):
+            failures.append(
+                "script/check_copy_hygiene.py: platform-specific OS copy guard allowed "
+                f"app-facing unsafe sample {sample!r}"
+            )
+
+    for sample in safe_samples:
+        if rule.pattern.search(sample):
+            failures.append(
+                "script/check_copy_hygiene.py: platform-specific OS copy guard rejected "
+                f"target-neutral sample {sample!r}"
+            )
+
+    if not is_allowed_match(script_path, "Android device command", rule.name):
+        failures.append(
+            "script/check_copy_hygiene.py: platform-specific OS copy guard should allow "
+            "developer diagnostic scripts to name concrete platforms."
+        )
 
     return failures
 
@@ -565,12 +720,39 @@ def android_chat_history_danger_guard_failures() -> list[str]:
     failures: list[str] = []
     ui_path = ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/ui/ClientScreens.kt"
     test_path = ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/AppNavigationTest.kt"
+    compose_test_path = ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt"
     ui_relative = ui_path.relative_to(ROOT)
     test_relative = test_path.relative_to(ROOT)
+    compose_test_relative = compose_test_path.relative_to(ROOT)
     ui_text = ui_path.read_text(encoding="utf-8", errors="replace")
     test_text = test_path.read_text(encoding="utf-8", errors="replace")
+    compose_test_text = compose_test_path.read_text(encoding="utf-8", errors="replace")
 
     required_ui_snippets = (
+        (
+            "archiveActionContentDescription = stringResource(R.string.archive_chat_named, title)",
+            "Per-chat archive buttons must include the chat title in their accessibility label.",
+        ),
+        (
+            "restoreActionContentDescription = stringResource(R.string.restore_chat_named, title)",
+            "Per-chat restore buttons must include the chat title in their accessibility label.",
+        ),
+        (
+            "permanentlyDeleteActionContentDescription =\n        stringResource(R.string.permanently_delete_chat_named, title)",
+            "Per-chat permanent delete buttons must include the chat title in their accessibility label.",
+        ),
+        (
+            "contentDescription = archiveActionContentDescription",
+            "Archive button semantics must use the contextual chat-title label.",
+        ),
+        (
+            "contentDescription = restoreActionContentDescription",
+            "Restore button semantics must use the contextual chat-title label.",
+        ),
+        (
+            "contentDescription = permanentlyDeleteActionContentDescription",
+            "Permanent delete button semantics must use the contextual chat-title label.",
+        ),
         (
             "var showBulkActions by rememberSaveable { mutableStateOf(false) }",
             "Bulk chat-history actions must stay collapsed until the user opens Manage all chats.",
@@ -580,16 +762,41 @@ def android_chat_history_danger_guard_failures() -> list[str]:
             "Bulk archive/delete controls must stay hidden behind the Manage all chats expander.",
         ),
         (
+            "stateDescription = bulkActionsStateDescription",
+            "Manage all chats must expose expanded/collapsed state to accessibility.",
+        ),
+        (
             "bulkArchiveConfirmStep.value = 1",
             "Archive-all must open the two-step confirmation dialog before acting.",
+        ),
+        (
+            "onClick = {\n"
+            "                            hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)\n"
+            "                            bulkArchiveConfirmStep.value = 1\n"
+            "                        },",
+            "Archive-all must open confirmation with lightweight haptic feedback.",
         ),
         (
             "bulkDeleteConfirmStep.value = 1",
             "Permanent bulk delete must open the two-step confirmation dialog before acting.",
         ),
         (
+            "onClick = {\n"
+            "                            hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)\n"
+            "                            bulkDeleteConfirmStep.value = 1\n"
+            "                        },",
+            "Permanent bulk delete must open confirmation with lightweight haptic feedback.",
+        ),
+        (
             "deleteConfirmStep.value = 1",
             "Single permanent delete must open the two-step confirmation dialog before acting.",
+        ),
+        (
+            "onClick = {\n"
+            "                            hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)\n"
+            "                            deleteConfirmStep.value = 1\n"
+            "                        },",
+            "Single permanent delete must open confirmation with lightweight haptic feedback.",
         ),
         (
             "archive_all_chats_confirm_first",
@@ -658,6 +865,20 @@ def android_chat_history_danger_guard_failures() -> list[str]:
                 f"{test_relative}: Missing Android chat-history danger-action regression test {snippet}."
             )
 
+    required_compose_test_snippets = (
+        'onNodeWithContentDescription("Archive chat Active project chat", useUnmergedTree = true)',
+        'onNodeWithContentDescription("Restore chat Archived project chat", useUnmergedTree = true)',
+        'onNodeWithContentDescription("Permanently delete chat Archived project chat", useUnmergedTree = true)',
+        "settingsScreenPerChatHistoryActionsUseConfirmationHaptics",
+        "assertEquals(listOf(HapticFeedbackType.TextHandleMove), hapticFeedback.events)",
+        "assertEquals(\n            listOf(HapticFeedbackType.TextHandleMove, HapticFeedbackType.LongPress),",
+    )
+    for snippet in required_compose_test_snippets:
+        if snippet not in compose_test_text:
+            failures.append(
+                f"{compose_test_relative}: Missing per-chat contextual accessibility regression {snippet}."
+            )
+
     return failures
 
 
@@ -689,27 +910,23 @@ def android_chat_model_menu_guard_failures() -> list[str]:
         ),
         (
             "onSelectEmbeddingModel = viewModel::selectEmbeddingModel",
-            "Chat top-bar model menu must stay wired to the persisted embedding-model selector.",
-        ),
-        (
-            "onSelectEmbeddingModel: (String?) -> Unit",
-            "Chat top-bar model menu must accept embedding-model selection separately from chat model selection.",
-        ),
-        (
-            "EmbeddingModelMenuItem(",
-            "Chat top-bar model menu must keep a visible Memory indexing model section.",
-        ),
-        (
-            "embeddingModelMenuModels(",
-            "Embedding models must stay filtered separately from chat models.",
+            "Settings must stay wired to the persisted embedding-model selector.",
         ),
         (
             "modelMenuSearchAvailable(state.models)",
-            "Model-menu search must stay available when embedding or installable chat models are present.",
+            "Chat model-menu search must stay available when searchable chat models are present.",
         ),
         (
-            "embeddingModelMenuEmptyTextRes(",
-            "Embedding-model empty states must distinguish search misses from unavailable models.",
+            "chatModelMenuItemSemanticsModifier(",
+            "Chat model rows must keep accessibility state semantics.",
+        ),
+        (
+            "!model.installed && !installing -> R.string.install_model",
+            "Uninstalled chat model rows must expose the install action as accessibility state.",
+        ),
+        (
+            "text = stringResource(R.string.install_model)",
+            "Uninstalled chat model rows must show a visible install action cue.",
         ),
         (
             "val selectedModel = chatModelMenuModels(state.models)\n        .firstOrNull { it.id == state.selectedModelId }",
@@ -728,8 +945,29 @@ def android_chat_model_menu_guard_failures() -> list[str]:
         if snippet not in main_text:
             failures.append(f"{main_relative}: {guidance}")
 
+    if main_text.count("onSelectEmbeddingModel = viewModel::selectEmbeddingModel") != 1:
+        failures.append(
+            f"{main_relative}: Embedding model selection must be reachable only through Settings, not the Chat top bar."
+        )
+    forbidden_top_bar_snippets = (
+        "EmbeddingModelMenuItem(",
+        "embeddingModelMenuModels(",
+        "embeddingModelMenuEmptyTextRes(",
+    )
+    for snippet in forbidden_top_bar_snippets:
+        if snippet in main_text:
+            failures.append(
+                f"{main_relative}: Chat top-bar model picker must not render or own embedding-model selection ({snippet})."
+            )
+
+    if "onSelectEmbeddingModel: (String?) -> Unit" not in ui_text:
+        failures.append(f"{ui_relative}: Settings must keep an embedding-model selection callback.")
     if "R.string.model_status_value" not in ui_text:
         failures.append(f"{ui_relative}: Embedding model row status copy must be formatted through localized resources.")
+    if "selectedEmbeddingModelRowModifier(selected)" not in ui_text:
+        failures.append(f"{ui_relative}: Settings embedding model rows must keep selected-state accessibility semantics.")
+    if "selectedPreferenceOptionState(selected, selectedStateDescription)" not in ui_text:
+        failures.append(f"{ui_relative}: Settings language and appearance rows must keep selected-state accessibility semantics.")
 
     required_viewmodel_snippets = (
         (
@@ -759,10 +997,7 @@ def android_chat_model_menu_guard_failures() -> list[str]:
             failures.append(f"{relative}: Model provider/status rows must not hard-code a dash-formatted status string.")
 
     required_test_snippets = (
-        "embeddingModelMenuShowsOnlyInstalledLocalEmbeddingModelsAndPinsSelection",
-        "embeddingModelMenuSearchMatchesModelIdentityProviderAndSource",
-        "modelMenuSearchStaysAvailableForEmbeddingOrInstallableChatModels",
-        "embeddingModelMenuEmptyTextDistinguishesSearchFromUnavailableModels",
+        "chatModelMenuSearchAvailabilityUsesChatModelsOnly",
         "chatModelPickerClosedLabelIgnoresProviderManagedChatModel",
         "assertEquals(null, chatModelPickerFallbackDisplayName(state))",
         "chat-unknown-source",
@@ -787,7 +1022,14 @@ def android_chat_model_menu_guard_failures() -> list[str]:
 
     required_compose_test_snippets = (
         "appTopBarKeepsNavigationModelPickerAndNewChatChrome",
+        "chatTopBarModelPickerExposesSelectedRowsToAccessibility",
+        "chatTopBarModelPickerExposesInstallActionForUninstalledLocalChatModel",
+        'hasStateDescription("Install model")',
+        "settingsPreferenceRowsExposeSelectedStateToAccessibility",
+        "settingsEmbeddingModelRowsExposeSelectedStateToAccessibility",
         "chatTopBarModelPickerStatusLineUsesLocalizedResources",
+        'assertNoVisibleText("Memory indexing model")',
+        'assertNoVisibleText("Nomic Embed Text")',
         "Ollama - Installé",
     )
     for snippet in required_compose_test_snippets:
@@ -823,6 +1065,8 @@ def android_suggested_question_guard_failures() -> list[str]:
         ".filter { seen.add(it.lowercase(Locale.ROOT)) }",
         "val visibleSuggestions = normalizedSuggestedQuestions(suggestions)",
         "normalizedSuggestedQuestions(suggestions).isNotEmpty() || isLoadingSuggestions",
+        "suggestionContentDescription = stringResource(R.string.content_desc_suggested_question, text)",
+        "contentDescription = suggestionContentDescription",
     )
     for snippet in required_ui_snippets:
         if snippet not in ui_text:
@@ -836,8 +1080,26 @@ def android_suggested_question_guard_failures() -> list[str]:
         if snippet not in test_text:
             failures.append(f"{test_relative}: Missing suggested-question helper regression {snippet}.")
 
-    if "chatScreenNormalizesSuggestedQuestionChips" not in compose_test_text:
-        failures.append(f"{compose_test_relative}: Missing suggested-question Compose rendering regression.")
+    required_compose_snippets = (
+        "chatScreenNormalizesSuggestedQuestionChips",
+        "Suggested question: Summarize again?",
+    )
+    for snippet in required_compose_snippets:
+        if snippet not in compose_test_text:
+            failures.append(f"{compose_test_relative}: Missing suggested-question Compose rendering regression {snippet}.")
+
+    if "CHAT_MESSAGE_LIST_TEST_TAG" not in ui_text:
+        failures.append(f"{ui_relative}: Missing stable chat list test tag for jump-to-latest coverage.")
+
+    required_jump_to_latest_snippets = (
+        "chatScreenJumpToLatestAppearsAfterScrollingAwayAndReturnsToLatestMessage",
+        "CHAT_MESSAGE_LIST_TEST_TAG",
+        "performScrollToIndex(messages.lastIndex)",
+        'onNodeWithContentDescription("Jump to latest message")',
+    )
+    for snippet in required_jump_to_latest_snippets:
+        if snippet not in compose_test_text:
+            failures.append(f"{compose_test_relative}: Missing chat jump-to-latest Compose regression {snippet}.")
 
     return failures
 
@@ -866,11 +1128,12 @@ def android_chat_pairing_empty_state_guard_failures() -> list[str]:
     required_ui_snippets = (
         "state.trustedRuntime == null -> stringResource(R.string.chat_hint_pairing)",
         "state.trustedRuntime == null -> stringResource(R.string.empty_chat_pairing_title)",
-        "state.trustedRuntime == null -> stringResource(R.string.empty_chat_pairing)",
+        "state.trustedRuntime == null -> R.string.empty_chat_pairing",
         "val canEditComposer = chatComposerCanEdit(state)",
         "internal fun chatComposerCanEdit(state: RuntimeUiState): Boolean",
         "chatComposerShouldShowStatus(",
         "internal fun chatComposerShouldShowStatus(",
+        "internal fun chatEmptyTextRes(state: RuntimeUiState, preferQrRouteRefresh: Boolean = false): Int",
         "state.trustedRuntime != null",
         "internal fun chatEmptyScanActionLabelRes(state: RuntimeUiState): Int",
     )
@@ -910,13 +1173,96 @@ def android_chat_pairing_empty_state_guard_failures() -> list[str]:
     return failures
 
 
+def android_trusted_runtime_forget_guard_failures() -> list[str]:
+    failures: list[str] = []
+    ui_path = ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/ui/ClientScreens.kt"
+    compose_test_path = ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt"
+    strings_path = ROOT / "apps/android/app/src/main/res/values/strings.xml"
+
+    for path in (ui_path, compose_test_path, strings_path):
+        if not path.exists():
+            failures.append(f"{path.relative_to(ROOT)}: missing Android trusted-runtime forget guard file.")
+            return failures
+
+    ui_text = ui_path.read_text(encoding="utf-8", errors="replace")
+    compose_test_text = compose_test_path.read_text(encoding="utf-8", errors="replace")
+    strings_text = strings_path.read_text(encoding="utf-8", errors="replace")
+    ui_relative = ui_path.relative_to(ROOT)
+    compose_test_relative = compose_test_path.relative_to(ROOT)
+    strings_relative = strings_path.relative_to(ROOT)
+
+    required_ui_snippets = (
+        (
+            "var showForgetConfirmation by rememberSaveable { mutableStateOf(false) }",
+            "Trusted runtime forget must keep a transient confirmation state.",
+        ),
+        (
+            "if (trustedRuntime != null && showForgetConfirmation) {",
+            "Trusted runtime forget confirmation must only show for an existing trusted runtime.",
+        ),
+        (
+            "title = { Text(stringResource(R.string.forget_trusted_runtime_confirm_title)) }",
+            "Trusted runtime forget dialog title must use localized copy.",
+        ),
+        (
+            "hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Toggle)\n"
+            "                        showForgetConfirmation = false",
+            "Trusted runtime forget cancel must use lightweight feedback without invoking the action.",
+        ),
+        (
+            "hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Destructive)\n"
+            "                        showForgetConfirmation = false\n"
+            "                        onForgetTrustedRuntime()",
+            "Trusted runtime forget must only invoke the action from the destructive confirmation.",
+        ),
+        (
+            "onClick = {\n"
+            "                        hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)\n"
+            "                        showForgetConfirmation = true\n"
+            "                    },",
+            "Trusted runtime forget button must open the confirmation with lightweight feedback instead of invoking directly.",
+        ),
+    )
+    for snippet, guidance in required_ui_snippets:
+        if snippet not in ui_text:
+            failures.append(f"{ui_relative}: {guidance}")
+
+    required_test_snippets = (
+        "settingsTrustedRuntimeForgetRequiresConfirmation",
+        'compose.onNodeWithText("Forget trusted runtime?").assertIsDisplayed()',
+        'compose.onNodeWithText("Cancel").performClick()',
+        'compose.onNodeWithText("Forget runtime").performClick()',
+        "assertEquals(0, forgetClicks)",
+        "assertEquals(1, forgetClicks)",
+        "assertEquals(listOf(HapticFeedbackType.TextHandleMove), hapticFeedback.events)",
+        "assertEquals(listOf(HapticFeedbackType.LongPress), hapticFeedback.events)",
+    )
+    for snippet in required_test_snippets:
+        if snippet not in compose_test_text:
+            failures.append(f"{compose_test_relative}: Missing trusted-runtime forget regression {snippet}.")
+
+    required_string_snippets = (
+        "forget_trusted_runtime_confirm_title",
+        "forget_trusted_runtime_confirm_message",
+        "forget_trusted_runtime_confirm_action",
+    )
+    for snippet in required_string_snippets:
+        if snippet not in strings_text:
+            failures.append(f"{strings_relative}: Missing trusted-runtime forget confirmation string {snippet}.")
+
+    return failures
+
+
 def android_haptic_guard_failures() -> list[str]:
     failures: list[str] = []
     main_path = ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/MainActivity.kt"
     ui_path = ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/ui/ClientScreens.kt"
     test_path = ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/AppNavigationTest.kt"
+    compose_test_path = ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt"
+    scanner_test_path = ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/PairingQrScannerChromeNoDeviceComposeTest.kt"
+    strings_path = ROOT / "apps/android/app/src/main/res/values/strings.xml"
 
-    for path in (main_path, ui_path, test_path):
+    for path in (main_path, ui_path, test_path, compose_test_path, scanner_test_path, strings_path):
         if not path.exists():
             failures.append(f"{path.relative_to(ROOT)}: missing Android haptic contract file.")
             return failures
@@ -924,9 +1270,15 @@ def android_haptic_guard_failures() -> list[str]:
     main_text = main_path.read_text(encoding="utf-8")
     ui_text = ui_path.read_text(encoding="utf-8")
     test_text = test_path.read_text(encoding="utf-8")
+    compose_test_text = compose_test_path.read_text(encoding="utf-8")
+    scanner_test_text = scanner_test_path.read_text(encoding="utf-8")
+    strings_text = strings_path.read_text(encoding="utf-8")
     main_relative = main_path.relative_to(ROOT)
     ui_relative = ui_path.relative_to(ROOT)
     test_relative = test_path.relative_to(ROOT)
+    compose_test_relative = compose_test_path.relative_to(ROOT)
+    scanner_test_relative = scanner_test_path.relative_to(ROOT)
+    strings_relative = strings_path.relative_to(ROOT)
 
     required_main_snippets = (
         (
@@ -944,6 +1296,14 @@ def android_haptic_guard_failures() -> list[str]:
             "Drawer new-chat action must keep a primary-action haptic.",
         ),
         (
+            "chatSessionOptionsContentDescription = stringResource(R.string.chat_session_more_named, title)",
+            "Drawer chat-session overflow buttons must include the chat title in their accessibility label.",
+        ),
+        (
+            "contentDescription = chatSessionOptionsContentDescription",
+            "Drawer chat-session overflow buttons must use the contextual chat-title label.",
+        ),
+        (
             "hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.SelectionChange)\n"
             "                onSelectDestination(AppDestination.Chat)",
             "Permanent navigation rail chat selection must keep selection haptic.",
@@ -954,9 +1314,44 @@ def android_haptic_guard_failures() -> list[str]:
             "Chat rename menu action must keep primary-action haptic.",
         ),
         (
-            "hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Destructive)\n"
+            "hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)\n"
             "                                onArchiveChatSession(session)",
-            "Chat archive action must keep destructive haptic.",
+            "Chat archive action must use lightweight feedback because archive is reversible.",
+        ),
+        (
+            "internal fun PairingQrScannerChrome(",
+            "QR scanner chrome must stay testable without opening CameraX.",
+        ),
+        (
+            "hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Toggle)\n"
+            "                                onTorchToggle()",
+            "QR scanner flashlight toggle must keep toggle haptic.",
+        ),
+        (
+            "PAIRING_QR_FLASHLIGHT_BUTTON_TEST_TAG",
+            "QR scanner flashlight button must keep a stable no-device test tag.",
+        ),
+        (
+            "stateDescription = torchStateDescription",
+            "QR scanner flashlight button must expose on/off state to accessibility.",
+        ),
+        (
+            "qr_scanner_flashlight_state_on",
+            "QR scanner flashlight state must use localized on copy.",
+        ),
+        (
+            "qr_scanner_flashlight_state_off",
+            "QR scanner flashlight state must use localized off copy.",
+        ),
+        (
+            "hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)\n"
+            "                        onRequestCameraPermission()",
+            "QR scanner permission action must keep primary-action haptic.",
+        ),
+        (
+            "hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Toggle)\n"
+            "                            onCancel()",
+            "QR scanner cancel actions must use lightweight feedback.",
         ),
     )
     for snippet, guidance in required_main_snippets:
@@ -974,6 +1369,14 @@ def android_haptic_guard_failures() -> list[str]:
             "Attachment button must keep a primary-action haptic.",
         ),
         (
+            "attachFilesStateDescription",
+            "Attachment button must keep an accessibility state description.",
+        ),
+        (
+            "stateDescription = attachFilesStateDescription",
+            "Attachment button must expose readiness or disabled reason to accessibility.",
+        ),
+        (
             "hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Destructive)\n"
             "                            onCancel()",
             "Cancel-generation button must keep destructive haptic.",
@@ -989,9 +1392,38 @@ def android_haptic_guard_failures() -> list[str]:
             "Suggested-question chips must keep primary-action haptic.",
         ),
         (
+            "hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)\n"
+            "                        actionHandler()",
+            "Connection route notice cards must keep primary-action haptic.",
+        ),
+        (
+            "runtimeRouteNotice(state, state.trustedRuntime)?.action == RouteNoticePrimaryAction.ScanLatestQr",
+            "Settings trusted-runtime primary action must follow route-refresh QR guidance before stale endpoints.",
+        ),
+        (
+            "RouteNoticePrimaryAction.ScanLatestQr -> onScanLatestQr()",
+            "Settings trusted-runtime primary action must open the latest-QR scanner when route refresh is required.",
+        ),
+        (
             "hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Destructive)\n"
             "                    onRemoveAttachment(attachment.id)",
             "Attachment removal must keep destructive haptic.",
+        ),
+        (
+            "attachmentContentDescription = stringResource(",
+            "Attachment chips must build contextual accessibility labels with file state.",
+        ),
+        (
+            "contentDescription = attachmentContentDescription",
+            "Attachment chips must expose file name and state to accessibility.",
+        ),
+        (
+            "stateDescription = attachmentStateDescription",
+            "Attachment chips must expose document or vision-required state to accessibility.",
+        ),
+        (
+            "stateDescription = attachmentTypeDescription",
+            "Read-only message attachment chips must expose document or image state to accessibility.",
         ),
         (
             "hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Clipboard)",
@@ -1003,8 +1435,60 @@ def android_haptic_guard_failures() -> list[str]:
             "Expandable Settings sections must keep toggle haptic.",
         ),
         (
+            "stateDescription = toggleStateDescription",
+            "Expandable Settings sections must expose expanded/collapsed state to accessibility.",
+        ),
+        (
+            "val toggleContentDescription = stringResource(title)",
+            "Endpoint diagnostics expander must expose the section title as its accessibility label.",
+        ),
+        (
+            "modifier = Modifier.clearAndSetSemantics {}",
+            "Endpoint diagnostics expander must hide the nested icon button from accessibility.",
+        ),
+        (
+            "stateDescription = autoReconnectStateDescription",
+            "Auto reconnect switch must expose localized on/off state to accessibility.",
+        ),
+        (
+            "stateDescription = diagnosticsStateDescription",
+            "Connection troubleshooting switch must expose localized on/off state to accessibility.",
+        ),
+        (
+            "discoveredRuntimeActionContentDescription = stringResource(",
+            "Discovered runtime actions must build contextual accessibility labels.",
+        ),
+        (
+            "contentDescription = discoveredRuntimeActionContentDescription",
+            "Discovered runtime action buttons must include the runtime name in their accessibility label.",
+        ),
+        (
+            "settingsSectionExpandedStateDescriptionRes()",
+            "Expandable Settings sections must use localized expanded state copy.",
+        ),
+        (
             "shouldPerformSelectionChangeHaptic(selected)",
             "Model/preference selection rows must avoid duplicate haptics for already selected items.",
+        ),
+        (
+            "memoryToggleContentDescription = stringResource(",
+            "Memory enable/pause switches must include the memory text in their accessibility label.",
+        ),
+        (
+            "memoryRemoveContentDescription = stringResource(R.string.memory_remove_named, memoryActionLabel)",
+            "Memory remove buttons must include the memory text in their accessibility label.",
+        ),
+        (
+            "onClick = {\n"
+            "                    hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)\n"
+            "                    showDeleteConfirmation.value = true\n"
+            "                },\n"
+            "                enabled = actionsEnabled,",
+            "Memory remove buttons must open confirmation with lightweight haptic feedback.",
+        ),
+        (
+            "stateDescription = memoryStateDescription",
+            "Memory enable/pause switches must expose enabled/paused state to accessibility.",
         ),
     )
     for snippet, guidance in required_ui_snippets:
@@ -1019,6 +1503,134 @@ def android_haptic_guard_failures() -> list[str]:
     for snippet in required_test_snippets:
         if snippet not in test_text:
             failures.append(f"{test_relative}: Missing Android haptic policy regression test {snippet}.")
+
+    required_compose_test_snippets = (
+        "connectionStatusSavedRouteNoticeClickConnectsWithHaptic",
+        "connectionStatusRefreshNeededRouteNoticeClickScansLatestQrWithHaptic",
+        "settingsExpiredRelayRoutePrimaryActionScansLatestQrWithHaptic",
+        "settingsConnectedTrustedRuntimeDoesNotExposePairingConnectButton",
+        "connectionStatusRefreshHealthActionUsesActionCopyAndCallback",
+        "Refresh health",
+        "settingsExpandableSectionsExposeLocalizedExpandedState",
+        "Chat options for Trip plan",
+        "Chat Trip plan. 3 messages - Needs attention.",
+        "Selected chat One note. 1 message.",
+        "chatScreenAttachmentChipsExposeFileStateToAccessibility",
+        "chatScreenAttachmentSizeUsesSelectedAppLanguageContext",
+        "Formatter.formatFileSize(localizedContext, attachment.sizeBytes)",
+        "chatScreenMessageAttachmentChipsExposeFileStateToAccessibility",
+        "Attachment diagram.png, Vision model required",
+        "Attachment diagram.png, Image",
+        "settingsMemoryRowsExposeContextualActionAccessibility",
+        "settingsAutoReconnectSwitchExposesAccessibilityState",
+        "settingsDiscoveredRuntimeActionsUseContextualAccessibilityLabels",
+        "settingsScreenKeepsBulkChatHistoryActionsHiddenAndTwoStepConfirmed",
+        "settingsScreenKeepsEndpointInputsBehindDeveloperDiagnosticsSwitch",
+        "chatScreenStreamingShowsCancelActionInsteadOfSend",
+        "hasStateDescription(\"Ready to attach files.\")",
+        "hasStateDescription(\"Select a model before sending.\")",
+        "hasStateDescription(\"Wait for the current response or cancel it.\")",
+        "onAllNodesWithContentDescription(\"Send message\").assertCountEquals(0)",
+        "HapticFeedbackType.LongPress",
+        "hasContentDescription(\"Connection troubleshooting\") and",
+        "hasStateDescription(\"Collapsed\") and",
+        "SemanticsProperties.Role, Role.Button",
+        "hasText(\"Manage all chats\") and hasStateDescription(\"Collapsed\")",
+        "hasText(\"Manage all chats\") and hasStateDescription(\"Expanded\")",
+        "Pause memory Project Alpha prefers concise Korean summaries",
+        "Enable memory Use metric units for travel planning",
+        "Remove memory Project Alpha prefers concise Korean summaries",
+        'compose.onNodeWithText("Cancel").performClick()',
+        'compose.onNodeWithText("Delete").performClick()',
+        "assertEquals(1, removeClicks)",
+    )
+    for snippet in required_compose_test_snippets:
+        if snippet not in compose_test_text:
+            failures.append(f"{compose_test_relative}: Missing Android haptic Compose regression test {snippet}.")
+
+    required_string_snippets = (
+        'name="attach_files_state_ready"',
+        'name="attach_files_state_unavailable"',
+        'name="chat_session_row_summary"',
+        'name="chat_session_row_summary_selected"',
+    )
+    for snippet in required_string_snippets:
+        if snippet not in strings_text:
+            failures.append(f"{strings_relative}: Missing Android attachment action accessibility string {snippet}.")
+
+    required_scanner_test_snippets = (
+        "PairingQrScannerChromeNoDeviceComposeTest",
+        "scannerChromeShowsPermissionStateWithoutCameraPreview",
+        "scannerChromeShowsCameraStateWithTorchAndCancelActions",
+        "HapticFeedbackType.TextHandleMove, HapticFeedbackType.TextHandleMove",
+        "hasStateDescription(\"Flashlight off\")",
+        "hasStateDescription(\"Flashlight on\")",
+    )
+    for snippet in required_scanner_test_snippets:
+        if snippet not in scanner_test_text:
+            failures.append(f"{scanner_test_relative}: Missing QR scanner chrome no-device regression {snippet}.")
+
+    return failures
+
+
+def android_physical_chat_smoke_guard_failures() -> list[str]:
+    failures: list[str] = []
+    path = ROOT / "script/android_pairing_deeplink_smoke.sh"
+    relative = path.relative_to(ROOT)
+    text = path.read_text(encoding="utf-8", errors="replace")
+    required_snippets = (
+        (
+            "--expect-chat-cancel",
+            "Physical pairing smoke must keep the optional chat/cancel UI path.",
+        ),
+        (
+            "--live-backend",
+            "Physical pairing smoke must keep the optional real Ollama/LM Studio runtime path.",
+        ),
+        (
+            "LOCAL_AGENT_BRIDGE_MOCK_BACKEND=1",
+            "Physical pairing smoke must keep mock backend opt-in rather than forcing Android toward model providers.",
+        ),
+        (
+            "AETHERLINK_DEV_MOCK_CHUNK_DELAY_MS=5000",
+            "Physical chat/cancel smoke must slow the dev mock stream enough for cancel.",
+        ),
+        (
+            "--chat-delta-timeout",
+            "Physical live-backend smoke must allow longer first-token waits.",
+        ),
+        (
+            "--probe-external-relay-from-device",
+            "Physical external-relay smoke must keep the Android-device route reachability probe.",
+        ),
+        (
+            "script/android_relay_reachability_probe.sh",
+            "Physical external-relay smoke must probe relay reachability from the Android device before QR injection when requested.",
+        ),
+        (
+            'tap_content_description "Message"',
+            "Physical chat/cancel smoke must tap the accessibility-labelled chat input.",
+        ),
+        (
+            'tap_content_description "Send message"',
+            "Physical chat/cancel smoke must tap the accessibility-labelled send control.",
+        ),
+        (
+            'tap_content_description "Cancel generation"',
+            "Physical chat/cancel smoke must tap the accessibility-labelled cancel control.",
+        ),
+        (
+            'wait_for_log "$RUNTIME_LOG" "chat.cancel"',
+            "Physical chat/cancel smoke must verify chat.cancel reaches the runtime.",
+        ),
+        (
+            'wait_for_log "$RUNTIME_LOG" "chat.done"',
+            "Physical chat/cancel smoke must verify the runtime closes the streamed chat lifecycle.",
+        ),
+    )
+    for snippet, guidance in required_snippets:
+        if snippet not in text:
+            failures.append(f"{relative}: {guidance}")
 
     return failures
 
@@ -1299,6 +1911,61 @@ def macos_remote_qr_lease_guard_failures() -> list[str]:
     return failures
 
 
+def macos_pairing_qr_accessibility_guard_failures() -> list[str]:
+    failures: list[str] = []
+    view_path = ROOT / "apps/macos/LocalAgentBridgeApp/Sources/PairingView.swift"
+    test_path = ROOT / "apps/macos/LocalAgentBridgeApp/Tests/AetherLinkLocalizationTests.swift"
+
+    if not view_path.exists() or not test_path.exists():
+        failures.append("macOS Pairing QR accessibility guard files are missing.")
+        return failures
+
+    view_text = view_path.read_text(encoding="utf-8", errors="replace")
+    test_text = test_path.read_text(encoding="utf-8", errors="replace")
+    view_relative = view_path.relative_to(ROOT)
+    test_relative = test_path.relative_to(ROOT)
+
+    required_view_snippets = (
+        (
+            ".accessibilityValue(Text(pairingQRCodeAccessibilityValue(isExpired: isExpired)))",
+            "Pairing QR image must expose active vs expired state through accessibility value.",
+        ),
+        (
+            ".accessibilityHint(Text(pairingQRCodeAccessibilityHint()))",
+            "Pairing QR image must explain that the QR verifies AetherLink Runtime and carries connection details.",
+        ),
+        (
+            "func pairingQRCodeAccessibilityValue(isExpired: Bool) -> String",
+            "Pairing QR accessibility value must stay testable without rendering SwiftUI.",
+        ),
+        (
+            "func pairingQRCodeAccessibilityHint() -> String",
+            "Pairing QR accessibility hint must stay testable without rendering SwiftUI.",
+        ),
+    )
+    for snippet, guidance in required_view_snippets:
+        if snippet not in view_text:
+            failures.append(f"{view_relative}: {guidance}")
+
+    required_test_snippets = (
+        "testToolbarAndMenuPairingQRGenerationUsesSharedAvailabilityContract",
+        "pairingQRGenerationCommandAvailable(",
+        "testCompanionDateFormattingUsesSelectedAppLanguage",
+        "localizedCompanionDateString(from:",
+        "testCompanionByteCountFormattingUsesSelectedAppLanguage",
+        "localizedCompanionByteCountString(fromByteCount:",
+        "testPairingQRCodeAccessibilityCopyUsesSelectedLanguageAndState",
+        "Scan this QR from AetherLink.",
+        "Pairing QR expired. Generate a new QR.",
+        "This QR verifies AetherLink Runtime and includes connection details for pairing or refresh.",
+    )
+    for snippet in required_test_snippets:
+        if snippet not in test_text:
+            failures.append(f"{test_relative}: Missing macOS Pairing QR accessibility regression {snippet}.")
+
+    return failures
+
+
 def macos_suggested_question_guard_failures() -> list[str]:
     failures: list[str] = []
     router_path = ROOT / "apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift"
@@ -1477,8 +2144,60 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate coverage summary must mention Android raw visible-string localization coverage.",
         ),
         (
+            "platform-neutral app copy guard",
+            "Default no-device gate coverage summary must mention platform-neutral app copy coverage.",
+        ),
+        (
+            "RuntimeClientViewModelTest.identityOnlyPairingQrTimesOutWhenNoDiscoveryRouteAppears",
+            "Default no-device quality gate must run the identity-only QR discovery timeout regression.",
+        ),
+        (
+            "identity-only QR discovery timeout",
+            "Default no-device gate coverage summary must mention identity-only QR timeout coverage.",
+        ),
+        (
+            "macOS raw SwiftUI visible-string localization guard",
+            "Default no-device gate coverage summary must mention macOS raw visible-string localization coverage.",
+        ),
+        (
+            "Android native language picker labels",
+            "Default no-device gate coverage summary must mention Android native language-picker labels.",
+        ),
+        (
+            "AetherLinkThemeNoDeviceComposeTest",
+            "Default no-device gate must run the Android app theme-path regression.",
+        ),
+        (
+            "PairingQrScannerChromeNoDeviceComposeTest",
+            "Default no-device gate must run the Android QR scanner chrome regression.",
+        ),
+        (
+            "Android QR scanner permission/torch/cancel chrome",
+            "Default no-device gate coverage summary must mention Android QR scanner chrome coverage.",
+        ),
+        (
+            "QR scanner torch state accessibility",
+            "Default no-device gate coverage summary must mention QR scanner flashlight state accessibility.",
+        ),
+        (
+            "Android app System/Light/Dark theme path",
+            "Default no-device gate coverage summary must mention Android app theme-path coverage.",
+        ),
+        (
             "Android app top-bar shell chrome",
             "Default no-device gate coverage summary must mention Android app top-bar shell coverage.",
+        ),
+        (
+            "Android chat top-bar install action cue",
+            "Default no-device gate coverage summary must mention Android chat top-bar install action cue coverage.",
+        ),
+        (
+            "Android drawer chat options contextual accessibility",
+            "Default no-device gate coverage summary must mention drawer chat options contextual accessibility.",
+        ),
+        (
+            "Android drawer chat row accessibility summaries",
+            "Default no-device gate coverage summary must mention drawer chat row accessibility summaries.",
         ),
         (
             "Android QR-first chat empty state",
@@ -1492,10 +2211,330 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Android composer readiness hint",
             "Default no-device gate coverage summary must mention Android composer readiness hint coverage.",
         ),
+        (
+            "Android composer attach action accessibility state",
+            "Default no-device gate coverage summary must mention Android composer attach action accessibility coverage.",
+        ),
+        (
+            "Android streaming cancel Compose action",
+            "Default no-device gate coverage summary must mention Android streaming cancel Compose action coverage.",
+        ),
+        (
+            "Android attachment chip accessibility state",
+            "Default no-device gate coverage summary must mention Android attachment chip accessibility coverage.",
+        ),
+        (
+            "Android message attachment accessibility state",
+            "Default no-device gate coverage summary must mention Android message attachment accessibility coverage.",
+        ),
+        (
+            "Android suggested-question accessibility labels",
+            "Default no-device gate coverage summary must mention Android suggested-question accessibility labels.",
+        ),
+        (
+            "Android jump-to-latest Compose interaction",
+            "Default no-device gate coverage summary must mention Android jump-to-latest Compose interaction coverage.",
+        ),
+        (
+            "Settings expandable section accessibility state",
+            "Default no-device gate coverage summary must mention Settings expandable section accessibility coverage.",
+        ),
+        (
+            "Settings diagnostic endpoint expander accessibility state",
+            "Default no-device gate coverage summary must mention Settings diagnostic endpoint expander accessibility state.",
+        ),
+        (
+            "Settings connection switch state accessibility",
+            "Default no-device gate coverage summary must mention Settings connection switch accessibility coverage.",
+        ),
+        (
+            "Settings discovered route contextual action accessibility",
+            "Default no-device gate coverage summary must mention Settings discovered route contextual action accessibility.",
+        ),
+        (
+            "Settings memory contextual action accessibility",
+            "Default no-device gate coverage summary must mention Settings memory contextual action accessibility.",
+        ),
+        (
+            "Settings memory destructive confirmation haptic timing",
+            "Default no-device gate coverage summary must mention Settings memory destructive confirmation haptic timing.",
+        ),
+        (
+            "chat history destructive confirmation haptic timing",
+            "Default no-device gate coverage summary must mention chat-history destructive confirmation haptic timing.",
+        ),
+        (
+            "confirmation-open lightweight haptic timing",
+            "Default no-device gate coverage summary must mention confirmation-open lightweight haptic timing.",
+        ),
+        (
+            "Settings expired-route primary QR action",
+            "Default no-device gate coverage summary must mention Settings expired-route primary QR action coverage.",
+        ),
+        (
+            "Android connected Settings redundant-connect guard",
+            "Default no-device gate coverage summary must mention the connected Settings redundant-connect guard.",
+        ),
+        (
+            "macOS global QR generation availability gate",
+            "Default no-device gate coverage summary must mention macOS global QR command availability coverage.",
+        ),
+        (
+            "macOS app-language date formatting",
+            "Default no-device gate coverage summary must mention macOS app-language date formatting coverage.",
+        ),
+        (
+            "macOS app-language byte-count formatting",
+            "Default no-device gate coverage summary must mention macOS app-language byte-count formatting coverage.",
+        ),
+        (
+            "Android attachment size locale formatting",
+            "Default no-device gate coverage summary must mention Android attachment size locale formatting coverage.",
+        ),
+        (
+            "Android trusted-runtime forget confirmation",
+            "Default no-device gate coverage summary must mention trusted-runtime forget confirmation coverage.",
+        ),
+        (
+            "chat history per-chat contextual action accessibility",
+            "Default no-device gate coverage summary must mention chat-history contextual action accessibility.",
+        ),
+        (
+            "chat history bulk expander accessibility state",
+            "Default no-device gate coverage summary must mention chat-history bulk expander accessibility state.",
+        ),
+        (
+            "macOS five-language system/light/dark detail render smoke",
+            "Default no-device gate coverage summary must mention macOS five-language system/light/dark render-smoke coverage.",
+        ),
+        (
+            "macOS first-run diagnostics hiding",
+            "Default no-device gate coverage summary must mention macOS first-run diagnostics hiding.",
+        ),
+        (
+            "macOS Pairing QR accessibility state",
+            "Default no-device gate coverage summary must mention macOS Pairing QR accessibility state.",
+        ),
+        (
+            "macOS trusted-device remove accessibility labels",
+            "Default no-device gate coverage summary must mention macOS trusted-device remove accessibility labels.",
+        ),
+        (
+            "macOS trusted-device row accessibility labels",
+            "Default no-device gate coverage summary must mention macOS trusted-device row accessibility labels.",
+        ),
+        (
+            "macOS trusted-device removal confirmation localization",
+            "Default no-device gate coverage summary must mention macOS trusted-device removal confirmation localization.",
+        ),
+        (
+            "macOS connection disable accessibility label",
+            "Default no-device gate coverage summary must mention macOS connection disable accessibility label coverage.",
+        ),
+        (
+            "macOS provider technical-details accessibility labels",
+            "Default no-device gate coverage summary must mention macOS provider technical-details accessibility labels.",
+        ),
+        (
+            "macOS provider status pill accessibility labels",
+            "Default no-device gate coverage summary must mention macOS provider status pill accessibility labels.",
+        ),
+        (
+            "macOS runtime overview accessibility labels",
+            "Default no-device gate coverage summary must mention macOS runtime overview accessibility labels.",
+        ),
+        (
+            "macOS status card accessibility labels",
+            "Default no-device gate coverage summary must mention macOS status card accessibility labels.",
+        ),
+        (
+            "macOS model row accessibility labels",
+            "Default no-device gate coverage summary must mention macOS model row accessibility labels.",
+        ),
+        (
+            "macOS relay status row accessibility labels",
+            "Default no-device gate coverage summary must mention macOS relay status row accessibility labels.",
+        ),
+        (
+            "macOS route diagnostic technical-details accessibility labels",
+            "Default no-device gate coverage summary must mention macOS route diagnostic technical-details accessibility labels.",
+        ),
+        (
+            "macOS readiness row accessibility labels",
+            "Default no-device gate coverage summary must mention macOS readiness row accessibility labels.",
+        ),
+        (
+            "Android refresh-health action copy",
+            "Default no-device gate coverage summary must mention Android refresh-health action copy.",
+        ),
+        (
+            "including Connection Recovery",
+            "Default no-device gate coverage summary must mention macOS Connection Recovery render coverage.",
+        ),
+        (
+            "macOS native language picker labels",
+            "Default no-device gate coverage summary must mention macOS native language-picker labels.",
+        ),
+        (
+            "LocalRuntimeMessageRouterTests/testCompanionAppModelStartRenewsSavedBootstrapRelayRouteBeforeRelayStart",
+            "Default no-device gate must run the bootstrap relay start-renewal regression.",
+        ),
+        (
+            "LocalRuntimeMessageRouterTests/testCompanionAppModelRenewsBootstrapRelayRouteAfterRelayFailure",
+            "Default no-device gate must run the bootstrap relay failure-renewal regression.",
+        ),
+        (
+            "LocalRuntimeMessageRouterTests/testCompanionAppModelPersistsBootstrapAllocationLeaseForRestoredQRCode",
+            "Default no-device gate must run the restored-QR bootstrap lease persistence regression.",
+        ),
+        (
+            "LocalRuntimeMessageRouterTests/testCompanionAppModelRegeneratesBootstrapQRCodeWithExpiredSavedLease",
+            "Default no-device gate must run the expired bootstrap lease QR regeneration regression.",
+        ),
+        (
+            "LocalRuntimeMessageRouterTests/testCompanionAppModelRequiresRemoteQRCodeForLoopbackSavedRelayHost",
+            "Default no-device gate must run the loopback saved relay QR rejection regression.",
+        ),
+        (
+            "LocalRuntimeMessageRouterTests/testCompanionAppModelAllowsEnvironmentPrivateOverlayRelayButWaitsForLease",
+            "Default no-device gate must run the private-overlay lease-wait regression.",
+        ),
+        (
+            "LocalRuntimeMessageRouterTests/testCompanionAppModelWaitsForLeaseBeforeUsingCGNATPrivateOverlayRelayQRCode",
+            "Default no-device gate must run the CGNAT private-overlay lease-wait regression.",
+        ),
+        (
+            "remote relay lease renewal and QR eligibility",
+            "Default no-device gate coverage summary must mention remote relay lease renewal and QR eligibility coverage.",
+        ),
+        (
+            "LocalRuntimeMessageRouterTests/testChatSendDoesNotCompactShortConversation",
+            "Default no-device gate must run the short-chat runtime compaction regression.",
+        ),
+        (
+            "LocalRuntimeMessageRouterTests/testChatSendCompactsOlderTurnsBeforeBackendRequestWhenContextIsLarge",
+            "Default no-device gate must run the oversized-chat runtime compaction regression.",
+        ),
+        (
+            "LocalRuntimeMessageRouterTests/testChatSendCompactionKeepsRuntimeMemoryAndCapabilityGuardSeparate",
+            "Default no-device gate must run the runtime context separation compaction regression.",
+        ),
+        (
+            "heuristic runtime chat context compaction",
+            "Default no-device gate coverage summary must mention runtime chat context compaction coverage.",
+        ),
     )
     for snippet, guidance in required_snippets:
         if snippet not in gate_text:
             failures.append(f"{gate_path.relative_to(ROOT)}: {guidance}")
+
+    return failures
+
+
+def macos_runtime_compaction_guard_failures() -> list[str]:
+    failures: list[str] = []
+    router_path = ROOT / "apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift"
+    tests_path = ROOT / "apps/macos/CompanionCore/Tests/LocalRuntimeMessageRouterTests.swift"
+
+    if not router_path.exists() or not tests_path.exists():
+        return ["macOS runtime compaction guard files are missing."]
+
+    router_text = router_path.read_text(encoding="utf-8", errors="replace")
+    tests_text = tests_path.read_text(encoding="utf-8", errors="replace")
+    router_snippets = (
+        (
+            "chatRequestWithRuntimeConversationCompaction(request)",
+            "chat.send must keep runtime-side conversation compaction before backend.chat.",
+        ),
+        (
+            "runtimeConversationCompactionPrefix = \"Runtime conversation summary:\"",
+            "Runtime compaction must keep a recognizable backend-only summary prefix.",
+        ),
+        (
+            "messages.filter { !$0.isRuntimeConversationCompactionContext }",
+            "Runtime compaction must strip stale client-supplied compaction summaries before rebuilding context.",
+        ),
+        (
+            "runtimeConversationCompactionRecentTurnCount",
+            "Runtime compaction must preserve recent conversation turns verbatim.",
+        ),
+    )
+    for snippet, guidance in router_snippets:
+        if snippet not in router_text:
+            failures.append(f"{router_path.relative_to(ROOT)}: {guidance}")
+
+    test_snippets = (
+        "testChatSendDoesNotCompactShortConversation",
+        "testChatSendCompactsOlderTurnsBeforeBackendRequestWhenContextIsLarge",
+        "testChatSendCompactionKeepsRuntimeMemoryAndCapabilityGuardSeparate",
+    )
+    for snippet in test_snippets:
+        if snippet not in tests_text:
+            failures.append(
+                f"{tests_path.relative_to(ROOT)}: missing runtime compaction regression {snippet}."
+            )
+
+    return failures
+
+
+def macos_render_smoke_guard_failures() -> list[str]:
+    failures: list[str] = []
+    render_test_path = ROOT / "apps/macos/LocalAgentBridgeApp/Tests/AetherLinkRenderSmokeTests.swift"
+
+    if not render_test_path.exists():
+        failures.append("apps/macos/LocalAgentBridgeApp/Tests/AetherLinkRenderSmokeTests.swift is missing.")
+        return failures
+
+    render_test_text = render_test_path.read_text(encoding="utf-8")
+    required_snippets = (
+        (
+            "testPrimaryCompanionSurfacesRenderAtMinimumDetailSizeAcrossLanguagesAndAppearances",
+            "macOS primary surface render smoke must run across all supported languages and appearances.",
+        ),
+        (
+            "for language in AetherLinkAppLanguage.allCases",
+            "macOS render smoke must iterate every supported launch language.",
+        ),
+        (
+            "for appearance in AetherLinkAppAppearance.pickerOptions",
+            "macOS render smoke must iterate System, Light, and Dark appearances from the app picker options.",
+        ),
+        (
+            "withStoredPreferences(language: language, appearance: appearance)",
+            "macOS render smoke must apply the language and appearance preference before rendering detail surfaces.",
+        ),
+        (
+            ".environment(\\.locale, Locale(identifier: language.localeIdentifier))",
+            "macOS render smoke must render detail surfaces with the selected locale.",
+        ),
+        (
+            'label: "\\(name) \\(language.rawValue) \\(appearance.rawValue)"',
+            "macOS render smoke failures must identify surface, language, and appearance.",
+        ),
+        (
+            '("StatusView", AnyView(StatusView(model: model)))',
+            "macOS render smoke must include StatusView.",
+        ),
+        (
+            '("PairingView", AnyView(PairingView(model: model)))',
+            "macOS render smoke must include PairingView.",
+        ),
+        (
+            '("RemoteRelayRoutePanel", AnyView(RemoteRelayRoutePanel(model: model)))',
+            "macOS render smoke must include Advanced Connection Setup / Connection Recovery.",
+        ),
+        (
+            '("TrustedDevicesView", AnyView(TrustedDevicesView(model: model)))',
+            "macOS render smoke must include TrustedDevicesView.",
+        ),
+        (
+            '("LogsView", AnyView(LogsView(model: model)))',
+            "macOS render smoke must include LogsView.",
+        ),
+    )
+    for snippet, guidance in required_snippets:
+        if snippet not in render_test_text:
+            failures.append(f"{render_test_path.relative_to(ROOT)}: {guidance}")
 
     return failures
 
@@ -1515,8 +2554,28 @@ def android_string_parity_guard_failures() -> list[str]:
             "Android string parity must keep the raw Compose visible-string regex guard.",
         ),
         (
+            "for match in RAW_COMPOSE_VISIBLE_LITERAL_RE.finditer(text)",
+            "Android raw Compose visible-string guard must scan multiline Kotlin source text.",
+        ),
+        (
+            'text.count("\\n", 0, match.start()) + 1',
+            "Android raw Compose visible-string guard must report line numbers from multiline matches.",
+        ),
+        (
             "check_no_raw_compose_visible_literals",
             "Android string parity must scan Kotlin UI sources for raw visible/accessibility strings.",
+        ),
+        (
+            "raw_compose_visible_literal_matcher_self_test_failures",
+            "Android raw Compose visible-string guard must keep inline matcher self-tests.",
+        ),
+        (
+            "multiline Text named argument",
+            "Android raw Compose visible-string matcher self-test must cover multiline named Text arguments.",
+        ),
+        (
+            "multiline Button positional text",
+            "Android raw Compose visible-string matcher self-test must cover multiline Button text.",
         ),
         (
             "raw Compose visible-string guards",
@@ -1526,6 +2585,132 @@ def android_string_parity_guard_failures() -> list[str]:
     for snippet, guidance in required_snippets:
         if snippet not in parity_text:
             failures.append(f"{parity_path.relative_to(ROOT)}: {guidance}")
+
+    return failures
+
+
+def macos_localization_script_guard_failures() -> list[str]:
+    failures: list[str] = []
+    localization_path = ROOT / "script/check_macos_localization.py"
+
+    if not localization_path.exists():
+        failures.append("script/check_macos_localization.py is missing.")
+        return failures
+
+    localization_text = localization_path.read_text(encoding="utf-8", errors="replace")
+    required_snippets = (
+        (
+            "RAW_SWIFTUI_VISIBLE_LITERAL_RE",
+            "macOS localization must keep the raw SwiftUI visible-string regex guard.",
+        ),
+        (
+            "for match in RAW_SWIFTUI_VISIBLE_LITERAL_RE.finditer(text)",
+            "macOS raw SwiftUI visible-string guard must scan multiline Swift source text.",
+        ),
+        (
+            'text.count("\\n", 0, match.start()) + 1',
+            "macOS raw SwiftUI visible-string guard must report line numbers from multiline matches.",
+        ),
+        (
+            "check_no_raw_swiftui_visible_literals",
+            "macOS localization must scan SwiftUI sources for raw visible strings.",
+        ),
+        (
+            "raw_swiftui_visible_literal_matcher_self_test_failures",
+            "macOS raw SwiftUI visible-string guard must keep inline matcher self-tests.",
+        ),
+        (
+            "trustedDeviceRowAccessibilityLabel(",
+            "macOS localization guard must require contextual trusted-device row accessibility labels.",
+        ),
+        (
+            "Trusted device %@. %@. Key fingerprint %@",
+            "macOS localization guard must require the trusted-device row accessibility localization key.",
+        ),
+        (
+            "trustedDeviceRemoveAccessibilityLabel(name: name, keyFingerprint: keyFingerprint)",
+            "macOS localization guard must require contextual trusted-device remove button accessibility labels.",
+        ),
+        (
+            "Remove trust for %@. Key fingerprint %@",
+            "macOS localization guard must require the trusted-device remove accessibility localization key.",
+        ),
+        (
+            "logTechnicalDetailsAccessibilityLabel(summary: display.summary)",
+            "macOS localization guard must require contextual Activity technical-details accessibility labels.",
+        ),
+        (
+            "Technical details for %@",
+            "macOS localization guard must require the Activity technical-details accessibility localization key.",
+        ),
+        (
+            "providerStatusTechnicalDetailsAccessibilityLabel(providerName: status.name)",
+            "macOS localization guard must require contextual provider technical-details accessibility labels.",
+        ),
+        (
+            "routeDiagnosticDisclosureAccessibilityLabel(context: accessibilityContext)",
+            "macOS localization guard must require contextual route diagnostic technical-details accessibility labels.",
+        ),
+        (
+            "Connection diagnostics",
+            "macOS localization guard must require the route diagnostic technical-details fallback key.",
+        ),
+        (
+            "relayStatusRowAccessibilityLabel(title: title, value: value, detail: detail)",
+            "macOS localization guard must require grouped connection status row accessibility labels.",
+        ),
+        (
+            "Connection setting %@. Status %@. %@",
+            "macOS localization guard must require the connection status row accessibility localization key.",
+        ),
+        (
+            "readinessRowAccessibilityLabel(",
+            "macOS localization guard must require contextual readiness row accessibility labels.",
+        ),
+        (
+            "Readiness %@. Status %@. %@",
+            "macOS localization guard must require the readiness row accessibility localization key.",
+        ),
+        (
+            "runtimeOverviewAccessibilityLabel(",
+            "macOS localization guard must require contextual runtime overview accessibility labels.",
+        ),
+        (
+            "Runtime overview %@. Status %@. %@ %@",
+            "macOS localization guard must require the runtime overview accessibility localization key.",
+        ),
+        (
+            "statusCardAccessibilityLabel(",
+            "macOS localization guard must require contextual Status card accessibility labels.",
+        ),
+        (
+            "Status %@. Current state %@. %@",
+            "macOS localization guard must require the Status card accessibility localization key.",
+        ),
+        (
+            "modelRowAccessibilityLabel(",
+            "macOS localization guard must require contextual model row accessibility labels.",
+        ),
+        (
+            "Model %@. ID %@. Type %@. Provider %@. Source %@. State %@. Size %@",
+            "macOS localization guard must require the model row accessibility localization key.",
+        ),
+        (
+            "Model provider",
+            "macOS localization guard must require the provider technical-details accessibility fallback key.",
+        ),
+        (
+            "multiline Text",
+            "macOS raw SwiftUI visible-string matcher self-test must cover multiline Text.",
+        ),
+        (
+            "multiline alert",
+            "macOS raw SwiftUI visible-string matcher self-test must cover multiline alert text.",
+        ),
+    )
+    for snippet, guidance in required_snippets:
+        if snippet not in localization_text:
+            failures.append(f"{localization_path.relative_to(ROOT)}: {guidance}")
 
     return failures
 
@@ -1594,10 +2779,31 @@ def main() -> int:
             print(f" - {failure}", file=sys.stderr)
         return 1
 
+    macos_render_smoke_failures = macos_render_smoke_guard_failures()
+    if macos_render_smoke_failures:
+        print("macOS render smoke guard failed:", file=sys.stderr)
+        for failure in macos_render_smoke_failures:
+            print(f" - {failure}", file=sys.stderr)
+        return 1
+
     android_string_parity_failures = android_string_parity_guard_failures()
     if android_string_parity_failures:
         print("Android string parity guard failed:", file=sys.stderr)
         for failure in android_string_parity_failures:
+            print(f" - {failure}", file=sys.stderr)
+        return 1
+
+    macos_localization_script_failures = macos_localization_script_guard_failures()
+    if macos_localization_script_failures:
+        print("macOS localization script guard failed:", file=sys.stderr)
+        for failure in macos_localization_script_failures:
+            print(f" - {failure}", file=sys.stderr)
+        return 1
+
+    platform_os_copy_failures = platform_specific_os_copy_guard_failures()
+    if platform_os_copy_failures:
+        print("Platform-specific OS copy guard failed:", file=sys.stderr)
+        for failure in platform_os_copy_failures:
             print(f" - {failure}", file=sys.stderr)
         return 1
 
@@ -1629,6 +2835,13 @@ def main() -> int:
             print(f" - {failure}", file=sys.stderr)
         return 1
 
+    macos_pairing_qr_accessibility_failures = macos_pairing_qr_accessibility_guard_failures()
+    if macos_pairing_qr_accessibility_failures:
+        print("macOS Pairing QR accessibility guard failed:", file=sys.stderr)
+        for failure in macos_pairing_qr_accessibility_failures:
+            print(f" - {failure}", file=sys.stderr)
+        return 1
+
     macos_suggested_question_failures = macos_suggested_question_guard_failures()
     if macos_suggested_question_failures:
         print("macOS suggested-question guard failed:", file=sys.stderr)
@@ -1640,6 +2853,13 @@ def main() -> int:
     if macos_chat_store_corruption_failures:
         print("macOS chat-store corruption guard failed:", file=sys.stderr)
         for failure in macos_chat_store_corruption_failures:
+            print(f" - {failure}", file=sys.stderr)
+        return 1
+
+    macos_runtime_compaction_failures = macos_runtime_compaction_guard_failures()
+    if macos_runtime_compaction_failures:
+        print("macOS runtime compaction guard failed:", file=sys.stderr)
+        for failure in macos_runtime_compaction_failures:
             print(f" - {failure}", file=sys.stderr)
         return 1
 
@@ -1661,6 +2881,13 @@ def main() -> int:
     if android_runtime_boundary_matcher_failures:
         print("Android runtime boundary matcher self-test failed:", file=sys.stderr)
         for failure in android_runtime_boundary_matcher_failures:
+            print(f" - {failure}", file=sys.stderr)
+        return 1
+
+    android_client_ui_copy_failures = android_client_ui_resource_copy_guard_failures()
+    if android_client_ui_copy_failures:
+        print("Android client UI resource copy guard failed:", file=sys.stderr)
+        for failure in android_client_ui_copy_failures:
             print(f" - {failure}", file=sys.stderr)
         return 1
 
@@ -1699,10 +2926,24 @@ def main() -> int:
             print(f" - {failure}", file=sys.stderr)
         return 1
 
+    android_trusted_runtime_forget_failures = android_trusted_runtime_forget_guard_failures()
+    if android_trusted_runtime_forget_failures:
+        print("Android trusted-runtime forget guard failed:", file=sys.stderr)
+        for failure in android_trusted_runtime_forget_failures:
+            print(f" - {failure}", file=sys.stderr)
+        return 1
+
     android_haptic_failures = android_haptic_guard_failures()
     if android_haptic_failures:
         print("Android haptic guard failed:", file=sys.stderr)
         for failure in android_haptic_failures:
+            print(f" - {failure}", file=sys.stderr)
+        return 1
+
+    android_physical_chat_smoke_failures = android_physical_chat_smoke_guard_failures()
+    if android_physical_chat_smoke_failures:
+        print("Android physical chat/cancel smoke guard failed:", file=sys.stderr)
+        for failure in android_physical_chat_smoke_failures:
             print(f" - {failure}", file=sys.stderr)
         return 1
 

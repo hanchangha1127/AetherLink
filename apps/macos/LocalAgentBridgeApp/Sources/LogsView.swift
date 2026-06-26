@@ -65,6 +65,7 @@ private struct LogRow: View {
                         Text(NSLocalizedString("Technical Details", comment: ""))
                             .font(.caption.weight(.medium))
                     }
+                    .accessibilityLabel(Text(logTechnicalDetailsAccessibilityLabel(summary: display.summary)))
                     .tint(.secondary)
                 }
             }
@@ -312,6 +313,15 @@ func localizedLogDisplay(_ line: String) -> LogDisplay {
             diagnostic: line
         )
     }
+}
+
+func logTechnicalDetailsAccessibilityLabel(summary: String) -> String {
+    let normalizedSummary = summary.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        ?? NSLocalizedString("Runtime event recorded.", comment: "")
+    return String(
+        format: NSLocalizedString("Technical details for %@", comment: ""),
+        normalizedSummary
+    )
 }
 
 private func detail(after prefix: String, in line: String) -> String? {

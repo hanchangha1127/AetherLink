@@ -27,15 +27,15 @@ enum AetherLinkAppLanguage: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .english:
-            return NSLocalizedString("English", comment: "")
+            return "English"
         case .korean:
-            return NSLocalizedString("Korean", comment: "")
+            return "한국어"
         case .japanese:
-            return NSLocalizedString("Japanese", comment: "")
+            return "日本語"
         case .simplifiedChinese:
-            return NSLocalizedString("Simplified Chinese", comment: "")
+            return "简体中文"
         case .french:
-            return NSLocalizedString("French", comment: "")
+            return "Français"
         }
     }
 
