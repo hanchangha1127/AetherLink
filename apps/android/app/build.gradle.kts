@@ -19,6 +19,11 @@ android {
     buildFeatures {
         buildConfig = true
     }
+
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+        unitTests.isIncludeAndroidResources = true
+    }
 }
 
 dependencies {
@@ -27,6 +32,10 @@ dependencies {
     implementation(project(":core:pairing"))
 
     implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.camera.camera2)
+    implementation(libs.androidx.camera.core)
+    implementation(libs.androidx.camera.lifecycle)
+    implementation(libs.androidx.camera.view)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.foundation)
     implementation(libs.androidx.compose.material.icons)
@@ -37,10 +46,17 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.lifecycle.viewmodel.ktx)
-    implementation(libs.google.play.services.code.scanner)
+    implementation(libs.google.mlkit.barcode.scanning)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.serialization.json)
     debugImplementation(libs.androidx.compose.ui.tooling)
 
+    testImplementation(platform(libs.androidx.compose.bom))
+    testImplementation(libs.androidx.compose.ui.test.junit4)
+    testImplementation(libs.androidx.test.core)
+    testImplementation(libs.androidx.test.ext.junit)
     testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.robolectric)
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
 }

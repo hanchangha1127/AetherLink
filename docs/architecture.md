@@ -1,6 +1,6 @@
 # AetherLink Architecture
 
-AetherLink is a local-first AI companion built around a client device and a runtime host. The runtime host owns execution and backend access. The client device controls the session and renders the UI. The current v0.1 implementation targets an Android client and a macOS runtime.
+AetherLink is a local-first AI companion built around a client device and a runtime host. The runtime host owns execution and backend access. The client device controls the session and renders the UI. The current v0.1 implementation has mobile-client and desktop-runtime targets.
 
 ## System Shape
 
@@ -11,7 +11,7 @@ Client Device
   Model picker
   Chat UI
   Local chat cache
-  User-managed local memory notes
+  Runtime-owned user memory notes
   Cancel control
         |
         | authenticated JSON protocol over replaceable transport
@@ -50,7 +50,7 @@ Target connection order:
 
 Future peer discovery can use a DHT-like or bootstrap-peer layer, but only as a privacy-preserving rendezvous fabric for paired identities. Where practical, rendezvous should be distributed or decentralized rather than pinned to one fixed service. Bootstrap peers may help a client and runtime host find each other's short-lived reachability records, but they must not become accounts, a directory of public runtime hosts, a backend URL registry, a cloud control plane, or an authority that grants trust. Trust comes only from QR pairing, pinned peer identity, challenge-response authentication, and the encrypted session.
 
-Current implementation status: the code has the identity-first connection target and v0.1 direct endpoint hint boundary, but remote connectivity pieces are still placeholders. It does not implement real NAT traversal, signaling, encrypted relay transport, or production end-to-end transport encryption yet. Today, direct endpoint hints are still selected for the existing local TCP transport. They are candidates, not durable product addresses. The current Android resolver wires Bonjour/local discovery results and explicitly selected local/dev endpoints into route candidates before stale trusted last-known endpoint hints; that slice is still same-network/local-direct only, not real remote P2P or NAT traversal.
+Current implementation status: the code has the identity-first connection target, a v0.1 direct endpoint hint boundary, and a temporary outbound TCP relay path for development different-network testing. It does not implement real NAT traversal, decentralized signaling, hardened relay allocation, or production end-to-end transport encryption yet. Direct endpoint hints remain diagnostics/local fast paths, not durable product addresses. The current client resolver wires QR-provisioned relay material, Bonjour/local discovery results, USB/emulator forwarding, and explicitly selected local/dev endpoints into route candidates, but it no longer promotes stale trusted last-known private IPs as automatic reconnect routes.
 
 Bonjour/local discovery route candidates should carry minimal routing hints when available. The preferred hint is a pairing-derived `route_token` that the client learned from QR pairing; stable device id and fingerprint TXT values are legacy/development fallbacks rather than the production privacy target. The client may automatically route a trusted runtime identity only to discovered endpoints whose hints match the pinned trusted runtime record. Discovered endpoints without identity metadata are local/dev/manual reachability candidates only; they must not be treated as automatic trusted-identity matches.
 
@@ -66,23 +66,23 @@ Fixed IP entry, manual host/port entry, `127.0.0.1:43170`, USB reverse, and raw 
 
 | Capability | Current Status | Implementation Notes |
 | --- | --- | --- |
-| Client persistent keypair | Implemented | Android uses a persistent client identity and signs runtime challenges. |
-| Runtime persistent keypair | Partially implemented | The macOS runtime can create a Keychain-backed P-256 identity key and expose its public key/fingerprint in QR pairing metadata. Production encrypted transport still needs to bind sessions to this key. |
+| Client persistent keypair | Implemented | The client uses a persistent client identity and signs runtime challenges. |
+| Runtime persistent keypair | Partially implemented | The current desktop runtime can create a Keychain-backed P-256 identity key and expose its public key/fingerprint in QR pairing metadata. Production encrypted transport still needs to bind sessions to this key. |
 | QR trusted-device pairing | Implemented for v0.1 | QR pairing creates a trusted client/runtime record and can carry runtime public-key metadata, identity-first route data, remote-route material, and optional development endpoint hints. |
 | Runtime command authentication | Implemented for v0.1 | Runtime commands are rejected until pairing and challenge-response authentication succeed. |
-| Local direct endpoint hints | Implemented as development/local fast path | USB reverse, emulator, Bonjour/local discovery, pairing QR host/port, and manual diagnostics can produce direct TCP route candidates. This is the current v0.1 local/dev route, not the intended final connection design or a solution for unrelated networks. |
+| Local direct endpoint hints | Implemented as development/local fast path | USB reverse, emulator, Bonjour/local discovery, explicitly scoped diagnostic QR host/port, and manual diagnostics can produce direct TCP route candidates. These hints are not persisted as normal trusted reconnect routes and are not a solution for unrelated networks. |
 | Identity-first reconnect | Partially implemented | The client treats paired runtime identity as the primary target and starts local discovery when restoring a trusted runtime, even if a stable endpoint is not available. |
 | Route-token matched local discovery | Partially implemented | Bonjour/local discovery can advertise a pairing-derived route token; the client only auto-routes discovered runtimes whose route hints match the trusted runtime record. |
 | Production encrypted transport | Not implemented | The active transport remains development TCP. TLS or Noise-style encryption bound to paired identities is required. |
-| Remote P2P NAT traversal | Interface scaffolded, transport not implemented | `PeerToPeer` route candidates and connector injection are modeled so a future NAT traversal transport can be attempted by the same connection manager. Android transport connectors return a common framed `RuntimeProtocolChannel`, so a future P2P connector can feed the same protocol stream as direct TCP. Actual STUN-like address discovery, authenticated hole punching, replay protection, and session-key binding to paired identities are not implemented. |
+| Remote P2P NAT traversal | Interface scaffolded, transport not implemented | `PeerToPeer` route candidates and connector injection are modeled so a future NAT traversal transport can be attempted by the same connection manager. Client transport connectors return a common framed `RuntimeProtocolChannel`, so a future P2P connector can feed the same protocol stream as direct TCP. Actual STUN-like address discovery, authenticated hole punching, replay protection, and session-key binding to paired identities are not implemented. |
 | DHT/bootstrap peer discovery | Not implemented | Future bootstrap or DHT-like discovery may publish only short-lived rendezvous records derived from paired-device secrets. It must not expose stable public runtime directories or backend URLs. |
 | Signaling service | Not implemented | Future signaling may exchange only reachability metadata, never AI protocol payloads. |
-| Encrypted blind relay/TURN fallback | Interface scaffolded, transport not implemented | `Relay` route candidates and fallback connector injection are modeled so a future blind relay transport can be attempted after direct/P2P paths fail and return the same `RuntimeProtocolChannel` abstraction. No relay allocation, forwarding, or production encryption exists yet. |
-| QR-only normal onboarding | In progress | Normal UX is QR/trusted-runtime oriented and must support different-network route bootstrap through overlay/rendezvous/relay material. Compatibility paths still preserve host/port hints for v0.1 development and diagnostics. |
+| Encrypted blind relay/TURN fallback | Development relay implemented, production relay not complete | `Relay` route candidates, a QR-provisioned TCP relay client, relay allocation, and AES-GCM frame-body encryption exist for development testing. It is not yet the production blind relay/TURN design, and NAT traversal plus hardened session encryption remain future work. |
+| QR-only normal onboarding | In progress | Normal UX is QR/trusted-runtime oriented and must support different-network route bootstrap through overlay/rendezvous/relay material. Compatibility paths keep host/port hints only for explicit development diagnostics. |
 
 ## Future Platform Shape
 
-The v0.1 implementation starts with one companion runtime target and one client target. The long-term product direction is broader:
+The v0.1 implementation starts with one runtime target and one client target. The long-term product direction is broader:
 
 - Runtime host targets: macOS first, then Windows and DGX OS-class AI workstations or servers.
 - Client device targets: Android first, then iOS.
@@ -92,7 +92,7 @@ The invariant stays the same as platforms expand: client apps are controllers, a
 
 ## Runtime Host
 
-The runtime host is responsible for the following. In v0.1, this role is implemented by the macOS companion runtime:
+The runtime host is responsible for the following. In v0.1, this role is implemented by AetherLink Runtime:
 
 - Starting the local runtime transport.
 - Managing local direct, remote P2P, and encrypted relay/TURN-style connectivity through a replaceable connection manager.
@@ -100,7 +100,7 @@ The runtime host is responsible for the following. In v0.1, this role is impleme
 - Checking runtime health.
 - Listing models through backend adapters.
 - Listing embedding models separately from chat/text-generation models.
-- Returning installed backend models exactly as backend adapters report them, including Ollama cloud models from `/api/tags` and LM Studio local models from the runtime-host-side server.
+- Returning installed backend models exactly as backend adapters report them while keeping normal client chat selection focused on installed runtime-host-local chat models.
 - Pulling arbitrary Ollama model names through runtime-host-side pull requests.
 - Forwarding chat requests to the active backend.
 - Streaming response deltas back to the client.
@@ -108,11 +108,11 @@ The runtime host is responsible for the following. In v0.1, this role is impleme
 - Managing model residency: unload the previous model before loading a newly selected model, and unload the active model after 10 or more minutes without chat activity.
 - Owning trusted-device and pairing boundaries.
 
-The runtime is also the future home for memory, file inputs, image inputs, internal Python tool execution, skills, MCP, web search, tool permissions, and audit logging.
+The runtime is also the home for runtime-owned memory, current document/image attachment ingestion, model capability checks, and future internal Python tool execution, skills, MCP, web search, tool permissions, and audit logging.
 
 ## Client Device
 
-The client device is responsible for the following. In v0.1, this role is implemented by the Android app:
+The client device is responsible for the following. In v0.1, this role is implemented by the mobile client app:
 
 - Pairing/discovery UI.
 - Connection status across local direct, remote P2P, and encrypted relay fallback modes.
@@ -120,16 +120,16 @@ The client device is responsible for the following. In v0.1, this role is implem
 - Install action that sends model pull requests to the runtime host.
 - Chat input and transcript rendering.
 - Previous chat list, local transcript cache restoration, and authenticated runtime-owned history restoration through `chat.sessions.list` / `chat.messages.list`.
-- User-managed local memory notes that can be included as chat context.
+- Runtime-owned user memory notes that can be included as chat context.
 - Streaming delta rendering.
 - Cancel action.
 - Displaying runtime and backend errors.
 
-The client sends high-level protocol messages only. It does not execute tools, read files, call MCP servers, perform web search, or call local model backend URLs. The client never calls Ollama `/api/tags`, `/api/ps`, `/api/pull`, `/api/chat`, or LM Studio endpoints directly. Client-side local memory is limited to user-managed notes and UI cache transcripts; when enabled, those notes are included in the same `chat.send` message path through the runtime host. The runtime host records accepted chat processing events and exposes narrow authenticated history reads so request/stream/done/cancel/error state is not owned only by the mobile client.
+The client sends high-level protocol messages only. It does not execute tools, read files, call MCP servers, perform web search, or call local model backend URLs. The client never calls Ollama `/api/tags`, `/api/ps`, `/api/pull`, `/api/chat`, or LM Studio endpoints directly. Client-side storage is limited to UI continuity cache; user memory is synchronized through the trusted runtime and, when enabled, included in the same `chat.send` message path through the runtime host. The runtime host records accepted chat processing events and exposes narrow authenticated history reads so request/stream/done/cancel/error state is not owned only by the mobile client.
 
-In Korean terms: client device는 조작 화면이고, runtime host가 실행 경계입니다. 현재 구현에서는 Android가 client이고 macOS companion이 runtime host입니다. client가 Ollama/LM Studio 서버 주소를 직접 다루는 흐름은 v0.1 제품 방향이 아닙니다.
+In Korean terms: client device는 조작 화면이고, runtime host가 실행 경계입니다. 현재 구현은 mobile client와 desktop runtime host 대상입니다. client가 Ollama/LM Studio 서버 주소를 직접 다루는 흐름은 v0.1 제품 방향이 아닙니다.
 
-Future image inputs and file inputs follow the same boundary: the client may capture, choose, or approve inputs in the UI, but ingestion, parsing, indexing, and backend calls run through the runtime host. The client must not upload files or images directly to Ollama, LM Studio, future serving backends, or research/indexing services.
+Current file and image attachment paths follow the same boundary: the client may capture, choose, or approve inputs in the UI, but ingestion, parsing, model capability checks, indexing, and backend calls run through the runtime host. Image attachments require a vision/image/multimodal-capable model before the runtime forwards image bytes. Document ingestion is runtime-side and can expand to chunking/indexing later. The client must not upload files or images directly to Ollama, LM Studio, future serving backends, or research/indexing services.
 
 ## Ollama Backend Adapter
 
@@ -145,7 +145,7 @@ The runtime-host-side adapter owns:
 
 The adapter is behind a backend interface so the protocol and client UI do not depend on Ollama-specific HTTP details.
 
-The model list is backend-derived. Local Ollama models are the main path. AetherLink does not hardcode recommended/default local or cloud Ollama models when `/api/tags` is empty. Ollama cloud models are not generic suggestions; they are selectable installed models with `source = cloud` only after the user-side Ollama pull/sign-in flow makes the runtime host's local `/api/tags` return them. The client still sends `models.pull` and `chat.send` to the runtime host, and only the runtime host calls Ollama `/api/pull` or `/api/chat`.
+The model list is backend-derived. Local Ollama models are the main path. AetherLink does not hardcode recommended/default local or cloud Ollama models when `/api/tags` is empty. Cloud/source metadata can remain in protocol data for compatibility, but normal client chat selection stays focused on installed runtime-host-local chat models. The client still sends `models.pull` and `chat.send` to the runtime host, and only the runtime host calls Ollama `/api/pull` or `/api/chat`.
 
 ## LM Studio Backend Adapter
 
@@ -159,7 +159,7 @@ The runtime-host-side adapter owns:
 - Generation cancellation through the same runtime cancellation registry shape as other backends.
 - Structured errors for unavailable server, no models, bad backend responses, and cancelled generation.
 
-In the current macOS runtime implementation, LM Studio is started by the user from the Developer tab or with `lms server start`. The client sees only runtime protocol health, model metadata, streaming deltas, and cancellation results.
+In the current desktop runtime implementation, LM Studio is started by the user from the Developer tab or with `lms server start`. The client sees only runtime protocol health, model metadata, streaming deltas, and cancellation results.
 
 ## Future Serving Backend Expansion
 
@@ -191,9 +191,9 @@ v0.1 may use a local socket transport while the product hardens authentication, 
 - Protocol routing is separate from socket implementation.
 - Runtime commands flow through a router rather than directly through UI code.
 - Pairing/auth checks can be inserted before dispatch.
-- A route resolver can order candidates for the paired peer identity, next preferring current Bonjour/local discovery results before stale trusted last-known endpoint hints for the same-network/local-direct path, and later adding remote P2P NAT traversal plus encrypted blind relay/TURN-style forwarding without changing client feature screens.
+- A route resolver can order candidates for the paired peer identity, preferring QR-provisioned remote route material and current Bonjour/local discovery results over diagnostic direct endpoints, and later adding remote P2P NAT traversal plus production encrypted blind relay/TURN-style forwarding without changing client feature screens.
 - Bonjour/local route candidates should include minimal runtime route hints when possible, preferably `route_token`. The client should route a trusted runtime only when discovered route-token or legacy `device_id`/fingerprint metadata matches the pinned trusted identity. Metadata-less Bonjour discovery results are diagnostics only, not trusted identity matches or selected trusted-runtime routes.
 - Relay/signaling servers carry only connection metadata or encrypted transport packets. They are not AI/cloud backends and cannot inspect AI protocol payloads, model lists, prompts, responses, files, memory, or backend credentials.
 - Manual fixed endpoints, mDNS records, and same-network host/port assumptions are development-only hints.
-- Current code stops at local-direct route candidates over the existing TCP transport; remote P2P NAT traversal, signaling, and encrypted relay forwarding remain unimplemented transport milestones.
+- Current code has local-direct route candidates and a temporary outbound TCP relay path; remote P2P NAT traversal, decentralized/bootstrap signaling, and production encrypted relay forwarding remain unfinished transport milestones.
 - Same-network unauthenticated access remains forbidden even if discovery or pairing starts as a minimal v0.1 implementation.

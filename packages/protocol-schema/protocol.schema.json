@@ -18,6 +18,7 @@
         "models.list",
         "models.pull",
         "models.result",
+        "route.refresh",
         "chat.send",
         "chat.delta",
         "chat.done",
@@ -28,9 +29,13 @@
         "chat.suggestions.result",
         "chat.title.request",
         "chat.title.result",
+        "chat.session.rename",
         "chat.session.archive",
         "chat.session.restore",
         "chat.session.delete",
+        "memory.list",
+        "memory.upsert",
+        "memory.delete",
         "error"
       ]
     },
@@ -76,6 +81,10 @@
       "then": { "properties": { "payload": { "$ref": "#/$defs/modelsPullPayload" } } }
     },
     {
+      "if": { "properties": { "type": { "const": "route.refresh" } }, "required": ["type"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/routeRefreshPayload" } } }
+    },
+    {
       "if": { "properties": { "type": { "const": "chat.send" } }, "required": ["type"] },
       "then": { "properties": { "payload": { "$ref": "#/$defs/chatSendPayload" } } }
     },
@@ -116,6 +125,10 @@
       "then": { "properties": { "payload": { "$ref": "#/$defs/chatTitleResultPayload" } } }
     },
     {
+      "if": { "properties": { "type": { "const": "chat.session.rename" } }, "required": ["type"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/chatSessionRenamePayload" } } }
+    },
+    {
       "if": { "properties": { "type": { "const": "chat.session.archive" } }, "required": ["type"] },
       "then": { "properties": { "payload": { "$ref": "#/$defs/chatSessionArchivePayload" } } }
     },
@@ -126,6 +139,18 @@
     {
       "if": { "properties": { "type": { "const": "chat.session.delete" } }, "required": ["type"] },
       "then": { "properties": { "payload": { "$ref": "#/$defs/chatSessionDeletePayload" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "memory.list" } }, "required": ["type"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/memoryListPayload" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "memory.upsert" } }, "required": ["type"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/memoryUpsertPayload" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "memory.delete" } }, "required": ["type"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/memoryDeletePayload" } } }
     },
     {
       "if": { "properties": { "type": { "const": "error" } }, "required": ["type"] },
@@ -160,7 +185,9 @@
       "required": ["device_id", "nonce"],
       "properties": {
         "device_id": { "$ref": "#/$defs/nonEmptyString" },
-        "nonce": { "$ref": "#/$defs/nonEmptyString" }
+        "nonce": { "$ref": "#/$defs/nonEmptyString" },
+        "runtime_key_fingerprint": { "$ref": "#/$defs/nonEmptyString" },
+        "runtime_signature": { "$ref": "#/$defs/nonEmptyString" }
       },
       "additionalProperties": false
     },
@@ -311,6 +338,32 @@
         }
       ]
     },
+    "routeRefreshPayload": {
+      "oneOf": [
+        { "$ref": "#/$defs/emptyPayload" },
+        {
+          "type": "object",
+          "required": [
+            "relay_host",
+            "relay_port",
+            "relay_id",
+            "relay_secret",
+            "relay_expires_at",
+            "relay_nonce"
+          ],
+          "properties": {
+            "relay_host": { "$ref": "#/$defs/nonEmptyString" },
+            "relay_port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+            "relay_id": { "$ref": "#/$defs/nonEmptyString" },
+            "relay_secret": { "$ref": "#/$defs/nonEmptyString" },
+            "relay_expires_at": { "type": "integer", "minimum": 1 },
+            "relay_nonce": { "$ref": "#/$defs/nonEmptyString" },
+            "relay_scope": { "enum": ["remote", "private_overlay", "usb_reverse"] }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
     "chatMessage": {
       "type": "object",
       "required": ["role", "content"],
@@ -342,6 +395,7 @@
       "properties": {
         "session_id": { "$ref": "#/$defs/nonEmptyString" },
         "model": { "$ref": "#/$defs/nonEmptyString" },
+        "locale": { "type": "string" },
         "messages": {
           "type": "array",
           "items": { "$ref": "#/$defs/chatMessage" },
@@ -354,11 +408,15 @@
       "type": "object",
       "properties": {
         "delta": { "type": "string" },
-        "reasoning_delta": { "type": "string" }
+        "text": { "type": "string" },
+        "reasoning_delta": { "type": "string" },
+        "thinking_delta": { "type": "string" }
       },
       "anyOf": [
         { "required": ["delta"] },
-        { "required": ["reasoning_delta"] }
+        { "required": ["text"] },
+        { "required": ["reasoning_delta"] },
+        { "required": ["thinking_delta"] }
       ],
       "additionalProperties": false
     },
@@ -403,7 +461,8 @@
         {
           "type": "object",
           "properties": {
-            "limit": { "type": "integer", "minimum": 1, "maximum": 200 }
+            "limit": { "type": "integer", "minimum": 1, "maximum": 200 },
+            "include_archived": { "type": "boolean", "default": false }
           },
           "additionalProperties": false
         },
@@ -428,7 +487,22 @@
         "title": { "type": "string" },
         "model": { "type": "string" },
         "last_activity_at": { "type": "string", "format": "date-time" },
-        "message_count": { "type": "integer", "minimum": 0 }
+        "message_count": { "type": "integer", "minimum": 0 },
+        "status": { "type": "string", "enum": ["active", "archived"] },
+        "archived_at": { "type": "string", "format": "date-time" },
+        "last_event": {
+          "type": "string",
+          "enum": [
+            "request",
+            "assistant_delta",
+            "reasoning_delta",
+            "done",
+            "cancelled",
+            "error"
+          ]
+        },
+        "last_finish_reason": { "type": "string" },
+        "last_error_code": { "type": "string" }
       },
       "additionalProperties": false
     },
@@ -464,7 +538,22 @@
         "role": { "type": "string" },
         "content": { "type": "string" },
         "reasoning": { "type": "string" },
+        "attachments": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/storedChatAttachment" }
+        },
         "created_at": { "type": "string", "format": "date-time" }
+      },
+      "additionalProperties": false
+    },
+    "storedChatAttachment": {
+      "type": "object",
+      "required": ["type", "mime_type"],
+      "properties": {
+        "type": { "enum": ["image", "document", "file"] },
+        "mime_type": { "$ref": "#/$defs/nonEmptyString" },
+        "name": { "type": "string" },
+        "text": { "type": "string" }
       },
       "additionalProperties": false
     },
@@ -516,6 +605,16 @@
       "required": ["title"],
       "properties": {
         "title": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "chatSessionRenamePayload": {
+      "type": "object",
+      "required": ["session_id", "title"],
+      "properties": {
+        "session_id": { "$ref": "#/$defs/nonEmptyString" },
+        "title": { "$ref": "#/$defs/nonEmptyString" },
+        "renamed_at": { "type": "string", "format": "date-time" }
       },
       "additionalProperties": false
     },
@@ -572,6 +671,77 @@
       },
       "additionalProperties": false
     },
+    "memoryEntry": {
+      "type": "object",
+      "required": ["id", "content", "enabled", "created_at", "updated_at"],
+      "properties": {
+        "id": { "$ref": "#/$defs/nonEmptyString" },
+        "content": { "$ref": "#/$defs/nonEmptyString" },
+        "enabled": { "type": "boolean" },
+        "created_at": { "type": "string", "format": "date-time" },
+        "updated_at": { "type": "string", "format": "date-time" }
+      },
+      "additionalProperties": false
+    },
+    "memoryListPayload": {
+      "oneOf": [
+        { "$ref": "#/$defs/emptyPayload" },
+        {
+          "type": "object",
+          "required": ["entries"],
+          "properties": {
+            "entries": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/memoryEntry" }
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "memoryUpsertPayload": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["content"],
+          "properties": {
+            "id": { "type": "string" },
+            "content": { "$ref": "#/$defs/nonEmptyString" },
+            "enabled": { "type": "boolean" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["entry"],
+          "properties": {
+            "entry": { "$ref": "#/$defs/memoryEntry" }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "memoryDeletePayload": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["id"],
+          "properties": {
+            "id": { "$ref": "#/$defs/nonEmptyString" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["id", "deleted_at"],
+          "properties": {
+            "id": { "$ref": "#/$defs/nonEmptyString" },
+            "deleted_at": { "type": "string", "format": "date-time" }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
     "errorPayload": {
       "type": "object",
       "required": ["code", "message", "retryable"],
@@ -595,6 +765,7 @@
             "unsupported_attachment",
             "unreadable_attachment",
             "chat_store_unavailable",
+            "memory_store_unavailable",
             "transport_error",
             "internal_error"
           ]

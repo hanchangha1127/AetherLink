@@ -1,0 +1,1 @@
+aetherlink://pair?v=1&n=nonce-1&c=123456&rid=runtime-1&rn=AetherLink%20Runtime&rf=runtime-fingerprint&rk=runtime%2Bpublic/key%3D&rt=route-token-1&rh=relay.example.test&rp=43171&ri=relay-bootstrap-1&rs=secret-bootstrap-1&rx=4102444800000&rrn=allocated-nonce-1&rsc=remote

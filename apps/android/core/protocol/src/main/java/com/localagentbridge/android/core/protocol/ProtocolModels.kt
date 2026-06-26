@@ -27,6 +27,7 @@ object MessageType {
     const val ModelsList = "models.list"
     const val ModelsResult = "models.result"
     const val ModelsPull = "models.pull"
+    const val RouteRefresh = "route.refresh"
     const val ChatSend = "chat.send"
     const val ChatDelta = "chat.delta"
     const val ChatDone = "chat.done"
@@ -37,9 +38,13 @@ object MessageType {
     const val ChatSuggestionsResult = "chat.suggestions.result"
     const val ChatTitleRequest = "chat.title.request"
     const val ChatTitleResult = "chat.title.result"
+    const val ChatSessionRename = "chat.session.rename"
     const val ChatSessionArchive = "chat.session.archive"
     const val ChatSessionRestore = "chat.session.restore"
     const val ChatSessionDelete = "chat.session.delete"
+    const val MemoryList = "memory.list"
+    const val MemoryUpsert = "memory.upsert"
+    const val MemoryDelete = "memory.delete"
     const val Error = "error"
 }
 
@@ -53,7 +58,10 @@ data class HelloPayload(
 
 @Serializable
 data class AuthChallengePayload(
+    @SerialName("device_id") val deviceId: String? = null,
     val nonce: String,
+    @SerialName("runtime_key_fingerprint") val runtimeKeyFingerprint: String? = null,
+    @SerialName("runtime_signature") val runtimeSignature: String? = null,
 )
 
 @Serializable
@@ -126,6 +134,17 @@ data class ModelPullResultPayload(
 )
 
 @Serializable
+data class RouteRefreshPayload(
+    @SerialName("relay_host") val relayHost: String? = null,
+    @SerialName("relay_port") val relayPort: Int? = null,
+    @SerialName("relay_id") val relayId: String? = null,
+    @SerialName("relay_secret") val relaySecret: String? = null,
+    @SerialName("relay_expires_at") val relayExpiresAtEpochMillis: Long? = null,
+    @SerialName("relay_nonce") val relayNonce: String? = null,
+    @SerialName("relay_scope") val relayScope: String? = null,
+)
+
+@Serializable
 data class ChatMessagePayload(
     val role: String,
     val content: String,
@@ -146,6 +165,7 @@ data class ChatSendPayload(
     @SerialName("session_id") val sessionId: String,
     val model: String,
     val messages: List<ChatMessagePayload>,
+    val locale: String? = null,
 )
 
 @Serializable
@@ -182,6 +202,7 @@ data class ChatCancelPayload(
 @Serializable
 data class ChatSessionsListRequestPayload(
     val limit: Int? = null,
+    @SerialName("include_archived") val includeArchived: Boolean = false,
 )
 
 @Serializable
@@ -196,6 +217,11 @@ data class ChatSessionSummaryPayload(
     val model: String,
     @SerialName("last_activity_at") val lastActivityAt: String,
     @SerialName("message_count") val messageCount: Int,
+    val status: String? = null,
+    @SerialName("archived_at") val archivedAt: String? = null,
+    @SerialName("last_event") val lastEvent: String? = null,
+    @SerialName("last_finish_reason") val lastFinishReason: String? = null,
+    @SerialName("last_error_code") val lastErrorCode: String? = null,
 )
 
 @Serializable
@@ -215,6 +241,7 @@ data class ChatStoredMessagePayload(
     val role: String,
     val content: String,
     val reasoning: String? = null,
+    val attachments: List<ChatAttachmentPayload> = emptyList(),
     @SerialName("created_at") val createdAt: String? = null,
 )
 
@@ -246,11 +273,55 @@ data class ChatTitleResultPayload(
 )
 
 @Serializable
+data class ChatSessionRenamePayload(
+    @SerialName("session_id") val sessionId: String,
+    val title: String,
+    @SerialName("renamed_at") val renamedAt: String? = null,
+)
+
+@Serializable
 data class ChatSessionLifecyclePayload(
     @SerialName("session_id") val sessionId: String,
     val status: String? = null,
     @SerialName("archived_at") val archivedAt: String? = null,
     @SerialName("restored_at") val restoredAt: String? = null,
+    @SerialName("deleted_at") val deletedAt: String? = null,
+)
+
+@Serializable
+data class MemoryListResultPayload(
+    val entries: List<MemoryEntryPayload>,
+)
+
+@Serializable
+data class MemoryEntryPayload(
+    val id: String,
+    val content: String,
+    val enabled: Boolean = true,
+    @SerialName("created_at") val createdAt: String? = null,
+    @SerialName("updated_at") val updatedAt: String? = null,
+)
+
+@Serializable
+data class MemoryUpsertPayload(
+    val id: String? = null,
+    val content: String,
+    val enabled: Boolean? = null,
+)
+
+@Serializable
+data class MemoryUpsertResultPayload(
+    val entry: MemoryEntryPayload,
+)
+
+@Serializable
+data class MemoryDeletePayload(
+    val id: String,
+)
+
+@Serializable
+data class MemoryDeleteResultPayload(
+    val id: String,
     @SerialName("deleted_at") val deletedAt: String? = null,
 )
 

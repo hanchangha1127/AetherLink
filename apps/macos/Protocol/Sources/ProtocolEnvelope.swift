@@ -12,6 +12,7 @@ public enum MessageType {
     public static let modelsList = "models.list"
     public static let modelsPull = "models.pull"
     public static let modelsResult = "models.result"
+    public static let routeRefresh = "route.refresh"
     public static let chatSend = "chat.send"
     public static let chatDelta = "chat.delta"
     public static let chatDone = "chat.done"
@@ -22,9 +23,13 @@ public enum MessageType {
     public static let chatSuggestionsResult = "chat.suggestions.result"
     public static let chatTitleRequest = "chat.title.request"
     public static let chatTitleResult = "chat.title.result"
+    public static let chatSessionRename = "chat.session.rename"
     public static let chatSessionArchive = "chat.session.archive"
     public static let chatSessionRestore = "chat.session.restore"
     public static let chatSessionDelete = "chat.session.delete"
+    public static let memoryList = "memory.list"
+    public static let memoryUpsert = "memory.upsert"
+    public static let memoryDelete = "memory.delete"
     public static let error = "error"
 }
 

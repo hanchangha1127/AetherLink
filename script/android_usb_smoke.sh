@@ -18,7 +18,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo "Waiting for Mac runtime dev server on 127.0.0.1:$PORT"
+echo "Waiting for AetherLink Runtime dev listener on local diagnostic port $PORT"
 for _ in {1..40}; do
   if nc -z 127.0.0.1 "$PORT" >/dev/null 2>&1; then
     break
@@ -37,7 +37,7 @@ echo "Running unauthenticated runtime security smoke"
 ./script/android_usb_install.sh
 
 echo "Runtime log: $LOG_FILE"
-echo "Keep this script running while testing the Android app."
+echo "Keep this script running while testing AetherLink."
 while true; do
   sleep 3600
 done

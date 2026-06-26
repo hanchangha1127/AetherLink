@@ -98,6 +98,11 @@ let package = Package(
             path: "apps/macos/OllamaBackend/Tests"
         ),
         .testTarget(
+            name: "TransportTests",
+            dependencies: ["Transport"],
+            path: "apps/macos/Transport/Tests"
+        ),
+        .testTarget(
             name: "LMStudioBackendTests",
             dependencies: ["LMStudioBackend"],
             path: "apps/macos/LMStudioBackend/Tests"
@@ -106,6 +111,11 @@ let package = Package(
             name: "CompanionCoreTests",
             dependencies: ["CompanionCore"],
             path: "apps/macos/CompanionCore/Tests"
+        ),
+        .testTarget(
+            name: "LocalAgentBridgeTests",
+            dependencies: [.target(name: macCompanionTarget)],
+            path: "apps/macos/LocalAgentBridgeApp/Tests"
         ),
         .testTarget(
             name: "DocumentIngestionTests",

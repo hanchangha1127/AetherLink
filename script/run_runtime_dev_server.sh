@@ -6,8 +6,13 @@ PORT="${LOCAL_AGENT_BRIDGE_PORT:-43170}"
 
 cd "$ROOT_DIR"
 
-echo "Starting AetherLink runtime dev server on port $PORT"
-echo "This server is the Android-facing Mac runtime. It is not Ollama."
+echo "Starting AetherLink Runtime dev server on port $PORT"
+echo "This process serves paired clients; model providers stay behind AetherLink Runtime."
+
+if [[ -z "${AETHERLINK_DEV_RUNTIME_IDENTITY_FILE:-}" ]]; then
+  export AETHERLINK_DEV_RUNTIME_IDENTITY_FILE="$HOME/.aetherlink/runtime-dev-identity.json"
+fi
+echo "Runtime identity file: $AETHERLINK_DEV_RUNTIME_IDENTITY_FILE"
 
 if [[ -n "${AETHERLINK_RELAY_HOST:-}" ]]; then
   export AETHERLINK_RELAY_PORT="${AETHERLINK_RELAY_PORT:-43171}"
@@ -21,6 +26,12 @@ if [[ -n "${AETHERLINK_RELAY_HOST:-}" ]]; then
   fi
   echo "Remote relay route enabled: $AETHERLINK_RELAY_HOST:$AETHERLINK_RELAY_PORT"
   echo "Pairing QR will include relay metadata and will not default to 127.0.0.1 unless AETHERLINK_DEV_PAIRING_HOST is set."
+fi
+
+if [[ -n "${AETHERLINK_BOOTSTRAP_RELAY_HOST:-}" ]]; then
+  export AETHERLINK_BOOTSTRAP_RELAY_PORT="${AETHERLINK_BOOTSTRAP_RELAY_PORT:-43171}"
+  echo "Remote relay allocation enabled: $AETHERLINK_BOOTSTRAP_RELAY_HOST:$AETHERLINK_BOOTSTRAP_RELAY_PORT"
+  echo "Runtime will request relay route material before printing the development pairing QR."
 fi
 
 swift build --product RuntimeDevServer

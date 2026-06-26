@@ -158,11 +158,13 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
         do {
             let response = try decoder.decode(OpenAIModelsResponse.self, from: data)
             return response.data.map { model in
-                ModelInfo(
+                let kind = ModelKind.from(capabilities: [], fallbackName: model.id)
+                return ModelInfo(
                     id: model.id,
                     name: model.id,
                     provider: .lmStudio,
-                    kind: .chat,
+                    kind: kind,
+                    capabilities: kind.defaultCapabilities,
                     providerModelID: model.id,
                     installed: true,
                     running: false,

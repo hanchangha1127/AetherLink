@@ -19,15 +19,16 @@ class PairingStore(private val context: Context) {
         val fingerprint = prefs[Keys.runtimeFingerprint] ?: prefs[LegacyKeys.runtimeFingerprint] ?: return@map null
         val publicKeyBase64 = prefs[Keys.runtimePublicKey] ?: prefs[LegacyKeys.runtimePublicKey]
         val routeToken = prefs[Keys.runtimeRouteToken] ?: prefs[LegacyKeys.runtimeRouteToken]
-        val host = prefs[Keys.runtimeHost] ?: prefs[LegacyKeys.runtimeHost]
-        val port = prefs[Keys.runtimePort] ?: prefs[LegacyKeys.runtimePort]
+        val host: String? = null
+        val port: Int? = null
         val relayHost = prefs[Keys.runtimeRelayHost]
         val relayPort = prefs[Keys.runtimeRelayPort]
         val relayId = prefs[Keys.runtimeRelayId]
         val relaySecret = prefs[Keys.runtimeRelaySecret]
         val relayExpiresAtEpochMillis = prefs[Keys.runtimeRelayExpiresAtEpochMillis]
         val relayNonce = prefs[Keys.runtimeRelayNonce]
-        TrustedRuntime(
+        val relayScope = prefs[Keys.runtimeRelayScope]
+        val trusted = TrustedRuntime(
             id,
             name,
             fingerprint,
@@ -41,7 +42,13 @@ class PairingStore(private val context: Context) {
             relaySecret,
             relayExpiresAtEpochMillis,
             relayNonce,
+            relayScope,
         )
+        if (trusted.hasCompleteRelayRoute()) {
+            trusted
+        } else {
+            trusted.withoutRelayRoute()
+        }
     }
 
     suspend fun trustRuntime(runtime: TrustedRuntime) {
@@ -61,38 +68,34 @@ class PairingStore(private val context: Context) {
             } else {
                 prefs.remove(Keys.runtimeRouteToken)
             }
-            val endpoint = runtime.validDirectEndpointOrNull()
-            if (endpoint != null) {
-                prefs[Keys.runtimeHost] = endpoint.host
-                prefs[Keys.runtimePort] = endpoint.port
-            } else {
-                prefs.remove(Keys.runtimeHost)
-                prefs.remove(Keys.runtimePort)
-            }
+            prefs.remove(Keys.runtimeHost)
+            prefs.remove(Keys.runtimePort)
             val relayHost = runtime.relayHost
             val relayPort = runtime.relayPort
             val relayId = runtime.relayId
             val relaySecret = runtime.relaySecret
-            val relayExpiresAtEpochMillis = runtime.relayExpiresAtEpochMillis
-            val relayNonce = runtime.relayNonce
-            if (!relayHost.isNullOrBlank() && relayPort != null && relayPort in 1..65535 && !relayId.isNullOrBlank()) {
-                prefs[Keys.runtimeRelayHost] = relayHost
-                prefs[Keys.runtimeRelayPort] = relayPort
-                prefs[Keys.runtimeRelayId] = relayId
-                if (!relaySecret.isNullOrBlank()) {
-                    prefs[Keys.runtimeRelaySecret] = relaySecret
-                } else {
-                    prefs.remove(Keys.runtimeRelaySecret)
-                }
+            val relayScope = runtime.relayScope
+            if (runtime.hasValidRelayRoute()) {
+                prefs[Keys.runtimeRelayHost] = requireNotNull(relayHost)
+                prefs[Keys.runtimeRelayPort] = requireNotNull(relayPort)
+                prefs[Keys.runtimeRelayId] = requireNotNull(relayId)
+                prefs[Keys.runtimeRelaySecret] = requireNotNull(relaySecret)
+                val relayExpiresAtEpochMillis = runtime.relayExpiresAtEpochMillis
                 if (relayExpiresAtEpochMillis != null && relayExpiresAtEpochMillis > 0L) {
                     prefs[Keys.runtimeRelayExpiresAtEpochMillis] = relayExpiresAtEpochMillis
                 } else {
                     prefs.remove(Keys.runtimeRelayExpiresAtEpochMillis)
                 }
+                val relayNonce = runtime.relayNonce
                 if (!relayNonce.isNullOrBlank()) {
                     prefs[Keys.runtimeRelayNonce] = relayNonce
                 } else {
                     prefs.remove(Keys.runtimeRelayNonce)
+                }
+                if (!relayScope.isNullOrBlank()) {
+                    prefs[Keys.runtimeRelayScope] = relayScope
+                } else {
+                    prefs.remove(Keys.runtimeRelayScope)
                 }
             } else {
                 prefs.remove(Keys.runtimeRelayHost)
@@ -101,6 +104,7 @@ class PairingStore(private val context: Context) {
                 prefs.remove(Keys.runtimeRelaySecret)
                 prefs.remove(Keys.runtimeRelayExpiresAtEpochMillis)
                 prefs.remove(Keys.runtimeRelayNonce)
+                prefs.remove(Keys.runtimeRelayScope)
             }
             prefs.removeLegacyRuntimeKeys()
         }
@@ -127,6 +131,7 @@ class PairingStore(private val context: Context) {
         val runtimeRelaySecret = stringPreferencesKey("runtime_relay_secret")
         val runtimeRelayExpiresAtEpochMillis = longPreferencesKey("runtime_relay_expires_at_epoch_millis")
         val runtimeRelayNonce = stringPreferencesKey("runtime_relay_nonce")
+        val runtimeRelayScope = stringPreferencesKey("runtime_relay_scope")
     }
 
     private object LegacyKeys {
@@ -153,6 +158,7 @@ class PairingStore(private val context: Context) {
         remove(Keys.runtimeRelaySecret)
         remove(Keys.runtimeRelayExpiresAtEpochMillis)
         remove(Keys.runtimeRelayNonce)
+        remove(Keys.runtimeRelayScope)
     }
 
     private fun MutablePreferences.removeLegacyRuntimeKeys() {
@@ -172,10 +178,42 @@ internal data class TrustedRuntimeDirectEndpoint(
 )
 
 internal fun TrustedRuntime.hasValidRelayRoute(): Boolean {
+    val expiresAt = relayExpiresAtEpochMillis
+    return hasCompleteRelayRoute() &&
+        expiresAt != null &&
+        expiresAt > System.currentTimeMillis()
+}
+
+internal fun TrustedRuntime.hasExpiredRelayRoute(
+    nowEpochMillis: Long = System.currentTimeMillis(),
+): Boolean {
+    val expiresAt = relayExpiresAtEpochMillis ?: return false
+    return hasCompleteRelayRoute() && expiresAt <= nowEpochMillis
+}
+
+private fun TrustedRuntime.hasCompleteRelayRoute(): Boolean {
+    val expiresAt = relayExpiresAtEpochMillis
     return !relayHost.isNullOrBlank() &&
+        (isEligibleRemoteRelayHost(relayHost, relayScope) || relayHost.isDebugUsbReverseRelayRoute(relayScope)) &&
         relayPort != null &&
         relayPort in 1..65535 &&
-        !relayId.isNullOrBlank()
+        !relayId.isNullOrBlank() &&
+        !relaySecret.isNullOrBlank() &&
+        expiresAt != null &&
+        expiresAt > 0L &&
+        !relayNonce.isNullOrBlank()
+}
+
+private fun TrustedRuntime.withoutRelayRoute(): TrustedRuntime {
+    return copy(
+        relayHost = null,
+        relayPort = null,
+        relayId = null,
+        relaySecret = null,
+        relayExpiresAtEpochMillis = null,
+        relayNonce = null,
+        relayScope = null,
+    )
 }
 
 internal fun TrustedRuntime.validDirectEndpointOrNull(): TrustedRuntimeDirectEndpoint? {
@@ -184,3 +222,18 @@ internal fun TrustedRuntime.validDirectEndpointOrNull(): TrustedRuntimeDirectEnd
     val endpointPort = port?.takeIf { it in 1..65535 } ?: return null
     return TrustedRuntimeDirectEndpoint(endpointHost, endpointPort)
 }
+
+private fun String.isDebugUsbReverseRelayRoute(relayScope: String?): Boolean {
+    if (relayScope?.trim()?.lowercase() != DEBUG_USB_REVERSE_RELAY_SCOPE) return false
+    val normalized = trim()
+        .removePrefix("[")
+        .removeSuffix("]")
+        .removeSuffix(".")
+        .lowercase()
+    return normalized == "localhost" ||
+        normalized == "::1" ||
+        normalized == "0:0:0:0:0:0:0:1" ||
+        normalized.startsWith("127.")
+}
+
+private const val DEBUG_USB_REVERSE_RELAY_SCOPE = "usb_reverse"

@@ -11,3 +11,7 @@ Run from the repository root:
 ```sh
 swift assets/brand/generate_aetherlink_icons.swift
 ```
+
+## License
+
+Licensed under the Apache License, Version 2.0. See [LICENSE](../../LICENSE).

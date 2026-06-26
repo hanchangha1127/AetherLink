@@ -12,6 +12,20 @@ public struct RuntimeIdentityKey: Equatable, Sendable {
     }
 }
 
+public struct RuntimeChallengeSignature: Equatable, Sendable {
+    public var runtimeKeyFingerprint: String
+    public var signatureBase64: String
+
+    public init(runtimeKeyFingerprint: String, signatureBase64: String) {
+        self.runtimeKeyFingerprint = runtimeKeyFingerprint
+        self.signatureBase64 = signatureBase64
+    }
+}
+
+public protocol RuntimeChallengeSigning: Sendable {
+    func signAuthChallenge(deviceID: String, nonce: String) throws -> RuntimeChallengeSignature
+}
+
 public enum RuntimeIdentityKeyStoreError: Error, LocalizedError, Sendable {
     case keychainReadFailed(OSStatus)
     case keychainWriteFailed(OSStatus)
@@ -32,7 +46,9 @@ public enum RuntimeIdentityKeyStoreError: Error, LocalizedError, Sendable {
     }
 }
 
-public final class RuntimeIdentityKeyStore: @unchecked Sendable {
+public final class RuntimeIdentityKeyStore: RuntimeChallengeSigning, @unchecked Sendable {
+    private static let authChallengeContext = "AetherLink runtime auth challenge v1"
+
     private let service: String
     private let account: String
 
@@ -47,6 +63,16 @@ public final class RuntimeIdentityKeyStore: @unchecked Sendable {
     public func loadOrCreate() throws -> RuntimeIdentityKey {
         let privateKey = try loadPrivateKey() ?? createAndStorePrivateKey()
         return Self.identityKey(from: privateKey)
+    }
+
+    public func signAuthChallenge(deviceID: String, nonce: String) throws -> RuntimeChallengeSignature {
+        let privateKey = try loadPrivateKey() ?? createAndStorePrivateKey()
+        let digest = Self.authChallengeDigest(deviceID: deviceID, nonce: nonce)
+        let signature = try privateKey.signature(for: digest)
+        return RuntimeChallengeSignature(
+            runtimeKeyFingerprint: Self.identityKey(from: privateKey).fingerprint,
+            signatureBase64: signature.derRepresentation.base64EncodedString()
+        )
     }
 
     public func delete() throws {
@@ -112,4 +138,32 @@ public final class RuntimeIdentityKeyStore: @unchecked Sendable {
             fingerprint: fingerprint
         )
     }
+
+    public static func authChallengeMessageData(deviceID: String, nonce: String) -> Data {
+        Data("\(authChallengeContext)\n\(deviceID)\n\(nonce)".utf8)
+    }
+
+    public static func verifyAuthChallengeSignature(
+        publicKeyBase64: String,
+        deviceID: String,
+        nonce: String,
+        signatureBase64: String
+    ) -> Bool {
+        guard let publicKeyData = Data(base64Encoded: publicKeyBase64),
+              let signatureData = Data(base64Encoded: signatureBase64),
+              let publicKey = try? P256.Signing.PublicKey(derRepresentation: publicKeyData),
+              let signature = try? P256.Signing.ECDSASignature(derRepresentation: signatureData)
+        else {
+            return false
+        }
+        return publicKey.isValidSignature(
+            signature,
+            for: authChallengeDigest(deviceID: deviceID, nonce: nonce)
+        )
+    }
+
+    private static func authChallengeDigest(deviceID: String, nonce: String) -> SHA256.Digest {
+        SHA256.hash(data: authChallengeMessageData(deviceID: deviceID, nonce: nonce))
+    }
+
 }

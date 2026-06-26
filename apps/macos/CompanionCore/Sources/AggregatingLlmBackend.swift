@@ -89,7 +89,7 @@ public final class AggregatingLlmBackend: LlmBackend, @unchecked Sendable {
             throw BackendError(
                 provider: .lmStudio,
                 code: "unsupported_operation",
-                message: "LM Studio model downloads are managed on the runtime host through LM Studio or lms.",
+                message: "LM Studio model downloads are managed through LM Studio or lms for AetherLink Runtime.",
                 retryable: false
             )
         }
@@ -161,27 +161,23 @@ public final class AggregatingLlmBackend: LlmBackend, @unchecked Sendable {
     }
 
     private func resolveChatRoute(for model: String) async throws -> (provider: ModelProvider, modelID: String) {
+        let models = try await listModels()
         if let resolved = ModelProvider.splitQualifiedModelID(model) {
-            return resolved
+            if let match = Self.matchingInstalledModel(
+                requestedModel: resolved.modelID,
+                requestedProvider: resolved.provider,
+                models: models
+            ) {
+                return (match.provider, match.providerModelID)
+            }
+            throw Self.modelNotInstalledError(model, provider: resolved.provider)
         }
 
-        let requestedCanonical = Self.canonicalModelName(model)
-        let models = try await listModels()
-        if let match = models.first(where: { candidate in
-            let providerModelID = candidate.providerModelID
-            return candidate.installed && (
-                candidate.id == model
-                    || candidate.name == model
-                    || providerModelID == model
-                    || Self.canonicalModelName(candidate.id) == requestedCanonical
-                    || Self.canonicalModelName(candidate.name) == requestedCanonical
-                    || Self.canonicalModelName(providerModelID) == requestedCanonical
-            )
-        }) {
+        if let match = Self.matchingInstalledModel(requestedModel: model, models: models) {
             return (match.provider, match.providerModelID)
         }
 
-        return (.ollama, model)
+        throw Self.modelNotInstalledError(model, provider: .aggregate)
     }
 
     private func resolveModelReference(_ model: String) -> (provider: ModelProvider, modelID: String) {
@@ -322,6 +318,37 @@ public final class AggregatingLlmBackend: LlmBackend, @unchecked Sendable {
             return String(name.dropLast(":latest".count))
         }
         return name
+    }
+
+    private static func matchingInstalledModel(
+        requestedModel: String,
+        requestedProvider: ModelProvider? = nil,
+        models: [ModelInfo]
+    ) -> ModelInfo? {
+        let requestedCanonical = canonicalModelName(requestedModel)
+        return models.first { candidate in
+            guard candidate.installed else { return false }
+            guard candidate.kind == .chat else { return false }
+            if let requestedProvider, candidate.provider != requestedProvider {
+                return false
+            }
+            let providerModelID = candidate.providerModelID
+            return candidate.id == requestedModel
+                || candidate.name == requestedModel
+                || providerModelID == requestedModel
+                || canonicalModelName(candidate.id) == requestedCanonical
+                || canonicalModelName(candidate.name) == requestedCanonical
+                || canonicalModelName(providerModelID) == requestedCanonical
+        }
+    }
+
+    private static func modelNotInstalledError(_ model: String, provider: ModelProvider) -> BackendError {
+        BackendError(
+            provider: provider,
+            code: "model_not_installed",
+            message: "Model is not reported as installed by AetherLink Runtime: \(model)",
+            retryable: false
+        )
     }
 }
 

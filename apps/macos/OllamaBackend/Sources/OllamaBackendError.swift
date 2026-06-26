@@ -74,7 +74,7 @@ public enum OllamaBackendError: Error, Equatable, LocalizedError, Sendable {
             return BackendError(
                 provider: .ollama,
                 code: "backend_unavailable",
-                message: "Ollama is not reachable from the runtime host.",
+                message: "Ollama is not reachable through AetherLink Runtime.",
                 retryable: true
             )
         case .httpStatus(_, let statusCode, _) where statusCode == 401 || statusCode == 403:
@@ -88,14 +88,14 @@ public enum OllamaBackendError: Error, Equatable, LocalizedError, Sendable {
             return BackendError(
                 provider: .ollama,
                 code: "backend_unavailable",
-                message: "Ollama returned HTTP \(statusCode) to the runtime host.",
+                message: "Ollama returned HTTP \(statusCode) through AetherLink Runtime.",
                 retryable: true
             )
         case .transport:
             return BackendError(
                 provider: .ollama,
                 code: "transport_error",
-                message: "The runtime host lost communication with Ollama.",
+                message: "AetherLink Runtime lost communication with Ollama.",
                 retryable: true
             )
         case .generationNotFound(let generationID):
@@ -116,21 +116,21 @@ public enum OllamaBackendError: Error, Equatable, LocalizedError, Sendable {
             return BackendError(
                 provider: .ollama,
                 code: "internal_error",
-                message: "The runtime host could not encode the Ollama request.",
+                message: "AetherLink Runtime could not encode the Ollama request.",
                 retryable: false
             )
         case .responseDecoding:
             return BackendError(
                 provider: .ollama,
                 code: "bad_backend_response",
-                message: "The runtime host could not decode the Ollama response.",
+                message: "AetherLink Runtime could not decode the Ollama response.",
                 retryable: false
             )
         case .streamDecoding:
             return BackendError(
                 provider: .ollama,
                 code: "bad_backend_response",
-                message: "The runtime host could not decode the Ollama stream.",
+                message: "AetherLink Runtime could not decode the Ollama stream.",
                 retryable: false
             )
         }

@@ -37,15 +37,24 @@ struct RuntimeDevServer {
             backend: backend,
             pairingCoordinator: pairingCoordinator,
             trustedDeviceStore: trustedDeviceStore,
+            runtimeChallengeSigner: identity.signer,
             onPairingAccepted: { device in
                 print("[runtime] Development pairing accepted for device_id=\(device.id) name=\"\(device.name)\"")
             }
         )
         let server = LocalPeerServer()
         let advertiser = BonjourAdvertiser()
-        let relayConfiguration = Self.relayConfiguration(environment: environment, identity: identity)
-        let devPairingDirectHost = Self.developmentPairingDirectHost(environment: environment, relayConfigured: relayConfiguration != nil)
+        let shouldAdvertiseBonjour = environment["AETHERLINK_DEV_DISABLE_BONJOUR"] != "1"
+        let relayRouteRequested = Self.relayRouteRequested(environment: environment)
+        let relayRouteAllocation = Self.relayRouteAllocation(environment: environment, identity: identity)
+        let relayConfiguration = relayRouteAllocation?.configuration
+        let devPairingDirectHost = Self.developmentPairingDirectHost(
+            environment: environment,
+            relayConfigured: relayConfiguration != nil,
+            relayRouteRequested: relayRouteRequested
+        )
         let relayClient = relayConfiguration == nil ? nil : RelayPeerClient()
+        let relayPairingReadiness = RelayPairingReadiness()
         RuntimeDevServerState.server = server
         RuntimeDevServerState.advertiser = advertiser
         RuntimeDevServerState.relayClient = relayClient
@@ -54,11 +63,14 @@ struct RuntimeDevServer {
             print("[runtime] received type=\(envelope.type) request_id=\(envelope.requestID)")
             router.handle(envelope, sink: LoggingSink(wrapped: sink))
         }
-        advertiser.start(port: Int32(port), metadata: identity.advertisementMetadata)
+        if shouldAdvertiseBonjour {
+            advertiser.start(port: Int32(port), metadata: identity.advertisementMetadata)
+        }
         if let relayConfiguration, let relayClient {
             relayClient.start(
                 configuration: relayConfiguration,
                 onStatusChange: { status in
+                    relayPairingReadiness.update(status)
                     print("[runtime] relay status=\(status.logLabel)")
                 }
             ) { envelope, sink in
@@ -69,22 +81,39 @@ struct RuntimeDevServer {
 
         print("[runtime] AetherLink dev server listening on 127.0.0.1:\(port)")
         print("[runtime] Backend: \(useMockBackend ? "dev mock" : "Ollama + LM Studio")")
-        print("[runtime] Advertising _aetherlink._tcp.local. on port \(port)")
+        if shouldAdvertiseBonjour {
+            print("[runtime] Advertising _aetherlink._tcp.local. on port \(port)")
+        } else {
+            print("[runtime] Bonjour advertising disabled for this development run.")
+        }
         if let relayConfiguration {
             print("[runtime] Relay route enabled: \(relayConfiguration.host):\(relayConfiguration.port) id=\(relayConfiguration.relayID)")
         }
-        print("[runtime] For a USB-connected client device, run:")
-        print("[runtime]   adb reverse tcp:\(port) tcp:\(port)")
-        print("[runtime] Then connect the client app to 127.0.0.1:\(port)")
+        printDevelopmentConnectionHint(
+            port: port,
+            relayConfiguration: relayConfiguration,
+            directHost: devPairingDirectHost
+        )
 
         if environment["AETHERLINK_DEV_PAIRING"] == "1" {
-            startDevelopmentPairing(
-                coordinator: pairingCoordinator,
-                port: port,
-                identity: identity,
-                environment: environment,
-                directHost: devPairingDirectHost
-            )
+            if relayRouteRequested && relayConfiguration == nil && devPairingDirectHost == nil {
+                print("[runtime] Development pairing QR not emitted: relay route allocation failed and no explicit direct pairing host was set.")
+                print("[runtime] Fix the allocation relay or set AETHERLINK_DEV_PAIRING_HOST only for local diagnostics.")
+            } else if waitForDevelopmentRelayPairingReadinessIfNeeded(
+                relayConfiguration: relayConfiguration,
+                relayPairingReadiness: relayPairingReadiness,
+                environment: environment
+            ) {
+                startDevelopmentPairing(
+                    coordinator: pairingCoordinator,
+                    port: port,
+                    identity: identity,
+                    environment: environment,
+                    relayConfiguration: relayConfiguration,
+                    serviceRelayRouteLease: relayRouteAllocation?.lease,
+                    directHost: devPairingDirectHost
+                )
+            }
         }
 
         dispatchMain()
@@ -97,17 +126,92 @@ struct RuntimeDevServer {
         return TrustedDeviceStore(fileURL: URL(fileURLWithPath: path))
     }
 
-    private static func relayConfiguration(
+    private static func printDevelopmentConnectionHint(
+        port: UInt16,
+        relayConfiguration: RelayPeerConfiguration?,
+        directHost: String?
+    ) {
+        if relayConfiguration != nil && directHost == nil {
+            print("[runtime] Relay QR route is active. Scan the emitted aetherlink://pair QR/URI in AetherLink.")
+            print("[runtime] No USB port forwarding, fixed network address, or model-provider address is required for this route.")
+            return
+        }
+
+        if relayConfiguration != nil {
+            print("[runtime] Relay route is active with an explicit direct diagnostic fallback.")
+        }
+        print("[runtime] For local direct diagnostics with a USB-connected trusted device, run:")
+        print("[runtime]   adb reverse tcp:\(port) tcp:\(port)")
+        print("[runtime] Then use the local diagnostic route 127.0.0.1:\(port) in AetherLink.")
+    }
+
+    private static func relayRouteAllocation(
         environment: [String: String],
         identity: DevRuntimeIdentity
-    ) -> RelayPeerConfiguration? {
-        guard let host = environment["AETHERLINK_RELAY_HOST"]?.takeIfNotEmpty else {
+    ) -> CompanionRemoteRelayRouteAllocation? {
+        if let host = environment["AETHERLINK_RELAY_HOST"]?.takeIfNotEmpty {
+            let port = UInt16(environment["AETHERLINK_RELAY_PORT"] ?? "") ?? 43171
+            let explicitRelayID = environment["AETHERLINK_RELAY_ID"]?.takeIfNotEmpty
+            let explicitRelaySecret = environment["AETHERLINK_RELAY_SECRET"]?.takeIfNotEmpty
+            if explicitRelayID != nil || explicitRelaySecret != nil {
+                guard let explicitRelayID, let explicitRelaySecret else {
+                    print("[runtime] relay configuration failed: AETHERLINK_RELAY_ID and AETHERLINK_RELAY_SECRET must be set together.")
+                    return nil
+                }
+                let lease = Self.newRelayRouteLease()
+                return CompanionRemoteRelayRouteAllocation(
+                    configuration: RelayPeerConfiguration(
+                        host: host,
+                        port: port,
+                        relayID: explicitRelayID,
+                        relaySecret: explicitRelaySecret,
+                        relayNonce: lease.nonce
+                    ),
+                    lease: CompanionRemoteRouteLease(
+                        expiresAtEpochMillis: lease.expiresAtEpochMillis,
+                        nonce: lease.nonce
+                    )
+                )
+            }
+            do {
+                return try TCPRelayServiceRouteAllocator().allocateRelayRoute(
+                    host: host,
+                    port: port,
+                    routeToken: identity.routeToken,
+                    relaySecret: Self.preferredDevelopmentRelaySecret(environment: environment),
+                    allocationToken: environment["AETHERLINK_BOOTSTRAP_RELAY_ALLOCATION_TOKEN"]?.takeIfNotEmpty
+                        ?? environment["AETHERLINK_RELAY_ALLOCATION_TOKEN"]?.takeIfNotEmpty,
+                    timeout: 5
+                )
+            } catch {
+                print("[runtime] relay allocation failed: \(error.localizedDescription)")
+                return nil
+            }
+        }
+        guard Self.bootstrapRelayRequested(environment: environment) else {
             return nil
         }
-        let port = UInt16(environment["AETHERLINK_RELAY_PORT"] ?? "") ?? 43171
-        let relayID = environment["AETHERLINK_RELAY_ID"]?.takeIfNotEmpty ?? identity.routeToken
-        let relaySecret = environment["AETHERLINK_RELAY_SECRET"]?.takeIfNotEmpty
-        return RelayPeerConfiguration(host: host, port: port, relayID: relayID, relaySecret: relaySecret)
+        do {
+            return try EnvironmentRemoteRelayRouteAllocator(environment: environment)
+                .allocateRemoteRelayRoute(
+                    runtimeDeviceID: identity.deviceID,
+                    routeToken: identity.routeToken,
+                    preferredRelaySecret: Self.preferredDevelopmentRelaySecret(environment: environment)
+                )
+        } catch {
+            print("[runtime] relay allocation failed: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    private static func bootstrapRelayRequested(environment: [String: String]) -> Bool {
+        environment["AETHERLINK_BOOTSTRAP_RELAY_ENDPOINTS"]?.takeIfNotEmpty != nil
+            || environment["AETHERLINK_BOOTSTRAP_RELAY_HOST"]?.takeIfNotEmpty != nil
+    }
+
+    private static func relayRouteRequested(environment: [String: String]) -> Bool {
+        environment["AETHERLINK_RELAY_HOST"]?.takeIfNotEmpty != nil
+            || bootstrapRelayRequested(environment: environment)
     }
 
     private static func startDevelopmentPairing(
@@ -115,8 +219,18 @@ struct RuntimeDevServer {
         port: UInt16,
         identity: DevRuntimeIdentity,
         environment: [String: String],
+        relayConfiguration: RelayPeerConfiguration?,
+        serviceRelayRouteLease: CompanionRemoteRouteLease?,
         directHost: String?
     ) {
+        let relayRouteLease = relayConfiguration == nil
+            ? nil
+            : serviceRelayRouteLease.map {
+                (expiresAtEpochMillis: $0.expiresAtEpochMillis, nonce: $0.nonce)
+            } ?? relayConfiguration?.relayNonce.map { nonce in
+                let lease = Self.newRelayRouteLease()
+                return (expiresAtEpochMillis: lease.expiresAtEpochMillis, nonce: nonce)
+            }
         let session = coordinator.beginPairing(
             validFor: TimeInterval(environment["AETHERLINK_DEV_PAIRING_TTL_SECONDS"] ?? "") ?? 300,
             macDeviceID: identity.deviceID,
@@ -126,10 +240,13 @@ struct RuntimeDevServer {
             routeToken: identity.routeToken,
             host: directHost,
             port: directHost == nil ? nil : Int(port),
-            relayHost: environment["AETHERLINK_RELAY_HOST"]?.takeIfNotEmpty,
-            relayPort: environment["AETHERLINK_RELAY_PORT"].flatMap { UInt16($0) }.map(Int.init),
-            relayID: environment["AETHERLINK_RELAY_ID"]?.takeIfNotEmpty ?? identity.routeToken,
-            relaySecret: environment["AETHERLINK_RELAY_SECRET"]?.takeIfNotEmpty
+            relayHost: relayConfiguration?.host,
+            relayPort: relayConfiguration.map { Int($0.port) },
+            relayID: relayConfiguration?.relayID,
+            relaySecret: relayConfiguration?.relaySecret,
+            relayExpiresAtEpochMillis: relayRouteLease?.expiresAtEpochMillis,
+            relayNonce: relayRouteLease?.nonce,
+            relayScope: relayConfiguration.flatMap { relayScope(for: $0.host) }
         )
 
         print("[runtime] WARNING: AETHERLINK_DEV_PAIRING=1 opened a development-only pairing window.")
@@ -137,23 +254,45 @@ struct RuntimeDevServer {
         printDevelopmentPairingInfo(session)
     }
 
+    private static func waitForDevelopmentRelayPairingReadinessIfNeeded(
+        relayConfiguration: RelayPeerConfiguration?,
+        relayPairingReadiness: RelayPairingReadiness,
+        environment: [String: String]
+    ) -> Bool {
+        guard let relayConfiguration else {
+            return true
+        }
+
+        let timeout = TimeInterval(environment["AETHERLINK_DEV_RELAY_PAIRING_READY_TIMEOUT_SECONDS"] ?? "") ?? 10
+        print("[runtime] Waiting for relay route \(relayConfiguration.host):\(relayConfiguration.port) before emitting development pairing QR.")
+        if relayPairingReadiness.waitUntilReadyForPairing(timeout: timeout) {
+            return true
+        }
+
+        let status = relayPairingReadiness.currentStatus
+        print("[runtime] Development pairing QR not emitted: relay route \(relayConfiguration.host):\(relayConfiguration.port) is not ready after \(timeout)s (status=\(status.logLabel)).")
+        print("[runtime] Start the relay, fix public/VPN/tunnel reachability, or unset relay environment variables for direct local diagnostics.")
+        return false
+    }
+
     private static func developmentPairingDirectHost(
         environment: [String: String],
-        relayConfigured: Bool
+        relayConfigured: Bool,
+        relayRouteRequested: Bool
     ) -> String? {
         if let explicitHost = environment["AETHERLINK_DEV_PAIRING_HOST"]?.takeIfNotEmpty {
             return explicitHost
         }
-        return relayConfigured ? nil : "127.0.0.1"
+        return (relayConfigured || relayRouteRequested) ? nil : defaultRuntimeRouteHost()
     }
 
     private static func printDevelopmentPairingInfo(_ session: PairingSession) {
         var info: [String: Any] = [
             "pairing_code": session.code,
             "pairing_nonce": session.nonce,
-            "mac_device_id": session.macDeviceID,
-            "mac_name": session.macName,
-            "fingerprint": session.fingerprint,
+            "runtime_device_id": session.macDeviceID,
+            "runtime_name": session.macName,
+            "runtime_key_fingerprint": session.fingerprint,
             "service_type": session.serviceType,
             "expires_at": ISO8601DateFormatter().string(from: session.expiresAt)
         ]
@@ -182,6 +321,15 @@ struct RuntimeDevServer {
         if let relaySecret = session.relaySecret {
             info["relay_secret"] = relaySecret
         }
+        if let relayExpiresAtEpochMillis = session.relayExpiresAtEpochMillis {
+            info["relay_expires_at"] = relayExpiresAtEpochMillis
+        }
+        if let relayNonce = session.relayNonce {
+            info["relay_nonce"] = relayNonce
+        }
+        if let relayScope = session.relayScope {
+            info["relay_scope"] = relayScope
+        }
 
         guard let data = try? JSONSerialization.data(withJSONObject: info, options: [.sortedKeys]),
               let json = String(data: data, encoding: .utf8)
@@ -190,40 +338,191 @@ struct RuntimeDevServer {
             return
         }
         print("[runtime] AETHERLINK_DEV_PAIRING_INFO \(json)")
+        print("[runtime] AETHERLINK_DEV_PAIRING_URI \(session.qrPayload)")
+        print("[runtime] AETHERLINK_DEV_PAIRING_COMPACT_URI \(session.compactQRCodePayload)")
     }
 
     private static func runtimeIdentity(environment: [String: String]) -> DevRuntimeIdentity {
-        let deviceID = environment["AETHERLINK_DEV_MAC_DEVICE_ID"] ?? "aetherlink-dev-mac"
+        let deviceID = environment["AETHERLINK_DEV_RUNTIME_DEVICE_ID"]
+            ?? environment["AETHERLINK_DEV_MAC_DEVICE_ID"]
+            ?? "aetherlink-dev-runtime"
         let identityKey = loadDevelopmentRuntimeIdentityKey(
             deviceID: deviceID,
             environment: environment
         )
         return DevRuntimeIdentity(
-            deviceID: environment["AETHERLINK_DEV_MAC_DEVICE_ID"] ?? "aetherlink-dev-mac",
+            deviceID: deviceID,
             name: environment["AETHERLINK_DEV_RUNTIME_NAME"] ?? environment["AETHERLINK_DEV_MAC_NAME"] ?? "AetherLink Dev Runtime",
-            publicKeyBase64: identityKey.publicKeyBase64,
-            fingerprint: environment["AETHERLINK_DEV_MAC_FINGERPRINT"] ?? identityKey.fingerprint,
-            routeToken: environment["AETHERLINK_DEV_ROUTE_TOKEN"] ?? "dev-aetherlink-route"
+            publicKeyBase64: identityKey.key.publicKeyBase64,
+            fingerprint: environment["AETHERLINK_DEV_RUNTIME_FINGERPRINT"] ?? environment["AETHERLINK_DEV_MAC_FINGERPRINT"] ?? identityKey.key.fingerprint,
+            routeToken: environment["AETHERLINK_DEV_ROUTE_TOKEN"] ?? "dev-aetherlink-route",
+            signer: identityKey.signer
         )
+    }
+
+    private static func newRelayRouteLease(
+        validFor seconds: TimeInterval = 15 * 60
+    ) -> (expiresAtEpochMillis: Int64, nonce: String) {
+        let expiresAt = Date().addingTimeInterval(seconds)
+        return (
+            expiresAtEpochMillis: Int64((expiresAt.timeIntervalSince1970 * 1000).rounded()),
+            nonce: UUID().uuidString
+        )
+    }
+
+    private static func generateRelaySecret() -> String {
+        let bytes = (0..<32).map { _ in UInt8.random(in: 0...255) }
+        return Data(bytes).base64EncodedString()
+    }
+
+    private static func defaultRuntimeRouteHost() -> String? {
+        var interfaces: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&interfaces) == 0, let firstInterface = interfaces else {
+            return nil
+        }
+        defer { freeifaddrs(interfaces) }
+
+        var candidates: [(name: String, address: String, score: Int)] = []
+        var cursor: UnsafeMutablePointer<ifaddrs>? = firstInterface
+        while let interface = cursor {
+            defer { cursor = interface.pointee.ifa_next }
+            let flags = Int32(interface.pointee.ifa_flags)
+            guard (flags & IFF_UP) != 0, (flags & IFF_LOOPBACK) == 0 else { continue }
+            guard let address = interface.pointee.ifa_addr, address.pointee.sa_family == UInt8(AF_INET) else { continue }
+
+            let interfaceName = String(cString: interface.pointee.ifa_name)
+            guard let score = pairingInterfaceScore(name: interfaceName) else { continue }
+
+            var hostBuffer = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+            let result = getnameinfo(
+                address,
+                socklen_t(address.pointee.sa_len),
+                &hostBuffer,
+                socklen_t(hostBuffer.count),
+                nil,
+                0,
+                NI_NUMERICHOST
+            )
+            guard result == 0 else { continue }
+            let addressString = String(cString: hostBuffer)
+            guard isUsablePairingAddress(addressString) else { continue }
+            candidates.append((interfaceName, addressString, score))
+        }
+
+        return candidates
+            .sorted { lhs, rhs in
+                if lhs.score != rhs.score {
+                    return lhs.score < rhs.score
+                }
+                return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
+            }
+            .first?
+            .address
+    }
+
+    private static func pairingInterfaceScore(name: String) -> Int? {
+        let virtualPrefixes = [
+            "bridge",
+            "utun",
+            "awdl",
+            "llw",
+            "lo",
+            "gif",
+            "stf",
+            "p2p",
+            "ap"
+        ]
+        if virtualPrefixes.contains(where: { name.hasPrefix($0) }) {
+            return nil
+        }
+        if name.hasPrefix("en") {
+            return 0
+        }
+        return 10
+    }
+
+    private static func isUsablePairingAddress(_ address: String) -> Bool {
+        guard !address.isEmpty else { return false }
+        if address == "0.0.0.0" || address == "255.255.255.255" { return false }
+        if address.hasPrefix("127.") || address.hasPrefix("169.254.") { return false }
+        return true
+    }
+
+    private static func preferredDevelopmentRelaySecret(environment: [String: String]) -> String {
+        environment["AETHERLINK_DEV_RELAY_SECRET"]?.takeIfNotEmpty
+            ?? environment["AETHERLINK_BOOTSTRAP_RELAY_FRAME_SECRET"]?.takeIfNotEmpty
+            ?? loadOrCreateSavedDevelopmentRelaySecret()
+    }
+
+    private static func relayScope(for host: String) -> String? {
+        let normalized = host
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
+            .lowercased()
+        if normalized == "localhost" ||
+            normalized == "::1" ||
+            normalized == "0:0:0:0:0:0:0:1" ||
+            normalized.hasPrefix("127.") {
+            return "usb_reverse"
+        }
+        if normalized.isPrivateOverlayRelayLiteral() {
+            return "private_overlay"
+        }
+        return nil
+    }
+
+    private static func loadOrCreateSavedDevelopmentRelaySecret(
+        defaults: UserDefaults = .standard
+    ) -> String {
+        let key = "aetherlink.dev_relay.secret"
+        if let existing = defaults.string(forKey: key)?.takeIfNotEmpty {
+            return existing
+        }
+        let secret = generateRelaySecret()
+        defaults.set(secret, forKey: key)
+        return secret
     }
 
     private static func loadDevelopmentRuntimeIdentityKey(
         deviceID: String,
         environment: [String: String]
-    ) -> RuntimeIdentityKey {
+    ) -> (key: RuntimeIdentityKey, signer: (any RuntimeChallengeSigning)?) {
+        if let filePath = environment["AETHERLINK_DEV_RUNTIME_IDENTITY_FILE"], !filePath.isEmpty {
+            let store = FileRuntimeIdentityKeyStore(fileURL: URL(fileURLWithPath: filePath))
+            do {
+                return (try store.loadOrCreate(), store)
+            } catch {
+                print("[runtime] runtime identity file failed: \(error.localizedDescription)")
+                return (
+                    RuntimeIdentityKey(publicKeyBase64: "", fingerprint: "dev-\(deviceID)"),
+                    nil
+                )
+            }
+        }
         if let publicKey = environment["AETHERLINK_DEV_RUNTIME_PUBLIC_KEY"], !publicKey.isEmpty {
-            return RuntimeIdentityKey(
-                publicKeyBase64: publicKey,
-                fingerprint: environment["AETHERLINK_DEV_RUNTIME_KEY_FINGERPRINT"] ?? "dev-\(deviceID)"
+            return (
+                RuntimeIdentityKey(
+                    publicKeyBase64: publicKey,
+                    fingerprint: environment["AETHERLINK_DEV_RUNTIME_KEY_FINGERPRINT"] ?? "dev-\(deviceID)"
+                ),
+                nil
             )
         }
+        let store = RuntimeIdentityKeyStore(
+            service: environment["AETHERLINK_DEV_RUNTIME_KEYCHAIN_SERVICE"] ?? "dev.aetherlink.runtime-dev-server",
+            account: environment["AETHERLINK_DEV_RUNTIME_KEYCHAIN_ACCOUNT"] ?? deviceID
+        )
         do {
-            return try RuntimeIdentityKeyStore(
-                service: environment["AETHERLINK_DEV_RUNTIME_KEYCHAIN_SERVICE"] ?? "dev.aetherlink.runtime-dev-server",
-                account: environment["AETHERLINK_DEV_RUNTIME_KEYCHAIN_ACCOUNT"] ?? deviceID
-            ).loadOrCreate()
+            return (try store.loadOrCreate(), store)
         } catch {
-            return RuntimeIdentityKey(publicKeyBase64: "", fingerprint: "dev-\(deviceID)")
+            let fileStore = FileRuntimeIdentityKeyStore()
+            do {
+                print("[runtime] runtime identity Keychain unavailable; using persisted file identity fallback.")
+                return (try fileStore.loadOrCreate(), fileStore)
+            } catch {
+                print("[runtime] runtime identity stores unavailable; using temporary fingerprint fallback.")
+                return (RuntimeIdentityKey(publicKeyBase64: "", fingerprint: "dev-\(deviceID)"), nil)
+            }
         }
     }
 }
@@ -234,6 +533,7 @@ private struct DevRuntimeIdentity {
     var publicKeyBase64: String
     var fingerprint: String
     var routeToken: String
+    var signer: (any RuntimeChallengeSigning)?
 
     var advertisementMetadata: RuntimeAdvertisementMetadata {
         RuntimeAdvertisementMetadata(
@@ -250,13 +550,84 @@ private enum RuntimeDevServerState {
     static var relayClient: RelayPeerClient?
 }
 
+private final class RelayPairingReadiness: @unchecked Sendable {
+    private let condition = NSCondition()
+    private var status: RelayPeerStatus = .stopped
+
+    var currentStatus: RelayPeerStatus {
+        condition.lock()
+        defer { condition.unlock() }
+        return status
+    }
+
+    func update(_ newStatus: RelayPeerStatus) {
+        condition.lock()
+        status = newStatus
+        condition.broadcast()
+        condition.unlock()
+    }
+
+    func waitUntilReadyForPairing(timeout: TimeInterval) -> Bool {
+        let deadline = Date().addingTimeInterval(max(0, timeout))
+        condition.lock()
+        defer { condition.unlock() }
+
+        while !status.isReadyForPairing {
+            if !condition.wait(until: deadline) {
+                break
+            }
+        }
+        return status.isReadyForPairing
+    }
+}
+
 private extension String {
     var takeIfNotEmpty: String? {
         isEmpty ? nil : self
     }
+
+    func isPrivateOverlayRelayLiteral() -> Bool {
+        isPrivateOverlayIPv4Literal() || isPrivateOverlayIPv6Literal()
+    }
+
+    private func isPrivateOverlayIPv4Literal() -> Bool {
+        let octets = split(separator: ".", omittingEmptySubsequences: false)
+        guard octets.count == 4 else { return false }
+        let values: [Int] = octets.compactMap { part in
+            guard !part.isEmpty,
+                  part.allSatisfy(\.isNumber),
+                  let value = Int(part),
+                  (0...255).contains(value)
+            else {
+                return nil
+            }
+            return value
+        }
+        guard values.count == 4 else { return false }
+        let first = values[0]
+        let second = values[1]
+        return first == 10 ||
+            (first == 100 && (64...127).contains(second)) ||
+            (first == 172 && (16...31).contains(second)) ||
+            (first == 192 && second == 168)
+    }
+
+    private func isPrivateOverlayIPv6Literal() -> Bool {
+        guard contains(":") else { return false }
+        return hasPrefix("fc") || hasPrefix("fd")
+    }
 }
 
 private extension RelayPeerStatus {
+    var isReadyForPairing: Bool {
+        switch self {
+        case .waitingForPeer, .ready:
+            return true
+        case .stopped, .connecting, .reconnecting, .failed:
+            return false
+        }
+    }
+
     var logLabel: String {
         switch self {
         case .stopped:

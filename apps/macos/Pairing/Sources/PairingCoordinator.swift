@@ -19,51 +19,62 @@ public struct PairingSession: Identifiable, Equatable, Sendable {
     public var relaySecret: String?
     public var relayExpiresAtEpochMillis: Int64?
     public var relayNonce: String?
+    public var relayScope: String?
     public var serviceType: String
 
     public var qrPayload: String {
+        pairingPayload(compact: false)
+    }
+
+    public var compactQRCodePayload: String {
+        pairingPayload(compact: true)
+    }
+
+    private func pairingPayload(compact: Bool) -> String {
         var components = URLComponents()
         components.scheme = "aetherlink"
         components.host = "pair"
         var queryItems = [
-            URLQueryItem(name: "version", value: "1"),
-            URLQueryItem(name: "pairing_nonce", value: nonce),
-            URLQueryItem(name: "pairing_code", value: code),
-            URLQueryItem(name: "mac_device_id", value: macDeviceID),
-            URLQueryItem(name: "mac_name", value: macName),
-            URLQueryItem(name: "fingerprint", value: fingerprint),
-            URLQueryItem(name: "service_type", value: serviceType)
+            URLQueryItem(name: compact ? "v" : "version", value: "1"),
+            URLQueryItem(name: compact ? "n" : "pairing_nonce", value: nonce),
+            URLQueryItem(name: compact ? "c" : "pairing_code", value: code),
+            URLQueryItem(name: compact ? "rid" : "runtime_device_id", value: macDeviceID),
+            URLQueryItem(name: compact ? "rn" : "runtime_name", value: macName),
+            URLQueryItem(name: compact ? "rf" : "runtime_key_fingerprint", value: fingerprint)
         ]
         if let runtimePublicKeyBase64, !runtimePublicKeyBase64.isEmpty {
-            queryItems.append(URLQueryItem(name: "runtime_public_key", value: runtimePublicKeyBase64))
-            queryItems.append(URLQueryItem(name: "runtime_key_fingerprint", value: fingerprint))
+            queryItems.append(URLQueryItem(name: compact ? "rk" : "runtime_public_key", value: runtimePublicKeyBase64))
         }
         if let routeToken, !routeToken.isEmpty {
-            queryItems.append(URLQueryItem(name: "route_token", value: routeToken))
+            queryItems.append(URLQueryItem(name: compact ? "rt" : "route_token", value: routeToken))
         }
         if let host {
-            queryItems.append(URLQueryItem(name: "host", value: host))
+            queryItems.append(URLQueryItem(name: compact ? "h" : "host", value: host))
         }
         if let port {
-            queryItems.append(URLQueryItem(name: "port", value: String(port)))
+            queryItems.append(URLQueryItem(name: compact ? "p" : "port", value: String(port)))
         }
         if let relayHost, !relayHost.isEmpty {
-            queryItems.append(URLQueryItem(name: "relay_host", value: relayHost))
+            queryItems.append(URLQueryItem(name: compact ? "rh" : "relay_host", value: relayHost))
         }
         if let relayPort {
-            queryItems.append(URLQueryItem(name: "relay_port", value: String(relayPort)))
+            queryItems.append(URLQueryItem(name: compact ? "rp" : "relay_port", value: String(relayPort)))
         }
         if let relayID, !relayID.isEmpty {
-            queryItems.append(URLQueryItem(name: "relay_id", value: relayID))
+            queryItems.append(URLQueryItem(name: compact ? "ri" : "relay_id", value: relayID))
         }
         if let relaySecret, !relaySecret.isEmpty {
-            queryItems.append(URLQueryItem(name: "relay_secret", value: relaySecret))
+            queryItems.append(URLQueryItem(name: compact ? "rs" : "relay_secret", value: relaySecret))
         }
         if let relayExpiresAtEpochMillis {
-            queryItems.append(URLQueryItem(name: "relay_expires_at", value: String(relayExpiresAtEpochMillis)))
+            queryItems.append(URLQueryItem(name: compact ? "rx" : "relay_expires_at", value: String(relayExpiresAtEpochMillis)))
         }
         if let relayNonce, !relayNonce.isEmpty {
-            queryItems.append(URLQueryItem(name: "relay_nonce", value: relayNonce))
+            queryItems.append(URLQueryItem(name: compact ? "rrn" : "relay_nonce", value: relayNonce))
+        }
+        if let relayScope, !relayScope.isEmpty {
+            let canonicalScopeName = relayHost == nil ? "route_scope" : "relay_scope"
+            queryItems.append(URLQueryItem(name: compact ? "rsc" : canonicalScopeName, value: relayScope))
         }
         components.queryItems = queryItems
         if let percentEncodedQuery = components.percentEncodedQuery {
@@ -154,6 +165,7 @@ public final class PairingCoordinator: @unchecked Sendable {
         relaySecret: String? = nil,
         relayExpiresAtEpochMillis: Int64? = nil,
         relayNonce: String? = nil,
+        relayScope: String? = nil,
         serviceType: String = "_aetherlink._tcp.local."
     ) -> PairingSession {
         let code = String(format: "%06d", Int.random(in: 0...999_999))
@@ -175,6 +187,7 @@ public final class PairingCoordinator: @unchecked Sendable {
             relaySecret: relaySecret,
             relayExpiresAtEpochMillis: relayExpiresAtEpochMillis,
             relayNonce: relayNonce,
+            relayScope: host == nil ? relayScope : relayScope ?? "local_diagnostic",
             serviceType: serviceType
         )
         lock.withLock {
@@ -200,7 +213,7 @@ public final class PairingCoordinator: @unchecked Sendable {
                 failedAttempts = 0
                 return .rejected(rejection(
                     reason: .expired,
-                    message: "Pairing session expired. Start pairing again on the runtime host.",
+                    message: "Pairing session expired. Start pairing again in AetherLink Runtime.",
                     retryable: false,
                     failedAttempts: 0,
                     remainingAttempts: 0
@@ -212,7 +225,7 @@ public final class PairingCoordinator: @unchecked Sendable {
                 guard failedAttempts < maxFailedAttempts else {
                     let rejection = rejection(
                         reason: .attemptsExceeded,
-                        message: "Too many invalid pairing attempts. Start pairing again on the runtime host.",
+                        message: "Too many invalid pairing attempts. Start pairing again in AetherLink Runtime.",
                         retryable: false,
                         failedAttempts: failedAttempts,
                         remainingAttempts: remainingAttempts

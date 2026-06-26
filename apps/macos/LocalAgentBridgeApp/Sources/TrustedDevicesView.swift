@@ -1,4 +1,6 @@
 import CompanionCore
+import CryptoKit
+import Foundation
 import SwiftUI
 import TrustedDevices
 
@@ -10,7 +12,7 @@ struct TrustedDevicesView: View {
         VStack(alignment: .leading, spacing: 18) {
                 CompanionPageHeader(
                     title: NSLocalizedString("Trusted Devices", comment: ""),
-                    subtitle: NSLocalizedString("Manage pairing trust and remove client devices allowed to use this local runtime.", comment: ""),
+                    subtitle: NSLocalizedString("Manage pairing trust and remove devices allowed to use AetherLink Runtime.", comment: ""),
                     systemImage: "lock.shield.fill"
                 )
 
@@ -32,7 +34,7 @@ struct TrustedDevicesView: View {
                     ContentUnavailableView(
                         NSLocalizedString("No trusted devices", comment: ""),
                         systemImage: "lock.slash",
-                        description: Text(NSLocalizedString("Pair a client device before allowing runtime commands.", comment: ""))
+                        description: Text(NSLocalizedString("Pair a device before allowing runtime commands.", comment: ""))
                     )
                     .frame(maxWidth: .infinity, minHeight: 280)
                 } else {
@@ -40,6 +42,7 @@ struct TrustedDevicesView: View {
                         TrustedDeviceRow(
                             name: device.name,
                             id: device.id,
+                            keyFingerprint: trustedDeviceKeyFingerprint(device.publicKeyBase64),
                             pairedAt: device.pairedAt
                         ) {
                             pendingRemovalDevice = device
@@ -77,12 +80,7 @@ struct TrustedDevicesView: View {
             }
             Button(NSLocalizedString("Cancel", comment: ""), role: .cancel) {}
         } message: {
-            Text(
-                String(
-                    format: NSLocalizedString("%@ will need to pair again before it can use this local runtime.", comment: ""),
-                    pendingRemovalDevice?.name ?? ""
-                )
-            )
+            Text(trustedDeviceRemovalMessage(for: pendingRemovalDevice))
         }
     }
 
@@ -97,6 +95,7 @@ struct TrustedDevicesView: View {
 private struct TrustedDeviceRow: View {
     let name: String
     let id: String
+    let keyFingerprint: String
     let pairedAt: Date
     let onRemove: () -> Void
 
@@ -122,6 +121,16 @@ private struct TrustedDeviceRow: View {
                 .font(.caption)
                 .lineLimit(1)
                 .truncationMode(.middle)
+                Text(
+                    String(
+                        format: NSLocalizedString("Key fingerprint %@", comment: ""),
+                        keyFingerprint
+                    )
+                )
+                .foregroundStyle(.secondary)
+                .font(.caption)
+                .lineLimit(1)
+                .truncationMode(.middle)
             }
 
             Spacer(minLength: 12)
@@ -134,4 +143,30 @@ private struct TrustedDeviceRow: View {
             .controlSize(.small)
         }
     }
+}
+
+func trustedDeviceKeyFingerprint(_ publicKeyBase64: String) -> String {
+    let trimmedKey = publicKeyBase64.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmedKey.isEmpty else {
+        return NSLocalizedString("Unavailable", comment: "")
+    }
+
+    let keyData = Data(base64Encoded: trimmedKey) ?? Data(trimmedKey.utf8)
+    let digest = SHA256.hash(data: keyData)
+    return digest.prefix(6)
+        .map { String(format: "%02X", $0) }
+        .joined(separator: ":")
+}
+
+func trustedDeviceRemovalMessage(for device: TrustedDevice?) -> String {
+    let trimmedName = device?.name.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    let name = trimmedName.isEmpty
+        ? NSLocalizedString("Selected device", comment: "")
+        : trimmedName
+    let keyFingerprint = trustedDeviceKeyFingerprint(device?.publicKeyBase64 ?? "")
+    return String(
+        format: NSLocalizedString("%@ will need to pair again before it can use AetherLink Runtime. Key fingerprint %@", comment: ""),
+        name,
+        keyFingerprint
+    )
 }

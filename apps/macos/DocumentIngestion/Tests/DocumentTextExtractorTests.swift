@@ -31,6 +31,44 @@ final class DocumentTextExtractorTests: XCTestCase {
         XCTAssertEqual(document.text, "Hello HWPX")
     }
 
+    func testExtractsTextFromHWPXHancomMimeAlias() throws {
+        let fileURL = try makeArchive(
+            extension: "bin",
+            entries: [
+                "Contents/section0.xml": "<root><p><t>Hello Hancom HWPX</t></p></root>"
+            ]
+        )
+
+        let document = try DocumentTextExtractor().extractText(
+            from: fileURL,
+            mimeType: "application/vnd.hancom.hwpx"
+        )
+
+        XCTAssertEqual(document.mimeType, "application/hwp+zip")
+        XCTAssertEqual(document.text, "Hello Hancom HWPX")
+    }
+
+    func testExtractsTextFromHWPMLXmlDocument() throws {
+        let fileURL = try writeText("<body><p><t>Hello HWPML</t></p></body>", extension: "hwpml")
+
+        let document = try DocumentTextExtractor().extractText(from: fileURL)
+
+        XCTAssertEqual(document.mimeType, "application/x-hwpml")
+        XCTAssertEqual(document.text, "Hello HWPML")
+    }
+
+    func testExtractsTextFromHWPMLHancomMimeAlias() throws {
+        let fileURL = try writeExtensionlessText("<body><p><t>Hello Hancom HWPML</t></p></body>")
+
+        let document = try DocumentTextExtractor().extractText(
+            from: fileURL,
+            mimeType: "application/vnd.hancom.hwpml"
+        )
+
+        XCTAssertEqual(document.mimeType, "application/x-hwpml")
+        XCTAssertEqual(document.text, "Hello Hancom HWPML")
+    }
+
     func testExtractsTextFromOpenDocumentText() throws {
         let fileURL = try makeArchive(
             extension: "odt",
@@ -153,6 +191,15 @@ final class DocumentTextExtractorTests: XCTestCase {
         XCTAssertTrue(document.text.contains("Hello HTML"))
     }
 
+    func testExtractsTextFromXHTML() throws {
+        let fileURL = try writeText("<html><body><h1>Hello XHTML</h1></body></html>", extension: "xhtml")
+
+        let document = try DocumentTextExtractor().extractText(from: fileURL)
+
+        XCTAssertEqual(document.mimeType, "text/html")
+        XCTAssertTrue(document.text.contains("Hello XHTML"))
+    }
+
     func testExtractsPlainTextFamilyDocuments() throws {
         let fileURL = try writeText(#"{"title":"Hello JSON"}"#, extension: "json")
 
@@ -160,6 +207,51 @@ final class DocumentTextExtractorTests: XCTestCase {
 
         XCTAssertEqual(document.mimeType, "text/plain")
         XCTAssertEqual(document.text, #"{"title":"Hello JSON"}"#)
+    }
+
+    func testExtractsStructuredPlainTextDocumentFamily() throws {
+        let cases: [(extension: String, mimeType: String?, fileText: String, expectedText: String)] = [
+            ("jsonl", "application/x-ndjson", #"{"title":"Hello JSONL"}"#, #"{"title":"Hello JSONL"}"#),
+            ("yaml", "application/yaml", "title: Hello YAML", "title: Hello YAML"),
+            ("toml", "application/toml", #"title = "Hello TOML""#, #"title = "Hello TOML""#),
+            ("csv", "text/csv", "title,body\nHello CSV,Attachment text", "title,body Hello CSV,Attachment text"),
+            ("tsv", "text/tab-separated-values", "title\tbody\nHello TSV\tAttachment text", "title body Hello TSV Attachment text"),
+            ("ini", "text/plain", "[section]\ntitle=Hello INI", "[section] title=Hello INI"),
+            ("properties", "text/plain", "title=Hello properties", "title=Hello properties"),
+        ]
+
+        for testCase in cases {
+            let fileURL = try writeText(testCase.fileText, extension: testCase.extension)
+
+            let document = try DocumentTextExtractor().extractText(
+                from: fileURL,
+                mimeType: testCase.mimeType
+            )
+
+            XCTAssertEqual(document.mimeType, "text/plain", "Expected plain text MIME for .\(testCase.extension)")
+            XCTAssertEqual(document.text, testCase.expectedText, "Unexpected text for .\(testCase.extension)")
+        }
+    }
+
+    func testExtractsStructuredPlainTextDocumentsFromMimeOnlyAttachments() throws {
+        let cases: [(mimeType: String, fileText: String, expectedText: String)] = [
+            ("application/jsonl", #"{"title":"Hello JSONL"}"#, #"{"title":"Hello JSONL"}"#),
+            ("application/x-yaml", "title: Hello YAML", "title: Hello YAML"),
+            ("application/toml", #"title = "Hello TOML""#, #"title = "Hello TOML""#),
+            ("application/x-toml", #"title = "Hello xTOML""#, #"title = "Hello xTOML""#),
+        ]
+
+        for testCase in cases {
+            let fileURL = try writeExtensionlessText(testCase.fileText)
+
+            let document = try DocumentTextExtractor().extractText(
+                from: fileURL,
+                mimeType: testCase.mimeType
+            )
+
+            XCTAssertEqual(document.mimeType, "text/plain", "Expected MIME-only \(testCase.mimeType) as text")
+            XCTAssertEqual(document.text, testCase.expectedText, "Unexpected text for \(testCase.mimeType)")
+        }
     }
 
     func testExtractsRTFText() throws {
@@ -186,6 +278,13 @@ final class DocumentTextExtractorTests: XCTestCase {
         let fileURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
             .appendingPathExtension(pathExtension)
+        try text.write(to: fileURL, atomically: true, encoding: .utf8)
+        return fileURL
+    }
+
+    private func writeExtensionlessText(_ text: String) throws -> URL {
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
         try text.write(to: fileURL, atomically: true, encoding: .utf8)
         return fileURL
     }

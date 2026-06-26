@@ -26,7 +26,7 @@ public enum ModelProvider: String, Equatable, Sendable {
         case .lmStudio:
             return "LM Studio"
         case .aggregate:
-            return "Local runtime"
+            return "AetherLink Runtime"
         }
     }
 

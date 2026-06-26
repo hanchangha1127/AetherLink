@@ -4,8 +4,14 @@ import XCTest
 
 final class AggregatingLlmBackendResidencyTests: XCTestCase {
     func testSwitchingModelsUnloadsPreviousInactiveModel() async throws {
-        let ollama = ResidencyTestBackend(provider: .ollama)
-        let lmStudio = ResidencyTestBackend(provider: .lmStudio)
+        let ollama = ResidencyTestBackend(
+            provider: .ollama,
+            models: [ModelInfo(id: "qwen-local", name: "qwen-local", provider: .ollama)]
+        )
+        let lmStudio = ResidencyTestBackend(
+            provider: .lmStudio,
+            models: [ModelInfo(id: "gemma-local", name: "gemma-local", provider: .lmStudio)]
+        )
         let backend = AggregatingLlmBackend(
             [ollama, lmStudio],
             modelIdleUnloadDelayNanoseconds: 60_000_000_000
@@ -21,7 +27,10 @@ final class AggregatingLlmBackendResidencyTests: XCTestCase {
     }
 
     func testRepeatedSameModelDoesNotUnloadBetweenChats() async throws {
-        let ollama = ResidencyTestBackend(provider: .ollama)
+        let ollama = ResidencyTestBackend(
+            provider: .ollama,
+            models: [ModelInfo(id: "qwen-local", name: "qwen-local", provider: .ollama)]
+        )
         let backend = AggregatingLlmBackend(
             [ollama],
             modelIdleUnloadDelayNanoseconds: 60_000_000_000
@@ -34,7 +43,10 @@ final class AggregatingLlmBackendResidencyTests: XCTestCase {
     }
 
     func testIdlePolicyUnloadsActiveModelAfterDelay() async throws {
-        let ollama = ResidencyTestBackend(provider: .ollama)
+        let ollama = ResidencyTestBackend(
+            provider: .ollama,
+            models: [ModelInfo(id: "qwen-local", name: "qwen-local", provider: .ollama)]
+        )
         let backend = AggregatingLlmBackend(
             [ollama],
             modelIdleUnloadDelayNanoseconds: 0
@@ -44,6 +56,77 @@ final class AggregatingLlmBackendResidencyTests: XCTestCase {
 
         await eventually {
             ollama.unloadedModels == ["qwen-local"]
+        }
+    }
+
+    func testUnknownUnqualifiedModelDoesNotFallbackToOllama() async throws {
+        let ollama = ResidencyTestBackend(
+            provider: .ollama,
+            models: [ModelInfo(id: "qwen-local", name: "qwen-local", provider: .ollama)]
+        )
+        let backend = AggregatingLlmBackend([ollama])
+
+        do {
+            _ = try await collect(backend.chat(request: chatRequest(model: "synthetic-default")))
+            XCTFail("Expected unknown model to be rejected")
+        } catch let error as BackendError {
+            XCTAssertEqual(error.provider, .aggregate)
+            XCTAssertEqual(error.code, "model_not_installed")
+            XCTAssertFalse(error.retryable)
+            XCTAssertTrue(ollama.routedModels.isEmpty)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
+    func testQualifiedModelMustBeReportedByThatProvider() async throws {
+        let ollama = ResidencyTestBackend(
+            provider: .ollama,
+            models: [ModelInfo(id: "qwen-local", name: "qwen-local", provider: .ollama)]
+        )
+        let lmStudio = ResidencyTestBackend(
+            provider: .lmStudio,
+            models: [ModelInfo(id: "gemma-local", name: "gemma-local", provider: .lmStudio)]
+        )
+        let backend = AggregatingLlmBackend([ollama, lmStudio])
+
+        do {
+            _ = try await collect(backend.chat(request: chatRequest(model: "lm_studio:qwen-local")))
+            XCTFail("Expected provider-mismatched model to be rejected")
+        } catch let error as BackendError {
+            XCTAssertEqual(error.provider, .lmStudio)
+            XCTAssertEqual(error.code, "model_not_installed")
+            XCTAssertFalse(error.retryable)
+            XCTAssertTrue(lmStudio.routedModels.isEmpty)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
+    func testInstalledEmbeddingModelIsNotRoutedAsChat() async throws {
+        let ollama = ResidencyTestBackend(
+            provider: .ollama,
+            models: [
+                ModelInfo(
+                    id: "nomic-embed-text",
+                    name: "nomic-embed-text",
+                    provider: .ollama,
+                    kind: .embedding
+                )
+            ]
+        )
+        let backend = AggregatingLlmBackend([ollama])
+
+        do {
+            _ = try await collect(backend.chat(request: chatRequest(model: "ollama:nomic-embed-text")))
+            XCTFail("Expected embedding model to be rejected for chat routing")
+        } catch let error as BackendError {
+            XCTAssertEqual(error.provider, .ollama)
+            XCTAssertEqual(error.code, "model_not_installed")
+            XCTAssertFalse(error.retryable)
+            XCTAssertTrue(ollama.routedModels.isEmpty)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
         }
     }
 
@@ -85,14 +168,21 @@ private final class ResidencyTestBackend: LlmBackend, @unchecked Sendable {
     let provider: ModelProvider
 
     private let lock = NSLock()
+    private let models: [ModelInfo]
     private var unloaded: [String] = []
+    private var routed: [String] = []
 
     var unloadedModels: [String] {
         lock.withLock { unloaded }
     }
 
-    init(provider: ModelProvider) {
+    var routedModels: [String] {
+        lock.withLock { routed }
+    }
+
+    init(provider: ModelProvider, models: [ModelInfo] = []) {
         self.provider = provider
+        self.models = models
     }
 
     func healthCheck() async -> BackendStatus {
@@ -100,11 +190,14 @@ private final class ResidencyTestBackend: LlmBackend, @unchecked Sendable {
     }
 
     func listModels() async throws -> [ModelInfo] {
-        []
+        models
     }
 
     func chat(request: ChatRequest) -> AsyncThrowingStream<ChatStreamEvent, Error> {
         AsyncThrowingStream { continuation in
+            lock.withLock {
+                routed.append(request.model)
+            }
             continuation.yield(.done(inputTokens: 1, outputTokens: 1))
             continuation.finish()
         }

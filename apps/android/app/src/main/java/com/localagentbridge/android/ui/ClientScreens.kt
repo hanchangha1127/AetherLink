@@ -1,8 +1,10 @@
 package com.localagentbridge.android.ui
 
 import android.content.ClipData
+import android.text.format.Formatter
 import android.widget.Toast
 import androidx.annotation.StringRes
+import com.localagentbridge.android.isAetherLinkPairingQrCandidateValue
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -11,6 +13,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -74,11 +78,16 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.ClipEntry
@@ -86,6 +95,7 @@ import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -99,13 +109,16 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.localagentbridge.android.R
+import com.localagentbridge.android.core.pairing.isEligibleRemoteRelayHost
 import com.localagentbridge.android.core.transport.RuntimeEndpointSource
 import com.localagentbridge.android.runtime.RuntimeAppLanguage
+import com.localagentbridge.android.runtime.RuntimeAppTheme
 import com.localagentbridge.android.runtime.RuntimeActiveRouteKind
 import com.localagentbridge.android.runtime.RuntimeChatMessage
 import com.localagentbridge.android.runtime.RuntimeChatSession
 import com.localagentbridge.android.runtime.RuntimeDiscoveredRuntime
 import com.localagentbridge.android.runtime.RuntimeMemoryEntry
+import com.localagentbridge.android.runtime.RuntimeMessageAttachment
 import com.localagentbridge.android.runtime.RuntimeModel
 import com.localagentbridge.android.runtime.RuntimePendingAttachment
 import com.localagentbridge.android.runtime.RuntimeProviderStatus
@@ -116,65 +129,32 @@ import com.localagentbridge.android.runtime.isChatModel
 import com.localagentbridge.android.runtime.isEmbeddingModel
 import com.localagentbridge.android.runtime.supportsImageInput
 import kotlinx.coroutines.launch
-import java.text.DateFormat
-import java.util.Date
 import java.util.Locale
 
-@Composable
-fun PairingScreen(
-    state: RuntimeUiState,
-    onStartDiscovery: () -> Unit,
-    onStopDiscovery: () -> Unit,
-    onUseDiscoveredRuntime: (RuntimeDiscoveredRuntime) -> Unit,
-    onForgetTrustedRuntime: () -> Unit,
-    onScanPairingQr: () -> Unit,
-    onConnect: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    ScreenList(modifier) {
-        val hasTrustedRuntime = state.trustedRuntime != null
-        val hasRouteDiscoveryContext = hasTrustedRuntime || state.isPairingAwaitingRoute
-        item {
-            ScreenHeader(
-                title = R.string.pairing_title,
-                subtitle = R.string.pairing_subtitle,
-            )
-        }
-        item {
-            QrPairingPanel(
-                state = state,
-                onScanPairingQr = onScanPairingQr,
-            )
-        }
-        if (state.isPairingAwaitingRoute) {
-            item { PendingPairingRouteStatus(state = state) }
-        }
-        if (hasTrustedRuntime) {
-            item {
-                TrustedRuntimePanel(
-                    state = state,
-                    onForgetTrustedRuntime = onForgetTrustedRuntime,
-                )
-            }
-            item {
-                PairingConnectButton(
-                    state = state,
-                    onConnect = onConnect,
-                )
-            }
-        }
-        if (hasRouteDiscoveryContext) {
-            item {
-                DiscoveryPanel(
-                    state = state,
-                    onStartDiscovery = onStartDiscovery,
-                    onStopDiscovery = onStopDiscovery,
-                    onUseDiscoveredRuntime = onUseDiscoveredRuntime,
-                )
-            }
-        }
-        item { ErrorText(state.error, onRouteAction = onScanPairingQr) }
+internal enum class AetherLinkInteractionFeedback {
+    PrimaryAction,
+    SelectionChange,
+    Toggle,
+    Destructive,
+    Clipboard,
+}
+
+internal fun aetherLinkHapticFeedbackType(feedback: AetherLinkInteractionFeedback): HapticFeedbackType {
+    return when (feedback) {
+        AetherLinkInteractionFeedback.PrimaryAction,
+        AetherLinkInteractionFeedback.SelectionChange,
+        AetherLinkInteractionFeedback.Toggle,
+        -> HapticFeedbackType.TextHandleMove
+        AetherLinkInteractionFeedback.Destructive,
+        AetherLinkInteractionFeedback.Clipboard,
+        -> HapticFeedbackType.LongPress
     }
+}
+
+internal fun shouldPerformSelectionChangeHaptic(selected: Boolean): Boolean = !selected
+
+private fun HapticFeedback.performAetherLinkFeedback(feedback: AetherLinkInteractionFeedback) {
+    performHapticFeedback(aetherLinkHapticFeedbackType(feedback))
 }
 
 @Composable
@@ -229,7 +209,7 @@ private fun QrPairingPanel(
             )
             Button(
                 onClick = {
-                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                    hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
                     onScanPairingQr()
                 },
                 enabled = !state.isConnecting,
@@ -260,6 +240,65 @@ private fun QrPairingPanel(
             )
         }
     }
+}
+
+@Composable
+private fun ManualPairingPayloadDialog(
+    onDismiss: () -> Unit,
+    onSubmit: (String) -> Unit,
+) {
+    var payload by rememberSaveable { mutableStateOf("") }
+    val sanitizedPayload = usableManualPairingPayload(payload)
+    val hapticFeedback = LocalHapticFeedback.current
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(stringResource(R.string.manual_qr_payload_title))
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text = stringResource(R.string.manual_qr_payload_detail),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.secondary,
+                )
+                OutlinedTextField(
+                    value = payload,
+                    onValueChange = { payload = it },
+                    label = { Text(stringResource(R.string.manual_qr_payload_label)) },
+                    minLines = 3,
+                    maxLines = 6,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
+                    sanitizedPayload?.let(onSubmit)
+                },
+                enabled = sanitizedPayload != null,
+            ) {
+                Text(stringResource(R.string.manual_qr_payload_submit))
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = {
+                    hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Toggle)
+                    onDismiss()
+                },
+            ) {
+                Text(stringResource(R.string.cancel))
+            }
+        },
+    )
+}
+
+internal fun usableManualPairingPayload(rawValue: String): String? {
+    return rawValue.trim().takeIf { it.isAetherLinkPairingQrCandidateValue() }
 }
 
 @Composable
@@ -353,7 +392,7 @@ private fun PairingConnectButton(
 
     Button(
         onClick = {
-            hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+            hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
             onConnect()
         },
         enabled = state.trustedRuntime != null && !state.isConnecting,
@@ -370,20 +409,27 @@ private fun PairingConnectButton(
 
 @Composable
 private fun connectRuntimeActionLabel(state: RuntimeUiState): String {
+    return stringResource(connectRuntimeActionLabelRes(state))
+}
+
+@StringRes
+internal fun connectRuntimeActionLabelRes(state: RuntimeUiState): Int {
     return if (state.isConnecting) {
-        stringResource(R.string.connecting)
-    } else if (state.trustedRuntime.hasRelayRoute()) {
-        stringResource(R.string.connect_remote_route)
+        R.string.connecting
+    } else if (state.trustedRuntime.hasUsableRelayRoute()) {
+        R.string.connect_remote_route
     } else {
-        stringResource(R.string.connect_runtime)
+        R.string.connect_runtime
     }
 }
 
 @Composable
 fun ConnectionStatusScreen(
     state: RuntimeUiState,
+    onConnect: (() -> Unit)? = null,
     onRefreshHealth: () -> Unit,
     onDisconnect: () -> Unit,
+    onScanLatestQr: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     ScreenList(modifier) {
@@ -394,7 +440,11 @@ fun ConnectionStatusScreen(
             )
         }
         item {
-            ConnectionStatusPanel(state = state)
+            ConnectionStatusPanel(
+                state = state,
+                onConnect = onConnect,
+                onScanLatestQr = onScanLatestQr,
+            )
         }
         item {
             ConnectionStatusActions(
@@ -403,12 +453,24 @@ fun ConnectionStatusScreen(
                 onDisconnect = onDisconnect,
             )
         }
-        item { ErrorText(state.error) }
+        item { RouteRefreshSavedNotice(state = state) }
+        item {
+            ErrorText(
+                error = state.error,
+                routeAction = routeNoticePrimaryAction(state),
+                onConnect = onConnect,
+                onScanLatestQr = onScanLatestQr,
+            )
+        }
     }
 }
 
 @Composable
-private fun ConnectionStatusPanel(state: RuntimeUiState) {
+private fun ConnectionStatusPanel(
+    state: RuntimeUiState,
+    onConnect: (() -> Unit)? = null,
+    onScanLatestQr: (() -> Unit)? = null,
+) {
     OutlinedCard(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -439,11 +501,11 @@ private fun ConnectionStatusPanel(state: RuntimeUiState) {
                 value = providerStatusSummary(state),
             )
             ProviderStatusRows(providers = state.providerStatuses)
-            StatusLine(
-                label = stringResource(R.string.runtime_route),
-                value = runtimeRouteDisplayLabel(state),
+            RuntimeRouteNotice(
+                state = state,
+                onConnect = onConnect,
+                onScanLatestQr = onScanLatestQr,
             )
-            RuntimeRouteNotice(state = state)
             StatusLine(
                 label = stringResource(R.string.connected),
                 value = if (state.isConnected) stringResource(R.string.yes) else stringResource(R.string.no),
@@ -477,37 +539,14 @@ private fun ConnectionStatusHero(state: RuntimeUiState) {
 
     val isTrustedConnection = state.isConnected && state.trustedRuntime != null
     val needsPairing = state.trustedRuntime == null && !state.isConnected
-    val hasRelayRoute = state.trustedRuntime.hasRelayRoute()
+    val hasRelayRoute = state.trustedRuntime.hasUsableRelayRoute()
     val needsRoute = state.trustedRuntime != null &&
         state.trustedRuntime.endpointHint == null &&
         !hasRelayRoute &&
         !state.isConnected
-    val hasSavedRelayRoute = hasRelayRoute && !state.isConnected
-    val hasSavedRoute = state.trustedRuntime != null &&
-        (state.trustedRuntime.endpointHint != null || hasRelayRoute) &&
-        !state.isConnected
 
-    val title = when {
-        isTrustedConnection -> stringResource(R.string.status_connected_trusted_title)
-        state.isConnected -> stringResource(R.string.status_connected_diagnostics_title)
-        state.isConnecting -> stringResource(R.string.status_connecting_trusted_title)
-        state.isPairingAwaitingRoute || needsRoute -> stringResource(R.string.status_route_needed_title)
-        needsPairing -> stringResource(R.string.status_pairing_needed_title)
-        hasSavedRelayRoute -> stringResource(R.string.status_relay_ready_title)
-        hasSavedRoute -> stringResource(R.string.status_connect_ready_title)
-        else -> stringResource(R.string.status_disconnected)
-    }
-    val detail = when {
-        isTrustedConnection -> stringResource(R.string.status_connected_trusted_detail, runtimeName)
-        state.isConnected -> stringResource(R.string.status_connected_diagnostics_detail)
-        state.isConnecting -> stringResource(R.string.status_connecting_trusted_detail, runtimeName)
-        state.isPairingAwaitingRoute -> stringResource(R.string.pending_pairing_route_status, runtimeName)
-        needsRoute -> stringResource(R.string.status_route_needed_detail)
-        needsPairing -> stringResource(R.string.status_pairing_needed_detail)
-        hasSavedRelayRoute -> stringResource(R.string.status_relay_ready_detail, runtimeName)
-        hasSavedRoute -> stringResource(R.string.status_connect_ready_detail, runtimeName)
-        else -> stringResource(R.string.status_disconnected_summary)
-    }
+    val title = stringResource(connectionStatusHeroTitleRes(state))
+    val detail = stringResource(connectionStatusHeroDetailRes(state), runtimeName)
     val icon = when {
         isTrustedConnection -> Icons.Filled.CheckCircle
         state.isConnecting -> Icons.Filled.Refresh
@@ -561,60 +600,125 @@ private fun ConnectionStatusHero(state: RuntimeUiState) {
     }
 }
 
-@Composable
-private fun runtimeRouteDisplayLabel(state: RuntimeUiState): String {
-    when (state.activeRouteKind) {
-        RuntimeActiveRouteKind.Relay -> return stringResource(R.string.runtime_route_relay)
-        RuntimeActiveRouteKind.PeerToPeer -> return stringResource(R.string.runtime_route_p2p)
-        RuntimeActiveRouteKind.DirectTcp, null -> Unit
+@StringRes
+internal fun connectionStatusHeroTitleRes(state: RuntimeUiState): Int {
+    val isTrustedConnection = state.isConnected && state.trustedRuntime != null
+    val needsPairing = state.trustedRuntime == null && !state.isConnected
+    val hasRelayRoute = state.trustedRuntime.hasUsableRelayRoute()
+    val needsRoute = state.trustedRuntime != null &&
+        state.trustedRuntime.endpointHint == null &&
+        !hasRelayRoute &&
+        !state.isConnected
+    val hasSavedRelayRoute = hasRelayRoute && !state.isConnected
+    val hasSavedRoute = state.trustedRuntime != null &&
+        (state.trustedRuntime.endpointHint != null || hasRelayRoute) &&
+        !state.isConnected
+
+    return when {
+        isTrustedConnection -> R.string.status_connected_trusted_title
+        state.isConnected -> R.string.status_connected_diagnostics_title
+        state.isConnecting -> R.string.status_connecting_trusted_title
+        state.isPairingAwaitingRoute || needsRoute -> R.string.status_route_needed_title
+        needsPairing -> R.string.status_pairing_needed_title
+        hasSavedRelayRoute -> R.string.status_relay_ready_title
+        hasSavedRoute -> R.string.status_connect_ready_title
+        else -> R.string.status_disconnected
     }
-    if (state.isConnected || state.isConnecting) {
-        val host = state.runtimeHost.takeIf { it.isNotBlank() }
-        val port = state.runtimePort.takeIf { it.isNotBlank() }
-        if (host != null && port != null) {
-            return when (state.runtimeEndpointSource) {
-                RuntimeEndpointSource.BonjourDiscovery -> stringResource(R.string.runtime_route_local_discovery)
-                RuntimeEndpointSource.PairingQr -> stringResource(R.string.runtime_route_local_qr)
-                RuntimeEndpointSource.UsbReverse,
-                RuntimeEndpointSource.Emulator -> stringResource(R.string.runtime_route_development)
-                RuntimeEndpointSource.TrustedLastKnown -> stringResource(R.string.runtime_route_saved_hint)
-                RuntimeEndpointSource.Manual -> stringResource(R.string.runtime_route_diagnostics)
-            }
-        }
-    }
-    state.trustedRuntime?.endpointHint?.let {
-        return stringResource(R.string.runtime_route_saved_hint)
-    }
-    if (state.trustedRuntime.hasRelayRoute()) {
-        return stringResource(R.string.runtime_route_relay)
-    }
-    if (state.isPairingAwaitingRoute) {
-        val runtimeName = state.pendingPairingRuntimeName
-            ?.takeIf { it.isNotBlank() }
-            ?: stringResource(R.string.trusted_runtime)
-        return stringResource(R.string.pending_pairing_route_status, runtimeName)
-    }
-    if (state.trustedRuntime != null) {
-        return stringResource(R.string.runtime_route_resolving)
-    }
-    return stringResource(R.string.runtime_route_pair_first)
 }
 
-private fun RuntimeTrustedRuntime?.hasRelayRoute(): Boolean {
-    return this != null &&
-        !relayHost.isNullOrBlank() &&
+@StringRes
+internal fun connectionStatusHeroDetailRes(state: RuntimeUiState): Int {
+    val isTrustedConnection = state.isConnected && state.trustedRuntime != null
+    val needsPairing = state.trustedRuntime == null && !state.isConnected
+    val hasRelayRoute = state.trustedRuntime.hasUsableRelayRoute()
+    val needsRoute = state.trustedRuntime != null &&
+        state.trustedRuntime.endpointHint == null &&
+        !hasRelayRoute &&
+        !state.isConnected
+    val hasSavedRelayRoute = hasRelayRoute && !state.isConnected
+    val hasSavedRoute = state.trustedRuntime != null &&
+        (state.trustedRuntime.endpointHint != null || hasRelayRoute) &&
+        !state.isConnected
+
+    return when {
+        isTrustedConnection -> R.string.status_connected_trusted_detail
+        state.isConnected -> R.string.status_connected_diagnostics_detail
+        state.isConnecting -> R.string.status_connecting_trusted_detail
+        state.isPairingAwaitingRoute -> R.string.pending_pairing_route_detail
+        needsRoute -> R.string.status_route_needed_detail
+        needsPairing -> R.string.status_pairing_needed_detail
+        hasSavedRelayRoute -> R.string.status_relay_ready_detail
+        hasSavedRoute -> R.string.status_connect_ready_detail
+        else -> R.string.status_disconnected_summary
+    }
+}
+
+internal fun RuntimeTrustedRuntime?.hasRelayRouteMaterial(): Boolean {
+    val host = this?.relayHost?.takeIf { it.isNotBlank() } ?: return false
+    return isEligibleRemoteRelayHost(host, relayScope) &&
         relayPort != null &&
         relayPort in 1..65535 &&
-        !relayId.isNullOrBlank()
+        !relayId.isNullOrBlank() &&
+        !relaySecret.isNullOrBlank() &&
+        relayExpiresAtEpochMillis != null &&
+        relayExpiresAtEpochMillis > 0L &&
+        !relayNonce.isNullOrBlank()
+}
+
+internal fun RuntimeTrustedRuntime?.hasUsableRelayRoute(): Boolean {
+    return hasRelayRouteMaterial() && !isRelayRouteExpired()
+}
+
+private fun RuntimeTrustedRuntime?.hasUnusableRelayRouteHint(): Boolean {
+    val runtime = this ?: return false
+    val hasAnyRelayField = !runtime.relayHost.isNullOrBlank() ||
+        runtime.relayPort != null ||
+        !runtime.relayId.isNullOrBlank() ||
+        !runtime.relaySecret.isNullOrBlank() ||
+        runtime.relayExpiresAtEpochMillis != null ||
+        !runtime.relayNonce.isNullOrBlank()
+    return hasAnyRelayField && !runtime.hasRelayRouteMaterial()
+}
+
+internal fun RuntimeTrustedRuntime?.hasRelayRouteWithoutSecret(): Boolean {
+    val runtime = this ?: return false
+    val host = runtime.relayHost?.takeIf { it.isNotBlank() } ?: return false
+    return isEligibleRemoteRelayHost(host, runtime.relayScope) &&
+        runtime.relayPort != null &&
+        runtime.relayPort in 1..65535 &&
+        !runtime.relayId.isNullOrBlank() &&
+        runtime.relaySecret.isNullOrBlank()
 }
 
 @Composable
-private fun RuntimeRouteNotice(state: RuntimeUiState) {
+private fun RuntimeRouteNotice(
+    state: RuntimeUiState,
+    onConnect: (() -> Unit)?,
+    onScanLatestQr: (() -> Unit)?,
+) {
     val trustedRuntime = state.trustedRuntime
     val notice = runtimeRouteNotice(state, trustedRuntime) ?: return
+    val hapticFeedback = LocalHapticFeedback.current
+    val action = notice.action
+    val actionHandler = when (action) {
+        RouteNoticePrimaryAction.Connect -> onConnect
+        RouteNoticePrimaryAction.ScanLatestQr -> onScanLatestQr
+        null -> null
+    }
 
     Surface(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .let { base ->
+                if (actionHandler == null) {
+                    base
+                } else {
+                    base.clickable(role = Role.Button) {
+                        hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
+                        actionHandler()
+                    }
+                }
+            },
         shape = RoundedCornerShape(14.dp),
         color = notice.containerColor(),
         contentColor = notice.contentColor(),
@@ -647,18 +751,14 @@ private fun RuntimeRouteNotice(state: RuntimeUiState) {
                     style = MaterialTheme.typography.bodySmall,
                     color = notice.contentColor(),
                 )
-                relayRouteEndpointLabel(trustedRuntime)?.let { endpointLabel ->
+                if (action != null && actionHandler != null) {
                     Text(
-                        text = endpointLabel,
-                        style = MaterialTheme.typography.bodySmall,
+                        text = stringResource(action.labelRes()),
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
                         color = notice.contentColor(),
-                    )
-                }
-                relayRouteLeaseLabel(trustedRuntime)?.let { leaseLabel ->
-                    Text(
-                        text = leaseLabel,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = notice.contentColor(),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
             }
@@ -666,16 +766,64 @@ private fun RuntimeRouteNotice(state: RuntimeUiState) {
     }
 }
 
-private data class RuntimeRouteNoticeState(
+internal data class RuntimeRouteNoticeState(
     @param:StringRes val detailRes: Int,
     val tone: RuntimeRouteNoticeTone,
     val icon: androidx.compose.ui.graphics.vector.ImageVector,
+    val action: RouteNoticePrimaryAction? = null,
 )
 
-private enum class RuntimeRouteNoticeTone {
+internal enum class RuntimeRouteNoticeTone {
     Neutral,
     Ready,
     Warning,
+}
+
+internal enum class RouteNoticePrimaryAction {
+    Connect,
+    ScanLatestQr,
+}
+
+@StringRes
+internal fun routeNoticeActionLabelRes(action: RouteNoticePrimaryAction): Int {
+    return when (action) {
+        RouteNoticePrimaryAction.Connect -> R.string.connect_remote_route
+        RouteNoticePrimaryAction.ScanLatestQr -> R.string.route_notice_action_scan_qr
+    }
+}
+
+@StringRes
+internal fun RouteNoticePrimaryAction.labelRes(): Int {
+    return when (this) {
+        RouteNoticePrimaryAction.Connect -> R.string.connect_remote_route
+        RouteNoticePrimaryAction.ScanLatestQr -> R.string.route_notice_action_scan_qr
+    }
+}
+
+internal fun routeNoticePrimaryAction(state: RuntimeUiState): RouteNoticePrimaryAction? {
+    if (state.isConnected || state.isConnecting) return null
+    val trustedRuntime = state.trustedRuntime ?: return RouteNoticePrimaryAction.ScanLatestQr
+    if (state.isPairingAwaitingRoute) return RouteNoticePrimaryAction.ScanLatestQr
+    if (state.error?.isRouteAvailabilityNotice() == true) {
+        return if (
+            state.error.code in QR_REFRESH_EMPTY_CHAT_ERROR_CODES ||
+            state.error.diagnosticCode in QR_REFRESH_EMPTY_CHAT_DIAGNOSTIC_CODES
+        ) {
+            RouteNoticePrimaryAction.ScanLatestQr
+        } else if (
+            trustedRuntime.hasUsableRelayRoute() ||
+            trustedRuntime.endpointHint != null ||
+            state.runtimeHost.isNotBlank()
+        ) {
+            RouteNoticePrimaryAction.Connect
+        } else {
+            RouteNoticePrimaryAction.ScanLatestQr
+        }
+    }
+    if (trustedRuntime.hasUsableRelayRoute()) return RouteNoticePrimaryAction.Connect
+    if (trustedRuntime.endpointHint != null) return RouteNoticePrimaryAction.Connect
+    if (state.runtimeHost.isNotBlank()) return RouteNoticePrimaryAction.Connect
+    return RouteNoticePrimaryAction.ScanLatestQr
 }
 
 @Composable
@@ -692,7 +840,7 @@ private fun RuntimeRouteNoticeState.contentColor() = when (tone) {
     RuntimeRouteNoticeTone.Neutral -> MaterialTheme.colorScheme.onSurfaceVariant
 }
 
-private fun runtimeRouteNotice(
+internal fun runtimeRouteNotice(
     state: RuntimeUiState,
     trustedRuntime: RuntimeTrustedRuntime?,
 ): RuntimeRouteNoticeState? {
@@ -728,24 +876,36 @@ private fun runtimeRouteNotice(
             )
         }
     }
-    if (trustedRuntime.hasRelayRoute()) {
+    if (trustedRuntime.hasRelayRouteWithoutSecret()) {
+        return RuntimeRouteNoticeState(
+            detailRes = R.string.route_notice_relay_without_secret,
+            tone = RuntimeRouteNoticeTone.Warning,
+            icon = Icons.Filled.Error,
+            action = RouteNoticePrimaryAction.ScanLatestQr,
+        )
+    }
+    if (trustedRuntime.hasUnusableRelayRouteHint()) {
+        return RuntimeRouteNoticeState(
+            detailRes = R.string.route_notice_relay_unusable,
+            tone = RuntimeRouteNoticeTone.Warning,
+            icon = Icons.Filled.Error,
+            action = RouteNoticePrimaryAction.ScanLatestQr,
+        )
+    }
+    if (trustedRuntime.hasRelayRouteMaterial()) {
         return if (trustedRuntime.isRelayRouteExpired()) {
             RuntimeRouteNoticeState(
                 detailRes = R.string.route_notice_relay_expired,
                 tone = RuntimeRouteNoticeTone.Warning,
                 icon = Icons.Filled.Error,
-            )
-        } else if (trustedRuntime?.relaySecret.isNullOrBlank()) {
-            RuntimeRouteNoticeState(
-                detailRes = R.string.route_notice_relay_without_secret,
-                tone = RuntimeRouteNoticeTone.Warning,
-                icon = Icons.Filled.Error,
+                action = RouteNoticePrimaryAction.ScanLatestQr,
             )
         } else {
             RuntimeRouteNoticeState(
                 detailRes = R.string.route_notice_relay_encrypted,
                 tone = RuntimeRouteNoticeTone.Neutral,
                 icon = Icons.Filled.Link,
+                action = routeNoticePrimaryAction(state),
             )
         }
     }
@@ -761,40 +921,15 @@ private fun runtimeRouteNotice(
             detailRes = R.string.route_notice_development_route,
             tone = RuntimeRouteNoticeTone.Neutral,
             icon = Icons.Filled.Link,
+            action = routeNoticePrimaryAction(state),
         )
     }
     return RuntimeRouteNoticeState(
         detailRes = R.string.route_notice_remote_pending,
         tone = RuntimeRouteNoticeTone.Neutral,
         icon = Icons.Filled.Search,
+        action = RouteNoticePrimaryAction.ScanLatestQr,
     )
-}
-
-@Composable
-private fun relayRouteEndpointLabel(trustedRuntime: RuntimeTrustedRuntime?): String? {
-    val runtime = trustedRuntime?.takeIf { it.hasRelayRoute() } ?: return null
-    val host = runtime.relayHost?.takeIf { it.isNotBlank() } ?: return null
-    val port = runtime.relayPort?.takeIf { it in 1..65535 } ?: return null
-    return stringResource(R.string.route_notice_relay_endpoint, "$host:$port")
-}
-
-@Composable
-private fun relayRouteLeaseLabel(trustedRuntime: RuntimeTrustedRuntime?): String? {
-    val expiresAtMillis = trustedRuntime?.relayRouteExpiresAtMillis() ?: return null
-    val formatted = rememberFormattedDateTime(expiresAtMillis)
-    return if (expiresAtMillis <= System.currentTimeMillis()) {
-        stringResource(R.string.route_notice_relay_lease_expired_at, formatted)
-    } else {
-        stringResource(R.string.route_notice_relay_lease_expires_at, formatted)
-    }
-}
-
-@Composable
-private fun rememberFormattedDateTime(epochMillis: Long): String {
-    val locale = Locale.getDefault()
-    return DateFormat
-        .getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT, locale)
-        .format(Date(epochMillis))
 }
 
 private fun RuntimeTrustedRuntime?.relayRouteExpiresAtMillis(): Long? {
@@ -815,15 +950,16 @@ private fun ConnectionStatusActions(
     onRefreshHealth: () -> Unit,
     onDisconnect: () -> Unit,
 ) {
+    if (!state.isConnected) return
+
     val hapticFeedback = LocalHapticFeedback.current
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Button(
             onClick = {
-                hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
                 onRefreshHealth()
             },
-            enabled = state.isConnected,
             modifier = Modifier.fillMaxWidth(),
         ) {
             Icon(
@@ -835,10 +971,9 @@ private fun ConnectionStatusActions(
         }
         OutlinedButton(
             onClick = {
-                hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Destructive)
                 onDisconnect()
             },
-            enabled = state.isConnected,
             modifier = Modifier.fillMaxWidth(),
         ) {
             Icon(
@@ -878,6 +1013,11 @@ private fun ProviderStatusRow(provider: RuntimeProviderStatus) {
     } else {
         MaterialTheme.colorScheme.error
     }
+    val diagnosticMessage = providerDiagnosticMessage(provider)
+    val diagnosticCode = providerDiagnosticCode(provider)
+    val hasDiagnostics = providerDiagnosticsVisible(provider)
+    var diagnosticsExpanded by rememberSaveable(provider.id) { mutableStateOf(false) }
+    val hapticFeedback = LocalHapticFeedback.current
 
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -921,26 +1061,67 @@ private fun ProviderStatusRow(provider: RuntimeProviderStatus) {
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.secondary,
             )
-            provider.message.takeIf { it.isNotBlank() }?.let { message ->
-                Text(
-                    text = stringResource(R.string.provider_host_detail, message),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.secondary,
-                )
-            }
-            provider.code?.takeIf { it.isNotBlank() }?.let { code ->
-                Text(
-                    text = stringResource(R.string.provider_error_code, code),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.secondary,
-                )
-            }
             if (provider.retryable == true) {
                 Text(
                     text = stringResource(R.string.provider_retryable_hint),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.secondary,
                 )
+            }
+            if (hasDiagnostics) {
+                TextButton(
+                    onClick = {
+                        hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Toggle)
+                        diagnosticsExpanded = !diagnosticsExpanded
+                    },
+                    contentPadding = PaddingValues(horizontal = 0.dp, vertical = 4.dp),
+                ) {
+                    Icon(
+                        imageVector = if (diagnosticsExpanded) {
+                            Icons.Filled.KeyboardArrowUp
+                        } else {
+                            Icons.Filled.KeyboardArrowDown
+                        },
+                        contentDescription = null,
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        text = stringResource(
+                            if (diagnosticsExpanded) {
+                                R.string.provider_hide_diagnostics
+                            } else {
+                                R.string.provider_show_diagnostics
+                            }
+                        )
+                    )
+                }
+                if (diagnosticsExpanded) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
+                                shape = RoundedCornerShape(8.dp),
+                            )
+                            .padding(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        diagnosticMessage?.let { message ->
+                            Text(
+                                text = stringResource(R.string.provider_host_detail, message),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.secondary,
+                            )
+                        }
+                        diagnosticCode?.let { code ->
+                            Text(
+                                text = stringResource(R.string.provider_error_code, code),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.secondary,
+                            )
+                        }
+                    }
+                }
             }
         }
     }
@@ -953,35 +1134,61 @@ fun ChatScreen(
     onSend: () -> Unit,
     onCancel: () -> Unit,
     onConnect: () -> Unit,
+    onScanPairingQr: () -> Unit,
     onRefreshHealth: () -> Unit,
-    onRequestModels: () -> Unit,
-    onSelectModel: (String) -> Unit,
     onAttachFiles: () -> Unit,
     onRemoveAttachment: (String) -> Unit,
     onSuggestionClick: (String) -> Unit,
-    onResolveRoute: () -> Unit,
+    onScanLatestQr: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val listState = rememberLazyListState()
-    val hasSendableContent = state.chatInput.isNotBlank() || state.pendingAttachments.isNotEmpty()
-    val hasUnsupportedImageAttachment = hasUnsupportedImageAttachment(state)
-    val canSend = state.isConnected &&
-        !state.isStreaming &&
-        selectedModelIsUsable(state) &&
-        hasSendableContent &&
-        !hasUnsupportedImageAttachment
+    val hapticFeedback = LocalHapticFeedback.current
+    val scope = rememberCoroutineScope()
+    val hasSendableContent = chatComposerHasSendableContent(state)
+    val hasUnsupportedImageAttachment = chatComposerHasUnsupportedImageAttachment(state)
+    val canSend = chatComposerCanSend(state)
     val density = LocalDensity.current
     val keyboardDockPadding = if (WindowInsets.ime.getBottom(density) > 0) 64.dp else 0.dp
     val composerDockSpace = 166.dp
+    var previousMessageCount by rememberSaveable { mutableStateOf(0) }
+    val showJumpToLatest by remember(state.messages.size) {
+        derivedStateOf {
+            shouldShowJumpToLatestChatButton(
+                lastVisibleItemIndex = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index,
+                totalItemsCount = listState.layoutInfo.totalItemsCount.takeIf { it > 0 } ?: state.messages.size,
+            )
+        }
+    }
 
     LaunchedEffect(
         state.messages.size,
         state.messages.lastOrNull()?.content,
         state.messages.lastOrNull()?.reasoning,
+        state.isStreaming,
     ) {
         if (state.messages.isNotEmpty()) {
-            listState.animateScrollToItem(state.messages.lastIndex)
+            val layoutInfo = listState.layoutInfo
+            val lastVisibleItemIndex = layoutInfo.visibleItemsInfo.lastOrNull()?.index
+            val totalItemsCount = layoutInfo.totalItemsCount.takeIf { it > 0 } ?: state.messages.size
+            val messageCountChanged = previousMessageCount != state.messages.size
+            val newUserMessageAdded = newUserMessageAddedSince(
+                previousMessageCount = previousMessageCount,
+                messages = state.messages,
+                isStreaming = state.isStreaming,
+            )
+            if (
+                shouldAutoScrollChat(
+                    lastVisibleItemIndex = lastVisibleItemIndex,
+                    totalItemsCount = totalItemsCount,
+                    messageCountChanged = messageCountChanged,
+                    newUserMessageAdded = newUserMessageAdded,
+                )
+            ) {
+                listState.animateScrollToItem(state.messages.lastIndex)
+            }
         }
+        previousMessageCount = state.messages.size
     }
 
     Box(
@@ -996,12 +1203,13 @@ fun ChatScreen(
                     .padding(bottom = composerDockSpace),
                 contentAlignment = Alignment.Center,
             ) {
-                ChatEmptyState(
-                    state = state,
-                    onConnect = onConnect,
-                    onRequestModels = onRequestModels,
-                    onSelectModel = onSelectModel,
-                )
+                if (shouldShowChatEmptyState(state)) {
+                    ChatEmptyState(
+                        state = state,
+                        onConnect = onConnect,
+                        onScanPairingQr = onScanPairingQr,
+                    )
+                }
             }
         } else {
             LazyColumn(
@@ -1030,11 +1238,30 @@ fun ChatScreen(
                         isStreaming = state.isStreaming &&
                             message.role == "assistant" &&
                             message.id == state.messages.lastOrNull()?.id,
-                        showSuggestions = isLatestAssistant && !state.isStreaming,
+                        showSuggestions = shouldShowAssistantSuggestionsForMessage(state, message),
                         isLoadingSuggestions = isLatestAssistant && state.isLoadingSuggestions,
                         onSuggestionClick = onSuggestionClick,
                     )
                 }
+            }
+        }
+        if (showJumpToLatest) {
+            FilledTonalIconButton(
+                onClick = {
+                    hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
+                    scope.launch {
+                        listState.animateScrollToItem(state.messages.lastIndex)
+                    }
+                },
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = composerDockSpace + keyboardDockPadding + 18.dp)
+                    .size(40.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.KeyboardArrowDown,
+                    contentDescription = stringResource(R.string.content_desc_jump_to_latest),
+                )
             }
         }
         Column(
@@ -1050,13 +1277,22 @@ fun ChatScreen(
                 state = state,
                 onRefreshHealth = onRefreshHealth,
             )
-            ErrorText(state.error, onRouteAction = onResolveRoute)
+            RouteRefreshSavedNotice(state = state)
+            if (shouldShowChatBottomError(state)) {
+                ErrorText(
+                    error = state.error,
+                    routeAction = routeNoticePrimaryAction(state),
+                    onConnect = onConnect,
+                    onScanLatestQr = onScanLatestQr,
+                )
+            }
             ChatComposer(
                 value = state.chatInput,
                 attachments = state.pendingAttachments,
                 enabled = !state.isStreaming,
                 imageAttachmentsSupported = !hasUnsupportedImageAttachment,
                 canSend = canSend,
+                hasSendableContent = hasSendableContent,
                 isStreaming = state.isStreaming,
                 hint = chatInputHint(state),
                 onInputChange = onInputChange,
@@ -1120,7 +1356,7 @@ private fun BackendReadinessBanner(
             }
             TextButton(
                 onClick = {
-                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                    hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
                     onRefreshHealth()
                 },
             ) {
@@ -1147,12 +1383,14 @@ fun SettingsScreen(
     onUseDiscoveredRuntime: (RuntimeDiscoveredRuntime) -> Unit,
     onForgetTrustedRuntime: () -> Unit,
     onScanPairingQr: () -> Unit,
+    onSubmitPairingPayload: (String) -> Unit,
     onConnect: () -> Unit,
     onRefreshHealth: () -> Unit,
     onRequestModels: () -> Unit,
     onDisconnect: () -> Unit,
     onSetAutoReconnectEnabled: (Boolean) -> Unit,
     onSetLanguageTag: (String) -> Unit,
+    onSetTheme: (RuntimeAppTheme) -> Unit,
     onSelectEmbeddingModel: (String?) -> Unit,
     onAddMemoryEntry: (String) -> Unit,
     onRemoveMemoryEntry: (String) -> Unit,
@@ -1166,31 +1404,26 @@ fun SettingsScreen(
     modifier: Modifier = Modifier,
 ) {
     ScreenList(modifier) {
-        item {
-            ScreenHeader(
-                title = R.string.settings_title,
-                subtitle = R.string.settings_subtitle,
-            )
+        if (settingsScreenShowsGenericHeader(state)) {
+            item {
+                ScreenHeader(
+                    title = R.string.settings_title,
+                    subtitle = R.string.settings_subtitle,
+                )
+            }
         }
         item {
-            AppPreferencesPanel(
-                selectedLanguageTag = state.selectedLanguageTag,
-                onSetLanguageTag = onSetLanguageTag,
-            )
-        }
-        item {
-            SettingsExpandableSection(
-                title = R.string.status_title,
-                subtitle = R.string.status_subtitle,
-                initiallyExpanded = !state.isConnected ||
-                    state.trustedRuntime == null ||
-                    state.isPairingAwaitingRoute,
-            ) {
-                CompanionOnlyPanel()
+	            SettingsExpandableSection(
+	                title = settingsPrimaryConnectionSectionTitleRes(state),
+	                subtitle = settingsPrimaryConnectionSectionSubtitleRes(state),
+	                initiallyExpanded = settingsPrimaryConnectionSectionInitiallyExpanded(state),
+	                expandWhenKey = settingsPrimaryConnectionSectionExpansionKey(state),
+	            ) {
                 QrPairingPanel(
                     state = state,
                     onScanPairingQr = onScanPairingQr,
                 )
+                CompanionOnlyPanel()
                 if (state.isPairingAwaitingRoute) {
                     PendingPairingRouteStatus(state = state)
                 }
@@ -1205,7 +1438,11 @@ fun SettingsScreen(
                 if (state.trustedRuntime == null) {
                     EmptyState(text = stringResource(R.string.connect_requires_pairing))
                 }
-                ConnectionStatusPanel(state = state)
+                ConnectionStatusPanel(
+                    state = state,
+                    onConnect = onConnect,
+                    onScanLatestQr = onScanPairingQr,
+                )
                 ConnectionStatusActions(
                     state = state,
                     onRefreshHealth = onRefreshHealth,
@@ -1219,56 +1456,136 @@ fun SettingsScreen(
             }
         }
         item {
-            SettingsExpandableSection(
-                title = R.string.advanced_connection,
-                subtitle = R.string.advanced_connection_detail,
-            ) {
-                DiscoveryPanel(
-                    state = state,
-                    onStartDiscovery = onStartDiscovery,
-                    onStopDiscovery = onStopDiscovery,
-                    onUseDiscoveredRuntime = onUseDiscoveredRuntime,
-                )
-                if (showDeveloperDiagnostics) {
+            AppPreferencesPanel(
+                selectedLanguageTag = state.selectedLanguageTag,
+                onSetLanguageTag = onSetLanguageTag,
+                selectedTheme = state.selectedTheme,
+                onSetTheme = onSetTheme,
+            )
+        }
+        if (settingsScreenShowsTroubleshootingSection(showDeveloperDiagnostics)) {
+            item {
+                SettingsExpandableSection(
+                    title = R.string.advanced_connection,
+                    subtitle = R.string.advanced_connection_detail,
+                ) {
+                    DiscoveryPanel(
+                        state = state,
+                        onStartDiscovery = onStartDiscovery,
+                        onStopDiscovery = onStopDiscovery,
+                        onUseDiscoveredRuntime = onUseDiscoveredRuntime,
+                    )
                     DeveloperDiagnosticsPanel(
                         state = state,
                         onHostChange = onHostChange,
                         onPortChange = onPortChange,
                         onUseUsbReverse = onUseUsbReverse,
                         onUseEmulator = onUseEmulator,
+                        onSubmitPairingPayload = onSubmitPairingPayload,
                     )
                 }
             }
         }
         item {
-            EmbeddingModelPanel(
-                state = state,
-                onRequestModels = onRequestModels,
-                onSelectEmbeddingModel = onSelectEmbeddingModel,
-            )
+            SettingsExpandableSection(
+                title = R.string.embedding_model_title,
+                subtitle = R.string.embedding_model_subtitle,
+                initiallyExpanded = settingsLowerPrioritySectionInitiallyExpanded(),
+            ) {
+                EmbeddingModelPanel(
+                    state = state,
+                    onRequestModels = onRequestModels,
+                    onSelectEmbeddingModel = onSelectEmbeddingModel,
+                    showHeader = false,
+                )
+            }
         }
         item {
-            MemoryPanel(
-                entries = state.memoryEntries,
-                onAddMemoryEntry = onAddMemoryEntry,
-                onRemoveMemoryEntry = onRemoveMemoryEntry,
-                onSetMemoryEntryEnabled = onSetMemoryEntryEnabled,
-            )
+            SettingsExpandableSection(
+                title = R.string.memory_title,
+                subtitle = R.string.memory_subtitle,
+                initiallyExpanded = settingsLowerPrioritySectionInitiallyExpanded(),
+            ) {
+                MemoryPanel(
+                    entries = state.memoryEntries,
+                    actionsEnabled = memoryActionsEnabled(state),
+                    onAddMemoryEntry = onAddMemoryEntry,
+                    onRemoveMemoryEntry = onRemoveMemoryEntry,
+                    onSetMemoryEntryEnabled = onSetMemoryEntryEnabled,
+                    showHeader = false,
+                )
+            }
         }
         item {
-            ChatHistorySettingsPanel(
-                activeSessions = state.chatSessions,
-                archivedSessions = state.archivedChatSessions,
-                isActionEnabled = !state.isStreaming,
-                onArchiveChatSession = onArchiveChatSession,
-                onRestoreChatSession = onRestoreChatSession,
-                onPermanentlyDeleteChatSession = onPermanentlyDeleteChatSession,
-                onArchiveAllChatSessions = onArchiveAllChatSessions,
-                onPermanentlyDeleteArchivedChatSessions = onPermanentlyDeleteArchivedChatSessions,
+            SettingsExpandableSection(
+                title = R.string.chat_history_settings_title,
+                subtitle = R.string.chat_history_settings_subtitle,
+                initiallyExpanded = settingsLowerPrioritySectionInitiallyExpanded(),
+            ) {
+                ChatHistorySettingsPanel(
+                    activeSessions = state.chatSessions,
+                    archivedSessions = state.archivedChatSessions,
+                    isActionEnabled = !state.isStreaming,
+                    onArchiveChatSession = onArchiveChatSession,
+                    onRestoreChatSession = onRestoreChatSession,
+                    onPermanentlyDeleteChatSession = onPermanentlyDeleteChatSession,
+                    onArchiveAllChatSessions = onArchiveAllChatSessions,
+                    onPermanentlyDeleteArchivedChatSessions = onPermanentlyDeleteArchivedChatSessions,
+                    showHeader = false,
+                )
+            }
+        }
+        item {
+            ErrorText(
+                error = state.error,
+                routeAction = routeNoticePrimaryAction(state),
+                onConnect = onConnect,
+                onScanLatestQr = onScanPairingQr,
             )
         }
-        item { ErrorText(state.error, onRouteAction = onScanPairingQr) }
     }
+}
+
+internal fun settingsScreenShowsGenericHeader(state: RuntimeUiState): Boolean {
+    return state.trustedRuntime != null && !state.isPairingAwaitingRoute
+}
+
+@StringRes
+internal fun settingsPrimaryConnectionSectionTitleRes(state: RuntimeUiState): Int {
+    return if (settingsScreenShowsGenericHeader(state)) {
+        R.string.status_title
+    } else {
+        R.string.pairing_title
+    }
+}
+
+@StringRes
+internal fun settingsPrimaryConnectionSectionSubtitleRes(state: RuntimeUiState): Int {
+    return if (settingsScreenShowsGenericHeader(state)) {
+        R.string.status_subtitle
+    } else {
+        R.string.pairing_subtitle
+    }
+}
+
+internal fun settingsPrimaryConnectionSectionInitiallyExpanded(state: RuntimeUiState): Boolean {
+    return !state.isConnected ||
+        state.trustedRuntime == null ||
+        state.isPairingAwaitingRoute
+}
+
+internal fun settingsPrimaryConnectionSectionExpansionKey(state: RuntimeUiState): String {
+    return when {
+        state.trustedRuntime == null -> "pairing-required"
+        state.isPairingAwaitingRoute -> "pairing-route:${state.pendingPairingRuntimeName.orEmpty()}"
+        else -> "trusted:${state.trustedRuntime.deviceId}"
+    }
+}
+
+internal fun settingsLowerPrioritySectionInitiallyExpanded(): Boolean = false
+
+internal fun settingsScreenShowsTroubleshootingSection(showDeveloperDiagnostics: Boolean): Boolean {
+    return showDeveloperDiagnostics
 }
 
 @Composable
@@ -1305,7 +1622,7 @@ private fun AutoReconnectSettingRow(
             Switch(
                 checked = enabled,
                 onCheckedChange = { checked ->
-                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                    hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Toggle)
                     onSetAutoReconnectEnabled(checked)
                 },
                 enabled = canChange,
@@ -1355,12 +1672,18 @@ private fun SettingsExpandableSection(
     @StringRes title: Int,
     @StringRes subtitle: Int,
     initiallyExpanded: Boolean = false,
+    expandWhenKey: String? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val isExpanded = rememberSaveable { mutableStateOf(initiallyExpanded) }
     val hapticFeedback = LocalHapticFeedback.current
+    LaunchedEffect(expandWhenKey, initiallyExpanded) {
+        if (initiallyExpanded) {
+            isExpanded.value = true
+        }
+    }
     val toggleExpanded = {
-        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+        hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Toggle)
         isExpanded.value = !isExpanded.value
     }
     val toggleContentDescription = stringResource(
@@ -1468,26 +1791,10 @@ private fun TrustedRuntimePanel(
                     )
                 }
             }
-            state.trustedRuntime?.let { trusted ->
-                Text(
-                    text = runtimeRouteDisplayLabel(state),
-                    color = MaterialTheme.colorScheme.secondary,
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                relayRouteLeaseLabel(trusted)?.let { leaseLabel ->
-                    Text(
-                        text = leaseLabel,
-                        color = if (trusted.isRelayRouteExpired()) {
-                            MaterialTheme.colorScheme.error
-                        } else {
-                            MaterialTheme.colorScheme.secondary
-                        },
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
+            state.trustedRuntime?.let {
                 OutlinedButton(
                     onClick = {
-                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                        hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Destructive)
                         onForgetTrustedRuntime()
                     },
                     modifier = Modifier.fillMaxWidth(),
@@ -1512,9 +1819,15 @@ private fun DeveloperDiagnosticsPanel(
     onPortChange: (String) -> Unit,
     onUseUsbReverse: () -> Unit,
     onUseEmulator: () -> Unit,
+    onSubmitPairingPayload: (String) -> Unit,
 ) {
     val isEnabled = rememberSaveable { mutableStateOf(false) }
+    var showManualPayloadDialog by rememberSaveable { mutableStateOf(false) }
     val hapticFeedback = LocalHapticFeedback.current
+    val toggleDeveloperDiagnostics = {
+        hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Toggle)
+        isEnabled.value = !isEnabled.value
+    }
 
     OutlinedCard(modifier = Modifier.fillMaxWidth()) {
         Column(
@@ -1524,7 +1837,10 @@ private fun DeveloperDiagnosticsPanel(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(DEVELOPER_DIAGNOSTICS_TOGGLE_ROW_TAG)
+                    .clickable { toggleDeveloperDiagnostics() },
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -1544,14 +1860,35 @@ private fun DeveloperDiagnosticsPanel(
                     )
                 }
                 Switch(
+                    modifier = Modifier.testTag(
+                        if (isEnabled.value) {
+                            DEVELOPER_DIAGNOSTICS_SWITCH_ENABLED_TAG
+                        } else {
+                            DEVELOPER_DIAGNOSTICS_SWITCH_DISABLED_TAG
+                        },
+                    ),
                     checked = isEnabled.value,
                     onCheckedChange = { checked ->
-                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                        hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Toggle)
                         isEnabled.value = checked
                     },
                 )
             }
             if (isEnabled.value) {
+                OutlinedButton(
+                    onClick = {
+                        hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
+                        showManualPayloadDialog = true
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Icon(
+                        Icons.Filled.ContentCopy,
+                        contentDescription = null,
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(stringResource(R.string.enter_qr_payload))
+                }
                 EndpointPanel(
                     state = state,
                     onHostChange = onHostChange,
@@ -1562,6 +1899,16 @@ private fun DeveloperDiagnosticsPanel(
                 )
             }
         }
+    }
+
+    if (showManualPayloadDialog) {
+        ManualPairingPayloadDialog(
+            onDismiss = { showManualPayloadDialog = false },
+            onSubmit = { rawValue ->
+                showManualPayloadDialog = false
+                onSubmitPairingPayload(rawValue)
+            },
+        )
     }
 }
 
@@ -1577,7 +1924,7 @@ private fun EndpointPanel(
     val isExpanded = rememberSaveable { mutableStateOf(false) }
     val hapticFeedback = LocalHapticFeedback.current
     val toggleExpanded = {
-        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+        hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Toggle)
         isExpanded.value = !isExpanded.value
     }
 
@@ -1634,7 +1981,7 @@ private fun EndpointPanel(
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(
                         onClick = {
-                            hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                            hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
                             onUseUsbReverse()
                         },
                         modifier = Modifier.fillMaxWidth(),
@@ -1648,7 +1995,7 @@ private fun EndpointPanel(
                     }
                     OutlinedButton(
                         onClick = {
-                            hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                            hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
                             onUseEmulator()
                         },
                         modifier = Modifier.fillMaxWidth(),
@@ -1708,7 +2055,7 @@ private fun DiscoveryPanel(
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
                     onClick = {
-                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                        hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
                         onStartDiscovery()
                     },
                     enabled = !state.isDiscovering,
@@ -1726,7 +2073,7 @@ private fun DiscoveryPanel(
                 }
                 OutlinedButton(
                     onClick = {
-                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                        hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Destructive)
                         onStopDiscovery()
                     },
                     enabled = state.isDiscovering,
@@ -1769,7 +2116,7 @@ private fun DiscoveredRuntimeRow(
     val hapticFeedback = LocalHapticFeedback.current
     val identityStatus = peer.identityStatus(trustedRuntime)
     val hasAdvertisedIdentity = peer.hasAdvertisedIdentity()
-    val isKnownMismatch = identityStatus == DiscoveredRuntimeIdentityStatus.DifferentTrustedRuntime
+    val canUseDiscoveredRoute = discoveredRuntimeSelectable(peer, trustedRuntime)
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -1809,14 +2156,23 @@ private fun DiscoveredRuntimeRow(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            TextButton(
-                onClick = {
-                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                    onUse(peer)
-                },
-                enabled = !isKnownMismatch,
-            ) {
-                Text(stringResource(R.string.use))
+            if (canUseDiscoveredRoute) {
+                TextButton(
+                    onClick = {
+                        hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
+                        onUse(peer)
+                    },
+                ) {
+                    Text(stringResource(discoveredRuntimeActionLabelRes(peer, trustedRuntime)))
+                }
+            } else {
+                Text(
+                    text = stringResource(identityStatus.routeUnavailableLabelRes()),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.secondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
     }
@@ -1837,6 +2193,31 @@ private enum class DiscoveredRuntimeIdentityStatus {
         }
         DifferentTrustedRuntime -> R.string.discovery_identity_different_trusted_runtime
     }
+}
+
+private fun DiscoveredRuntimeIdentityStatus.routeUnavailableLabelRes(): Int = when (this) {
+    DiscoveredRuntimeIdentityStatus.TrustedMatch -> R.string.use_trusted_connection
+    DiscoveredRuntimeIdentityStatus.Unknown -> R.string.discovery_route_qr_required
+    DiscoveredRuntimeIdentityStatus.DifferentTrustedRuntime -> R.string.discovery_route_not_trusted
+}
+
+@StringRes
+internal fun discoveredRuntimeActionLabelRes(
+    peer: RuntimeDiscoveredRuntime,
+    trustedRuntime: RuntimeTrustedRuntime?,
+): Int {
+    return if (discoveredRuntimeSelectable(peer, trustedRuntime)) {
+        R.string.use_trusted_connection
+    } else {
+        peer.identityStatus(trustedRuntime).routeUnavailableLabelRes()
+    }
+}
+
+internal fun discoveredRuntimeSelectable(
+    peer: RuntimeDiscoveredRuntime,
+    trustedRuntime: RuntimeTrustedRuntime?,
+): Boolean {
+    return peer.identityStatus(trustedRuntime) == DiscoveredRuntimeIdentityStatus.TrustedMatch
 }
 
 private fun RuntimeDiscoveredRuntime.identityStatus(trustedRuntime: RuntimeTrustedRuntime?): DiscoveredRuntimeIdentityStatus {
@@ -1887,10 +2268,11 @@ private fun String?.normalizedIdentityValue(): String? = this?.trim()?.takeUnles
 private fun ChatEmptyState(
     state: RuntimeUiState,
     onConnect: () -> Unit,
-    onRequestModels: () -> Unit,
-    onSelectModel: (String) -> Unit,
+    onScanPairingQr: () -> Unit,
 ) {
     val hapticFeedback = LocalHapticFeedback.current
+    val preferQrRouteRefresh = shouldScanLatestQrFromEmptyChat(state)
+    val primaryAction = chatEmptyPrimaryAction(state)
     val statusIcon = when {
         !state.isConnected -> Icons.Filled.Link
         state.isStreaming -> Icons.Filled.Refresh
@@ -1900,166 +2282,61 @@ private fun ChatEmptyState(
 
     Column(
         modifier = Modifier
+            .widthIn(max = 460.dp)
             .fillMaxWidth()
             .padding(horizontal = 20.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Surface(
-            modifier = Modifier.size(38.dp),
-            shape = RoundedCornerShape(8.dp),
-            color = if (state.isConnected) {
-                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.76f)
-            } else {
-                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.62f)
-            },
-        ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    imageVector = statusIcon,
-                    contentDescription = null,
-                    tint = if (state.isConnected) {
-                        MaterialTheme.colorScheme.onPrimaryContainer
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
-                )
-            }
-        }
+        Icon(
+            imageVector = statusIcon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.secondary.copy(alpha = 0.78f),
+            modifier = Modifier.size(30.dp),
+        )
         Column(
-            verticalArrangement = Arrangement.spacedBy(5.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(
-                text = chatEmptyTitle(state),
+                text = chatEmptyTitle(state, preferQrRouteRefresh),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center,
             )
             Text(
-                text = chatEmptyText(state),
+                text = chatEmptyText(state, preferQrRouteRefresh),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.secondary,
                 textAlign = TextAlign.Center,
-                maxLines = 3,
+                maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
         }
         if (state.isStreaming) {
             LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
         }
-        val chatModels = state.models.filter { it.isChatModel() }
-        if (state.isConnected && !selectedModelIsUsable(state) && chatModels.isNotEmpty()) {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                horizontalAlignment = Alignment.Start,
-            ) {
-                Text(
-                    text = stringResource(R.string.chat_select_model_from_runtime),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.secondary,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                QuickModelPicker(
-                    models = chatModels,
-                    installingModelId = state.installingModelId,
-                    onSelectModel = onSelectModel,
-                )
-            }
-        }
-        if (!state.isConnected && state.trustedRuntime != null) {
+        if (primaryAction != null) {
             Button(
                 onClick = {
-                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                    onConnect()
+                    hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
+                    when (primaryAction) {
+                        ChatEmptyPrimaryAction.Connect -> onConnect()
+                        ChatEmptyPrimaryAction.ScanQr -> onScanPairingQr()
+                    }
                 },
                 enabled = !state.isConnecting,
             ) {
                 Icon(Icons.Filled.Link, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    text = connectRuntimeActionLabel(state),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
-        if (state.isConnected && !selectedModelIsUsable(state)) {
-            Button(
-                onClick = {
-                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                    onRequestModels()
-                },
-                enabled = !state.isLoadingModels,
-            ) {
-                Icon(Icons.Filled.Refresh, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = if (state.isLoadingModels) {
-                        stringResource(R.string.loading_models)
-                    } else {
-                        stringResource(R.string.load_models)
+                    text = when (primaryAction) {
+                        ChatEmptyPrimaryAction.Connect -> connectRuntimeActionLabel(state)
+                        ChatEmptyPrimaryAction.ScanQr -> stringResource(R.string.route_notice_action_scan_qr)
                     },
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-            }
-            if (state.isLoadingModels) {
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-            }
-        }
-    }
-}
-
-@Composable
-private fun QuickModelPicker(
-    models: List<RuntimeModel>,
-    installingModelId: String?,
-    onSelectModel: (String) -> Unit,
-) {
-    val hapticFeedback = LocalHapticFeedback.current
-    val visibleModels = models.sortedWith(
-        compareBy<RuntimeModel> { !it.installed }
-            .thenBy { it.name.lowercase() }
-    ).take(8)
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        visibleModels.forEach { model ->
-            val isInstalling = model.id == installingModelId
-            val status = quickModelStatus(model = model, installing = isInstalling)
-            OutlinedButton(
-                onClick = {
-                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                    onSelectModel(model.id)
-                },
-                enabled = !isInstalling,
-                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                modifier = Modifier
-                    .widthIn(max = 220.dp)
-                    .semantics {
-                        stateDescription = status
-                    },
-            ) {
-                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text(
-                        text = model.name,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        text = status,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.secondary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
             }
         }
     }
@@ -2069,7 +2346,7 @@ private fun QuickModelPicker(
 private fun quickModelStatus(model: RuntimeModel, installing: Boolean): String {
     return when {
         installing -> stringResource(R.string.installing_model)
-        !model.installed -> stringResource(R.string.install_model)
+        !model.installed -> stringResource(R.string.model_not_installed)
         model.running -> stringResource(R.string.model_running)
         else -> stringResource(R.string.model_installed)
     }
@@ -2111,6 +2388,9 @@ private fun ChatMessageRow(
                         modifier = Modifier.padding(horizontal = 15.dp, vertical = 10.dp),
                     )
                 }
+                ReadOnlyAttachmentChips(
+                    attachments = message.attachments,
+                )
             }
         } else {
             AssistantMessage(
@@ -2133,8 +2413,8 @@ private fun AssistantMessage(
     onSuggestionClick: (String) -> Unit,
 ) {
     val hasReasoning = message.reasoning.isNotBlank()
-    val isReasoningExpanded = rememberSaveable(message.id) { mutableStateOf(false) }
-    val showTyping = isStreaming && message.content.isBlank()
+    var isReasoningExpanded by rememberSaveable(message.id) { mutableStateOf(false) }
+    val showTyping = assistantShowsTypingPlaceholder(message, isStreaming)
 
     Column(
         modifier = Modifier
@@ -2145,8 +2425,8 @@ private fun AssistantMessage(
         if (hasReasoning) {
             AssistantReasoning(
                 reasoning = message.reasoning,
-                expanded = isReasoningExpanded.value,
-                onExpandedChange = { isReasoningExpanded.value = it },
+                expanded = isReasoningExpanded,
+                onExpandedChange = { isReasoningExpanded = it },
             )
         }
         if (message.content.isNotBlank() || showTyping) {
@@ -2158,6 +2438,9 @@ private fun AssistantMessage(
                     .padding(horizontal = 2.dp),
             )
         }
+        ReadOnlyAttachmentChips(
+            attachments = message.attachments,
+        )
         if (showTyping) {
             LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
         }
@@ -2171,6 +2454,7 @@ private fun AssistantMessage(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun SuggestedQuestions(
     suggestions: List<String>,
@@ -2182,46 +2466,75 @@ private fun SuggestedQuestions(
     val hapticFeedback = LocalHapticFeedback.current
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
-            text = stringResource(
-                if (isLoading && suggestions.isEmpty()) {
-                    R.string.generating_suggestions
-                } else {
-                    R.string.suggested_next_questions
-                }
-            ),
+            text = stringResource(R.string.suggested_next_questions),
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.secondary,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
-        if (suggestions.isNotEmpty()) {
-            Column(
+        if (isLoading && suggestions.isEmpty()) {
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                LinearProgressIndicator(modifier = Modifier.weight(1f))
+                Text(
+                    text = stringResource(R.string.generating_suggestions),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.secondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        if (suggestions.isNotEmpty()) {
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 suggestions.forEach { suggestion ->
-                    OutlinedButton(
+                    SuggestedQuestionChip(
+                        text = suggestion,
                         onClick = {
-                            hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                            hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
                             onSuggestionClick(suggestion)
                         },
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 7.dp),
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Text(
-                            text = suggestion,
-                            maxLines = 3,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                    }
+                    )
                 }
             }
-        } else {
-            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
         }
     }
 }
+
+@Composable
+private fun SuggestedQuestionChip(
+    text: String,
+    onClick: () -> Unit,
+) {
+    Surface(
+        modifier = Modifier
+            .widthIn(min = 120.dp, max = 360.dp)
+            .clickable(
+                role = Role.Button,
+                onClick = onClick,
+            ),
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.58f),
+        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodySmall,
+            maxLines = SUGGESTED_QUESTION_MAX_LINES,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+        )
+    }
+}
+
+internal fun suggestedQuestionMaxLines(): Int = SUGGESTED_QUESTION_MAX_LINES
 
 @Composable
 private fun MessageContent(
@@ -2315,7 +2628,7 @@ private fun MessageCopyButton(textToCopy: String) {
 
     TextButton(
         onClick = {
-            hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+            hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Clipboard)
             scope.launch {
                 clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("AetherLink", textToCopy)))
                 Toast.makeText(context, copiedMessage, Toast.LENGTH_SHORT).show()
@@ -2342,7 +2655,7 @@ private fun Modifier.copyOnLongPress(textToCopy: String): Modifier {
     val scope = rememberCoroutineScope()
     val copiedMessage = stringResource(R.string.message_copied)
     val copyAction = {
-        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+        hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Clipboard)
         scope.launch {
             clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("AetherLink", textToCopy)))
             Toast.makeText(context, copiedMessage, Toast.LENGTH_SHORT).show()
@@ -2362,12 +2675,12 @@ private fun Modifier.copyOnLongPress(textToCopy: String): Modifier {
         }
 }
 
-private sealed interface MessageContentPart {
+internal sealed interface MessageContentPart {
     data class Text(val text: String) : MessageContentPart
     data class Code(val language: String?, val code: String) : MessageContentPart
 }
 
-private fun parseMessageContent(content: String): List<MessageContentPart> {
+internal fun parseMessageContent(content: String): List<MessageContentPart> {
     val parts = mutableListOf<MessageContentPart>()
     var cursor = 0
 
@@ -2436,7 +2749,11 @@ private fun AssistantReasoning(
     onExpandedChange: (Boolean) -> Unit,
 ) {
     val hapticFeedback = LocalHapticFeedback.current
-    val preview = reasoningPreview(reasoning)
+    val displayPolicy = reasoningDisplayPolicy(
+        reasoning = reasoning,
+        expanded = expanded,
+    )
+    val isExpandable = displayPolicy.expandable
     val toggleLabel = stringResource(
         if (expanded) {
             R.string.assistant_reasoning_hide
@@ -2445,23 +2762,27 @@ private fun AssistantReasoning(
         }
     )
     val toggleExpanded = {
-        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+        hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Toggle)
         onExpandedChange(!expanded)
     }
-    val reasoningText = if (expanded) reasoning.trim() else preview
-    val contentAlpha = if (expanded) 0.62f else 0.46f
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(IntrinsicSize.Min)
+    val rowModifier = if (isExpandable) {
+        Modifier
             .semantics {
                 stateDescription = toggleLabel
             }
             .clickable(
                 role = Role.Button,
+                onClickLabel = toggleLabel,
                 onClick = toggleExpanded,
             )
+    } else {
+        Modifier
+    }
+
+    Row(
+        modifier = rowModifier
+            .fillMaxWidth()
+            .height(IntrinsicSize.Min)
             .padding(horizontal = 2.dp, vertical = 2.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
@@ -2470,7 +2791,7 @@ private fun AssistantReasoning(
                 .fillMaxHeight()
                 .width(2.dp)
                 .background(
-                    color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.24f),
+                    color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.16f),
                     shape = RoundedCornerShape(1.dp),
                 ),
         )
@@ -2489,49 +2810,80 @@ private fun AssistantReasoning(
                     text = stringResource(R.string.assistant_reasoning_label),
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.7f),
+                    color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.56f),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
                 )
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(2.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.weight(1f, fill = false),
-                ) {
-                    Text(
-                        text = toggleLabel,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.68f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Icon(
-                        imageVector = if (expanded) {
-                            Icons.Filled.KeyboardArrowUp
-                        } else {
-                            Icons.Filled.KeyboardArrowDown
-                        },
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.secondary.copy(alpha = 0.68f),
-                        modifier = Modifier.size(17.dp),
-                    )
+                if (isExpandable) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f, fill = false),
+                    ) {
+                        Text(
+                            text = toggleLabel,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.56f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Icon(
+                            imageVector = if (expanded) {
+                                Icons.Filled.KeyboardArrowUp
+                            } else {
+                                Icons.Filled.KeyboardArrowDown
+                            },
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.secondary.copy(alpha = 0.56f),
+                            modifier = Modifier.size(17.dp),
+                        )
+                    }
                 }
             }
             Text(
-                text = reasoningText,
+                text = displayPolicy.text,
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = contentAlpha),
-                maxLines = if (expanded) Int.MAX_VALUE else 3,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = displayPolicy.contentAlpha),
+                maxLines = displayPolicy.maxLines,
                 overflow = TextOverflow.Ellipsis,
             )
         }
     }
 }
 
+internal data class ReasoningDisplayPolicy(
+    val text: String,
+    val contentAlpha: Float,
+    val maxLines: Int,
+    val expandable: Boolean,
+)
+
+internal fun reasoningDisplayPolicy(
+    reasoning: String,
+    expanded: Boolean,
+): ReasoningDisplayPolicy {
+    val expandable = reasoningNeedsExpansion(reasoning)
+    val isExpanded = expanded && expandable
+    return ReasoningDisplayPolicy(
+        text = if (isExpanded) reasoning.trim() else reasoningPreview(reasoning),
+        contentAlpha = if (isExpanded) REASONING_EXPANDED_ALPHA else REASONING_COLLAPSED_ALPHA,
+        maxLines = if (isExpanded) Int.MAX_VALUE else REASONING_PREVIEW_MAX_LINES,
+        expandable = expandable,
+    )
+}
+
+internal fun assistantShowsTypingPlaceholder(
+    message: RuntimeChatMessage,
+    isStreaming: Boolean,
+): Boolean {
+    return isStreaming && message.content.isBlank() && !message.isReasoningOpen
+}
+
 internal fun reasoningPreview(
     reasoning: String,
     maxLines: Int = REASONING_PREVIEW_MAX_LINES,
+    maxCharacters: Int = REASONING_PREVIEW_MAX_CHARS,
 ): String {
     val previewLines = reasoning
         .trim()
@@ -2543,9 +2895,48 @@ internal fun reasoningPreview(
     return previewLines
         .joinToString(separator = "\n")
         .ifBlank { reasoning.trim().replace(Regex("\\s+"), " ") }
+        .cappedReasoningPreview(maxCharacters)
 }
 
-private const val REASONING_PREVIEW_MAX_LINES = 3
+internal fun reasoningNeedsExpansion(
+    reasoning: String,
+    maxLines: Int = REASONING_PREVIEW_MAX_LINES,
+): Boolean {
+    val full = reasoning.trim().replace(Regex("\\s+"), " ")
+    if (full.isBlank()) return false
+    val normalizedLines = reasoning
+        .trim()
+        .lineSequence()
+        .map { it.trim().replace(Regex("\\s+"), " ") }
+        .filter { it.isNotBlank() }
+        .toList()
+    return normalizedLines.size > maxLines ||
+        full.length > REASONING_SINGLE_PARAGRAPH_PREVIEW_CHARS
+}
+
+internal const val REASONING_PREVIEW_MAX_LINES = 3
+internal const val REASONING_PREVIEW_MAX_CHARS = 180
+internal const val REASONING_COLLAPSED_ALPHA = 0.42f
+internal const val REASONING_EXPANDED_ALPHA = 0.58f
+private const val REASONING_SINGLE_PARAGRAPH_PREVIEW_CHARS = REASONING_PREVIEW_MAX_CHARS
+private const val SUGGESTED_QUESTION_MAX_LINES = 2
+internal const val CHAT_COMPOSER_CONTAINER_CORNER_RADIUS_DP = 28
+internal const val CHAT_COMPOSER_CONTAINER_ALPHA = 0.98f
+internal const val DEVELOPER_DIAGNOSTICS_TOGGLE_ROW_TAG = "developer-diagnostics-toggle-row"
+internal const val DEVELOPER_DIAGNOSTICS_SWITCH_DISABLED_TAG = "developer-diagnostics-switch-disabled"
+internal const val DEVELOPER_DIAGNOSTICS_SWITCH_ENABLED_TAG = "developer-diagnostics-switch-enabled"
+
+private fun String.cappedReasoningPreview(maxCharacters: Int): String {
+    val trimmed = trim()
+    if (trimmed.length <= maxCharacters) return trimmed
+    return trimmed.take(maxCharacters).trimEnd() + "..."
+}
+
+internal fun chatComposerInputContentDescriptionRes(): Int = R.string.message
+
+internal fun chatComposerVisualPlaceholderRes(): Int? = null
+
+internal fun chatEmptyStaticPromptRes(): Int? = null
 
 @Composable
 private fun ChatComposer(
@@ -2554,6 +2945,7 @@ private fun ChatComposer(
     enabled: Boolean,
     imageAttachmentsSupported: Boolean,
     canSend: Boolean,
+    hasSendableContent: Boolean,
     isStreaming: Boolean,
     hint: String,
     onInputChange: (String) -> Unit,
@@ -2566,18 +2958,21 @@ private fun ChatComposer(
     val hapticFeedback = LocalHapticFeedback.current
     val showComposerWarning = !imageAttachmentsSupported && attachments.any { it.type == "image" }
     val showComposerStatus = !isStreaming && showComposerWarning && hint.isNotBlank()
-    val inputContentDescription = stringResource(R.string.message)
-    val inputPlaceholder = stringResource(R.string.chat_input_placeholder)
-    val sendStateDescription = hint.ifBlank { stringResource(R.string.chat_hint_ready) }
+    val inputContentDescription = stringResource(chatComposerInputContentDescriptionRes())
+    val sendStateDescription = when {
+        hint.isNotBlank() -> hint
+        hasSendableContent -> stringResource(R.string.chat_hint_ready)
+        else -> stringResource(R.string.chat_hint_enter_message)
+    }
     Surface(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(28.dp),
-        tonalElevation = 0.dp,
-        shadowElevation = 0.dp,
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.54f),
+        shape = RoundedCornerShape(CHAT_COMPOSER_CONTAINER_CORNER_RADIUS_DP.dp),
+        tonalElevation = 1.dp,
+        shadowElevation = 2.dp,
+        color = MaterialTheme.colorScheme.surface.copy(alpha = CHAT_COMPOSER_CONTAINER_ALPHA),
     ) {
         Column(
-            modifier = Modifier.padding(horizontal = 9.dp, vertical = 8.dp),
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             if (isStreaming) {
@@ -2598,7 +2993,7 @@ private fun ChatComposer(
             ) {
                 FilledTonalIconButton(
                     onClick = {
-                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                        hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
                         onAttachFiles()
                     },
                     enabled = enabled,
@@ -2636,13 +3031,6 @@ private fun ChatComposer(
                                 .padding(horizontal = 2.dp, vertical = 9.dp),
                             contentAlignment = Alignment.TopStart,
                         ) {
-                            if (value.isBlank()) {
-                                Text(
-                                    text = inputPlaceholder,
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.72f),
-                                )
-                            }
                             innerTextField()
                         }
                     },
@@ -2650,7 +3038,7 @@ private fun ChatComposer(
                 if (isStreaming) {
                     FilledIconButton(
                         onClick = {
-                            hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                            hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Destructive)
                             onCancel()
                         },
                         enabled = true,
@@ -2664,7 +3052,7 @@ private fun ChatComposer(
                 } else {
                     FilledIconButton(
                         onClick = {
-                            hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                            hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
                             onSend()
                         },
                         enabled = canSend,
@@ -2729,6 +3117,61 @@ private fun ComposerStatus(
 }
 
 @Composable
+private fun ReadOnlyAttachmentChips(
+    attachments: List<RuntimeMessageAttachment>,
+) {
+    if (attachments.isEmpty()) return
+
+    Row(
+        modifier = Modifier
+            .widthIn(max = 548.dp)
+            .horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        attachments.forEach { attachment ->
+            ReadOnlyAttachmentChip(attachment = attachment)
+        }
+    }
+}
+
+@Composable
+private fun ReadOnlyAttachmentChip(attachment: RuntimeMessageAttachment) {
+    Surface(
+        shape = RoundedCornerShape(999.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.62f),
+        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 11.dp, vertical = 6.dp),
+            verticalArrangement = Arrangement.spacedBy(1.dp),
+        ) {
+            Text(
+                text = attachment.name,
+                style = MaterialTheme.typography.labelMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = attachmentTypeLabel(attachment.type),
+                style = MaterialTheme.typography.labelSmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
+private fun attachmentTypeLabel(type: String): String {
+    return if (type == "image") {
+        stringResource(R.string.attachment_type_image)
+    } else {
+        stringResource(R.string.attachment_type_document)
+    }
+}
+
+@Composable
 private fun AttachmentChips(
     attachments: List<RuntimePendingAttachment>,
     enabled: Boolean,
@@ -2761,6 +3204,7 @@ private fun AttachmentChip(
     imageAttachmentsSupported: Boolean,
     onRemoveAttachment: (String) -> Unit,
 ) {
+    val hapticFeedback = LocalHapticFeedback.current
     val isUnsupportedImage = attachment.type == "image" && !imageAttachmentsSupported
     val metadata = attachmentMetadataLabel(attachment)
     Surface(
@@ -2803,7 +3247,10 @@ private fun AttachmentChip(
                 )
             }
             IconButton(
-                onClick = { onRemoveAttachment(attachment.id) },
+                onClick = {
+                    hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Destructive)
+                    onRemoveAttachment(attachment.id)
+                },
                 enabled = enabled,
                 modifier = Modifier.size(28.dp),
             ) {
@@ -2819,23 +3266,21 @@ private fun AttachmentChip(
 
 @Composable
 private fun attachmentMetadataLabel(attachment: RuntimePendingAttachment): String {
+    val context = LocalContext.current
     val typeLabel = if (attachment.type == "image") {
         stringResource(R.string.attachment_type_image)
     } else {
         stringResource(R.string.attachment_type_document)
     }
-    val sizeLabel = formatAttachmentSize(attachment.sizeBytes)
-    return if (sizeLabel.isBlank()) typeLabel else "$typeLabel - $sizeLabel"
-}
-
-private fun formatAttachmentSize(sizeBytes: Long): String {
-    if (sizeBytes <= 0L) return ""
-    val kib = 1024.0
-    val mib = kib * 1024.0
-    return when {
-        sizeBytes >= mib -> String.format(Locale.US, "%.1f MB", sizeBytes / mib)
-        sizeBytes >= kib -> String.format(Locale.US, "%.1f KB", sizeBytes / kib)
-        else -> "$sizeBytes B"
+    val sizeLabel = if (attachment.sizeBytes > 0L) {
+        Formatter.formatFileSize(context, attachment.sizeBytes)
+    } else {
+        ""
+    }
+    return if (sizeLabel.isBlank()) {
+        typeLabel
+    } else {
+        stringResource(R.string.attachment_metadata_with_size, typeLabel, sizeLabel)
     }
 }
 
@@ -2869,6 +3314,8 @@ private fun CompanionOnlyPanel() {
 private fun AppPreferencesPanel(
     selectedLanguageTag: String,
     onSetLanguageTag: (String) -> Unit,
+    selectedTheme: RuntimeAppTheme,
+    onSetTheme: (RuntimeAppTheme) -> Unit,
 ) {
     OutlinedCard(modifier = Modifier.fillMaxWidth()) {
         Column(
@@ -2880,7 +3327,10 @@ private fun AppPreferencesPanel(
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
             )
-            AppearanceStatus()
+            AppearancePreferenceSelector(
+                selectedTheme = selectedTheme,
+                onSetTheme = onSetTheme,
+            )
             LanguagePreferenceSelector(
                 selectedLanguageTag = selectedLanguageTag,
                 onSetLanguageTag = onSetLanguageTag,
@@ -2890,51 +3340,47 @@ private fun AppPreferencesPanel(
 }
 
 @Composable
-private fun AppearanceStatus() {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(14.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant,
+private fun AppearancePreferenceSelector(
+    selectedTheme: RuntimeAppTheme,
+    onSetTheme: (RuntimeAppTheme) -> Unit,
+) {
+    val hapticFeedback = LocalHapticFeedback.current
+    val options = appThemePreferenceOptions()
+
+    Column(
+        modifier = Modifier.selectableGroup(),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Row(
-            modifier = Modifier.padding(12.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                imageVector = Icons.Filled.Settings,
-                contentDescription = null,
-                modifier = Modifier.size(20.dp),
-                tint = MaterialTheme.colorScheme.primary,
-            )
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
+        Text(
+            text = stringResource(R.string.appearance_title),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.secondary,
+        )
+        options.forEach { (theme, labelRes) ->
+            val selected = theme == selectedTheme
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .selectable(
+                        selected = selected,
+                        role = Role.RadioButton,
+                    ) {
+                        if (shouldPerformSelectionChangeHaptic(selected)) {
+                            hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.SelectionChange)
+                        }
+                        onSetTheme(theme)
+                    }
+                    .padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
+                RadioButton(
+                    selected = selected,
+                    onClick = null,
+                )
                 Text(
-                    text = stringResource(R.string.appearance_title),
+                    text = stringResource(labelRes),
                     style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Text(
-                    text = stringResource(R.string.appearance_system_detail),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            Surface(
-                shape = RoundedCornerShape(999.dp),
-                color = MaterialTheme.colorScheme.primaryContainer,
-            ) {
-                Text(
-                    text = stringResource(R.string.appearance_system),
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                    style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -2943,11 +3389,20 @@ private fun AppearanceStatus() {
     }
 }
 
+internal fun appThemePreferenceOptions(): List<Pair<RuntimeAppTheme, Int>> {
+    return listOf(
+        RuntimeAppTheme.System to R.string.appearance_system,
+        RuntimeAppTheme.Light to R.string.appearance_light,
+        RuntimeAppTheme.Dark to R.string.appearance_dark,
+    )
+}
+
 @Composable
 private fun EmbeddingModelPanel(
     state: RuntimeUiState,
     onRequestModels: () -> Unit,
     onSelectEmbeddingModel: (String?) -> Unit,
+    showHeader: Boolean = true,
 ) {
     val hapticFeedback = LocalHapticFeedback.current
     val embeddingModels = state.models
@@ -2957,9 +3412,7 @@ private fun EmbeddingModelPanel(
     val selectedEmbeddingModelUnavailable =
         state.selectedEmbeddingModelId != null && selectedEmbeddingModel == null
     val selectedEmbeddingModelLabel = selectedEmbeddingModel?.name
-        ?: state.selectedEmbeddingModelId
-            ?.substringAfter(':')
-            ?.takeIf(String::isNotBlank)
+        ?: state.selectedEmbeddingModelId?.let(::savedRuntimeModelDisplayName)
         ?: stringResource(R.string.model_none)
     val selectedEmbeddingModelRecoveryMessage = when {
         !selectedEmbeddingModelUnavailable -> null
@@ -2973,17 +3426,19 @@ private fun EmbeddingModelPanel(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                    text = stringResource(R.string.embedding_model_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Text(
-                    text = stringResource(R.string.embedding_model_subtitle),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.secondary,
-                )
+            if (showHeader) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        text = stringResource(R.string.embedding_model_title),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        text = stringResource(R.string.embedding_model_subtitle),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.secondary,
+                    )
+                }
             }
             StatusLine(
                 label = stringResource(R.string.selected_embedding_model),
@@ -3000,9 +3455,15 @@ private fun EmbeddingModelPanel(
                 selected = state.selectedEmbeddingModelId == null,
                 onSelectEmbeddingModel = onSelectEmbeddingModel,
             )
+            if (selectedEmbeddingModelUnavailable) {
+                SavedEmbeddingModelRow(
+                    modelName = selectedEmbeddingModelLabel,
+                    detail = selectedEmbeddingModelRecoveryMessage,
+                )
+            }
             Button(
                 onClick = {
-                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                    hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
                     onRequestModels()
                 },
                 enabled = state.isConnected && !state.isLoadingModels,
@@ -3038,6 +3499,47 @@ private fun EmbeddingModelPanel(
 }
 
 @Composable
+private fun SavedEmbeddingModelRow(
+    modelName: String,
+    detail: String?,
+) {
+    OutlinedCard(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = Icons.Filled.CheckCircle,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+            )
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                Text(
+                    text = modelName,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (detail != null) {
+                    Text(
+                        text = detail,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.secondary,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun EmbeddingModelNoneRow(
     selected: Boolean,
     onSelectEmbeddingModel: (String?) -> Unit,
@@ -3045,7 +3547,9 @@ private fun EmbeddingModelNoneRow(
     val hapticFeedback = LocalHapticFeedback.current
     OutlinedButton(
         onClick = {
-            hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+            if (shouldPerformSelectionChangeHaptic(selected)) {
+                hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.SelectionChange)
+            }
             onSelectEmbeddingModel(null)
         },
         modifier = Modifier.fillMaxWidth(),
@@ -3090,7 +3594,9 @@ private fun EmbeddingModelRow(
     val hapticFeedback = LocalHapticFeedback.current
     OutlinedButton(
         onClick = {
-            hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+            if (shouldPerformSelectionChangeHaptic(selected)) {
+                hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.SelectionChange)
+            }
             onSelectEmbeddingModel(model.id)
         },
         enabled = model.installed,
@@ -3133,14 +3639,7 @@ private fun LanguagePreferenceSelector(
     onSetLanguageTag: (String) -> Unit,
 ) {
     val hapticFeedback = LocalHapticFeedback.current
-    val options = listOf(
-        RuntimeAppLanguage.System to R.string.language_system,
-        RuntimeAppLanguage.English to R.string.language_english,
-        RuntimeAppLanguage.Korean to R.string.language_korean,
-        RuntimeAppLanguage.Japanese to R.string.language_japanese,
-        RuntimeAppLanguage.SimplifiedChinese to R.string.language_simplified_chinese,
-        RuntimeAppLanguage.French to R.string.language_french,
-    )
+    val options = appLanguagePreferenceOptions()
 
     Column(
         modifier = Modifier.selectableGroup(),
@@ -3160,8 +3659,8 @@ private fun LanguagePreferenceSelector(
                         selected = selected,
                         role = Role.RadioButton,
                     ) {
-                        if (!selected) {
-                            hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                        if (shouldPerformSelectionChangeHaptic(selected)) {
+                            hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.SelectionChange)
                         }
                         onSetLanguageTag(language.languageTag)
                     }
@@ -3184,6 +3683,16 @@ private fun LanguagePreferenceSelector(
     }
 }
 
+internal fun appLanguagePreferenceOptions(): List<Pair<RuntimeAppLanguage, Int>> {
+    return listOf(
+        RuntimeAppLanguage.English to R.string.language_english,
+        RuntimeAppLanguage.Korean to R.string.language_korean,
+        RuntimeAppLanguage.Japanese to R.string.language_japanese,
+        RuntimeAppLanguage.SimplifiedChinese to R.string.language_simplified_chinese,
+        RuntimeAppLanguage.French to R.string.language_french,
+    )
+}
+
 @Composable
 private fun ChatHistorySettingsPanel(
     activeSessions: List<RuntimeChatSession>,
@@ -3194,10 +3703,38 @@ private fun ChatHistorySettingsPanel(
     onPermanentlyDeleteChatSession: (String) -> Unit,
     onArchiveAllChatSessions: () -> Unit,
     onPermanentlyDeleteArchivedChatSessions: () -> Unit,
+    showHeader: Boolean = true,
 ) {
     val hapticFeedback = LocalHapticFeedback.current
     val bulkArchiveConfirmStep = rememberSaveable { mutableStateOf(0) }
     val bulkDeleteConfirmStep = rememberSaveable { mutableStateOf(0) }
+    var showBulkActions by rememberSaveable { mutableStateOf(false) }
+    var chatSearchQuery by rememberSaveable { mutableStateOf("") }
+    val untitledTitle = stringResource(R.string.untitled_chat)
+    val filteredActiveSessions = filterChatHistorySessions(
+        sessions = activeSessions,
+        query = chatSearchQuery,
+        untitledTitle = untitledTitle,
+    )
+    val filteredArchivedSessions = filterChatHistorySessions(
+        sessions = archivedSessions,
+        query = chatSearchQuery,
+        untitledTitle = untitledTitle,
+    )
+    val hasSearchQuery = chatSearchQuery.trim().isNotEmpty()
+    val hasFilteredResults = filteredActiveSessions.isNotEmpty() || filteredArchivedSessions.isNotEmpty()
+    val canArchiveAll = chatHistoryArchiveAllEnabled(
+        isActionEnabled = isActionEnabled,
+        activeSessionCount = activeSessions.size,
+    )
+    val canPermanentlyDeleteArchived = chatHistoryPermanentDeleteArchivedEnabled(
+        isActionEnabled = isActionEnabled,
+        archivedSessionCount = archivedSessions.size,
+    )
+    val hasBulkActions = chatHistoryBulkActionsAvailable(
+        activeSessionCount = activeSessions.size,
+        archivedSessionCount = archivedSessions.size,
+    )
 
     TwoStepConfirmationDialog(
         step = bulkArchiveConfirmStep.value,
@@ -3205,6 +3742,7 @@ private fun ChatHistorySettingsPanel(
         firstMessage = stringResource(R.string.archive_all_chats_confirm_first),
         secondMessage = stringResource(R.string.archive_all_chats_confirm_second),
         confirmRes = R.string.archive,
+        enabled = canArchiveAll,
         onStepChange = { bulkArchiveConfirmStep.value = it },
         onConfirm = onArchiveAllChatSessions,
     )
@@ -3214,6 +3752,7 @@ private fun ChatHistorySettingsPanel(
         firstMessage = stringResource(R.string.delete_archived_chats_confirm_first),
         secondMessage = stringResource(R.string.delete_archived_chats_confirm_second),
         confirmRes = R.string.permanently_delete,
+        enabled = canPermanentlyDeleteArchived,
         onStepChange = { bulkDeleteConfirmStep.value = it },
         onConfirm = onPermanentlyDeleteArchivedChatSessions,
     )
@@ -3223,17 +3762,19 @@ private fun ChatHistorySettingsPanel(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                    text = stringResource(R.string.chat_history_settings_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Text(
-                    text = stringResource(R.string.chat_history_settings_subtitle),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.secondary,
-                )
+            if (showHeader) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        text = stringResource(R.string.chat_history_settings_title),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        text = stringResource(R.string.chat_history_settings_subtitle),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.secondary,
+                    )
+                }
             }
             StatusLine(
                 label = stringResource(R.string.previous_chats),
@@ -3243,41 +3784,107 @@ private fun ChatHistorySettingsPanel(
                 label = stringResource(R.string.archived_chats),
                 value = archivedSessions.size.toString(),
             )
-            OutlinedButton(
-                onClick = {
-                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                    bulkArchiveConfirmStep.value = 1
-                },
-                enabled = isActionEnabled && activeSessions.isNotEmpty(),
+            OutlinedTextField(
+                value = chatSearchQuery,
+                onValueChange = { chatSearchQuery = it },
                 modifier = Modifier.fillMaxWidth(),
-            ) {
-                Icon(Icons.Filled.Archive, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
+                singleLine = true,
+                label = { Text(stringResource(R.string.chat_search_label)) },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Filled.Search,
+                        contentDescription = null,
+                    )
+                },
+                trailingIcon = {
+                    if (chatSearchQuery.isNotEmpty()) {
+                        IconButton(
+                            onClick = {
+                                hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
+                                chatSearchQuery = ""
+                            },
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Close,
+                                contentDescription = stringResource(R.string.clear_chat_search),
+                            )
+                        }
+                    }
+                },
+            )
+            if (hasBulkActions) {
+                OutlinedButton(
+                        onClick = {
+                            hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Toggle)
+                            showBulkActions = !showBulkActions
+                        },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Icon(
+                        imageVector = if (showBulkActions) {
+                            Icons.Filled.KeyboardArrowUp
+                        } else {
+                            Icons.Filled.KeyboardArrowDown
+                        },
+                        contentDescription = null,
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = stringResource(R.string.chat_history_bulk_actions_title),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                if (showBulkActions) {
+                    Text(
+                        text = stringResource(R.string.chat_history_bulk_actions_detail),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.secondary,
+                    )
+                    OutlinedButton(
+                        onClick = {
+                            hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Destructive)
+                            bulkArchiveConfirmStep.value = 1
+                        },
+                        enabled = canArchiveAll,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Icon(Icons.Filled.Archive, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = stringResource(R.string.archive_all_chats),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Destructive)
+                            bulkDeleteConfirmStep.value = 1
+                        },
+                        enabled = canPermanentlyDeleteArchived,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Icon(Icons.Filled.DeleteSweep, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = stringResource(R.string.permanently_delete_archived_chats),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+            if (hasSearchQuery && !hasFilteredResults) {
                 Text(
-                    text = stringResource(R.string.archive_all_chats),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                    text = stringResource(R.string.no_chat_search_results),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.secondary,
                 )
             }
-            OutlinedButton(
-                onClick = {
-                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                    bulkDeleteConfirmStep.value = 1
-                },
-                enabled = isActionEnabled && archivedSessions.isNotEmpty(),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Icon(Icons.Filled.DeleteSweep, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = stringResource(R.string.permanently_delete_archived_chats),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            if (activeSessions.isNotEmpty()) {
+            if (filteredActiveSessions.isNotEmpty()) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    activeSessions.forEach { session ->
+                    filteredActiveSessions.forEach { session ->
                         ChatHistorySettingsRow(
                             session = session,
                             isActionEnabled = isActionEnabled,
@@ -3288,7 +3895,7 @@ private fun ChatHistorySettingsPanel(
                     }
                 }
             }
-            if (archivedSessions.isNotEmpty()) {
+            if (filteredArchivedSessions.isNotEmpty()) {
                 HorizontalDivider()
                 Text(
                     text = stringResource(R.string.archived_chats),
@@ -3296,7 +3903,7 @@ private fun ChatHistorySettingsPanel(
                     color = MaterialTheme.colorScheme.secondary,
                 )
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    archivedSessions.forEach { session ->
+                    filteredArchivedSessions.forEach { session ->
                         ChatHistorySettingsRow(
                             session = session,
                             isActionEnabled = isActionEnabled,
@@ -3311,6 +3918,50 @@ private fun ChatHistorySettingsPanel(
     }
 }
 
+internal fun filterChatHistorySessions(
+    sessions: List<RuntimeChatSession>,
+    query: String,
+    untitledTitle: String,
+): List<RuntimeChatSession> {
+    val terms = query
+        .trim()
+        .lowercase(Locale.ROOT)
+        .split(Regex("\\s+"))
+        .filter { it.isNotBlank() }
+    if (terms.isEmpty()) return sessions
+    return sessions.filter { session ->
+        val searchableText = listOfNotNull(
+            session.localizedTitle(untitledTitle),
+            session.modelId,
+            session.lastEvent,
+            session.lastFinishReason,
+            session.lastErrorCode,
+        ).joinToString(separator = " ").lowercase(Locale.ROOT)
+        terms.all(searchableText::contains)
+    }
+}
+
+internal fun chatHistoryArchiveAllEnabled(
+    isActionEnabled: Boolean,
+    activeSessionCount: Int,
+): Boolean {
+    return isActionEnabled && activeSessionCount > 0
+}
+
+internal fun chatHistoryPermanentDeleteArchivedEnabled(
+    isActionEnabled: Boolean,
+    archivedSessionCount: Int,
+): Boolean {
+    return isActionEnabled && archivedSessionCount > 0
+}
+
+internal fun chatHistoryBulkActionsAvailable(
+    activeSessionCount: Int,
+    archivedSessionCount: Int,
+): Boolean {
+    return activeSessionCount > 0 || archivedSessionCount > 0
+}
+
 @Composable
 private fun ChatHistorySettingsRow(
     session: RuntimeChatSession,
@@ -3322,7 +3973,25 @@ private fun ChatHistorySettingsRow(
     val hapticFeedback = LocalHapticFeedback.current
     val deleteConfirmStep = rememberSaveable(session.id) { mutableStateOf(0) }
     val isArchived = session.archivedAtMillis != null
-    val title = session.title.ifBlank { stringResource(R.string.untitled_chat) }
+    val title = session.localizedTitle(stringResource(R.string.untitled_chat))
+    val statusRes = chatHistorySessionStatusRes(session)
+    val baseStatusText = if (isArchived) {
+        stringResource(R.string.archived_chat)
+    } else {
+        stringResource(R.string.chat_message_count, session.messageCount)
+    }
+    val statusText = statusRes?.let { status ->
+        stringResource(R.string.chat_session_status_value, baseStatusText, stringResource(status))
+    } ?: baseStatusText
+    val statusColor = when (statusRes) {
+        R.string.chat_session_status_failed -> MaterialTheme.colorScheme.error
+        R.string.chat_session_status_in_progress -> MaterialTheme.colorScheme.primary
+        else -> MaterialTheme.colorScheme.secondary
+    }
+    val canPermanentlyDelete = chatHistoryPermanentDeleteChatEnabled(
+        isActionEnabled = isActionEnabled,
+        isArchived = isArchived,
+    )
 
     TwoStepConfirmationDialog(
         step = deleteConfirmStep.value,
@@ -3330,6 +3999,7 @@ private fun ChatHistorySettingsRow(
         firstMessage = stringResource(R.string.permanently_delete_chat_confirm_first, title),
         secondMessage = stringResource(R.string.permanently_delete_chat_confirm_second, title),
         confirmRes = R.string.permanently_delete,
+        enabled = canPermanentlyDelete,
         onStepChange = { deleteConfirmStep.value = it },
         onConfirm = { onPermanentlyDeleteChatSession(session.id) },
     )
@@ -3360,13 +4030,9 @@ private fun ChatHistorySettingsRow(
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
-                        text = if (isArchived) {
-                            stringResource(R.string.archived_chat)
-                        } else {
-                            stringResource(R.string.chat_message_count, session.messageCount)
-                        },
+                        text = statusText,
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.secondary,
+                        color = statusColor,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
@@ -3379,7 +4045,7 @@ private fun ChatHistorySettingsRow(
                 if (isArchived) {
                     OutlinedButton(
                         onClick = {
-                            hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                            hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
                             onRestoreChatSession(session.id)
                         },
                         enabled = isActionEnabled,
@@ -3395,7 +4061,7 @@ private fun ChatHistorySettingsRow(
                     }
                     OutlinedButton(
                         onClick = {
-                            hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                            hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Destructive)
                             deleteConfirmStep.value = 1
                         },
                         enabled = isActionEnabled,
@@ -3412,7 +4078,7 @@ private fun ChatHistorySettingsRow(
                 } else {
                     OutlinedButton(
                         onClick = {
-                            hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                            hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Destructive)
                             onArchiveChatSession(session.id)
                         },
                         enabled = isActionEnabled,
@@ -3432,6 +4098,59 @@ private fun ChatHistorySettingsRow(
     }
 }
 
+@StringRes
+internal fun chatHistorySessionStatusRes(session: RuntimeChatSession): Int? {
+    val errorCode = session.lastErrorCode?.trim()
+    if (!errorCode.isNullOrBlank()) {
+        return R.string.chat_session_status_failed
+    }
+
+    val finishReason = session.lastFinishReason?.trim()?.lowercase(Locale.ROOT)
+    when (finishReason) {
+        "cancel", "cancelled", "canceled" -> return R.string.chat_session_status_cancelled
+        "error", "failed", "failure" -> return R.string.chat_session_status_failed
+    }
+    if (!finishReason.isNullOrBlank()) {
+        return R.string.chat_session_status_completed
+    }
+
+    return when (session.lastEvent?.trim()?.lowercase(Locale.ROOT)) {
+        "chat.error", "error", "failed", "failure" -> R.string.chat_session_status_failed
+        "chat.cancel", "chat.cancelled", "chat.canceled", "cancelled", "canceled" ->
+            R.string.chat_session_status_cancelled
+        "chat.done", "done", "completed" -> R.string.chat_session_status_completed
+        "chat.send",
+        "chat.sent",
+        "chat.request",
+        "chat.requested",
+        "chat.start",
+        "chat.started",
+        "chat.delta",
+        "chat.reasoning_delta",
+        "chat.thinking_delta",
+        "streaming" -> R.string.chat_session_status_in_progress
+        else -> null
+    }
+}
+
+private fun RuntimeChatSession.localizedTitle(untitledTitle: String): String {
+    val cleanTitle = title.trim()
+    return if (cleanTitle.isBlank() || cleanTitle == LEGACY_DEFAULT_CHAT_TITLE) {
+        untitledTitle
+    } else {
+        cleanTitle
+    }
+}
+
+private const val LEGACY_DEFAULT_CHAT_TITLE = "New chat"
+
+internal fun chatHistoryPermanentDeleteChatEnabled(
+    isActionEnabled: Boolean,
+    isArchived: Boolean,
+): Boolean {
+    return isActionEnabled && isArchived
+}
+
 @Composable
 private fun TwoStepConfirmationDialog(
     step: Int,
@@ -3439,6 +4158,7 @@ private fun TwoStepConfirmationDialog(
     firstMessage: String,
     secondMessage: String,
     @StringRes confirmRes: Int,
+    enabled: Boolean = true,
     onStepChange: (Int) -> Unit,
     onConfirm: () -> Unit,
 ) {
@@ -3452,7 +4172,13 @@ private fun TwoStepConfirmationDialog(
         confirmButton = {
             TextButton(
                 onClick = {
-                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                    hapticFeedback.performAetherLinkFeedback(
+                        if (step == 1) {
+                            AetherLinkInteractionFeedback.PrimaryAction
+                        } else {
+                            AetherLinkInteractionFeedback.Destructive
+                        },
+                    )
                     if (step == 1) {
                         onStepChange(2)
                     } else {
@@ -3460,6 +4186,7 @@ private fun TwoStepConfirmationDialog(
                         onConfirm()
                     }
                 },
+                enabled = enabled,
             ) {
                 Text(
                     text = if (step == 1) {
@@ -3473,7 +4200,7 @@ private fun TwoStepConfirmationDialog(
         dismissButton = {
             TextButton(
                 onClick = {
-                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                    hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Toggle)
                     onStepChange(0)
                 },
             ) {
@@ -3486,12 +4213,14 @@ private fun TwoStepConfirmationDialog(
 @Composable
 private fun MemoryPanel(
     entries: List<RuntimeMemoryEntry>,
+    actionsEnabled: Boolean,
     onAddMemoryEntry: (String) -> Unit,
     onRemoveMemoryEntry: (String) -> Unit,
     onSetMemoryEntryEnabled: (String, Boolean) -> Unit,
+    showHeader: Boolean = true,
 ) {
     val draft = rememberSaveable { mutableStateOf("") }
-    val canAdd = draft.value.isNotBlank()
+    val canAdd = actionsEnabled && draft.value.isNotBlank()
     val hapticFeedback = LocalHapticFeedback.current
 
     OutlinedCard(modifier = Modifier.fillMaxWidth()) {
@@ -3499,30 +4228,47 @@ private fun MemoryPanel(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                    text = stringResource(R.string.memory_title),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Text(
-                    text = stringResource(R.string.memory_subtitle),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.secondary,
-                )
+            if (showHeader) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        text = stringResource(R.string.memory_title),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Text(
+                        text = stringResource(R.string.memory_subtitle),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.secondary,
+                    )
+                }
+            }
+            if (!actionsEnabled) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                ) {
+                    Text(
+                        text = stringResource(memoryLockNoticeTextRes(hasEntries = entries.isNotEmpty())),
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
             }
             OutlinedTextField(
                 value = draft.value,
                 onValueChange = { draft.value = it },
                 label = { Text(stringResource(R.string.memory_add_label)) },
                 placeholder = { Text(stringResource(R.string.memory_add_placeholder)) },
+                enabled = actionsEnabled,
                 minLines = 2,
                 maxLines = 4,
                 modifier = Modifier.fillMaxWidth(),
             )
             Button(
                 onClick = {
-                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                    hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
                     onAddMemoryEntry(draft.value)
                     draft.value = ""
                 },
@@ -3534,12 +4280,13 @@ private fun MemoryPanel(
                 Text(stringResource(R.string.memory_add))
             }
             if (entries.isEmpty()) {
-                EmptyState(text = stringResource(R.string.memory_empty))
+                EmptyState(text = stringResource(memoryEmptyStateTextRes(actionsEnabled = actionsEnabled)))
             } else {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     entries.forEach { entry ->
                         MemoryEntryRow(
                             entry = entry,
+                            actionsEnabled = actionsEnabled,
                             onRemoveMemoryEntry = onRemoveMemoryEntry,
                             onSetMemoryEntryEnabled = onSetMemoryEntryEnabled,
                         )
@@ -3553,6 +4300,7 @@ private fun MemoryPanel(
 @Composable
 private fun MemoryEntryRow(
     entry: RuntimeMemoryEntry,
+    actionsEnabled: Boolean,
     onRemoveMemoryEntry: (String) -> Unit,
     onSetMemoryEntryEnabled: (String, Boolean) -> Unit,
 ) {
@@ -3573,10 +4321,11 @@ private fun MemoryEntryRow(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                        hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Destructive)
                         showDeleteConfirmation.value = false
                         onRemoveMemoryEntry(entry.id)
                     },
+                    enabled = actionsEnabled,
                 ) {
                     Text(stringResource(R.string.delete))
                 }
@@ -3584,7 +4333,7 @@ private fun MemoryEntryRow(
             dismissButton = {
                 TextButton(
                     onClick = {
-                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                        hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Toggle)
                         showDeleteConfirmation.value = false
                     },
                 ) {
@@ -3632,15 +4381,17 @@ private fun MemoryEntryRow(
             Switch(
                 checked = entry.enabled,
                 onCheckedChange = { enabled ->
-                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                    hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Toggle)
                     onSetMemoryEntryEnabled(entry.id, enabled)
                 },
+                enabled = actionsEnabled,
             )
             FilledTonalIconButton(
                 onClick = {
-                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                    hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Destructive)
                     showDeleteConfirmation.value = true
                 },
+                enabled = actionsEnabled,
                 modifier = Modifier.size(40.dp),
             ) {
                 Icon(
@@ -3690,12 +4441,19 @@ private fun EmptyState(text: String) {
 @Composable
 private fun ErrorText(
     error: RuntimeUiError?,
-    onRouteAction: (() -> Unit)? = null,
+    routeAction: RouteNoticePrimaryAction? = null,
+    onConnect: (() -> Unit)? = null,
+    onScanLatestQr: (() -> Unit)? = null,
 ) {
     if (error == null) return
 
     if (error.isRouteAvailabilityNotice()) {
-        RouteAvailabilityNotice(error, onClick = onRouteAction)
+        RouteAvailabilityNotice(
+            error = error,
+            action = routeAction,
+            onConnect = onConnect,
+            onScanLatestQr = onScanLatestQr,
+        )
         return
     }
 
@@ -3724,8 +4482,7 @@ private fun ErrorText(
                     text = runtimeErrorLabel(error),
                     color = MaterialTheme.colorScheme.onErrorContainer,
                 )
-                val detailText = runtimeErrorDetailLabel(error)
-                    ?: error.detail?.takeIf { it.isNotBlank() }
+                val detailText = runtimeVisibleErrorDetail(error) ?: runtimeErrorDetailLabel(error)
                 detailText?.let { detail ->
                     Text(
                         text = stringResource(R.string.error_detail, detail),
@@ -3748,21 +4505,28 @@ private fun ErrorText(
 @Composable
 private fun RouteAvailabilityNotice(
     error: RuntimeUiError,
-    onClick: (() -> Unit)?,
+    action: RouteNoticePrimaryAction?,
+    onConnect: (() -> Unit)?,
+    onScanLatestQr: (() -> Unit)?,
 ) {
     val body = routeAvailabilityCompactLabel(error)
     val hapticFeedback = LocalHapticFeedback.current
+    val actionHandler = when (action) {
+        RouteNoticePrimaryAction.Connect -> onConnect
+        RouteNoticePrimaryAction.ScanLatestQr -> onScanLatestQr
+        null -> null
+    }
 
     Surface(
         modifier = Modifier
             .fillMaxWidth()
             .let { base ->
-                if (onClick == null) {
+                if (actionHandler == null) {
                     base
                 } else {
                     base.clickable(role = Role.Button) {
-                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                        onClick()
+                        hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
+                        actionHandler()
                     }
                 }
             },
@@ -3786,12 +4550,12 @@ private fun RouteAvailabilityNotice(
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.86f),
                 style = MaterialTheme.typography.bodySmall,
                 fontWeight = FontWeight.Medium,
-                maxLines = 2,
+                maxLines = 3,
                 overflow = TextOverflow.Ellipsis,
             )
-            if (onClick != null) {
+            if (action != null && actionHandler != null) {
                 Text(
-                    text = stringResource(R.string.route_notice_action_scan_qr),
+                    text = stringResource(routeNoticeActionLabelRes(action)),
                     color = MaterialTheme.colorScheme.primary,
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.SemiBold,
@@ -3805,12 +4569,29 @@ private fun RouteAvailabilityNotice(
 
 @Composable
 private fun routeAvailabilityCompactLabel(error: RuntimeUiError): String {
-    return when {
+    return when (error.diagnosticCode) {
+        "route_diagnostic_relay_failed" -> stringResource(R.string.route_diagnostic_relay_failed)
+        "route_diagnostic_relay_auth_failed" ->
+            stringResource(R.string.route_diagnostic_relay_auth_failed)
+        "route_diagnostic_remote_route_expired" ->
+            stringResource(R.string.route_diagnostic_remote_route_expired)
+        "route_diagnostic_direct_qr_rejected" ->
+            stringResource(R.string.route_diagnostic_direct_qr_rejected)
+        "route_diagnostic_relay_qr_unreachable" ->
+            stringResource(R.string.route_diagnostic_relay_qr_unreachable)
+        else -> when {
+        error.code == "remote_route_unreachable" ->
+            stringResource(R.string.error_remote_route_unreachable)
         error.code == "remote_routes_unavailable" ||
             error.code == "remote_route_expired" ||
+            error.code == "pairing_route_retrying" ||
+            error.code == "pairing_direct_route_rejected" ||
+            error.code == "pairing_relay_route_rejected" ||
+            error.code == "pairing_endpoint_unavailable" ||
             error.diagnosticCode in RELAY_ROUTE_NEEDED_DIAGNOSTIC_CODES ->
             stringResource(R.string.route_notice_short_relay_needed)
         else -> stringResource(R.string.route_notice_short_unavailable)
+        }
     }
 }
 
@@ -3822,22 +4603,51 @@ private val ROUTE_AVAILABILITY_NOTICE_CODES = setOf(
     "no_route",
     "no_connectable_route",
     "remote_routes_unavailable",
-    "remote_route_expired",
+        "remote_route_unreachable",
+        "remote_route_expired",
+        "pairing_required",
+        "authentication_required",
+        "pairing_route_retrying",
+        "pairing_endpoint_unavailable",
+        "pairing_direct_route_rejected",
+    "pairing_relay_route_rejected",
 )
 
 private val ROUTE_AVAILABILITY_DIAGNOSTIC_CODES = setOf(
     "route_diagnostic_local_missing_remote_pending",
     "route_diagnostic_direct_failed_remote_pending",
     "route_diagnostic_remote_pending",
+    "route_diagnostic_relay_failed",
+    "route_diagnostic_relay_auth_failed",
     "route_diagnostic_remote_route_expired",
+    "route_diagnostic_direct_qr_rejected",
+    "route_diagnostic_relay_qr_unreachable",
 )
 
 private val RELAY_ROUTE_NEEDED_DIAGNOSTIC_CODES = setOf(
     "route_diagnostic_local_missing_remote_pending",
     "route_diagnostic_direct_failed_remote_pending",
     "route_diagnostic_remote_pending",
+    "route_diagnostic_relay_failed",
+    "route_diagnostic_relay_auth_failed",
     "route_diagnostic_remote_route_expired",
+    "route_diagnostic_direct_qr_rejected",
+    "route_diagnostic_relay_qr_unreachable",
 )
+
+private val QR_REFRESH_EMPTY_CHAT_ERROR_CODES = setOf(
+    "remote_routes_unavailable",
+    "remote_route_unreachable",
+    "remote_route_expired",
+    "pairing_required",
+    "authentication_required",
+    "pairing_route_retrying",
+    "pairing_endpoint_unavailable",
+    "pairing_direct_route_rejected",
+    "pairing_relay_route_rejected",
+)
+
+private val QR_REFRESH_EMPTY_CHAT_DIAGNOSTIC_CODES = RELAY_ROUTE_NEEDED_DIAGNOSTIC_CODES
 
 private fun selectedModelIsUsable(state: RuntimeUiState): Boolean {
     val selectedId = state.selectedModelId ?: return false
@@ -3850,11 +4660,64 @@ private fun selectedModelIsMissingFromRuntime(state: RuntimeUiState): Boolean {
     return state.models.none { it.id == selectedId && it.isChatModel() }
 }
 
-private fun hasUnsupportedImageAttachment(state: RuntimeUiState): Boolean {
+internal fun chatComposerHasSendableContent(state: RuntimeUiState): Boolean {
+    return state.chatInput.isNotBlank() || state.pendingAttachments.isNotEmpty()
+}
+
+internal fun chatComposerHasUnsupportedImageAttachment(state: RuntimeUiState): Boolean {
     if (state.pendingAttachments.none { it.type == "image" }) return false
     val selectedId = state.selectedModelId ?: return false
     val selectedModel = state.models.firstOrNull { it.id == selectedId && it.isChatModel() }
     return selectedModel?.supportsImageInput() != true
+}
+
+internal fun chatComposerCanSend(state: RuntimeUiState): Boolean {
+    return state.isConnected &&
+        !state.isStreaming &&
+        selectedModelIsUsable(state) &&
+        chatComposerHasSendableContent(state) &&
+        !chatComposerHasUnsupportedImageAttachment(state)
+}
+
+internal fun shouldAutoScrollChat(
+    lastVisibleItemIndex: Int?,
+    totalItemsCount: Int,
+    messageCountChanged: Boolean,
+    newUserMessageAdded: Boolean = false,
+    nearBottomThreshold: Int = 1,
+): Boolean {
+    if (totalItemsCount <= 0) return false
+    if (lastVisibleItemIndex == null) return true
+    if (messageCountChanged && newUserMessageAdded) return true
+    val latestItemIndex = totalItemsCount - 1
+    return lastVisibleItemIndex >= latestItemIndex - nearBottomThreshold
+}
+
+internal fun newUserMessageAddedSince(
+    previousMessageCount: Int,
+    messages: List<RuntimeChatMessage>,
+    isStreaming: Boolean,
+): Boolean {
+    if (!isStreaming || messages.isEmpty()) return false
+    val startIndex = previousMessageCount.coerceIn(0, messages.size)
+    if (startIndex == messages.size) return false
+    return messages
+        .drop(startIndex)
+        .any { message -> message.role == "user" }
+}
+
+internal fun shouldShowJumpToLatestChatButton(
+    lastVisibleItemIndex: Int?,
+    totalItemsCount: Int,
+    nearBottomThreshold: Int = 1,
+): Boolean {
+    if (lastVisibleItemIndex == null) return false
+    return !shouldAutoScrollChat(
+        lastVisibleItemIndex = lastVisibleItemIndex,
+        totalItemsCount = totalItemsCount,
+        messageCountChanged = false,
+        nearBottomThreshold = nearBottomThreshold,
+    )
 }
 
 @Composable
@@ -3864,31 +4727,113 @@ private fun chatInputHint(state: RuntimeUiState): String {
         state.selectedModelId == null -> stringResource(R.string.chat_hint_select_model)
         selectedModelIsMissingFromRuntime(state) -> stringResource(R.string.chat_hint_model_unavailable)
         !selectedModelIsUsable(state) -> stringResource(R.string.chat_hint_install_model)
-        hasUnsupportedImageAttachment(state) -> stringResource(R.string.chat_hint_select_vision_model)
+        chatComposerHasUnsupportedImageAttachment(state) -> stringResource(R.string.chat_hint_select_vision_model)
         state.isStreaming -> stringResource(R.string.chat_hint_wait_for_stream)
         else -> ""
     }
 }
 
 @Composable
-private fun chatEmptyTitle(state: RuntimeUiState): String {
+private fun chatEmptyTitle(state: RuntimeUiState, preferQrRouteRefresh: Boolean = false): String {
     return when {
+        preferQrRouteRefresh -> stringResource(R.string.status_route_needed_title)
         !state.isConnected -> stringResource(R.string.empty_chat_disconnected_title)
         state.isStreaming -> stringResource(R.string.empty_chat_streaming_title)
-        selectedModelIsUsable(state) -> stringResource(R.string.empty_chat_title)
         else -> stringResource(R.string.empty_chat_no_model_title)
     }
 }
 
 @Composable
-private fun chatEmptyText(state: RuntimeUiState): String {
+private fun chatEmptyText(state: RuntimeUiState, preferQrRouteRefresh: Boolean = false): String {
     return when {
+        preferQrRouteRefresh -> stringResource(R.string.route_notice_short_relay_needed)
         !state.isConnected -> stringResource(R.string.empty_chat_disconnected)
         state.isStreaming -> stringResource(R.string.empty_chat_streaming)
-        selectedModelIsUsable(state) -> stringResource(R.string.empty_chat)
         selectedModelIsMissingFromRuntime(state) -> stringResource(R.string.selected_model_unavailable)
         else -> stringResource(R.string.empty_chat_no_model)
     }
+}
+
+internal fun shouldScanLatestQrFromEmptyChat(state: RuntimeUiState): Boolean {
+    if (state.isConnected || state.trustedRuntime == null) return false
+    val error = state.error ?: return false
+    return error.code in QR_REFRESH_EMPTY_CHAT_ERROR_CODES ||
+        error.diagnosticCode in QR_REFRESH_EMPTY_CHAT_DIAGNOSTIC_CODES
+}
+
+internal fun shouldShowChatBottomError(state: RuntimeUiState): Boolean {
+    return !(state.messages.isEmpty() && shouldScanLatestQrFromEmptyChat(state))
+}
+
+internal enum class ChatEmptyPrimaryAction {
+    Connect,
+    ScanQr,
+}
+
+internal fun chatEmptyPrimaryAction(state: RuntimeUiState): ChatEmptyPrimaryAction? {
+    if (state.messages.isNotEmpty() || state.isConnected) return null
+    return when {
+        shouldScanLatestQrFromEmptyChat(state) -> ChatEmptyPrimaryAction.ScanQr
+        state.trustedRuntime == null -> ChatEmptyPrimaryAction.ScanQr
+        else -> ChatEmptyPrimaryAction.Connect
+    }
+}
+
+internal fun shouldShowChatEmptyState(state: RuntimeUiState): Boolean {
+    if (state.messages.isNotEmpty()) return false
+    if (shouldScanLatestQrFromEmptyChat(state)) return true
+    if (!state.isConnected) return true
+    if (state.isStreaming) return true
+    if (!selectedModelIsUsable(state)) return true
+    return false
+}
+
+internal fun memoryActionsEnabled(state: RuntimeUiState): Boolean {
+    return state.isConnected && state.trustedRuntime != null
+}
+
+@StringRes
+internal fun memoryLockNoticeTextRes(hasEntries: Boolean): Int {
+    return if (hasEntries) {
+        R.string.memory_read_only_notice
+    } else {
+        R.string.memory_connect_to_load
+    }
+}
+
+@StringRes
+internal fun memoryEmptyStateTextRes(actionsEnabled: Boolean): Int {
+    return if (actionsEnabled) {
+        R.string.memory_empty
+    } else {
+        R.string.memory_empty_disconnected
+    }
+}
+
+internal fun shouldShowAssistantSuggestions(
+    isLatestAssistant: Boolean,
+    hasAssistantOutput: Boolean,
+    isStreaming: Boolean,
+    isLoadingSuggestions: Boolean,
+    suggestions: List<String>,
+): Boolean {
+    if (!isLatestAssistant || !hasAssistantOutput || isStreaming) return false
+    return suggestions.isNotEmpty() || isLoadingSuggestions
+}
+
+internal fun shouldShowAssistantSuggestionsForMessage(
+    state: RuntimeUiState,
+    message: RuntimeChatMessage,
+): Boolean {
+    val isLatestAssistant = message.role == "assistant" &&
+        message.id == state.messages.lastAssistantMessageId()
+    return shouldShowAssistantSuggestions(
+        isLatestAssistant = isLatestAssistant,
+        hasAssistantOutput = message.content.isNotBlank(),
+        isStreaming = state.isStreaming,
+        isLoadingSuggestions = state.isLoadingSuggestions,
+        suggestions = message.suggestions,
+    )
 }
 
 @Composable
@@ -3899,16 +4844,20 @@ private fun runtimeErrorLabel(error: RuntimeUiError): String {
         "no_route" -> stringResource(R.string.error_no_runtime_route)
         "no_connectable_route" -> stringResource(R.string.error_no_connectable_runtime_route)
         "remote_routes_unavailable" -> stringResource(R.string.error_remote_routes_unavailable)
+        "remote_route_unreachable" -> stringResource(R.string.error_remote_route_unreachable)
         "remote_route_expired" -> stringResource(R.string.error_remote_route_expired)
         "discovery_failed" -> stringResource(R.string.error_discovery_failed)
         "invalid_pairing_qr" -> stringResource(R.string.error_invalid_pairing_qr)
         "pairing_route_retrying" -> stringResource(R.string.error_pairing_route_retrying)
         "pairing_endpoint_unavailable" -> stringResource(R.string.error_pairing_endpoint_unavailable)
+        "pairing_direct_route_rejected" -> stringResource(R.string.error_pairing_direct_route_rejected)
+        "pairing_relay_route_rejected" -> stringResource(R.string.error_pairing_relay_route_rejected)
         "qr_scan_failed" -> stringResource(R.string.error_qr_scan_failed)
         "pair_first" -> stringResource(R.string.error_pair_first)
         "pairing_required" -> stringResource(R.string.error_pairing_required)
         "pairing_rejected" -> stringResource(R.string.error_pairing_rejected)
         "runtime_identity_mismatch" -> stringResource(R.string.error_runtime_identity_mismatch)
+        "runtime_authentication_failed" -> stringResource(R.string.error_runtime_authentication_failed)
         "authentication_required" -> stringResource(R.string.error_authentication_required)
         "authentication_failed" -> stringResource(R.string.error_authentication_failed)
         "device_identity_failed" -> stringResource(R.string.error_device_identity_failed)
@@ -3917,9 +4866,14 @@ private fun runtimeErrorLabel(error: RuntimeUiError): String {
         "select_embedding_model" -> stringResource(R.string.error_select_embedding_model)
         "connect_first" -> stringResource(R.string.error_connect_first)
         "receive_failed" -> stringResource(R.string.error_receive_failed)
+        "remote_route_auth_failed" -> stringResource(R.string.error_remote_route_auth_failed)
         "generation_cancelled" -> stringResource(R.string.error_generation_cancelled)
         "generation_in_progress" -> stringResource(R.string.error_generation_in_progress)
         "chat_session_not_found" -> stringResource(R.string.error_chat_session_not_found)
+        "chat_session_must_be_archived_before_delete" -> stringResource(R.string.error_chat_session_must_be_archived_before_delete)
+        "chat_session_sync_failed" -> stringResource(R.string.error_chat_session_sync_failed)
+        "chat_history_runtime_required" -> stringResource(R.string.error_chat_history_runtime_required)
+        "memory_runtime_required" -> stringResource(R.string.error_memory_runtime_required)
         "runtime_error" -> stringResource(R.string.error_runtime_error)
         "send_failed" -> stringResource(R.string.error_send_failed)
         "invalid_payload" -> stringResource(R.string.error_invalid_payload)
@@ -3927,6 +4881,7 @@ private fun runtimeErrorLabel(error: RuntimeUiError): String {
         "model_install_failed" -> stringResource(R.string.error_model_install_failed)
         "attachment_too_large" -> stringResource(R.string.error_attachment_too_large)
         "attachment_read_failed" -> stringResource(R.string.error_attachment_read_failed)
+        "attachment_limit_reached" -> stringResource(R.string.error_attachment_limit_reached)
         "select_vision_model" -> stringResource(R.string.error_select_vision_model)
         "unsupported_attachment" -> stringResource(R.string.error_unsupported_attachment)
         "unreadable_attachment" -> stringResource(R.string.error_unreadable_attachment)
@@ -3939,9 +4894,52 @@ private fun runtimeErrorLabel(error: RuntimeUiError): String {
     }
 }
 
+internal fun runtimeVisibleErrorDetail(error: RuntimeUiError): String? {
+    return error.detail
+        ?.trim()
+        ?.takeUnless { it.containsBackendEndpointMaterial() }
+        ?.takeIf { it.isNotEmpty() }
+}
+
+internal fun providerDiagnosticMessage(provider: RuntimeProviderStatus): String? {
+    return provider.message
+        .trim()
+        .takeUnless { it.containsBackendEndpointMaterial() }
+        ?.takeIf { it.isNotEmpty() }
+}
+
+internal fun providerDiagnosticCode(provider: RuntimeProviderStatus): String? {
+    return provider.code
+        ?.trim()
+        ?.takeUnless { it.containsBackendEndpointMaterial() }
+        ?.takeIf { it.matches(PROVIDER_DIAGNOSTIC_CODE_PATTERN) }
+}
+
+internal fun providerDiagnosticsVisible(provider: RuntimeProviderStatus): Boolean {
+    return providerDiagnosticMessage(provider) != null || providerDiagnosticCode(provider) != null
+}
+
+private fun String.containsBackendEndpointMaterial(): Boolean {
+    return BACKEND_ENDPOINT_DETAIL_PATTERNS.any { pattern -> pattern.containsMatchIn(this) }
+}
+
+private val BACKEND_ENDPOINT_DETAIL_PATTERNS = listOf(
+    Regex("https?://[^\\s,;)]+", RegexOption.IGNORE_CASE),
+    Regex("\\b(?:[A-Za-z0-9.-]+|\\[[0-9A-Fa-f:]+])(?::)(?:11434|1234)\\b", RegexOption.IGNORE_CASE),
+    Regex("\\b(?:Ollama|LM Studio)\\s+URL\\b", RegexOption.IGNORE_CASE),
+    Regex("/(?:api/(?:tags|ps|pull|chat|show|v1)|v1/(?:models|chat|chat/completions))\\b", RegexOption.IGNORE_CASE),
+    Regex(
+        "(^|[\\s{,;?&])['\"]?(?:route[_-]?token|routeToken|route[_-]?secret|relay[_-]?secret|relaySecret|pairing[_-]?secret|pairingSecret|rt|rs)['\"]?\\s*[:=]\\s*['\"]?[^\\s'\",;})]+",
+        RegexOption.IGNORE_CASE,
+    ),
+)
+
+private val PROVIDER_DIAGNOSTIC_CODE_PATTERN = Regex("[A-Za-z][A-Za-z0-9_.-]{0,79}")
+
 @Composable
 private fun runtimeErrorDetailLabel(error: RuntimeUiError): String? {
     return when (error.code) {
+        "qr_scan_failed" -> stringResource(R.string.error_qr_scanner_unavailable_detail)
         "ollama_auth_required" -> stringResource(R.string.error_ollama_auth_required_detail)
         else -> null
     }
@@ -3958,8 +4956,14 @@ private fun runtimeErrorDiagnosticLabel(error: RuntimeUiError): String? {
             stringResource(R.string.route_diagnostic_remote_pending)
         "route_diagnostic_relay_failed" ->
             stringResource(R.string.route_diagnostic_relay_failed)
+        "route_diagnostic_relay_auth_failed" ->
+            stringResource(R.string.route_diagnostic_relay_auth_failed)
         "route_diagnostic_remote_route_expired" ->
             stringResource(R.string.route_diagnostic_remote_route_expired)
+        "route_diagnostic_direct_qr_rejected" ->
+            stringResource(R.string.route_diagnostic_direct_qr_rejected)
+        "route_diagnostic_relay_qr_unreachable" ->
+            stringResource(R.string.route_diagnostic_relay_qr_unreachable)
         else -> null
     }
 }
@@ -3993,6 +4997,26 @@ private fun providerStatusDetail(provider: RuntimeProviderStatus): String {
         else -> stringResource(R.string.provider_unavailable_hint, provider.name)
     }
 }
+
+private fun savedRuntimeModelDisplayName(modelId: String): String {
+    val trimmed = modelId.trim()
+    if (trimmed.isEmpty()) return trimmed
+    val providerPrefix = trimmed.substringBefore(':', missingDelimiterValue = "")
+        .lowercase(Locale.US)
+    return if (providerPrefix in modelDisplayProviderPrefixes && ':' in trimmed) {
+        trimmed.substringAfter(':').takeIf { it.isNotBlank() } ?: trimmed
+    } else {
+        trimmed
+    }
+}
+
+private val modelDisplayProviderPrefixes = setOf(
+    "ollama",
+    "lmstudio",
+    "lm_studio",
+    "companion",
+    "runtime",
+)
 
 @Composable
 private fun runtimeStatusLabel(status: String): String {

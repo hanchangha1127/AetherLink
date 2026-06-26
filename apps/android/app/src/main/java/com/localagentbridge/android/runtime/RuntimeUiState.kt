@@ -37,6 +37,7 @@ data class RuntimeUiState(
     val activeRequestId: String? = null,
     val memoryEntries: List<RuntimeMemoryEntry> = emptyList(),
     val selectedLanguageTag: String = RuntimeAppLanguage.English.languageTag,
+    val selectedTheme: RuntimeAppTheme = RuntimeAppTheme.System,
     val trustedRuntimeAutoReconnectEnabled: Boolean = true,
     val pairingOnboardingCompleted: Boolean = false,
     val activeRouteKind: RuntimeActiveRouteKind? = null,
@@ -50,7 +51,6 @@ enum class RuntimeActiveRouteKind {
 }
 
 enum class RuntimeAppLanguage(val languageTag: String) {
-    System(""),
     English("en"),
     Korean("ko"),
     Japanese("ja"),
@@ -58,11 +58,14 @@ enum class RuntimeAppLanguage(val languageTag: String) {
     French("fr");
 
     companion object {
-        val supportedLanguageTags: Set<String> = entries.map { it.languageTag }.toSet()
+        val supportedLanguageTags: Set<String> = entries
+            .map { it.languageTag }
+            .filter { it.isNotBlank() }
+            .toSet()
 
         fun normalizeLanguageTag(languageTag: String): String {
             val normalized = languageTag.trim().replace('_', '-')
-            if (normalized.isBlank()) return System.languageTag
+            if (normalized.isBlank()) return English.languageTag
             if (
                 normalized.equals("zh-CN", ignoreCase = true) ||
                 normalized.equals("zh-Hans", ignoreCase = true) ||
@@ -74,7 +77,20 @@ enum class RuntimeAppLanguage(val languageTag: String) {
             return entries
                 .firstOrNull { it.languageTag.equals(normalized, ignoreCase = true) }
                 ?.languageTag
-                ?: System.languageTag
+                ?: English.languageTag
+        }
+    }
+}
+
+enum class RuntimeAppTheme(val storageValue: String) {
+    System("system"),
+    Light("light"),
+    Dark("dark");
+
+    companion object {
+        fun fromStorage(value: String): RuntimeAppTheme {
+            val normalized = value.trim().lowercase()
+            return entries.firstOrNull { it.storageValue == normalized } ?: System
         }
     }
 }
@@ -92,6 +108,7 @@ data class RuntimeTrustedRuntime(
     val relaySecret: String? = null,
     val relayExpiresAtEpochMillis: Long? = null,
     val relayNonce: String? = null,
+    val relayScope: String? = null,
 ) {
     val lastKnownEndpoint: RuntimeEndpointHint
         get() = requireNotNull(endpointHint) { "Trusted runtime endpoint hint is not available" }
@@ -140,7 +157,10 @@ data class RuntimeChatMessage(
     val role: String,
     val content: String,
     val reasoning: String = "",
+    val isReasoningOpen: Boolean = false,
+    val inlineReasoningPendingTag: String = "",
     val suggestions: List<String> = emptyList(),
+    val attachments: List<RuntimeMessageAttachment> = emptyList(),
 )
 
 data class RuntimePendingAttachment(
@@ -152,12 +172,24 @@ data class RuntimePendingAttachment(
     val dataBase64: String,
 )
 
+data class RuntimeMessageAttachment(
+    val id: String = UUID.randomUUID().toString(),
+    val type: String,
+    val name: String,
+    val mimeType: String,
+    val text: String? = null,
+)
+
 data class RuntimeChatSession(
     val id: String,
     val title: String,
+    val modelId: String? = null,
     val updatedAtMillis: Long,
     val messageCount: Int,
     val archivedAtMillis: Long? = null,
+    val lastEvent: String? = null,
+    val lastFinishReason: String? = null,
+    val lastErrorCode: String? = null,
 )
 
 data class RuntimeMemoryEntry(

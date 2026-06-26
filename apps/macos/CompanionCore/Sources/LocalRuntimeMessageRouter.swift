@@ -15,6 +15,9 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
     private let pairingCoordinator: PairingCoordinator
     private let trustedDeviceStore: TrustedDeviceStore
     private let chatEventStore: any RuntimeChatEventStore
+    private let memoryStore: any RuntimeMemoryStore
+    private let routeRefresher: (any RuntimeRouteRefreshing)?
+    private let runtimeChallengeSigner: (any RuntimeChallengeSigning)?
     private let onPairingAccepted: (@Sendable (TrustedDevice) -> Void)?
     private let dateFormatter = ISO8601DateFormatter()
     private let authLock = NSLock()
@@ -26,6 +29,9 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         pairingCoordinator: PairingCoordinator = PairingCoordinator(),
         trustedDeviceStore: TrustedDeviceStore = TrustedDeviceStore(),
         chatEventStore: any RuntimeChatEventStore = JSONLRuntimeChatEventStore(),
+        memoryStore: any RuntimeMemoryStore = JSONLRuntimeMemoryStore(),
+        routeRefresher: (any RuntimeRouteRefreshing)? = nil,
+        runtimeChallengeSigner: (any RuntimeChallengeSigning)? = nil,
         onPairingAccepted: (@Sendable (TrustedDevice) -> Void)? = nil
     ) {
         self.backend = backend
@@ -33,6 +39,9 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         self.pairingCoordinator = pairingCoordinator
         self.trustedDeviceStore = trustedDeviceStore
         self.chatEventStore = chatEventStore
+        self.memoryStore = memoryStore
+        self.routeRefresher = routeRefresher
+        self.runtimeChallengeSigner = runtimeChallengeSigner
         self.onPairingAccepted = onPairingAccepted
         dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     }
@@ -60,6 +69,9 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         case MessageType.modelsPull:
             guard allowRuntimeCommand(envelope, sink: sink) else { return }
             await handleModelsPull(envelope, sink: sink)
+        case MessageType.routeRefresh:
+            guard allowRuntimeCommand(envelope, sink: sink) else { return }
+            await handleRouteRefresh(envelope, sink: sink)
         case MessageType.chatSend:
             guard allowRuntimeCommand(envelope, sink: sink) else { return }
             await handleChatSend(envelope, sink: sink)
@@ -78,6 +90,9 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         case MessageType.chatTitleRequest:
             guard allowRuntimeCommand(envelope, sink: sink) else { return }
             await handleChatTitleRequest(envelope, sink: sink)
+        case MessageType.chatSessionRename:
+            guard allowRuntimeCommand(envelope, sink: sink) else { return }
+            handleChatSessionRename(envelope, sink: sink)
         case MessageType.chatSessionArchive:
             guard allowRuntimeCommand(envelope, sink: sink) else { return }
             handleChatSessionMutation(envelope, sink: sink, mutation: .archive)
@@ -87,11 +102,20 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         case MessageType.chatSessionDelete:
             guard allowRuntimeCommand(envelope, sink: sink) else { return }
             handleChatSessionMutation(envelope, sink: sink, mutation: .delete)
+        case MessageType.memoryList:
+            guard allowRuntimeCommand(envelope, sink: sink) else { return }
+            handleMemoryList(envelope, sink: sink)
+        case MessageType.memoryUpsert:
+            guard allowRuntimeCommand(envelope, sink: sink) else { return }
+            handleMemoryUpsert(envelope, sink: sink)
+        case MessageType.memoryDelete:
+            guard allowRuntimeCommand(envelope, sink: sink) else { return }
+            handleMemoryDelete(envelope, sink: sink)
         default:
             sink.send(errorEnvelope(
                 requestID: envelope.requestID,
                 code: "unknown_message_type",
-                message: "Unsupported development transport message type: \(envelope.type)",
+                message: "Unsupported AetherLink Runtime message type: \(envelope.type)",
                 retryable: false
             ))
         }
@@ -103,7 +127,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
             sink.send(errorEnvelope(
                 requestID: envelope.requestID,
                 code: "authentication_required",
-                message: "Pair and authenticate this client device before sending runtime commands.",
+                message: "Pair and authenticate this device before sending runtime commands.",
                 retryable: false
             ))
             return false
@@ -167,16 +191,18 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
     private func handleChatSuggestionsRequest(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) async {
         do {
             let parsedRequest = try chatSuggestionsRequest(from: envelope)
-            _ = try await resolvedInstalledModel(parsedRequest.request.model)
+            _ = try await resolvedInstalledChatModel(parsedRequest.request.model)
 
             var generatedText = ""
+            var inlineReasoningSplitter = RuntimeInlineReasoningSplitter()
             for try await event in backend.chat(request: parsedRequest.request) {
                 switch event {
                 case .delta(let text):
-                    generatedText += text
+                    generatedText += inlineReasoningSplitter.split(text).answerText
                 case .reasoningDelta:
                     continue
                 case .done:
+                    generatedText += inlineReasoningSplitter.flush().answerText
                     break
                 }
             }
@@ -200,16 +226,18 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
     private func handleChatTitleRequest(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) async {
         do {
             let parsedRequest = try chatTitleRequest(from: envelope)
-            _ = try await resolvedInstalledModel(parsedRequest.request.model)
+            _ = try await resolvedInstalledChatModel(parsedRequest.request.model)
 
             var generatedText = ""
+            var inlineReasoningSplitter = RuntimeInlineReasoningSplitter()
             for try await event in backend.chat(request: parsedRequest.request) {
                 switch event {
                 case .delta(let text):
-                    generatedText += text
+                    generatedText += inlineReasoningSplitter.split(text).answerText
                 case .reasoningDelta:
                     continue
                 case .done:
+                    generatedText += inlineReasoningSplitter.flush().answerText
                     break
                 }
             }
@@ -244,7 +272,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                 sink.send(errorEnvelope(
                     requestID: envelope.requestID,
                     code: "pairing_required",
-                    message: "This client device is not trusted by AetherLink Runtime.",
+                    message: "This device is not trusted by AetherLink Runtime.",
                     retryable: false
                 ))
                 return
@@ -252,13 +280,19 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
 
             let nonce = Self.makeNonce()
             setChallenge(connectionID: sink.connectionID, deviceID: deviceID, nonce: nonce)
+            var payload: [String: JSONValue] = [
+                "device_id": .string(deviceID),
+                "nonce": .string(nonce)
+            ]
+            if let runtimeChallengeSigner {
+                let proof = try runtimeChallengeSigner.signAuthChallenge(deviceID: deviceID, nonce: nonce)
+                payload["runtime_key_fingerprint"] = .string(proof.runtimeKeyFingerprint)
+                payload["runtime_signature"] = .string(proof.signatureBase64)
+            }
             sink.send(ProtocolEnvelope(
                 type: MessageType.authChallenge,
                 requestID: envelope.requestID,
-                payload: [
-                    "device_id": .string(deviceID),
-                    "nonce": .string(nonce)
-                ]
+                payload: payload
             ))
         } catch {
             sink.send(errorEnvelope(requestID: envelope.requestID, error: error))
@@ -282,7 +316,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                 sink.send(errorEnvelope(
                     requestID: envelope.requestID,
                     code: "authentication_failed",
-                    message: "Could not authenticate this client device.",
+                    message: "Could not authenticate this device.",
                     retryable: false
                 ))
                 return
@@ -416,17 +450,58 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         }
     }
 
+    private func handleRouteRefresh(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) async {
+        do {
+            guard let routeRefresher else {
+                sink.send(errorEnvelope(
+                    requestID: envelope.requestID,
+                    code: "route_refresh_unavailable",
+                    message: "AetherLink Runtime does not have a refreshable remote route configured.",
+                    retryable: true
+                ))
+                return
+            }
+            guard let route = try await routeRefresher.refreshRuntimeRoute() else {
+                sink.send(errorEnvelope(
+                    requestID: envelope.requestID,
+                    code: "route_refresh_unavailable",
+                    message: "AetherLink Runtime could not refresh remote route material.",
+                    retryable: true
+                ))
+                return
+            }
+            var payload: [String: JSONValue] = [
+                "relay_host": .string(route.relayHost),
+                "relay_port": .number(Double(route.relayPort)),
+                "relay_id": .string(route.relayID),
+                "relay_secret": .string(route.relaySecret),
+                "relay_expires_at": .number(Double(route.relayExpiresAtEpochMillis)),
+                "relay_nonce": .string(route.relayNonce)
+            ]
+            if let relayScope = route.relayScope?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !relayScope.isEmpty {
+                payload["relay_scope"] = .string(relayScope)
+            }
+            sink.send(ProtocolEnvelope(
+                type: MessageType.routeRefresh,
+                requestID: envelope.requestID,
+                payload: payload
+            ))
+        } catch {
+            sink.send(errorEnvelope(requestID: envelope.requestID, error: error))
+        }
+    }
+
     private func handleChatSend(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) async {
         var storageContext: RuntimeChatStorageContext?
         do {
             let request = Self.chatRequestWithRuntimeCapabilityGuard(try chatRequest(from: envelope))
+            let locale = optionalString("locale", in: envelope.payload)
             storageContext = RuntimeChatStorageContext(
                 requestID: envelope.requestID,
                 sessionID: request.sessionID,
                 model: request.model
             )
-            let model = try await resolvedInstalledModel(request.model)
-            try validateAttachments(in: request, for: model)
             try recordChatEvent(.init(
                 kind: .request,
                 requestID: envelope.requestID,
@@ -434,21 +509,19 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                 model: request.model,
                 messages: request.messages
             ))
+            let model = try await resolvedInstalledChatModel(request.model)
+            try validateAttachments(in: request, for: model)
+            var inlineReasoningSplitter = RuntimeInlineReasoningSplitter()
             for try await event in backend.chat(request: request) {
                 switch event {
                 case .delta(let text):
-                    try recordChatEvent(.init(
-                        kind: .assistantDelta,
+                    try emitChatSegments(
+                        inlineReasoningSplitter.split(text),
                         requestID: envelope.requestID,
                         sessionID: request.sessionID,
                         model: request.model,
-                        delta: text
-                    ))
-                    sink.send(ProtocolEnvelope(
-                        type: MessageType.chatDelta,
-                        requestID: envelope.requestID,
-                        payload: ["delta": .string(text)]
-                    ))
+                        sink: sink
+                    )
                 case .reasoningDelta(let text):
                     try recordChatEvent(.init(
                         kind: .reasoningDelta,
@@ -463,6 +536,13 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                         payload: ["reasoning_delta": .string(text)]
                     ))
                 case .done(let inputTokens, let outputTokens):
+                    try emitChatSegments(
+                        inlineReasoningSplitter.flush(),
+                        requestID: envelope.requestID,
+                        sessionID: request.sessionID,
+                        model: request.model,
+                        sink: sink
+                    )
                     try recordChatEvent(.init(
                         kind: .done,
                         requestID: envelope.requestID,
@@ -482,6 +562,12 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                             ])
                         ]
                     ))
+                    scheduleChatTitleGenerationIfNeeded(
+                        sessionID: request.sessionID,
+                        model: request.model,
+                        sourceRequestID: envelope.requestID,
+                        locale: locale
+                    )
                 }
             }
         } catch OllamaBackendError.generationCancelled {
@@ -519,6 +605,47 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         }
     }
 
+    private func emitChatSegments(
+        _ segments: [RuntimeInlineReasoningSegment],
+        requestID: String,
+        sessionID: String,
+        model: String,
+        sink: any RuntimeMessageSink
+    ) throws {
+        for segment in segments {
+            switch segment {
+            case .answer(let text):
+                guard !text.isEmpty else { continue }
+                try recordChatEvent(.init(
+                    kind: .assistantDelta,
+                    requestID: requestID,
+                    sessionID: sessionID,
+                    model: model,
+                    delta: text
+                ))
+                sink.send(ProtocolEnvelope(
+                    type: MessageType.chatDelta,
+                    requestID: requestID,
+                    payload: ["delta": .string(text)]
+                ))
+            case .reasoning(let text):
+                guard !text.isEmpty else { continue }
+                try recordChatEvent(.init(
+                    kind: .reasoningDelta,
+                    requestID: requestID,
+                    sessionID: sessionID,
+                    model: model,
+                    reasoningDelta: text
+                ))
+                sink.send(ProtocolEnvelope(
+                    type: MessageType.chatDelta,
+                    requestID: requestID,
+                    payload: ["reasoning_delta": .string(text)]
+                ))
+            }
+        }
+    }
+
     private func mutateChatSession(
         sessionID: String,
         requestID: String,
@@ -533,6 +660,8 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
             )
         } catch RuntimeChatEventStoreError.sessionNotFound {
             throw LocalRuntimeRouterError.chatSessionNotFound(sessionID)
+        } catch RuntimeChatEventStoreError.sessionMustBeArchivedBeforeDelete {
+            throw LocalRuntimeRouterError.chatSessionMustBeArchivedBeforeDelete(sessionID)
         } catch {
             throw LocalRuntimeRouterError.chatStoreUnavailable(error.localizedDescription)
         }
@@ -563,7 +692,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         ))
     }
 
-    private func resolvedInstalledModel(_ requestedModel: String) async throws -> ResolvedRuntimeModel {
+    private func resolvedInstalledChatModel(_ requestedModel: String) async throws -> ResolvedRuntimeModel {
         let models = try await backend.listModels()
         if let resolved = ModelProvider.splitQualifiedModelID(requestedModel) {
             if let model = models.first(where: { model in
@@ -577,7 +706,12 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                             || Self.canonicalModelName(model.providerModelID) == Self.canonicalModelName(resolved.modelID)
                     )
             }) {
-                return ResolvedRuntimeModel(provider: model.provider, capabilities: model.capabilities)
+                return try Self.resolvedChatModel(
+                    provider: model.provider,
+                    kind: model.kind,
+                    capabilities: model.capabilities,
+                    requestedModel: requestedModel
+                )
             }
             throw LocalRuntimeRouterError.modelNotInstalled(requestedModel)
         }
@@ -593,9 +727,30 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                     || Self.canonicalModelName(model.providerModelID) == requestedCanonicalName
             )
         }) {
-            return ResolvedRuntimeModel(provider: model.provider, capabilities: model.capabilities)
+            return try Self.resolvedChatModel(
+                provider: model.provider,
+                kind: model.kind,
+                capabilities: model.capabilities,
+                requestedModel: requestedModel
+            )
         }
         throw LocalRuntimeRouterError.modelNotInstalled(requestedModel)
+    }
+
+    private static func resolvedChatModel(
+        provider: ModelProvider,
+        kind: ModelKind,
+        capabilities: [String],
+        requestedModel: String
+    ) throws -> ResolvedRuntimeModel {
+        guard kind == ModelKind.chat else {
+            throw LocalRuntimeRouterError.modelNotInstalled(requestedModel)
+        }
+        return ResolvedRuntimeModel(
+            provider: provider,
+            kind: kind,
+            capabilities: capabilities
+        )
     }
 
     private func validateAttachments(in request: ChatRequest, for model: ResolvedRuntimeModel) throws {
@@ -639,19 +794,34 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
     private func handleChatSessionsList(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) {
         do {
             let limit = optionalInt("limit", in: envelope.payload).map { min(max($0, 1), 200) } ?? 100
-            let sessions = try chatEventStore.listSessions(limit: limit)
+            let includeArchived = optionalBool("include_archived", in: envelope.payload) ?? false
+            let sessions = try chatEventStore.listSessions(limit: limit, includeArchived: includeArchived)
             sink.send(ProtocolEnvelope(
                 type: MessageType.chatSessionsList,
                 requestID: envelope.requestID,
                 payload: [
                     "sessions": .array(sessions.map { session in
-                        .object([
+                        var payload: [String: JSONValue] = [
                             "session_id": .string(session.sessionID),
                             "title": .string(session.title),
                             "model": .string(session.model),
                             "last_activity_at": .string(dateFormatter.string(from: session.lastActivityAt)),
-                            "message_count": .number(Double(session.messageCount))
-                        ])
+                            "message_count": .number(Double(session.messageCount)),
+                            "status": .string(session.status)
+                        ]
+                        if let archivedAt = session.archivedAt {
+                            payload["archived_at"] = .string(dateFormatter.string(from: archivedAt))
+                        }
+                        if let lastEvent = session.lastEvent {
+                            payload["last_event"] = .string(lastEvent)
+                        }
+                        if let lastFinishReason = session.lastFinishReason {
+                            payload["last_finish_reason"] = .string(lastFinishReason)
+                        }
+                        if let lastErrorCode = session.lastErrorCode {
+                            payload["last_error_code"] = .string(lastErrorCode)
+                        }
+                        return .object(payload)
                     })
                 ]
             ))
@@ -680,6 +850,21 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                         }
                         if let createdAt = message.createdAt {
                             payload["created_at"] = .string(dateFormatter.string(from: createdAt))
+                        }
+                        if !message.attachments.isEmpty {
+                            payload["attachments"] = .array(message.attachments.map { attachment in
+                                var attachmentPayload: [String: JSONValue] = [
+                                    "type": .string(attachment.type),
+                                    "mime_type": .string(attachment.mimeType)
+                                ]
+                                if let name = attachment.name, !name.isEmpty {
+                                    attachmentPayload["name"] = .string(name)
+                                }
+                                if let text = attachment.text, !text.isEmpty {
+                                    attachmentPayload["text"] = .string(text)
+                                }
+                                return .object(attachmentPayload)
+                            })
                         }
                         return .object(payload)
                     })
@@ -714,6 +899,106 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         } catch {
             sink.send(errorEnvelope(requestID: envelope.requestID, error: error))
         }
+    }
+
+    private func handleChatSessionRename(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) {
+        do {
+            let sessionID = try requiredString("session_id", in: envelope.payload)
+            let title = try requiredString("title", in: envelope.payload)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !title.isEmpty else {
+                throw LocalRuntimeRouterError.invalidPayload("Payload field title must be a non-empty string")
+            }
+            guard let session = try chatEventStore
+                .listSessions(limit: Int.max, includeArchived: true)
+                .first(where: { $0.sessionID == sessionID }) else {
+                throw RuntimeChatEventStoreError.sessionNotFound(sessionID)
+            }
+            let renamedAt = Date()
+            try recordChatEvent(.init(
+                timestamp: renamedAt,
+                kind: .title,
+                requestID: envelope.requestID,
+                sessionID: sessionID,
+                model: session.model,
+                title: title
+            ))
+            sink.send(ProtocolEnvelope(
+                type: MessageType.chatSessionRename,
+                requestID: envelope.requestID,
+                payload: [
+                    "session_id": .string(sessionID),
+                    "title": .string(title),
+                    "renamed_at": .string(dateFormatter.string(from: renamedAt))
+                ]
+            ))
+        } catch {
+            sink.send(errorEnvelope(requestID: envelope.requestID, error: error))
+        }
+    }
+
+    private func handleMemoryList(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) {
+        do {
+            let entries = try memoryStore.list()
+            sink.send(ProtocolEnvelope(
+                type: MessageType.memoryList,
+                requestID: envelope.requestID,
+                payload: [
+                    "entries": .array(entries.map { .object(memoryEntryPayload($0)) })
+                ]
+            ))
+        } catch {
+            sink.send(errorEnvelope(requestID: envelope.requestID, error: LocalRuntimeRouterError.memoryStoreUnavailable(error.localizedDescription)))
+        }
+    }
+
+    private func handleMemoryUpsert(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) {
+        do {
+            let entry = try memoryStore.upsert(
+                id: optionalString("id", in: envelope.payload),
+                content: try requiredString("content", in: envelope.payload),
+                enabled: optionalBool("enabled", in: envelope.payload),
+                timestamp: Date()
+            )
+            sink.send(ProtocolEnvelope(
+                type: MessageType.memoryUpsert,
+                requestID: envelope.requestID,
+                payload: [
+                    "entry": .object(memoryEntryPayload(entry))
+                ]
+            ))
+        } catch {
+            sink.send(errorEnvelope(requestID: envelope.requestID, error: error))
+        }
+    }
+
+    private func handleMemoryDelete(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) {
+        do {
+            let result = try memoryStore.delete(
+                id: try requiredString("id", in: envelope.payload),
+                timestamp: Date()
+            )
+            sink.send(ProtocolEnvelope(
+                type: MessageType.memoryDelete,
+                requestID: envelope.requestID,
+                payload: [
+                    "id": .string(result.id),
+                    "deleted_at": .string(dateFormatter.string(from: result.deletedAt))
+                ]
+            ))
+        } catch {
+            sink.send(errorEnvelope(requestID: envelope.requestID, error: error))
+        }
+    }
+
+    private func memoryEntryPayload(_ entry: RuntimeMemoryEntry) -> [String: JSONValue] {
+        [
+            "id": .string(entry.id),
+            "content": .string(entry.content),
+            "enabled": .bool(entry.enabled),
+            "created_at": .string(dateFormatter.string(from: entry.createdAt)),
+            "updated_at": .string(dateFormatter.string(from: entry.updatedAt))
+        ]
     }
 
     private func chatRequest(from envelope: ProtocolEnvelope) throws -> ChatRequest {
@@ -781,6 +1066,9 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         let recentMessages = Array(baseRequest.messages.suffix(8))
         guard recentMessages.contains(where: { $0.role == "user" }) else {
             throw LocalRuntimeRouterError.invalidPayload("messages must include at least one user message")
+        }
+        guard recentMessages.contains(where: { $0.role == "assistant" }) else {
+            throw LocalRuntimeRouterError.invalidPayload("messages must include at least one assistant message")
         }
 
         let titleRequest = ChatRequest(
@@ -919,6 +1207,100 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         }
     }
 
+    private func scheduleChatTitleGenerationIfNeeded(
+        sessionID: String,
+        model: String,
+        sourceRequestID: String,
+        locale: String?
+    ) {
+        Task {
+            await generateAndStoreChatTitleIfNeeded(
+                sessionID: sessionID,
+                model: model,
+                sourceRequestID: sourceRequestID,
+                locale: locale
+            )
+        }
+    }
+
+    private func generateAndStoreChatTitleIfNeeded(
+        sessionID: String,
+        model: String,
+        sourceRequestID: String,
+        locale: String?
+    ) async {
+        do {
+            let sessions = try chatEventStore.listSessions(limit: 200, includeArchived: true)
+            guard let session = sessions.first(where: { $0.sessionID == sessionID }),
+                  session.status == "active",
+                  session.title.isPlaceholderChatTitle else {
+                return
+            }
+
+            let storedMessages = try chatEventStore.listMessages(sessionID: sessionID, limit: 8)
+            guard Self.isFirstAnsweredTurn(storedMessages) else { return }
+
+            let promptMessages = storedMessages.map {
+                ChatMessage(role: $0.role, content: $0.content)
+            }
+            let generatedTitle = await generatedChatTitle(
+                sessionID: sessionID,
+                model: model,
+                messages: promptMessages,
+                locale: locale
+            )
+            let title = generatedTitle.isEmpty
+                ? Self.deterministicTitle(from: storedMessages)
+                : generatedTitle
+            guard !title.isEmpty else { return }
+
+            try recordChatEvent(.init(
+                kind: .title,
+                requestID: "\(sourceRequestID)-title",
+                sessionID: sessionID,
+                model: model,
+                title: title
+            ))
+        } catch {
+            return
+        }
+    }
+
+    private func generatedChatTitle(
+        sessionID: String,
+        model: String,
+        messages: [ChatMessage],
+        locale: String?
+    ) async -> String {
+        do {
+            let request = ChatRequest(
+                generationID: "\(sessionID)-title-\(UUID().uuidString)",
+                sessionID: sessionID,
+                model: model,
+                messages: Self.titlePromptMessages(
+                    recentMessages: messages,
+                    locale: locale
+                )
+            )
+            var generatedText = ""
+            var inlineReasoningSplitter = RuntimeInlineReasoningSplitter()
+            for try await event in backend.chat(request: request) {
+                switch event {
+                case .delta(let text):
+                    generatedText += inlineReasoningSplitter.split(text).answerText
+                case .reasoningDelta:
+                    continue
+                case .done:
+                    generatedText += inlineReasoningSplitter.flush().answerText
+                    break
+                }
+            }
+            return Self.title(from: generatedText)
+        } catch {
+            return ""
+        }
+    }
+
     private static func makeNonce() -> String {
         var bytes = [UInt8](repeating: 0, count: 32)
         _ = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
@@ -1010,12 +1392,12 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
     private static func suggestions(from rawText: String, maxSuggestions: Int) -> [String] {
         let trimmedText = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
         let decoder = JSONDecoder()
-        if let data = trimmedText.data(using: .utf8) {
+        if let data = jsonPayloadText(from: trimmedText).data(using: .utf8) {
             if let result = try? decoder.decode(ChatSuggestionsResult.self, from: data) {
                 return result.suggestions.cleanedSuggestions(maxCount: maxSuggestions)
             }
         }
-        return []
+        return fallbackSuggestionList(from: trimmedText, maxSuggestions: maxSuggestions)
     }
 
     private static func title(from rawText: String) -> String {
@@ -1023,9 +1405,15 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         guard !trimmedText.isEmpty else { return "" }
 
         let decoder = JSONDecoder()
-        if let data = trimmedText.data(using: .utf8),
+        let fencedPayload = fencedCodePayload(from: trimmedText)
+        let jsonCandidate = fencedPayload ?? trimmedText
+        if let data = jsonCandidate.data(using: .utf8),
            let result = try? decoder.decode(ChatTitleResult.self, from: data) {
             return result.title.cleanedTitle()
+        }
+
+        if fencedPayload != nil {
+            return ""
         }
 
         if trimmedText.hasPrefix("{") || trimmedText.hasPrefix("[") {
@@ -1033,6 +1421,64 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         }
 
         return trimmedText.cleanedTitle()
+    }
+
+    private static func jsonPayloadText(from text: String) -> String {
+        let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let fencedPayload = fencedCodePayload(from: trimmedText) else {
+            return trimmedText
+        }
+        return fencedPayload
+    }
+
+    private static func fencedCodePayload(from text: String) -> String? {
+        guard let openingFence = text.range(of: "```") else { return nil }
+        let afterOpeningFence = text[openingFence.upperBound...]
+        guard let firstLineBreak = afterOpeningFence.firstIndex(of: "\n") else { return nil }
+        let bodyStart = afterOpeningFence.index(after: firstLineBreak)
+        let bodySlice: Substring
+        if let closingFence = afterOpeningFence[bodyStart...].range(of: "```") {
+            bodySlice = afterOpeningFence[bodyStart..<closingFence.lowerBound]
+        } else {
+            bodySlice = afterOpeningFence[bodyStart...]
+        }
+        let body = String(bodySlice).trimmingCharacters(in: .whitespacesAndNewlines)
+        return body.isEmpty ? nil : body
+    }
+
+    private static func fallbackSuggestionList(from text: String, maxSuggestions: Int) -> [String] {
+        let candidates = text
+            .components(separatedBy: .newlines)
+            .filter { $0.hasSuggestionListPrefix }
+        return candidates.cleanedSuggestions(maxCount: maxSuggestions)
+    }
+
+    private static func isFirstAnsweredTurn(_ messages: [RuntimeChatStoredMessage]) -> Bool {
+        let visibleMessages = messages.filter { message in
+            let role = message.role.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            return role == "user" || role == "assistant"
+        }
+        guard visibleMessages.count == 2 else { return false }
+        return visibleMessages.first?.role.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "user"
+            && visibleMessages.last?.role.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "assistant"
+            && !visibleMessages.last!.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private static func deterministicTitle(from messages: [RuntimeChatStoredMessage]) -> String {
+        let assistantText = messages
+            .first { $0.role.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "assistant" }?
+            .content ?? ""
+        let userText = messages
+            .first { $0.role.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "user" }?
+            .content ?? ""
+
+        let source = assistantText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? userText
+            : assistantText
+        let sentence = source
+            .components(separatedBy: CharacterSet(charactersIn: ".!?\n"))
+            .first ?? source
+        return sentence.cleanedTitle(maxWordCount: 6, maxCharacterCount: 60)
     }
 
     private static func verifySignature(
@@ -1110,7 +1556,9 @@ private enum LocalRuntimeRouterError: Error, LocalizedError {
     case unsupportedAttachment(String)
     case unreadableAttachment(String)
     case chatSessionNotFound(String)
+    case chatSessionMustBeArchivedBeforeDelete(String)
     case chatStoreUnavailable(String)
+    case memoryStoreUnavailable(String)
 
     var code: String {
         switch self {
@@ -1124,8 +1572,12 @@ private enum LocalRuntimeRouterError: Error, LocalizedError {
             return "unreadable_attachment"
         case .chatSessionNotFound:
             return "chat_session_not_found"
+        case .chatSessionMustBeArchivedBeforeDelete:
+            return "chat_session_must_be_archived_before_delete"
         case .chatStoreUnavailable:
             return "chat_store_unavailable"
+        case .memoryStoreUnavailable:
+            return "memory_store_unavailable"
         }
     }
 
@@ -1140,8 +1592,12 @@ private enum LocalRuntimeRouterError: Error, LocalizedError {
             return message
         case .chatSessionNotFound(let sessionID):
             return "Chat session not found in AetherLink Runtime: \(sessionID)"
+        case .chatSessionMustBeArchivedBeforeDelete(let sessionID):
+            return "Archive this chat before permanently deleting it: \(sessionID)"
         case .chatStoreUnavailable(let message):
             return "The runtime could not save chat processing information on this host: \(message)"
+        case .memoryStoreUnavailable(let message):
+            return "The runtime could not save memory information on this host: \(message)"
         }
     }
 }
@@ -1183,6 +1639,13 @@ private func processChatAttachments(_ attachments: [ChatAttachment]) throws -> P
         let name = attachment.name ?? "attachment"
         if let text = attachment.text?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty {
             promptBlocks.append(documentPromptBlock(name: name, mimeType: attachment.mimeType, text: text))
+            preservedAttachments.append(ChatAttachment(
+                type: attachment.type,
+                mimeType: attachment.mimeType,
+                name: attachment.name,
+                dataBase64: nil,
+                text: text
+            ))
             continue
         }
 
@@ -1205,6 +1668,13 @@ private func processChatAttachments(_ attachments: [ChatAttachment]) throws -> P
         promptBlocks.append(documentPromptBlock(
             name: extracted.fileName,
             mimeType: extracted.mimeType,
+            text: extracted.text
+        ))
+        preservedAttachments.append(ChatAttachment(
+            type: attachment.type,
+            mimeType: extracted.mimeType,
+            name: extracted.fileName,
+            dataBase64: nil,
             text: extracted.text
         ))
     }
@@ -1292,7 +1762,157 @@ private extension ChatMessage {
 
 private struct ResolvedRuntimeModel {
     var provider: ModelProvider
+    var kind: ModelKind
     var capabilities: [String]
+}
+
+private enum RuntimeInlineReasoningSegment: Equatable {
+    case answer(String)
+    case reasoning(String)
+}
+
+private struct RuntimeInlineReasoningSplitter {
+    private var isReasoningOpen = false
+    private var pendingTagFragment = ""
+
+    mutating func split(_ text: String) -> [RuntimeInlineReasoningSegment] {
+        guard !text.isEmpty else { return [] }
+
+        var input = pendingTagFragment + text
+        pendingTagFragment = ""
+        if let partialTagRange = input.trailingPartialInlineReasoningTagRange {
+            pendingTagFragment = String(input[partialTagRange])
+            input.removeSubrange(partialTagRange)
+        }
+
+        guard !input.isEmpty else { return [] }
+        return splitCompleteText(input)
+    }
+
+    mutating func flush() -> [RuntimeInlineReasoningSegment] {
+        guard !pendingTagFragment.isEmpty else { return [] }
+        defer { pendingTagFragment = "" }
+        return [
+            isReasoningOpen ? .reasoning(pendingTagFragment) : .answer(pendingTagFragment)
+        ]
+    }
+
+    private mutating func splitCompleteText(_ text: String) -> [RuntimeInlineReasoningSegment] {
+        var segments: [RuntimeInlineReasoningSegment] = []
+        var cursor = text.startIndex
+
+        while cursor < text.endIndex {
+            if isReasoningOpen {
+                guard let closeTag = text.nextInlineReasoningTag(from: cursor, matching: .close) else {
+                    segments.appendMerging(.reasoning(String(text[cursor...])))
+                    cursor = text.endIndex
+                    continue
+                }
+
+                segments.appendMerging(.reasoning(String(text[cursor..<closeTag.range.lowerBound])))
+                cursor = closeTag.range.upperBound
+                isReasoningOpen = false
+            } else {
+                guard let tag = text.nextInlineReasoningTag(from: cursor) else {
+                    segments.appendMerging(.answer(String(text[cursor...])))
+                    cursor = text.endIndex
+                    continue
+                }
+
+                switch tag.kind {
+                case .open:
+                    segments.appendMerging(.answer(String(text[cursor..<tag.range.lowerBound])))
+                    cursor = tag.range.upperBound
+                    isReasoningOpen = true
+                case .close:
+                    segments.appendMerging(.answer(String(text[cursor..<tag.range.lowerBound])))
+                    cursor = tag.range.upperBound
+                }
+            }
+        }
+
+        return segments
+    }
+}
+
+private enum RuntimeInlineReasoningTagKind {
+    case open
+    case close
+
+    static let tokens: [(kind: RuntimeInlineReasoningTagKind, value: String)] = [
+        (.open, "<think>"),
+        (.open, "<thinking>"),
+        (.close, "</think>"),
+        (.close, "</thinking>")
+    ]
+}
+
+private extension Array where Element == RuntimeInlineReasoningSegment {
+    var answerText: String {
+        map { segment in
+            if case .answer(let text) = segment {
+                return text
+            }
+            return ""
+        }.joined()
+    }
+
+    mutating func appendMerging(_ segment: RuntimeInlineReasoningSegment) {
+        switch segment {
+        case .answer(let text), .reasoning(let text):
+            guard !text.isEmpty else { return }
+        }
+
+        guard let last = popLast() else {
+            append(segment)
+            return
+        }
+
+        switch (last, segment) {
+        case (.answer(let lhs), .answer(let rhs)):
+            append(.answer(lhs + rhs))
+        case (.reasoning(let lhs), .reasoning(let rhs)):
+            append(.reasoning(lhs + rhs))
+        default:
+            append(last)
+            append(segment)
+        }
+    }
+}
+
+private extension String {
+    typealias RuntimeInlineReasoningTag = (kind: RuntimeInlineReasoningTagKind, range: Range<String.Index>)
+
+    func nextInlineReasoningTag(
+        from cursor: String.Index,
+        matching expectedKind: RuntimeInlineReasoningTagKind? = nil
+    ) -> RuntimeInlineReasoningTag? {
+        var best: RuntimeInlineReasoningTag?
+        for token in RuntimeInlineReasoningTagKind.tokens where expectedKind == nil || token.kind == expectedKind {
+            guard let range = range(
+                of: token.value,
+                options: [.caseInsensitive],
+                range: cursor..<endIndex
+            ) else {
+                continue
+            }
+            if best == nil || range.lowerBound < best!.range.lowerBound {
+                best = (token.kind, range)
+            }
+        }
+        return best
+    }
+
+    var trailingPartialInlineReasoningTagRange: Range<String.Index>? {
+        guard let tagStart = lastIndex(of: "<") else { return nil }
+        let suffix = String(self[tagStart...]).lowercased()
+        guard !RuntimeInlineReasoningTagKind.tokens.contains(where: { $0.value == suffix }) else {
+            return nil
+        }
+        return RuntimeInlineReasoningTagKind.tokens.contains(where: { $0.value.hasPrefix(suffix) })
+            ? tagStart..<endIndex
+            : nil
+    }
 }
 
 private extension ResolvedRuntimeModel {
@@ -1338,14 +1958,24 @@ private func optionalInt(_ key: String, in payload: [String: JSONValue]) -> Int?
     }
 }
 
+private func optionalBool(_ key: String, in payload: [String: JSONValue]) -> Bool? {
+    guard let value = payload[key] else { return nil }
+    switch value {
+    case .bool(let bool):
+        return bool
+    case .string(let string):
+        return Bool(string.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
+    default:
+        return nil
+    }
+}
+
 private extension Array where Element == String {
     func cleanedSuggestions(maxCount: Int) -> [String] {
         var seen = Set<String>()
         var result: [String] = []
         for suggestion in self {
-            let cleaned = suggestion
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-                .trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+            let cleaned = suggestion.cleanedSuggestion()
             guard !cleaned.isEmpty else { continue }
             let key = cleaned.lowercased()
             guard !seen.contains(key) else { continue }
@@ -1360,6 +1990,31 @@ private extension Array where Element == String {
 }
 
 private extension String {
+    var hasSuggestionListPrefix: Bool {
+        range(
+            of: #"^\s*(?:[-*•]\s+|\d{1,2}[\.)]\s+)"#,
+            options: .regularExpression
+        ) != nil
+    }
+
+    func cleanedSuggestion() -> String {
+        var cleaned = trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "\"'`"))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if let prefixRange = cleaned.range(of: #"^\s*(?:[-*•]\s+|\d{1,2}[\.)]\s+)"#, options: .regularExpression) {
+            cleaned.removeSubrange(prefixRange)
+        }
+        return cleaned
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "\"'`"))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var isPlaceholderChatTitle: Bool {
+        let normalized = trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return normalized.isEmpty || normalized == "new chat"
+    }
+
     func cleanedTitle(maxWordCount: Int = 8, maxCharacterCount: Int = 80) -> String {
         var cleaned = trimmingCharacters(in: .whitespacesAndNewlines)
             .trimmingCharacters(in: CharacterSet(charactersIn: "\"'`"))

@@ -1,0 +1,375 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aetherlink.dev/schema/pairing-qr.v1.json",
+  "title": "AetherLink Pairing QR Payload v1",
+  "description": "Schema for the decoded aetherlink://pair query payload. This is not the runtime JSON frame protocol.",
+  "type": "object",
+  "allOf": [
+    {
+      "anyOf": [
+        { "required": ["version"] },
+        { "required": ["v"] }
+      ]
+    },
+    {
+      "anyOf": [
+        { "required": ["pairing_nonce"] },
+        { "required": ["nonce"] },
+        { "required": ["n"] }
+      ]
+    },
+    {
+      "anyOf": [
+        { "required": ["pairing_code"] },
+        { "required": ["code"] },
+        { "required": ["c"] }
+      ]
+    },
+    {
+      "anyOf": [
+        { "required": ["runtime_device_id"] },
+        { "required": ["mac_device_id"] },
+        { "required": ["device_id"] },
+        { "required": ["rid"] }
+      ]
+    },
+    {
+      "anyOf": [
+        { "required": ["runtime_key_fingerprint"] },
+        { "required": ["fingerprint"] },
+        { "required": ["cert_fingerprint"] },
+        { "required": ["rf"] }
+      ]
+    },
+    {
+      "if": {
+        "required": ["relay_host"],
+        "properties": {
+          "relay_host": { "$ref": "#/$defs/privateOverlayRelayHost" }
+        }
+      },
+      "then": { "$ref": "#/$defs/privateOverlayScopeRequired" }
+    },
+    {
+      "if": {
+        "required": ["remote_host"],
+        "properties": {
+          "remote_host": { "$ref": "#/$defs/privateOverlayRelayHost" }
+        }
+      },
+      "then": { "$ref": "#/$defs/privateOverlayScopeRequired" }
+    },
+    {
+      "if": {
+        "required": ["route_host"],
+        "properties": {
+          "route_host": { "$ref": "#/$defs/privateOverlayRelayHost" }
+        }
+      },
+      "then": { "$ref": "#/$defs/privateOverlayScopeRequired" }
+    },
+    {
+      "if": {
+        "required": ["rendezvous_host"],
+        "properties": {
+          "rendezvous_host": { "$ref": "#/$defs/privateOverlayRelayHost" }
+        }
+      },
+      "then": { "$ref": "#/$defs/privateOverlayScopeRequired" }
+    },
+    {
+      "if": {
+        "required": ["rh"],
+        "properties": {
+          "rh": { "$ref": "#/$defs/privateOverlayRelayHost" }
+        }
+      },
+      "then": { "$ref": "#/$defs/privateOverlayScopeRequired" }
+    }
+  ],
+  "properties": {
+    "version": { "const": "1" },
+    "v": { "const": "1" },
+    "pairing_nonce": { "$ref": "#/$defs/nonEmptyString" },
+    "nonce": { "$ref": "#/$defs/nonEmptyString" },
+    "n": { "$ref": "#/$defs/nonEmptyString" },
+    "pairing_code": {
+      "type": "string",
+      "pattern": "^[0-9]{6}$"
+    },
+    "code": {
+      "type": "string",
+      "pattern": "^[0-9]{6}$"
+    },
+    "c": {
+      "type": "string",
+      "pattern": "^[0-9]{6}$"
+    },
+    "runtime_device_id": { "$ref": "#/$defs/nonEmptyString" },
+    "mac_device_id": { "$ref": "#/$defs/nonEmptyString" },
+    "device_id": { "$ref": "#/$defs/nonEmptyString" },
+    "rid": { "$ref": "#/$defs/nonEmptyString" },
+    "runtime_name": { "$ref": "#/$defs/nonEmptyString" },
+    "mac_name": { "$ref": "#/$defs/nonEmptyString" },
+    "name": { "$ref": "#/$defs/nonEmptyString" },
+    "rn": { "$ref": "#/$defs/nonEmptyString" },
+    "runtime_public_key": { "$ref": "#/$defs/nonEmptyString" },
+    "mac_public_key": { "$ref": "#/$defs/nonEmptyString" },
+    "public_key": { "$ref": "#/$defs/nonEmptyString" },
+    "rk": { "$ref": "#/$defs/nonEmptyString" },
+    "runtime_key_fingerprint": { "$ref": "#/$defs/nonEmptyString" },
+    "fingerprint": { "$ref": "#/$defs/nonEmptyString" },
+    "cert_fingerprint": { "$ref": "#/$defs/nonEmptyString" },
+    "rf": { "$ref": "#/$defs/nonEmptyString" },
+    "route_token": { "$ref": "#/$defs/nonEmptyString" },
+    "discovery_token": { "$ref": "#/$defs/nonEmptyString" },
+    "rt": { "$ref": "#/$defs/nonEmptyString" },
+    "host": {
+      "description": "Development diagnostic local-direct route hint only. Product clients must not use this as the normal QR pairing route.",
+      "$ref": "#/$defs/nonEmptyString"
+    },
+    "runtime_host": {
+      "description": "Alias for diagnostic local-direct host.",
+      "$ref": "#/$defs/nonEmptyString"
+    },
+    "h": {
+      "description": "Compact alias for diagnostic local-direct host.",
+      "$ref": "#/$defs/nonEmptyString"
+    },
+    "port": {
+      "$ref": "#/$defs/portValue"
+    },
+    "runtime_port": {
+      "$ref": "#/$defs/portValue"
+    },
+    "p": {
+      "$ref": "#/$defs/portValue"
+    },
+    "relay_host": { "$ref": "#/$defs/eligibleRelayHost" },
+    "remote_host": { "$ref": "#/$defs/eligibleRelayHost" },
+    "route_host": { "$ref": "#/$defs/eligibleRelayHost" },
+    "rendezvous_host": { "$ref": "#/$defs/eligibleRelayHost" },
+    "rh": { "$ref": "#/$defs/eligibleRelayHost" },
+    "relay_port": {
+      "$ref": "#/$defs/portValue"
+    },
+    "remote_port": {
+      "$ref": "#/$defs/portValue"
+    },
+    "route_port": {
+      "$ref": "#/$defs/portValue"
+    },
+    "rendezvous_port": {
+      "$ref": "#/$defs/portValue"
+    },
+    "rp": {
+      "$ref": "#/$defs/portValue"
+    },
+    "relay_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^\\S+$"
+    },
+    "remote_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^\\S+$"
+    },
+    "route_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^\\S+$"
+    },
+    "network_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^\\S+$"
+    },
+    "ri": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^\\S+$"
+    },
+    "relay_secret": { "$ref": "#/$defs/nonEmptyString" },
+    "remote_secret": { "$ref": "#/$defs/nonEmptyString" },
+    "route_secret": { "$ref": "#/$defs/nonEmptyString" },
+    "rs": { "$ref": "#/$defs/nonEmptyString" },
+    "relay_expires_at": {
+      "$ref": "#/$defs/epochMillisValue"
+    },
+    "remote_expires_at": {
+      "$ref": "#/$defs/epochMillisValue"
+    },
+    "route_expires_at": {
+      "$ref": "#/$defs/epochMillisValue"
+    },
+    "rendezvous_expires_at": {
+      "$ref": "#/$defs/epochMillisValue"
+    },
+    "rx": {
+      "$ref": "#/$defs/epochMillisValue"
+    },
+    "relay_nonce": { "$ref": "#/$defs/nonEmptyString" },
+    "remote_nonce": { "$ref": "#/$defs/nonEmptyString" },
+    "route_nonce": { "$ref": "#/$defs/nonEmptyString" },
+    "rendezvous_nonce": { "$ref": "#/$defs/nonEmptyString" },
+    "rrn": { "$ref": "#/$defs/nonEmptyString" },
+    "relay_scope": {
+      "description": "Optional route scope. `remote` marks a normal public QR-provisioned relay route, `private_overlay` marks a user-managed VPN/tunnel/private-overlay relay route, and `usb_reverse` is debug-only for loopback relay routes through adb reverse.",
+      "type": "string",
+      "enum": ["remote", "private_overlay", "usb_reverse"]
+    },
+    "remote_scope": {
+      "description": "Alias for relay_scope.",
+      "type": "string",
+      "enum": ["remote", "private_overlay", "usb_reverse"]
+    },
+    "route_scope": {
+      "description": "Development-only route scope. `local_diagnostic` allows explicit local-direct QR diagnostics; product QR pairing should use remote relay/P2P route material instead.",
+      "type": "string",
+      "enum": ["usb_reverse", "local_diagnostic"]
+    },
+    "rsc": {
+      "description": "Compact alias for route_scope/relay_scope.",
+      "type": "string",
+      "enum": ["remote", "private_overlay", "usb_reverse", "local_diagnostic"]
+    },
+    "service_type": { "$ref": "#/$defs/nonEmptyString" }
+  },
+  "dependentRequired": {
+    "host": ["port"],
+    "port": ["host"],
+    "runtime_host": ["runtime_port"],
+    "runtime_port": ["runtime_host"],
+    "h": ["p"],
+    "p": ["h"],
+    "relay_host": ["relay_port", "relay_id", "relay_secret", "relay_expires_at", "relay_nonce"],
+    "relay_port": ["relay_host", "relay_id", "relay_secret", "relay_expires_at", "relay_nonce"],
+    "relay_id": ["relay_host", "relay_port", "relay_secret", "relay_expires_at", "relay_nonce"],
+    "relay_secret": ["relay_host", "relay_port", "relay_id", "relay_expires_at", "relay_nonce"],
+    "relay_expires_at": ["relay_host", "relay_port", "relay_id", "relay_secret", "relay_nonce"],
+    "relay_nonce": ["relay_host", "relay_port", "relay_id", "relay_secret", "relay_expires_at"],
+    "rh": ["rp", "ri", "rs", "rx", "rrn"],
+    "rp": ["rh", "ri", "rs", "rx", "rrn"],
+    "ri": ["rh", "rp", "rs", "rx", "rrn"],
+    "rs": ["rh", "rp", "ri", "rx", "rrn"],
+    "rx": ["rh", "rp", "ri", "rs", "rrn"],
+    "rrn": ["rh", "rp", "ri", "rs", "rx"]
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1
+    },
+    "portValue": {
+      "description": "URL query values are strings after decoding; schema accepts either a typed integer or its digit string representation.",
+      "anyOf": [
+        {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        {
+          "type": "string",
+          "pattern": "^([1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])$"
+        }
+      ]
+    },
+    "epochMillisValue": {
+      "description": "URL query values are strings after decoding; schema accepts either a typed positive integer or its digit string representation.",
+      "anyOf": [
+        {
+          "type": "integer",
+          "minimum": 1
+        },
+        {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*$"
+        }
+      ]
+    },
+    "eligibleRelayHost": {
+      "description": "A relay host for remote QR pairing. Loopback, unspecified, mDNS-local, link-local, and multicast IP literals are rejected. CGNAT, private IPv4, and ULA IPv6 literals require explicit `relay_scope=private_overlay` in app/runtime policy because they only work when a user-managed VPN, tunnel, or private overlay makes the address reachable from both devices.",
+      "allOf": [
+        { "$ref": "#/$defs/nonEmptyString" },
+        {
+          "not": {
+            "enum": [
+              "localhost",
+              "127.0.0.1",
+              "::1",
+              "[::1]",
+              "0.0.0.0",
+              "::",
+              "[::]",
+              "255.255.255.255"
+            ]
+          }
+        },
+        {
+          "not": {
+            "pattern": "^127\\."
+          }
+        },
+        {
+          "not": {
+            "pattern": "^0\\."
+          }
+        },
+        {
+          "not": {
+            "pattern": "^169\\.254\\."
+          }
+        },
+        {
+          "not": {
+            "pattern": "^(22[4-9]|23[0-9]|24[0-9]|25[0-5])\\."
+          }
+        },
+        {
+          "not": {
+            "pattern": "^(\\[)?fe80:"
+          }
+        },
+        {
+          "not": {
+            "pattern": "(^|\\.)local$"
+          }
+        }
+      ]
+    },
+    "privateOverlayRelayHost": {
+      "description": "Private IPv4, CGNAT, and ULA IPv6 relay literals are only valid when the QR explicitly marks a user-managed private overlay.",
+      "anyOf": [
+        { "pattern": "^10\\." },
+        { "pattern": "^100\\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\\." },
+        { "pattern": "^172\\.(1[6-9]|2[0-9]|3[01])\\." },
+        { "pattern": "^192\\.168\\." },
+        { "pattern": "^(\\[)?f[c-d]" }
+      ]
+    },
+    "privateOverlayScopeRequired": {
+      "anyOf": [
+        {
+          "properties": {
+            "relay_scope": { "const": "private_overlay" }
+          },
+          "required": ["relay_scope"]
+        },
+        {
+          "properties": {
+            "remote_scope": { "const": "private_overlay" }
+          },
+          "required": ["remote_scope"]
+        },
+        {
+          "properties": {
+            "rsc": { "const": "private_overlay" }
+          },
+          "required": ["rsc"]
+        }
+      ]
+    }
+  }
+}

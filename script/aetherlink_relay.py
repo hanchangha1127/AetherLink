@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
-"""Development relay for AetherLink remote route testing.
+"""Legacy development relay for AetherLink local relay experiments.
 
-This is a connectivity bootstrap component, not an AI backend. It pairs one
-runtime and one client by relay_id, sends a small ready line, and then forwards
-bytes in both directions without decoding AetherLink protocol frames.
+This script does not implement the allocation/lease handshake required by
+current QR pairing. Use the SwiftPM `AetherLinkRelay --require-allocation`
+executable for different-network QR pairing tests.
 """
 
 from __future__ import annotations
 
 import argparse
 import asyncio
+import sys
 from dataclasses import dataclass
 
 
@@ -121,7 +122,26 @@ async def main() -> None:
     parser = argparse.ArgumentParser(description="Run the AetherLink development relay.")
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=43171)
+    parser.add_argument(
+        "--allow-legacy-no-allocation",
+        action="store_true",
+        help=(
+            "Run the legacy relay without allocation/lease support. "
+            "This is not valid for current QR pairing."
+        ),
+    )
     args = parser.parse_args()
+
+    if not args.allow_legacy_no_allocation:
+        print(
+            "[relay] script/aetherlink_relay.py is legacy and does not support "
+            "allocation leases required by QR pairing. Use "
+            "`swift run AetherLinkRelay --require-allocation`, or pass "
+            "`--allow-legacy-no-allocation` only for old local relay experiments.",
+            file=sys.stderr,
+            flush=True,
+        )
+        raise SystemExit(2)
 
     hub = RelayHub()
     server = await asyncio.start_server(

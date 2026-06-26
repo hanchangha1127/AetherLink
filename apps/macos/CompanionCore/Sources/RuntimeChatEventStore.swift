@@ -34,11 +34,14 @@ public struct RuntimeChatSessionMutationResult: Equatable, Sendable {
 
 public enum RuntimeChatEventStoreError: Error, LocalizedError, Equatable {
     case sessionNotFound(String)
+    case sessionMustBeArchivedBeforeDelete(String)
 
     public var errorDescription: String? {
         switch self {
         case .sessionNotFound(let sessionID):
             return "Chat session not found: \(sessionID)"
+        case .sessionMustBeArchivedBeforeDelete(let sessionID):
+            return "Chat session must be archived before deletion: \(sessionID)"
         }
     }
 }
@@ -136,19 +139,34 @@ public struct RuntimeChatStoredSession: Equatable, Sendable {
     public var model: String
     public var lastActivityAt: Date
     public var messageCount: Int
+    public var status: String
+    public var archivedAt: Date?
+    public var lastEvent: String?
+    public var lastFinishReason: String?
+    public var lastErrorCode: String?
 
     public init(
         sessionID: String,
         title: String,
         model: String,
         lastActivityAt: Date,
-        messageCount: Int
+        messageCount: Int,
+        status: String = "active",
+        archivedAt: Date? = nil,
+        lastEvent: String? = nil,
+        lastFinishReason: String? = nil,
+        lastErrorCode: String? = nil
     ) {
         self.sessionID = sessionID
         self.title = title
         self.model = model
         self.lastActivityAt = lastActivityAt
         self.messageCount = messageCount
+        self.status = status
+        self.archivedAt = archivedAt
+        self.lastEvent = lastEvent
+        self.lastFinishReason = lastFinishReason
+        self.lastErrorCode = lastErrorCode
     }
 }
 
@@ -156,19 +174,27 @@ public struct RuntimeChatStoredMessage: Equatable, Sendable {
     public var role: String
     public var content: String
     public var reasoning: String?
+    public var attachments: [ChatAttachment]
     public var createdAt: Date?
 
-    public init(role: String, content: String, reasoning: String? = nil, createdAt: Date? = nil) {
+    public init(
+        role: String,
+        content: String,
+        reasoning: String? = nil,
+        attachments: [ChatAttachment] = [],
+        createdAt: Date? = nil
+    ) {
         self.role = role
         self.content = content
         self.reasoning = reasoning
+        self.attachments = attachments
         self.createdAt = createdAt
     }
 }
 
 public protocol RuntimeChatEventStore: Sendable {
     func append(_ event: RuntimeChatStoredEvent) throws
-    func listSessions(limit: Int) throws -> [RuntimeChatStoredSession]
+    func listSessions(limit: Int, includeArchived: Bool) throws -> [RuntimeChatStoredSession]
     func listMessages(sessionID: String, limit: Int) throws -> [RuntimeChatStoredMessage]
     func mutateSession(
         sessionID: String,
@@ -178,12 +204,18 @@ public protocol RuntimeChatEventStore: Sendable {
     ) throws -> RuntimeChatSessionMutationResult
 }
 
+public extension RuntimeChatEventStore {
+    func listSessions(limit: Int) throws -> [RuntimeChatStoredSession] {
+        try listSessions(limit: limit, includeArchived: false)
+    }
+}
+
 public struct NullRuntimeChatEventStore: RuntimeChatEventStore {
     public init() {}
 
     public func append(_ event: RuntimeChatStoredEvent) throws {}
 
-    public func listSessions(limit: Int) throws -> [RuntimeChatStoredSession] {
+    public func listSessions(limit: Int, includeArchived: Bool) throws -> [RuntimeChatStoredSession] {
         []
     }
 
@@ -219,9 +251,9 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
         }
     }
 
-    public func listSessions(limit: Int = 100) throws -> [RuntimeChatStoredSession] {
+    public func listSessions(limit: Int = 100, includeArchived: Bool = false) throws -> [RuntimeChatStoredSession] {
         try lock.withLock {
-            try Self.sessions(from: readEvents(), limit: limit)
+            try Self.sessions(from: readEvents(), limit: limit, includeArchived: includeArchived)
         }
     }
 
@@ -241,10 +273,14 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
             let cleanSessionID = sessionID.trimmingCharacters(in: .whitespacesAndNewlines)
             let events = try readEvents()
             let sessionEvents = events.filter { $0.sessionID == cleanSessionID }
+            let lifecycleState = Self.lifecycleState(from: sessionEvents)
             guard !cleanSessionID.isEmpty,
                   !sessionEvents.isEmpty,
-                  Self.lifecycleState(from: sessionEvents) != .deleted else {
+                  lifecycleState != .deleted else {
                 throw RuntimeChatEventStoreError.sessionNotFound(sessionID)
+            }
+            if mutation == .delete, lifecycleState != .archived {
+                throw RuntimeChatEventStoreError.sessionMustBeArchivedBeforeDelete(cleanSessionID)
             }
             try appendUnlocked(RuntimeChatStoredEvent(
                 timestamp: timestamp,
@@ -301,21 +337,29 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
 
     private static func sessions(
         from events: [RuntimeChatStoredEvent],
-        limit: Int
+        limit: Int,
+        includeArchived: Bool
     ) throws -> [RuntimeChatStoredSession] {
         let grouped = Dictionary(grouping: events, by: \.sessionID)
         return grouped.compactMap { sessionID, events in
-            guard lifecycleState(from: events) == .active else { return nil }
+            let state = lifecycleState(from: events)
+            guard state == .active || (includeArchived && state == .archived) else { return nil }
             let chatEvents = events.filter { !$0.kind.isSessionMetadata }
             guard let last = chatEvents.max(by: { $0.timestamp < $1.timestamp })
                     ?? events.max(by: { $0.timestamp < $1.timestamp }) else { return nil }
             let messages = messages(from: events, sessionID: sessionID, limit: Int.max)
+            let archivedAt = state == .archived ? latestLifecycleEvent(from: events)?.timestamp : nil
             return RuntimeChatStoredSession(
                 sessionID: sessionID,
                 title: latestStoredTitle(from: events) ?? defaultSessionTitle,
                 model: last.model,
                 lastActivityAt: last.timestamp,
-                messageCount: messages.count
+                messageCount: messages.count,
+                status: state.rawValue,
+                archivedAt: archivedAt,
+                lastEvent: last.kind.rawValue,
+                lastFinishReason: last.finishReason?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfBlank,
+                lastErrorCode: last.error?.code.trimmingCharacters(in: .whitespacesAndNewlines).nilIfBlank
             )
         }
         .sorted { $0.lastActivityAt > $1.lastActivityAt }
@@ -339,7 +383,14 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
         for request in requestEvents {
             let requestMessages = request.messages?
                 .filter { !$0.isRuntimeOnlySystemMessage }
-                .map { RuntimeChatStoredMessage(role: $0.role, content: $0.content, createdAt: request.timestamp) }
+                .map {
+                    RuntimeChatStoredMessage(
+                        role: $0.role,
+                        content: $0.content,
+                        attachments: $0.attachments.map(\.withoutInlineData),
+                        createdAt: request.timestamp
+                    )
+                }
                 ?? []
             messages = mergeTranscript(messages, withRequestMessages: requestMessages)
 
@@ -411,16 +462,7 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
     }
 
     private static func lifecycleState(from events: [RuntimeChatStoredEvent]) -> RuntimeChatSessionLifecycleState {
-        let lifecycleEvents = events
-            .enumerated()
-            .filter { $0.element.kind.isSessionLifecycle }
-        guard let latestLifecycle = lifecycleEvents
-            .max(by: { lhs, rhs in
-                if lhs.element.timestamp == rhs.element.timestamp {
-                    return lhs.offset < rhs.offset
-                }
-                return lhs.element.timestamp < rhs.element.timestamp
-            })?.element else {
+        guard let latestLifecycle = latestLifecycleEvent(from: events) else {
             return .active
         }
         switch latestLifecycle.kind {
@@ -435,10 +477,23 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
         }
     }
 
+    private static func latestLifecycleEvent(from events: [RuntimeChatStoredEvent]) -> RuntimeChatStoredEvent? {
+        let lifecycleEvents = events
+            .enumerated()
+            .filter { $0.element.kind.isSessionLifecycle }
+        return lifecycleEvents
+            .max(by: { lhs, rhs in
+                if lhs.element.timestamp == rhs.element.timestamp {
+                    return lhs.offset < rhs.offset
+                }
+                return lhs.element.timestamp < rhs.element.timestamp
+            })?.element
+    }
+
     private static let defaultSessionTitle = "New chat"
 }
 
-private enum RuntimeChatSessionLifecycleState {
+private enum RuntimeChatSessionLifecycleState: String {
     case active
     case archived
     case deleted
@@ -518,6 +573,12 @@ private extension Array {
     func limited(toLast limit: Int) -> [Element] {
         guard limit > 0, count > limit else { return self }
         return Array(suffix(limit))
+    }
+}
+
+private extension String {
+    var nilIfBlank: String? {
+        isEmpty ? nil : self
     }
 }
 

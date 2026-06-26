@@ -66,6 +66,7 @@ public struct ProtocolCodec: Sendable {
 public struct RelayFrameCipher: Sendable {
     public static let aad = Data("AETHERLINK_RELAY_FRAME_V1".utf8)
     private static let keyPrefix = Data("AetherLink relay frame v1\n".utf8)
+    private static let routeNonceContext = Data("\nroute_nonce\n".utf8)
     private static let authenticationTagBytes = 16
 
     private let key: SymmetricKey
@@ -74,9 +75,13 @@ public struct RelayFrameCipher: Sendable {
     private var runtimeReceiveCounter: UInt64 = 0
     private var clientReceiveCounter: UInt64 = 0
 
-    public init(relaySecret: String) {
+    public init(relaySecret: String, routeNonce: String? = nil) {
         var material = Self.keyPrefix
         material.append(Data(relaySecret.utf8))
+        if let routeNonce, !routeNonce.isEmpty {
+            material.append(Self.routeNonceContext)
+            material.append(Data(routeNonce.utf8))
+        }
         self.key = SymmetricKey(data: Data(SHA256.hash(data: material)))
     }
 

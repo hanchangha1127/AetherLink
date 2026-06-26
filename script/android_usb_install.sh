@@ -54,7 +54,7 @@ if [[ -z "$SERIAL" ]]; then
 fi
 
 echo "Using Android device $SERIAL"
-echo "Forwarding Android 127.0.0.1:$PORT to Mac runtime port $PORT"
+echo "Preparing USB diagnostic loopback to AetherLink Runtime port $PORT"
 "$ADB" -s "$SERIAL" reverse "tcp:$PORT" "tcp:$PORT"
 
 echo "Building and installing debug APK"
@@ -74,4 +74,4 @@ echo "Launching $ACTIVITY"
 "$ADB" -s "$SERIAL" shell am start -n "$ACTIVITY"
 
 echo "Android app launched."
-echo "In the app, use the USB reverse endpoint preset: 127.0.0.1:$PORT"
+echo "For this USB-only diagnostic run, use the prepared USB diagnostic route in AetherLink Settings."

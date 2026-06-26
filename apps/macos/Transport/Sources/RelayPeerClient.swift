@@ -7,6 +7,7 @@ public struct RelayPeerConfiguration: Equatable, Sendable {
     public var port: UInt16
     public var relayID: String
     public var relaySecret: String?
+    public var relayNonce: String?
     public var reconnectDelay: TimeInterval
 
     public init(
@@ -14,15 +15,29 @@ public struct RelayPeerConfiguration: Equatable, Sendable {
         port: UInt16,
         relayID: String,
         relaySecret: String? = nil,
+        relayNonce: String? = nil,
         reconnectDelay: TimeInterval = 2
     ) {
         precondition(!host.isEmpty, "Relay host must not be empty")
         precondition(!relayID.isEmpty, "Relay id must not be empty")
+        precondition(relayNonce?.isEmpty != true, "Relay nonce must not be empty")
         self.host = host
         self.port = port
         self.relayID = relayID
         self.relaySecret = relaySecret
+        self.relayNonce = relayNonce
         self.reconnectDelay = reconnectDelay
+    }
+
+    public func withRelayNonce(_ relayNonce: String?) -> RelayPeerConfiguration {
+        RelayPeerConfiguration(
+            host: host,
+            port: port,
+            relayID: relayID,
+            relaySecret: relaySecret,
+            relayNonce: relayNonce?.isEmpty == false ? relayNonce : nil,
+            reconnectDelay: reconnectDelay
+        )
     }
 }
 
@@ -93,7 +108,8 @@ public final class RelayPeerClient: RelayPeerTransport, @unchecked Sendable {
         let sink = RelayPeerConnection(
             connection: connection,
             codec: codec,
-            relaySecret: configuration.relaySecret
+            relaySecret: configuration.relaySecret,
+            relayNonce: configuration.relayNonce
         )
 
         lock.withLock {
@@ -104,20 +120,35 @@ public final class RelayPeerClient: RelayPeerTransport, @unchecked Sendable {
             switch state {
             case .ready:
                 guard let self else { return }
-                self.updateStatus(.waitingForPeer)
                 sink.sendRelayHandshake(relayID: configuration.relayID)
-                Self.receiveReadyLine(connection: connection) { ready in
-                    guard ready else {
-                        self.updateStatus(.failed("Relay did not return ready after registration."))
+                Self.receiveRegistrationStatus(connection: connection) { status in
+                    switch status {
+                    case .registered:
+                        self.updateStatus(.waitingForPeer)
+                        Self.receiveRegistrationStatus(connection: connection) { status in
+                            guard status == .ready else {
+                                self.updateStatus(.failed("Relay did not return ready after registration."))
+                                connection.cancel()
+                                return
+                            }
+                            self.updateStatus(.ready)
+                            Self.receiveNextFrame(
+                                connection: connection,
+                                peer: sink,
+                                onMessage: onMessage
+                            )
+                        }
+                    case .ready:
+                        self.updateStatus(.ready)
+                        Self.receiveNextFrame(
+                            connection: connection,
+                            peer: sink,
+                            onMessage: onMessage
+                        )
+                    case nil:
+                        self.updateStatus(.failed("Relay did not accept runtime registration."))
                         connection.cancel()
-                        return
                     }
-                    self.updateStatus(.ready)
-                    Self.receiveNextFrame(
-                        connection: connection,
-                        peer: sink,
-                        onMessage: onMessage
-                    )
                 }
             case .waiting(let error):
                 self?.updateStatus(.failed(error.localizedDescription))
@@ -187,16 +218,51 @@ public final class RelayPeerClient: RelayPeerTransport, @unchecked Sendable {
         explicitHandler?(newStatus)
     }
 
-    private static func receiveReadyLine(connection: NWConnection, completion: @escaping @Sendable (Bool) -> Void) {
-        let expected = Data("AETHERLINK_RELAY ready\n".utf8)
-        connection.receive(minimumIncompleteLength: expected.count, maximumLength: expected.count) { data, _, _, error in
+    private enum RelayRegistrationStatus: Equatable, Sendable {
+        case registered
+        case ready
+    }
+
+    private static func receiveRegistrationStatus(
+        connection: NWConnection,
+        completion: @escaping @Sendable (RelayRegistrationStatus?) -> Void
+    ) {
+        receiveLine(connection: connection) { line in
+            switch line {
+            case "AETHERLINK_RELAY registered":
+                completion(.registered)
+            case "AETHERLINK_RELAY ready":
+                completion(.ready)
+            default:
+                completion(nil)
+            }
+        }
+    }
+
+    private static func receiveLine(
+        connection: NWConnection,
+        buffer: Data = Data(),
+        completion: @escaping @Sendable (String?) -> Void
+    ) {
+        guard buffer.count < 256 else {
+            completion(nil)
+            return
+        }
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 1) { data, _, _, error in
             guard error == nil,
-                  let data
+                  let data,
+                  let byte = data.first
             else {
-                completion(false)
+                completion(nil)
                 return
             }
-            completion(data == expected)
+            var nextBuffer = buffer
+            if byte == UInt8(ascii: "\n") {
+                completion(String(data: nextBuffer, encoding: .utf8)?.trimmingCharacters(in: .newlines))
+                return
+            }
+            nextBuffer.append(byte)
+            receiveLine(connection: connection, buffer: nextBuffer, completion: completion)
         }
     }
 
@@ -258,13 +324,13 @@ public final class RelayPeerConnection: RuntimeMessageSink, @unchecked Sendable 
     private var sendCipher: RelayFrameCipher?
     private var receiveCipher: RelayFrameCipher?
 
-    init(connection: NWConnection, codec: ProtocolCodec, relaySecret: String?) {
+    init(connection: NWConnection, codec: ProtocolCodec, relaySecret: String?, relayNonce: String?) {
         self.connection = connection
         self.codec = codec
         self.sendQueue = DispatchQueue(label: "dev.aetherlink.relay-peer-send-\(id.uuidString)")
         if let relaySecret, !relaySecret.isEmpty {
-            self.sendCipher = RelayFrameCipher(relaySecret: relaySecret)
-            self.receiveCipher = RelayFrameCipher(relaySecret: relaySecret)
+            self.sendCipher = RelayFrameCipher(relaySecret: relaySecret, routeNonce: relayNonce)
+            self.receiveCipher = RelayFrameCipher(relaySecret: relaySecret, routeNonce: relayNonce)
         }
     }
 

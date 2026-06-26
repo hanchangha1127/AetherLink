@@ -112,7 +112,7 @@ public final class DocumentTextExtractor: Sendable {
             text = try extractTextutilText(from: fileURL)
         case .legacySpreadsheet, .legacyPresentation, .legacyHWP:
             text = try extractBinaryText(from: fileURL)
-        case .xml:
+        case .hwpml, .xml:
             text = XMLTextCollector.collectText(from: try Data(contentsOf: fileURL))
         case .plainText:
             text = try String(contentsOf: fileURL, encoding: .utf8)
@@ -280,6 +280,7 @@ private enum DocumentKind {
     case legacyPresentation
     case legacyHWP
     case hwpx
+    case hwpml
     case odt
     case ods
     case odp
@@ -324,8 +325,10 @@ private enum DocumentKind {
             self = .legacyPresentation
         case ("hwp", _), (_, "application/x-hwp"), (_, "application/haansofthwp"):
             self = .legacyHWP
-        case ("hwpx", _), (_, "application/hwp+zip"), (_, "application/x-hwpx"):
+        case ("hwpx", _), (_, "application/hwp+zip"), (_, "application/x-hwpx"), (_, "application/vnd.hancom.hwpx"):
             self = .hwpx
+        case ("hwpml", _), (_, "application/x-hwpml"), (_, "application/vnd.hancom.hwpml"):
+            self = .hwpml
         case ("odt", _), (_, "application/vnd.oasis.opendocument.text"):
             self = .odt
         case ("ods", _), (_, "application/vnd.oasis.opendocument.spreadsheet"):
@@ -364,7 +367,7 @@ private enum DocumentKind {
             self = .keynote
         case ("rtf", _), (_, "application/rtf"), (_, "text/rtf"):
             self = .rtf
-        case ("html", _), ("htm", _), (_, "text/html"), (_, "application/xhtml+xml"):
+        case ("html", _), ("htm", _), ("xhtml", _), (_, "text/html"), (_, "application/xhtml+xml"):
             self = .html
         case ("webarchive", _), (_, "application/x-webarchive"):
             self = .webArchive
@@ -397,8 +400,12 @@ private enum DocumentKind {
             (_, "text/csv"),
             (_, "text/tab-separated-values"),
             (_, "application/json"),
+            (_, "application/jsonl"),
             (_, "application/x-ndjson"),
             (_, "application/yaml"),
+            (_, "application/x-yaml"),
+            (_, "application/toml"),
+            (_, "application/x-toml"),
             (_, "text/yaml"):
             self = .plainText
         default:
@@ -422,6 +429,8 @@ private enum DocumentKind {
             return "application/x-hwp"
         case .hwpx:
             return "application/hwp+zip"
+        case .hwpml:
+            return "application/x-hwpml"
         case .odt:
             return "application/vnd.oasis.opendocument.text"
         case .ods:

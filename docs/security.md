@@ -1,10 +1,10 @@
 # AetherLink Security Model
 
-The project is local-first: no cloud AI backend and no account-server requirement for model access. The runtime host owns execution and backend access. The client device is a controller/client. That split is the main security boundary. The current v0.1 implementation uses a macOS runtime and an Android client.
+The project is local-first: no cloud AI backend and no account-server requirement for model access. The runtime host owns execution and backend access. The client device is a controller/client. That split is the main security boundary. The current v0.1 implementation has desktop-runtime and mobile-client targets.
 
 AetherLink may later use distributed rendezvous/bootstrap/DHT-style discovery, signaling, or an encrypted blind relay/TURN-style component for connectivity when paired devices are on different networks. That component is connection infrastructure only: it must not run models, proxy backend APIs in plaintext, inspect AI protocol payloads, store prompts/responses, see model lists, files, memory, or backend credentials, or become a cloud AI backend, account backend, or model-logic backend.
 
-Current code status: remote P2P NAT traversal, decentralized/distributed rendezvous, hardened blind relay allocation, and production end-to-end transport encryption are not complete yet. Existing endpoint hints, Bonjour/mDNS records, USB reverse paths, localhost/dev-server flows, and the outbound TCP development relay are development scaffolding behind the trusted-device boundary. The development relay can optionally encrypt AetherLink frame bodies with a QR-provided `relay_secret`, but that is only a foundation slice, not the final production transport security model.
+Current code status: remote P2P NAT traversal, decentralized/distributed rendezvous, hardened blind relay allocation, and production end-to-end transport encryption are not complete yet. Existing endpoint hints, Bonjour/mDNS records, USB reverse paths, localhost/dev-server flows, and the outbound TCP development relay are development scaffolding behind the trusted-device boundary. QR-provisioned relay routes require pairwise route material including `relay_secret`, `relay_expires_at`, and `relay_nonce`; `relay_secret` plus `relay_nonce` derive the AES-GCM relay-frame key so AetherLink frame bodies are encrypted before relay forwarding and stale or mismatched QR route material can be rejected. The development relay can also require an allocation token before it issues route material, which is useful for public/VPN/tunnel relay testing, but that token is only allocation gating and not device trust. That is only a foundation slice, not the final production transport security model. Loopback, `.local`, link-local, and unspecified relay hosts are not QR-ready remote routes. Carrier-grade NAT, private IPv4, and ULA IPv6 relay literals are accepted only when QR generation explicitly opts into `relay_scope=private_overlay`, meaning a user-controlled VPN, tunnel, or private overlay makes the address reachable from both paired devices.
 
 ## Local-First Threat Model
 
@@ -12,7 +12,7 @@ Assets to protect:
 
 - Runtime host access.
 - Local model prompts and responses.
-- Runtime-host chat processing event logs, client-local chat cache, and user-managed memory notes.
+- Runtime-host chat processing event logs, client-local UI cache, and runtime-owned user memory notes.
 - Future compacted session summaries and embedding indexes.
 - Future project files, project instructions, trusted-source settings, and project indexes.
 - Future scheduled tasks, reminders, monitors, recurring automations, runtime-triggered jobs, client approvals, and audit logs.
@@ -24,7 +24,7 @@ Primary threats:
 - Any device on the same Wi-Fi attempts to control the runtime host.
 - A malicious client sends protocol messages directly to the local transport.
 - A paired client device is lost or should no longer be trusted.
-- Runtime-host chat event logs, client-local chat cache, memory notes, compacted summaries, or embedding indexes leak from a device backup or filesystem.
+- Runtime-host chat event logs, client-local UI cache, runtime-owned memory notes, compacted summaries, or embedding indexes leak from a device backup or filesystem.
 - Project files or indexes are used as model/research context without project-scoped permission or trusted-source selection.
 - A scheduled job runs later with broader file, network, tool, MCP, web search, or backend access than the user approved.
 - Future tool execution gains file, terminal, network, or MCP access without explicit permission.
@@ -51,12 +51,12 @@ Target pairing flow:
 
 1. User opens pairing on the runtime host.
 2. The runtime host displays a QR code plus a one-time pairing code.
-3. QR pairing data includes runtime device id, pairing nonce, service identity, runtime public key or certificate fingerprint, and a route token. For different-network product use, it also bootstraps private overlay/rendezvous/relay material. A fixed host/port is not required for the product pairing payload and is only an optional development reachability hint.
+3. QR pairing data includes runtime device id, pairing nonce, service identity, runtime public key or certificate fingerprint, and a route token. For different-network product use, it also bootstraps private overlay/rendezvous/relay material. The current QR-provisioned relay path requires `relay_host`, `relay_port`, `relay_id`, `relay_secret`, `relay_expires_at`, and `relay_nonce`. A fixed host/port is not required for the product pairing payload and is only an optional development reachability hint.
 4. The client submits pairing nonce, code, client device id, client device name, and client public key.
 5. The runtime host stores the client public key only if the pairing window is active and user confirmation succeeds.
 6. Future sessions use challenge-response authentication before runtime commands.
 
-v0.1 persists the scanned trusted runtime record on Android only after the runtime accepts `pairing.request` and stores the client device as trusted. When the QR and accepted `pairing.result` include runtime public-key metadata, the client verifies that the accepted runtime key/fingerprint matches the scanned QR before storing trust. The client connects to the runtime host, not to Ollama or LM Studio directly.
+v0.1 persists the scanned trusted runtime record on the client only after the runtime accepts `pairing.request` and stores the client device as trusted. When the QR and accepted `pairing.result` include runtime public-key metadata, the client verifies that the accepted runtime key/fingerprint matches the scanned QR before storing trust. The client connects to the runtime host, not to Ollama or LM Studio directly.
 
 An active pairing session allows only a bounded number of invalid nonce/code submissions. After the limit is reached, the runtime host invalidates that pairing session and returns structured `pairing.result` rejection details while preserving the existing `accepted: false` response shape.
 
@@ -76,7 +76,7 @@ Bitcoin-network analogy note: AetherLink should borrow only peer identity and di
 
 DHT/bootstrap note: a future DHT-like or bootstrap-peer layer may be useful for finding a paired peer without a fixed IP, but it must publish only privacy-preserving rendezvous records. It must not expose stable runtime host directories, backend URLs, model inventory, prompts, files, memory, or any authority to mark a device as trusted.
 
-Implementation status note: identity-only QR, local route-token matching, and relay route preparation are connection-manager increments. A temporary outbound TCP development relay is implemented for different-Wi-Fi testing by `relay_id`; with `relay_secret`, Android and the runtime host encrypt relay frame bodies using AES-GCM before the relay sees them. Actual private per-user overlay routing, DHT/bootstrap discovery, NAT traversal, production signaling, relay allocation, key rotation, replay-resistant session setup, and production end-to-end encryption are not complete. Local direct and the development relay remain diagnostics/development scaffolding, not the intended final same-network-IP design.
+Implementation status note: identity-only QR, local route-token matching, and relay route preparation are connection-manager increments. A temporary outbound TCP development relay is implemented for different-Wi-Fi testing by `relay_id`; QR-provisioned relay routes require `relay_secret`, `relay_expires_at`, and `relay_nonce`, and the client plus runtime host encrypt relay frame bodies using AES-GCM before the relay sees them. The current relay-frame key derivation binds both `relay_secret` and `relay_nonce`, so replaying an old lease nonce or using a different nonce with the same secret fails to decrypt. The development relay allocation endpoint can require an allocation token, but runtime commands still require pairing, pinned runtime identity, and challenge-response authentication. Actual private per-user overlay routing, DHT/bootstrap discovery, NAT traversal, production signaling, relay allocation, key rotation, replay-resistant session setup, and production end-to-end encryption are not complete. Local direct and the development relay remain diagnostics/development scaffolding, not the intended final same-network-IP design.
 
 Development note: `AETHERLINK_DEV_PAIRING=1` is only for local automated smoke tests with RuntimeDevServer. It opens and prints a temporary pairing session for scripts, but runtime commands still require the normal pairing/trusted-device and challenge-response path. Do not enable this flag for production or normal trusted-device use.
 
@@ -86,11 +86,12 @@ After pairing, each runtime connection authenticates before model or command mes
 
 1. The client sends `hello` with its trusted device id.
 2. The runtime host checks the trusted-device store and returns `auth.challenge` with a one-time nonce.
-3. The client signs the nonce with its paired private key and sends `auth.response`.
-4. The runtime host verifies the signature against the stored client public key.
-5. The runtime host allows runtime commands only after the connection is authenticated.
+3. When the client has a pinned runtime public key from QR pairing, it verifies the runtime's challenge signature before sending a client signature.
+4. The client signs the nonce with its paired private key and sends `auth.response`.
+5. The runtime host verifies the signature against the stored client public key.
+6. The runtime host allows runtime commands only after the connection is authenticated.
 
-Runtime commands include `runtime.health`, `models.list`, `models.pull`, `chat.send`, and `chat.cancel`. Requests sent before authentication fail with `authentication_required`; unknown or removed device ids fail with `pairing_required`; invalid signatures fail with `authentication_failed`.
+Runtime commands include `runtime.health`, `models.list`, `models.pull`, `chat.send`, and `chat.cancel`. Requests sent before authentication fail with `authentication_required`; unknown or removed device ids fail with `pairing_required`; invalid client signatures fail with `authentication_failed`; invalid runtime proofs fail client-side with `runtime_authentication_failed`.
 
 The same authentication requirement applies on every transport. A relay or signaling server must not be trusted as an authenticator, must not terminate the end-to-end encrypted AetherLink session, and must not be able to forge either device identity.
 
@@ -114,11 +115,13 @@ Target security properties:
 
 Current implementation status: AetherLink has route-candidate plumbing for the target connection order and a temporary outbound TCP development relay for different-Wi-Fi testing. Different-network production P2P, NAT traversal, decentralized/bootstrap signaling, encrypted blind relay fallback, and production end-to-end transport encryption remain future work.
 
+Development preflight should fail closed for remote QR testing. `script/run_different_network_dev_runtime.sh --preflight-only` rejects accidental loopback, `.local`, unspecified, link-local, carrier-grade NAT, and private relay hosts unless an explicit private-overlay flag is used, and it checks the allocation API before RuntimeDevServer starts. When the relay requires an allocation token, preflight and RuntimeDevServer must send the same token with `--allocation-token` or `AETHERLINK_BOOTSTRAP_RELAY_ALLOCATION_TOKEN`. The app-side QR path blocks scope-less private IP relay literals and accepts them only when the QR marks `relay_scope=private_overlay`; the macOS GUI now requires an explicit private-overlay/VPN/tunnel opt-in before it emits that scope. This prevents a QR from looking remote-ready when the real blocker is the absence of reachable relay/bootstrap/overlay material.
+
 Public access is forbidden for the same reason same-network unauthenticated access is forbidden: network reachability is not trust. A runtime host must never accept model, file, memory, tool, or backend commands just because a peer found it through local discovery, a bootstrap peer, a DHT-like record, a relay allocation, or a public address.
 
 ## Local Chat History, Memory, And Compaction
 
-The runtime host stores chat processing events locally when it handles `chat.send`: request metadata/messages, streamed answer deltas, reasoning deltas, completion usage, cancellation, and errors. Inline attachment bytes are stripped before storage. The client may still keep a local chat cache for UI continuity, and v0.1 can store user-managed memory notes locally on the client device. Enabled memory notes are sent only as context inside `chat.send`, which still goes through the authenticated runtime host. The client must not use memory features to call Ollama, LM Studio, web search, MCP, or tools directly.
+The runtime host stores chat processing events locally when it handles `chat.send`: request metadata/messages, streamed answer deltas, reasoning deltas, completion usage, cancellation, and errors. Inline attachment bytes are stripped before storage. The client may still keep a local UI cache for continuity, but user-managed memory notes are synchronized through the authenticated runtime host with `memory.list`, `memory.upsert`, and `memory.delete`. Enabled memory notes are sent only as context inside `chat.send`, which still goes through the authenticated runtime host. The client must not use memory features to call Ollama, LM Studio, web search, MCP, or tools directly.
 
 Archive is not deletion. Archived chats remain retained, but they are excluded from memory, reflection, research, and compaction inputs unless the user explicitly restores them or selects them as sources. Deleted chats should be treated as removal requests, not hidden research material.
 

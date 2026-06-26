@@ -1,6 +1,11 @@
 package com.localagentbridge.android.core.transport
 
 import com.localagentbridge.android.core.protocol.ProtocolCodec
+import com.localagentbridge.android.core.protocol.ProtocolEnvelope
+import com.localagentbridge.android.core.protocol.MessageType
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -9,6 +14,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.ByteArrayInputStream
 import java.net.ServerSocket
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
 import kotlin.system.measureTimeMillis
 
@@ -45,6 +52,40 @@ class RuntimeRelayTcpClientTest {
         )
         assertEquals(
             "ec6f782db28fe4e5bc8a0bfd9c8944051dbaeceea6bd1d3ec34b1ef9cf265f728a76ef7f24dcad7daaa516cb1f756d24d686df0b05806e436524baf6f4d27f6fb86e25b5eae90f83ccf30718cf68",
+            runtimeCryptor.encryptRuntimeFrameBodyForTest(runtimeBody).toHex(),
+        )
+    }
+
+    @Test
+    fun relayFrameCryptorBindsRouteNonceIntoKey() {
+        val clientCryptor = RelayFrameBodyCryptor("relay-secret-1", "relay-nonce-1")
+        val runtimeCryptor = RelayFrameBodyCryptor("relay-secret-1", "relay-nonce-1")
+        val wrongNonceRuntimeCryptor = RelayFrameBodyCryptor("relay-secret-1", "relay-nonce-2")
+        val clientBody = """{"type":"models.list","request_id":"request-1","payload":{}}""".encodeToByteArray()
+        val encryptedClientBody = clientCryptor.encryptClientFrameBody(clientBody)
+
+        assertEquals(
+            "request-1",
+            ProtocolCodec().decode(runtimeCryptor.decryptClientFrameBodyForTest(encryptedClientBody)).requestId,
+        )
+        assertThrows(Exception::class.java) {
+            wrongNonceRuntimeCryptor.decryptClientFrameBodyForTest(encryptedClientBody)
+        }
+    }
+
+    @Test
+    fun relayFrameCryptorMatchesNonceBoundSharedCiphertextVectors() {
+        val clientCryptor = RelayFrameBodyCryptor("relay-secret-vector", "relay-nonce-vector")
+        val runtimeCryptor = RelayFrameBodyCryptor("relay-secret-vector", "relay-nonce-vector")
+        val clientBody = """{"type":"models.list","request_id":"vector-1","payload":{}}""".encodeToByteArray()
+        val runtimeBody = """{"type":"runtime.health","request_id":"vector-2","payload":{}}""".encodeToByteArray()
+
+        assertEquals(
+            "74f16ae572397183106c40e09692c529475b5c71a6a65351177bb184968dd94a16bb1366ba73ef68614d722cebc79e67782e9b5f797bfc3d0b59a6ba9a5d48873303037e1866b51a32fb9d",
+            clientCryptor.encryptClientFrameBody(clientBody).toHex(),
+        )
+        assertEquals(
+            "aae3d45d8054aeccfbe0af5e5f9193ec1812a9d7c2cd2f9456b0e8e5cde3f991382e886940bc3f1e3a7004b1fc55d72ed295a1b03f670c765b92f3bb7be947f27f3f4572eff0aeb6a541e1c263c5",
             runtimeCryptor.encryptRuntimeFrameBodyForTest(runtimeBody).toHex(),
         )
     }
@@ -90,6 +131,85 @@ class RuntimeRelayTcpClientTest {
         serverThread.join(1_500)
         assertTrue("Relay connect should not wait forever", elapsedMillis < 1_500)
     }
+
+    @Test
+    fun relayClientSerializesEncryptionWithConcurrentSends() = runBlocking {
+        val codec = ProtocolCodec()
+        val relaySecret = "relay-concurrent-secret"
+        val frameCount = 48
+        val server = ServerSocket(0)
+        val receivedRequestIds = CompletableFuture<List<String>>()
+        val serverThread = thread(start = true, isDaemon = true) {
+            runCatching {
+                server.accept().use { socket ->
+                    val handshake = socket.getInputStream().readAsciiLine()
+                    assertEquals("AETHERLINK_RELAY client relay-concurrent", handshake)
+                    socket.getOutputStream().write("AETHERLINK_RELAY ready\n".toByteArray(Charsets.UTF_8))
+                    socket.getOutputStream().flush()
+
+                    val runtimeCryptor = RelayFrameBodyCryptor(relaySecret, "relay-concurrent")
+                    val requestIds = mutableListOf<String>()
+                    repeat(frameCount) {
+                        val encryptedBody = codec.readFrameBody(socket.getInputStream())
+                        val body = runtimeCryptor.decryptClientFrameBodyForTest(encryptedBody)
+                        requestIds += codec.decode(body).requestId
+                    }
+                    receivedRequestIds.complete(requestIds)
+                }
+            }.onFailure(receivedRequestIds::completeExceptionally)
+        }
+        val client = RuntimeRelayTcpClient()
+        val route = PreparedRemoteRuntimeRoute.Relay(
+            identity = PairedRuntimeIdentity(
+                deviceId = "runtime-1",
+                name = "AetherLink",
+                fingerprint = "fingerprint",
+            ),
+            relayId = "relay-concurrent",
+            host = "127.0.0.1",
+            port = server.localPort,
+            relayFrameSecret = relaySecret,
+            security = RemoteRouteSecurityContext(
+                rendezvousToken = "relay-concurrent",
+                expiresAtEpochMillis = Long.MAX_VALUE,
+                antiReplayNonce = "relay-concurrent",
+            ),
+        )
+
+        val channel = client.connect(route, timeoutMillis = 1_000)
+        coroutineScope {
+            (0 until frameCount)
+                .map { index ->
+                    async {
+                        channel.send(
+                            ProtocolEnvelope(
+                                type = MessageType.ModelsList,
+                                requestId = "request-$index",
+                            ),
+                        )
+                    }
+                }
+                .awaitAll()
+        }
+        channel.close()
+
+        val requestIds = receivedRequestIds.get(2, TimeUnit.SECONDS)
+        server.close()
+        serverThread.join(1_500)
+        assertEquals(frameCount, requestIds.size)
+        assertEquals((0 until frameCount).map { "request-$it" }.toSet(), requestIds.toSet())
+    }
 }
 
 private fun ByteArray.toHex(): String = joinToString(separator = "") { "%02x".format(it) }
+
+private fun java.io.InputStream.readAsciiLine(maxBytes: Int = 256): String {
+    val buffer = StringBuilder()
+    while (buffer.length < maxBytes) {
+        val next = read()
+        if (next == -1) break
+        if (next == '\n'.code) return buffer.toString().trimEnd('\r')
+        buffer.append(next.toChar())
+    }
+    error("ASCII line was not complete")
+}

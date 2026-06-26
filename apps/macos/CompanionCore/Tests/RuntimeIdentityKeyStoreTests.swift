@@ -32,6 +32,59 @@ final class RuntimeIdentityKeyStoreTests: XCTestCase {
         XCTAssertNotEqual(first.fingerprint, second.fingerprint)
     }
 
+    func testFileStoreLoadOrCreatePersistsRuntimeIdentity() throws {
+        let fileURL = temporaryIdentityFileURL()
+        let store = FileRuntimeIdentityKeyStore(fileURL: fileURL)
+
+        let first = try store.loadOrCreate()
+        let second = try FileRuntimeIdentityKeyStore(fileURL: fileURL).loadOrCreate()
+
+        XCTAssertEqual(first, second)
+        XCTAssertFalse(first.publicKeyBase64.isEmpty)
+        XCTAssertEqual(first.fingerprint, try fingerprint(forPublicKeyBase64: first.publicKeyBase64))
+        XCTAssertEqual(try filePermissions(at: fileURL), 0o600)
+    }
+
+    func testFileStoreSignsVerifiableAuthChallenge() throws {
+        let fileURL = temporaryIdentityFileURL()
+        let store = FileRuntimeIdentityKeyStore(fileURL: fileURL)
+        let identity = try store.loadOrCreate()
+
+        let signature = try store.signAuthChallenge(deviceID: "android-device-1", nonce: "nonce-1")
+
+        XCTAssertEqual(signature.runtimeKeyFingerprint, identity.fingerprint)
+        XCTAssertTrue(RuntimeIdentityKeyStore.verifyAuthChallengeSignature(
+            publicKeyBase64: identity.publicKeyBase64,
+            deviceID: "android-device-1",
+            nonce: "nonce-1",
+            signatureBase64: signature.signatureBase64
+        ))
+        XCTAssertFalse(RuntimeIdentityKeyStore.verifyAuthChallengeSignature(
+            publicKeyBase64: identity.publicKeyBase64,
+            deviceID: "android-device-1",
+            nonce: "different-nonce",
+            signatureBase64: signature.signatureBase64
+        ))
+    }
+
+    func testFileStoreThrowsStructuredErrorForInvalidFile() throws {
+        let fileURL = temporaryIdentityFileURL()
+        try FileManager.default.createDirectory(
+            at: fileURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try Data("not-json".utf8).write(to: fileURL)
+
+        XCTAssertThrowsError(try FileRuntimeIdentityKeyStore(fileURL: fileURL).loadOrCreate()) { error in
+            guard case FileRuntimeIdentityKeyStoreError.invalidData(let path, let reason) = error else {
+                XCTFail("Expected invalidData, got \(error)")
+                return
+            }
+            XCTAssertEqual(path, fileURL.standardizedFileURL.path)
+            XCTAssertFalse(reason.isEmpty)
+        }
+    }
+
     private func loadOrSkip(_ store: RuntimeIdentityKeyStore) throws -> RuntimeIdentityKey {
         do {
             return try store.loadOrCreate()
@@ -45,5 +98,17 @@ final class RuntimeIdentityKeyStoreTests: XCTestCase {
         return SHA256.hash(data: publicKeyData)
             .map { String(format: "%02x", $0) }
             .joined()
+    }
+
+    private func temporaryIdentityFileURL() -> URL {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent("aetherlink-file-identity-tests", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            .appendingPathComponent("runtime-identity.json")
+    }
+
+    private func filePermissions(at fileURL: URL) throws -> Int {
+        let attributes = try FileManager.default.attributesOfItem(atPath: fileURL.path)
+        return try XCTUnwrap(attributes[.posixPermissions] as? Int) & 0o777
     }
 }

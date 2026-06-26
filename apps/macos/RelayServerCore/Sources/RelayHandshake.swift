@@ -7,6 +7,7 @@ public enum RelayRole: String, Sendable {
 
 public struct RelayHandshake: Equatable, Sendable {
     public static let prefix = "AETHERLINK_RELAY"
+    public static let registeredLine = Data("AETHERLINK_RELAY registered\n".utf8)
     public static let readyLine = Data("AETHERLINK_RELAY ready\n".utf8)
 
     public let role: RelayRole

@@ -61,6 +61,7 @@ struct SmokeOptions {
     var backendMode: BackendMode = .mock
     var allowUnavailable = false
     var transportMode: TransportMode = .direct
+    var allowDirectFallback = false
 
     static func parse(_ arguments: [String]) throws -> SmokeOptions {
         var options = SmokeOptions()
@@ -72,13 +73,17 @@ struct SmokeOptions {
                 options.allowUnavailable = true
             case "--relay":
                 options.transportMode = .relay
+            case "--allow-direct-fallback":
+                options.allowDirectFallback = true
             case "--help", "-h":
                 print("""
-                Usage: ./script/runtime_authenticated_mock_smoke.swift [--relay] [--real-ollama] [--allow-unavailable]
+                Usage: ./script/runtime_authenticated_mock_smoke.swift [--relay] [--allow-direct-fallback] [--real-ollama] [--allow-unavailable]
 
                   default              Run authenticated mock E2E smoke, including pull and chat coverage.
-                  --relay              Route the smoke through script/aetherlink_relay.py with encrypted relay frames.
-                  --real-ollama        Run pairing/auth smoke against the real local Ollama backend.
+                  --relay              Route the smoke through AetherLinkRelay allocation with encrypted relay frames.
+                  --allow-direct-fallback
+                                       Allow explicit mixed-route relay diagnostics where QR pairing info also carries direct host/port.
+                  --real-ollama        Run pairing/auth smoke against the real provider aggregate with Ollama behind the runtime host.
                   --allow-unavailable  In --real-ollama mode, skip successfully if Ollama is unavailable.
                 """)
                 exit(0)
@@ -92,6 +97,9 @@ struct SmokeOptions {
         if options.allowUnavailable, options.transportMode == .relay {
             throw SmokeFailure.message("--allow-unavailable with --relay is not supported yet")
         }
+        if options.allowDirectFallback, options.transportMode != .relay {
+            throw SmokeFailure.message("--allow-direct-fallback only applies with --relay")
+        }
         return options
     }
 }
@@ -100,7 +108,9 @@ final class ServerOutput {
     private let lock = NSLock()
     private var buffer = ""
     private(set) var pairingInfo: [String: Any]?
+    private(set) var pairingURI: String?
     let pairingInfoReady = DispatchSemaphore(value: 0)
+    let pairingURIReady = DispatchSemaphore(value: 0)
 
     func append(_ data: Data) {
         guard !data.isEmpty, let text = String(data: data, encoding: .utf8) else { return }
@@ -120,18 +130,40 @@ final class ServerOutput {
     private func handleLine(_ line: String) {
         print("[server] \(line)")
         let marker = "AETHERLINK_DEV_PAIRING_INFO "
-        guard let markerRange = line.range(of: marker) else { return }
-        let jsonText = String(line[markerRange.upperBound...])
-        guard let data = jsonText.data(using: .utf8),
-              let object = try? JSONSerialization.jsonObject(with: data),
-              let info = object as? [String: Any]
+        if let markerRange = line.range(of: marker) {
+            let jsonText = String(line[markerRange.upperBound...])
+            guard let data = jsonText.data(using: .utf8),
+                  let object = try? JSONSerialization.jsonObject(with: data),
+                  let info = object as? [String: Any]
+            else {
+                return
+            }
+            lock.lock()
+            pairingInfo = info
+            lock.unlock()
+            pairingInfoReady.signal()
+            return
+        }
+
+        let compactURIMarker = "AETHERLINK_DEV_PAIRING_COMPACT_URI "
+        let canonicalURIMarker = "AETHERLINK_DEV_PAIRING_URI "
+        let uriText: String?
+        if let compactRange = line.range(of: compactURIMarker) {
+            uriText = String(line[compactRange.upperBound...])
+        } else if let canonicalRange = line.range(of: canonicalURIMarker) {
+            uriText = String(line[canonicalRange.upperBound...])
+        } else {
+            uriText = nil
+        }
+        guard let uriText,
+              !uriText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         else {
             return
         }
         lock.lock()
-        pairingInfo = info
+        pairingURI = uriText.trimmingCharacters(in: .whitespacesAndNewlines)
         lock.unlock()
-        pairingInfoReady.signal()
+        pairingURIReady.signal()
     }
 }
 
@@ -162,8 +194,24 @@ final class RelayProcessOutput {
 struct RelayConfiguration {
     var relayID: String
     var relaySecret: String
+    var relayNonce: String?
     var host: String
     var port: UInt16
+}
+
+struct RelayEndpoint {
+    var host: String
+    var port: UInt16
+}
+
+struct ParsedPairingURI {
+    var pairingCode: String
+    var pairingNonce: String
+    var runtimeDeviceID: String
+    var relayConfiguration: RelayConfiguration?
+    var relayExpiresAt: Int64?
+    var hasDirectHost: Bool
+    var hasDirectPort: Bool
 }
 
 final class TCPClient {
@@ -202,11 +250,17 @@ final class TCPClient {
         }
     }
 
-    static func relay(host: String, port: UInt16, relayID: String, relaySecret: String) throws -> TCPClient {
+    static func relay(
+        host: String,
+        port: UInt16,
+        relayID: String,
+        relaySecret: String,
+        relayNonce: String
+    ) throws -> TCPClient {
         let client = try TCPClient(
             host: host,
             port: port,
-            relayCipher: RelayFrameBodyCipher(secret: relaySecret)
+            relayCipher: RelayFrameBodyCipher(secret: relaySecret, routeNonce: relayNonce)
         )
         do {
             try client.writeAll(Data("AETHERLINK_RELAY client \(relayID)\n".utf8))
@@ -291,15 +345,18 @@ final class TCPClient {
 struct RelayFrameBodyCipher {
     private static let aad = Data("AETHERLINK_RELAY_FRAME_V1".utf8)
     private static let keyPrefix = Data("AetherLink relay frame v1\n".utf8)
+    private static let routeNonceContext = Data("\nroute_nonce\n".utf8)
     private static let tagBytes = 16
 
     private let key: SymmetricKey
     private var clientSendCounter: UInt64 = 0
     private var runtimeReceiveCounter: UInt64 = 0
 
-    init(secret: String) {
+    init(secret: String, routeNonce: String) {
         var material = Self.keyPrefix
         material.append(Data(secret.utf8))
+        material.append(Self.routeNonceContext)
+        material.append(Data(routeNonce.utf8))
         key = SymmetricKey(data: Data(SHA256.hash(data: material)))
     }
 
@@ -413,11 +470,15 @@ func connectWithRetry(host: String, port: UInt16, relay: RelayConfiguration? = n
     while Date() < deadline {
         do {
             if let relay {
+                guard let relayNonce = relay.relayNonce, !relayNonce.isEmpty else {
+                    throw SmokeFailure.message("Relay route is missing nonce-bound frame material")
+                }
                 return try TCPClient.relay(
                     host: relay.host,
                     port: relay.port,
                     relayID: relay.relayID,
-                    relaySecret: relay.relaySecret
+                    relaySecret: relay.relaySecret,
+                    relayNonce: relayNonce
                 )
             }
             return try TCPClient(host: host, port: port)
@@ -463,6 +524,130 @@ func requireString(_ object: [String: Any], _ key: String, context: String) thro
     return value
 }
 
+func requireInt(_ object: [String: Any], _ key: String, context: String) throws -> Int {
+    if let value = object[key] as? Int {
+        return value
+    }
+    if let value = object[key] as? Int64 {
+        return Int(value)
+    }
+    throw SmokeFailure.message("\(context) expected integer for \(key), got \(String(describing: object[key]))")
+}
+
+func parsePairingURI(_ value: String) throws -> ParsedPairingURI {
+    try assertNoBackendLeak(value, context: "pairing URI")
+    guard let components = URLComponents(string: value),
+          components.scheme == "aetherlink",
+          components.host == "pair",
+          let items = components.queryItems,
+          !items.isEmpty
+    else {
+        throw SmokeFailure.message("Development pairing URI must be an aetherlink://pair URI with query parameters: \(value)")
+    }
+    let query = Dictionary(
+        items.map { ($0.name, $0.value ?? "") },
+        uniquingKeysWith: { _, latest in latest }
+    )
+
+    let pairingCode = try requireQueryValue(
+        query,
+        names: ["pairing_code", "code", "c"],
+        context: "pairing URI"
+    )
+    let pairingNonce = try requireQueryValue(
+        query,
+        names: ["pairing_nonce", "nonce", "n"],
+        context: "pairing URI"
+    )
+    let runtimeDeviceID = try requireQueryValue(
+        query,
+        names: ["runtime_device_id", "mac_device_id", "device_id", "rid"],
+        context: "pairing URI"
+    )
+    let hasDirectHost = queryValue(query, names: ["host", "runtime_host", "h"]) != nil
+    let hasDirectPort = queryValue(query, names: ["port", "runtime_port", "p"]) != nil
+
+    let relayHost = queryValue(query, names: ["relay_host", "remote_host", "route_host", "rendezvous_host", "rh"])
+    let relayPortValue = queryValue(query, names: ["relay_port", "remote_port", "route_port", "rendezvous_port", "rp"])
+    let relayID = queryValue(query, names: ["relay_id", "remote_id", "route_id", "network_id", "ri"])
+    let relaySecret = queryValue(query, names: ["relay_secret", "remote_secret", "route_secret", "rs"])
+    let relayNonce = queryValue(query, names: ["relay_nonce", "remote_nonce", "route_nonce", "rendezvous_nonce", "rrn"])
+    let relayExpiresAtValue = queryValue(query, names: ["relay_expires_at", "remote_expires_at", "route_expires_at", "rendezvous_expires_at", "rx"])
+
+    let relayConfiguration: RelayConfiguration?
+    if relayHost != nil ||
+        relayPortValue != nil ||
+        relayID != nil ||
+        relaySecret != nil ||
+        relayNonce != nil ||
+        relayExpiresAtValue != nil {
+        guard let relayHost,
+              let relayPortValue,
+              let relayPort = UInt16(relayPortValue),
+              let relayID,
+              let relaySecret,
+              let relayNonce,
+              !relayNonce.isEmpty
+        else {
+            throw SmokeFailure.message("Pairing URI relay route was incomplete: \(query)")
+        }
+        relayConfiguration = RelayConfiguration(
+            relayID: relayID,
+            relaySecret: relaySecret,
+            relayNonce: relayNonce,
+            host: relayHost,
+            port: relayPort
+        )
+    } else {
+        relayConfiguration = nil
+    }
+
+    let relayExpiresAt: Int64?
+    if let relayExpiresAtValue {
+        guard let parsed = Int64(relayExpiresAtValue), parsed > 0 else {
+            throw SmokeFailure.message("Pairing URI relay_expires_at was invalid: \(relayExpiresAtValue)")
+        }
+        relayExpiresAt = parsed
+    } else {
+        relayExpiresAt = nil
+    }
+
+    return ParsedPairingURI(
+        pairingCode: pairingCode,
+        pairingNonce: pairingNonce,
+        runtimeDeviceID: runtimeDeviceID,
+        relayConfiguration: relayConfiguration,
+        relayExpiresAt: relayExpiresAt,
+        hasDirectHost: hasDirectHost,
+        hasDirectPort: hasDirectPort
+    )
+}
+
+func queryValue(_ query: [String: String], names: [String]) -> String? {
+    for name in names {
+        if let value = query[name], !value.isEmpty {
+            return value
+        }
+    }
+    return nil
+}
+
+func requireQueryValue(_ query: [String: String], names: [String], context: String) throws -> String {
+    guard let value = queryValue(query, names: names) else {
+        throw SmokeFailure.message("\(context) missing \(names.first ?? "query field")")
+    }
+    return value
+}
+
+func nonEmptyEnvironmentValue(_ key: String) -> String? {
+    guard let value = ProcessInfo.processInfo.environment[key]?.trimmingCharacters(in: .whitespacesAndNewlines),
+          !value.isEmpty
+    else {
+        return nil
+    }
+    return value
+}
+
 func requireModelList(_ response: [String: Any], context: String) throws -> [[String: Any]] {
     let modelsPayload = try payload(response, context: context)
     guard let modelList = modelsPayload["models"] as? [[String: Any]] else {
@@ -497,6 +682,52 @@ func sendAndRead(_ client: TCPClient, type: String, requestID: String, payload: 
     let response = try client.readEnvelope()
     try assertNoBackendLeak(response, context: requestID)
     return response
+}
+
+func authenticateFreshClient(
+    host: String,
+    port: UInt16,
+    relay: RelayConfiguration?,
+    deviceID: String,
+    privateKey: P256.Signing.PrivateKey,
+    requestPrefix: String
+) throws -> TCPClient {
+    let client = try connectWithRetry(host: host, port: port, relay: relay)
+    do {
+        let challenge = try sendAndRead(
+            client,
+            type: "hello",
+            requestID: "\(requestPrefix)-hello",
+            payload: [
+                "device_id": deviceID,
+                "device_name": "Smoke Test Client",
+                "client_capabilities": ["chat", "streaming", "attachments"]
+            ]
+        )
+        try requireType(challenge, "auth.challenge", context: "\(requestPrefix) hello")
+        let challengePayload = try payload(challenge, context: "\(requestPrefix) hello")
+        let nonce = try requireString(challengePayload, "nonce", context: "\(requestPrefix) hello")
+
+        let digest = SHA256.hash(data: Data(nonce.utf8))
+        let signature = try privateKey.signature(for: digest).derRepresentation.base64EncodedString()
+        let authResponse = try sendAndRead(
+            client,
+            type: "auth.response",
+            requestID: "\(requestPrefix)-auth",
+            payload: [
+                "device_id": deviceID,
+                "nonce": nonce,
+                "signature": signature
+            ]
+        )
+        try requireType(authResponse, "auth.response", context: "\(requestPrefix) auth.response")
+        let authPayload = try payload(authResponse, context: "\(requestPrefix) auth.response")
+        try requireBool(authPayload, "accepted", true, context: "\(requestPrefix) auth.response")
+        return client
+    } catch {
+        client.close()
+        throw error
+    }
 }
 
 func fetchLocalOllamaJSON(path: String) throws -> [String: Any] {
@@ -586,7 +817,8 @@ func startServer(
     port: UInt16,
     trustedDevicesFile: URL,
     backendMode: BackendMode,
-    relay: RelayConfiguration?
+    relay: RelayConfiguration?,
+    bootstrapRelay: RelayEndpoint?
 ) throws -> Process {
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
@@ -608,6 +840,14 @@ func startServer(
         environment["AETHERLINK_RELAY_PORT"] = String(relay.port)
         environment["AETHERLINK_RELAY_ID"] = relay.relayID
         environment["AETHERLINK_RELAY_SECRET"] = relay.relaySecret
+    }
+    if let bootstrapRelay {
+        environment["AETHERLINK_BOOTSTRAP_RELAY_HOST"] = bootstrapRelay.host
+        environment["AETHERLINK_BOOTSTRAP_RELAY_PORT"] = String(bootstrapRelay.port)
+        environment["AETHERLINK_RELAY_HOST"] = nil
+        environment["AETHERLINK_RELAY_PORT"] = nil
+        environment["AETHERLINK_RELAY_ID"] = nil
+        environment["AETHERLINK_RELAY_SECRET"] = nil
     }
     process.environment = environment
     return process
@@ -749,11 +989,11 @@ func runMockBackendChecks(client: TCPClient, port: UInt16) throws {
         }
     }
 
-    print("OK: authenticated mock E2E smoke passed on 127.0.0.1:\(port).")
+    print("OK: authenticated mock E2E smoke passed on local diagnostic port \(port).")
 }
 
 func runRealOllamaChecks(client: TCPClient, port: UInt16, allowUnavailable: Bool) throws {
-    print("Checking runtime.health against real local backend aggregate...")
+    print("Checking runtime.health against real model provider aggregate...")
     let health = try sendAndRead(client, type: "runtime.health", requestID: "smoke-health")
     try requireType(health, "runtime.health", context: "runtime.health")
     let healthPayload = try payload(health, context: "runtime.health")
@@ -765,7 +1005,7 @@ func runRealOllamaChecks(client: TCPClient, port: UInt16, allowUnavailable: Bool
         guard ollama["code"] as? String == "backend_unavailable" else {
             throw SmokeFailure.message("runtime.health Ollama unavailable response was not useful backend_unavailable: \(health)")
         }
-        let message = "Real Ollama smoke skipped: runtime.health reported Ollama backend_unavailable. Start Ollama on 127.0.0.1:11434 and rerun --real-ollama."
+        let message = "Real Ollama smoke skipped: runtime.health reported the Ollama provider unavailable. Start Ollama on the runtime host and rerun --real-ollama."
         if allowUnavailable {
             print("SKIPPED: \(message)")
             return
@@ -860,26 +1100,41 @@ func main() throws {
 
     let port = try freePort()
     var relayConfiguration: RelayConfiguration?
+    var bootstrapRelayEndpoint: RelayEndpoint?
     var relayProcess: Process?
     var relayPipe: Pipe?
     if options.transportMode == .relay {
+        _ = try runAndCapture(["swift", "build", "--product", "AetherLinkRelay"])
         let relayPort = try freePort()
-        let relay = RelayConfiguration(
-            relayID: "aetherlink-smoke-\(UUID().uuidString)",
-            relaySecret: "aetherlink-relay-smoke-\(UUID().uuidString)",
-            host: "127.0.0.1",
-            port: relayPort
-        )
+        let relayEndpoint = RelayEndpoint(host: "127.0.0.1", port: relayPort)
+        let manualRelayID = nonEmptyEnvironmentValue("AETHERLINK_RELAY_ID")
+        let manualRelaySecret = nonEmptyEnvironmentValue("AETHERLINK_RELAY_SECRET")
+        if manualRelayID != nil || manualRelaySecret != nil {
+            guard let manualRelayID, let manualRelaySecret else {
+                throw SmokeFailure.message("Manual relay smoke requires both AETHERLINK_RELAY_ID and AETHERLINK_RELAY_SECRET")
+            }
+            relayConfiguration = RelayConfiguration(
+                relayID: manualRelayID,
+                relaySecret: manualRelaySecret,
+                host: relayEndpoint.host,
+                port: relayEndpoint.port
+            )
+        } else {
+            bootstrapRelayEndpoint = relayEndpoint
+        }
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        let relayBinary = "\(try runAndCapture(["swift", "build", "--show-bin-path"]))/AetherLinkRelay"
         process.arguments = [
-            "python3",
-            "script/aetherlink_relay.py",
+            relayBinary,
             "--host",
-            relay.host,
+            relayEndpoint.host,
             "--port",
-            String(relay.port)
+            String(relayEndpoint.port)
         ]
+        if bootstrapRelayEndpoint != nil {
+            process.arguments?.append("--require-allocation")
+        }
         let output = RelayProcessOutput()
         let pipe = Pipe()
         process.standardOutput = pipe
@@ -892,10 +1147,13 @@ func main() throws {
             process.terminate()
             throw SmokeFailure.message("Development relay did not start")
         }
-        relayConfiguration = relay
         relayProcess = process
         relayPipe = pipe
-        print("Relay smoke route ready on \(relay.host):\(relay.port) relay_id=\(relay.relayID)")
+        if let relayConfiguration {
+            print("Preconfigured relay smoke route ready on \(relayConfiguration.host):\(relayConfiguration.port) relay_id=\(relayConfiguration.relayID)")
+        } else {
+            print("Allocated relay smoke endpoint ready on \(relayEndpoint.host):\(relayEndpoint.port)")
+        }
     }
     defer {
         relayPipe?.fileHandleForReading.readabilityHandler = nil
@@ -915,7 +1173,8 @@ func main() throws {
         port: port,
         trustedDevicesFile: temporaryDirectory.appendingPathComponent("trusted-devices.json"),
         backendMode: options.backendMode,
-        relay: relayConfiguration
+        relay: relayConfiguration,
+        bootstrapRelay: bootstrapRelayEndpoint
     )
     let outputPipe = Pipe()
     server.standardOutput = outputPipe
@@ -938,32 +1197,95 @@ func main() throws {
     else {
         throw SmokeFailure.message("RuntimeDevServer did not print AETHERLINK_DEV_PAIRING_INFO")
     }
+    guard output.pairingURIReady.wait(timeout: .now() + 5) == .success,
+          let pairingURI = output.pairingURI
+    else {
+        throw SmokeFailure.message("RuntimeDevServer did not print AETHERLINK_DEV_PAIRING_URI")
+    }
 
-    let pairingCode = try requireString(pairingInfo, "pairing_code", context: "dev pairing info")
-    let pairingNonce = try requireString(pairingInfo, "pairing_nonce", context: "dev pairing info")
-    let macDeviceID = try requireString(pairingInfo, "mac_device_id", context: "dev pairing info")
-    if let relayConfiguration {
+    let parsedPairingURI = try parsePairingURI(pairingURI)
+    let pairingCode = parsedPairingURI.pairingCode
+    let pairingNonce = parsedPairingURI.pairingNonce
+    let runtimeDeviceID = parsedPairingURI.runtimeDeviceID
+    let pairingInfoCode = try requireString(pairingInfo, "pairing_code", context: "dev pairing info")
+    let pairingInfoNonce = try requireString(pairingInfo, "pairing_nonce", context: "dev pairing info")
+    let pairingInfoRuntimeDeviceID = try requireString(pairingInfo, "runtime_device_id", context: "dev pairing info")
+    guard pairingInfoCode == pairingCode,
+          pairingInfoNonce == pairingNonce,
+          pairingInfoRuntimeDeviceID == runtimeDeviceID
+    else {
+        throw SmokeFailure.message("Development pairing URI did not match pairing info: uri=\(pairingURI) info=\(pairingInfo)")
+    }
+    if let legacyRuntimeDeviceID = pairingInfo["mac_device_id"] as? String,
+       legacyRuntimeDeviceID != runtimeDeviceID {
+        throw SmokeFailure.message("Development pairing legacy runtime id did not match canonical runtime_device_id: \(pairingInfo)")
+    }
+    var clientRelayConfiguration = relayConfiguration
+    if options.transportMode == .relay {
+        guard let parsedRelayConfiguration = parsedPairingURI.relayConfiguration else {
+            throw SmokeFailure.message("Relay-mode development pairing URI did not include relay route material: \(pairingURI)")
+        }
         let relayHost = try requireString(pairingInfo, "relay_host", context: "dev pairing info")
         let relayID = try requireString(pairingInfo, "relay_id", context: "dev pairing info")
         let relaySecret = try requireString(pairingInfo, "relay_secret", context: "dev pairing info")
-        guard relayHost == relayConfiguration.host,
-              relayID == relayConfiguration.relayID,
-              relaySecret == relayConfiguration.relaySecret,
-              pairingInfo["relay_port"] as? Int == Int(relayConfiguration.port)
+        let relayNonce = try requireString(pairingInfo, "relay_nonce", context: "dev pairing info")
+        let relayPort = try requireInt(pairingInfo, "relay_port", context: "dev pairing info")
+        let expectedEndpoint = bootstrapRelayEndpoint
+            ?? relayConfiguration.map { RelayEndpoint(host: $0.host, port: $0.port) }
+            ?? RelayEndpoint(host: relayHost, port: UInt16(relayPort))
+        guard relayHost == expectedEndpoint.host,
+              relayPort == Int(expectedEndpoint.port)
         else {
-            throw SmokeFailure.message("Development pairing info did not include the configured relay route: \(pairingInfo)")
+            throw SmokeFailure.message("Development pairing info did not include the configured relay endpoint: \(pairingInfo)")
         }
-        if pairingInfo["host"] != nil || pairingInfo["port"] != nil {
-            throw SmokeFailure.message("Relay-mode development pairing info must not include a local direct host/port by default: \(pairingInfo)")
+        guard parsedRelayConfiguration.host == relayHost,
+              parsedRelayConfiguration.port == UInt16(relayPort),
+              parsedRelayConfiguration.relayID == relayID,
+              parsedRelayConfiguration.relaySecret == relaySecret,
+              parsedRelayConfiguration.relayNonce == relayNonce
+        else {
+            throw SmokeFailure.message("Development pairing URI relay route did not match pairing info: uri=\(pairingURI) info=\(pairingInfo)")
         }
+        if let relayConfiguration {
+            guard relayID == relayConfiguration.relayID,
+                  relaySecret == relayConfiguration.relaySecret
+            else {
+                throw SmokeFailure.message("Manual relay pairing info did not include the configured relay credentials: \(pairingInfo)")
+            }
+        }
+        guard let relayExpiresAt = pairingInfo["relay_expires_at"] as? Int64 ?? (pairingInfo["relay_expires_at"] as? Int).map(Int64.init),
+              relayExpiresAt > Int64(Date().timeIntervalSince1970 * 1000),
+              parsedPairingURI.relayExpiresAt == relayExpiresAt,
+              !relayNonce.isEmpty
+        else {
+            throw SmokeFailure.message("Development pairing URI/info did not include matching fresh relay lease material: uri=\(pairingURI) info=\(pairingInfo)")
+        }
+        let hasDirectHost = pairingInfo["host"] != nil
+        let hasDirectPort = pairingInfo["port"] != nil
+        if hasDirectHost != parsedPairingURI.hasDirectHost || hasDirectPort != parsedPairingURI.hasDirectPort {
+            throw SmokeFailure.message("Development pairing URI direct-route flags did not match pairing info: uri=\(pairingURI) info=\(pairingInfo)")
+        }
+        if (parsedPairingURI.hasDirectHost || parsedPairingURI.hasDirectPort), !options.allowDirectFallback {
+            throw SmokeFailure.message("Relay-mode development pairing URI must not include a local direct host/port by default: \(pairingURI)")
+        }
+        if options.allowDirectFallback, parsedPairingURI.hasDirectHost != parsedPairingURI.hasDirectPort {
+            throw SmokeFailure.message("Mixed-route relay pairing URI must include both local direct host and port: \(pairingURI)")
+        }
+        if options.allowDirectFallback, hasDirectPort {
+            let directPort = try requireInt(pairingInfo, "port", context: "mixed-route dev pairing info")
+            guard (1...65535).contains(directPort) else {
+                throw SmokeFailure.message("Mixed-route relay pairing info direct port must be in 1...65535: \(pairingInfo)")
+            }
+        }
+        clientRelayConfiguration = parsedRelayConfiguration
     }
 
     let privateKey = P256.Signing.PrivateKey()
     let publicKeyBase64 = privateKey.publicKey.derRepresentation.base64EncodedString()
     let deviceID = "aetherlink-auth-smoke-device"
 
-    print("Pairing with dev session mac_device_id=\(macDeviceID) over \(options.transportMode.name)...")
-    let pairingClient = try connectWithRetry(host: "127.0.0.1", port: port, relay: relayConfiguration)
+    print("Pairing with dev session runtime_device_id=\(runtimeDeviceID) over \(options.transportMode.name)...")
+    let pairingClient = try connectWithRetry(host: "127.0.0.1", port: port, relay: clientRelayConfiguration)
     do {
         let pairResponse = try sendAndRead(
             pairingClient,
@@ -988,44 +1310,44 @@ func main() throws {
     }
 
     print("Authenticating a fresh \(options.transportMode.name) connection with P-256 challenge-response...")
-    let client = try connectWithRetry(host: "127.0.0.1", port: port, relay: relayConfiguration)
-    defer { client.close() }
+    do {
+        let client = try authenticateFreshClient(
+            host: "127.0.0.1",
+            port: port,
+            relay: clientRelayConfiguration,
+            deviceID: deviceID,
+            privateKey: privateKey,
+            requestPrefix: "smoke"
+        )
+        defer { client.close() }
 
-    let challenge = try sendAndRead(
-        client,
-        type: "hello",
-        requestID: "smoke-hello",
-        payload: [
-            "device_id": deviceID,
-            "device_name": "Smoke Test Client",
-            "client_capabilities": ["chat", "streaming", "attachments"]
-        ]
+        switch options.backendMode {
+        case .mock:
+            try runMockBackendChecks(client: client, port: port)
+        case .realOllama:
+            try runRealOllamaChecks(client: client, port: port, allowUnavailable: options.allowUnavailable)
+        }
+    }
+
+    print("Reconnecting with the saved trusted \(options.transportMode.name) route...")
+    let reconnectClient = try authenticateFreshClient(
+        host: "127.0.0.1",
+        port: port,
+        relay: clientRelayConfiguration,
+        deviceID: deviceID,
+        privateKey: privateKey,
+        requestPrefix: "smoke-reconnect"
     )
-    try requireType(challenge, "auth.challenge", context: "hello")
-    let challengePayload = try payload(challenge, context: "hello")
-    let nonce = try requireString(challengePayload, "nonce", context: "hello")
-
-    let digest = SHA256.hash(data: Data(nonce.utf8))
-    let signature = try privateKey.signature(for: digest).derRepresentation.base64EncodedString()
-    let authResponse = try sendAndRead(
-        client,
-        type: "auth.response",
-        requestID: "smoke-auth",
-        payload: [
-            "device_id": deviceID,
-            "nonce": nonce,
-            "signature": signature
-        ]
+    defer { reconnectClient.close() }
+    let reconnectHealth = try sendAndRead(
+        reconnectClient,
+        type: "runtime.health",
+        requestID: "smoke-reconnect-health"
     )
-    try requireType(authResponse, "auth.response", context: "auth.response")
-    let authPayload = try payload(authResponse, context: "auth.response")
-    try requireBool(authPayload, "accepted", true, context: "auth.response")
-
-    switch options.backendMode {
-    case .mock:
-        try runMockBackendChecks(client: client, port: port)
-    case .realOllama:
-        try runRealOllamaChecks(client: client, port: port, allowUnavailable: options.allowUnavailable)
+    try requireType(reconnectHealth, "runtime.health", context: "saved trusted route reconnect runtime.health")
+    let reconnectPayload = try payload(reconnectHealth, context: "saved trusted route reconnect runtime.health")
+    guard reconnectPayload["status"] as? String == "ok" else {
+        throw SmokeFailure.message("saved trusted route reconnect runtime.health did not report ok: \(reconnectHealth)")
     }
 }
 

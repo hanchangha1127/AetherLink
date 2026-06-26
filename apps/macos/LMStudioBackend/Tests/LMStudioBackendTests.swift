@@ -77,7 +77,10 @@ final class LMStudioBackendTests: XCTestCase {
             case "/api/v1/models":
                 return self.response(statusCode: 404, body: "missing")
             case "/v1/models":
-                return self.response(statusCode: 200, body: #"{"object":"list","data":[{"id":"loaded-local-model","object":"model"}]}"#)
+                return self.response(
+                    statusCode: 200,
+                    body: #"{"object":"list","data":[{"id":"loaded-local-model","object":"model"},{"id":"text-embedding-nomic","object":"model"}]}"#
+                )
             default:
                 XCTFail("Unexpected path: \(request.url?.path ?? "nil")")
                 return self.response(statusCode: 500, body: "{}")
@@ -87,8 +90,10 @@ final class LMStudioBackendTests: XCTestCase {
         let models = try await backend.listModels()
 
         XCTAssertEqual(paths, ["/api/v1/models", "/v1/models"])
-        XCTAssertEqual(models.map(\.id), ["loaded-local-model"])
-        XCTAssertEqual(models.map(\.provider), [.lmStudio])
+        XCTAssertEqual(models.map(\.id), ["loaded-local-model", "text-embedding-nomic"])
+        XCTAssertEqual(models.map(\.provider), [.lmStudio, .lmStudio])
+        XCTAssertEqual(models.map(\.kind), [.chat, .embedding])
+        XCTAssertEqual(models.map(\.capabilities), [["chat"], ["embedding"]])
     }
 
     func testUnloadModelPostsLoadedInstanceID() async throws {

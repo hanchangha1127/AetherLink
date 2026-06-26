@@ -30,7 +30,7 @@ class RuntimeRelayTcpClient(
             codec = codec,
             frameCryptor = route.relayFrameSecret
                 ?.takeIf { it.isNotBlank() }
-                ?.let { RelayFrameBodyCryptor(it) },
+                ?.let { RelayFrameBodyCryptor(it, route.security.antiReplayNonce) },
         )
         runCatching {
             channel.sendHandshake(route.relayId)
@@ -65,9 +65,9 @@ class RuntimeRelayTcpClient(
 
         override suspend fun send(envelope: ProtocolEnvelope) = withContext(Dispatchers.IO) {
             val body = codec.encodeBody(envelope)
-            val framedBody = frameCryptor?.encryptClientFrameBody(body) ?: body
-            val frame = codec.encodeFrameBody(framedBody)
             sendMutex.withLock {
+                val framedBody = frameCryptor?.encryptClientFrameBody(body) ?: body
+                val frame = codec.encodeFrameBody(framedBody)
                 socket.outputStream.write(frame)
                 socket.outputStream.flush()
             }
@@ -89,13 +89,14 @@ class RuntimeRelayTcpClient(
     }
 }
 
-internal class RelayFrameBodyCryptor(secret: String) {
-    private val key = SecretKeySpec(deriveKey(secret), "AES")
+internal class RelayFrameBodyCryptor(secret: String, routeNonce: String? = null) {
+    private val key = SecretKeySpec(deriveKey(secret, routeNonce), "AES")
     private var clientCounter = 0L
     private var runtimeCounter = 0L
 
     init {
         require(secret.isNotBlank()) { "Relay frame secret must not be blank" }
+        require(routeNonce?.isNotBlank() != false) { "Relay frame route nonce must not be blank" }
     }
 
     fun encryptClientFrameBody(plaintext: ByteArray): ByteArray {
@@ -156,15 +157,20 @@ internal class RelayFrameBodyCryptor(secret: String) {
 
     private companion object {
         private val KEY_PREFIX = "AetherLink relay frame v1\n".toByteArray(Charsets.UTF_8)
+        private val ROUTE_NONCE_CONTEXT = "\nroute_nonce\n".toByteArray(Charsets.UTF_8)
         private val AAD = "AETHERLINK_RELAY_FRAME_V1".toByteArray(Charsets.UTF_8)
         private val CLIENT_DIRECTION = "CLNT".toByteArray(Charsets.US_ASCII)
         private val RUNTIME_DIRECTION = "RUNT".toByteArray(Charsets.US_ASCII)
         private const val GCM_TAG_BITS = 128
 
-        private fun deriveKey(secret: String): ByteArray {
+        private fun deriveKey(secret: String, routeNonce: String?): ByteArray {
             val digest = MessageDigest.getInstance("SHA-256")
             digest.update(KEY_PREFIX)
             digest.update(secret.toByteArray(Charsets.UTF_8))
+            if (routeNonce != null) {
+                digest.update(ROUTE_NONCE_CONTEXT)
+                digest.update(routeNonce.toByteArray(Charsets.UTF_8))
+            }
             return digest.digest()
         }
 

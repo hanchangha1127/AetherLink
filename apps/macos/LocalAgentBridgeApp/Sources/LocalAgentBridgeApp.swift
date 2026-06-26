@@ -6,11 +6,17 @@ import SwiftUI
 struct LocalAgentBridgeApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @Environment(\.openWindow) private var openWindow
+    @AppStorage(AetherLinkAppLanguageStorageKey) private var appLanguageTag = AetherLinkAppLanguage.defaultLanguage.rawValue
+    @AppStorage(AetherLinkAppAppearanceStorageKey) private var appAppearance = AetherLinkAppAppearance.defaultAppearance.rawValue
     @StateObject private var model = CompanionAppModel()
+    @State private var requestedSection: CompanionSection?
 
     var body: some Scene {
         WindowGroup(NSLocalizedString("AetherLink", comment: ""), id: "main") {
-            ContentView(model: model)
+            ContentView(model: model, requestedSection: $requestedSection)
+                .environment(\.locale, Locale(identifier: currentAppLanguage.localeIdentifier))
+                .id(currentAppLanguage.rawValue)
+                .preferredColorScheme(currentAppAppearance.preferredColorScheme)
                 .frame(minWidth: 860, minHeight: 560)
                 .task {
                     model.start()
@@ -49,14 +55,25 @@ struct LocalAgentBridgeApp: App {
             Button(NSLocalizedString("Load Models", comment: "")) {
                 Task { await model.loadModels() }
             }
-            Button(NSLocalizedString("Start Pairing", comment: "")) {
+            Button(NSLocalizedString("Generate Pairing QR", comment: "")) {
                 model.beginPairing()
+                requestedSection = .pairing
+                openWindow(id: "main")
+                NSApp.activate(ignoringOtherApps: true)
             }
             Divider()
             Button(NSLocalizedString("Quit", comment: "")) {
                 NSApp.terminate(nil)
             }
         }
+    }
+
+    private var currentAppLanguage: AetherLinkAppLanguage {
+        AetherLinkAppLanguage.normalized(appLanguageTag)
+    }
+
+    private var currentAppAppearance: AetherLinkAppAppearance {
+        AetherLinkAppAppearance.normalized(appAppearance)
     }
 }
 

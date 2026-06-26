@@ -130,9 +130,9 @@ func localizedTransportStatus(_ status: CompanionTransportStatus) -> String {
     case .stopped:
         return NSLocalizedString("Stopped", comment: "")
     case .advertising:
-        return NSLocalizedString("Route ready", comment: "")
+        return NSLocalizedString("Ready for devices", comment: "")
     case .failed:
-        return NSLocalizedString("Runtime listener failed", comment: "")
+        return NSLocalizedString("AetherLink Runtime needs attention", comment: "")
     }
 }
 

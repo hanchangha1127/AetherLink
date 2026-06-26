@@ -42,7 +42,7 @@ public enum LMStudioBackendError: Error, Equatable, LocalizedError, Sendable {
     public var message: String {
         switch self {
         case .unavailable(let endpoint, let reason):
-            return "LM Studio is not reachable from the runtime host for \(endpoint): \(reason)"
+            return "LM Studio is not reachable through AetherLink Runtime for \(endpoint): \(reason)"
         case .noModels:
             return "LM Studio did not report any local chat models."
         case .httpStatus(let endpoint, let statusCode, let body):
@@ -78,7 +78,7 @@ public enum LMStudioBackendError: Error, Equatable, LocalizedError, Sendable {
             return BackendError(
                 provider: .lmStudio,
                 code: "backend_unavailable",
-                message: "LM Studio is not reachable from the runtime host.",
+                message: "LM Studio is not reachable through AetherLink Runtime.",
                 retryable: true
             )
         case .noModels:
@@ -92,14 +92,14 @@ public enum LMStudioBackendError: Error, Equatable, LocalizedError, Sendable {
             return BackendError(
                 provider: .lmStudio,
                 code: "backend_unavailable",
-                message: "LM Studio returned HTTP \(statusCode) to the runtime host.",
+                message: "LM Studio returned HTTP \(statusCode) through AetherLink Runtime.",
                 retryable: true
             )
         case .transport:
             return BackendError(
                 provider: .lmStudio,
                 code: "transport_error",
-                message: "The runtime host lost communication with LM Studio.",
+                message: "AetherLink Runtime lost communication with LM Studio.",
                 retryable: true
             )
         case .generationNotFound(let generationID):
@@ -120,14 +120,14 @@ public enum LMStudioBackendError: Error, Equatable, LocalizedError, Sendable {
             return BackendError(
                 provider: .lmStudio,
                 code: "internal_error",
-                message: "The runtime host could not encode the LM Studio request.",
+                message: "AetherLink Runtime could not encode the LM Studio request.",
                 retryable: false
             )
         case .badResponse, .streamDecoding:
             return BackendError(
                 provider: .lmStudio,
                 code: "bad_backend_response",
-                message: "The runtime host could not decode the LM Studio response.",
+                message: "AetherLink Runtime could not decode the LM Studio response.",
                 retryable: false
             )
         }

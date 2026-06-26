@@ -5,7 +5,6 @@ import android.app.Activity
 import android.net.Uri
 import android.os.Bundle
 import android.provider.OpenableColumns
-import android.util.Base64
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -20,6 +19,7 @@ import com.localagentbridge.android.core.protocol.ChatMessagePayload
 import com.localagentbridge.android.core.protocol.ChatMessagesListRequestPayload
 import com.localagentbridge.android.core.protocol.ChatMessagesListResultPayload
 import com.localagentbridge.android.core.protocol.ChatSessionLifecyclePayload
+import com.localagentbridge.android.core.protocol.ChatSessionRenamePayload
 import com.localagentbridge.android.core.protocol.ChatSendPayload
 import com.localagentbridge.android.core.protocol.ChatSessionsListRequestPayload
 import com.localagentbridge.android.core.protocol.ChatSessionsListResultPayload
@@ -29,6 +29,11 @@ import com.localagentbridge.android.core.protocol.ChatTitleRequestPayload
 import com.localagentbridge.android.core.protocol.ChatTitleResultPayload
 import com.localagentbridge.android.core.protocol.ErrorPayload
 import com.localagentbridge.android.core.protocol.HelloPayload
+import com.localagentbridge.android.core.protocol.MemoryDeletePayload
+import com.localagentbridge.android.core.protocol.MemoryDeleteResultPayload
+import com.localagentbridge.android.core.protocol.MemoryListResultPayload
+import com.localagentbridge.android.core.protocol.MemoryUpsertPayload
+import com.localagentbridge.android.core.protocol.MemoryUpsertResultPayload
 import com.localagentbridge.android.core.protocol.MessageType
 import com.localagentbridge.android.core.protocol.ModelPullPayload
 import com.localagentbridge.android.core.protocol.ModelPullResultPayload
@@ -36,17 +41,19 @@ import com.localagentbridge.android.core.protocol.ModelsResultPayload
 import com.localagentbridge.android.core.protocol.PairingRequestPayload
 import com.localagentbridge.android.core.protocol.PairingResultPayload
 import com.localagentbridge.android.core.protocol.ProtocolEnvelope
+import com.localagentbridge.android.core.protocol.RouteRefreshPayload
 import com.localagentbridge.android.core.protocol.RuntimeHealthPayload
+import com.localagentbridge.android.core.pairing.DeviceIdentity
 import com.localagentbridge.android.core.pairing.DeviceIdentityStore
 import com.localagentbridge.android.core.pairing.RuntimePairingPayload
 import com.localagentbridge.android.core.pairing.RuntimePairingPayloadParser
 import com.localagentbridge.android.core.pairing.PairingStore
+import com.localagentbridge.android.core.pairing.RuntimeIdentityProofVerifier
 import com.localagentbridge.android.core.pairing.TrustedRuntime
 import com.localagentbridge.android.core.transport.BonjourDiscovery
+import com.localagentbridge.android.core.transport.DiscoveredRuntime
 import com.localagentbridge.android.core.transport.RuntimeTransportClient
 import com.localagentbridge.android.core.transport.PairedRuntimeIdentity
-import com.localagentbridge.android.core.transport.PreparedRemoteRuntimeRoute
-import com.localagentbridge.android.core.transport.RemoteRouteSecurityContext
 import com.localagentbridge.android.core.transport.RuntimeConnectionFailure
 import com.localagentbridge.android.core.transport.RuntimeConnectionFailureReason
 import com.localagentbridge.android.core.transport.RuntimeConnectionManager
@@ -54,6 +61,7 @@ import com.localagentbridge.android.core.transport.RuntimeConnectionTarget
 import com.localagentbridge.android.core.transport.RuntimeEndpointHint
 import com.localagentbridge.android.core.transport.RuntimeEndpointSource
 import com.localagentbridge.android.core.transport.RuntimeProtocolChannel
+import com.localagentbridge.android.core.transport.RuntimeRelayConnector
 import com.localagentbridge.android.core.transport.RuntimeRelayTcpClient
 import com.localagentbridge.android.core.transport.RuntimeRouteCandidate
 import com.localagentbridge.android.core.transport.RuntimeRouteCapability
@@ -62,11 +70,13 @@ import com.localagentbridge.android.core.transport.RuntimeRouteRejectionReason
 import com.localagentbridge.android.core.transport.RuntimeRouteSource
 import com.localagentbridge.android.core.transport.RuntimeTransportConnector
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -78,39 +88,258 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonObject
+import java.util.Base64
 import java.util.UUID
 
-class RuntimeClientViewModel(application: Application) : AndroidViewModel(application) {
-    private val json = Json {
-        ignoreUnknownKeys = true
-        explicitNulls = false
-        encodeDefaults = true
+internal interface RuntimeTrustedRuntimeStore {
+    val trustedRuntime: Flow<TrustedRuntime?>
+    suspend fun trustRuntime(runtime: TrustedRuntime)
+    suspend fun forgetRuntime()
+}
+
+internal interface RuntimeDeviceIdentityProvider {
+    suspend fun loadOrCreate(): DeviceIdentity
+}
+
+internal interface RuntimeDiscoverySource {
+    fun discover(): Flow<List<DiscoveredRuntime>>
+}
+
+internal interface RuntimeLocalDataStore {
+    fun load(): PersistedRuntimeData
+    fun save(data: PersistedRuntimeData)
+}
+
+internal interface RuntimeLifecycleCallbacksRegistrar {
+    fun register(application: Application, callbacks: Application.ActivityLifecycleCallbacks)
+    fun unregister(application: Application, callbacks: Application.ActivityLifecycleCallbacks)
+}
+
+internal data class RuntimeAttachmentMetadata(
+    val name: String,
+    val mimeType: String,
+    val sizeBytes: Long,
+)
+
+internal interface RuntimeAttachmentReader {
+    fun metadata(reference: String): RuntimeAttachmentMetadata
+    fun readBytes(reference: String): ByteArray?
+}
+
+internal data class RuntimeClientViewModelDependencies(
+    val json: Json,
+    val transportClient: RuntimeTransportClient,
+    val transportConnector: RuntimeTransportConnector,
+    val relayConnector: RuntimeRelayConnector,
+    val discovery: RuntimeDiscoverySource,
+    val trustedRuntimeStore: RuntimeTrustedRuntimeStore,
+    val deviceIdentityProvider: RuntimeDeviceIdentityProvider,
+    val localDataStore: RuntimeLocalDataStore,
+    val lifecycleCallbacksRegistrar: RuntimeLifecycleCallbacksRegistrar,
+    val attachmentReader: RuntimeAttachmentReader? = null,
+    val currentTimeMillis: () -> Long = { System.currentTimeMillis() },
+) {
+    companion object {
+        fun create(application: Application): RuntimeClientViewModelDependencies {
+            val json = runtimeClientJson()
+            val transportClient = RuntimeTransportClient()
+            return RuntimeClientViewModelDependencies(
+                json = json,
+                transportClient = transportClient,
+                transportConnector = RuntimeTransportConnector { host, port, timeoutMillis ->
+                    transportClient.connect(host = host, port = port, timeoutMillis = timeoutMillis)
+                },
+                relayConnector = RuntimeRelayTcpClient(),
+                discovery = AndroidRuntimeDiscoverySource(BonjourDiscovery(application)),
+                trustedRuntimeStore = AndroidTrustedRuntimeStore(PairingStore(application)),
+                deviceIdentityProvider = AndroidDeviceIdentityProvider(DeviceIdentityStore(application)),
+                localDataStore = AndroidRuntimeLocalDataStore(RuntimeLocalStore(application, json)),
+                lifecycleCallbacksRegistrar = AndroidRuntimeLifecycleCallbacksRegistrar,
+                attachmentReader = AndroidRuntimeAttachmentReader(application),
+            )
+        }
     }
-    private val client = RuntimeTransportClient()
+}
+
+private class AndroidTrustedRuntimeStore(
+    private val store: PairingStore,
+) : RuntimeTrustedRuntimeStore {
+    override val trustedRuntime: Flow<TrustedRuntime?> = store.trustedRuntime
+
+    override suspend fun trustRuntime(runtime: TrustedRuntime) {
+        store.trustRuntime(runtime)
+    }
+
+    override suspend fun forgetRuntime() {
+        store.forgetRuntime()
+    }
+}
+
+private class AndroidDeviceIdentityProvider(
+    private val store: DeviceIdentityStore,
+) : RuntimeDeviceIdentityProvider {
+    override suspend fun loadOrCreate(): DeviceIdentity = store.loadOrCreate()
+}
+
+private class AndroidRuntimeDiscoverySource(
+    private val discovery: BonjourDiscovery,
+) : RuntimeDiscoverySource {
+    override fun discover(): Flow<List<DiscoveredRuntime>> = discovery.discover()
+}
+
+private class AndroidRuntimeLocalDataStore(
+    private val store: RuntimeLocalStore,
+) : RuntimeLocalDataStore {
+    override fun load(): PersistedRuntimeData = store.load()
+
+    override fun save(data: PersistedRuntimeData) {
+        store.save(data)
+    }
+}
+
+private object AndroidRuntimeLifecycleCallbacksRegistrar : RuntimeLifecycleCallbacksRegistrar {
+    override fun register(application: Application, callbacks: Application.ActivityLifecycleCallbacks) {
+        application.registerActivityLifecycleCallbacks(callbacks)
+    }
+
+    override fun unregister(application: Application, callbacks: Application.ActivityLifecycleCallbacks) {
+        application.unregisterActivityLifecycleCallbacks(callbacks)
+    }
+}
+
+private class AndroidRuntimeAttachmentReader(
+    private val application: Application,
+) : RuntimeAttachmentReader {
+    override fun metadata(reference: String): RuntimeAttachmentMetadata {
+        val uri = Uri.parse(reference)
+        val resolver = application.contentResolver
+        var name = uri.lastPathSegment?.substringAfterLast('/')?.takeIf(String::isNotBlank)
+            ?: "attachment"
+        var sizeBytes = -1L
+        resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)
+            ?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                    val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
+                    if (nameIndex >= 0) {
+                        name = cursor.getString(nameIndex)?.takeIf(String::isNotBlank) ?: name
+                    }
+                    if (sizeIndex >= 0 && !cursor.isNull(sizeIndex)) {
+                        sizeBytes = cursor.getLong(sizeIndex)
+                    }
+                }
+            }
+        val mimeType = resolver.getType(uri) ?: mimeTypeFromName(name)
+        return RuntimeAttachmentMetadata(name = name, mimeType = mimeType, sizeBytes = sizeBytes)
+    }
+
+    override fun readBytes(reference: String): ByteArray? {
+        val uri = Uri.parse(reference)
+        val resolver = application.contentResolver
+        return runCatching {
+            resolver.openInputStream(uri)?.use { input -> input.readBytes() }
+        }.getOrNull()
+    }
+}
+
+private fun runtimeClientJson(): Json = Json {
+    ignoreUnknownKeys = true
+    explicitNulls = false
+    encodeDefaults = true
+}
+
+internal val RUNTIME_CLIENT_CAPABILITIES = listOf(
+    MessageType.RuntimeHealth,
+    MessageType.ModelsList,
+    MessageType.ModelsPull,
+    MessageType.RouteRefresh,
+    MessageType.ChatSend,
+    MessageType.ChatCancel,
+    MessageType.ChatSessionsList,
+    MessageType.ChatMessagesList,
+    MessageType.ChatSuggestionsRequest,
+    MessageType.ChatTitleRequest,
+    MessageType.ChatSessionRename,
+    MessageType.ChatSessionArchive,
+    MessageType.ChatSessionRestore,
+    MessageType.ChatSessionDelete,
+    MessageType.MemoryList,
+    MessageType.MemoryUpsert,
+    MessageType.MemoryDelete,
+    "chat.attachments",
+)
+
+internal const val ROUTE_REFRESH_LEASE_RENEWAL_LEAD_MS = 60_000L
+internal const val ROUTE_REFRESH_LEASE_MIN_DELAY_MS = 1_000L
+internal const val ROUTE_REFRESH_RETRY_DELAY_MS = 10_000L
+
+internal fun runtimeRouteRefreshLeaseDelayMillis(
+    nowEpochMillis: Long,
+    relayExpiresAtEpochMillis: Long?,
+    renewalLeadMillis: Long = ROUTE_REFRESH_LEASE_RENEWAL_LEAD_MS,
+    minimumDelayMillis: Long = ROUTE_REFRESH_LEASE_MIN_DELAY_MS,
+): Long? {
+    val expiresAt = relayExpiresAtEpochMillis ?: return null
+    if (expiresAt <= nowEpochMillis) return null
+    return maxOf(minimumDelayMillis, expiresAt - nowEpochMillis - renewalLeadMillis)
+}
+
+internal fun runtimeRouteRefreshRetryDelayMillis(
+    nowEpochMillis: Long,
+    relayExpiresAtEpochMillis: Long?,
+    retryDelayMillis: Long = ROUTE_REFRESH_RETRY_DELAY_MS,
+    minimumDelayMillis: Long = ROUTE_REFRESH_LEASE_MIN_DELAY_MS,
+): Long? {
+    val expiresAt = relayExpiresAtEpochMillis ?: return null
+    val remainingMillis = expiresAt - nowEpochMillis
+    if (remainingMillis <= minimumDelayMillis) return null
+    return minOf(retryDelayMillis, remainingMillis - minimumDelayMillis)
+        .coerceAtLeast(minimumDelayMillis)
+}
+
+class RuntimeClientViewModel internal constructor(
+    application: Application,
+    private val dependencies: RuntimeClientViewModelDependencies,
+) : AndroidViewModel(application) {
+    constructor(application: Application) : this(
+        application = application,
+        dependencies = RuntimeClientViewModelDependencies.create(application),
+    )
+
+    private val json = dependencies.json
+    private val client = dependencies.transportClient
     private val connectionManager = RuntimeConnectionManager(
-        connector = RuntimeTransportConnector { host, port, timeoutMillis ->
-            client.connect(host = host, port = port, timeoutMillis = timeoutMillis)
-        },
+        connector = dependencies.transportConnector,
         routeResolver = RuntimeRouteResolver { target ->
             runtimeRouteCandidates(
                 state = state.value,
                 target = target,
                 includeUsbReverseFallback = BuildConfig.DEBUG &&
                     state.value.runtimeEndpointSource == RuntimeEndpointSource.UsbReverse,
+                suppressDirectRoutes = pendingPairingPayload
+                    ?.takeIf { payload ->
+                        target.identity?.let { identity -> payload.matchesIdentity(identity) } == true
+                    }
+                    ?.hasRelayRoute() == true,
             )
         },
-        remoteRoutePreparer = { identity ->
-            remoteRuntimeRoutes(identity)
-        },
-        relayConnector = RuntimeRelayTcpClient(),
+        remoteRoutePreparer = RuntimeRemoteRoutePlanner(
+            pendingPairingPayload = { pendingPairingPayload },
+            trustedRuntime = { state.value.trustedRuntime },
+            nowEpochMillis = dependencies.currentTimeMillis,
+        ),
+        relayConnector = dependencies.relayConnector,
+        currentTimeMillis = dependencies.currentTimeMillis,
     )
-    private val discovery = BonjourDiscovery(application)
-    private val pairingStore = PairingStore(application)
-    private val deviceIdentityStore = DeviceIdentityStore(application)
-    private val localStore = RuntimeLocalStore(application, json)
+    private val discovery = dependencies.discovery
+    private val pairingStore = dependencies.trustedRuntimeStore
+    private val deviceIdentityStore = dependencies.deviceIdentityProvider
+    private val localStore = dependencies.localDataStore
+    private val attachmentReader = dependencies.attachmentReader ?: AndroidRuntimeAttachmentReader(application)
     private var readJob: Job? = null
     private var discoveryJob: Job? = null
     private var reconnectJob: Job? = null
+    private var routeRefreshLeaseJob: Job? = null
     private var activeChannel: RuntimeProtocolChannel? = null
     private var pendingPairingPayload: RuntimePairingPayload? = null
     private var pendingPairingRetryJob: Job? = null
@@ -123,7 +352,10 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
     private var pendingSuggestionSessionId: String? = null
     private var pendingTitleRequestId: String? = null
     private var pendingTitleSessionId: String? = null
+    private var pendingMemoryListRequestId: String? = null
+    private var pendingRouteRefreshRequestId: String? = null
     private val pendingChatSessionLifecycleRequestIds = mutableSetOf<String>()
+    private val pendingChatSessionRenameRequestIds = mutableSetOf<String>()
     private var modelIdToSelectAfterRefresh: String? = null
     private var isSessionAuthenticated = false
     private var persistedRuntimeData = PersistedRuntimeData()
@@ -145,10 +377,11 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
     val state: StateFlow<RuntimeUiState> = mutableState.asStateFlow()
 
     init {
-        application.registerActivityLifecycleCallbacks(lifecycleCallbacks)
+        dependencies.lifecycleCallbacksRegistrar.register(application, lifecycleCallbacks)
         val loadedRuntimeData = localStore.load()
         shouldRestoreTrustedRuntimeConnection = loadedRuntimeData.trustedRuntimeAutoReconnectEnabled
         publishPersistedRuntimeData(loadedRuntimeData, save = false)
+        restorePersistedPendingPairingRouteIfNeeded(loadedRuntimeData)
         viewModelScope.launch {
             pairingStore.trustedRuntime.collect { trusted ->
                 mutableState.update {
@@ -169,6 +402,7 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
                             relaySecret = trusted.relaySecret,
                             relayExpiresAtEpochMillis = trusted.relayExpiresAtEpochMillis,
                             relayNonce = trusted.relayNonce,
+                            relayScope = trusted.relayScope,
                         )
                         it.withTrustedRuntimeRouteFields(runtime, endpoint)
                     }
@@ -240,19 +474,28 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
     }
 
     fun addAttachments(uris: List<Uri>) {
-        if (uris.isEmpty()) return
+        addAttachmentReferences(uris.map { it.toString() })
+    }
+
+    internal fun addAttachmentReferences(references: List<String>) {
+        if (references.isEmpty()) return
         viewModelScope.launch {
-            val resolver = getApplication<Application>().contentResolver
+            val availableSlots = (MAX_PENDING_ATTACHMENTS - state.value.pendingAttachments.size)
+                .coerceAtLeast(0)
+            if (availableSlots == 0) {
+                showError("attachment_limit_reached")
+                return@launch
+            }
+            val referencesToLoad = references.take(availableSlots)
+            val selectionWasLimited = references.size > referencesToLoad.size
             val loadedAttachments = mutableListOf<RuntimePendingAttachment>()
-            for (uri in uris.take(MAX_PENDING_ATTACHMENTS)) {
-                val metadata = attachmentMetadata(uri)
+            for (reference in referencesToLoad) {
+                val metadata = attachmentReader.metadata(reference)
                 if (metadata.sizeBytes > MAX_ATTACHMENT_BYTES) {
                     showError("attachment_too_large", metadata.name)
                     return@launch
                 }
-                val bytes = runCatching {
-                    resolver.openInputStream(uri)?.use { input -> input.readBytes() }
-                }.getOrNull()
+                val bytes = attachmentReader.readBytes(reference)
                 if (bytes == null) {
                     showError("attachment_read_failed", metadata.name)
                     return@launch
@@ -266,13 +509,20 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
                     name = metadata.name,
                     mimeType = metadata.mimeType,
                     sizeBytes = bytes.size.toLong(),
-                    dataBase64 = Base64.encodeToString(bytes, Base64.NO_WRAP),
+                    dataBase64 = Base64.getEncoder().encodeToString(bytes),
                 )
             }
             mutableState.update { current ->
                 val combined = (current.pendingAttachments + loadedAttachments)
                     .take(MAX_PENDING_ATTACHMENTS)
-                current.copy(pendingAttachments = combined, error = null)
+                current.copy(
+                    pendingAttachments = combined,
+                    error = if (selectionWasLimited) {
+                        RuntimeUiError(code = "attachment_limit_reached")
+                    } else {
+                        null
+                    },
+                )
             }
         }
     }
@@ -289,6 +539,13 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
     fun setAppLanguageTag(languageTag: String) {
         publishPersistedRuntimeData(
             persistedRuntimeData.withAppLanguageTag(languageTag),
+            save = true,
+        )
+    }
+
+    fun setAppTheme(theme: RuntimeAppTheme) {
+        publishPersistedRuntimeData(
+            persistedRuntimeData.withAppTheme(theme),
             save = true,
         )
     }
@@ -333,13 +590,21 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
             showError("generation_in_progress")
             return
         }
-        if (persistedRuntimeData.sessions.none { it.id == sessionId }) {
+        val session = persistedRuntimeData.sessions.firstOrNull { it.id == sessionId }
+        if (session == null) {
             showError("chat_session_not_found")
             return
         }
+        if (isRuntimeOwnedChatMutationBlocked(listOf(session))) return
+        val cleanTitle = title.trim()
+        if (cleanTitle.isBlank()) return
         publishPersistedRuntimeData(
-            persistedRuntimeData.withRenamedChatSession(sessionId, title, nowMillis()),
+            persistedRuntimeData.withRenamedChatSession(sessionId, cleanTitle, nowMillis()),
             save = true,
+        )
+        sendRuntimeChatSessionRenameIfNeeded(
+            session = session,
+            title = cleanTitle,
         )
     }
 
@@ -353,9 +618,14 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
             showError("chat_session_not_found")
             return
         }
+        if (session.archivedAtMillis == null) {
+            showError("chat_session_must_be_archived_before_delete")
+            return
+        }
+        if (isRuntimeOwnedChatMutationBlocked(listOf(session))) return
         val now = nowMillis()
         publishPersistedRuntimeData(
-            persistedRuntimeData.withoutChatSession(sessionId, nowMillis = now),
+            persistedRuntimeData.withoutArchivedChatSession(sessionId, nowMillis = now),
             save = true,
         )
         sendRuntimeChatSessionLifecycleIfNeeded(
@@ -377,6 +647,7 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
             showError("chat_session_not_found")
             return
         }
+        if (isRuntimeOwnedChatMutationBlocked(listOf(session))) return
         publishPersistedRuntimeData(
             persistedRuntimeData.withArchivedChatSession(sessionId, nowMillis()),
             save = true,
@@ -396,6 +667,7 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
             return
         }
         val sessionsToArchive = persistedRuntimeData.sessions.filter { it.archivedAtMillis == null }
+        if (isRuntimeOwnedChatMutationBlocked(sessionsToArchive)) return
         publishPersistedRuntimeData(
             persistedRuntimeData.withArchivedChatSessions(nowMillis()),
             save = true,
@@ -419,6 +691,7 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
             showError("chat_session_not_found")
             return
         }
+        if (isRuntimeOwnedChatMutationBlocked(listOf(session))) return
         publishPersistedRuntimeData(
             persistedRuntimeData.withUnarchivedChatSession(sessionId, nowMillis()),
             save = true,
@@ -429,32 +702,13 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
         )
     }
 
-    fun clearChatSessions() {
-        if (state.value.isStreaming) {
-            showError("generation_in_progress")
-            return
-        }
-        val sessionsToDelete = persistedRuntimeData.sessions
-        val now = nowMillis()
-        publishPersistedRuntimeData(
-            persistedRuntimeData.withoutChatSessions(nowMillis = now),
-            save = true,
-        )
-        sessionsToDelete.forEach { session ->
-            sendRuntimeChatSessionLifecycleIfNeeded(
-                session = session,
-                type = MessageType.ChatSessionDelete,
-            )
-        }
-        mutableState.update { it.copy(chatInput = "") }
-    }
-
     fun clearArchivedChatSessions() {
         if (state.value.isStreaming) {
             showError("generation_in_progress")
             return
         }
         val archivedSessionsToDelete = persistedRuntimeData.sessions.filter { it.archivedAtMillis != null }
+        if (isRuntimeOwnedChatMutationBlocked(archivedSessionsToDelete)) return
         val now = nowMillis()
         publishPersistedRuntimeData(
             persistedRuntimeData.withoutArchivedChatSessions(nowMillis = now),
@@ -468,28 +722,57 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
         }
     }
 
-    fun storeMemoryEntry(content: String) {
-        publishPersistedRuntimeData(
-            persistedRuntimeData.withMemoryEntry(content, nowMillis()),
-            save = true,
+    fun addMemoryEntry(content: String) {
+        val cleanContent = content.trim()
+        if (cleanContent.isBlank()) return
+        if (!canSendRuntimeMemoryCommand()) {
+            showError("memory_runtime_required")
+            return
+        }
+        sendEnvelope(
+            envelope(
+                type = MessageType.MemoryUpsert,
+                serializer = MemoryUpsertPayload.serializer(),
+                payload = MemoryUpsertPayload(
+                    content = cleanContent,
+                    enabled = true,
+                ),
+            )
         )
     }
 
-    fun addMemoryEntry(content: String) {
-        storeMemoryEntry(content)
-    }
-
     fun removeMemoryEntry(entryId: String) {
-        publishPersistedRuntimeData(
-            persistedRuntimeData.withoutMemoryEntry(entryId),
-            save = true,
+        val cleanId = entryId.trim()
+        if (cleanId.isBlank()) return
+        if (!canSendRuntimeMemoryCommand()) {
+            showError("memory_runtime_required")
+            return
+        }
+        sendEnvelope(
+            envelope(
+                type = MessageType.MemoryDelete,
+                serializer = MemoryDeletePayload.serializer(),
+                payload = MemoryDeletePayload(id = cleanId),
+            )
         )
     }
 
     fun setMemoryEntryEnabled(entryId: String, enabled: Boolean) {
-        publishPersistedRuntimeData(
-            persistedRuntimeData.withMemoryEntryEnabled(entryId, enabled, nowMillis()),
-            save = true,
+        val entry = state.value.memoryEntries.firstOrNull { it.id == entryId } ?: return
+        if (!canSendRuntimeMemoryCommand()) {
+            showError("memory_runtime_required")
+            return
+        }
+        sendEnvelope(
+            envelope(
+                type = MessageType.MemoryUpsert,
+                serializer = MemoryUpsertPayload.serializer(),
+                payload = MemoryUpsertPayload(
+                    id = entry.id,
+                    content = entry.content,
+                    enabled = enabled,
+                ),
+            )
         )
     }
 
@@ -509,12 +792,14 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
         reconnectJob = null
         viewModelScope.launch {
             val current = state.value
+            if (publishTrustedRemoteRouteExpiredIfNeeded(current)) return@launch
             if (current.shouldDiscoverTrustedRuntimeRoute()) {
                 ensureTrustedRuntimeDiscovery()
             }
             val target = autoReconnectTrustedRuntimeConnectionTarget(current)
                 ?: trustedRuntimeConnectionTarget(current)
             if (target == null) {
+                if (publishTrustedRemoteRouteExpiredIfNeeded(current)) return@launch
                 showError("pairing_required")
                 return@launch
             }
@@ -524,14 +809,19 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
     }
 
     fun restoreTrustedRuntimeConnection() {
+        if (pendingPairingPayload != null) return
         val current = state.value
         if (!shouldAttemptTrustedRuntimeRestore(shouldRestoreTrustedRuntimeConnection, current)) return
+        if (publishTrustedRemoteRouteExpiredIfNeeded(current)) return
         if (current.shouldDiscoverTrustedRuntimeRoute()) {
             ensureTrustedRuntimeDiscovery()
         }
-        val target = autoReconnectTrustedRuntimeConnectionTarget(current) ?: return
+        val target = autoReconnectTrustedRuntimeConnectionTarget(current) ?: run {
+            publishTrustedRemoteRouteExpiredIfNeeded(current)
+            return
+        }
         reconnectJob?.cancel()
-        reconnectJob = viewModelScope.launch {
+        reconnectJob = viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) {
             val refreshed = state.value
             if (
                 shouldRestoreTrustedRuntimeConnection &&
@@ -548,52 +838,69 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
         viewModelScope.launch {
             cancelPendingPairingRetry()
             mutableState.update { it.copy(routeRefreshNoticeRuntimeName = null) }
-            val payload = runCatching { RuntimePairingPayloadParser.parse(rawValue) }
-                .onFailure { error -> showError("invalid_pairing_qr", error.message) }
-                .getOrNull()
-                ?: return@launch
+            val payload = when (
+                val parsed = parseRuntimePairingQrPayload(
+                    rawValue = rawValue,
+                    allowDebugLoopbackRelay = BuildConfig.DEBUG,
+                    allowDiagnosticLocalDirectEndpoint = BuildConfig.DEBUG,
+                )
+            ) {
+                is RuntimePairingQrParseResult.Accepted -> parsed.payload
+                is RuntimePairingQrParseResult.Rejected -> {
+                    if (parsed.clearPendingPairing) {
+                        pendingPairingPayload = null
+                        clearPersistedPendingPairingRoute()
+                        mutableState.update {
+                            it.withClearedPendingPairing().copy(error = parsed.error)
+                        }
+                    } else {
+                        mutableState.update { it.copy(error = parsed.error) }
+                    }
+                    return@launch
+                }
+            }
 
             val refreshedTrustedRuntime = trustedRuntimeFromRouteRefreshQr(
                 current = state.value.trustedRuntime,
                 payload = payload,
             )
             if (refreshedTrustedRuntime != null) {
-                pendingPairingPayload = payload
-                pairingStore.trustRuntime(refreshedTrustedRuntime)
+                clearPersistedPendingPairingRoute()
                 val trustedEndpoint = refreshedTrustedRuntime.lastKnownEndpointHintOrNull()
                 val runtime = refreshedTrustedRuntime.toRuntimeTrustedRuntime()
+                pairingStore.trustRuntime(refreshedTrustedRuntime)
                 mutableState.update {
                     it.withClearedPendingPairing()
                         .withTrustedRuntimeRouteFields(runtime, trustedEndpoint)
                         .copy(
-                            runtimeStatus = "route_refreshed",
                             routeRefreshNoticeRuntimeName = runtime.name,
                             error = null,
                         )
                 }
-                pendingPairingPayload = null
                 connectToRuntime(refreshedTrustedRuntime.toConnectionTarget())
                 return@launch
             }
 
-            pendingPairingPayload = payload
-            mutableState.update {
-                it.withPendingPairing(payload)
+            if (shouldPreemptActiveConnectionForPairingQr(state.value, payload)) {
+                closeRuntimeConnection()
             }
 
-            if (payload.endpointHintOrNull() == null) {
+            pendingPairingPayload = payload
+            persistPendingPairingPayload(payload)
+            val plan = pendingPairingConnectionPlan(state.value, payload)
+            mutableState.value = plan.pendingState
+
+            if (plan.shouldStartDiscovery) {
                 startDiscovery()
             }
 
-            val target = pairingRuntimeConnectionTarget(state.value, payload)
+            val target = plan.target
             if (target == null) {
-                if (payload.shouldWaitForDiscoveryRoute()) {
-                    mutableState.update {
-                        it.withPendingPairing(payload)
-                    }
+                if (plan.shouldWaitForDiscoveryRoute) {
                     return@launch
                 }
                 pendingPairingPayload = null
+                clearPersistedPendingPairingRoute()
                 mutableState.update {
                     it.withClearedPendingPairing().copy(
                         error = RuntimeUiError("pairing_endpoint_unavailable"),
@@ -635,9 +942,74 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
             .onFailure { error ->
                 cancelPendingPairingRetry()
                 pendingPairingPayload = null
+                clearPersistedPendingPairingRoute()
                 mutableState.update { it.withClearedPendingPairing() }
                 showError("device_identity_failed", error.message)
             }
+    }
+
+    private fun persistPendingPairingPayload(payload: RuntimePairingPayload) {
+        val cleanData = persistedRuntimeData.withPendingPairingRoute(
+            payload = payload,
+            nowMillis = nowMillis(),
+        )
+        persistedRuntimeData = cleanData
+        localStore.save(cleanData)
+    }
+
+    private fun clearPersistedPendingPairingRoute() {
+        val cleanData = persistedRuntimeData.withoutPendingPairingRoute()
+        if (cleanData == persistedRuntimeData) return
+        persistedRuntimeData = cleanData
+        localStore.save(cleanData)
+    }
+
+    private fun restorePersistedPendingPairingRouteIfNeeded(data: PersistedRuntimeData) {
+        val pendingRoute = data.pendingPairingRoute ?: return
+        val payload = pendingRoute.toRuntimePairingPayloadOrNull()
+        if (
+            payload == null ||
+            pendingRoute.isExpired(nowMillis()) ||
+            payload.hasExpiredRemoteRoute()
+        ) {
+            clearPersistedPendingPairingRoute()
+            return
+        }
+
+        pendingPairingPayload = payload
+        mutableState.update {
+            it.withPendingPairing(payload)
+        }
+
+        if (payload.shouldWaitForDiscoveryRoute()) {
+            startDiscovery()
+        }
+
+        viewModelScope.launch {
+            val target = pairingRuntimeConnectionTarget(state.value, payload)
+            if (target == null) {
+                if (payload.shouldWaitForDiscoveryRoute()) {
+                    mutableState.update {
+                        it.withPendingPairing(payload)
+                    }
+                    return@launch
+                }
+                pendingPairingPayload = null
+                clearPersistedPendingPairingRoute()
+                mutableState.update {
+                    it.withClearedPendingPairing().copy(
+                        error = RuntimeUiError("pairing_endpoint_unavailable"),
+                    )
+                }
+                return@launch
+            }
+            mutableState.update { it.copy(isPairingAwaitingRoute = false) }
+            if (connectToRuntime(target, requestHealthAfterConnect = false)) {
+                sendPairingRequest(payload)
+            } else {
+                handlePendingPairingConnectionFailure(payload)
+            }
+        }
     }
 
     fun startDiscovery() {
@@ -707,6 +1079,7 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
         if (payload.hasExpiredRemoteRoute()) {
             cancelPendingPairingRetry()
             pendingPairingPayload = null
+            clearPersistedPendingPairingRoute()
             mutableState.update {
                 it.withClearedPendingPairing().copy(
                     error = RuntimeUiError(
@@ -729,6 +1102,7 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
             return
         }
         pendingPairingPayload = null
+        clearPersistedPendingPairingRoute()
         mutableState.update { it.withClearedPendingPairing() }
     }
 
@@ -737,9 +1111,10 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
         if (pendingPairingRetryAttempts >= MAX_PENDING_PAIRING_RETRY_ATTEMPTS) {
             cancelPendingPairingRetry()
             pendingPairingPayload = null
+            clearPersistedPendingPairingRoute()
             mutableState.update {
                 it.withClearedPendingPairing().copy(
-                    error = RuntimeUiError("pairing_endpoint_unavailable"),
+                    error = pendingPairingExhaustedRouteError(payload),
                 )
             }
             return
@@ -773,6 +1148,7 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
     }
 
     private suspend fun connectToDiscoveredTrustedRuntimeIfNeeded() {
+        if (pendingPairingPayload != null) return
         if (!shouldRestoreTrustedRuntimeConnection) return
         val current = state.value
         if (current.isConnected || current.isConnecting) return
@@ -785,6 +1161,7 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
         discoveryJob = null
         cancelPendingPairingRetry()
         pendingPairingPayload = null
+        clearPersistedPendingPairingRoute()
         mutableState.update {
             it.withClearedPendingPairing().copy(
                 isDiscovering = false,
@@ -793,6 +1170,21 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
     }
 
     fun useDiscoveredRuntime(peer: RuntimeDiscoveredRuntime) {
+        val current = state.value
+        if (!discoveredRuntimeSelectableForTrustState(current, pendingPairingPayload, peer)) {
+            mutableState.update {
+                it.copy(
+                    error = RuntimeUiError(
+                        if (current.trustedRuntime == null && pendingPairingPayload == null) {
+                            "pairing_required"
+                        } else {
+                            "runtime_identity_mismatch"
+                        },
+                    ),
+                )
+            }
+            return
+        }
         mutableState.update {
             it.copy(
                 runtimeHost = peer.host,
@@ -805,6 +1197,7 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
 
     fun forgetTrustedRuntime() {
         persistTrustedRuntimeAutoReconnectEnabled(false)
+        closeRuntimeConnection()
         viewModelScope.launch {
             pairingStore.forgetRuntime()
             mutableState.update { it.copy(routeRefreshNoticeRuntimeName = null, error = null) }
@@ -819,6 +1212,7 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
     private fun closeRuntimeConnection() {
         reconnectJob?.cancel()
         reconnectJob = null
+        cancelRuntimeRouteRefreshLease()
         cancelPendingPairingRetry()
         readJob?.cancel()
         readJob = null
@@ -827,9 +1221,12 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
         client.close()
         isSessionAuthenticated = false
         pendingModelPullRequestId = null
+        pendingMemoryListRequestId = null
+        pendingRouteRefreshRequestId = null
         pendingPairingPayload = null
         clearPendingRuntimeHistoryRequests()
         pendingChatSessionLifecycleRequestIds.clear()
+        pendingChatSessionRenameRequestIds.clear()
         clearPendingSuggestions()
         clearPendingTitleRequest()
         modelIdToSelectAfterRefresh = null
@@ -880,7 +1277,10 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
                 type = MessageType.ChatSessionsList,
                 requestId = requestId,
                 serializer = ChatSessionsListRequestPayload.serializer(),
-                payload = ChatSessionsListRequestPayload(limit = MAX_RUNTIME_CHAT_SESSIONS),
+                payload = ChatSessionsListRequestPayload(
+                    limit = MAX_RUNTIME_CHAT_SESSIONS,
+                    includeArchived = true,
+                ),
             )
         )
     }
@@ -904,6 +1304,14 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
         )
     }
 
+    private fun requestRuntimeMemory() {
+        if (!isSessionAuthenticated || activeChannel?.isConnected != true) return
+        if (pendingMemoryListRequestId != null) return
+        val requestId = UUID.randomUUID().toString()
+        pendingMemoryListRequestId = requestId
+        sendEnvelope(ProtocolEnvelope(type = MessageType.MemoryList, requestId = requestId))
+    }
+
     private fun sendRuntimeChatSessionLifecycleIfNeeded(
         session: PersistedChatSession,
         type: String,
@@ -920,6 +1328,41 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
                 payload = ChatSessionLifecyclePayload(sessionId = session.id),
             )
         )
+    }
+
+    private fun sendRuntimeChatSessionRenameIfNeeded(
+        session: PersistedChatSession,
+        title: String,
+    ) {
+        if (!session.runtimeOwned) return
+        if (!isSessionAuthenticated || activeChannel?.isConnected != true) return
+        val requestId = UUID.randomUUID().toString()
+        pendingChatSessionRenameRequestIds += requestId
+        sendEnvelope(
+            envelope(
+                type = MessageType.ChatSessionRename,
+                requestId = requestId,
+                serializer = ChatSessionRenamePayload.serializer(),
+                payload = ChatSessionRenamePayload(
+                    sessionId = session.id,
+                    title = title,
+                ),
+            )
+        )
+    }
+
+    private fun isRuntimeOwnedChatMutationBlocked(sessions: List<PersistedChatSession>): Boolean {
+        if (
+            !runtimeOwnedChatMutationRequiresConnectedRuntime(
+                sessions = sessions,
+                isSessionAuthenticated = isSessionAuthenticated,
+                isTransportConnected = activeChannel?.isConnected == true,
+            )
+        ) {
+            return false
+        }
+        showError("chat_history_runtime_required")
+        return true
     }
 
     fun selectModel(modelId: String) {
@@ -945,6 +1388,10 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
             showError("select_embedding_model")
             return
         }
+        if (!model.installed) {
+            showError("select_embedding_model")
+            return
+        }
         persistSelectedEmbeddingModel(modelId)
     }
 
@@ -964,6 +1411,7 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
             return
         }
 
+        persistSelectedModel(modelId)
         val requestId = UUID.randomUUID().toString()
         pendingModelPullRequestId = requestId
         modelIdToSelectAfterRefresh = modelId
@@ -1016,13 +1464,23 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
         val sessionId = ensureActiveChatSession()
         val requestId = UUID.randomUUID().toString()
         val displayText = text.ifBlank {
-            current.pendingAttachments.joinToString(
-                separator = "\n",
-                prefix = "Analyze attached input:\n",
-            ) { "- ${it.name}" }
+            attachmentOnlyPrompt(
+                attachments = current.pendingAttachments,
+                languageTag = current.selectedLanguageTag,
+            )
         }
         val attachments = current.pendingAttachments
-        val userMessage = RuntimeChatMessage(role = "user", content = displayText)
+        val userMessage = RuntimeChatMessage(
+            role = "user",
+            content = displayText,
+            attachments = attachments.map { attachment ->
+                RuntimeMessageAttachment(
+                    type = attachment.type,
+                    name = attachment.name,
+                    mimeType = attachment.mimeType,
+                )
+            },
+        )
         val assistantMessage = RuntimeChatMessage(role = "assistant", content = "")
         val updatedMessages = current.messages + userMessage + assistantMessage
         clearPendingSuggestions()
@@ -1052,7 +1510,8 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
                         messages = current.messages + userMessage,
                         memoryEntries = current.memoryEntries,
                         attachments = attachments,
-                    )
+                    ),
+                    locale = current.runtimeRequestLocale(),
                 )
             )
         )
@@ -1101,6 +1560,7 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
 
         readJob?.cancel()
         readJob = null
+        cancelRuntimeRouteRefreshLease()
         activeChannel?.close()
         activeChannel = null
         client.close()
@@ -1138,14 +1598,21 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
                 sendHello()
             }
         }.onFailure { error ->
-            Log.e(TAG, "Runtime connection failed", error)
+            val uiError = error.connectionUiError()
+            Log.e(
+                TAG,
+                "Runtime connection failed code=${uiError.code}" +
+                    " diagnostic=${uiError.diagnosticCode ?: "none"}" +
+                    " target=${target.connectionLogLabel()}",
+                error,
+            )
             mutableState.update {
                 it.copy(
                     isConnected = false,
                     isConnecting = false,
                     runtimeStatus = "failed",
                     activeRouteKind = null,
-                    error = error.connectionUiError(),
+                    error = uiError,
                 )
             }
             if (shouldRetryTrustedRuntimeConnectFailure(state.value, target, shouldRestoreTrustedRuntimeConnection)) {
@@ -1170,10 +1637,15 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
                             Log.e(TAG, "Runtime receive failed", error)
                             isSessionAuthenticated = false
                             clearPendingRuntimeHistoryRequests()
+                            pendingMemoryListRequestId = null
+                            pendingRouteRefreshRequestId = null
+                            cancelRuntimeRouteRefreshLease()
                             clearPendingSuggestions()
                             clearPendingTitleRequest()
                             val current = state.value
-                            val updatedState = current.withRuntimeReceiveFailure(error.message)
+                            val updatedState = current.withRuntimeReceiveFailure(
+                                current.runtimeReceiveFailureUiError(error),
+                            )
                             mutableState.value = updatedState
                             if (current.activeRequestId != null) {
                                 persistActiveMessages(updatedState.messages, clearError = false)
@@ -1188,10 +1660,15 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
 
     private fun scheduleTrustedRuntimeReconnect() {
         if (!shouldRestoreTrustedRuntimeConnection) return
-        if (state.value.shouldDiscoverTrustedRuntimeRoute()) {
+        val current = state.value
+        if (publishTrustedRemoteRouteExpiredIfNeeded(current)) return
+        if (current.shouldDiscoverTrustedRuntimeRoute()) {
             ensureTrustedRuntimeDiscovery()
         }
-        val target = autoReconnectTrustedRuntimeConnectionTarget(state.value) ?: return
+        val target = autoReconnectTrustedRuntimeConnectionTarget(current) ?: run {
+            publishTrustedRemoteRouteExpiredIfNeeded(current)
+            return
+        }
         reconnectJob?.cancel()
         reconnectJob = viewModelScope.launch {
             delay(RECONNECT_DELAY_MS)
@@ -1214,6 +1691,7 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
             MessageType.RuntimeHealth -> handleRuntimeHealth(envelope)
             MessageType.ModelsList, MessageType.ModelsResult -> handleModels(envelope)
             MessageType.ModelsPull -> handleModelPull(envelope)
+            MessageType.RouteRefresh -> handleRouteRefresh(envelope)
             MessageType.ChatSessionsList -> handleChatSessionsList(envelope)
             MessageType.ChatMessagesList -> handleChatMessagesList(envelope)
             MessageType.ChatDelta -> handleChatDelta(envelope)
@@ -1221,9 +1699,13 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
             MessageType.ChatCancel -> handleCancelAck(envelope)
             MessageType.ChatSuggestionsResult -> handleChatSuggestionsResult(envelope)
             MessageType.ChatTitleResult -> handleChatTitleResult(envelope)
+            MessageType.ChatSessionRename -> handleChatSessionRename(envelope)
             MessageType.ChatSessionArchive,
             MessageType.ChatSessionRestore,
             MessageType.ChatSessionDelete -> handleChatSessionLifecycle(envelope)
+            MessageType.MemoryList -> handleMemoryList(envelope)
+            MessageType.MemoryUpsert -> handleMemoryUpsert(envelope)
+            MessageType.MemoryDelete -> handleMemoryDelete(envelope)
             MessageType.Error -> handleError(envelope)
         }
     }
@@ -1233,6 +1715,11 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
         viewModelScope.launch {
             runCatching {
                 val identity = deviceIdentityStore.loadOrCreate()
+                if (!verifyRuntimeAuthChallenge(payload, identity.deviceId)) {
+                    isSessionAuthenticated = false
+                    showError("runtime_authentication_failed")
+                    return@launch
+                }
                 sendEnvelope(
                     envelope(
                         type = MessageType.AuthResponse,
@@ -1251,6 +1738,29 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
         }
     }
 
+    private fun verifyRuntimeAuthChallenge(
+        payload: AuthChallengePayload,
+        deviceId: String,
+    ): Boolean {
+        val trustedRuntime = state.value.trustedRuntime ?: return true
+        val runtimePublicKey = trustedRuntime.publicKeyBase64?.takeIf { it.isNotBlank() }
+            ?: return true
+        val challengedDeviceId = payload.deviceId?.takeIf { it.isNotBlank() } ?: return false
+        if (challengedDeviceId != deviceId) return false
+        val signature = payload.runtimeSignature?.takeIf { it.isNotBlank() } ?: return false
+        val challengeFingerprint = payload.runtimeKeyFingerprint?.takeIf { it.isNotBlank() }
+        if (challengeFingerprint != null && trustedRuntime.fingerprint != null && challengeFingerprint != trustedRuntime.fingerprint) {
+            return false
+        }
+        return RuntimeIdentityProofVerifier.verifyChallenge(
+            runtimePublicKeyBase64 = runtimePublicKey,
+            expectedFingerprint = trustedRuntime.fingerprint,
+            deviceId = challengedDeviceId,
+            nonce = payload.nonce,
+            signatureBase64 = signature,
+        )
+    }
+
     private fun handleAuthResponse(envelope: ProtocolEnvelope) {
         val payload = decodePayload(AuthResponsePayload.serializer(), envelope.payload) ?: return
         if (payload.accepted == true) {
@@ -1261,10 +1771,14 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
                     error = null,
                 )
             }
+            requestRuntimeRouteRefresh()
+            scheduleRuntimeRouteRefreshLease()
             requestRuntimeHealth()
             requestRuntimeChatSessions()
+            requestRuntimeMemory()
         } else {
             isSessionAuthenticated = false
+            cancelRuntimeRouteRefreshLease()
             showError("authentication_failed", payload.message)
         }
     }
@@ -1275,6 +1789,7 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
         if (!payload.accepted || pending == null) {
             cancelPendingPairingRetry()
             pendingPairingPayload = null
+            clearPersistedPendingPairingRoute()
             mutableState.update {
                 it.withClearedPendingPairing().copy(
                     error = RuntimeUiError("pairing_rejected", payload.message),
@@ -1288,6 +1803,7 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
             if (trusted == null) {
                 cancelPendingPairingRetry()
                 pendingPairingPayload = null
+                clearPersistedPendingPairingRoute()
                 mutableState.update {
                     it.withClearedPendingPairing().copy(
                         error = RuntimeUiError("runtime_identity_mismatch"),
@@ -1301,30 +1817,23 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
             val runtime = trusted.toRuntimeTrustedRuntime()
             cancelPendingPairingRetry()
             pendingPairingPayload = null
+            clearPersistedPendingPairingRoute()
             isSessionAuthenticated = true
-                    publishPersistedRuntimeData(
-                        persistedRuntimeData.withPairingOnboardingCompleted(),
-                        save = true,
-                    )
-                    mutableState.update {
-                        it.withClearedPendingPairing()
-                            .withTrustedRuntimeRouteFields(runtime, trustedEndpoint)
-                            .copy(routeRefreshNoticeRuntimeName = null, error = null)
-                    }
+            publishPersistedRuntimeData(
+                persistedRuntimeData.withPairingOnboardingCompleted(),
+                save = true,
+            )
+            mutableState.update {
+                it.withClearedPendingPairing()
+                    .withTrustedRuntimeRouteFields(runtime, trustedEndpoint)
+                    .copy(routeRefreshNoticeRuntimeName = null, error = null)
+            }
+            requestRuntimeRouteRefresh()
+            scheduleRuntimeRouteRefreshLease()
             requestRuntimeHealth()
             requestRuntimeChatSessions()
+            requestRuntimeMemory()
         }
-    }
-
-    private fun remoteRuntimeRoutes(identity: PairedRuntimeIdentity): List<PreparedRemoteRuntimeRoute> {
-        val relay = pendingPairingPayload
-            ?.takeIf { it.matchesIdentity(identity) }
-            ?.relayRouteOrNull(identity)
-            ?: state.value.trustedRuntime
-                ?.takeIf { it.matchesIdentity(identity) }
-                ?.relayRouteOrNull(identity)
-            ?: return emptyList()
-        return listOf(relay)
     }
 
     private fun sendHello() {
@@ -1347,6 +1856,83 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
                     showError("device_identity_failed", error.message)
                 }
         }
+    }
+
+    private fun requestRuntimeRouteRefresh() {
+        if (!isSessionAuthenticated) return
+        if (activeChannel?.isConnected != true) return
+        if (state.value.trustedRuntime == null) return
+        if (pendingRouteRefreshRequestId != null) return
+        val requestId = UUID.randomUUID().toString()
+        pendingRouteRefreshRequestId = requestId
+        sendEnvelope(ProtocolEnvelope(type = MessageType.RouteRefresh, requestId = requestId))
+    }
+
+    private fun handleRouteRefresh(envelope: ProtocolEnvelope) {
+        if (pendingRouteRefreshRequestId != envelope.requestId) return
+        pendingRouteRefreshRequestId = null
+        val payload = decodePayload(RouteRefreshPayload.serializer(), envelope.payload) ?: return
+        val current = state.value.trustedRuntime ?: return
+        val trusted = trustedRuntimeFromRouteRefreshPayload(
+            current = current,
+            payload = payload,
+            nowEpochMillis = nowMillis(),
+        ) ?: return
+        viewModelScope.launch {
+            pairingStore.trustRuntime(trusted)
+            val runtime = trusted.toRuntimeTrustedRuntime()
+            mutableState.update {
+                it.withTrustedRuntimeRouteFields(runtime, trusted.lastKnownEndpointHintOrNull())
+                    .copy(routeRefreshNoticeRuntimeName = null)
+            }
+            scheduleRuntimeRouteRefreshLease()
+        }
+    }
+
+    private fun scheduleRuntimeRouteRefreshLease() {
+        routeRefreshLeaseJob?.cancel()
+        routeRefreshLeaseJob = null
+        if (!isSessionAuthenticated) return
+        val channel = activeChannel ?: return
+        if (!channel.isConnected) return
+        val current = state.value
+        if (!current.isConnected) return
+        val trustedRuntime = current.trustedRuntime ?: return
+        val now = nowMillis()
+        if (!trustedRuntime.hasRelayRoute(now)) return
+        val delayMillis = runtimeRouteRefreshLeaseDelayMillis(
+            nowEpochMillis = now,
+            relayExpiresAtEpochMillis = trustedRuntime.relayExpiresAtEpochMillis,
+        ) ?: return
+        routeRefreshLeaseJob = viewModelScope.launch {
+            delay(delayMillis)
+            routeRefreshLeaseJob = null
+            requestRuntimeRouteRefresh()
+        }
+    }
+
+    private fun scheduleRuntimeRouteRefreshRetry() {
+        routeRefreshLeaseJob?.cancel()
+        routeRefreshLeaseJob = null
+        if (!isSessionAuthenticated) return
+        val channel = activeChannel ?: return
+        if (!channel.isConnected) return
+        val current = state.value
+        if (!current.isConnected) return
+        val delayMillis = runtimeRouteRefreshRetryDelayMillis(
+            nowEpochMillis = nowMillis(),
+            relayExpiresAtEpochMillis = current.trustedRuntime?.relayExpiresAtEpochMillis,
+        ) ?: return
+        routeRefreshLeaseJob = viewModelScope.launch {
+            delay(delayMillis)
+            routeRefreshLeaseJob = null
+            requestRuntimeRouteRefresh()
+        }
+    }
+
+    private fun cancelRuntimeRouteRefreshLease() {
+        routeRefreshLeaseJob?.cancel()
+        routeRefreshLeaseJob = null
     }
 
     private fun handleRuntimeHealth(envelope: ProtocolEnvelope) {
@@ -1373,6 +1959,7 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
         if (isSessionAuthenticated) {
             requestModels()
             requestRuntimeChatSessions()
+            requestRuntimeMemory()
         }
     }
 
@@ -1485,14 +2072,16 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
         if (pendingChatSessionsRequestId != null && pendingChatSessionsRequestId != envelope.requestId) return
         pendingChatSessionsRequestId = null
         val payload = decodePayload(ChatSessionsListResultPayload.serializer(), envelope.payload) ?: return
+        val syncedData = persistedRuntimeData.withRuntimeChatSessionSummaries(
+            sessions = payload.sessions,
+            nowMillis = nowMillis(),
+        )
         publishPersistedRuntimeData(
-            persistedRuntimeData.withRuntimeChatSessionSummaries(
-                sessions = payload.sessions,
-                nowMillis = nowMillis(),
-            ),
+            syncedData,
             save = true,
             clearError = false,
         )
+        activeRuntimeSessionId(syncedData)?.let(::requestRuntimeChatMessages)
     }
 
     private fun handleChatMessagesList(envelope: ProtocolEnvelope) {
@@ -1510,6 +2099,10 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
             ),
             save = true,
             clearError = false,
+        )
+        requestChatSuggestions(
+            sourceState = state.value,
+            requireMissingSuggestions = true,
         )
     }
 
@@ -1537,66 +2130,44 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
     }
 
     private fun requestChatTitleIfNeeded(sourceState: RuntimeUiState): Boolean {
-        if (!sourceState.isConnected || !isSessionAuthenticated) return false
-        if (sourceState.isStreaming) return false
-        if (sourceState.selectedModelSendState() != SelectedModelSendState.Ready) return false
-
-        val sessionId = sourceState.activeChatSessionId ?: return false
-        val session = persistedRuntimeData.sessions.firstOrNull { it.id == sessionId } ?: return false
-        if (session.archivedAtMillis != null || session.titleManuallyEdited || session.titleGenerated) return false
-        val chatMessages = sourceState.messages
-            .filter { it.role == "user" || it.role == "assistant" }
-            .filter { it.content.isNotBlank() }
-        if (chatMessages.count { it.role == "user" } != 1) return false
-        if (chatMessages.count { it.role == "assistant" } != 1) return false
-
-        val model = sourceState.selectedModelId ?: return false
+        val candidate = chatTitleRequestCandidate(
+            sourceState = sourceState,
+            persistedRuntimeData = persistedRuntimeData,
+            isSessionAuthenticated = isSessionAuthenticated,
+        ) ?: return false
         val requestId = UUID.randomUUID().toString()
         pendingTitleRequestId = requestId
-        pendingTitleSessionId = sessionId
+        pendingTitleSessionId = candidate.sessionId
         sendEnvelope(
             envelope(
                 type = MessageType.ChatTitleRequest,
                 requestId = requestId,
                 serializer = ChatTitleRequestPayload.serializer(),
                 payload = ChatTitleRequestPayload(
-                    sessionId = sessionId,
-                    model = model,
-                    messages = chatMessages.map { message ->
-                        ChatMessagePayload(
-                            role = message.role,
-                            content = message.content,
-                        )
-                    },
-                    locale = sourceState.selectedLanguageTag.takeIf { it.isNotBlank() },
+                    sessionId = candidate.sessionId,
+                    model = candidate.model,
+                    messages = candidate.messages,
+                    locale = candidate.locale,
                 ),
             )
         )
         return true
     }
 
-    private fun requestChatSuggestions(sourceState: RuntimeUiState) {
-        if (!sourceState.isConnected || !isSessionAuthenticated) return
-        if (sourceState.isStreaming || sourceState.isLoadingSuggestions) return
-        if (sourceState.selectedModelSendState() != SelectedModelSendState.Ready) return
-
-        val sessionId = sourceState.activeChatSessionId ?: return
-        val model = sourceState.selectedModelId ?: return
-        val recentMessages = sourceState.messages
-            .filter { it.role == "user" || it.role == "assistant" }
-            .filter { it.content.isNotBlank() }
-            .takeLast(MAX_SUGGESTION_CONTEXT_MESSAGES)
-            .map { message ->
-                ChatMessagePayload(
-                    role = message.role,
-                    content = message.content,
-                )
-            }
-        if (recentMessages.size < 2) return
-
+    private fun requestChatSuggestions(
+        sourceState: RuntimeUiState,
+        requireMissingSuggestions: Boolean = false,
+    ) {
+        val candidate = chatSuggestionsRequestCandidate(
+            sourceState = sourceState,
+            isSessionAuthenticated = isSessionAuthenticated,
+            requireMissingSuggestions = requireMissingSuggestions,
+            maxContextMessages = MAX_SUGGESTION_CONTEXT_MESSAGES,
+            maxSuggestions = MAX_SUGGESTIONS,
+        ) ?: return
         val requestId = UUID.randomUUID().toString()
         pendingSuggestionRequestId = requestId
-        pendingSuggestionSessionId = sessionId
+        pendingSuggestionSessionId = candidate.sessionId
         mutableState.update {
             it.copy(
                 isLoadingSuggestions = true,
@@ -1609,11 +2180,11 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
                 requestId = requestId,
                 serializer = ChatSuggestionsRequestPayload.serializer(),
                 payload = ChatSuggestionsRequestPayload(
-                    sessionId = sessionId,
-                    model = model,
-                    messages = recentMessages,
-                    maxSuggestions = MAX_SUGGESTIONS,
-                    locale = sourceState.selectedLanguageTag.takeIf { it.isNotBlank() },
+                    sessionId = candidate.sessionId,
+                    model = candidate.model,
+                    messages = candidate.messages,
+                    maxSuggestions = candidate.maxSuggestions,
+                    locale = candidate.locale,
                 ),
             )
         )
@@ -1652,8 +2223,60 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
         requestRuntimeChatSessions()
     }
 
+    private fun handleChatSessionRename(envelope: ProtocolEnvelope) {
+        pendingChatSessionRenameRequestIds -= envelope.requestId
+        val payload = decodePayload(ChatSessionRenamePayload.serializer(), envelope.payload) ?: return
+        publishPersistedRuntimeData(
+            persistedRuntimeData.withRenamedChatSession(
+                sessionId = payload.sessionId,
+                title = payload.title,
+                nowMillis = nowMillis(),
+            ),
+            save = true,
+            clearError = false,
+        )
+        requestRuntimeChatSessions()
+    }
+
     private fun handleChatSessionLifecycle(envelope: ProtocolEnvelope) {
         pendingChatSessionLifecycleRequestIds -= envelope.requestId
+        val payload = decodePayload(ChatSessionLifecyclePayload.serializer(), envelope.payload) ?: return
+        publishPersistedRuntimeData(
+            persistedRuntimeData.withRuntimeChatSessionLifecycleResult(
+                result = payload,
+                nowMillis = nowMillis(),
+            ),
+            save = true,
+            clearError = false,
+        )
+        requestRuntimeChatSessions()
+    }
+
+    private fun handleMemoryList(envelope: ProtocolEnvelope) {
+        if (pendingMemoryListRequestId == envelope.requestId) {
+            pendingMemoryListRequestId = null
+        }
+        val payload = decodePayload(MemoryListResultPayload.serializer(), envelope.payload) ?: return
+        publishPersistedRuntimeData(
+            persistedRuntimeData.withRuntimeMemoryEntries(payload.entries, nowMillis()),
+            save = true,
+        )
+    }
+
+    private fun handleMemoryUpsert(envelope: ProtocolEnvelope) {
+        val payload = decodePayload(MemoryUpsertResultPayload.serializer(), envelope.payload) ?: return
+        publishPersistedRuntimeData(
+            persistedRuntimeData.withRuntimeMemoryEntry(payload.entry, nowMillis()),
+            save = true,
+        )
+    }
+
+    private fun handleMemoryDelete(envelope: ProtocolEnvelope) {
+        val payload = decodePayload(MemoryDeleteResultPayload.serializer(), envelope.payload) ?: return
+        publishPersistedRuntimeData(
+            persistedRuntimeData.withoutRuntimeMemoryEntry(payload.id),
+            save = true,
+        )
     }
 
     private fun handleCancelAck(envelope: ProtocolEnvelope) {
@@ -1671,6 +2294,8 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
 
     private fun handleError(envelope: ProtocolEnvelope) {
         if (pendingChatSessionLifecycleRequestIds.remove(envelope.requestId)) {
+            val payload = decodePayload(ErrorPayload.serializer(), envelope.payload)
+            showError("chat_session_sync_failed", payload?.message)
             return
         }
         if (pendingSuggestionRequestId == envelope.requestId) {
@@ -1689,6 +2314,22 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
         if (pendingChatMessagesRequestId == envelope.requestId) {
             pendingChatMessagesRequestId = null
             pendingChatMessagesSessionId = null
+            return
+        }
+        if (pendingMemoryListRequestId == envelope.requestId) {
+            pendingMemoryListRequestId = null
+            return
+        }
+        if (pendingRouteRefreshRequestId == envelope.requestId) {
+            val payload = decodePayload(ErrorPayload.serializer(), envelope.payload)
+            pendingRouteRefreshRequestId = null
+            if (payload?.code.isPairingRequiredRuntimeCode()) {
+                isSessionAuthenticated = false
+                cancelRuntimeRouteRefreshLease()
+                mutableState.value = state.value.withRuntimeError(envelope, payload, pendingModelPullRequestId)
+            } else {
+                scheduleRuntimeRouteRefreshRetry()
+            }
             return
         }
         val payload = decodePayload(ErrorPayload.serializer(), envelope.payload)
@@ -1727,6 +2368,11 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
                     val isTitleRequest = envelope.type == MessageType.ChatTitleRequest &&
                         pendingTitleRequestId == envelope.requestId
                     val isSessionLifecycleRequest = pendingChatSessionLifecycleRequestIds.remove(envelope.requestId)
+                    val isSessionRenameRequest = pendingChatSessionRenameRequestIds.remove(envelope.requestId)
+                    val isMemoryListRequest = envelope.type == MessageType.MemoryList &&
+                        pendingMemoryListRequestId == envelope.requestId
+                    val isRouteRefreshRequest = envelope.type == MessageType.RouteRefresh &&
+                        pendingRouteRefreshRequestId == envelope.requestId
                     val isRuntimeHistoryRequest = (
                         envelope.type == MessageType.ChatSessionsList &&
                             pendingChatSessionsRequestId == envelope.requestId
@@ -1743,11 +2389,25 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
                         clearPendingRuntimeHistoryRequests()
                         return@onFailure
                     }
+                    if (isMemoryListRequest) {
+                        pendingMemoryListRequestId = null
+                        return@onFailure
+                    }
+                    if (isRouteRefreshRequest) {
+                        pendingRouteRefreshRequestId = null
+                        scheduleRuntimeRouteRefreshRetry()
+                        return@onFailure
+                    }
                     if (isTitleRequest) {
                         clearPendingTitleRequest()
                         return@onFailure
                     }
                     if (isSessionLifecycleRequest) {
+                        showError("chat_session_sync_failed", error.message)
+                        return@onFailure
+                    }
+                    if (isSessionRenameRequest) {
+                        showError("chat_session_sync_failed", error.message)
                         return@onFailure
                     }
                     val cleanedMessages = if (isActiveChatSend) {
@@ -1800,6 +2460,30 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
         mutableState.update { it.copy(error = RuntimeUiError(code, detail)) }
     }
 
+    private fun publishTrustedRemoteRouteExpiredIfNeeded(
+        current: RuntimeUiState = state.value,
+    ): Boolean {
+        if (autoReconnectTrustedRuntimeConnectionTarget(current) != null) {
+            return false
+        }
+        if (!current.trustedRuntime.hasExpiredRelayRoute(dependencies.currentTimeMillis())) {
+            return false
+        }
+        mutableState.update {
+            it.copy(
+                isConnected = false,
+                isConnecting = false,
+                runtimeStatus = "failed",
+                activeRouteKind = null,
+                error = RuntimeUiError(
+                    code = "remote_route_expired",
+                    diagnosticCode = "route_diagnostic_remote_route_expired",
+                ),
+            )
+        }
+        return true
+    }
+
     private fun clearPendingSuggestions() {
         pendingSuggestionRequestId = null
         pendingSuggestionSessionId = null
@@ -1811,37 +2495,22 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
         pendingChatMessagesSessionId = null
     }
 
+    private fun canSendRuntimeMemoryCommand(): Boolean {
+        return isSessionAuthenticated && activeChannel?.isConnected == true
+    }
+
     private fun clearPendingTitleRequest() {
         pendingTitleRequestId = null
         pendingTitleSessionId = null
     }
 
-    private fun attachmentMetadata(uri: Uri): AttachmentMetadata {
-        val resolver = getApplication<Application>().contentResolver
-        var name = uri.lastPathSegment?.substringAfterLast('/')?.takeIf(String::isNotBlank)
-            ?: "attachment"
-        var sizeBytes = -1L
-        resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)
-            ?.use { cursor ->
-                if (cursor.moveToFirst()) {
-                    val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                    val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
-                    if (nameIndex >= 0) {
-                        name = cursor.getString(nameIndex)?.takeIf(String::isNotBlank) ?: name
-                    }
-                    if (sizeIndex >= 0 && !cursor.isNull(sizeIndex)) {
-                        sizeBytes = cursor.getLong(sizeIndex)
-                    }
-                }
-            }
-        val mimeType = resolver.getType(uri) ?: mimeTypeFromName(name)
-        return AttachmentMetadata(name = name, mimeType = mimeType, sizeBytes = sizeBytes)
-    }
-
     private fun ensureActiveChatSession(): String {
         val currentSessionId = state.value.activeChatSessionId
         if (currentSessionId != null) return currentSessionId
-        val data = persistedRuntimeData.withNewChatSession(nowMillis())
+        val data = persistedRuntimeData.withNewChatSession(
+            nowMillis = nowMillis(),
+            modelId = state.value.selectedModelId,
+        )
         publishPersistedRuntimeData(data, save = true)
         return data.activeSessionId ?: error("new chat session was not created")
     }
@@ -1892,6 +2561,7 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
                 messages = activeSessionMessages(cleanData),
                 memoryEntries = runtimeMemoryEntries(cleanData),
                 selectedLanguageTag = cleanData.appLanguageTag,
+                selectedTheme = RuntimeAppTheme.fromStorage(cleanData.appTheme),
                 trustedRuntimeAutoReconnectEnabled = cleanData.trustedRuntimeAutoReconnectEnabled,
                 pairingOnboardingCompleted = cleanData.pairingOnboardingCompleted,
                 error = if (clearError) null else it.error,
@@ -1940,14 +2610,14 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
         }
     }
 
-    private fun nowMillis(): Long = System.currentTimeMillis()
+    private fun nowMillis(): Long = dependencies.currentTimeMillis()
 
     private fun isActiveChatEnvelope(envelope: ProtocolEnvelope): Boolean {
         return state.value.activeRequestId == envelope.requestId
     }
 
     override fun onCleared() {
-        getApplication<Application>().unregisterActivityLifecycleCallbacks(lifecycleCallbacks)
+        dependencies.lifecycleCallbacksRegistrar.unregister(getApplication(), lifecycleCallbacks)
         stopDiscovery()
         closeRuntimeConnection()
         super.onCleared()
@@ -1965,21 +2635,7 @@ class RuntimeClientViewModel(application: Application) : AndroidViewModel(applic
         const val MAX_RUNTIME_CHAT_MESSAGES = 200
         const val ATTACHMENT_TYPE_IMAGE = "image"
         const val ATTACHMENT_TYPE_DOCUMENT = "document"
-        val CLIENT_CAPABILITIES = listOf(
-            MessageType.RuntimeHealth,
-            MessageType.ModelsList,
-            MessageType.ModelsPull,
-            MessageType.ChatSend,
-            MessageType.ChatCancel,
-            MessageType.ChatSessionsList,
-            MessageType.ChatMessagesList,
-            MessageType.ChatSuggestionsRequest,
-            MessageType.ChatTitleRequest,
-            MessageType.ChatSessionArchive,
-            MessageType.ChatSessionRestore,
-            MessageType.ChatSessionDelete,
-            "chat.attachments",
-        )
+        val CLIENT_CAPABILITIES = RUNTIME_CLIENT_CAPABILITIES
         val SUCCESS_PULL_STATUSES = setOf("success", "succeeded", "installed", "complete", "completed", "ready", "ok")
         val ACCEPTED_PULL_STATUSES = setOf("accepted", "queued", "pending", "started", "pulling", "downloading", "installing", "in_progress")
         val FAILED_PULL_STATUSES = setOf("failed", "failure", "error", "cancelled", "canceled")
@@ -2001,12 +2657,6 @@ private val EMBEDDING_MODEL_NAME_HINTS = setOf(
     "snowflake-arctic-embed",
     "qwen3-embedding",
     "embeddinggemma",
-)
-
-private data class AttachmentMetadata(
-    val name: String,
-    val mimeType: String,
-    val sizeBytes: Long,
 )
 
 private fun attachmentType(mimeType: String, name: String): String {
@@ -2048,6 +2698,7 @@ private fun mimeTypeFromName(name: String): String {
         "potm" -> "application/vnd.ms-powerpoint.template.macroenabled.12"
         "ppt", "pps", "pot" -> "application/vnd.ms-powerpoint"
         "hwp" -> "application/x-hwp"
+        "hwpml" -> "application/x-hwpml"
         "epub" -> "application/epub+zip"
         "pages" -> "application/vnd.apple.pages"
         "numbers" -> "application/vnd.apple.numbers"
@@ -2055,6 +2706,7 @@ private fun mimeTypeFromName(name: String): String {
         "webarchive" -> "application/x-webarchive"
         "rtf" -> "application/rtf"
         "html", "htm" -> "text/html"
+        "xhtml" -> "application/xhtml+xml"
         "xml" -> "application/xml"
         "md", "markdown" -> "text/markdown"
         "rst" -> "text/x-rst"
@@ -2105,8 +2757,8 @@ internal fun runtimeProviderStatuses(payload: RuntimeHealthPayload): List<Runtim
                 id = "ollama",
                 name = "Ollama",
                 available = status.available,
-                message = status.message,
-                code = status.code,
+                message = runtimeProviderSafeMessage(status.message),
+                code = runtimeProviderSafeCode(status.code),
                 retryable = status.retryable,
             )
         },
@@ -2115,13 +2767,44 @@ internal fun runtimeProviderStatuses(payload: RuntimeHealthPayload): List<Runtim
                 id = "lm_studio",
                 name = "LM Studio",
                 available = status.available,
-                message = status.message,
-                code = status.code,
+                message = runtimeProviderSafeMessage(status.message),
+                code = runtimeProviderSafeCode(status.code),
                 retryable = status.retryable,
             )
         },
     )
 }
+
+internal fun runtimeProviderSafeMessage(message: String): String {
+    return message
+        .trim()
+        .takeUnless { it.containsBackendEndpointMaterial() }
+        .orEmpty()
+}
+
+internal fun runtimeProviderSafeCode(code: String?): String? {
+    return code
+        ?.trim()
+        ?.takeUnless { it.containsBackendEndpointMaterial() }
+        ?.takeIf { it.matches(PROVIDER_DIAGNOSTIC_CODE_PATTERN) }
+}
+
+private fun String.containsBackendEndpointMaterial(): Boolean {
+    return BACKEND_ENDPOINT_DETAIL_PATTERNS.any { pattern -> pattern.containsMatchIn(this) }
+}
+
+private val BACKEND_ENDPOINT_DETAIL_PATTERNS = listOf(
+    Regex("https?://[^\\s,;)]+", RegexOption.IGNORE_CASE),
+    Regex("\\b(?:[A-Za-z0-9.-]+|\\[[0-9A-Fa-f:]+])(?::)(?:11434|1234)\\b", RegexOption.IGNORE_CASE),
+    Regex("\\b(?:Ollama|LM Studio)\\s+URL\\b", RegexOption.IGNORE_CASE),
+    Regex("/(?:api/(?:tags|ps|pull|chat|show|v1)|v1/(?:models|chat|chat/completions))\\b", RegexOption.IGNORE_CASE),
+    Regex(
+        "(^|[\\s{,;?&])['\"]?(?:route[_-]?token|routeToken|route[_-]?secret|relay[_-]?secret|relaySecret|pairing[_-]?secret|pairingSecret|rt|rs)['\"]?\\s*[:=]\\s*['\"]?[^\\s'\",;})]+",
+        RegexOption.IGNORE_CASE,
+    ),
+)
+
+private val PROVIDER_DIAGNOSTIC_CODE_PATTERN = Regex("[A-Za-z][A-Za-z0-9_.-]{0,79}")
 
 internal fun trustedRuntimeConnectionTarget(state: RuntimeUiState): RuntimeConnectionTarget? {
     val trustedRuntime = state.trustedRuntime ?: return null
@@ -2133,7 +2816,9 @@ internal fun trustedRuntimeConnectionTarget(state: RuntimeUiState): RuntimeConne
             publicKeyBase64 = trustedRuntime.publicKeyBase64,
             routeToken = trustedRuntime.routeToken,
         ),
-        endpointHint = if (trustedRuntime.hasRelayRoute()) null else trustedRuntime.endpointHint,
+        endpointHint = trustedRuntime.endpointHint
+            ?.takeUnless { trustedRuntime.hasRelayRoute() }
+            ?.takeUnless { it.source == RuntimeEndpointSource.TrustedLastKnown },
     )
 }
 
@@ -2158,7 +2843,6 @@ internal fun autoReconnectTrustedRuntimeConnectionTarget(state: RuntimeUiState):
     if (discoveredTarget != null) return discoveredTarget
     val trustedTarget = trustedRuntimeConnectionTarget(state) ?: return null
     if (state.trustedRuntime?.hasRelayRoute() == true) return trustedTarget
-    if (trustedTarget.endpointHint?.source == RuntimeEndpointSource.TrustedLastKnown) return trustedTarget
     return trustedTarget.takeIf { it.endpointHint != null }
 }
 
@@ -2177,48 +2861,70 @@ internal fun shouldRetryTrustedRuntimeConnectFailure(
     if (!restoreEnabled || state.isConnected || state.isConnecting) return false
     val identity = target.identity ?: return false
     val trustedRuntime = state.trustedRuntime ?: return false
-    return trustedRuntime.hasRelayRoute() && trustedRuntime.matchesIdentity(identity)
+    return trustedRuntime.matchesIdentity(identity)
 }
 
 internal fun RuntimeUiState.shouldDiscoverTrustedRuntimeRoute(): Boolean {
-    return trustedRuntime != null && !isConnected && !isConnecting && trustedRuntime.hasRelayRoute().not()
+    return trustedRuntime != null && !isConnected && !isConnecting
+}
+
+internal fun discoveredRuntimeSelectableForTrustState(
+    state: RuntimeUiState,
+    pendingPairingPayload: RuntimePairingPayload?,
+    peer: RuntimeDiscoveredRuntime,
+): Boolean {
+    val trustedIdentity = trustedRuntimeConnectionTarget(state)?.identity
+    val pendingIdentity = pendingPairingPayload?.toConnectionTarget(endpoint = null)?.identity
+    return listOfNotNull(trustedIdentity, pendingIdentity)
+        .any { identity -> peer.matchesTrustedIdentity(identity, allowMissingMetadata = false) }
 }
 
 internal fun runtimeRouteCandidates(
     state: RuntimeUiState,
     target: RuntimeConnectionTarget,
     includeUsbReverseFallback: Boolean = false,
+    suppressDirectRoutes: Boolean = false,
 ): List<RuntimeRouteCandidate> {
     val routes = mutableListOf<RuntimeRouteCandidate>()
     val seenEndpoints = mutableSetOf<Pair<String, Int>>()
 
     val identity = target.identity
-    if (identity != null) {
-        val hasSavedRelayRoute = state.trustedRuntime
+    val hasSavedRelayRoute = identity != null &&
+        state.trustedRuntime
             ?.let { it.matchesIdentity(identity) && it.hasRelayRoute() } == true
-        if (!hasSavedRelayRoute) state.selectedRouteEndpointHintOrNull()?.let { endpoint ->
+    if (identity != null) {
+        if (!hasSavedRelayRoute && !suppressDirectRoutes) state.selectedRouteEndpointHintOrNull()?.let { endpoint ->
             val key = endpoint.host to endpoint.port
-            if (state.isTrustedRouteEndpointAllowed(endpoint, identity) && seenEndpoints.add(key)) {
+            if (
+                endpoint.isAllowedDirectEndpoint() &&
+                state.isTrustedRouteEndpointAllowed(endpoint, identity) &&
+                seenEndpoints.add(key)
+            ) {
                 routes += RuntimeRouteCandidate.DirectTcp(
                     hint = endpoint,
                     source = endpoint.routeSource(),
                 )
             }
         }
-        state.discoveredRuntimes.forEach { discovered ->
+        if (!suppressDirectRoutes) state.discoveredRuntimes.forEach { discovered ->
             val key = discovered.host to discovered.port
-            if (discovered.matchesTrustedIdentity(identity, allowMissingMetadata = false) && seenEndpoints.add(key)) {
+            val endpoint = RuntimeEndpointHint(
+                host = discovered.host,
+                port = discovered.port,
+                source = RuntimeEndpointSource.BonjourDiscovery,
+            )
+            if (
+                endpoint.isAllowedDirectEndpoint() &&
+                discovered.matchesTrustedIdentity(identity, allowMissingMetadata = false) &&
+                seenEndpoints.add(key)
+            ) {
                 routes += RuntimeRouteCandidate.DirectTcp(
-                    hint = RuntimeEndpointHint(
-                        host = discovered.host,
-                        port = discovered.port,
-                        source = RuntimeEndpointSource.BonjourDiscovery,
-                    ),
+                    hint = endpoint,
                     source = RuntimeRouteSource.FreshDiscovery,
                 )
             }
         }
-        if (includeUsbReverseFallback && !hasSavedRelayRoute) {
+        if (includeUsbReverseFallback && !hasSavedRelayRoute && !suppressDirectRoutes) {
             val endpoint = RuntimeEndpointHint(
                 host = "127.0.0.1",
                 port = 43170,
@@ -2236,7 +2942,7 @@ internal fun runtimeRouteCandidates(
 
     target.endpointHint?.let { endpoint ->
         val key = endpoint.host to endpoint.port
-        if (endpoint.isAllowedDirectEndpoint() && seenEndpoints.add(key)) {
+        if (!hasSavedRelayRoute && !suppressDirectRoutes && endpoint.isAllowedDirectEndpoint() && seenEndpoints.add(key)) {
             routes += RuntimeRouteCandidate.DirectTcp(
                 hint = endpoint,
                 source = endpoint.routeSource(),
@@ -2303,7 +3009,7 @@ private fun String?.normalizedIdentityOrNull(): String? {
     return this?.trim()?.takeIf { it.isNotEmpty() }
 }
 
-private fun runtimePublicKeyMatches(expected: String?, actual: String?): Boolean {
+internal fun runtimePublicKeyMatches(expected: String?, actual: String?): Boolean {
     val normalizedExpected = expected.normalizedIdentityOrNull()
     val normalizedActual = actual.normalizedIdentityOrNull()
     return normalizedExpected == null || normalizedActual == null || normalizedExpected == normalizedActual
@@ -2334,12 +3040,18 @@ internal fun RuntimeConnectionFailure.toRuntimeUiError(): RuntimeUiError {
                 )
             }
         }
-        RuntimeConnectionFailureReason.RouteAttemptsFailed ->
+        RuntimeConnectionFailureReason.RouteAttemptsFailed -> {
+            val diagnosticCode = routeDiagnosticCode()
             RuntimeUiError(
-                code = "connection_failed",
+                code = if (diagnosticCode == "route_diagnostic_relay_failed") {
+                    "remote_route_unreachable"
+                } else {
+                    "connection_failed"
+                },
                 detail = message,
-                diagnosticCode = routeDiagnosticCode(),
+                diagnosticCode = diagnosticCode,
             )
+        }
     }
 }
 
@@ -2452,8 +3164,9 @@ private fun RuntimeEndpointHint.routeSource(): RuntimeRouteSource {
 }
 
 private fun RuntimeEndpointHint.isAllowedDirectEndpoint(): Boolean {
+    if (port in LOCAL_MODEL_BACKEND_PORTS) return false
     if (source != RuntimeEndpointSource.Manual) return true
-    return port !in LOCAL_MODEL_BACKEND_PORTS
+    return true
 }
 
 private fun TrustedRuntime.lastKnownEndpointHintOrNull(): RuntimeEndpointHint? {
@@ -2479,32 +3192,6 @@ private fun TrustedRuntime.toConnectionTarget(): RuntimeConnectionTarget {
     )
 }
 
-private fun RuntimeTrustedRuntime?.hasRelayRoute(): Boolean {
-    return this != null &&
-        !relayHost.isNullOrBlank() &&
-        relayPort != null &&
-        relayPort in 1..65535 &&
-        !relayId.isNullOrBlank()
-}
-
-private fun TrustedRuntime.relayRouteOrNull(identity: PairedRuntimeIdentity): PreparedRemoteRuntimeRoute.Relay? {
-    val host = relayHost?.takeIf { it.isNotBlank() } ?: return null
-    val port = relayPort?.takeIf { it in 1..65535 } ?: return null
-    val relayRouteId = relayId?.takeIf { it.isNotBlank() } ?: routeToken?.takeIf { it.isNotBlank() } ?: return null
-    return PreparedRemoteRuntimeRoute.Relay(
-        identity = identity,
-        relayId = relayRouteId,
-        host = host,
-        port = port,
-        relayFrameSecret = relaySecret?.takeIf { it.isNotBlank() },
-        security = relaySecurityContext(
-            relayId = relayRouteId,
-            expiresAtEpochMillis = relayExpiresAtEpochMillis,
-            antiReplayNonce = relayNonce,
-        ),
-    )
-}
-
 private fun RuntimePairingPayload.endpointHintOrNull(): RuntimeEndpointHint? {
     val endpointHost = host ?: return null
     val endpointPort = port ?: return null
@@ -2515,49 +3202,8 @@ private fun RuntimePairingPayload.endpointHintOrNull(): RuntimeEndpointHint? {
     )
 }
 
-private fun RuntimePairingPayload.hasRelayRoute(): Boolean {
-    return !relayHost.isNullOrBlank() && relayPort != null && relayPort in 1..65535 && !relayId.isNullOrBlank()
-}
-
-private fun RuntimePairingPayload.hasExpiredRemoteRoute(
-    nowEpochMillis: Long = System.currentTimeMillis(),
-): Boolean {
-    val expiresAt = relayExpiresAtEpochMillis ?: return false
-    return expiresAt <= nowEpochMillis
-}
-
-private fun RuntimePairingPayload.relayRouteOrNull(identity: PairedRuntimeIdentity): PreparedRemoteRuntimeRoute.Relay? {
-    val host = relayHost?.takeIf { it.isNotBlank() } ?: return null
-    val port = relayPort?.takeIf { it in 1..65535 } ?: return null
-    val relayRouteId = relayId?.takeIf { it.isNotBlank() } ?: return null
-    return PreparedRemoteRuntimeRoute.Relay(
-        identity = identity,
-        relayId = relayRouteId,
-        host = host,
-        port = port,
-        relayFrameSecret = relaySecret?.takeIf { it.isNotBlank() },
-        security = relaySecurityContext(
-            relayId = relayRouteId,
-            expiresAtEpochMillis = relayExpiresAtEpochMillis,
-            antiReplayNonce = relayNonce,
-        ),
-    )
-}
-
-private fun relaySecurityContext(
-    relayId: String,
-    expiresAtEpochMillis: Long?,
-    antiReplayNonce: String?,
-): RemoteRouteSecurityContext {
-    return RemoteRouteSecurityContext(
-        rendezvousToken = relayId,
-        expiresAtEpochMillis = expiresAtEpochMillis?.takeIf { it > 0L } ?: Long.MAX_VALUE,
-        antiReplayNonce = antiReplayNonce?.takeIf { it.isNotBlank() } ?: relayId,
-    )
-}
-
 internal fun RuntimeUiState.withPendingPairing(payload: RuntimePairingPayload): RuntimeUiState {
-    val endpoint = payload.endpointHintOrNull()
+    val endpoint = if (payload.hasRelayRoute()) null else payload.endpointHintOrNull()
     return copy(
         pairingCode = payload.pairingCode,
         pendingPairingRuntimeName = payload.runtimeName,
@@ -2615,7 +3261,7 @@ internal fun pairingRuntimeConnectionTarget(
     payload: RuntimePairingPayload,
 ): RuntimeConnectionTarget? {
     val endpoint = payload.endpointHintOrNull()
-    if (payload.hasRelayRoute()) return payload.toConnectionTarget(endpoint = endpoint)
+    if (payload.hasRelayRoute()) return payload.toConnectionTarget(endpoint = null)
     if (endpoint != null) return payload.toConnectionTarget(endpoint)
 
     val identityOnlyTarget = payload.toConnectionTarget(endpoint = null)
@@ -2633,10 +3279,24 @@ internal fun pairingRuntimeConnectionTarget(
     )
 }
 
+internal fun shouldPreemptActiveConnectionForPairingQr(
+    state: RuntimeUiState,
+    payload: RuntimePairingPayload,
+): Boolean {
+    if (!state.isConnected && !state.isConnecting) return false
+    val trusted = state.trustedRuntime ?: return true
+    if (trusted.deviceId != payload.runtimeDeviceId) return true
+    if (!runtimePublicKeyMatches(payload.fingerprint, trusted.fingerprint)) return true
+    if (!runtimePublicKeyMatches(payload.runtimePublicKeyBase64, trusted.publicKeyBase64)) return true
+    return false
+}
+
 internal fun trustedRuntimeFromAcceptedPairing(
     pending: RuntimePairingPayload,
     payload: PairingResultPayload,
 ): TrustedRuntime? {
+    if (pending.hasExpiredRemoteRoute()) return null
+    val hasRelayRoute = pending.hasRelayRoute()
     val acceptedRuntimeDeviceId = payload.runtimeDeviceIdV2
         ?: payload.runtimeDeviceId
         ?: pending.runtimeDeviceId
@@ -2658,14 +3318,15 @@ internal fun trustedRuntimeFromAcceptedPairing(
         fingerprint = acceptedFingerprint,
         publicKeyBase64 = acceptedPublicKey,
         routeToken = pending.routeToken,
-        host = if (pending.hasRelayRoute()) null else pending.host,
-        port = if (pending.hasRelayRoute()) null else pending.port,
-        relayHost = pending.relayHost,
-        relayPort = pending.relayPort,
-        relayId = pending.relayId,
-        relaySecret = pending.relaySecret,
-        relayExpiresAtEpochMillis = null,
-        relayNonce = null,
+        host = null,
+        port = null,
+        relayHost = if (hasRelayRoute) pending.relayHost else null,
+        relayPort = if (hasRelayRoute) pending.relayPort else null,
+        relayId = if (hasRelayRoute) pending.relayId else null,
+        relaySecret = if (hasRelayRoute) pending.relaySecret else null,
+        relayExpiresAtEpochMillis = if (hasRelayRoute) pending.relayExpiresAtEpochMillis else null,
+        relayNonce = if (hasRelayRoute) pending.relayNonce else null,
+        relayScope = if (hasRelayRoute) pending.relayScope else null,
     )
 }
 
@@ -2674,9 +3335,9 @@ internal fun trustedRuntimeFromRouteRefreshQr(
     payload: RuntimePairingPayload,
 ): TrustedRuntime? {
     current ?: return null
-    val endpoint = payload.endpointHintOrNull()
+    if (payload.hasExpiredRemoteRoute()) return null
     val hasRelayRoute = payload.hasRelayRoute()
-    if (!hasRelayRoute && endpoint == null) return null
+    if (!hasRelayRoute) return null
     if (current.deviceId != payload.runtimeDeviceId) return null
     if (current.fingerprint != null && current.fingerprint != payload.fingerprint) return null
     if (
@@ -2691,19 +3352,137 @@ internal fun trustedRuntimeFromRouteRefreshQr(
         fingerprint = current.fingerprint ?: payload.fingerprint,
         publicKeyBase64 = current.publicKeyBase64 ?: payload.runtimePublicKeyBase64,
         routeToken = payload.routeToken ?: current.routeToken,
-        host = if (hasRelayRoute) null else endpoint?.host,
-        port = if (hasRelayRoute) null else endpoint?.port,
+        host = null,
+        port = null,
         relayHost = if (hasRelayRoute) payload.relayHost else null,
         relayPort = if (hasRelayRoute) payload.relayPort else null,
         relayId = if (hasRelayRoute) payload.relayId else null,
         relaySecret = if (hasRelayRoute) payload.relaySecret else null,
-        relayExpiresAtEpochMillis = null,
-        relayNonce = null,
+        relayExpiresAtEpochMillis = if (hasRelayRoute) payload.relayExpiresAtEpochMillis else null,
+        relayNonce = if (hasRelayRoute) payload.relayNonce else null,
+        relayScope = if (hasRelayRoute) payload.relayScope else null,
+    )
+}
+
+internal fun trustedRuntimeFromRouteRefreshPayload(
+    current: RuntimeTrustedRuntime?,
+    payload: RouteRefreshPayload,
+    nowEpochMillis: Long = System.currentTimeMillis(),
+): TrustedRuntime? {
+    current ?: return null
+    val fingerprint = current.fingerprint ?: return null
+    val candidateRuntime = current.copy(
+        endpointHint = null,
+        relayHost = payload.relayHost,
+        relayPort = payload.relayPort,
+        relayId = payload.relayId,
+        relaySecret = payload.relaySecret,
+        relayExpiresAtEpochMillis = payload.relayExpiresAtEpochMillis,
+        relayNonce = payload.relayNonce,
+        relayScope = payload.relayScope,
+    )
+    if (!candidateRuntime.hasRelayRoute(nowEpochMillis)) return null
+    return TrustedRuntime(
+        deviceId = current.deviceId,
+        name = current.name,
+        fingerprint = fingerprint,
+        publicKeyBase64 = current.publicKeyBase64,
+        routeToken = current.routeToken,
+        host = null,
+        port = null,
+        relayHost = payload.relayHost,
+        relayPort = payload.relayPort,
+        relayId = payload.relayId,
+        relaySecret = payload.relaySecret,
+        relayExpiresAtEpochMillis = payload.relayExpiresAtEpochMillis,
+        relayNonce = payload.relayNonce,
+        relayScope = payload.relayScope,
+    )
+}
+
+internal sealed class RuntimePairingQrParseResult {
+    data class Accepted(val payload: RuntimePairingPayload) : RuntimePairingQrParseResult()
+    data class Rejected(
+        val error: RuntimeUiError,
+        val clearPendingPairing: Boolean = false,
+    ) : RuntimePairingQrParseResult()
+}
+
+internal fun parseRuntimePairingQrPayload(
+    rawValue: String,
+    allowDebugLoopbackRelay: Boolean,
+    allowDiagnosticLocalDirectEndpoint: Boolean,
+): RuntimePairingQrParseResult {
+    val payload = runCatching {
+        RuntimePairingPayloadParser.parse(
+            rawValue = rawValue,
+            allowDebugLoopbackRelay = allowDebugLoopbackRelay,
+            allowDiagnosticLocalDirectEndpoint = allowDiagnosticLocalDirectEndpoint,
+        )
+    }.getOrElse { error ->
+        return RuntimePairingQrParseResult.Rejected(pairingQrParseUiError(error))
+    }
+    if (payload.hasExpiredRemoteRoute()) {
+        return RuntimePairingQrParseResult.Rejected(
+            error = RuntimeUiError(
+                code = "remote_route_expired",
+                diagnosticCode = "route_diagnostic_remote_route_expired",
+            ),
+            clearPendingPairing = true,
+        )
+    }
+    return RuntimePairingQrParseResult.Accepted(payload)
+}
+
+internal data class PendingPairingConnectionPlan(
+    val pendingState: RuntimeUiState,
+    val target: RuntimeConnectionTarget?,
+    val shouldStartDiscovery: Boolean,
+    val shouldWaitForDiscoveryRoute: Boolean,
+)
+
+internal fun pendingPairingConnectionPlan(
+    state: RuntimeUiState,
+    payload: RuntimePairingPayload,
+): PendingPairingConnectionPlan {
+    val pendingState = state.withPendingPairing(payload)
+    return PendingPairingConnectionPlan(
+        pendingState = pendingState,
+        target = pairingRuntimeConnectionTarget(pendingState, payload),
+        shouldStartDiscovery = payload.shouldWaitForDiscoveryRoute(),
+        shouldWaitForDiscoveryRoute = payload.shouldWaitForDiscoveryRoute(),
     )
 }
 
 internal fun RuntimePairingPayload.shouldWaitForDiscoveryRoute(): Boolean {
     return endpointHintOrNull() == null && !hasRelayRoute()
+}
+
+internal fun pendingPairingExhaustedRouteError(payload: RuntimePairingPayload): RuntimeUiError {
+    return if (payload.hasRelayRoute()) {
+        RuntimeUiError(
+            code = "remote_route_unreachable",
+            diagnosticCode = "route_diagnostic_relay_failed",
+        )
+    } else {
+        RuntimeUiError("pairing_endpoint_unavailable")
+    }
+}
+
+internal fun pairingQrParseUiError(error: Throwable): RuntimeUiError {
+    return when (error.message) {
+        LOCAL_DIRECT_ENDPOINT_QR_ERROR -> RuntimeUiError(
+            code = "pairing_direct_route_rejected",
+            detail = error.message,
+            diagnosticCode = "route_diagnostic_direct_qr_rejected",
+        )
+        RELAY_HOST_UNREACHABLE_QR_ERROR -> RuntimeUiError(
+            code = "pairing_relay_route_rejected",
+            detail = error.message,
+            diagnosticCode = "route_diagnostic_relay_qr_unreachable",
+        )
+        else -> RuntimeUiError("invalid_pairing_qr", error.message)
+    }
 }
 
 private fun TrustedRuntime.toRuntimeTrustedRuntime(): RuntimeTrustedRuntime {
@@ -2720,36 +3499,7 @@ private fun TrustedRuntime.toRuntimeTrustedRuntime(): RuntimeTrustedRuntime {
         relaySecret = relaySecret,
         relayExpiresAtEpochMillis = relayExpiresAtEpochMillis,
         relayNonce = relayNonce,
-    )
-}
-
-private fun RuntimePairingPayload.matchesIdentity(identity: PairedRuntimeIdentity): Boolean {
-    return runtimeDeviceId == identity.deviceId &&
-        fingerprint == identity.fingerprint &&
-        runtimePublicKeyMatches(runtimePublicKeyBase64, identity.publicKeyBase64)
-}
-
-private fun RuntimeTrustedRuntime.matchesIdentity(identity: PairedRuntimeIdentity): Boolean {
-    return deviceId == identity.deviceId &&
-        runtimePublicKeyMatches(fingerprint, identity.fingerprint) &&
-        runtimePublicKeyMatches(publicKeyBase64, identity.publicKeyBase64)
-}
-
-private fun RuntimeTrustedRuntime.relayRouteOrNull(identity: PairedRuntimeIdentity): PreparedRemoteRuntimeRoute.Relay? {
-    val host = relayHost?.takeIf { it.isNotBlank() } ?: return null
-    val port = relayPort?.takeIf { it in 1..65535 } ?: return null
-    val relayRouteId = relayId?.takeIf { it.isNotBlank() } ?: routeToken?.takeIf { it.isNotBlank() } ?: return null
-    return PreparedRemoteRuntimeRoute.Relay(
-        identity = identity,
-        relayId = relayRouteId,
-        host = host,
-        port = port,
-        relayFrameSecret = relaySecret?.takeIf { it.isNotBlank() },
-        security = relaySecurityContext(
-            relayId = relayRouteId,
-            expiresAtEpochMillis = relayExpiresAtEpochMillis,
-            antiReplayNonce = relayNonce,
-        ),
+        relayScope = relayScope,
     )
 }
 
@@ -2759,11 +3509,128 @@ internal fun RuntimeUiState.selectedModelSendState(): SelectedModelSendState {
         ?: return SelectedModelSendState.Missing
     return if (!selectedModel.isChatModel()) {
         SelectedModelSendState.Missing
+    } else if (!selectedModel.isRuntimeHostLocalModel()) {
+        SelectedModelSendState.Missing
     } else if (selectedModel.installed) {
         SelectedModelSendState.Ready
     } else {
         SelectedModelSendState.NotInstalled
     }
+}
+
+internal data class ChatTitleRequestCandidate(
+    val sessionId: String,
+    val model: String,
+    val messages: List<ChatMessagePayload>,
+    val locale: String?,
+)
+
+internal data class ChatSuggestionsRequestCandidate(
+    val sessionId: String,
+    val model: String,
+    val messages: List<ChatMessagePayload>,
+    val maxSuggestions: Int,
+    val locale: String?,
+)
+
+internal fun chatSuggestionsRequestCandidate(
+    sourceState: RuntimeUiState,
+    isSessionAuthenticated: Boolean,
+    requireMissingSuggestions: Boolean,
+    maxContextMessages: Int,
+    maxSuggestions: Int,
+): ChatSuggestionsRequestCandidate? {
+    if (!sourceState.isConnected || !isSessionAuthenticated) return null
+    if (sourceState.isStreaming || sourceState.isLoadingSuggestions) return null
+    if (sourceState.selectedModelSendState() != SelectedModelSendState.Ready) return null
+
+    val sessionId = sourceState.activeChatSessionId ?: return null
+    val model = sourceState.selectedModelId ?: return null
+    val latestAssistant = sourceState.messages.lastOrNull { it.role == "assistant" && it.content.isNotBlank() }
+        ?: return null
+    if (requireMissingSuggestions && latestAssistant.suggestions.isNotEmpty()) return null
+
+    val recentMessages = sourceState.messages
+        .filter { it.role == "user" || it.role == "assistant" }
+        .filter { it.content.isNotBlank() }
+        .takeLast(maxContextMessages)
+        .map { message ->
+            ChatMessagePayload(
+                role = message.role,
+                content = message.content,
+            )
+        }
+    if (recentMessages.size < 2) return null
+
+    return ChatSuggestionsRequestCandidate(
+        sessionId = sessionId,
+        model = model,
+        messages = recentMessages,
+        maxSuggestions = maxSuggestions,
+        locale = sourceState.runtimeRequestLocale(),
+    )
+}
+
+internal fun chatTitleRequestCandidate(
+    sourceState: RuntimeUiState,
+    persistedRuntimeData: PersistedRuntimeData,
+    isSessionAuthenticated: Boolean,
+): ChatTitleRequestCandidate? {
+    if (!sourceState.isConnected || !isSessionAuthenticated) return null
+    if (sourceState.isStreaming) return null
+    if (sourceState.selectedModelSendState() != SelectedModelSendState.Ready) return null
+
+    val sessionId = sourceState.activeChatSessionId ?: return null
+    val session = persistedRuntimeData.sessions.firstOrNull { it.id == sessionId } ?: return null
+    if (session.archivedAtMillis != null || session.titleManuallyEdited || session.titleGenerated) return null
+
+    val chatMessages = sourceState.messages
+        .filter { it.role == "user" || it.role == "assistant" }
+        .filter { it.content.isNotBlank() }
+    if (chatMessages.count { it.role == "user" } != 1) return null
+    if (chatMessages.count { it.role == "assistant" } != 1) return null
+
+    val model = sourceState.selectedModelId ?: return null
+    return ChatTitleRequestCandidate(
+        sessionId = sessionId,
+        model = model,
+        messages = chatMessages.map { message ->
+            ChatMessagePayload(
+                role = message.role,
+                content = message.content,
+            )
+        },
+        locale = sourceState.runtimeRequestLocale(),
+    )
+}
+
+internal fun RuntimeUiState.runtimeRequestLocale(): String {
+    return RuntimeAppLanguage.normalizeLanguageTag(selectedLanguageTag)
+}
+
+internal fun attachmentOnlyPrompt(
+    attachments: List<RuntimePendingAttachment>,
+    languageTag: String,
+): String {
+    val label = when (RuntimeAppLanguage.normalizeLanguageTag(languageTag)) {
+        RuntimeAppLanguage.Korean.languageTag -> "첨부한 입력을 분석하세요:"
+        RuntimeAppLanguage.Japanese.languageTag -> "添付された入力を分析してください:"
+        RuntimeAppLanguage.SimplifiedChinese.languageTag -> "请分析附加输入："
+        RuntimeAppLanguage.French.languageTag -> "Analysez les éléments joints :"
+        else -> "Analyze attached input:"
+    }
+    return attachments.joinToString(
+        separator = "\n",
+        prefix = "$label\n",
+    ) { "- ${it.name}" }
+}
+
+internal fun runtimeOwnedChatMutationRequiresConnectedRuntime(
+    sessions: List<PersistedChatSession>,
+    isSessionAuthenticated: Boolean,
+    isTransportConnected: Boolean,
+): Boolean {
+    return sessions.any { it.runtimeOwned } && !(isSessionAuthenticated && isTransportConnected)
 }
 
 internal data class ReconciledModelSelections(
@@ -2778,7 +3645,7 @@ internal fun reconcileModelSelections(
     models: List<RuntimeModel>,
     installTargetModelId: String? = null,
 ): ReconciledModelSelections {
-    val chatModels = models.filter { it.isChatModel() }
+    val chatModels = models.filter { it.isChatModel() && it.isRuntimeHostLocalModel() }
     val embeddingModels = models.filter { it.isEmbeddingModel() }
     val installedTarget = installTargetModelId?.let { target ->
         chatModels.firstOrNull { it.id == target && it.installed }
@@ -2792,6 +3659,7 @@ internal fun reconcileModelSelections(
     val selectedEmbeddingModelId = when {
         currentSelectedEmbeddingModelId == null -> null
         models.any { it.id == currentSelectedEmbeddingModelId && !it.isEmbeddingModel() } -> null
+        models.any { it.id == currentSelectedEmbeddingModelId && it.isEmbeddingModel() && !it.installed } -> null
         else -> currentSelectedEmbeddingModelId
     }
     return ReconciledModelSelections(
@@ -2812,6 +3680,11 @@ internal fun RuntimeModel.isEmbeddingModel(): Boolean {
 
 internal fun RuntimeModel.supportsImageInput(): Boolean {
     return isChatModel() && capabilities.any { it == "vision" || it == "image" || it == "multimodal" }
+}
+
+internal fun RuntimeModel.isRuntimeHostLocalModel(): Boolean {
+    val normalizedSource = source?.trim()?.lowercase()
+    return normalizedSource == null || normalizedSource == "local"
 }
 
 internal fun normalizeModelKind(
@@ -2868,13 +3741,28 @@ internal fun RuntimeUiState.withChatDelta(
     val index = updated.indexOfLast { it.role == "assistant" }
     if (index >= 0) {
         val item = updated[index]
-        updated[index] = item.copy(
-            content = item.content + payload.content,
-            reasoning = item.reasoning + payload.reasoning,
-            suggestions = emptyList(),
-        )
+        updated[index] = item.withAssistantDelta(payload)
     }
     return copy(messages = updated)
+}
+
+private fun RuntimeChatMessage.withAssistantDelta(payload: ChatDeltaPayload): RuntimeChatMessage {
+    val parsedContent = payload.content.extractInlineReasoning(
+        startsInReasoning = isReasoningOpen,
+        pendingTag = inlineReasoningPendingTag,
+    )
+    val answerDelta = if (content.isBlank()) {
+        parsedContent.answer.trimStart()
+    } else {
+        parsedContent.answer
+    }
+    return copy(
+        content = content + answerDelta,
+        reasoning = reasoning + payload.reasoning + parsedContent.reasoning,
+        isReasoningOpen = parsedContent.isReasoningOpen,
+        inlineReasoningPendingTag = parsedContent.pendingTag,
+        suggestions = emptyList(),
+    )
 }
 
 internal fun RuntimeUiState.withChatDone(
@@ -2883,7 +3771,18 @@ internal fun RuntimeUiState.withChatDone(
 ): RuntimeUiState {
     if (activeRequestId != envelope.requestId) return this
     return copy(
-        messages = messages.withoutTrailingBlankAssistantPlaceholder(),
+        messages = messages
+            .map { message ->
+                if (message.role == "assistant") {
+                    message.copy(
+                        isReasoningOpen = false,
+                        inlineReasoningPendingTag = "",
+                    )
+                } else {
+                    message
+                }
+            }
+            .withoutTrailingBlankAssistantPlaceholder(),
         isStreaming = false,
         activeRequestId = null,
         error = if (payload?.finishReason == "cancelled") RuntimeUiError("generation_cancelled") else error,
@@ -2944,7 +3843,21 @@ internal fun RuntimeUiState.withRuntimeError(
     }
 }
 
-internal fun RuntimeUiState.withRuntimeReceiveFailure(detail: String?): RuntimeUiState {
+internal fun RuntimeUiState.runtimeReceiveFailureUiError(error: Throwable): RuntimeUiError {
+    if (activeRouteKind == RuntimeActiveRouteKind.Relay && error.isRelayFrameAuthenticationFailure()) {
+        return RuntimeUiError(
+            code = "remote_route_auth_failed",
+            detail = error.message,
+            diagnosticCode = "route_diagnostic_relay_auth_failed",
+        )
+    }
+    return RuntimeUiError("receive_failed", error.message)
+}
+
+internal fun RuntimeUiState.withRuntimeReceiveFailure(detail: String?): RuntimeUiState =
+    withRuntimeReceiveFailure(RuntimeUiError("receive_failed", detail))
+
+internal fun RuntimeUiState.withRuntimeReceiveFailure(error: RuntimeUiError): RuntimeUiState {
     return copy(
         isConnected = false,
         isStreaming = false,
@@ -2958,8 +3871,25 @@ internal fun RuntimeUiState.withRuntimeReceiveFailure(detail: String?): RuntimeU
         } else {
             messages
         },
-        error = RuntimeUiError("receive_failed", detail),
+        error = error,
     )
+}
+
+private fun Throwable.isRelayFrameAuthenticationFailure(): Boolean {
+    var current: Throwable? = this
+    while (current != null) {
+        if (current is javax.crypto.AEADBadTagException) return true
+        val message = current.message?.lowercase().orEmpty()
+        if (
+            "tag mismatch" in message ||
+            "mac check failed" in message ||
+            "authentication tag" in message
+        ) {
+            return true
+        }
+        current = current.cause
+    }
+    return false
 }
 
 internal fun RuntimeUiState.withPairingRequiredRuntimeState(detail: String?): RuntimeUiState {
@@ -2997,4 +3927,111 @@ private fun List<RuntimeChatMessage>.withoutTrailingBlankAssistantPlaceholder():
     }
 }
 
+internal fun String.extractInlineReasoning(startsInReasoning: Boolean = false): InlineReasoningDelta {
+    return extractInlineReasoning(
+        startsInReasoning = startsInReasoning,
+        pendingTag = "",
+    )
+}
+
+internal fun String.extractInlineReasoning(
+    startsInReasoning: Boolean = false,
+    pendingTag: String,
+): InlineReasoningDelta {
+    if (isEmpty()) {
+        return InlineReasoningDelta(
+            answer = "",
+            reasoning = "",
+            isReasoningOpen = startsInReasoning,
+            pendingTag = pendingTag,
+        )
+    }
+
+    val combined = pendingTag + this
+    val pendingTagRange = combined.trailingPartialThinkTagRange()
+    val text = if (pendingTagRange == null) {
+        combined
+    } else {
+        combined.removeRange(pendingTagRange)
+    }
+    val nextPendingTag = pendingTagRange?.let { combined.substring(it) }.orEmpty()
+    if (text.isEmpty()) {
+        return InlineReasoningDelta(
+            answer = "",
+            reasoning = "",
+            isReasoningOpen = startsInReasoning,
+            pendingTag = nextPendingTag,
+        )
+    }
+
+    val answer = StringBuilder()
+    val reasoning = StringBuilder()
+    var cursor = 0
+    var isReasoningOpen = startsInReasoning
+
+    while (cursor < text.length) {
+        if (isReasoningOpen) {
+            val closeTag = THINK_CLOSE_TAG_REGEX.find(text, cursor)
+            if (closeTag == null) {
+                reasoning.append(text.substring(cursor))
+                cursor = text.length
+            } else {
+                reasoning.append(text.substring(cursor, closeTag.range.first))
+                cursor = closeTag.range.last + 1
+                isReasoningOpen = false
+            }
+        } else {
+            val openTag = THINK_OPEN_TAG_REGEX.find(text, cursor)
+            val strayCloseTag = THINK_CLOSE_TAG_REGEX.find(text, cursor)
+            if (strayCloseTag != null && (openTag == null || strayCloseTag.range.first < openTag.range.first)) {
+                answer.append(text.substring(cursor, strayCloseTag.range.first))
+                cursor = strayCloseTag.range.last + 1
+            } else if (openTag == null) {
+                answer.append(text.substring(cursor))
+                cursor = text.length
+            } else {
+                answer.append(text.substring(cursor, openTag.range.first))
+                cursor = openTag.range.last + 1
+                isReasoningOpen = true
+            }
+        }
+    }
+
+    return InlineReasoningDelta(
+        answer = answer.toString(),
+        reasoning = reasoning.toString(),
+        isReasoningOpen = isReasoningOpen,
+        pendingTag = nextPendingTag,
+    )
+}
+
+internal data class InlineReasoningDelta(
+    val answer: String,
+    val reasoning: String,
+    val isReasoningOpen: Boolean,
+    val pendingTag: String = "",
+)
+
+private const val LOCAL_DIRECT_ENDPOINT_QR_ERROR = "Local direct endpoint QR routes are diagnostic-only"
+private const val RELAY_HOST_UNREACHABLE_QR_ERROR = "Relay host is not reachable for remote pairing"
 private val LOCAL_MODEL_BACKEND_PORTS = setOf(11434, 1234)
+private val THINK_OPEN_TAG_REGEX = Regex("<\\s*(think|thinking)\\s*>", RegexOption.IGNORE_CASE)
+private val THINK_CLOSE_TAG_REGEX = Regex("<\\s*/\\s*(think|thinking)\\s*>", RegexOption.IGNORE_CASE)
+private val THINK_TAG_TOKENS = listOf(
+    "<think>",
+    "<thinking>",
+    "</think>",
+    "</thinking>",
+)
+
+private fun String.trailingPartialThinkTagRange(): IntRange? {
+    val tagStart = lastIndexOf('<')
+    if (tagStart < 0) return null
+    val suffix = substring(tagStart).lowercase()
+    if (suffix in THINK_TAG_TOKENS) return null
+    return if (THINK_TAG_TOKENS.any { it.startsWith(suffix) }) {
+        tagStart until length
+    } else {
+        null
+    }
+}

@@ -2,8 +2,19 @@ import CompanionCore
 import SwiftUI
 
 struct ContentView: View {
-    @ObservedObject var model: CompanionAppModel
+    @ObservedObject private var model: CompanionAppModel
+    @Binding private var requestedSection: CompanionSection?
     @SceneStorage("selectedSection") private var selectedSection = CompanionSection.status
+    @AppStorage(AetherLinkAppLanguageStorageKey) private var appLanguageTag = AetherLinkAppLanguage.defaultLanguage.rawValue
+    @AppStorage(AetherLinkAppAppearanceStorageKey) private var appAppearance = AetherLinkAppAppearance.defaultAppearance.rawValue
+
+    init(
+        model: CompanionAppModel,
+        requestedSection: Binding<CompanionSection?> = .constant(nil)
+    ) {
+        self.model = model
+        self._requestedSection = requestedSection
+    }
 
     var body: some View {
         NavigationSplitView {
@@ -31,6 +42,16 @@ struct ContentView: View {
                         .tag(section)
                 }
                 .listStyle(.sidebar)
+
+                Divider()
+                    .padding(.horizontal, 12)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    AetherLinkAppearancePicker(appearance: appearanceBinding)
+                    AetherLinkLanguagePicker(languageTag: languageBinding)
+                }
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 12)
             }
             .background(.bar)
             .navigationSplitViewColumnWidth(min: 180, ideal: 220)
@@ -63,7 +84,7 @@ struct ContentView: View {
                 Button {
                     Task { await model.loadModels() }
                 } label: {
-                    Label(NSLocalizedString("Load Local Models", comment: ""), systemImage: "shippingbox")
+                    Label(NSLocalizedString("Load Models", comment: ""), systemImage: "shippingbox")
                 }
 
                 Button {
@@ -71,17 +92,96 @@ struct ContentView: View {
                     selectedSection = .pairing
                 } label: {
                     if model.pairingSession == nil {
-                        Label(NSLocalizedString("Start Pairing", comment: ""), systemImage: "qrcode")
+                        Label(NSLocalizedString("Generate Pairing QR", comment: ""), systemImage: "qrcode")
                     } else {
-                        Label(NSLocalizedString("Generate New Code", comment: ""), systemImage: "arrow.triangle.2.circlepath")
+                        Label(NSLocalizedString("Generate New QR", comment: ""), systemImage: "arrow.triangle.2.circlepath")
                     }
                 }
             }
         }
+        .onAppear {
+            selectedSection = companionSectionAfterExternalRequest(
+                current: selectedSection,
+                trustedDeviceCount: model.trustedDevices.count,
+                requested: requestedSection
+            )
+            requestedSection = nil
+        }
+        .onChange(of: requestedSection) { _, requested in
+            guard let requested else { return }
+            selectedSection = companionSectionAfterExternalRequest(
+                current: selectedSection,
+                trustedDeviceCount: model.trustedDevices.count,
+                requested: requested
+            )
+            requestedSection = nil
+        }
+        .onChange(of: model.trustedDevices.count) { _, trustedDeviceCount in
+            selectedSection = companionSectionAfterTrustedDeviceCountChange(
+                current: selectedSection,
+                trustedDeviceCount: trustedDeviceCount
+            )
+        }
+    }
+
+    private var languageBinding: Binding<String> {
+        Binding(
+            get: {
+                AetherLinkAppLanguage.normalized(appLanguageTag).rawValue
+            },
+            set: { newValue in
+                appLanguageTag = AetherLinkAppLanguage.normalized(newValue).rawValue
+            }
+        )
+    }
+
+    private var appearanceBinding: Binding<String> {
+        Binding(
+            get: {
+                AetherLinkAppAppearance.normalized(appAppearance).rawValue
+            },
+            set: { newValue in
+                appAppearance = AetherLinkAppAppearance.normalized(newValue).rawValue
+            }
+        )
     }
 }
 
-private enum CompanionSection: String, CaseIterable, Identifiable {
+private struct AetherLinkAppearancePicker: View {
+    @Binding var appearance: String
+
+    var body: some View {
+        Picker(selection: $appearance) {
+            ForEach(AetherLinkAppAppearance.pickerOptions) { option in
+                Text(option.title)
+                    .tag(option.rawValue)
+            }
+        } label: {
+            Label(NSLocalizedString("Appearance", comment: ""), systemImage: "circle.lefthalf.filled")
+        }
+        .pickerStyle(.menu)
+        .controlSize(.small)
+    }
+}
+
+private struct AetherLinkLanguagePicker: View {
+    @Binding var languageTag: String
+
+    var body: some View {
+        Picker(selection: $languageTag) {
+            ForEach(AetherLinkAppLanguage.pickerOptions) { language in
+                Text(language.title)
+                    .tag(language.rawValue)
+            }
+        } label: {
+            Label(NSLocalizedString("Language", comment: ""), systemImage: "globe")
+        }
+        .pickerStyle(.menu)
+        .controlSize(.small)
+    }
+}
+
+enum CompanionSection: String, CaseIterable, Identifiable {
     case status
     case pairing
     case trustedDevices
@@ -98,7 +198,7 @@ private enum CompanionSection: String, CaseIterable, Identifiable {
         case .trustedDevices:
             return NSLocalizedString("Trusted Devices", comment: "")
         case .logs:
-            return NSLocalizedString("Logs", comment: "")
+            return NSLocalizedString("Activity", comment: "")
         }
     }
 
@@ -110,4 +210,38 @@ private enum CompanionSection: String, CaseIterable, Identifiable {
         case .logs: "list.bullet.rectangle"
         }
     }
+}
+
+func companionOnboardingSection(
+    current: CompanionSection,
+    trustedDeviceCount: Int
+) -> CompanionSection {
+    if trustedDeviceCount == 0 {
+        return .pairing
+    }
+    return current
+}
+
+func companionSectionAfterExternalRequest(
+    current: CompanionSection,
+    trustedDeviceCount: Int,
+    requested: CompanionSection?
+) -> CompanionSection {
+    if let requested {
+        return requested
+    }
+    return companionOnboardingSection(
+        current: current,
+        trustedDeviceCount: trustedDeviceCount
+    )
+}
+
+func companionSectionAfterTrustedDeviceCountChange(
+    current: CompanionSection,
+    trustedDeviceCount: Int
+) -> CompanionSection {
+    return companionOnboardingSection(
+        current: current,
+        trustedDeviceCount: trustedDeviceCount
+    )
 }

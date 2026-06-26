@@ -13,7 +13,7 @@ struct StatusView: View {
             VStack(alignment: .leading, spacing: 18) {
                 CompanionPageHeader(
                     title: NSLocalizedString("AetherLink Runtime", comment: ""),
-                    subtitle: NSLocalizedString("Bridge trusted client devices through this local runtime to local models.", comment: ""),
+                    subtitle: NSLocalizedString("Bridge trusted devices through AetherLink Runtime to local models.", comment: ""),
                     systemImage: "bolt.horizontal.circle.fill"
                 )
 
@@ -28,7 +28,7 @@ struct StatusView: View {
                         tone: transportTone(for: model.transportState)
                     )
                     StatusCard(
-                        title: NSLocalizedString("Connection Routes", comment: ""),
+                        title: NSLocalizedString("Device Connections", comment: ""),
                         value: connectionRouteValue,
                         detail: connectionRouteDetail,
                         systemImage: "point.3.connected.trianglepath.dotted",
@@ -74,13 +74,14 @@ struct StatusView: View {
                             onGenerateRelayQRCode?()
                         } label: {
                             if model.pairingSession == nil {
-                                Label(NSLocalizedString("Start Pairing", comment: ""), systemImage: "qrcode")
+                                Label(NSLocalizedString("Generate Pairing QR", comment: ""), systemImage: "qrcode")
                             } else {
-                                Label(NSLocalizedString("Generate New Code", comment: ""), systemImage: "arrow.triangle.2.circlepath")
+                                Label(NSLocalizedString("Generate New QR", comment: ""), systemImage: "arrow.triangle.2.circlepath")
                             }
                         }
                         .buttonStyle(.borderedProminent)
-                        .disabled(onGenerateRelayQRCode == nil)
+                        .disabled(!canGeneratePairingQR || onGenerateRelayQRCode == nil)
+                        .help(pairingQRGenerationHelpText)
 
                         Button {
                             Task { await model.refreshBackendStatus() }
@@ -92,7 +93,7 @@ struct StatusView: View {
                         Button {
                             Task { await model.loadModels() }
                         } label: {
-                            Label(NSLocalizedString("Load Local Models", comment: ""), systemImage: "shippingbox")
+                            Label(NSLocalizedString("Load Models", comment: ""), systemImage: "shippingbox")
                         }
                         .buttonStyle(.bordered)
                     }
@@ -110,12 +111,12 @@ struct StatusView: View {
                     }
                 }
 
-                CompanionPanel(title: NSLocalizedString("Local Models", comment: ""), systemImage: "shippingbox") {
+                CompanionPanel(title: NSLocalizedString("Models", comment: ""), systemImage: "shippingbox") {
                     if model.models.isEmpty {
                         ContentUnavailableView(
-                            NSLocalizedString("No local models loaded", comment: ""),
+                            NSLocalizedString("No models loaded", comment: ""),
                             systemImage: "shippingbox",
-                            description: Text(NSLocalizedString("Load models to confirm what client devices can request through this local runtime.", comment: ""))
+                            description: Text(NSLocalizedString("Load models available through AetherLink Runtime.", comment: ""))
                         )
                         .frame(maxWidth: .infinity, minHeight: 180)
                     } else {
@@ -130,10 +131,12 @@ struct StatusView: View {
                     }
                 }
 
-                DevelopmentRelayPanel(
-                    model: model,
-                    onGenerateRelayQRCode: onGenerateRelayQRCode
-                )
+                if shouldShowRouteDiagnosticsPanel(model: model) {
+                    RemoteRelayRoutePanel(
+                        model: model,
+                        onGenerateRelayQRCode: onGenerateRelayQRCode
+                    )
+                }
             }
             .padding(24)
             .frame(maxWidth: 920, alignment: .leading)
@@ -143,12 +146,11 @@ struct StatusView: View {
     private var runtimeDetail: String {
         switch model.transportState.state {
         case .advertising:
-            return NSLocalizedString("Trusted devices can resolve the current local route after pairing.", comment: "")
+            return NSLocalizedString("Trusted devices can find this AetherLink Runtime nearby after pairing.", comment: "")
         case .failed:
-            return model.transportState.failureMessage
-                ?? NSLocalizedString("Runtime listener could not start.", comment: "")
+            return NSLocalizedString("AetherLink Runtime needs attention. Check Activity or restart AetherLink Runtime.", comment: "")
         case .stopped:
-            return NSLocalizedString("The local runtime listener is not active.", comment: "")
+            return NSLocalizedString("AetherLink Runtime is not active.", comment: "")
         }
     }
 
@@ -157,28 +159,49 @@ struct StatusView: View {
             return NSLocalizedString("Not ready", comment: "")
         }
         return model.hasDevelopmentRelayRoute
-            ? NSLocalizedString("Local + development relay", comment: "")
-            : NSLocalizedString("Local route", comment: "")
+            ? NSLocalizedString("Nearby + cross-network", comment: "")
+            : NSLocalizedString("Nearby only", comment: "")
     }
 
     private var connectionRouteDetail: String {
         guard model.transportState.state == .advertising else {
-            return NSLocalizedString("Start the runtime listener before resolving routes.", comment: "")
+            return NSLocalizedString("Start AetherLink Runtime before devices can connect.", comment: "")
         }
         if model.hasDevelopmentRelayRoute {
-            let endpoint = model.developmentRelayEndpoint ?? NSLocalizedString("configured relay", comment: "")
+            return connectionRouteStatusDetail
+        }
+        return NSLocalizedString("No cross-network connection details are saved yet. Pairing still works nearby, and QR-based remote connection can be prepared later.", comment: "")
+    }
+
+    private var connectionRouteStatusDetail: String {
+        let status = model.developmentRelayConnectionStatus
+        let endpoint = status.endpoint ?? model.developmentRelayEndpoint ?? NSLocalizedString("saved connection", comment: "")
+        switch status.status {
+        case .ready:
             if model.relayFrameEncryptionEnabled {
                 return String(
-                    format: NSLocalizedString("Development relay %@ is configured; relay frame bodies are encrypted, but production P2P remains roadmap.", comment: ""),
+                    format: NSLocalizedString("AetherLink Runtime and the trusted device are connected through %@. Model requests still run only through AetherLink Runtime.", comment: ""),
                     endpoint
                 )
             }
+            return NSLocalizedString("Connection details need a secure connection secret before sharing sensitive content.", comment: "")
+        case .waitingForPeer:
             return String(
-                format: NSLocalizedString("Development relay %@ is configured without relay_secret; use only for testing until encrypted session setup is complete.", comment: ""),
+                format: NSLocalizedString("%@ is ready and waiting for a trusted device.", comment: ""),
                 endpoint
             )
+        case .connecting:
+            return String(format: NSLocalizedString("Connecting through %@.", comment: ""), endpoint)
+        case .reconnecting:
+            return String(format: NSLocalizedString("Reconnecting through %@.", comment: ""), endpoint)
+        case .failed:
+            return String(
+                format: NSLocalizedString("Connection through %@ failed. Check Advanced Connection Setup, then try again.", comment: ""),
+                endpoint
+            )
+        case .stopped:
+            return NSLocalizedString("Start AetherLink Runtime to use these connection details.", comment: "")
         }
-        return NSLocalizedString("Local discovery/direct routes are available after pairing. Different-network production P2P remains roadmap.", comment: "")
     }
 
     private var connectionRouteTone: StatusTone {
@@ -249,7 +272,7 @@ struct StatusView: View {
 
     private var trustedDeviceDetail: String {
         model.trustedDevices.isEmpty
-            ? NSLocalizedString("Pair a client device before allowing runtime requests.", comment: "")
+            ? NSLocalizedString("Pair a device before allowing runtime requests.", comment: "")
             : NSLocalizedString("Authenticated devices can request runtime sessions.", comment: "")
     }
 
@@ -277,6 +300,7 @@ struct StatusView: View {
             )
         }
         return model.modelResidency.lastEvent
+            .map(localizedModelResidencyEvent)
             ?? NSLocalizedString("No active model is resident through the runtime policy.", comment: "")
     }
 
@@ -294,15 +318,29 @@ struct StatusView: View {
         case .lmStudio:
             return NSLocalizedString("LM Studio", comment: "")
         case .aggregate:
-            return NSLocalizedString("Local runtime", comment: "")
+            return NSLocalizedString("AetherLink Runtime", comment: "")
         }
+    }
+
+    private func localizedModelResidencyEvent(_ event: String) -> String {
+        let normalized = event.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if normalized.hasPrefix("model unload failed:") {
+            return NSLocalizedString("Model unload failed. Check Activity.", comment: "")
+        }
+        if normalized.hasPrefix("model unload requested:") {
+            return NSLocalizedString("Model unload requested by runtime policy.", comment: "")
+        }
+        if normalized.hasPrefix("model unloaded:") {
+            return NSLocalizedString("Model unloaded by runtime policy.", comment: "")
+        }
+        return NSLocalizedString("Model residency updated.", comment: "")
     }
 
     private var readinessItems: [ReadinessItem] {
         [
             ReadinessItem(
                 id: "runtime-listener",
-                title: NSLocalizedString("Runtime listener", comment: ""),
+                title: NSLocalizedString("AetherLink Runtime", comment: ""),
                 detail: runtimeReadinessDetail,
                 tone: transportTone(for: model.transportState)
             ),
@@ -322,7 +360,7 @@ struct StatusView: View {
                 id: "model-list-loaded",
                 title: NSLocalizedString("Model list loaded", comment: ""),
                 detail: model.models.isEmpty
-                    ? NSLocalizedString("Load models to show what this local runtime can offer.", comment: "")
+                    ? NSLocalizedString("Load models to show what AetherLink Runtime can offer.", comment: "")
                     : String(format: NSLocalizedString("%d model(s) loaded", comment: ""), model.models.count),
                 tone: model.models.isEmpty ? .inactive : .ready
             )
@@ -332,357 +370,147 @@ struct StatusView: View {
     private var runtimeReadinessDetail: String {
         switch model.transportState.state {
         case .advertising:
-            return NSLocalizedString("Accepting authenticated runtime sessions.", comment: "")
+            return NSLocalizedString("Ready for paired devices.", comment: "")
         case .failed:
-            return model.transportState.failureMessage
-                ?? NSLocalizedString("Runtime listener could not start.", comment: "")
+            return NSLocalizedString("AetherLink Runtime needs attention. Check Activity or restart AetherLink Runtime.", comment: "")
         case .stopped:
-            return NSLocalizedString("Start AetherLink Runtime listener.", comment: "")
+            return NSLocalizedString("Start AetherLink Runtime.", comment: "")
         }
     }
 
     private var runtimeOverview: RuntimeOverview {
-        if model.transportState.state != .advertising {
+        let focus = statusRuntimeOverviewFocus(
+            isRuntimeAdvertising: model.transportState.state == .advertising,
+            isBackendReady: backendSummary.tone == .ready,
+            hasTrustedDevices: !model.trustedDevices.isEmpty,
+            hasLoadedModels: !model.models.isEmpty,
+            hasRoutePreparationIssue: model.remoteRoutePreparationIssue != nil,
+            hasDevelopmentRelayRoute: model.hasDevelopmentRelayRoute,
+            isDevelopmentRelayQRCodeReady: model.isDevelopmentRelayQRCodeReady
+        )
+
+        switch focus {
+        case .runtimeSetup:
             return RuntimeOverview(
                 title: NSLocalizedString("Setup needed", comment: ""),
-                detail: NSLocalizedString("Start AetherLink Runtime before client devices can connect.", comment: ""),
-                footnote: NSLocalizedString("Client requests stay mediated by this local runtime. Ollama and LM Studio are never exposed directly to client devices.", comment: ""),
+                detail: NSLocalizedString("Start AetherLink Runtime before devices can connect.", comment: ""),
+                footnote: NSLocalizedString("AetherLink Runtime mediates device requests. Model providers stay private.", comment: ""),
                 tone: transportTone(for: model.transportState)
             )
-        }
-
-        if backendSummary.tone != .ready {
+        case .pairing:
             return RuntimeOverview(
-                title: NSLocalizedString("Model service needs attention", comment: ""),
-                detail: NSLocalizedString("Start Ollama or LM Studio here, then check model providers.", comment: ""),
-                footnote: NSLocalizedString("Client requests stay mediated by this local runtime. Ollama and LM Studio are never exposed directly to client devices.", comment: ""),
-                tone: backendSummary.tone
-            )
-        }
-
-        if model.trustedDevices.isEmpty {
-            return RuntimeOverview(
-                title: NSLocalizedString("Pair a Client Device to Continue", comment: ""),
-                detail: NSLocalizedString("Generate a QR pairing code and scan it from the AetherLink client app.", comment: ""),
-                footnote: NSLocalizedString("Pairing creates a trusted-device record so the client device can reconnect without entering backend URLs.", comment: ""),
+                title: NSLocalizedString("Pair a Device to Continue", comment: ""),
+                detail: pairingOverviewDetail,
+                footnote: NSLocalizedString("Pairing saves trust so devices reconnect without provider URLs.", comment: ""),
                 tone: .inactive
             )
-        }
-
-        if model.models.isEmpty {
+        case .backend:
             return RuntimeOverview(
-                title: NSLocalizedString("Load local models", comment: ""),
-                detail: NSLocalizedString("Load models so client devices can choose an installed chat model through this local runtime.", comment: ""),
+                title: NSLocalizedString("Model service needs attention", comment: ""),
+                detail: NSLocalizedString("Start a model provider for AetherLink Runtime, then check again.", comment: ""),
+                footnote: NSLocalizedString("AetherLink Runtime mediates device requests. Model providers stay private.", comment: ""),
+                tone: backendSummary.tone
+            )
+        case .models:
+            return RuntimeOverview(
+                title: NSLocalizedString("Load models", comment: ""),
+                detail: NSLocalizedString("Load models so devices can choose an installed chat model through AetherLink Runtime.", comment: ""),
                 footnote: NSLocalizedString("Chat and embedding model choices are managed separately so each workflow uses the right model.", comment: ""),
                 tone: .neutral
             )
-        }
-
-        if model.hasDevelopmentRelayRoute && !model.isDevelopmentRelayQRCodeReady {
+        case .routeIssue:
+            guard let issue = model.remoteRoutePreparationIssue else {
+                break
+            }
             return RuntimeOverview(
-                title: NSLocalizedString("Remote route unavailable for QR", comment: ""),
-                detail: NSLocalizedString("Use a public, VPN, or tunnel relay address before generating a remote QR.", comment: ""),
-                footnote: NSLocalizedString("The client device remains a controller; all model access stays on the runtime host.", comment: ""),
+                title: NSLocalizedString("Connection details need attention", comment: ""),
+                detail: remoteRoutePreparationIssueText(issue),
+                footnote: NSLocalizedString("Devices control sessions; all model access stays inside AetherLink Runtime.", comment: ""),
+                tone: .warning
+            )
+        case .routeQRCode:
+            return RuntimeOverview(
+                title: NSLocalizedString("Connection details not ready for QR", comment: ""),
+                detail: relayQRCodeReadinessText(
+                    settings: model.developmentRelaySettings,
+                    isEligibleForQRCode: model.isDevelopmentRelayRouteEligibleForQRCode,
+                    isPreparedForQRCode: model.isDevelopmentRelayRoutePreparedForQRCode,
+                    connectionStatus: model.developmentRelayConnectionStatus
+                ),
+                footnote: NSLocalizedString("Devices control sessions; all model access stays inside AetherLink Runtime.", comment: ""),
                 tone: .neutral
             )
+        case .ready:
+            break
         }
 
         return RuntimeOverview(
-            title: NSLocalizedString("Ready for Client Devices", comment: ""),
-            detail: NSLocalizedString("Route ready, model provider responding, trusted devices can chat.", comment: ""),
-            footnote: NSLocalizedString("The client device remains a controller; all model access stays on the runtime host.", comment: ""),
+            title: NSLocalizedString("Ready for Devices", comment: ""),
+            detail: NSLocalizedString("AetherLink Runtime is ready, model providers are responding, and trusted devices can chat.", comment: ""),
+            footnote: NSLocalizedString("Devices control sessions; all model access stays inside AetherLink Runtime.", comment: ""),
             tone: .ready
         )
     }
+
+    private var pairingOverviewDetail: String {
+        if model.canPrepareRemoteRelayRouteAutomatically {
+            return NSLocalizedString("Generate and scan a pairing QR. AetherLink prepares connection details automatically when available.", comment: "")
+        }
+        return NSLocalizedString("Generate a pairing QR when connection preparation is available. Use Advanced Connection Setup only when automatic preparation is unavailable.", comment: "")
+    }
+
+    private var canGeneratePairingQR: Bool {
+        pairingQRGenerationAvailable(
+            canPrepareAutomatically: model.canPrepareRemoteRelayRouteAutomatically,
+            isRouteEligibleForQRCode: model.isDevelopmentRelayRouteEligibleForQRCode
+        )
+    }
+
+    private var pairingQRGenerationHelpText: String {
+        canGeneratePairingQR
+            ? NSLocalizedString("Generate Pairing QR", comment: "")
+            : NSLocalizedString("Pairing from another network needs connection details inside the pairing QR.", comment: "")
+    }
 }
 
-private struct DevelopmentRelayPanel: View {
-    @ObservedObject var model: CompanionAppModel
-    var onGenerateRelayQRCode: (() -> Void)?
-    @State private var host = ""
-    @State private var port = "43171"
-    @State private var relaySecret = ""
-    @State private var message: String?
-    @State private var messageTone = StatusTone.neutral
-    @State private var isAdvancedSettingsExpanded = false
+enum StatusRuntimeOverviewFocus: Equatable {
+    case runtimeSetup
+    case pairing
+    case backend
+    case models
+    case routeIssue
+    case routeQRCode
+    case ready
+}
 
-    var body: some View {
-        CompanionPanel(title: NSLocalizedString("Remote Relay", comment: ""), systemImage: "point.3.connected.trianglepath.dotted") {
-            VStack(alignment: .leading, spacing: 12) {
-                relayStatus
-
-                DisclosureGroup(isExpanded: $isAdvancedSettingsExpanded) {
-                    advancedRouteSettings
-                        .padding(.top, 8)
-                } label: {
-                    Label(NSLocalizedString("Advanced Route Settings", comment: ""), systemImage: "slider.horizontal.3")
-                        .font(.subheadline.weight(.semibold))
-                }
-
-                if let message {
-                    Label(message, systemImage: messageTone.systemImage)
-                        .font(.caption)
-                        .foregroundStyle(messageTone.color)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-        }
-        .onAppear(perform: syncFromModel)
+func statusRuntimeOverviewFocus(
+    isRuntimeAdvertising: Bool,
+    isBackendReady: Bool,
+    hasTrustedDevices: Bool,
+    hasLoadedModels: Bool,
+    hasRoutePreparationIssue: Bool,
+    hasDevelopmentRelayRoute: Bool,
+    isDevelopmentRelayQRCodeReady: Bool
+) -> StatusRuntimeOverviewFocus {
+    guard isRuntimeAdvertising else {
+        return .runtimeSetup
     }
-
-    @ViewBuilder
-    private var advancedRouteSettings: some View {
-        let settings = model.developmentRelaySettings
-        VStack(alignment: .leading, spacing: 12) {
-            Text(NSLocalizedString("Use a relay host both devices can reach when they are not on the same network. The relay forwards AetherLink frames only; model providers stay private on this runtime host.", comment: ""))
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            HStack(spacing: 8) {
-                TextField(NSLocalizedString("Relay host", comment: ""), text: $host)
-                    .textFieldStyle(.roundedBorder)
-                TextField(NSLocalizedString("Port", comment: ""), text: $port)
-                    .textFieldStyle(.roundedBorder)
-                    .frame(width: 86)
-            }
-
-            SecureField(NSLocalizedString("Relay frame secret", comment: ""), text: $relaySecret, prompt: Text(NSLocalizedString("Generated automatically if blank", comment: "")))
-                .textFieldStyle(.roundedBorder)
-
-            HStack(spacing: 8) {
-                Button {
-                    saveRelay()
-                } label: {
-                    Label(NSLocalizedString("Save Relay", comment: ""), systemImage: "externaldrive.badge.checkmark")
-                }
-                .buttonStyle(.bordered)
-
-                Button {
-                    model.regenerateDevelopmentRelaySecret()
-                    syncFromModel()
-                    message = NSLocalizedString("Relay frame secret regenerated.", comment: "")
-                    messageTone = .ready
-                } label: {
-                    Label(NSLocalizedString("Generate Secret", comment: ""), systemImage: "key")
-                }
-                .buttonStyle(.bordered)
-
-                if settings.isEnabled {
-                    Button(role: .destructive) {
-                        model.clearDevelopmentRelay()
-                        syncFromModel()
-                        message = NSLocalizedString("Relay route disabled.", comment: "")
-                        messageTone = .neutral
-                    } label: {
-                        Label(NSLocalizedString("Disable Relay", comment: ""), systemImage: "xmark.circle")
-                    }
-                    .buttonStyle(.bordered)
-                }
-            }
-
-            if settings.isEnabled {
-                Button {
-                    guard let onGenerateRelayQRCode else { return }
-                    onGenerateRelayQRCode()
-                    message = NSLocalizedString("Latest route QR generated. Scan it from the client app to pair or refresh connectivity.", comment: "")
-                    messageTone = .ready
-                } label: {
-                    Label(NSLocalizedString("Generate Relay QR", comment: ""), systemImage: "qrcode")
-                }
-                .buttonStyle(.bordered)
-                .disabled(!model.shouldIncludeDevelopmentRelayInPairingQRCode || onGenerateRelayQRCode == nil)
-
-                if !model.isDevelopmentRelayQRCodeReady {
-                    Label(NSLocalizedString("Use a public, VPN, or tunnel relay address to include it in QR.", comment: ""), systemImage: "info.circle")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-
-            relayHostWarning(settings: settings)
-        }
+    guard hasTrustedDevices else {
+        return .pairing
     }
-
-    @ViewBuilder
-    private func relayHostWarning(settings: CompanionDevelopmentRelaySettings) -> some View {
-        if let warning = settings.hostReachabilityWarning {
-            Label(relayHostWarningText(warning), systemImage: "exclamationmark.triangle")
-                .font(.caption)
-                .foregroundStyle(StatusTone.warning.color)
-                .fixedSize(horizontal: false, vertical: true)
-        }
+    guard isBackendReady else {
+        return .backend
     }
-
-    @ViewBuilder
-    private var relayStatus: some View {
-        let settings = model.developmentRelaySettings
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                StatusPill(
-                    text: settings.isEnabled
-                        ? NSLocalizedString("Relay enabled", comment: "")
-                        : NSLocalizedString("Relay disabled", comment: ""),
-                    tone: settings.isEnabled ? (settings.frameEncryptionEnabled ? .ready : .warning) : .inactive
-                )
-                Text(relayStatusText(settings: settings))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                StatusPill(
-                    text: relayConnectionLabel(model.developmentRelayConnectionStatus),
-                    tone: relayConnectionTone(model.developmentRelayConnectionStatus, isEnabled: settings.isEnabled)
-                )
-                Text(relayConnectionDetail(status: model.developmentRelayConnectionStatus, settings: settings))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
+    guard hasLoadedModels else {
+        return .models
     }
-
-    private func relayConnectionLabel(_ status: CompanionDevelopmentRelayStatus) -> String {
-        switch status.status {
-        case .stopped:
-            return NSLocalizedString("Relay not connected", comment: "")
-        case .connecting:
-            return NSLocalizedString("Relay connecting", comment: "")
-        case .waitingForPeer:
-            return NSLocalizedString("Relay waiting", comment: "")
-        case .ready:
-            return NSLocalizedString("Relay connected", comment: "")
-        case .reconnecting:
-            return NSLocalizedString("Relay reconnecting", comment: "")
-        case .failed:
-            return NSLocalizedString("Relay failed", comment: "")
-        }
+    if hasRoutePreparationIssue {
+        return .routeIssue
     }
-
-    private func relayConnectionTone(_ status: CompanionDevelopmentRelayStatus, isEnabled: Bool) -> StatusTone {
-        guard isEnabled else { return .inactive }
-        switch status.status {
-        case .ready:
-            return .ready
-        case .failed:
-            return .warning
-        case .connecting, .waitingForPeer, .reconnecting:
-            return .neutral
-        case .stopped:
-            return .inactive
-        }
+    if hasDevelopmentRelayRoute && !isDevelopmentRelayQRCodeReady {
+        return .routeQRCode
     }
-
-    private func relayConnectionDetail(
-        status: CompanionDevelopmentRelayStatus,
-        settings: CompanionDevelopmentRelaySettings
-    ) -> String {
-        guard settings.isEnabled else {
-            return NSLocalizedString("The relay client is off; local discovery remains the active route.", comment: "")
-        }
-        let endpoint = status.endpoint ?? settings.endpointLabel ?? NSLocalizedString("configured relay", comment: "")
-        switch status.status {
-        case .stopped:
-            return NSLocalizedString("Start the runtime to connect this runtime host to the relay.", comment: "")
-        case .connecting:
-            return String(format: NSLocalizedString("Connecting to relay %@.", comment: ""), endpoint)
-        case .waitingForPeer:
-            return String(format: NSLocalizedString("Registered with relay %@ and waiting for the client device to join.", comment: ""), endpoint)
-        case .ready:
-            return String(format: NSLocalizedString("Runtime host and client device are matched through relay %@. Model requests still run only through this local runtime.", comment: ""), endpoint)
-        case .reconnecting(let message):
-            let base = String(format: NSLocalizedString("Reconnecting to relay %@.", comment: ""), endpoint)
-            guard let message, !message.isEmpty else { return base }
-            return [base, message].joined(separator: "\n")
-        case .failed(let message):
-            return String(
-                format: NSLocalizedString("Relay %@ failed: %@", comment: ""),
-                endpoint,
-                message
-            )
-        }
-    }
-
-    private func relayStatusText(settings: CompanionDevelopmentRelaySettings) -> String {
-        guard settings.isEnabled else {
-            return NSLocalizedString("Different-network pairing needs a reachable relay or future P2P route.", comment: "")
-        }
-        let endpoint = settings.endpointLabel ?? NSLocalizedString("configured relay", comment: "")
-        if settings.isEnvironmentOverride {
-            return String(
-                format: NSLocalizedString("Using %@ from environment variables. Generate the latest QR after changing route settings.", comment: ""),
-                endpoint
-            )
-        }
-        return String(
-            format: NSLocalizedString("New QR codes include %@ as the remote route. The client retries until the relay is reachable.", comment: ""),
-            endpoint
-        )
-    }
-
-    private func saveRelay() {
-        let trimmedHost = host.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedHost.isEmpty else {
-            message = NSLocalizedString("Enter a relay host.", comment: "")
-            messageTone = .warning
-            return
-        }
-        guard let relayPort = UInt16(port.trimmingCharacters(in: .whitespacesAndNewlines)), relayPort > 0 else {
-            message = NSLocalizedString("Enter a valid relay port.", comment: "")
-            messageTone = .warning
-            return
-        }
-        if let warning = CompanionDevelopmentRelaySettings.hostReachabilityWarning(for: trimmedHost) {
-            switch warning {
-            case .loopback, .localName:
-                message = relayHostWarningText(warning)
-                messageTone = .warning
-                return
-            case .privateNetwork:
-                model.configureDevelopmentRelay(
-                    host: trimmedHost,
-                    port: relayPort,
-                    relaySecret: relaySecret.trimmingCharacters(in: .whitespacesAndNewlines)
-                )
-                syncFromModel()
-                message = [
-                    NSLocalizedString("Relay route saved with warning. Verify this address is reachable from both devices before generating the latest QR.", comment: ""),
-                    relayHostWarningText(warning)
-                ].joined(separator: "\n")
-                messageTone = .warning
-                return
-            }
-        }
-        model.configureDevelopmentRelay(
-            host: trimmedHost,
-            port: relayPort,
-            relaySecret: relaySecret.trimmingCharacters(in: .whitespacesAndNewlines)
-        )
-        syncFromModel()
-        message = NSLocalizedString("Remote route saved. Generate the latest QR and scan it from the client app to pair or refresh connectivity.", comment: "")
-        messageTone = .ready
-    }
-
-    private func syncFromModel() {
-        let settings = model.developmentRelaySettings
-        host = settings.host
-        port = settings.isEnabled ? String(settings.port) : "43171"
-        relaySecret = settings.relaySecret ?? ""
-    }
-
-    private func relayHostWarningText(_ warning: CompanionDevelopmentRelaySettings.HostReachabilityWarning) -> String {
-        switch warning {
-        case .loopback:
-            return NSLocalizedString("This relay host points back to this machine. A client on another network cannot reach it.", comment: "")
-        case .privateNetwork:
-            return NSLocalizedString("This relay host is a private network address. Use a public, VPN, or tunnel address reachable from both devices.", comment: "")
-        case .localName:
-            return NSLocalizedString("This relay host is local-network only. Use a public, VPN, or tunnel address for different networks.", comment: "")
-        }
-    }
+    return .ready
 }
 
 private struct RuntimeOverviewPanel: View {
@@ -899,7 +727,7 @@ private struct ModelRow: View {
         case .lmStudio:
             return NSLocalizedString("LM Studio", comment: "")
         case .aggregate:
-            return NSLocalizedString("Local runtime", comment: "")
+            return NSLocalizedString("AetherLink Runtime", comment: "")
         }
     }
 
@@ -908,7 +736,7 @@ private struct ModelRow: View {
         case .local:
             return NSLocalizedString("Local", comment: "")
         case .cloud:
-            return NSLocalizedString("Cloud", comment: "")
+            return NSLocalizedString("Provider managed", comment: "")
         }
     }
 
@@ -986,6 +814,7 @@ private struct ReadinessItem: Identifiable {
 
 private struct ProviderStatusRow: View {
     let status: ProviderStatus
+    @State private var diagnosticsExpanded = false
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
@@ -1001,6 +830,25 @@ private struct ProviderStatusRow: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(status.rawStatus == .unavailable ? nil : 2)
+
+                if let diagnosticDetail = status.diagnosticDetail {
+                    DisclosureGroup(
+                        isExpanded: $diagnosticsExpanded,
+                        content: {
+                            Text(diagnosticDetail)
+                                .font(.system(.caption, design: .monospaced))
+                                .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .padding(.top, 4)
+                        },
+                        label: {
+                            Text(NSLocalizedString("Technical Details", comment: ""))
+                                .font(.caption.weight(.medium))
+                        }
+                    )
+                    .tint(.secondary)
+                }
             }
 
             Spacer(minLength: 12)
@@ -1028,15 +876,17 @@ private struct ProviderStatus: Identifiable {
     let name: String
     let rawStatus: RawStatus
     let detail: String
+    let diagnosticDetail: String?
 
     init(status: CompanionProviderStatus) {
         id = status.id
         name = Self.localizedProviderName(status.provider)
         rawStatus = RawStatus(status.availability)
+        diagnosticDetail = Self.diagnosticDetail(for: status)
 
         switch status.availability {
         case .notChecked:
-            detail = NSLocalizedString("Ollama and LM Studio are checked from this runtime host.", comment: "")
+            detail = NSLocalizedString("Model providers are checked by AetherLink Runtime.", comment: "")
         case .available:
             detail = NSLocalizedString("Model provider is responding.", comment: "")
         case .unavailable:
@@ -1084,32 +934,62 @@ private struct ProviderStatus: Identifiable {
         case .lmStudio:
             return NSLocalizedString("LM Studio", comment: "")
         case .aggregate:
-            return NSLocalizedString("Local runtime", comment: "")
+            return NSLocalizedString("AetherLink Runtime", comment: "")
         }
     }
 
     private static func unavailableDetail(for status: CompanionProviderStatus) -> String {
         let providerName = localizedProviderName(status.provider)
-        let message = status.message?.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        let baseDetail: String
-        if let message, !message.isEmpty {
-            baseDetail = message
-        } else {
-            baseDetail = String(
-                format: NSLocalizedString("%@ is not responding from this runtime host.", comment: ""),
-                providerName
-            )
-        }
+        let baseDetail = String(
+                format: NSLocalizedString("%@ is not responding through AetherLink Runtime.", comment: ""),
+            providerName
+        )
 
         guard status.retryable == true else {
             return baseDetail
         }
         return [
             baseDetail,
-            NSLocalizedString("Open a local model provider on this runtime host, then check again.", comment: "")
+            NSLocalizedString("Open a model provider for AetherLink Runtime, then check again.", comment: "")
         ].joined(separator: "\n")
     }
+
+    private static func diagnosticDetail(for status: CompanionProviderStatus) -> String? {
+        providerStatusDiagnosticDetail(
+            message: status.message,
+            code: status.code,
+            retryable: status.retryable
+        )
+    }
+}
+
+func providerStatusDiagnosticDetail(
+    message: String?,
+    code: String?,
+    retryable: Bool?
+) -> String? {
+    var lines: [String] = []
+    if let message = sanitizedTechnicalDiagnostic(message) {
+        lines.append(message)
+    }
+    if let code = sanitizedProviderStatusCode(code) {
+        lines.append("code=\(code)")
+    }
+    if let retryable {
+        lines.append("retryable=\(retryable ? "true" : "false")")
+    }
+    return lines.isEmpty ? nil : lines.joined(separator: "\n")
+}
+
+private func sanitizedProviderStatusCode(_ code: String?) -> String? {
+    guard let trimmed = code?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else {
+        return nil
+    }
+    let allowedCharacters = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.-")
+    guard trimmed.unicodeScalars.allSatisfy({ allowedCharacters.contains($0) }) else {
+        return NSLocalizedString("Sensitive technical detail redacted.", comment: "")
+    }
+    return trimmed
 }
 
 private extension ProviderStatus.RawStatus {
