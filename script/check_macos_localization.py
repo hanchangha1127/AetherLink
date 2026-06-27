@@ -85,7 +85,7 @@ REQUIRED_TRUSTED_DEVICE_KEYS = (
     "Selected device",
 )
 REQUIRED_REMOTE_ROUTE_PREPARATION_KEYS = (
-    "Connection setup result",
+    "Connection Recovery result",
     "Connection health",
     "Connection preparation",
     "Connection diagnostics",
@@ -679,7 +679,7 @@ def check_remote_connection_destructive_confirmation() -> list[str]:
     failures.extend(missing_source_snippets(
         REMOTE_RELAY_ROUTE_PANEL_SOURCE,
         (
-            "accessibilityContext: NSLocalizedString(\"Connection setup result\", comment: \"\")",
+            "accessibilityContext: NSLocalizedString(\"Connection Recovery result\", comment: \"\")",
             "accessibilityContext: NSLocalizedString(\"Connection health\", comment: \"\")",
             "accessibilityContext: NSLocalizedString(\"Connection preparation\", comment: \"\")",
             "routeDiagnosticDisclosureAccessibilityLabel(context: accessibilityContext)",
@@ -904,7 +904,9 @@ def check_menu_bar_localization_helpers() -> list[str]:
             (
                 "testMenuBarStatusAndCommandTitlesUseSelectedLanguage",
                 "testMenuBarPairingQRCommandTitleTracksActiveSessionAndLanguage",
+                "testPrimaryActionsPrioritizePairingQRWhenNoTrustedDevicesExist",
                 "testQuickActionAccessibilityUsesSelectedLanguage",
+                "companionPrimaryActionOrder(trustedDeviceCount: 0)",
                 "menuBarRuntimeStatusText(.advertising(serviceName: \"AetherLink\", port: 43170))",
                 "menuBarModelServiceStatusText([])",
                 "menuBarCommandTitles()",
@@ -978,6 +980,9 @@ def check_trusted_device_identity_display() -> list[str]:
             "Trusted device %@. %@. Key fingerprint %@",
             "trustedDeviceRemovalMessage(for: pendingRemovalDevice)",
             "%@ will need to pair again before it can use AetherLink Runtime. Key fingerprint %@",
+            ".accessibilityLabel(Text(trustedDeviceConfirmRemoveAccessibilityLabel(for: pendingRemovalDevice)))",
+            "func trustedDeviceConfirmRemoveAccessibilityLabel(for device: TrustedDevice?) -> String",
+            "Confirm removing trust for %@. Key fingerprint %@",
             "trustedDeviceRemoveAccessibilityLabel(name: name, keyFingerprint: keyFingerprint)",
             "func trustedDeviceRemoveAccessibilityLabel(name: String, keyFingerprint: String) -> String",
             "Remove trust for %@. Key fingerprint %@",

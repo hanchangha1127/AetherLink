@@ -44,7 +44,7 @@ struct RemoteRelayRoutePanel: View {
                 if let diagnosticMessage {
                     DiagnosticDisclosure(
                         title: NSLocalizedString("Technical Details", comment: ""),
-                        accessibilityContext: NSLocalizedString("Connection setup result", comment: ""),
+                        accessibilityContext: NSLocalizedString("Connection Recovery result", comment: ""),
                         text: diagnosticMessage
                     )
                 }

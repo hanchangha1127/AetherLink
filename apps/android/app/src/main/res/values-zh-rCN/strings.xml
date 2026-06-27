@@ -15,6 +15,7 @@
     <string name="new_chat_state_ready">可以开始新聊天。</string>
     <string name="new_chat_state_wait_for_stream">开始新聊天前，请等待当前回复完成或取消它。</string>
     <string name="new_chat_state_pairing_required">开始新聊天前，请先与 AetherLink Runtime 配对。</string>
+    <string name="chat_destination_state_ready">可以打开聊天。</string>
     <string name="previous_chats">历史聊天</string>
     <string name="no_previous_chats">还没有历史聊天。</string>
     <string name="chat_search_label">搜索聊天</string>
@@ -69,6 +70,8 @@
     <string name="delete_archived_chats_confirm_first">要从已保存历史中永久删除所有已归档聊天吗？活跃的历史聊天不会被删除。</string>
     <string name="delete_archived_chats_confirm_second">再次确认永久删除所有已归档聊天。此操作无法撤销。</string>
     <string name="continue_action">继续</string>
+    <string name="confirmation_continue_action_named">继续：%1$s</string>
+    <string name="confirmation_final_action_named">确认：%1$s</string>
     <string name="chat_title_label">聊天标题</string>
     <string name="rename_chat_title_state_empty">保存前请输入标题。</string>
     <string name="rename_chat_title_state_ready">已准备好保存。</string>
@@ -81,7 +84,7 @@
     <string name="pairing_title">配对 AetherLink</string>
     <string name="pairing_subtitle">加载模型或聊天前，请扫描受信任的 AetherLink 二维码。</string>
     <string name="qr_pairing_title">扫描配对二维码</string>
-    <string name="qr_pairing_detail">扫描最新的 AetherLink 二维码。受信任设备可再次扫描来刷新连接。</string>
+    <string name="qr_pairing_detail">请扫描最新的 AetherLink Runtime 二维码。若要从其他网络连接，二维码必须包含两台设备都能访问的中继、VPN、隧道或私有覆盖网络路径。</string>
     <string name="qr_pairing_security_note">AetherLink 只信任通过二维码验证的 AetherLink Runtime。模型提供方保持私有。</string>
     <string name="scan_qr">扫描 QR</string>
     <string name="scan_qr_state_ready">已准备好扫描 QR。</string>
@@ -104,6 +107,9 @@
     <string name="manual_qr_payload_detail">仅作为诊断备用方式。无法测试相机扫描时，粘贴 AetherLink Runtime 的二维码文本；正常配对仍使用相机二维码扫描。</string>
     <string name="manual_qr_payload_label">二维码文本</string>
     <string name="manual_qr_payload_submit">使用二维码文本</string>
+    <string name="manual_qr_payload_input_accessibility">诊断二维码文本输入</string>
+    <string name="manual_qr_payload_submit_accessibility">使用诊断二维码文本</string>
+    <string name="manual_qr_payload_cancel_accessibility">关闭诊断二维码文本</string>
     <string name="manual_qr_payload_state_empty">继续前，请粘贴 AetherLink Runtime 的二维码文本。</string>
     <string name="manual_qr_payload_state_invalid">请使用以 aetherlink://pair 开头的 AetherLink Runtime 二维码文本。</string>
     <string name="manual_qr_payload_state_ready">可以使用二维码文本。</string>
@@ -242,6 +248,8 @@
     <string name="model_refresh_state_loading">模型刷新正在进行。</string>
     <string name="model_refresh_state_connect_first">刷新模型前，请先连接受信任的运行时。</string>
     <string name="model_picker_state_wait_for_stream">请等待当前回复完成或取消后再更改模型。</string>
+    <string name="chat_model_picker_summary">聊天模型选择器。%1$s。%2$s</string>
+    <string name="chat_model_picker_summary_selected">聊天模型选择器。已选聊天模型 %1$s。</string>
     <string name="models_from_runtime">模型通过 AetherLink Runtime 加载，而不是直接从此应用加载。</string>
     <string name="models_need_connection">加载模型前，请连接到受信任的运行时。</string>
     <string name="model_backend_value">模型服务：%1$s</string>
@@ -290,11 +298,13 @@
     <string name="attachment_metadata_with_size">%1$s · %2$s</string>
     <string name="attachment_requires_vision_model">需要视觉模型</string>
     <string name="content_desc_attachment_chip">附件“%1$s”，%2$s</string>
+    <string name="attachment_only_prompt_header">请分析附加输入：</string>
     <string name="empty_chat_pairing_title">扫描 QR 开始</string>
     <string name="empty_chat_pairing">请先与 AetherLink Runtime 配对。模型提供方会保留在受信任运行时之后，不会直接暴露。</string>
     <string name="empty_chat_disconnected_title">连接后继续</string>
     <string name="empty_chat_disconnected">聊天前，请连接到受信任的运行时。</string>
     <string name="empty_chat_relay_route_unreachable">当前网络无法访问已保存的路径。请先在 AetherLink Runtime 中准备可访问的连接路径，然后扫描最新二维码。</string>
+    <string name="chat_empty_state_accessibility_summary">%1$s。%2$s</string>
     <string name="empty_chat_relay_qr_unreachable">此 QR 指向本设备无法访问的路径。请准备两台设备都可访问的路径，然后扫描最新二维码。</string>
     <string name="empty_chat_no_model_title">选择模型</string>
     <string name="empty_chat_no_model">发送前请选择模型。</string>
@@ -403,6 +413,9 @@
     <string name="route_notice_status_saved_connection">已保存连接</string>
     <string name="route_notice_status_nearby">附近</string>
     <string name="route_notice_status_scan_qr">扫描 QR</string>
+    <string name="route_notice_accessibility_summary">%1$s。%2$s。%3$s</string>
+    <string name="route_notice_accessibility_summary_with_steps">%1$s。%2$s。%3$s %4$s</string>
+    <string name="route_notice_recovery_steps">打开 AetherLink Runtime，生成最新二维码，然后在此处扫描。</string>
     <string name="route_refresh_notice">已为 %1$s 保存最新二维码。正在恢复受信任连接。</string>
     <string name="route_notice_relay_expired">连接信息已过期。请扫描包含新连接信息的最新 AetherLink Runtime 二维码。</string>
     <string name="route_notice_relay_without_secret">连接信息需要刷新。在此网络之外使用 AetherLink 前，请扫描包含远程连接信息的最新 AetherLink Runtime 二维码。</string>

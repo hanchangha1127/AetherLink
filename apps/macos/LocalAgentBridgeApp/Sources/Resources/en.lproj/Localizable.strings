@@ -165,6 +165,7 @@
 "Trusted device %@. %@. Key fingerprint %@" = "Trusted device %@. %@. Key fingerprint %@";
 "Remove Trust" = "Remove Trust";
 "Remove trust for %@. Key fingerprint %@" = "Remove trust for %@. Key fingerprint %@";
+"Confirm removing trust for %@. Key fingerprint %@" = "Confirm removing trust for %@. Key fingerprint %@";
 "Remove trusted device?" = "Remove trusted device?";
 "%@ will need to pair again before it can use AetherLink Runtime." = "%@ will need to pair again before it can use AetherLink Runtime.";
 "%@ will need to pair again before it can use AetherLink Runtime. Key fingerprint %@" = "%@ will need to pair again before it can use AetherLink Runtime. Key fingerprint %@";
@@ -182,7 +183,7 @@
 "Activity technical details collapsed" = "Activity details collapsed";
 "Collapse to hide activity technical details." = "Collapse to hide activity details.";
 "Expand to show activity technical details." = "Expand to show activity details.";
-"Connection setup result" = "Connection setup result";
+"Connection Recovery result" = "Connection Recovery result";
 "Connection health" = "Connection health";
 "Connection preparation" = "Connection preparation";
 "Connection diagnostics" = "Connection diagnostics";
@@ -290,7 +291,7 @@
 "Reconnecting through %@." = "Reconnecting through %@.";
 "Connection through %@ failed. Check Advanced Connection Setup, then try again." = "Connection through %@ failed. Check Connection Recovery, then try again.";
 "AetherLink can prepare connection details automatically when you generate a pairing QR." = "AetherLink can prepare connection details automatically when you generate a pairing QR.";
-"Pairing from another network needs connection details inside the pairing QR." = "Pairing from another network needs connection details inside the pairing QR.";
+"Pairing from another network needs connection details inside the pairing QR." = "Pairing from another network needs a relay, VPN, tunnel, or private-overlay route inside the pairing QR.";
 "Saved connection details use %@. Generate a fresh QR after updating the connection." = "Saved connection details use %@. Generate a fresh QR after updating the connection.";
 "New QR codes include %@ after AetherLink Runtime is ready." = "New QR codes include %@ after AetherLink Runtime is ready.";
 "Advanced Connection Setup needs an address reachable by both devices before it can be included in the QR." = "Connection Recovery needs an address reachable by both devices before it can be included in the QR.";

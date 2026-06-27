@@ -712,6 +712,7 @@ final class AetherLinkLocalizationTests: XCTestCase {
             XCTAssertEqual(NSLocalizedString("Provider endpoint redacted.", comment: ""), "Provider address hidden.")
             XCTAssertEqual(NSLocalizedString("Advanced Connection Setup", comment: ""), "Connection Recovery")
             XCTAssertEqual(NSLocalizedString("Connection Setup", comment: ""), "Recovery Details")
+            XCTAssertEqual(NSLocalizedString("Connection Recovery result", comment: ""), "Connection Recovery result")
             XCTAssertEqual(NSLocalizedString("Connection setup secret", comment: ""), "Protected connection key")
             XCTAssertEqual(
                 NSLocalizedString("Connection setup secret regenerated.", comment: ""),
@@ -1117,6 +1118,21 @@ final class AetherLinkLocalizationTests: XCTestCase {
         }
     }
 
+    func testPrimaryActionsPrioritizePairingQRWhenNoTrustedDevicesExist() {
+        XCTAssertEqual(
+            companionPrimaryActionOrder(trustedDeviceCount: -1),
+            [.pairingQR, .refreshProviders, .loadModels]
+        )
+        XCTAssertEqual(
+            companionPrimaryActionOrder(trustedDeviceCount: 0),
+            [.pairingQR, .refreshProviders, .loadModels]
+        )
+        XCTAssertEqual(
+            companionPrimaryActionOrder(trustedDeviceCount: 1),
+            [.refreshProviders, .loadModels, .pairingQR]
+        )
+    }
+
     func testMenuBarStatusAndCommandTitlesUseSelectedLanguage() {
         let expectations: [(
             languageTag: String,
@@ -1311,7 +1327,7 @@ final class AetherLinkLocalizationTests: XCTestCase {
                 "en",
                 "Ready",
                 "Unavailable",
-                "Pairing from another network needs connection details inside the pairing QR.",
+                "Pairing from another network needs a relay, VPN, tunnel, or private-overlay route inside the pairing QR.",
                 "Pairing QR generation is unavailable from this view.",
                 "Generate New QR"
             ),
@@ -1319,7 +1335,7 @@ final class AetherLinkLocalizationTests: XCTestCase {
                 "ko",
                 "준비됨",
                 "사용 불가",
-                "다른 네트워크에서 페어링하려면 페어링 QR 안에 연결 정보가 필요합니다.",
+                "다른 네트워크에서 페어링하려면 페어링 QR 안에 릴레이, VPN, 터널 또는 프라이빗 오버레이 경로가 필요합니다.",
                 "이 화면에서는 페어링 QR을 생성할 수 없습니다.",
                 "새 QR 생성"
             ),
@@ -1327,7 +1343,7 @@ final class AetherLinkLocalizationTests: XCTestCase {
                 "ja",
                 "準備完了",
                 "利用不可",
-                "別ネットワークからペアリングするには、ペアリング QR 内の接続情報が必要です。",
+                "別ネットワークからペアリングするには、ペアリング QR 内にリレー、VPN、トンネル、またはプライベートオーバーレイ経路が必要です。",
                 "この画面ではペアリング QR を生成できません。",
                 "新しい QR を生成"
             ),
@@ -1335,7 +1351,7 @@ final class AetherLinkLocalizationTests: XCTestCase {
                 "zh-Hans",
                 "就绪",
                 "不可用",
-                "从另一个网络配对需要配对二维码内包含连接信息。",
+                "从另一个网络配对时，配对二维码内需要包含中继、VPN、隧道或私有覆盖网络路径。",
                 "此视图无法生成配对二维码。",
                 "生成新二维码"
             ),
@@ -1343,7 +1359,7 @@ final class AetherLinkLocalizationTests: XCTestCase {
                 "fr",
                 "Prêt",
                 "Indisponible",
-                "Le jumelage depuis un autre réseau nécessite des informations de connexion dans le QR de jumelage.",
+                "Le jumelage depuis un autre réseau nécessite une route relais, VPN, tunnel ou overlay privé dans le QR de jumelage.",
                 "La génération du QR de jumelage n'est pas disponible depuis cette vue.",
                 "Générer un nouveau QR"
             ),
@@ -1600,12 +1616,12 @@ final class AetherLinkLocalizationTests: XCTestCase {
     }
 
     func testRouteDiagnosticDisclosureAccessibilityLabelUsesConnectionContext() {
-        let expectations: [(languageTag: String, label: String, fallbackLabel: String)] = [
-            ("en", "Details for Connection health", "Details for Connection diagnostics"),
-            ("ko", "연결 상태의 세부 정보", "연결 진단의 세부 정보"),
-            ("ja", "接続状態 の詳細", "接続診断 の詳細"),
-            ("zh-Hans", "连接状态 的详情", "连接诊断 的详情"),
-            ("fr", "Détails pour État de connexion", "Détails pour Diagnostics de connexion"),
+        let expectations: [(languageTag: String, healthLabel: String, resultLabel: String, fallbackLabel: String)] = [
+            ("en", "Details for Connection health", "Details for Connection Recovery result", "Details for Connection diagnostics"),
+            ("ko", "연결 상태의 세부 정보", "연결 복구 결과의 세부 정보", "연결 진단의 세부 정보"),
+            ("ja", "接続状態 の詳細", "接続の復旧結果 の詳細", "接続診断 の詳細"),
+            ("zh-Hans", "连接状态 的详情", "连接恢复结果 的详情", "连接诊断 的详情"),
+            ("fr", "Détails pour État de connexion", "Détails pour Résultat de récupération de connexion", "Détails pour Diagnostics de connexion"),
         ]
 
         XCTAssertEqual(expectations.map(\.languageTag), AetherLinkAppLanguage.allCases.map(\.rawValue))
@@ -1616,7 +1632,13 @@ final class AetherLinkLocalizationTests: XCTestCase {
                     routeDiagnosticDisclosureAccessibilityLabel(
                         context: NSLocalizedString("Connection health", comment: "")
                     ),
-                    expectation.label
+                    expectation.healthLabel
+                )
+                XCTAssertEqual(
+                    routeDiagnosticDisclosureAccessibilityLabel(
+                        context: NSLocalizedString("Connection Recovery result", comment: "")
+                    ),
+                    expectation.resultLabel
                 )
                 XCTAssertEqual(
                     routeDiagnosticDisclosureAccessibilityLabel(context: "   "),
@@ -2317,6 +2339,57 @@ final class AetherLinkLocalizationTests: XCTestCase {
             withStoredAppLanguage(expectation.languageTag) {
                 XCTAssertEqual(trustedDeviceRemovalMessage(for: device), expectation.message)
                 XCTAssertEqual(trustedDeviceRemovalMessage(for: nil), expectation.fallbackMessage)
+            }
+        }
+    }
+
+    func testTrustedDeviceConfirmRemoveActionAccessibilityLabelUsesDeviceContext() {
+        let device = TrustedDevice(
+            id: "device-1",
+            name: "Pixel",
+            publicKeyBase64: "aGVsbG8=",
+            pairedAt: Date(timeIntervalSince1970: 0)
+        )
+        let expectations: [(languageTag: String, label: String, fallbackLabel: String)] = [
+            (
+                "en",
+                "Confirm removing trust for Pixel. Key fingerprint 2C:F2:4D:BA:5F:B0",
+                "Confirm removing trust for Selected device. Key fingerprint Unavailable"
+            ),
+            (
+                "ko",
+                "Pixel 신뢰 해제를 확인합니다. 키 지문 2C:F2:4D:BA:5F:B0",
+                "선택한 항목 신뢰 해제를 확인합니다. 키 지문 사용 불가"
+            ),
+            (
+                "ja",
+                "Pixel の信頼解除を確認。キー指紋 2C:F2:4D:BA:5F:B0",
+                "選択したデバイス の信頼解除を確認。キー指紋 利用不可"
+            ),
+            (
+                "zh-Hans",
+                "确认移除 Pixel 的信任。密钥指纹 2C:F2:4D:BA:5F:B0",
+                "确认移除 所选设备 的信任。密钥指纹 不可用"
+            ),
+            (
+                "fr",
+                "Confirmer le retrait de l’approbation de Pixel. Empreinte de clé 2C:F2:4D:BA:5F:B0",
+                "Confirmer le retrait de l’approbation de Appareil sélectionné. Empreinte de clé Indisponible"
+            ),
+        ]
+
+        XCTAssertEqual(expectations.map(\.languageTag), AetherLinkAppLanguage.allCases.map(\.rawValue))
+
+        for expectation in expectations {
+            withStoredAppLanguage(expectation.languageTag) {
+                XCTAssertEqual(
+                    trustedDeviceConfirmRemoveAccessibilityLabel(for: device),
+                    expectation.label
+                )
+                XCTAssertEqual(
+                    trustedDeviceConfirmRemoveAccessibilityLabel(for: nil),
+                    expectation.fallbackLabel
+                )
             }
         }
     }

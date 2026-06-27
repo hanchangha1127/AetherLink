@@ -78,38 +78,9 @@ struct ContentView: View {
         }
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
-                Button {
-                    Task { await model.refreshBackendStatus() }
-                } label: {
-                    Label(NSLocalizedString("Check Model Providers", comment: ""), systemImage: "arrow.clockwise")
+                ForEach(companionPrimaryActionOrder(trustedDeviceCount: model.trustedDevices.count)) { action in
+                    toolbarPrimaryAction(action)
                 }
-                .help(modelProviderCheckActionAccessibilityHint())
-                .accessibilityValue(Text(modelProviderCheckActionAccessibilityValue()))
-                .accessibilityHint(Text(modelProviderCheckActionAccessibilityHint()))
-
-                Button {
-                    Task { await model.loadModels() }
-                } label: {
-                    Label(NSLocalizedString("Load Models", comment: ""), systemImage: "shippingbox")
-                }
-                .help(modelListLoadActionAccessibilityHint())
-                .accessibilityValue(Text(modelListLoadActionAccessibilityValue()))
-                .accessibilityHint(Text(modelListLoadActionAccessibilityHint()))
-
-                Button {
-                    model.beginPairing()
-                    selectedSection = .pairing
-                } label: {
-                    if model.pairingSession == nil {
-                        Label(NSLocalizedString("Generate Pairing QR", comment: ""), systemImage: "qrcode")
-                    } else {
-                        Label(NSLocalizedString("Generate New QR", comment: ""), systemImage: "arrow.triangle.2.circlepath")
-                    }
-                }
-                .disabled(!canGeneratePairingQR)
-                .help(pairingQRGenerationActionAccessibilityHint(isAvailable: canGeneratePairingQR))
-                .accessibilityValue(Text(pairingQRGenerationActionAccessibilityValue(isAvailable: canGeneratePairingQR)))
-                .accessibilityHint(Text(pairingQRGenerationActionAccessibilityHint(isAvailable: canGeneratePairingQR)))
             }
         }
         .onAppear {
@@ -164,6 +135,47 @@ struct ContentView: View {
             canPrepareAutomatically: model.canPrepareRemoteRelayRouteAutomatically,
             isRouteEligibleForQRCode: model.isDevelopmentRelayRouteEligibleForQRCode
         )
+    }
+
+    @ViewBuilder
+    private func toolbarPrimaryAction(_ action: CompanionPrimaryAction) -> some View {
+        switch action {
+        case .refreshProviders:
+            Button {
+                Task { await model.refreshBackendStatus() }
+            } label: {
+                Label(NSLocalizedString("Check Model Providers", comment: ""), systemImage: "arrow.clockwise")
+            }
+            .help(modelProviderCheckActionAccessibilityHint())
+            .accessibilityValue(Text(modelProviderCheckActionAccessibilityValue()))
+            .accessibilityHint(Text(modelProviderCheckActionAccessibilityHint()))
+
+        case .loadModels:
+            Button {
+                Task { await model.loadModels() }
+            } label: {
+                Label(NSLocalizedString("Load Models", comment: ""), systemImage: "shippingbox")
+            }
+            .help(modelListLoadActionAccessibilityHint())
+            .accessibilityValue(Text(modelListLoadActionAccessibilityValue()))
+            .accessibilityHint(Text(modelListLoadActionAccessibilityHint()))
+
+        case .pairingQR:
+            Button {
+                model.beginPairing()
+                selectedSection = .pairing
+            } label: {
+                if model.pairingSession == nil {
+                    Label(NSLocalizedString("Generate Pairing QR", comment: ""), systemImage: "qrcode")
+                } else {
+                    Label(NSLocalizedString("Generate New QR", comment: ""), systemImage: "arrow.triangle.2.circlepath")
+                }
+            }
+            .disabled(!canGeneratePairingQR)
+            .help(pairingQRGenerationActionAccessibilityHint(isAvailable: canGeneratePairingQR))
+            .accessibilityValue(Text(pairingQRGenerationActionAccessibilityValue(isAvailable: canGeneratePairingQR)))
+            .accessibilityHint(Text(pairingQRGenerationActionAccessibilityHint(isAvailable: canGeneratePairingQR)))
+        }
     }
 }
 

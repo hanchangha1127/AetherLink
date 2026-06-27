@@ -9,6 +9,197 @@ This document separates current verification evidence from historical captures.
 - Do not use an old screenshot or XML dump as proof that the current UI copy, route behavior, QR pairing, or localization is still correct.
 - New `artifacts/*.png` and `artifacts/*.xml` files are ignored by default so stale generated captures are not accidentally committed.
 
+## 2026-06-27 Android Attachment-Only Prompt Resource Localization
+
+The latest evidence is source/unit/script evidence plus physical-device install/launch:
+
+- Android now resolves the attachment-only prompt header from `R.string.attachment_only_prompt_header` using the selected app language.
+- English, Korean, Japanese, Simplified Chinese, and French resource files all carry the prompt header key.
+- `RuntimeAttachmentPromptResourceTest.attachmentOnlyPromptHeaderUsesLocalizedAndroidResources` covers resource-backed headers.
+- `RuntimeClientViewModelTest.attachmentOnlyPromptUsesSelectedAppLanguageAndEnglishFallback` covers prompt formatting and fallback behavior.
+- `RuntimeClientViewModelTest.attachmentOnlySendUsesSelectedLanguagePromptInChatSendPayload` covers the actual Korean `chat.send` payload for a blank message with an attachment.
+- Copy hygiene now requires the resource helper, the string key, and the default no-device summary label `Android attachment-only prompt resource localization`.
+- The default no-device quality gate passed after adding the prompt resource regression to the test selection.
+- A fresh debug APK was built, installed on connected device `R3CXC0M76VM`, and launched as `com.localagentbridge.android/.MainActivity`; adb reported the package process alive and `MainActivity` as top resumed.
+- Caveat: this does not prove a physical optical QR scan, real different-network runtime connectivity, live model streaming/cancel, or real haptic feel on the device.
+
+## 2026-06-27 macOS First-Run Pairing QR Primary Action Ordering
+
+The latest evidence is source/SwiftPM/script evidence only:
+
+- macOS now uses a shared `CompanionPrimaryAction` order for toolbar and menu-bar primary actions.
+- When there are no trusted devices, the order is `Generate Pairing QR`, provider refresh, then model loading.
+- When trusted devices exist, the order remains provider refresh, model loading, then Pairing QR.
+- Focused Swift coverage verifies the first-run and trusted-device action orders.
+- macOS localization parity, copy hygiene, and the no-device coverage summary now require `macOS first-run Pairing QR primary action ordering`.
+- Latest focused evidence: the primary action-order regression passed, macOS localization parity passed, copy hygiene passed, and no-device shell syntax validation passed.
+- Not covered: rendered toolbar/menu screenshots, physical VoiceOver ordering, optical camera QR scanning, live provider streaming/cancel, and real different-network runtime connectivity.
+
+## 2026-06-27 Android First-Run Language Picker Before Pairing
+
+The latest evidence includes source/Robolectric/script evidence plus physical install/launch evidence on `SM_S936N`:
+
+- Android Settings now renders the language selector before pairing/status content when no trusted runtime exists.
+- The regular Preferences card still contains appearance settings, but does not duplicate the language selector during the first-run pairing state.
+- Focused Compose coverage verifies that `Language`, `English`, and `한국어` are visible before `Pair AetherLink` in a clean first-run `RuntimeUiState`.
+- The same test keeps the five native language labels visible across supported launch languages and verifies that selecting Korean dispatches `onSetLanguageTag("ko")`.
+- Copy hygiene and the no-device coverage summary now require `Android first-run language picker before pairing`.
+- Latest focused evidence: the Android first-run language picker regression passed, Android string parity passed, copy hygiene passed, docs hygiene passed, whitespace diff checks passed, and the full no-device quality gate passed.
+- Physical device evidence: the latest debug APK installed on `SM_S936N`, `pidof` returned `28552`, Android app-locales reported `[en]`, and `dumpsys window` reported `com.localagentbridge.android/.MainActivity` as focused.
+- Not covered: destructive fresh-install verification on the physical phone, physical TalkBack announcement order, optical camera QR scanning, physical haptic feel, live provider streaming/cancel, and real different-network runtime connectivity.
+
+## 2026-06-27 Android Permanent Rail Chat Pairing Gate And Physical Launch Check
+
+The latest evidence includes source/Robolectric/resource/script evidence plus physical install/launch evidence on `SM_S936N`:
+
+- Android wide-layout permanent rail now keeps `Chat` disabled before a trusted runtime exists and exposes the localized pairing-required state.
+- The same rail destination exposes a localized ready state and becomes clickable after trust exists.
+- Focused Compose coverage verifies both pre-trust disabled semantics and post-trust click behavior.
+- English, Korean, Japanese, Simplified Chinese, and French resources include the new ready-state string.
+- Copy hygiene and the no-device coverage summary now require `Android permanent rail Chat pairing gate`.
+- Physical device evidence: `SM_S936N` was detected by ADB, the latest debug APK installed successfully, `pidof` returned `27906`, Android app-locales reported `[en]`, and `dumpsys window` reported `com.localagentbridge.android/.MainActivity` as focused.
+- The latest physical launch screenshot is `.codex-artifacts/android-language-sync-launch.png`; it shows a saved `dev-mock` trusted runtime state, so it proves latest launch/language/connection-gate state, not a clean first-run pairing screen.
+- Not covered: optical camera QR scanning, first-install onboarding, real TalkBack announcement order, physical haptic feel, live provider streaming/cancel, and real different-network runtime connectivity.
+
+## 2026-06-27 Android OS App-Language Sync From In-App Preferences
+
+The latest evidence is source/unit/script evidence only:
+
+- Android app-language startup now performs OS app-language reconciliation first, then synchronizes the selected AetherLink language back to Android 13+ `LocaleManager.applicationLocales`.
+- The sync policy normalizes supported aliases and region-qualified tags before comparing the current OS app-language value with the selected in-app language.
+- Focused unit coverage verifies that `null`, unsupported, matching, and mismatched language tags produce the expected synchronization decisions.
+- Android string parity now requires the synchronization helper, `LocaleList.forLanguageTags(...)` assignment path, startup ordering guard, and focused shell regression test.
+- Latest focused evidence: the new `AppNavigationTest.androidSystemAppLanguageSyncNormalizesCurrentAndSelectedTags` passed, Android string parity passed, copy hygiene passed, docs hygiene passed, whitespace diff checks passed, and the full no-device quality gate passed.
+- Not covered: physical Android Settings app-language UI state, real Activity recreation behavior after changing the OS app-language value, physical TalkBack output, camera QR scanning, live provider streaming/cancel, and real different-network runtime connectivity.
+
+## 2026-06-27 Android Relay Route Failure Cleanup And QR Relay Smoke
+
+The latest evidence includes focused no-device unit coverage, physical install/launch evidence on `SM_S936N`, and a USB-reversed development relay smoke:
+
+- Android trusted-runtime reconnect now strips failed saved relay route material after `remote_route_unreachable` / `route_diagnostic_relay_failed`, while preserving the trusted runtime identity.
+- Android no longer starts local discovery when a valid relay route is already present, preventing discovery state updates from clearing the structured relay failure recovery message.
+- Focused ViewModel coverage verifies persisted relay cleanup and no retry after a saved relay route fails from the current network.
+- The updated debug APK installed and launched on `SM_S936N`; `pidof` returned `24585`, and `dumpsys window` reported `com.localagentbridge.android/.MainActivity` as focused.
+- `script/android_pairing_deeplink_smoke.sh --relay --skip-install --expect-reconnect` passed. The development smoke injected the QR URI, paired through the relay route, observed `runtime.health`, force-stopped and relaunched the app, then observed a second `runtime.health` from the saved trusted relay route.
+- Physical screen capture after the fix was saved outside committed artifacts at `.codex-artifacts/android-after-relay-route-fix.png`; the device/runtime state was an installed debug app on `SM_S936N` after force-stop/relaunch with no public external relay configured.
+- Not covered: optical camera QR scanning, production relay allocation, public internet reachability, live provider streaming/cancel in this run, and true real different-network runtime connectivity. Real different-network use still needs a relay, tunnel, VPN, or future private overlay endpoint reachable from both devices.
+
+## 2026-06-27 Android Chat Model Picker Closed-State Accessibility
+
+The latest evidence is source/Robolectric/resource/script evidence only:
+
+- Android Chat top-bar model picker pills now expose a localized content description plus click action label while preserving the existing visible compact pill.
+- Selected-model accessibility copy avoids duplicate model-name announcements, while streaming-disabled copy continues to explain that the current response must finish or be canceled before changing models.
+- English, Korean, Japanese, Simplified Chinese, and French resources all include the new closed-picker summary strings.
+- Focused Compose coverage verifies selected-model summaries, disabled streaming summaries, state descriptions, click labels, and five-language localization.
+- Copy hygiene and the no-device coverage summary now require `Android chat top-bar model picker closed-button accessibility summary`.
+- Latest focused evidence: Android model-picker regressions passed, Android string parity passed, copy hygiene passed, docs hygiene passed, whitespace diff checks passed, and the full no-device quality gate passed.
+- Not covered: physical TalkBack announcement order, physical haptic feel, optical QR scanning, live provider streaming/cancel, and real different-network runtime connectivity.
+
+## 2026-06-27 macOS Trusted Device Confirm-Remove Accessibility
+
+The latest evidence is source/SwiftPM/localization/script evidence only:
+
+- macOS Trusted Devices confirmation dialogs now keep the visible final action short, while exposing a contextual accessibility label for the destructive confirm-remove action.
+- The label includes the selected trusted device name and key fingerprint, with localized fallback copy when the pending device is absent.
+- English, Korean, Japanese, Simplified Chinese, and French resources all include the new confirm-remove action accessibility string.
+- Focused localization coverage verifies the final confirm-remove action label across all five supported macOS languages.
+- Copy hygiene, macOS localization parity, and the no-device summary now require `macOS trusted-device confirm-remove action accessibility labels`.
+- Latest focused evidence: `AetherLinkLocalizationTests/testTrustedDeviceConfirmRemoveActionAccessibilityLabelUsesDeviceContext` passed, macOS localization parity passed, copy hygiene passed, docs hygiene passed, whitespace diff checks passed, shell syntax validation for the no-device quality gate passed, and the full no-device quality gate passed.
+- Not covered: physical VoiceOver navigation order, real trusted-device removal in a running window, optical QR scanning, live provider streaming/cancel, and real different-network runtime connectivity.
+
+## 2026-06-27 Android Route Notice Accessibility Summaries
+
+The latest evidence includes source/Robolectric/resource/script evidence plus physical install/launch evidence on `SM_S936N`:
+
+- Android connection route notice cards now expose one merged accessibility summary containing the localized title, current route state, and visible route guidance.
+- The same cards still expose localized click-action labels for `Connect trusted route` and `Scan latest QR`, and the focused tests verify callback routing plus haptic dispatch.
+- English, Korean, Japanese, Simplified Chinese, and French resources all include the new route notice accessibility summary format.
+- Copy hygiene and the no-device coverage summary now require `Android route notice accessibility summaries`.
+- Latest focused evidence: Android route notice regressions passed, Android string parity passed, copy hygiene passed, docs hygiene passed, whitespace diff checks passed, `:app:assembleDebug` passed, the full no-device quality gate passed, and the latest APK installed and launched on `SM_S936N`.
+- Physical device evidence: `SM_S936N` was detected by ADB, `adb install -r` returned `Success`, `pidof` returned `22583`, and `dumpsys window` reported `com.localagentbridge.android/.MainActivity` as focused.
+- Not covered: real TalkBack announcement order, physical haptic feel, optical QR scanning, live provider streaming/cancel, and real different-network runtime connectivity.
+
+## 2026-06-27 Android Diagnostic QR Text Accessibility Labels
+
+The latest evidence is source/Robolectric/resource/script evidence only:
+
+- Android Settings still keeps diagnostic QR text behind Developer routes, while the dialog now exposes contextual accessibility labels for the input, submit, and cancel controls.
+- The submit button keeps the visible text `Use QR text`, but assistive tech receives `Use diagnostic QR text`; the cancel action receives `Close diagnostic QR text`.
+- Focused Compose coverage verifies the input label, submit click label, cancel click label, and empty/invalid/ready state descriptions.
+- Resource coverage verifies the new accessibility-only labels across English, Korean, Japanese, Simplified Chinese, and French.
+- Copy hygiene and the no-device coverage summary now require `Android diagnostic QR text contextual action labels`.
+- Latest focused evidence: Android diagnostic QR text regressions passed, Android string parity passed, copy hygiene passed, docs hygiene passed, whitespace diff checks passed, and the full no-device quality gate passed.
+- Not covered: physical TalkBack output, real device haptics, optical QR scanning, live provider streaming/cancel, and real different-network runtime connectivity.
+
+## 2026-06-27 macOS Connection Recovery Diagnostic Accessibility
+
+The latest evidence is source/SwiftPM/script evidence only:
+
+- macOS Connection Recovery diagnostic disclosures now use the localized accessibility context `Connection Recovery result` instead of the stale `Connection setup result`.
+- English, Korean, Japanese, Simplified Chinese, and French resources all include the new localized context.
+- Focused localization coverage verifies the route diagnostic disclosure label for the new Connection Recovery result context across all five supported languages.
+- The macOS localization guard now requires the new context key and source snippet.
+- Latest focused evidence: `AetherLinkLocalizationTests/testRouteDiagnosticDisclosureAccessibilityLabelUsesConnectionContext` passed, macOS localization parity passed, copy hygiene passed, docs hygiene passed, the full `AetherLinkLocalizationTests` filter passed, and whitespace diff checks passed.
+- Not covered: physical VoiceOver navigation order, optical QR scanning, physical Android pairing, live provider streaming/cancel, and real different-network runtime connectivity.
+
+## 2026-06-27 Android Physical QR/Relay Smoke
+
+The latest physical Android smoke includes QR-result/deeplink pairing, chat streaming, cancel, and saved-route reconnect evidence on `SM_S936N`:
+
+- `script/android_pairing_deeplink_smoke.sh --relay --expect-chat-cancel --expect-reconnect` passed.
+- Runtime logs observed successful pairing, `runtime.health`, `chat.send`, streamed `chat.delta`, `chat.cancel`, `chat.done`, app relaunch, and a second `runtime.health` from the saved trusted relay route.
+- The Android UI was driven physically through ADB input for message entry, send, and cancel generation.
+- Latest screenshots were copied to `artifacts/aetherlink-physical-pairing-smoke.png` and `artifacts/aetherlink-physical-chat-cancel-smoke.png`.
+- Current app evidence after the smoke: `pidof` returned `21163`, and `dumpsys window` reported `com.localagentbridge.android/.MainActivity` as focused.
+- Not covered: optical camera QR scanning, real TalkBack announcement order, physical haptic feel, live provider streaming/cancel, and real different-network runtime connectivity. This smoke used `adb reverse`; a real different-network run still needs a relay, tunnel, VPN, or future private-overlay endpoint reachable from both devices.
+
+## 2026-06-27 Android Memory Delete Confirmation Accessibility
+
+The latest evidence includes source/Robolectric/script evidence plus physical install/launch evidence on `SM_S936N`:
+
+- Android Memory entry delete confirmation now gives the final `Delete` button a contextual accessibility label matching the memory item being removed.
+- Focused no-device Compose coverage verifies the contextual content description and click-action label on the delete confirmation button while preserving the existing haptic flow assertions.
+- Copy hygiene and the no-device coverage summary now require `Settings memory delete confirmation action labels`.
+- Latest focused evidence: Android Memory confirmation regression passed, Android string parity passed, copy hygiene passed, docs hygiene passed, whitespace diff checks passed, `:app:assembleDebug` passed, and the full no-device quality gate passed.
+- Physical device evidence: `SM_S936N` was detected by ADB, the debug APK installed successfully with `adb install -r`, `pidof` returned `19882`, and `dumpsys window` reported `com.localagentbridge.android/.MainActivity` as focused after launch.
+- Not covered: real TalkBack announcement order, physical haptic feel, optical QR scanning, live provider streaming/cancel, and real different-network runtime connectivity.
+
+## 2026-06-27 Android Reasoning And Chat-History Confirmation Accessibility
+
+The latest evidence includes source/Robolectric/script evidence plus physical install/launch evidence on `SM_S936N`:
+
+- Android assistant reasoning rows now merge the label, toggle, preview, and decorative children into one accessibility element while preserving the short dim collapsed preview and expandable full thinking text.
+- Android chat-history two-step confirmation buttons keep compact visible labels, but expose contextual accessibility action labels for bulk archive, bulk permanent delete, and single archived-chat permanent delete flows.
+- Focused no-device Compose/resource coverage verifies the destructive confirmation labels and five-language string formatting across English, Korean, Japanese, Simplified Chinese, and French.
+- Copy hygiene and the no-device coverage summary now require `chat history destructive confirmation action labels`.
+- Latest focused evidence: Android reasoning regressions passed, Android chat-history confirmation regressions passed, Android string parity passed, copy hygiene passed, docs hygiene passed, whitespace diff checks passed, and the full no-device quality gate passed.
+- Physical device evidence: `SM_S936N` was detected by ADB, `:app:assembleDebug` passed, the debug APK installed successfully with `adb install -r`, `pidof` returned `19015`, and `dumpsys window` reported `com.localagentbridge.android/.MainActivity` as focused after launch.
+- Not covered: real TalkBack announcement order, physical haptic feel, optical QR scanning, live provider streaming/cancel, and real different-network runtime connectivity.
+
+## 2026-06-27 Android Route-Recovery Empty-State Live Region
+
+The Android phone was connected during this pass. The latest evidence includes source/Robolectric/script evidence plus physical install/launch evidence on `SM_S936N`:
+
+- Android Chat now exposes the QR route-recovery empty-state title and body as one accessibility summary when the saved route is unreachable and the user must scan the latest QR.
+- The route-recovery summary uses `LiveRegionMode.Polite`, while the `Scan latest QR` button remains a separate action.
+- Focused no-device Compose coverage verifies the localized summary across English, Korean, Japanese, Simplified Chinese, and French.
+- Copy hygiene and the no-device coverage summary now require `Android route-recovery empty-state live-region accessibility`.
+- Physical device evidence: `SM_S936N` was detected by ADB, `:app:assembleDebug` passed, the debug APK installed successfully with `adb install -r`, `monkey` launched `com.localagentbridge.android`, `pidof` returned `18023`, `dumpsys window` reported `com.localagentbridge.android/.MainActivity` as focused, UIAutomator pulled `artifacts/aetherlink-window-route-recovery-live-region.xml`, and the latest screenshot is `artifacts/aetherlink-route-recovery-live-region.png`.
+- The UI dump includes the merged route-recovery content description `Scan latest QR. This network cannot reach the saved route. Prepare a reachable connection route in AetherLink Runtime, then scan the latest QR.`
+- Not covered: real TalkBack announcement timing, physical haptic feel, optical QR scanning, live provider streaming/cancel, and real different-network runtime connectivity.
+
+## 2026-06-27 Android Composer Readiness Live Region
+
+The Android phone was connected during this pass. The latest evidence includes source/Robolectric/script evidence plus physical install/launch evidence on `SM_S936N`:
+
+- Android Chat now exposes the visible composer readiness/status row as one polite live region. The row merges the decorative dot and text into one accessibility element and uses the same localized status text as its content description.
+- Focused no-device Compose coverage verifies the selected-model readiness status across English, Korean, Japanese, Simplified Chinese, and French.
+- Copy hygiene and the no-device coverage summary now require `Android composer readiness live-region accessibility`.
+- Physical device evidence: `SM_S936N` was detected by ADB, `:app:assembleDebug` passed, the debug APK installed successfully with `adb install -r`, `monkey` launched `com.localagentbridge.android`, `pidof` returned a running app process, `dumpsys window` reported `com.localagentbridge.android/.MainActivity` as focused, and UIAutomator pulled `artifacts/aetherlink-window-connected.xml`.
+- The UI dump includes the current QR-recovery/chat surface, including `Scan latest QR`, `dev-mock`, `New Chat`, and the composer status content description `Scan the latest AetherLink Runtime QR before sending.`
+- Not covered: real TalkBack announcement timing, physical haptic feel, optical QR scanning, live provider streaming/cancel, and real different-network runtime connectivity.
+
 ## 2026-06-27 macOS Pairing QR Image Accessibility Element
 
 The Android phone was disconnected during this pass. The latest evidence is source/SwiftPM/script evidence only:
@@ -1645,6 +1836,34 @@ Some existing historical XML dumps and screenshots may still show older copy suc
 - Latest focused evidence: Android `chatScreenMessageCopyActionsExposeLocalizedActionLabels` and `chatScreenCodeBlockCopyUsesLocalizedCodeActionLabels` passed after executing the actual copy actions and asserting live-region output.
 - Latest gate: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./script/check_no_device_quality.sh` passed after this update.
 - Caveat: the Android phone was disconnected, so this does not prove physical TalkBack announcement timing, physical clipboard behavior, camera QR scan, live streamed chat/cancel, or real different-network runtime connectivity.
+
+## 2026-06-27 macOS Pairing QR Cross-Network Route Help
+
+- Scope: macOS Pairing QR generation help text and five-language localization expectations.
+- Result: the disabled Pairing QR generation hint now names the required cross-network route classes: relay, VPN, tunnel, or private overlay.
+- Result: the localization test expectations were updated for English, Korean, Japanese, Simplified Chinese, and French.
+- Guardrail: copy hygiene now requires the five localized route-specific disabled Pairing QR generation hints.
+- Caveat: this is source/localization evidence only. It does not prove rendered macOS screenshots or real different-network connectivity.
+
+## 2026-06-27 Android Cross-Network QR Recovery Guidance
+
+- Scope: Android pairing-card copy, route-warning card recovery steps, five-language resources, Compose assertions, and script guardrails.
+- Result: the primary Android pairing card now explains that different-network QR pairing requires a relay, VPN, tunnel, or private-overlay route reachable from both devices.
+- Result: warning-state route notices now render a short recovery sequence: open AetherLink Runtime, generate the latest QR, then scan it on the client.
+- Result: the route-warning card accessibility summary includes the same recovery steps when the primary action is `Scan latest QR`.
+- Guardrail: copy hygiene now requires `route_notice_accessibility_summary_with_steps`, `routeNoticeRecoverySteps(notice)`, `route_notice_recovery_steps`, and the primary cross-network pairing copy.
+- Latest focused evidence: Android `settingsScreenRendersPairingCopyAcrossLaunchLanguages` and `connectionStatusRefreshNeededRouteNoticeClickScansLatestQrWithHaptic` passed with Kotlin incremental compilation disabled.
+- Caveat: this is no-device Android UI evidence. It does not prove production NAT traversal, optical QR camera scanning, or a public/VPN/tunnel relay from unrelated networks.
+
+## 2026-06-27 Android Physical Device Relay Pairing Smoke
+
+- Scope: physical Android device install, pairing-result deeplink, trusted-route persistence, runtime reconnect, and chat/cancel smoke.
+- Device: `SM_S936N` / `R3CXC0M76VM`, authorized through ADB.
+- Result: `script/android_usb_install.sh` built, installed, and launched the current debug APK successfully.
+- Result: `script/android_pairing_deeplink_smoke.sh --relay --expect-reconnect` passed. The app handled the `aetherlink://pair` URI, completed development pairing, and reconnected after force-stop/relaunch with app data preserved.
+- Result: `script/android_pairing_deeplink_smoke.sh --relay --expect-reconnect --expect-chat-cancel` passed. The runtime observed `chat.send`, `chat.delta`, `chat.cancel`, and `chat.done` from the physical Android UI.
+- Artifact: latest chat/cancel screenshot captured at `/var/folders/n2/vgx0vf052yl248_8cff1xt2r0000gn/T//aetherlink-android-pairing.GTfBbf/aetherlink-chat-cancel-smoke.png`.
+- Caveat: this is a USB-assisted development relay proof using ADB reverse and deeplink injection. It does not prove optical camera QR scanning or public/VPN/tunnel relay reachability from two unrelated networks.
 
 ## 2026-06-27 Android QR Pairing Live-Region Accessibility
 

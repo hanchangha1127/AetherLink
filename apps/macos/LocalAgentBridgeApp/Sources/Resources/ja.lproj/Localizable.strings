@@ -165,6 +165,7 @@
 "Trusted device %@. %@. Key fingerprint %@" = "信頼済みデバイス %@。%@。キー指紋 %@";
 "Remove Trust" = "信頼を解除";
 "Remove trust for %@. Key fingerprint %@" = "%@ の信頼を解除。キー指紋 %@";
+"Confirm removing trust for %@. Key fingerprint %@" = "%@ の信頼解除を確認。キー指紋 %@";
 "Remove trusted device?" = "信頼済みデバイスを解除しますか？";
 "%@ will need to pair again before it can use AetherLink Runtime." = "%@ は AetherLink Runtime を使用する前に再度ペアリングが必要です。";
 "%@ will need to pair again before it can use AetherLink Runtime. Key fingerprint %@" = "%@ は AetherLink Runtime を使用する前に再度ペアリングが必要です。キー指紋 %@";
@@ -182,7 +183,7 @@
 "Activity technical details collapsed" = "アクティビティ詳細は折りたたみ済み";
 "Collapse to hide activity technical details." = "アクティビティ詳細を非表示にするには折りたたみます。";
 "Expand to show activity technical details." = "アクティビティ詳細を表示するには展開します。";
-"Connection setup result" = "接続設定の結果";
+"Connection Recovery result" = "接続の復旧結果";
 "Connection health" = "接続状態";
 "Connection preparation" = "接続準備";
 "Connection diagnostics" = "接続診断";
@@ -290,7 +291,7 @@
 "Reconnecting through %@." = "%@ 経由で再接続しています。";
 "Connection through %@ failed. Check Advanced Connection Setup, then try again." = "%@ 経由の接続に失敗しました。接続の復旧を確認してから再試行してください。";
 "AetherLink can prepare connection details automatically when you generate a pairing QR." = "ペアリング QR を生成すると、AetherLink が接続情報を自動で準備できます。";
-"Pairing from another network needs connection details inside the pairing QR." = "別ネットワークからペアリングするには、ペアリング QR 内の接続情報が必要です。";
+"Pairing from another network needs connection details inside the pairing QR." = "別ネットワークからペアリングするには、ペアリング QR 内にリレー、VPN、トンネル、またはプライベートオーバーレイ経路が必要です。";
 "Saved connection details use %@. Generate a fresh QR after updating the connection." = "保存済みの接続情報は %@ を使用しています。接続を更新した後は新しい QR を生成してください。";
 "New QR codes include %@ after AetherLink Runtime is ready." = "AetherLink Runtime の準備ができると、新しい QR に %@ が含まれます。";
 "Advanced Connection Setup needs an address reachable by both devices before it can be included in the QR." = "QR に含める前に、接続の復旧には両方のデバイスから到達できるアドレスが必要です。";

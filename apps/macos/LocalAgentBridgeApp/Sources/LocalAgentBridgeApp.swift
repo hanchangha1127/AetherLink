@@ -42,28 +42,9 @@ struct LocalAgentBridgeApp: App {
                 openWindow(id: "main")
                 NSApp.activate(ignoringOtherApps: true)
             }
-            Button(commandTitles.refresh) {
-                Task { await model.refreshBackendStatus() }
+            ForEach(companionPrimaryActionOrder(trustedDeviceCount: model.trustedDevices.count)) { action in
+                menuBarPrimaryAction(action, commandTitles: commandTitles)
             }
-            .help(modelProviderCheckActionAccessibilityHint())
-            .accessibilityValue(Text(modelProviderCheckActionAccessibilityValue()))
-            .accessibilityHint(Text(modelProviderCheckActionAccessibilityHint()))
-            Button(commandTitles.loadModels) {
-                Task { await model.loadModels() }
-            }
-            .help(modelListLoadActionAccessibilityHint())
-            .accessibilityValue(Text(modelListLoadActionAccessibilityValue()))
-            .accessibilityHint(Text(modelListLoadActionAccessibilityHint()))
-            Button(pairingQRGenerationCommandTitle(hasActiveSession: model.pairingSession != nil)) {
-                model.beginPairing()
-                requestedSection = .pairing
-                openWindow(id: "main")
-                NSApp.activate(ignoringOtherApps: true)
-            }
-            .disabled(!canGeneratePairingQR)
-            .help(pairingQRGenerationActionAccessibilityHint(isAvailable: canGeneratePairingQR))
-            .accessibilityValue(Text(pairingQRGenerationActionAccessibilityValue(isAvailable: canGeneratePairingQR)))
-            .accessibilityHint(Text(pairingQRGenerationActionAccessibilityHint(isAvailable: canGeneratePairingQR)))
             Divider()
             Button(commandTitles.quit) {
                 NSApp.terminate(nil)
@@ -84,6 +65,42 @@ struct LocalAgentBridgeApp: App {
             canPrepareAutomatically: model.canPrepareRemoteRelayRouteAutomatically,
             isRouteEligibleForQRCode: model.isDevelopmentRelayRouteEligibleForQRCode
         )
+    }
+
+    @ViewBuilder
+    private func menuBarPrimaryAction(
+        _ action: CompanionPrimaryAction,
+        commandTitles: MenuBarCommandTitles
+    ) -> some View {
+        switch action {
+        case .refreshProviders:
+            Button(commandTitles.refresh) {
+                Task { await model.refreshBackendStatus() }
+            }
+            .help(modelProviderCheckActionAccessibilityHint())
+            .accessibilityValue(Text(modelProviderCheckActionAccessibilityValue()))
+            .accessibilityHint(Text(modelProviderCheckActionAccessibilityHint()))
+
+        case .loadModels:
+            Button(commandTitles.loadModels) {
+                Task { await model.loadModels() }
+            }
+            .help(modelListLoadActionAccessibilityHint())
+            .accessibilityValue(Text(modelListLoadActionAccessibilityValue()))
+            .accessibilityHint(Text(modelListLoadActionAccessibilityHint()))
+
+        case .pairingQR:
+            Button(pairingQRGenerationCommandTitle(hasActiveSession: model.pairingSession != nil)) {
+                model.beginPairing()
+                requestedSection = .pairing
+                openWindow(id: "main")
+                NSApp.activate(ignoringOtherApps: true)
+            }
+            .disabled(!canGeneratePairingQR)
+            .help(pairingQRGenerationActionAccessibilityHint(isAvailable: canGeneratePairingQR))
+            .accessibilityValue(Text(pairingQRGenerationActionAccessibilityValue(isAvailable: canGeneratePairingQR)))
+            .accessibilityHint(Text(pairingQRGenerationActionAccessibilityHint(isAvailable: canGeneratePairingQR)))
+        }
     }
 }
 

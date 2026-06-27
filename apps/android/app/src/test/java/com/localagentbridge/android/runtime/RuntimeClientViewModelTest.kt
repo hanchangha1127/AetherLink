@@ -7009,6 +7009,64 @@ class RuntimeClientViewModelTest {
 
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
+    fun trustedRelayConnectionFailureClearsStoredRelayAndStopsAutoReconnect() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val trustedStore = FakeEmittingTrustedRuntimeStore(trustedRuntimeForViewModelTests())
+            var relayConnectionAttempts = 0
+            val viewModel = RuntimeClientViewModel(
+                application = Application(),
+                dependencies = RuntimeClientViewModelDependencies(
+                    json = json,
+                    transportClient = RuntimeTransportClient(),
+                    transportConnector = RuntimeTransportConnector { _, _, _ ->
+                        error("Direct TCP should not be used for trusted relay auto-reconnect")
+                    },
+                    relayConnector = RuntimeRelayConnector { _, _ ->
+                        relayConnectionAttempts += 1
+                        error("Relay route is unreachable from this network")
+                    },
+                    discovery = EmptyRuntimeDiscoverySource,
+                    trustedRuntimeStore = trustedStore,
+                    deviceIdentityProvider = FakeDeviceIdentityProvider(testDeviceIdentity()),
+                    localDataStore = FakeRuntimeLocalDataStore(
+                        initialData = PersistedRuntimeData(trustedRuntimeAutoReconnectEnabled = false),
+                    ),
+                    lifecycleCallbacksRegistrar = NoopRuntimeLifecycleCallbacksRegistrar,
+                    currentTimeMillis = { 1_000L },
+                ),
+            )
+            advanceUntilIdle()
+            assertEquals("runtime-1", viewModel.state.value.trustedRuntime?.deviceId)
+            assertEquals("relay.example.test", viewModel.state.value.trustedRuntime?.relayHost)
+            assertEquals("secret-1", viewModel.state.value.trustedRuntime?.relaySecret)
+
+            viewModel.connectToTrustedRuntime()
+            runCurrent()
+            advanceUntilIdle()
+
+            assertEquals(1, relayConnectionAttempts)
+            assertEquals("remote_route_unreachable", viewModel.state.value.error?.code)
+            assertEquals(
+                "route_diagnostic_relay_failed",
+                viewModel.state.value.error?.diagnosticCode,
+            )
+            assertNull(viewModel.state.value.trustedRuntime?.relayHost)
+            assertNull(viewModel.state.value.trustedRuntime?.relaySecret)
+            assertNull(trustedStore.trusted?.relayHost)
+            assertNull(trustedStore.trusted?.relaySecret)
+            advanceTimeBy(2_000L)
+            advanceUntilIdle()
+
+            assertEquals(1, relayConnectionAttempts)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
     fun viewModelShowsExpiredRemoteRouteWhenTrustedRelayLeaseExpiredOnInit() = runTest {
         val mainDispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(mainDispatcher)
@@ -8052,28 +8110,67 @@ class RuntimeClientViewModelTest {
         val expectedBullets = "\n- route-notes.txt\n- pairing-qr.png"
 
         assertEquals(
+            "첨부한 입력을 분석하세요:",
+            testAttachmentOnlyPromptHeader(RuntimeAppLanguage.Korean.languageTag),
+        )
+        assertEquals(
+            "添付された入力を分析してください:",
+            testAttachmentOnlyPromptHeader(RuntimeAppLanguage.Japanese.languageTag),
+        )
+        assertEquals(
+            "请分析附加输入：",
+            testAttachmentOnlyPromptHeader(RuntimeAppLanguage.SimplifiedChinese.languageTag),
+        )
+        assertEquals(
+            "Analysez les éléments joints :",
+            testAttachmentOnlyPromptHeader(RuntimeAppLanguage.French.languageTag),
+        )
+        assertEquals(
+            "Analyze attached input:",
+            testAttachmentOnlyPromptHeader(""),
+        )
+
+        assertEquals(
             "Analyze attached input:$expectedBullets",
-            attachmentOnlyPrompt(attachments, RuntimeAppLanguage.English.languageTag),
+            attachmentOnlyPrompt(
+                attachments = attachments,
+                promptHeader = testAttachmentOnlyPromptHeader(RuntimeAppLanguage.English.languageTag),
+            ),
         )
         assertEquals(
             "첨부한 입력을 분석하세요:$expectedBullets",
-            attachmentOnlyPrompt(attachments, RuntimeAppLanguage.Korean.languageTag),
+            attachmentOnlyPrompt(
+                attachments = attachments,
+                promptHeader = testAttachmentOnlyPromptHeader(RuntimeAppLanguage.Korean.languageTag),
+            ),
         )
         assertEquals(
             "添付された入力を分析してください:$expectedBullets",
-            attachmentOnlyPrompt(attachments, RuntimeAppLanguage.Japanese.languageTag),
+            attachmentOnlyPrompt(
+                attachments = attachments,
+                promptHeader = testAttachmentOnlyPromptHeader(RuntimeAppLanguage.Japanese.languageTag),
+            ),
         )
         assertEquals(
             "请分析附加输入：$expectedBullets",
-            attachmentOnlyPrompt(attachments, RuntimeAppLanguage.SimplifiedChinese.languageTag),
+            attachmentOnlyPrompt(
+                attachments = attachments,
+                promptHeader = testAttachmentOnlyPromptHeader(RuntimeAppLanguage.SimplifiedChinese.languageTag),
+            ),
         )
         assertEquals(
             "Analysez les éléments joints :$expectedBullets",
-            attachmentOnlyPrompt(attachments, RuntimeAppLanguage.French.languageTag),
+            attachmentOnlyPrompt(
+                attachments = attachments,
+                promptHeader = testAttachmentOnlyPromptHeader(RuntimeAppLanguage.French.languageTag),
+            ),
         )
         assertEquals(
             "Analyze attached input:$expectedBullets",
-            attachmentOnlyPrompt(attachments, ""),
+            attachmentOnlyPrompt(
+                attachments = attachments,
+                promptHeader = testAttachmentOnlyPromptHeader(""),
+            ),
         )
     }
 
@@ -8102,7 +8199,7 @@ class RuntimeClientViewModelTest {
             assertEquals(RuntimeAppLanguage.Korean.languageTag, payload.locale)
             assertEquals("ollama:llama3.1:8b", payload.model)
             assertEquals(
-                attachmentOnlyPrompt(listOf(attachment), RuntimeAppLanguage.Korean.languageTag),
+                "첨부한 입력을 분석하세요:\n- pairing-notes.txt",
                 payload.messages.last().content,
             )
             assertEquals("user", payload.messages.last().role)
@@ -9086,6 +9183,7 @@ class RuntimeClientViewModelTest {
                 localDataStore = localStore,
                 lifecycleCallbacksRegistrar = NoopRuntimeLifecycleCallbacksRegistrar,
                 attachmentReader = attachmentReader,
+                attachmentPromptHeaderProvider = ::testAttachmentOnlyPromptHeader,
                 currentTimeMillis = { 1_000L },
             ),
         )
@@ -9219,6 +9317,16 @@ class RuntimeClientViewModelTest {
             sizeBytes = 10L,
             dataBase64 = "cGFpcmluZyBxcg==",
         )
+    }
+
+    private fun testAttachmentOnlyPromptHeader(languageTag: String): String {
+        return when (RuntimeAppLanguage.normalizeLanguageTag(languageTag)) {
+            RuntimeAppLanguage.Korean.languageTag -> "첨부한 입력을 분석하세요:"
+            RuntimeAppLanguage.Japanese.languageTag -> "添付された入力を分析してください:"
+            RuntimeAppLanguage.SimplifiedChinese.languageTag -> "请分析附加输入："
+            RuntimeAppLanguage.French.languageTag -> "Analysez les éléments joints :"
+            else -> "Analyze attached input:"
+        }
     }
 
     private fun trustedRuntimeForViewModelTests(): TrustedRuntime {

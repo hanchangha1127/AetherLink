@@ -134,6 +134,7 @@ import com.google.mlkit.vision.common.InputImage
 import com.localagentbridge.android.runtime.RuntimeClientViewModel
 import com.localagentbridge.android.runtime.RuntimeChatSession
 import com.localagentbridge.android.runtime.RuntimeModel
+import com.localagentbridge.android.runtime.RuntimeAppLanguage
 import com.localagentbridge.android.runtime.RuntimeAppTheme
 import com.localagentbridge.android.runtime.RuntimeUiState
 import com.localagentbridge.android.runtime.isChatModel
@@ -208,6 +209,33 @@ internal fun androidSystemAppLanguageTag(context: Context): String? {
     return locales.get(0).toLanguageTag()
 }
 
+internal fun shouldSynchronizeAndroidSystemAppLanguage(
+    currentLanguageTag: String?,
+    selectedLanguageTag: String,
+): Boolean {
+    val selected = RuntimeAppLanguage.normalizeLanguageTag(selectedLanguageTag)
+    val current = RuntimeAppLanguage.supportedLanguageTagOrNull(currentLanguageTag)
+    return current != selected
+}
+
+internal fun synchronizeAndroidSystemAppLanguageTag(
+    context: Context,
+    selectedLanguageTag: String,
+) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+    val localeManager = context.getSystemService(LocaleManager::class.java) ?: return
+    val normalizedLanguageTag = RuntimeAppLanguage.normalizeLanguageTag(selectedLanguageTag)
+    if (
+        !shouldSynchronizeAndroidSystemAppLanguage(
+            currentLanguageTag = androidSystemAppLanguageTag(context),
+            selectedLanguageTag = normalizedLanguageTag,
+        )
+    ) {
+        return
+    }
+    localeManager.applicationLocales = LocaleList.forLanguageTags(normalizedLanguageTag)
+}
+
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
 private fun LocalAgentBridgeApp(
@@ -218,8 +246,15 @@ private fun LocalAgentBridgeApp(
     val viewModel: RuntimeClientViewModel = viewModel()
     val state by viewModel.state.collectAsStateWithLifecycle()
     val baseContext = LocalContext.current
+    var systemLanguageReconciled by remember { mutableStateOf(false) }
     LaunchedEffect(viewModel, baseContext) {
         viewModel.reconcileSystemAppLanguageTag(androidSystemAppLanguageTag(baseContext))
+        systemLanguageReconciled = true
+    }
+    LaunchedEffect(baseContext, state.selectedLanguageTag, systemLanguageReconciled) {
+        if (systemLanguageReconciled) {
+            synchronizeAndroidSystemAppLanguageTag(baseContext, state.selectedLanguageTag)
+        }
     }
     AetherLinkTheme(theme = state.selectedTheme) {
         Surface(
@@ -417,6 +452,12 @@ private fun LocalAgentBridgeApp(
                         val newChatStateDescription = newChatActionStateDescription(state)
                         AetherLinkPermanentNavigationRail(
                             selectedDestination = effectiveDestination,
+                            chatEnabled = state.trustedRuntime != null,
+                            chatStateDescription = if (state.trustedRuntime == null) {
+                                stringResource(R.string.new_chat_state_pairing_required)
+                            } else {
+                                stringResource(R.string.chat_destination_state_ready)
+                            },
                             newChatEnabled = newChatEnabled,
                             newChatStateDescription = newChatStateDescription,
                             onNewChat = {
@@ -656,6 +697,8 @@ private fun LocalizedContent(
 @Composable
 internal fun AetherLinkPermanentNavigationRail(
     selectedDestination: AppDestination,
+    chatEnabled: Boolean,
+    chatStateDescription: String,
     newChatEnabled: Boolean,
     newChatStateDescription: String,
     onNewChat: () -> Unit,
@@ -663,6 +706,7 @@ internal fun AetherLinkPermanentNavigationRail(
 ) {
     val hapticFeedback = LocalHapticFeedback.current
     val newChatActionLabel = stringResource(R.string.new_chat)
+    val chatActionLabel = stringResource(AppDestination.Chat.labelRes)
 
     NavigationRail(
         modifier = Modifier
@@ -693,6 +737,11 @@ internal fun AetherLinkPermanentNavigationRail(
             onClick = {
                 hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.SelectionChange)
                 onSelectDestination(AppDestination.Chat)
+            },
+            enabled = chatEnabled,
+            modifier = Modifier.semantics {
+                stateDescription = chatStateDescription
+                onClick(label = chatActionLabel, action = null)
             },
             icon = {
                 Icon(
@@ -783,6 +832,16 @@ private fun ChatModelTopBarMenu(
         !state.isConnected -> stringResource(R.string.chat_status_disconnected)
         else -> stringResource(R.string.chat_hint_select_model)
     }
+    val modelPickerContentDescription = if (selectedModel != null && !state.isStreaming) {
+        stringResource(R.string.chat_model_picker_summary_selected, selectedModel.name)
+    } else {
+        stringResource(
+            R.string.chat_model_picker_summary,
+            selectedLabel,
+            modelPickerStateDescription,
+        )
+    }
+    val modelPickerActionLabel = stringResource(R.string.choose_model)
     val trimmedModelSearchQuery = modelSearchQuery.trim()
     val clearModelSearchContentDescription = stringResource(
         R.string.clear_model_search_named,
@@ -819,7 +878,9 @@ private fun ChatModelTopBarMenu(
             modifier = Modifier
                 .widthIn(max = 220.dp)
                 .semantics {
+                    contentDescription = modelPickerContentDescription
                     stateDescription = modelPickerStateDescription
+                    onClick(label = modelPickerActionLabel, action = null)
                 },
         ) {
             Icon(
@@ -1265,7 +1326,10 @@ internal fun chatModelPickerClosedLabel(
 
 internal fun chatModelPickerFallbackDisplayName(state: RuntimeUiState): String? {
     val selectedId = state.selectedModelId ?: return null
-    return if (state.isLoadingModels || state.models.isEmpty()) {
+    val canShowSavedModelName = state.isLoadingModels ||
+        state.isConnecting ||
+        (state.isConnected && state.models.isEmpty())
+    return if (canShowSavedModelName) {
         savedModelDisplayName(selectedId)
     } else {
         null

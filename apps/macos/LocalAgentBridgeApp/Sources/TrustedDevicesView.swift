@@ -92,6 +92,7 @@ struct TrustedDevicesView: View {
                     Task { await model.removeTrustedDevice(device) }
                 }
             }
+            .accessibilityLabel(Text(trustedDeviceConfirmRemoveAccessibilityLabel(for: pendingRemovalDevice)))
             Button(NSLocalizedString("Cancel", comment: ""), role: .cancel) {}
         } message: {
             Text(trustedDeviceRemovalMessage(for: pendingRemovalDevice))
@@ -240,6 +241,19 @@ func trustedDeviceRemoveAccessibilityLabel(name: String, keyFingerprint: String)
         format: NSLocalizedString("Remove trust for %@. Key fingerprint %@", comment: ""),
         deviceName,
         fingerprint
+    )
+}
+
+func trustedDeviceConfirmRemoveAccessibilityLabel(for device: TrustedDevice?) -> String {
+    let trimmedName = device?.name.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    let deviceName = trimmedName.isEmpty
+        ? NSLocalizedString("Selected device", comment: "")
+        : trimmedName
+    let keyFingerprint = trustedDeviceKeyFingerprint(device?.publicKeyBase64 ?? "")
+    return String(
+        format: NSLocalizedString("Confirm removing trust for %@. Key fingerprint %@", comment: ""),
+        deviceName,
+        keyFingerprint
     )
 }
 

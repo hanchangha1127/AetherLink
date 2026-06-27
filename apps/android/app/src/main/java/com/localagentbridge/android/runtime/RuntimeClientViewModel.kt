@@ -2,13 +2,17 @@ package com.localagentbridge.android.runtime
 
 import android.app.Application
 import android.app.Activity
+import android.content.Context
+import android.content.res.Configuration
 import android.net.Uri
 import android.os.Bundle
+import android.os.LocaleList
 import android.provider.OpenableColumns
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.localagentbridge.android.BuildConfig
+import com.localagentbridge.android.R
 import com.localagentbridge.android.core.protocol.AuthChallengePayload
 import com.localagentbridge.android.core.protocol.AuthResponsePayload
 import com.localagentbridge.android.core.protocol.ChatAttachmentPayload
@@ -89,6 +93,7 @@ import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonObject
 import java.util.Base64
+import java.util.Locale
 import java.util.UUID
 
 internal interface RuntimeTrustedRuntimeStore {
@@ -137,6 +142,7 @@ internal data class RuntimeClientViewModelDependencies(
     val localDataStore: RuntimeLocalDataStore,
     val lifecycleCallbacksRegistrar: RuntimeLifecycleCallbacksRegistrar,
     val attachmentReader: RuntimeAttachmentReader? = null,
+    val attachmentPromptHeaderProvider: ((String) -> String)? = null,
     val currentTimeMillis: () -> Long = { System.currentTimeMillis() },
 ) {
     companion object {
@@ -156,6 +162,9 @@ internal data class RuntimeClientViewModelDependencies(
                 localDataStore = AndroidRuntimeLocalDataStore(RuntimeLocalStore(application, json)),
                 lifecycleCallbacksRegistrar = AndroidRuntimeLifecycleCallbacksRegistrar,
                 attachmentReader = AndroidRuntimeAttachmentReader(application),
+                attachmentPromptHeaderProvider = { languageTag ->
+                    attachmentOnlyPromptHeader(application, languageTag)
+                },
             )
         }
     }
@@ -1519,7 +1528,11 @@ class RuntimeClientViewModel internal constructor(
         val displayText = text.ifBlank {
             attachmentOnlyPrompt(
                 attachments = current.pendingAttachments,
-                languageTag = current.selectedLanguageTag,
+                promptHeader = dependencies.attachmentPromptHeaderProvider?.invoke(current.selectedLanguageTag)
+                    ?: attachmentOnlyPromptHeader(
+                        context = getApplication(),
+                        languageTag = current.selectedLanguageTag,
+                    ),
             )
         }
         val attachments = current.pendingAttachments
@@ -1652,6 +1665,15 @@ class RuntimeClientViewModel internal constructor(
             }
         }.onFailure { error ->
             val uiError = error.connectionUiError()
+            val current = state.value
+            val trustedRuntimeWithoutFailedRelay = if (
+                pendingPairingPayload == null &&
+                uiError.requiresFreshRemoteRouteBeforeReconnect()
+            ) {
+                current.trustedRuntime?.withoutRelayRoute()
+            } else {
+                null
+            }
             Log.e(
                 TAG,
                 "Runtime connection failed code=${uiError.code}" +
@@ -1659,14 +1681,23 @@ class RuntimeClientViewModel internal constructor(
                     " target=${target.connectionLogLabel()}",
                 error,
             )
-            mutableState.update {
-                it.copy(
-                    isConnected = false,
-                    isConnecting = false,
-                    runtimeStatus = "failed",
-                    activeRouteKind = null,
-                    error = uiError,
-                )
+            val updatedState = current.copy(
+                isConnected = false,
+                isConnecting = false,
+                runtimeStatus = "failed",
+                activeRouteKind = null,
+                error = uiError,
+            ).let { failedState ->
+                trustedRuntimeWithoutFailedRelay?.let { runtime ->
+                    failedState.withTrustedRuntimeRouteFields(runtime, runtime.endpointHint)
+                } ?: failedState
+            }
+            mutableState.value = updatedState
+            trustedRuntimeWithoutFailedRelay?.toTrustedRuntimeOrNull()?.let { trusted ->
+                didAttemptTrustedRuntimeRestore = true
+                viewModelScope.launch {
+                    pairingStore.trustRuntime(trusted)
+                }
             }
             if (shouldRetryTrustedRuntimeConnectFailure(state.value, target, shouldRestoreTrustedRuntimeConnection)) {
                 scheduleTrustedRuntimeReconnect()
@@ -1711,6 +1742,7 @@ class RuntimeClientViewModel internal constructor(
                             }
                             mutableState.value = updatedState
                             trustedRuntimeWithoutFailedRelay?.toTrustedRuntimeOrNull()?.let { trusted ->
+                                didAttemptTrustedRuntimeRestore = true
                                 viewModelScope.launch {
                                     pairingStore.trustRuntime(trusted)
                                 }
@@ -2974,7 +3006,10 @@ internal fun shouldRetryTrustedRuntimeConnectFailure(
 }
 
 internal fun RuntimeUiState.shouldDiscoverTrustedRuntimeRoute(): Boolean {
-    return trustedRuntime != null && !isConnected && !isConnecting
+    return trustedRuntime != null &&
+        trustedRuntime.hasRelayRoute() != true &&
+        !isConnected &&
+        !isConnecting
 }
 
 internal fun discoveredRuntimeSelectableForTrustState(
@@ -3751,20 +3786,26 @@ internal fun RuntimeUiState.runtimeRequestLocale(): String {
     return RuntimeAppLanguage.normalizeLanguageTag(selectedLanguageTag)
 }
 
-internal fun attachmentOnlyPrompt(
-    attachments: List<RuntimePendingAttachment>,
+internal fun attachmentOnlyPromptHeader(
+    context: Context,
     languageTag: String,
 ): String {
-    val label = when (RuntimeAppLanguage.normalizeLanguageTag(languageTag)) {
-        RuntimeAppLanguage.Korean.languageTag -> "첨부한 입력을 분석하세요:"
-        RuntimeAppLanguage.Japanese.languageTag -> "添付された入力を分析してください:"
-        RuntimeAppLanguage.SimplifiedChinese.languageTag -> "请分析附加输入："
-        RuntimeAppLanguage.French.languageTag -> "Analysez les éléments joints :"
-        else -> "Analyze attached input:"
-    }
+    val normalizedLanguageTag = RuntimeAppLanguage.normalizeLanguageTag(languageTag)
+    val locale = Locale.forLanguageTag(normalizedLanguageTag)
+    val configuration = Configuration(context.resources.configuration)
+    configuration.setLocale(locale)
+    configuration.setLocales(LocaleList(locale))
+    return context.createConfigurationContext(configuration)
+        .getString(R.string.attachment_only_prompt_header)
+}
+
+internal fun attachmentOnlyPrompt(
+    attachments: List<RuntimePendingAttachment>,
+    promptHeader: String,
+): String {
     return attachments.joinToString(
         separator = "\n",
-        prefix = "$label\n",
+        prefix = "${promptHeader.trimEnd()}\n",
     ) { "- ${it.name}" }
 }
 
@@ -4039,7 +4080,11 @@ private fun Throwable.isRelayFrameAuthenticationFailure(): Boolean {
 
 private fun RuntimeUiError?.requiresFreshRemoteRouteBeforeReconnect(): Boolean {
     return this?.code == "remote_route_auth_failed" ||
-        this?.diagnosticCode == "route_diagnostic_relay_auth_failed"
+        this?.code == "remote_route_unreachable" ||
+        this?.code == "remote_route_expired" ||
+        this?.diagnosticCode == "route_diagnostic_relay_auth_failed" ||
+        this?.diagnosticCode == "route_diagnostic_relay_failed" ||
+        this?.diagnosticCode == "route_diagnostic_remote_route_expired"
 }
 
 internal fun RuntimeUiState.withPairingRequiredRuntimeState(detail: String?): RuntimeUiState {

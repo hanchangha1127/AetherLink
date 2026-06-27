@@ -15,6 +15,7 @@
     <string name="new_chat_state_ready">Prêt à démarrer un nouveau chat.</string>
     <string name="new_chat_state_wait_for_stream">Attendez la réponse en cours ou annulez-la avant de démarrer un nouveau chat.</string>
     <string name="new_chat_state_pairing_required">Jumelez AetherLink Runtime avant de démarrer un nouveau chat.</string>
+    <string name="chat_destination_state_ready">Prêt à ouvrir le chat.</string>
     <string name="previous_chats">Chats précédents</string>
     <string name="no_previous_chats">Aucun chat précédent pour le moment.</string>
     <string name="chat_search_label">Rechercher des chats</string>
@@ -69,6 +70,8 @@
     <string name="delete_archived_chats_confirm_first">Supprimer définitivement tous les chats archivés de l’historique enregistré ? Les chats actifs restent enregistrés.</string>
     <string name="delete_archived_chats_confirm_second">Confirmez la suppression définitive de tous les chats archivés. Cette action est irréversible.</string>
     <string name="continue_action">Continuer</string>
+    <string name="confirmation_continue_action_named">Continuer : %1$s</string>
+    <string name="confirmation_final_action_named">Confirmer : %1$s</string>
     <string name="chat_title_label">Titre du chat</string>
     <string name="rename_chat_title_state_empty">Saisissez un titre avant d’enregistrer.</string>
     <string name="rename_chat_title_state_ready">Prêt à enregistrer.</string>
@@ -81,7 +84,7 @@
     <string name="pairing_title">Jumeler AetherLink</string>
     <string name="pairing_subtitle">Scannez un QR AetherLink de confiance avant de charger les modèles ou de discuter.</string>
     <string name="qr_pairing_title">Scanner le QR de jumelage</string>
-    <string name="qr_pairing_detail">Scannez le dernier QR AetherLink. Les appareils approuvés peuvent rescanner pour actualiser la connexion.</string>
+    <string name="qr_pairing_detail">Scannez le dernier QR AetherLink Runtime. Pour se connecter depuis un autre réseau, le QR doit inclure une route relais, VPN, tunnel ou overlay privé joignable par les deux appareils.</string>
     <string name="qr_pairing_security_note">AetherLink ne fait confiance qu’aux AetherLink Runtime vérifiés par QR. Les fournisseurs de modèles restent privés.</string>
     <string name="scan_qr">Scanner le QR</string>
     <string name="scan_qr_state_ready">Prêt à scanner le QR.</string>
@@ -104,6 +107,9 @@
     <string name="manual_qr_payload_detail">Solution de diagnostic uniquement. Collez le texte QR d’AetherLink Runtime lorsque le scan caméra ne peut pas être testé; le jumelage normal reste le scan QR par caméra.</string>
     <string name="manual_qr_payload_label">Texte QR</string>
     <string name="manual_qr_payload_submit">Utiliser le texte QR</string>
+    <string name="manual_qr_payload_input_accessibility">Saisie du texte QR de diagnostic</string>
+    <string name="manual_qr_payload_submit_accessibility">Utiliser le texte QR de diagnostic</string>
+    <string name="manual_qr_payload_cancel_accessibility">Fermer le texte QR de diagnostic</string>
     <string name="manual_qr_payload_state_empty">Collez le texte QR d’AetherLink Runtime avant de continuer.</string>
     <string name="manual_qr_payload_state_invalid">Utilisez un texte QR d’AetherLink Runtime qui commence par aetherlink://pair.</string>
     <string name="manual_qr_payload_state_ready">Prêt à utiliser le texte QR.</string>
@@ -242,6 +248,8 @@
     <string name="model_refresh_state_loading">Actualisation des modèles en cours.</string>
     <string name="model_refresh_state_connect_first">Connectez-vous au runtime de confiance avant d’actualiser les modèles.</string>
     <string name="model_picker_state_wait_for_stream">Attendez la réponse en cours ou annulez-la avant de changer de modèle.</string>
+    <string name="chat_model_picker_summary">Sélecteur de modèle de chat. %1$s. %2$s</string>
+    <string name="chat_model_picker_summary_selected">Sélecteur de modèle de chat. Modèle de chat sélectionné %1$s.</string>
     <string name="models_from_runtime">Les modèles sont chargés via AetherLink Runtime, pas directement depuis cette app.</string>
     <string name="models_need_connection">Connectez-vous au runtime de confiance avant de charger les modèles.</string>
     <string name="model_backend_value">Service de modèles : %1$s</string>
@@ -290,11 +298,13 @@
     <string name="attachment_metadata_with_size">%1$s · %2$s</string>
     <string name="attachment_requires_vision_model">Modèle vision requis</string>
     <string name="content_desc_attachment_chip">Pièce jointe %1$s, %2$s</string>
+    <string name="attachment_only_prompt_header">Analysez les éléments joints :</string>
     <string name="empty_chat_pairing_title">Scannez le QR pour démarrer</string>
     <string name="empty_chat_pairing">Jumelez d’abord AetherLink Runtime. Les fournisseurs de modèles restent privés derrière le runtime de confiance.</string>
     <string name="empty_chat_disconnected_title">Connectez-vous pour continuer</string>
     <string name="empty_chat_disconnected">Connectez-vous au runtime de confiance avant de discuter.</string>
     <string name="empty_chat_relay_route_unreachable">Ce réseau ne peut pas atteindre la route enregistrée. Préparez une route de connexion joignable dans AetherLink Runtime, puis scannez le dernier QR.</string>
+    <string name="chat_empty_state_accessibility_summary">%1$s. %2$s</string>
     <string name="empty_chat_relay_qr_unreachable">Ce QR pointe vers une route inaccessible depuis cet appareil. Préparez une route joignable depuis les deux appareils, puis scannez le dernier QR.</string>
     <string name="empty_chat_no_model_title">Choisissez un modèle</string>
     <string name="empty_chat_no_model">Choisissez un modèle avant l’envoi.</string>
@@ -403,6 +413,9 @@
     <string name="route_notice_status_saved_connection">Connexion enregistrée</string>
     <string name="route_notice_status_nearby">À proximité</string>
     <string name="route_notice_status_scan_qr">Scanner QR</string>
+    <string name="route_notice_accessibility_summary">%1$s. %2$s. %3$s</string>
+    <string name="route_notice_accessibility_summary_with_steps">%1$s. %2$s. %3$s %4$s</string>
+    <string name="route_notice_recovery_steps">Ouvrez AetherLink Runtime, générez le dernier QR, puis scannez-le ici.</string>
     <string name="route_refresh_notice">Dernier QR enregistré pour %1$s. Restauration de la connexion de confiance.</string>
     <string name="route_notice_relay_expired">Les informations de connexion ont expiré. Scannez le dernier QR AetherLink Runtime avec de nouvelles informations de connexion.</string>
     <string name="route_notice_relay_without_secret">Les informations de connexion doivent être actualisées. Scannez le dernier QR AetherLink Runtime avec les informations de connexion distante avant d’utiliser AetherLink hors de ce réseau.</string>

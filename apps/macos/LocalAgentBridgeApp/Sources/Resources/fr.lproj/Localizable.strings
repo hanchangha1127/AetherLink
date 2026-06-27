@@ -165,6 +165,7 @@
 "Trusted device %@. %@. Key fingerprint %@" = "Appareil approuvé %@. %@. Empreinte de clé %@";
 "Remove Trust" = "Retirer l’approbation";
 "Remove trust for %@. Key fingerprint %@" = "Retirer l’approbation de %@. Empreinte de clé %@";
+"Confirm removing trust for %@. Key fingerprint %@" = "Confirmer le retrait de l’approbation de %@. Empreinte de clé %@";
 "Remove trusted device?" = "Retirer l’appareil approuvé ?";
 "%@ will need to pair again before it can use AetherLink Runtime." = "%@ devra être jumelé à nouveau avant de pouvoir utiliser AetherLink Runtime.";
 "%@ will need to pair again before it can use AetherLink Runtime. Key fingerprint %@" = "%@ devra être jumelé à nouveau avant de pouvoir utiliser AetherLink Runtime. Empreinte de clé %@";
@@ -182,7 +183,7 @@
 "Activity technical details collapsed" = "Détails d’activité réduits";
 "Collapse to hide activity technical details." = "Réduire pour masquer les détails d’activité.";
 "Expand to show activity technical details." = "Développer pour afficher les détails d’activité.";
-"Connection setup result" = "Résultat de configuration de connexion";
+"Connection Recovery result" = "Résultat de récupération de connexion";
 "Connection health" = "État de connexion";
 "Connection preparation" = "Préparation de connexion";
 "Connection diagnostics" = "Diagnostics de connexion";
@@ -290,7 +291,7 @@
 "Reconnecting through %@." = "Reconnexion via %@.";
 "Connection through %@ failed. Check Advanced Connection Setup, then try again." = "La connexion via %@ a échoué. Vérifiez la récupération de connexion, puis réessayez.";
 "AetherLink can prepare connection details automatically when you generate a pairing QR." = "AetherLink peut préparer automatiquement les informations de connexion lorsque vous générez un QR de jumelage.";
-"Pairing from another network needs connection details inside the pairing QR." = "Le jumelage depuis un autre réseau nécessite des informations de connexion dans le QR de jumelage.";
+"Pairing from another network needs connection details inside the pairing QR." = "Le jumelage depuis un autre réseau nécessite une route relais, VPN, tunnel ou overlay privé dans le QR de jumelage.";
 "Saved connection details use %@. Generate a fresh QR after updating the connection." = "Les informations de connexion enregistrées utilisent %@. Générez un nouveau QR après avoir mis à jour la connexion.";
 "New QR codes include %@ after AetherLink Runtime is ready." = "Les nouveaux QR incluent %@ lorsque AetherLink Runtime est prêt.";
 "Advanced Connection Setup needs an address reachable by both devices before it can be included in the QR." = "La récupération de connexion nécessite une adresse joignable par les deux appareils avant de l’inclure dans le QR.";

@@ -165,6 +165,7 @@
 "Trusted device %@. %@. Key fingerprint %@" = "신뢰 기기 %@. %@. 키 지문 %@";
 "Remove Trust" = "신뢰 해제";
 "Remove trust for %@. Key fingerprint %@" = "%@ 신뢰 해제. 키 지문 %@";
+"Confirm removing trust for %@. Key fingerprint %@" = "%@ 신뢰 해제를 확인합니다. 키 지문 %@";
 "Remove trusted device?" = "신뢰 기기를 해제할까요?";
 "%@ will need to pair again before it can use AetherLink Runtime." = "%@ 기기는 AetherLink Runtime을 다시 사용하려면 다시 페어링해야 합니다.";
 "%@ will need to pair again before it can use AetherLink Runtime. Key fingerprint %@" = "%@은(는) AetherLink Runtime을 다시 사용하려면 다시 페어링해야 합니다. 키 지문 %@";
@@ -182,7 +183,7 @@
 "Activity technical details collapsed" = "활동 세부 정보 접힘";
 "Collapse to hide activity technical details." = "활동 세부 정보를 숨기려면 접으세요.";
 "Expand to show activity technical details." = "활동 세부 정보를 보려면 펼치세요.";
-"Connection setup result" = "연결 설정 결과";
+"Connection Recovery result" = "연결 복구 결과";
 "Connection health" = "연결 상태";
 "Connection preparation" = "연결 준비";
 "Connection diagnostics" = "연결 진단";
@@ -290,7 +291,7 @@
 "Reconnecting through %@." = "%@을(를) 통해 다시 연결 중입니다.";
 "Connection through %@ failed. Check Advanced Connection Setup, then try again." = "%@을(를) 통한 연결에 실패했습니다. 연결 복구를 확인한 뒤 다시 시도하세요.";
 "AetherLink can prepare connection details automatically when you generate a pairing QR." = "페어링 QR을 생성하면 AetherLink가 연결 정보를 자동으로 준비할 수 있습니다.";
-"Pairing from another network needs connection details inside the pairing QR." = "다른 네트워크에서 페어링하려면 페어링 QR 안에 연결 정보가 필요합니다.";
+"Pairing from another network needs connection details inside the pairing QR." = "다른 네트워크에서 페어링하려면 페어링 QR 안에 릴레이, VPN, 터널 또는 프라이빗 오버레이 경로가 필요합니다.";
 "Saved connection details use %@. Generate a fresh QR after updating the connection." = "저장된 연결 정보가 %@을(를) 사용 중입니다. 연결을 업데이트한 뒤 새 QR을 생성하세요.";
 "New QR codes include %@ after AetherLink Runtime is ready." = "AetherLink Runtime이 준비되면 새 QR에 %@이(가) 포함됩니다.";
 "Advanced Connection Setup needs an address reachable by both devices before it can be included in the QR." = "QR에 포함하기 전에 연결 복구에는 두 기기 모두에서 접근 가능한 주소가 필요합니다.";

@@ -165,6 +165,7 @@
 "Trusted device %@. %@. Key fingerprint %@" = "受信任设备 %@。%@。密钥指纹 %@";
 "Remove Trust" = "移除信任";
 "Remove trust for %@. Key fingerprint %@" = "移除 %@ 的信任。密钥指纹 %@";
+"Confirm removing trust for %@. Key fingerprint %@" = "确认移除 %@ 的信任。密钥指纹 %@";
 "Remove trusted device?" = "移除受信任设备？";
 "%@ will need to pair again before it can use AetherLink Runtime." = "%@ 需要重新配对后才能使用 AetherLink Runtime。";
 "%@ will need to pair again before it can use AetherLink Runtime. Key fingerprint %@" = "%@ 需要重新配对后才能使用 AetherLink Runtime。密钥指纹 %@";
@@ -182,7 +183,7 @@
 "Activity technical details collapsed" = "活动详情已折叠";
 "Collapse to hide activity technical details." = "折叠以隐藏活动详情。";
 "Expand to show activity technical details." = "展开以显示活动详情。";
-"Connection setup result" = "连接设置结果";
+"Connection Recovery result" = "连接恢复结果";
 "Connection health" = "连接状态";
 "Connection preparation" = "连接准备";
 "Connection diagnostics" = "连接诊断";
@@ -290,7 +291,7 @@
 "Reconnecting through %@." = "正在通过 %@ 重新连接。";
 "Connection through %@ failed. Check Advanced Connection Setup, then try again." = "通过 %@ 的连接失败。请检查连接恢复后重试。";
 "AetherLink can prepare connection details automatically when you generate a pairing QR." = "生成配对二维码时，AetherLink 可以自动准备连接信息。";
-"Pairing from another network needs connection details inside the pairing QR." = "从另一个网络配对需要配对二维码内包含连接信息。";
+"Pairing from another network needs connection details inside the pairing QR." = "从另一个网络配对时，配对二维码内需要包含中继、VPN、隧道或私有覆盖网络路径。";
 "Saved connection details use %@. Generate a fresh QR after updating the connection." = "已保存的连接信息正在使用 %@。更新连接后请生成新的二维码。";
 "New QR codes include %@ after AetherLink Runtime is ready." = "AetherLink Runtime 就绪后，新的二维码会包含 %@。";
 "Advanced Connection Setup needs an address reachable by both devices before it can be included in the QR." = "写入二维码前，连接恢复需要两个设备都能访问的地址。";

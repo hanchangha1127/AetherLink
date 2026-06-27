@@ -204,6 +204,14 @@ struct MenuBarCommandTitles: Equatable {
     let quit: String
 }
 
+enum CompanionPrimaryAction: String, CaseIterable, Identifiable {
+    case pairingQR
+    case refreshProviders
+    case loadModels
+
+    var id: String { rawValue }
+}
+
 func menuBarRuntimeStatusText(_ status: CompanionTransportStatus) -> String {
     String(
         format: NSLocalizedString("Runtime: %@", comment: ""),
@@ -225,6 +233,13 @@ func menuBarCommandTitles() -> MenuBarCommandTitles {
         loadModels: NSLocalizedString("Load Models", comment: ""),
         quit: NSLocalizedString("Quit", comment: "")
     )
+}
+
+func companionPrimaryActionOrder(trustedDeviceCount: Int) -> [CompanionPrimaryAction] {
+    if trustedDeviceCount <= 0 {
+        return [.pairingQR, .refreshProviders, .loadModels]
+    }
+    return [.refreshProviders, .loadModels, .pairingQR]
 }
 
 func pairingQRGenerationCommandTitle(hasActiveSession: Bool) -> String {

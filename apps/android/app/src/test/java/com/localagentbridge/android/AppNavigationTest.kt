@@ -390,6 +390,16 @@ class AppNavigationTest {
     }
 
     @Test
+    fun androidSystemAppLanguageSyncNormalizesCurrentAndSelectedTags() {
+        assertTrue(shouldSynchronizeAndroidSystemAppLanguage(null, "en"))
+        assertFalse(shouldSynchronizeAndroidSystemAppLanguage("en-US", "en"))
+        assertFalse(shouldSynchronizeAndroidSystemAppLanguage("ko-KR", "ko"))
+        assertFalse(shouldSynchronizeAndroidSystemAppLanguage("zh-Hans", "zh-CN"))
+        assertTrue(shouldSynchronizeAndroidSystemAppLanguage("fr-FR", "ko"))
+        assertTrue(shouldSynchronizeAndroidSystemAppLanguage("de-DE", "en"))
+    }
+
+    @Test
     fun settingsThemeOptionsKeepSystemLightDarkOrder() {
         assertEquals(
             listOf(
@@ -909,6 +919,27 @@ class AppNavigationTest {
                 chooseModelLabel = "Choose model",
             ),
         )
+    }
+
+    @Test
+    fun chatModelPickerClosedLabelHidesSavedModelWhenDisconnectedAndNotRestoring() {
+        val state = RuntimeUiState(
+            isConnected = false,
+            isConnecting = false,
+            isLoadingModels = false,
+            selectedModelId = "ollama:dev-mock",
+            models = emptyList(),
+        )
+
+        assertEquals(
+            "Choose model",
+            chatModelPickerClosedLabel(
+                state = state,
+                loadingModelsLabel = "Loading models",
+                chooseModelLabel = "Choose model",
+            ),
+        )
+        assertNull(chatModelPickerFallbackDisplayName(state))
     }
 
     @Test

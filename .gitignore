@@ -20,3 +20,4 @@ apps/macos/**/.build/
 # when they are intentionally referenced; do not accidentally add stale captures.
 artifacts/*.png
 artifacts/*.xml
+.codex-artifacts/

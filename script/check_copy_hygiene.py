@@ -1035,6 +1035,26 @@ def android_chat_history_danger_guard_failures() -> list[str]:
             "Single permanent delete needs a second confirmation message.",
         ),
         (
+            "accessibilitySubject: String",
+            "Two-step confirmations must receive a destructive-action accessibility subject.",
+        ),
+        (
+            "R.string.confirmation_continue_action_named",
+            "Two-step confirmations must expose a contextual first-step action label.",
+        ),
+        (
+            "R.string.confirmation_final_action_named",
+            "Two-step confirmations must expose a contextual final-step action label.",
+        ),
+        (
+            "contentDescription = confirmActionContentDescription",
+            "Two-step confirmation buttons must expose the contextual subject as content description.",
+        ),
+        (
+            "onClick(label = confirmActionContentDescription, action = null)",
+            "Two-step confirmation buttons must expose the contextual subject as click label.",
+        ),
+        (
             "val rowAccessibilitySummary = stringResource(R.string.chat_session_row_summary, title, statusText)",
             "Settings chat-history rows must expose a localized title and status accessibility summary.",
         ),
@@ -1097,6 +1117,11 @@ def android_chat_history_danger_guard_failures() -> list[str]:
         "                hasStateDescription(\"Expanded\") and\n"
         "                hasClickActionLabel(\"Collapse section\")",
         "settingsScreenPerChatHistoryActionsUseConfirmationHaptics",
+        "chatHistoryConfirmationActionLabelsLocalizeSubjectsAcrossSupportedLanguages",
+        'hasContentDescription("Continue: Archive all chats")',
+        'hasClickActionLabel("Confirm: Permanently delete chat Archived project chat")',
+        "R.string.confirmation_continue_action_named",
+        "R.string.confirmation_final_action_named",
         "settingsChatHistoryRowsExposeLocalizedAccessibilitySummaries",
         "settingsConnectionStatusHeroExposesLocalizedAccessibilitySummaries",
         "R.string.chat_session_row_summary",
@@ -1193,6 +1218,18 @@ def android_chat_model_menu_guard_failures() -> list[str]:
         (
             "state.isStreaming -> stringResource(R.string.model_picker_state_wait_for_stream)",
             "Disabled chat model picker must explain the streaming lock state.",
+        ),
+        (
+            "R.string.chat_model_picker_summary",
+            "Closed chat model picker must expose a localized accessibility summary.",
+        ),
+        (
+            "contentDescription = modelPickerContentDescription",
+            "Closed chat model picker must attach its accessibility summary to the button.",
+        ),
+        (
+            "onClick(label = modelPickerActionLabel, action = null)",
+            "Closed chat model picker must expose an accessibility action label.",
         ),
         (
             "this.contentDescription = contentDescription",
@@ -1294,11 +1331,20 @@ def android_chat_model_menu_guard_failures() -> list[str]:
 
     required_compose_test_snippets = (
         "appTopBarKeepsNavigationModelPickerAndNewChatChrome",
+        "chatTopBarModelPickerClosedButtonLocalizesSelectedModelSummaryAcrossSupportedLanguages",
         "chatTopBarModelPickerExposesSelectedRowsToAccessibility",
         "chatTopBarModelPickerExplainsDisabledStreamingStateAcrossSupportedLanguages",
         "chatTopBarModelPickerExposesInstallActionForUninstalledLocalChatModel",
         "chatTopBarModelPickerRowsExposeAccessibilitySummaries",
         "chatTopBarModelPickerRowsLocalizeAccessibilitySummariesAcrossSupportedLanguages",
+        "Chat model picker. Selected chat model Qwen3 8B.",
+        "채팅 모델 선택기. 선택된 채팅 모델 Qwen3 8B.",
+        "チャットモデルピッカー。選択中のチャットモデル「Qwen3 8B」。",
+        "聊天模型选择器。已选聊天模型 Qwen3 8B。",
+        "Sélecteur de modèle de chat. Modèle de chat sélectionné Qwen3 8B.",
+        "Chat model picker. Qwen3 8B. Wait for the current response or cancel it before changing models.",
+        "채팅 모델 선택기. Qwen3 8B. 현재 응답을 기다리거나 취소한 뒤 모델을 변경하세요.",
+        "Sélecteur de modèle de chat. Qwen3 8B. Attendez la réponse en cours ou annulez-la avant de changer de modèle.",
         "Wait for the current response or cancel it before changing models.",
         "현재 응답을 기다리거나 취소한 뒤 모델을 변경하세요.",
         "Attendez la réponse en cours ou annulez-la avant de changer de modèle.",
@@ -1935,6 +1981,26 @@ def android_haptic_guard_failures() -> list[str]:
             "Diagnostic QR text field and submit action must attach readiness state to accessibility.",
         ),
         (
+            "contentDescription = payloadInputAccessibilityLabel",
+            "Diagnostic QR text field must expose a contextual accessibility label.",
+        ),
+        (
+            "contentDescription = payloadSubmitAccessibilityLabel",
+            "Diagnostic QR text submit action must expose a contextual accessibility label.",
+        ),
+        (
+            "onClick(label = payloadSubmitAccessibilityLabel, action = null)",
+            "Diagnostic QR text submit action must expose a contextual click label.",
+        ),
+        (
+            "contentDescription = payloadCancelAccessibilityLabel",
+            "Diagnostic QR text cancel action must expose a contextual accessibility label.",
+        ),
+        (
+            "onClick(label = payloadCancelAccessibilityLabel, action = null)",
+            "Diagnostic QR text cancel action must expose a contextual click label.",
+        ),
+        (
             "R.string.manual_qr_payload_state_empty",
             "Diagnostic QR text dialog must use localized empty-state guidance.",
         ),
@@ -2073,6 +2139,26 @@ def android_haptic_guard_failures() -> list[str]:
         (
             "onClickLabel = actionLabel",
             "Connection route notice cards must expose localized accessibility action labels.",
+        ),
+        (
+            "R.string.route_notice_accessibility_summary",
+            "Connection route notice cards must expose a merged accessibility summary.",
+        ),
+        (
+            "R.string.route_notice_accessibility_summary_with_steps",
+            "Connection route notice cards must include QR recovery steps in accessibility summaries.",
+        ),
+        (
+            "routeNoticeRecoverySteps(notice)",
+            "Connection route notice cards must render QR recovery steps for refresh-needed states.",
+        ),
+        (
+            "R.string.route_notice_recovery_steps",
+            "Connection route notice cards must use localized QR recovery-step copy.",
+        ),
+        (
+            "contentDescription = accessibilitySummary",
+            "Connection route notice cards must attach the merged accessibility summary to the actionable card.",
         ),
         (
             "stateDescription = body",
@@ -2239,7 +2325,7 @@ def android_haptic_guard_failures() -> list[str]:
             "Disabled attachment remove buttons must expose the disabled reason to accessibility.",
         ),
         (
-            "text = chatEmptyText(state, preferQrRouteRefresh),\n"
+            "text = emptyBody,\n"
             "                style = MaterialTheme.typography.bodyMedium,\n"
             "                color = MaterialTheme.colorScheme.secondary,\n"
             "                textAlign = TextAlign.Center,\n"
@@ -2333,6 +2419,14 @@ def android_haptic_guard_failures() -> list[str]:
             "Memory remove buttons must include the memory text in their accessibility label.",
         ),
         (
+            "contentDescription = memoryRemoveContentDescription",
+            "Memory delete confirmation must expose the memory text in its accessibility label.",
+        ),
+        (
+            "onClick(label = memoryRemoveContentDescription, action = null)",
+            "Memory delete confirmation must expose the memory text in its click action label.",
+        ),
+        (
             "onClick = {\n"
             "                    hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)\n"
             "                    showDeleteConfirmation.value = true\n"
@@ -2423,6 +2517,7 @@ def android_haptic_guard_failures() -> list[str]:
         "connectionStatusSavedRouteNoticeClickConnectsWithHaptic",
         "connectionStatusRefreshNeededRouteNoticeClickScansLatestQrWithHaptic",
         "routeNoticeShowsQrRefreshForRelayAuthenticationFailure",
+        "Open AetherLink Runtime, generate the latest QR, then scan it here.",
         "chatScreenRelayAuthFailureAfterRouteClearKeepsLatestQrRecoveryAction",
         "Saved connection details could not be authenticated. Scan a fresh QR from the trusted runtime.",
         "connectionStatusProviderDiagnosticsToggleExposesExpandedState",
@@ -2500,6 +2595,9 @@ def android_haptic_guard_failures() -> list[str]:
         "Desk Runtime. Different trusted runtime. Not trusted.",
         "chatScreenSendButtonLocalizesReadinessStateAcrossSupportedLanguages",
         "chatScreenRouteRecoveryEmptyStateShowsFullGuidanceOnNarrowWidth",
+        "chatScreenRouteRecoveryEmptyStateAnnouncesLocalizedSummary",
+        "chat_empty_state_accessibility_summary",
+        "hasContentDescription(expectedSummary)",
         "This network cannot reach the saved route. Prepare a reachable connection route in AetherLink Runtime, then scan the latest QR.",
         "Modifier.width(260.dp).height(720.dp)",
         "chatScreenExpiredRemoteRouteShowsLatestQrRecoveryAction",
@@ -2566,7 +2664,7 @@ def android_haptic_guard_failures() -> list[str]:
         "hasClickActionLabel(expected.cancelAction)",
         "chatScreenComposerReadinessStatusAnnouncesAcrossSupportedLanguages",
         ".getString(R.string.chat_hint_select_model)",
-        "hasContentDescription(expectedStatus, useUnmergedTree = true)",
+        "onNodeWithContentDescription(expectedStatus, useUnmergedTree = true)",
         ".assert(hasPoliteLiveRegion())",
         "Remove attachment brief.pdf",
         "onAllNodesWithContentDescription(\"Send message\").assertCountEquals(0)",
@@ -2620,6 +2718,8 @@ def android_haptic_guard_failures() -> list[str]:
         "R.string.memory_add_state_enter_memory",
         "R.string.memory_add_state_ready",
         'compose.onNodeWithText("Cancel").performClick()',
+        'hasContentDescription("Remove memory Project Alpha prefers concise Korean summaries") and',
+        'hasClickActionLabel("Remove memory Project Alpha prefers concise Korean summaries")',
         'compose.onNodeWithText("Delete").performClick()',
         "assertEquals(1, removeClicks)",
         'hasClickActionLabel("Connect trusted route")',
@@ -2673,6 +2773,11 @@ def android_haptic_guard_failures() -> list[str]:
         'name="scan_qr_state_ready"',
         'name="scan_qr_state_connecting"',
         'name="scan_latest_qr_state_ready"',
+        'name="qr_pairing_detail"',
+        "To connect from another network, the QR must include a relay, VPN, tunnel, or private-overlay route both devices can reach.",
+        'name="route_notice_accessibility_summary_with_steps"',
+        'name="route_notice_recovery_steps"',
+        'name="attachment_only_prompt_header"',
         'name="new_chat_state_pairing_required"',
         'name="setting_action_enable_named"',
         'name="setting_action_disable_named"',
@@ -2807,6 +2912,10 @@ def attachment_ingestion_guard_failures() -> list[str]:
     android_picker_path = ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/MainActivity.kt"
     android_runtime_path = ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt"
     android_test_path = ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/AppNavigationTest.kt"
+    android_runtime_test_path = ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt"
+    android_prompt_resource_test_path = ROOT / (
+        "apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeAttachmentPromptResourceTest.kt"
+    )
     macos_extractor_path = ROOT / "apps/macos/DocumentIngestion/Sources/DocumentTextExtractor.swift"
     macos_test_path = ROOT / "apps/macos/DocumentIngestion/Tests/DocumentTextExtractorTests.swift"
 
@@ -2814,6 +2923,8 @@ def attachment_ingestion_guard_failures() -> list[str]:
         android_picker_path,
         android_runtime_path,
         android_test_path,
+        android_runtime_test_path,
+        android_prompt_resource_test_path,
         macos_extractor_path,
         macos_test_path,
     )
@@ -2825,6 +2936,8 @@ def attachment_ingestion_guard_failures() -> list[str]:
     android_picker_text = android_picker_path.read_text(encoding="utf-8")
     android_runtime_text = android_runtime_path.read_text(encoding="utf-8")
     android_test_text = android_test_path.read_text(encoding="utf-8")
+    android_runtime_test_text = android_runtime_test_path.read_text(encoding="utf-8")
+    android_prompt_resource_test_text = android_prompt_resource_test_path.read_text(encoding="utf-8")
     macos_extractor_text = macos_extractor_path.read_text(encoding="utf-8")
     macos_test_text = macos_test_path.read_text(encoding="utf-8")
 
@@ -2852,6 +2965,51 @@ def attachment_ingestion_guard_failures() -> list[str]:
         failures.append(
             f"{android_runtime_path.relative_to(ROOT)}: Android attachment MIME fallback must map .hwpml."
         )
+
+    required_attachment_prompt_snippets = (
+        (
+            "attachmentOnlyPromptHeader(",
+            "Android attachment-only prompt header must be resolved through a testable resource helper.",
+        ),
+        (
+            "R.string.attachment_only_prompt_header",
+            "Android attachment-only prompt header must come from localized string resources.",
+        ),
+        (
+            "context = getApplication(),",
+            "Android attachment-only send path fallback must use the ViewModel application context for localized prompt headers.",
+        ),
+        (
+            "attachmentPromptHeaderProvider = { languageTag ->",
+            "Production Android dependencies must install the localized attachment-only prompt header provider.",
+        ),
+    )
+    for snippet, guidance in required_attachment_prompt_snippets:
+        if snippet not in android_runtime_text:
+            failures.append(f"{android_runtime_path.relative_to(ROOT)}: {guidance}")
+
+    required_attachment_prompt_unit_test_snippets = (
+        "attachmentOnlyPromptUsesSelectedAppLanguageAndEnglishFallback",
+        "첨부한 입력을 분석하세요:\\n- pairing-notes.txt",
+        "attachmentPromptHeaderProvider = ::testAttachmentOnlyPromptHeader",
+    )
+    for snippet in required_attachment_prompt_unit_test_snippets:
+        if snippet not in android_runtime_test_text:
+            failures.append(
+                f"{android_runtime_test_path.relative_to(ROOT)}: Missing attachment-only prompt resource regression {snippet}."
+            )
+
+    required_attachment_prompt_resource_test_snippets = (
+        "RuntimeAttachmentPromptResourceTest",
+        "attachmentOnlyPromptHeaderUsesLocalizedAndroidResources",
+        "context.getString(R.string.attachment_only_prompt_header)",
+        "attachmentOnlyPromptHeader(context, RuntimeAppLanguage.Korean.languageTag)",
+    )
+    for snippet in required_attachment_prompt_resource_test_snippets:
+        if snippet not in android_prompt_resource_test_text:
+            failures.append(
+                f"{android_prompt_resource_test_path.relative_to(ROOT)}: Missing attachment-only prompt resource regression {snippet}."
+            )
 
     required_picker_callback_snippets = (
         (
@@ -3372,6 +3530,11 @@ def macos_pairing_qr_accessibility_guard_failures() -> list[str]:
         "Pairing QR expired. Generate a new QR.",
         "This QR verifies AetherLink Runtime and includes connection details for pairing or refresh.",
         "Pairing QR generation is unavailable from this view.",
+        "Pairing from another network needs a relay, VPN, tunnel, or private-overlay route inside the pairing QR.",
+        "다른 네트워크에서 페어링하려면 페어링 QR 안에 릴레이, VPN, 터널 또는 프라이빗 오버레이 경로가 필요합니다.",
+        "別ネットワークからペアリングするには、ペアリング QR 内にリレー、VPN、トンネル、またはプライベートオーバーレイ経路が必要です。",
+        "从另一个网络配对时，配对二维码内需要包含中继、VPN、隧道或私有覆盖网络路径。",
+        "Le jumelage depuis un autre réseau nécessite une route relais, VPN, tunnel ou overlay privé dans le QR de jumelage.",
     )
     for snippet in required_test_snippets:
         if snippet not in test_text:
@@ -3405,6 +3568,10 @@ def macos_quick_action_accessibility_guard_failures() -> list[str]:
         "func modelListLoadActionAccessibilityValue() -> String",
         "func modelListLoadActionAccessibilityHint() -> String",
         "func pairingQRGenerationCommandTitle(hasActiveSession: Bool) -> String",
+        "enum CompanionPrimaryAction: String, CaseIterable, Identifiable",
+        "func companionPrimaryActionOrder(trustedDeviceCount: Int) -> [CompanionPrimaryAction]",
+        "return [.pairingQR, .refreshProviders, .loadModels]",
+        "return [.refreshProviders, .loadModels, .pairingQR]",
         "Check model provider availability through AetherLink Runtime.",
         "Load the installed local model list through AetherLink Runtime.",
     )
@@ -3430,18 +3597,11 @@ def macos_quick_action_accessibility_guard_failures() -> list[str]:
                 )
 
     for snippet in (
-        """Button(commandTitles.refresh) {
-                Task { await model.refreshBackendStatus() }
-            }
-            .help(modelProviderCheckActionAccessibilityHint())
-            .accessibilityValue(Text(modelProviderCheckActionAccessibilityValue()))
-            .accessibilityHint(Text(modelProviderCheckActionAccessibilityHint()))""",
-        """Button(commandTitles.loadModels) {
-                Task { await model.loadModels() }
-            }
-            .help(modelListLoadActionAccessibilityHint())
-            .accessibilityValue(Text(modelListLoadActionAccessibilityValue()))
-            .accessibilityHint(Text(modelListLoadActionAccessibilityHint()))""",
+        "ForEach(companionPrimaryActionOrder(trustedDeviceCount: model.trustedDevices.count))",
+        "menuBarPrimaryAction(action, commandTitles: commandTitles)",
+        "case .refreshProviders:",
+        "case .loadModels:",
+        "case .pairingQR:",
         "Button(pairingQRGenerationCommandTitle(hasActiveSession: model.pairingSession != nil))",
     ):
         if snippet not in app_text:
@@ -3452,6 +3612,8 @@ def macos_quick_action_accessibility_guard_failures() -> list[str]:
     required_test_snippets = (
         "testQuickActionAccessibilityUsesSelectedLanguage",
         "testMenuBarPairingQRCommandTitleTracksActiveSessionAndLanguage",
+        "testPrimaryActionsPrioritizePairingQRWhenNoTrustedDevicesExist",
+        "companionPrimaryActionOrder(trustedDeviceCount: 0)",
         "modelProviderCheckActionAccessibilityValue()",
         "modelProviderCheckActionAccessibilityHint()",
         "modelListLoadActionAccessibilityValue()",
@@ -3877,6 +4039,10 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate coverage summary must mention Android native language-picker labels.",
         ),
         (
+            "Android first-run language picker before pairing",
+            "Default no-device gate coverage summary must mention Android first-run language picker before pairing.",
+        ),
+        (
             "Android translated Memory noun",
             "Default no-device gate coverage summary must mention Android translated Memory noun coverage.",
         ),
@@ -3891,6 +4057,10 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         (
             "RuntimeClientViewModelTest.systemAppLanguageHelperDoesNotOverrideInAppLanguageSelection",
             "Default no-device gate must run the app-language source persistence regression.",
+        ),
+        (
+            "RuntimeAttachmentPromptResourceTest.attachmentOnlyPromptHeaderUsesLocalizedAndroidResources",
+            "Default no-device gate must run the Android attachment-only prompt resource regression.",
         ),
         (
             "AetherLinkThemeNoDeviceComposeTest",
@@ -3973,6 +4143,10 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate coverage summary must mention Android diagnostic QR text state accessibility.",
         ),
         (
+            "Android diagnostic QR text contextual action labels",
+            "Default no-device gate coverage summary must mention Android diagnostic QR text contextual action labels.",
+        ),
+        (
             "Android connect action disabled reason",
             "Default no-device gate coverage summary must mention Android connect action disabled reason.",
         ),
@@ -4005,8 +4179,16 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate coverage summary must mention Android permanent rail New Chat pairing gate coverage.",
         ),
         (
+            "Android permanent rail Chat pairing gate",
+            "Default no-device gate coverage summary must mention Android permanent rail Chat pairing gate coverage.",
+        ),
+        (
             "Android chat empty route guidance full-wrap layout",
             "Default no-device gate coverage summary must mention Android chat empty route guidance full-wrap layout.",
+        ),
+        (
+            "Android route-recovery empty-state live-region accessibility",
+            "Default no-device gate coverage summary must mention Android route-recovery empty-state live-region accessibility.",
         ),
         (
             "Android trusted composer readiness lock",
@@ -4043,6 +4225,10 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         (
             "Android composer attach action accessibility state",
             "Default no-device gate coverage summary must mention Android composer attach action accessibility coverage.",
+        ),
+        (
+            "Android attachment-only prompt resource localization",
+            "Default no-device gate coverage summary must mention Android attachment-only prompt resource localization coverage.",
         ),
         (
             "Android attachment picker single-dispatch guard",
@@ -4105,8 +4291,20 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate coverage summary must mention Android route notice action accessibility labels.",
         ),
         (
+            "Android route notice accessibility summaries",
+            "Default no-device gate coverage summary must mention Android route notice accessibility summary coverage.",
+        ),
+        (
             "Android route notice accessibility state",
             "Default no-device gate coverage summary must mention Android route notice accessibility state coverage.",
+        ),
+        (
+            "Android route notice QR recovery steps",
+            "Default no-device gate coverage summary must mention Android route notice QR recovery steps.",
+        ),
+        (
+            "Android primary pairing cross-network route copy",
+            "Default no-device gate coverage summary must mention Android primary pairing cross-network route copy.",
         ),
         (
             "Android relay auth failure QR recovery notice",
@@ -4265,6 +4463,10 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate coverage summary must mention chat-history destructive confirmation haptic timing.",
         ),
         (
+            "chat history destructive confirmation action labels",
+            "Default no-device gate coverage summary must mention chat-history destructive confirmation action labels.",
+        ),
+        (
             "confirmation-open lightweight haptic timing",
             "Default no-device gate coverage summary must mention confirmation-open lightweight haptic timing.",
         ),
@@ -4421,6 +4623,10 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate coverage summary must mention macOS trusted-device removal confirmation localization.",
         ),
         (
+            "macOS trusted-device confirm-remove action accessibility labels",
+            "Default no-device gate coverage summary must mention macOS trusted-device confirm-remove action accessibility labels.",
+        ),
+        (
             "macOS trusted-device refresh accessibility hint",
             "Default no-device gate coverage summary must mention macOS trusted-device refresh accessibility hint.",
         ),
@@ -4501,6 +4707,10 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate coverage summary must mention macOS menu-bar quick action accessibility parity.",
         ),
         (
+            "macOS first-run Pairing QR primary action ordering",
+            "Default no-device gate coverage summary must mention macOS first-run Pairing QR primary action ordering.",
+        ),
+        (
             "macOS Connection Recovery private-overlay toggle accessibility labels",
             "Default no-device gate coverage summary must mention macOS Connection Recovery private-overlay toggle accessibility labels.",
         ),
@@ -4521,8 +4731,16 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate coverage summary must mention Android chat top-bar model picker streaming disabled state.",
         ),
         (
+            "Android chat top-bar model picker closed-button accessibility summary",
+            "Default no-device gate coverage summary must mention Android chat top-bar model picker closed-button accessibility summary.",
+        ),
+        (
             "Settings memory action accessibility labels",
             "Default no-device gate coverage summary must mention Settings memory action accessibility labels.",
+        ),
+        (
+            "Settings memory delete confirmation action labels",
+            "Default no-device gate coverage summary must mention Settings memory delete confirmation action labels.",
         ),
         (
             "chat history bulk expander action labels",
@@ -4799,6 +5017,14 @@ def macos_localization_script_guard_failures() -> list[str]:
         (
             "Remove trust for %@. Key fingerprint %@",
             "macOS localization guard must require the trusted-device remove accessibility localization key.",
+        ),
+        (
+            "trustedDeviceConfirmRemoveAccessibilityLabel(for: pendingRemovalDevice)",
+            "macOS localization guard must require contextual trusted-device confirmation action labels.",
+        ),
+        (
+            "Confirm removing trust for %@. Key fingerprint %@",
+            "macOS localization guard must require the trusted-device confirmation action localization key.",
         ),
         (
             "trustedDeviceRefreshActionAccessibilityHint()",

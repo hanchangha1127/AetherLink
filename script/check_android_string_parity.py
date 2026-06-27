@@ -76,6 +76,16 @@ RUNTIME_VIEW_MODEL_TEST_SOURCE = (
     / "runtime"
     / "RuntimeClientViewModelTest.kt"
 )
+APP_NAVIGATION_TEST_SOURCE = (
+    ANDROID_APP_ROOT
+    / "src"
+    / "test"
+    / "java"
+    / "com"
+    / "localagentbridge"
+    / "android"
+    / "AppNavigationTest.kt"
+)
 ANDROID_MANIFEST_SOURCE = ANDROID_APP_ROOT / "src" / "main" / "AndroidManifest.xml"
 ANDROID_LOCALE_CONFIG_SOURCE = ANDROID_APP_ROOT / "src" / "main" / "res" / "xml" / "locales_config.xml"
 ANDROID_XML_NS = "{http://schemas.android.com/apk/res/android}"
@@ -121,6 +131,9 @@ REQUIRED_RELEASE_COPY_VALUES = {
             "Diagnostic fallback only. Paste AetherLink Runtime QR text when camera scanning "
             "cannot be tested; normal pairing remains camera QR scanning."
         ),
+        "manual_qr_payload_input_accessibility": "Diagnostic QR text input",
+        "manual_qr_payload_submit_accessibility": "Use diagnostic QR text",
+        "manual_qr_payload_cancel_accessibility": "Close diagnostic QR text",
         "usb_reverse": "USB connection",
         "emulator": "Emulator connection",
         "provider_host_detail": "Status detail: %1$s",
@@ -139,6 +152,9 @@ REQUIRED_RELEASE_COPY_VALUES = {
             "Diagnostic fallback only. Paste AetherLink Runtime QR text when camera scanning "
             "cannot be tested; normal pairing remains camera QR scanning."
         ),
+        "manual_qr_payload_input_accessibility": "Diagnostic QR text input",
+        "manual_qr_payload_submit_accessibility": "Use diagnostic QR text",
+        "manual_qr_payload_cancel_accessibility": "Close diagnostic QR text",
         "usb_reverse": "USB connection",
         "emulator": "Emulator connection",
         "provider_host_detail": "Status detail: %1$s",
@@ -157,6 +173,9 @@ REQUIRED_RELEASE_COPY_VALUES = {
             "진단용 대체 수단입니다. 카메라 스캔을 테스트할 수 없을 때만 AetherLink Runtime QR 텍스트를 "
             "붙여넣으세요. 일반 페어링은 카메라 QR 스캔만 사용합니다."
         ),
+        "manual_qr_payload_input_accessibility": "진단용 QR 텍스트 입력",
+        "manual_qr_payload_submit_accessibility": "진단용 QR 텍스트 사용",
+        "manual_qr_payload_cancel_accessibility": "진단용 QR 텍스트 닫기",
         "usb_reverse": "USB 연결",
         "emulator": "에뮬레이터 연결",
         "provider_host_detail": "상태 세부 정보: %1$s",
@@ -175,6 +194,9 @@ REQUIRED_RELEASE_COPY_VALUES = {
             "診断用の代替手段です。カメラスキャンをテストできない場合にのみ、AetherLink Runtime の QR "
             "テキストを貼り付けてください。通常のペアリングはカメラ QR スキャンのままです。"
         ),
+        "manual_qr_payload_input_accessibility": "診断用 QR テキスト入力",
+        "manual_qr_payload_submit_accessibility": "診断用 QR テキストを使用",
+        "manual_qr_payload_cancel_accessibility": "診断用 QR テキストを閉じる",
         "usb_reverse": "USB 接続",
         "emulator": "エミュレーター接続",
         "provider_host_detail": "状態の詳細: %1$s",
@@ -193,6 +215,9 @@ REQUIRED_RELEASE_COPY_VALUES = {
             "仅作为诊断备用方式。无法测试相机扫描时，粘贴 AetherLink Runtime 的二维码文本；"
             "正常配对仍使用相机二维码扫描。"
         ),
+        "manual_qr_payload_input_accessibility": "诊断二维码文本输入",
+        "manual_qr_payload_submit_accessibility": "使用诊断二维码文本",
+        "manual_qr_payload_cancel_accessibility": "关闭诊断二维码文本",
         "usb_reverse": "USB 连接",
         "emulator": "模拟器连接",
         "provider_host_detail": "状态详情：%1$s",
@@ -211,6 +236,9 @@ REQUIRED_RELEASE_COPY_VALUES = {
             "Solution de diagnostic uniquement. Collez le texte QR d’AetherLink Runtime lorsque le scan "
             "caméra ne peut pas être testé; le jumelage normal reste le scan QR par caméra."
         ),
+        "manual_qr_payload_input_accessibility": "Saisie du texte QR de diagnostic",
+        "manual_qr_payload_submit_accessibility": "Utiliser le texte QR de diagnostic",
+        "manual_qr_payload_cancel_accessibility": "Fermer le texte QR de diagnostic",
         "usb_reverse": "Connexion USB",
         "emulator": "Connexion émulateur",
         "provider_host_detail": "Détail de l’état : %1$s",
@@ -467,6 +495,9 @@ def check_android_locale_config() -> list[str]:
                 "Build.VERSION_CODES.TIRAMISU",
                 "localeManager.applicationLocales",
                 "viewModel.reconcileSystemAppLanguageTag(androidSystemAppLanguageTag(baseContext))",
+                "internal fun synchronizeAndroidSystemAppLanguageTag(",
+                "LocaleList.forLanguageTags(normalizedLanguageTag)",
+                "LaunchedEffect(baseContext, state.selectedLanguageTag, systemLanguageReconciled)",
             ),
             "Android OS app-language handoff",
         )
@@ -500,7 +531,16 @@ def check_android_locale_config() -> list[str]:
                 "viewModelReconcilesSystemAppLanguageUntilInAppLanguageIsSelected",
                 "systemAppLanguageHelperDoesNotOverrideInAppLanguageSelection",
             ),
-            "Android app-language handoff regression tests",
+            "Android app-language ViewModel handoff regression tests",
+        )
+    )
+    failures.extend(
+        missing_source_snippets(
+            APP_NAVIGATION_TEST_SOURCE,
+            (
+                "androidSystemAppLanguageSyncNormalizesCurrentAndSelectedTags",
+            ),
+            "Android app-language shell handoff regression tests",
         )
     )
 
