@@ -1,5 +1,6 @@
 package com.localagentbridge.android
 
+import android.net.Uri
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import com.localagentbridge.android.core.transport.RuntimeEndpointSource
 import com.localagentbridge.android.runtime.RuntimeActiveRouteKind
@@ -28,6 +29,7 @@ import com.localagentbridge.android.ui.chatComposerCanSend
 import com.localagentbridge.android.ui.chatComposerHasSendableContent
 import com.localagentbridge.android.ui.chatComposerHasUnsupportedImageAttachment
 import com.localagentbridge.android.ui.chatComposerInputContentDescriptionRes
+import com.localagentbridge.android.ui.chatInputHintRes
 import com.localagentbridge.android.ui.chatComposerShouldShowStatus
 import com.localagentbridge.android.ui.chatComposerVisualPlaceholderRes
 import com.localagentbridge.android.ui.chatEmptyPrimaryAction
@@ -44,6 +46,7 @@ import com.localagentbridge.android.ui.chatEmptyStaticPromptRes
 import com.localagentbridge.android.ui.discoveredRuntimeActionLabelRes
 import com.localagentbridge.android.ui.discoveredRuntimeSelectable
 import com.localagentbridge.android.ui.filterChatHistorySessions
+import com.localagentbridge.android.ui.hasConnectableTrustedRuntimeRoute
 import com.localagentbridge.android.ui.hasRelayRouteMaterial
 import com.localagentbridge.android.ui.hasRelayRouteWithoutSecret
 import com.localagentbridge.android.ui.hasUsableRelayRoute
@@ -159,6 +162,34 @@ class AppNavigationTest {
                 hasTrustedRuntime = true,
                 settingsOpenedForPairingOnboarding = true,
                 isPairingAwaitingRoute = false,
+            ),
+        )
+    }
+
+    @Test
+    fun newChatActionRequiresTrustedRuntimeAndIdleStream() {
+        assertFalse(newChatActionEnabled(RuntimeUiState()))
+
+        assertFalse(
+            newChatActionEnabled(
+                RuntimeUiState(
+                    trustedRuntime = RuntimeTrustedRuntime(
+                        deviceId = "runtime-1",
+                        name = "AetherLink Runtime",
+                    ),
+                    isStreaming = true,
+                ),
+            ),
+        )
+
+        assertTrue(
+            newChatActionEnabled(
+                RuntimeUiState(
+                    trustedRuntime = RuntimeTrustedRuntime(
+                        deviceId = "runtime-1",
+                        name = "AetherLink Runtime",
+                    ),
+                ),
             ),
         )
     }
@@ -450,6 +481,14 @@ class AppNavigationTest {
             "Pairing rejected pairing_secret=pairing-secret-value",
             "Relay URL rejected ?rt=compact-route-token&rs=compact-relay-secret",
             "{\"routeToken\":\"camel-route-token\",\"relaySecret\":\"camel-relay-secret\"}",
+            "Relay alias returned remote_secret=remote-secret-value",
+            "Route alias returned route_secret=route-secret-value",
+            "Rendezvous alias returned rendezvous_secret=rendezvous-secret-value",
+            "Relay identity leaked relay_id=relay-room-secret",
+            "Route identity leaked route_id=route-room-secret",
+            "Network identity leaked network_id=private-network-secret",
+            "Relay nonce leaked relay_nonce=nonce-secret-value",
+            "Compact relay metadata leaked ri=compact-route-id&rrn=compact-nonce",
         )
 
         unsafeDetails.forEach { detail ->
@@ -499,6 +538,14 @@ class AppNavigationTest {
             "Pairing rejected pairing_secret=pairing-secret-value",
             "Relay URL rejected ?rt=compact-route-token&rs=compact-relay-secret",
             "{\"routeToken\":\"camel-route-token\",\"relaySecret\":\"camel-relay-secret\"}",
+            "Relay alias returned remote_secret=remote-secret-value",
+            "Route alias returned route_secret=route-secret-value",
+            "Rendezvous alias returned rendezvous_secret=rendezvous-secret-value",
+            "Relay identity leaked relay_id=relay-room-secret",
+            "Route identity leaked route_id=route-room-secret",
+            "Network identity leaked network_id=private-network-secret",
+            "Relay nonce leaked relay_nonce=nonce-secret-value",
+            "Compact relay metadata leaked ri=compact-route-id&rrn=compact-nonce",
         )
 
         unsafeMessages.forEach { message ->
@@ -534,8 +581,15 @@ class AppNavigationTest {
             "localhost:1234",
             "route_token=route-secret-token",
             "relay_secret=relay-secret-value",
+            "remote_secret=remote-secret-value",
+            "rendezvous_secret=rendezvous-secret-value",
             "pairing_secret=pairing-secret-value",
+            "relay_id=relay-room-secret",
+            "network_id=private-network-secret",
+            "relay_nonce=nonce-secret-value",
             "rt=compact-route-token",
+            "ri=compact-route-id",
+            "rrn=compact-nonce",
             "backend unavailable",
         )
 
@@ -642,6 +696,24 @@ class AppNavigationTest {
         assertEquals(true, "application/pdf" in mimeTypes)
         assertEquals(true, "image/*" in mimeTypes)
         assertEquals("image/*", mimeTypes.last())
+    }
+
+    @Test
+    fun attachmentPickerCallbackAddsPickedUrisOnceAndIgnoresEmptySelections() {
+        val pickedUris = listOf(
+            Uri.parse("content://aetherlink/document/one"),
+            Uri.parse("content://aetherlink/document/two"),
+        )
+        val addedBatches = mutableListOf<List<Uri>>()
+
+        handlePickedAttachments(pickedUris) { uris ->
+            addedBatches += uris
+        }
+        handlePickedAttachments(emptyList()) { uris ->
+            addedBatches += uris
+        }
+
+        assertEquals(listOf(pickedUris), addedBatches)
     }
 
     @Test
@@ -1591,6 +1663,96 @@ class AppNavigationTest {
     }
 
     @Test
+    fun routeNoticeActionIgnoresManualDiagnosticHostForNormalQrFirstRecovery() {
+        val state = RuntimeUiState(
+            trustedRuntime = trustedRuntime(
+                relayHost = null,
+                relayPort = null,
+                relayId = null,
+                relaySecret = null,
+                relayExpiresAtEpochMillis = null,
+                relayNonce = null,
+            ),
+            runtimeHost = "192.0.2.10",
+            runtimePort = "43170",
+            runtimeEndpointSource = RuntimeEndpointSource.Manual,
+        )
+
+        val notice = runtimeRouteNotice(state, state.trustedRuntime)
+
+        assertEquals(false, hasConnectableTrustedRuntimeRoute(state))
+        assertEquals(RouteNoticePrimaryAction.ScanLatestQr, routeNoticePrimaryAction(state))
+        assertEquals(R.string.route_notice_remote_pending, notice?.detailRes)
+        assertEquals(RouteNoticePrimaryAction.ScanLatestQr, notice?.action)
+    }
+
+    @Test
+    fun routeNoticeActionStillConnectsForNonManualTrustedEndpointHints() {
+        val state = RuntimeUiState(
+            trustedRuntime = trustedRuntime(
+                relayHost = null,
+                relayPort = null,
+                relayId = null,
+                relaySecret = null,
+                relayExpiresAtEpochMillis = null,
+                relayNonce = null,
+            ),
+            runtimeHost = "192.0.2.20",
+            runtimePort = "43170",
+            runtimeEndpointSource = RuntimeEndpointSource.PairingQr,
+        )
+
+        val notice = runtimeRouteNotice(state, state.trustedRuntime)
+
+        assertEquals(true, hasConnectableTrustedRuntimeRoute(state))
+        assertEquals(RouteNoticePrimaryAction.Connect, routeNoticePrimaryAction(state))
+        assertEquals(R.string.route_notice_development_route, notice?.detailRes)
+        assertEquals(RouteNoticePrimaryAction.Connect, notice?.action)
+    }
+
+    @Test
+    fun chatComposerHintRequestsLatestQrWhenTrustedRuntimeNeedsRouteRefresh() {
+        val manualDiagnosticOnly = RuntimeUiState(
+            trustedRuntime = trustedRuntime(
+                relayHost = null,
+                relayPort = null,
+                relayId = null,
+                relaySecret = null,
+                relayExpiresAtEpochMillis = null,
+                relayNonce = null,
+            ),
+            runtimeHost = "192.0.2.10",
+            runtimePort = "43170",
+            runtimeEndpointSource = RuntimeEndpointSource.Manual,
+        )
+        val expiredRelay = RuntimeUiState(
+            trustedRuntime = trustedRuntime(
+                relayExpiresAtEpochMillis = 1L,
+                relayNonce = "nonce-1",
+            ),
+            error = RuntimeUiError(
+                code = "remote_route_expired",
+                diagnosticCode = "route_diagnostic_remote_route_expired",
+            ),
+        )
+
+        assertEquals(R.string.chat_hint_scan_latest_qr, chatInputHintRes(manualDiagnosticOnly))
+        assertEquals(R.string.chat_hint_scan_latest_qr, chatInputHintRes(expiredRelay))
+    }
+
+    @Test
+    fun chatComposerHintStillRequestsConnectWhenTrustedRuntimeHasRouteCandidate() {
+        val state = RuntimeUiState(
+            trustedRuntime = trustedRuntime(
+                relayExpiresAtEpochMillis = Long.MAX_VALUE,
+                relayNonce = "nonce-1",
+            ),
+        )
+
+        assertEquals(R.string.chat_hint_connect, chatInputHintRes(state))
+    }
+
+    @Test
     fun routeNoticeActionStaysInformationalWhenAlreadyConnected() {
         val state = RuntimeUiState(
             trustedRuntime = trustedRuntime(
@@ -2001,6 +2163,10 @@ class AppNavigationTest {
 
         assertEquals(true, shouldScanLatestQrFromEmptyChat(state))
         assertEquals(false, shouldShowChatBottomError(state))
+        assertEquals(
+            R.string.route_diagnostic_direct_qr_rejected,
+            chatEmptyTextRes(state, preferQrRouteRefresh = true),
+        )
     }
 
     @Test
@@ -2035,6 +2201,29 @@ class AppNavigationTest {
 
         assertEquals(true, shouldScanLatestQrFromEmptyChat(state))
         assertEquals(false, shouldShowChatBottomError(state))
+        assertEquals(
+            R.string.route_diagnostic_relay_auth_failed,
+            chatEmptyTextRes(state, preferQrRouteRefresh = true),
+        )
+    }
+
+    @Test
+    fun emptyChatPrefersQrRefreshForExpiredRemoteRoute() {
+        val state = RuntimeUiState(
+            isConnected = false,
+            trustedRuntime = trustedRuntime(),
+            error = RuntimeUiError(
+                code = "remote_route_expired",
+                diagnosticCode = "route_diagnostic_remote_route_expired",
+            ),
+        )
+
+        assertEquals(true, shouldScanLatestQrFromEmptyChat(state))
+        assertEquals(false, shouldShowChatBottomError(state))
+        assertEquals(
+            R.string.route_diagnostic_remote_route_expired,
+            chatEmptyTextRes(state, preferQrRouteRefresh = true),
+        )
     }
 
     @Test

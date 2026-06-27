@@ -2,6 +2,7 @@ package com.localagentbridge.android.core.pairing
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
 import java.io.File
@@ -90,6 +91,44 @@ class RuntimePairingPayloadParserTest {
         assertNull(payload.host)
         assertNull(payload.port)
         assertNull(payload.serviceType)
+    }
+
+    @Test
+    fun rejectsRouteTokenWithWhitespaceForIdentityOnlyQrPayload() {
+        try {
+            RuntimePairingPayloadParser.parse(
+                "aetherlink://pair?version=1&pairing_nonce=nonce-1&pairing_code=123456" +
+                    "&runtime_device_id=runtime-1&runtime_name=AetherLink+Runtime" +
+                    "&runtime_key_fingerprint=fp-1&route_token=route%201"
+            )
+            fail("Expected identity-only route token with whitespace to throw")
+        } catch (_: IllegalArgumentException) {
+            // Expected.
+        }
+    }
+
+    @Test
+    fun normalizesBlankRuntimeNameToDefaultRuntimeName() {
+        val payload = RuntimePairingPayloadParser.parse(
+            "aetherlink://pair?version=1&pairing_nonce=nonce-1&pairing_code=123456" +
+                "&runtime_device_id=runtime-1&runtime_name=%20%20%20" +
+                "&runtime_key_fingerprint=fp-1"
+        )
+
+        assertEquals("AetherLink Runtime", payload.runtimeName)
+    }
+
+    @Test
+    fun capsOversizedRuntimeNameBeforeUiOrStorage() {
+        val oversizedName = "Runtime%20" + "x".repeat(120)
+        val payload = RuntimePairingPayloadParser.parse(
+            "aetherlink://pair?version=1&pairing_nonce=nonce-1&pairing_code=123456" +
+                "&runtime_device_id=runtime-1&runtime_name=$oversizedName" +
+                "&runtime_key_fingerprint=fp-1"
+        )
+
+        assertEquals(80, payload.runtimeName.length)
+        assertTrue(payload.runtimeName.startsWith("Runtime x"))
     }
 
     @Test

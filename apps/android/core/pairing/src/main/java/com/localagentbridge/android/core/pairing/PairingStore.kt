@@ -1,22 +1,55 @@
 package com.localagentbridge.android.core.pairing
 
 import android.content.Context
+import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyProperties
+import android.util.Base64
 import androidx.datastore.preferences.core.MutablePreferences
+import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.flow
+import java.nio.ByteBuffer
+import java.security.KeyStore
+import java.security.MessageDigest
+import javax.crypto.Cipher
+import javax.crypto.KeyGenerator
+import javax.crypto.SecretKey
 
 internal val Context.localAgentBridgeDataStore by preferencesDataStore("local_agent_bridge")
 
-class PairingStore(private val context: Context) {
-    val trustedRuntime: Flow<TrustedRuntime?> = context.localAgentBridgeDataStore.data.map { prefs ->
-        val id = prefs[Keys.runtimeDeviceId] ?: prefs[LegacyKeys.runtimeDeviceId] ?: return@map null
+class PairingStore(
+    private val context: Context,
+    private val relaySecretStore: RelaySecretStore = AndroidKeystoreRelaySecretStore(context),
+) {
+    val trustedRuntime: Flow<TrustedRuntime?> = flow {
+        context.localAgentBridgeDataStore.data.collect { prefs ->
+            val loaded = loadTrustedRuntime(prefs)
+            if (loaded.shouldRemoveStoredRelayRoute) {
+                context.localAgentBridgeDataStore.edit { editPrefs ->
+                    loaded.relaySecretRefsToRemove.forEach(relaySecretStore::removeSecret)
+                    editPrefs.removeRelayRouteKeys()
+                }
+            } else if (loaded.relaySecretRefToPersist != null) {
+                context.localAgentBridgeDataStore.edit { editPrefs ->
+                    editPrefs[Keys.runtimeRelaySecretRef] = loaded.relaySecretRefToPersist
+                    editPrefs.remove(Keys.runtimeRelaySecret)
+                }
+            }
+            emit(loaded.trustedRuntime)
+        }
+    }
+
+    private fun loadTrustedRuntime(prefs: Preferences): LoadedTrustedRuntime {
+        val id = prefs[Keys.runtimeDeviceId] ?: prefs[LegacyKeys.runtimeDeviceId]
+            ?: return LoadedTrustedRuntime(null, shouldRemoveStoredRelayRoute = false)
         val name = prefs[Keys.runtimeName] ?: prefs[LegacyKeys.runtimeName] ?: "AetherLink Runtime"
-        val fingerprint = prefs[Keys.runtimeFingerprint] ?: prefs[LegacyKeys.runtimeFingerprint] ?: return@map null
+        val fingerprint = prefs[Keys.runtimeFingerprint] ?: prefs[LegacyKeys.runtimeFingerprint]
+            ?: return LoadedTrustedRuntime(null, shouldRemoveStoredRelayRoute = false)
         val publicKeyBase64 = prefs[Keys.runtimePublicKey] ?: prefs[LegacyKeys.runtimePublicKey]
         val routeToken = prefs[Keys.runtimeRouteToken] ?: prefs[LegacyKeys.runtimeRouteToken]
         val host: String? = null
@@ -24,7 +57,11 @@ class PairingStore(private val context: Context) {
         val relayHost = prefs[Keys.runtimeRelayHost]
         val relayPort = prefs[Keys.runtimeRelayPort]
         val relayId = prefs[Keys.runtimeRelayId]
-        val relaySecret = prefs[Keys.runtimeRelaySecret]
+        val relaySecretRef = prefs[Keys.runtimeRelaySecretRef]
+        val legacyRelaySecret = prefs[Keys.runtimeRelaySecret]
+        val relaySecret = relaySecretRef
+            ?.let(relaySecretStore::readSecret)
+            ?: legacyRelaySecret
         val relayExpiresAtEpochMillis = prefs[Keys.runtimeRelayExpiresAtEpochMillis]
         val relayNonce = prefs[Keys.runtimeRelayNonce]
         val relayScope = prefs[Keys.runtimeRelayScope]
@@ -44,10 +81,26 @@ class PairingStore(private val context: Context) {
             relayNonce,
             relayScope,
         )
-        if (trusted.hasCompleteRelayRoute()) {
-            trusted
+        val hasStoredRelayRoute = prefs.hasStoredRelayRoute()
+        return if (trusted.hasValidRelayRoute()) {
+            val relaySecretRefToPersist = if (!legacyRelaySecret.isNullOrBlank() || relaySecretRef.isNullOrBlank()) {
+                val ref = relaySecretHandle(id, requireNotNull(relayId))
+                relaySecretStore.saveSecret(ref, requireNotNull(relaySecret))
+                ref
+            } else {
+                null
+            }
+            LoadedTrustedRuntime(
+                trusted,
+                shouldRemoveStoredRelayRoute = false,
+                relaySecretRefToPersist = relaySecretRefToPersist,
+            )
         } else {
-            trusted.withoutRelayRoute()
+            LoadedTrustedRuntime(
+                trusted.withoutRelayRoute(),
+                shouldRemoveStoredRelayRoute = hasStoredRelayRoute,
+                relaySecretRefsToRemove = listOfNotNull(relaySecretRef),
+            )
         }
     }
 
@@ -75,11 +128,18 @@ class PairingStore(private val context: Context) {
             val relayId = runtime.relayId
             val relaySecret = runtime.relaySecret
             val relayScope = runtime.relayScope
-            if (runtime.hasCompleteRelayRoute()) {
+            if (runtime.hasValidRelayRoute()) {
+                val oldRelaySecretRef = prefs[Keys.runtimeRelaySecretRef]
+                val newRelaySecretRef = relaySecretHandle(runtime.deviceId, requireNotNull(relayId))
+                relaySecretStore.saveSecret(newRelaySecretRef, requireNotNull(relaySecret))
                 prefs[Keys.runtimeRelayHost] = requireNotNull(relayHost)
                 prefs[Keys.runtimeRelayPort] = requireNotNull(relayPort)
-                prefs[Keys.runtimeRelayId] = requireNotNull(relayId)
-                prefs[Keys.runtimeRelaySecret] = requireNotNull(relaySecret)
+                prefs[Keys.runtimeRelayId] = relayId
+                prefs[Keys.runtimeRelaySecretRef] = newRelaySecretRef
+                prefs.remove(Keys.runtimeRelaySecret)
+                if (oldRelaySecretRef != null && oldRelaySecretRef != newRelaySecretRef) {
+                    relaySecretStore.removeSecret(oldRelaySecretRef)
+                }
                 val relayExpiresAtEpochMillis = runtime.relayExpiresAtEpochMillis
                 if (relayExpiresAtEpochMillis != null && relayExpiresAtEpochMillis > 0L) {
                     prefs[Keys.runtimeRelayExpiresAtEpochMillis] = relayExpiresAtEpochMillis
@@ -98,13 +158,8 @@ class PairingStore(private val context: Context) {
                     prefs.remove(Keys.runtimeRelayScope)
                 }
             } else {
-                prefs.remove(Keys.runtimeRelayHost)
-                prefs.remove(Keys.runtimeRelayPort)
-                prefs.remove(Keys.runtimeRelayId)
-                prefs.remove(Keys.runtimeRelaySecret)
-                prefs.remove(Keys.runtimeRelayExpiresAtEpochMillis)
-                prefs.remove(Keys.runtimeRelayNonce)
-                prefs.remove(Keys.runtimeRelayScope)
+                prefs[Keys.runtimeRelaySecretRef]?.let(relaySecretStore::removeSecret)
+                prefs.removeRelayRouteKeys()
             }
             prefs.removeLegacyRuntimeKeys()
         }
@@ -112,6 +167,7 @@ class PairingStore(private val context: Context) {
 
     suspend fun forgetRuntime() {
         context.localAgentBridgeDataStore.edit { prefs ->
+            prefs[Keys.runtimeRelaySecretRef]?.let(relaySecretStore::removeSecret)
             prefs.removeRuntimeKeys()
             prefs.removeLegacyRuntimeKeys()
         }
@@ -129,6 +185,7 @@ class PairingStore(private val context: Context) {
         val runtimeRelayPort = intPreferencesKey("runtime_relay_port")
         val runtimeRelayId = stringPreferencesKey("runtime_relay_id")
         val runtimeRelaySecret = stringPreferencesKey("runtime_relay_secret")
+        val runtimeRelaySecretRef = stringPreferencesKey("runtime_relay_secret_ref")
         val runtimeRelayExpiresAtEpochMillis = longPreferencesKey("runtime_relay_expires_at_epoch_millis")
         val runtimeRelayNonce = stringPreferencesKey("runtime_relay_nonce")
         val runtimeRelayScope = stringPreferencesKey("runtime_relay_scope")
@@ -152,10 +209,15 @@ class PairingStore(private val context: Context) {
         remove(Keys.runtimeRouteToken)
         remove(Keys.runtimeHost)
         remove(Keys.runtimePort)
+        removeRelayRouteKeys()
+    }
+
+    private fun MutablePreferences.removeRelayRouteKeys() {
         remove(Keys.runtimeRelayHost)
         remove(Keys.runtimeRelayPort)
         remove(Keys.runtimeRelayId)
         remove(Keys.runtimeRelaySecret)
+        remove(Keys.runtimeRelaySecretRef)
         remove(Keys.runtimeRelayExpiresAtEpochMillis)
         remove(Keys.runtimeRelayNonce)
         remove(Keys.runtimeRelayScope)
@@ -170,6 +232,106 @@ class PairingStore(private val context: Context) {
         remove(LegacyKeys.runtimeHost)
         remove(LegacyKeys.runtimePort)
     }
+
+    private fun Preferences.hasStoredRelayRoute(): Boolean {
+        return this[Keys.runtimeRelayHost] != null ||
+            this[Keys.runtimeRelayPort] != null ||
+            this[Keys.runtimeRelayId] != null ||
+            this[Keys.runtimeRelaySecret] != null ||
+            this[Keys.runtimeRelaySecretRef] != null ||
+            this[Keys.runtimeRelayExpiresAtEpochMillis] != null ||
+            this[Keys.runtimeRelayNonce] != null ||
+            this[Keys.runtimeRelayScope] != null
+    }
+
+    private data class LoadedTrustedRuntime(
+        val trustedRuntime: TrustedRuntime?,
+        val shouldRemoveStoredRelayRoute: Boolean,
+        val relaySecretRefToPersist: String? = null,
+        val relaySecretRefsToRemove: List<String> = emptyList(),
+    )
+}
+
+interface RelaySecretStore {
+    fun saveSecret(handle: String, secret: String)
+    fun readSecret(handle: String): String?
+    fun removeSecret(handle: String)
+}
+
+class AndroidKeystoreRelaySecretStore(context: Context) : RelaySecretStore {
+    private val preferences = context.getSharedPreferences(RELAY_SECRET_STORE_NAME, Context.MODE_PRIVATE)
+
+    override fun saveSecret(handle: String, secret: String) {
+        preferences.edit()
+            .putString(handle, encrypt(secret))
+            .apply()
+    }
+
+    override fun readSecret(handle: String): String? {
+        val encoded = preferences.getString(handle, null) ?: return null
+        return runCatching { decrypt(encoded) }.getOrNull()
+    }
+
+    override fun removeSecret(handle: String) {
+        preferences.edit().remove(handle).apply()
+    }
+
+    private fun encrypt(secret: String): String {
+        val cipher = Cipher.getInstance(RELAY_SECRET_CIPHER)
+        cipher.init(Cipher.ENCRYPT_MODE, getOrCreateSecretKey())
+        val encrypted = cipher.doFinal(secret.toByteArray(Charsets.UTF_8))
+        val iv = cipher.iv
+        val packed = ByteBuffer.allocate(1 + iv.size + encrypted.size)
+            .put(iv.size.toByte())
+            .put(iv)
+            .put(encrypted)
+            .array()
+        return Base64.encodeToString(packed, Base64.NO_WRAP)
+    }
+
+    private fun decrypt(encoded: String): String {
+        val packed = ByteBuffer.wrap(Base64.decode(encoded, Base64.NO_WRAP))
+        val ivLength = packed.get().toInt() and 0xff
+        require(ivLength > 0 && ivLength <= packed.remaining()) { "Invalid relay secret IV" }
+        val iv = ByteArray(ivLength)
+        packed.get(iv)
+        val encrypted = ByteArray(packed.remaining())
+        packed.get(encrypted)
+        val cipher = Cipher.getInstance(RELAY_SECRET_CIPHER)
+        cipher.init(Cipher.DECRYPT_MODE, getOrCreateSecretKey(), javax.crypto.spec.GCMParameterSpec(128, iv))
+        return cipher.doFinal(encrypted).toString(Charsets.UTF_8)
+    }
+
+    private fun getOrCreateSecretKey(): SecretKey {
+        val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE_PROVIDER).apply { load(null) }
+        val existing = keyStore.getEntry(RELAY_SECRET_KEY_ALIAS, null) as? KeyStore.SecretKeyEntry
+        if (existing != null) return existing.secretKey
+
+        val keyGenerator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, ANDROID_KEYSTORE_PROVIDER)
+        val keySpec = KeyGenParameterSpec.Builder(
+            RELAY_SECRET_KEY_ALIAS,
+            KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT,
+        )
+            .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+            .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+            .setRandomizedEncryptionRequired(true)
+            .build()
+        keyGenerator.init(keySpec)
+        return keyGenerator.generateKey()
+    }
+
+    private companion object {
+        const val RELAY_SECRET_STORE_NAME = "local_agent_bridge_relay_secrets"
+        const val ANDROID_KEYSTORE_PROVIDER = "AndroidKeyStore"
+        const val RELAY_SECRET_KEY_ALIAS = "aetherlink_relay_secret_store_v1"
+        const val RELAY_SECRET_CIPHER = "AES/GCM/NoPadding"
+    }
+}
+
+private fun relaySecretHandle(deviceId: String, relayId: String): String {
+    val digest = MessageDigest.getInstance("SHA-256")
+        .digest("$deviceId\n$relayId".toByteArray(Charsets.UTF_8))
+    return "relay-v1-" + digest.joinToString("") { "%02x".format(it) }
 }
 
 internal data class TrustedRuntimeDirectEndpoint(

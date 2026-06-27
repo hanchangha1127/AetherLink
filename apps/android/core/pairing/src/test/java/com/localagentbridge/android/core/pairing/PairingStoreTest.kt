@@ -8,7 +8,9 @@ import androidx.test.core.app.ApplicationProvider
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -169,7 +171,8 @@ class PairingStoreTest {
 
     @Test
     fun pairingStorePersistsCompleteRelayRoute() = runTest {
-        val store = pairingStore()
+        val secretStore = FakeRelaySecretStore()
+        val store = pairingStore(secretStore)
         store.forgetRuntime()
 
         store.trustRuntime(completeRelayRuntime())
@@ -190,12 +193,22 @@ class PairingStoreTest {
         assertEquals("nonce-route-1", trusted?.relayNonce)
         assertEquals("remote", trusted?.relayScope)
 
+        val prefs = ApplicationProvider.getApplicationContext<android.content.Context>()
+            .localAgentBridgeDataStore
+            .data
+            .first()
+        assertNull(prefs[stringPreferencesKey("runtime_relay_secret")])
+        val relaySecretRef = prefs[stringPreferencesKey("runtime_relay_secret_ref")]
+        assertNotNull(relaySecretRef)
+        assertEquals("secret-1", secretStore.secrets[relaySecretRef])
+
         store.forgetRuntime()
     }
 
     @Test
-    fun pairingStorePreservesExpiredCompleteRelayRouteForReconnectDiagnostics() = runTest {
-        val store = pairingStore()
+    fun pairingStoreDropsExpiredCompleteRelayRouteOnWrite() = runTest {
+        val secretStore = FakeRelaySecretStore()
+        val store = pairingStore(secretStore)
         store.forgetRuntime()
 
         store.trustRuntime(
@@ -207,16 +220,139 @@ class PairingStoreTest {
 
         val trusted = store.trustedRuntime.first()
         assertEquals("runtime-1", trusted?.deviceId)
-        assertEquals("relay.example.test", trusted?.relayHost)
-        assertEquals(443, trusted?.relayPort)
-        assertEquals("relay-1", trusted?.relayId)
-        assertEquals("secret-1", trusted?.relaySecret)
-        assertEquals(2_000L, trusted?.relayExpiresAtEpochMillis)
-        assertEquals("expired-nonce-1", trusted?.relayNonce)
-        assertEquals("remote", trusted?.relayScope)
+        assertNull(trusted?.relayHost)
+        assertNull(trusted?.relayPort)
+        assertNull(trusted?.relayId)
+        assertNull(trusted?.relaySecret)
+        assertNull(trusted?.relayExpiresAtEpochMillis)
+        assertNull(trusted?.relayNonce)
+        assertNull(trusted?.relayScope)
         assertEquals(false, trusted?.hasValidRelayRoute())
-        assertEquals(true, trusted?.hasExpiredRelayRoute(nowEpochMillis = 2_001L))
-        assertNull(trusted?.validDirectEndpointOrNull())
+        assertEquals(false, trusted?.hasExpiredRelayRoute(nowEpochMillis = 2_001L))
+
+        val prefs = ApplicationProvider.getApplicationContext<android.content.Context>()
+            .localAgentBridgeDataStore
+            .data
+            .first()
+        assertNoStoredRelayRoute(prefs)
+        assertTrue(secretStore.secrets.isEmpty())
+
+        store.forgetRuntime()
+    }
+
+    @Test
+    fun pairingStoreDropsExpiredStoredRelayRouteOnRead() = runTest {
+        val secretStore = FakeRelaySecretStore()
+        val store = pairingStore(secretStore)
+        store.forgetRuntime()
+
+        ApplicationProvider.getApplicationContext<android.content.Context>()
+            .localAgentBridgeDataStore
+            .edit { prefs ->
+                prefs[stringPreferencesKey("runtime_device_id")] = "runtime-1"
+                prefs[stringPreferencesKey("runtime_name")] = "AetherLink Runtime"
+                prefs[stringPreferencesKey("runtime_fingerprint")] = "runtime-fingerprint"
+                prefs[stringPreferencesKey("runtime_public_key")] = "runtime-public-key"
+                prefs[stringPreferencesKey("runtime_route_token")] = "route-token"
+                prefs[stringPreferencesKey("runtime_relay_host")] = "relay.example.test"
+                prefs[intPreferencesKey("runtime_relay_port")] = 443
+                prefs[stringPreferencesKey("runtime_relay_id")] = "relay-1"
+                prefs[stringPreferencesKey("runtime_relay_secret")] = "secret-1"
+                prefs[longPreferencesKey("runtime_relay_expires_at_epoch_millis")] = 2_000L
+                prefs[stringPreferencesKey("runtime_relay_nonce")] = "expired-nonce-1"
+                prefs[stringPreferencesKey("runtime_relay_scope")] = "remote"
+            }
+
+        val trusted = store.trustedRuntime.first()
+        assertEquals("runtime-1", trusted?.deviceId)
+        assertNull(trusted?.relayHost)
+        assertNull(trusted?.relayPort)
+        assertNull(trusted?.relayId)
+        assertNull(trusted?.relaySecret)
+        assertNull(trusted?.relayExpiresAtEpochMillis)
+        assertNull(trusted?.relayNonce)
+        assertNull(trusted?.relayScope)
+
+        val prefs = ApplicationProvider.getApplicationContext<android.content.Context>()
+            .localAgentBridgeDataStore
+            .data
+            .first()
+        assertNoStoredRelayRoute(prefs)
+        assertTrue(secretStore.secrets.isEmpty())
+
+        store.forgetRuntime()
+    }
+
+    @Test
+    fun pairingStoreMigratesLegacyRawRelaySecretToSecretStoreOnRead() = runTest {
+        val secretStore = FakeRelaySecretStore()
+        val store = pairingStore(secretStore)
+        store.forgetRuntime()
+
+        ApplicationProvider.getApplicationContext<android.content.Context>()
+            .localAgentBridgeDataStore
+            .edit { prefs ->
+                prefs[stringPreferencesKey("runtime_device_id")] = "runtime-1"
+                prefs[stringPreferencesKey("runtime_name")] = "AetherLink Runtime"
+                prefs[stringPreferencesKey("runtime_fingerprint")] = "runtime-fingerprint"
+                prefs[stringPreferencesKey("runtime_public_key")] = "runtime-public-key"
+                prefs[stringPreferencesKey("runtime_route_token")] = "route-token"
+                prefs[stringPreferencesKey("runtime_relay_host")] = "relay.example.test"
+                prefs[intPreferencesKey("runtime_relay_port")] = 443
+                prefs[stringPreferencesKey("runtime_relay_id")] = "relay-1"
+                prefs[stringPreferencesKey("runtime_relay_secret")] = "secret-1"
+                prefs[longPreferencesKey("runtime_relay_expires_at_epoch_millis")] = 4102444800000L
+                prefs[stringPreferencesKey("runtime_relay_nonce")] = "nonce-route-1"
+                prefs[stringPreferencesKey("runtime_relay_scope")] = "remote"
+            }
+
+        val trusted = store.trustedRuntime.first()
+        assertEquals("secret-1", trusted?.relaySecret)
+
+        val prefs = ApplicationProvider.getApplicationContext<android.content.Context>()
+            .localAgentBridgeDataStore
+            .data
+            .first()
+        assertNull(prefs[stringPreferencesKey("runtime_relay_secret")])
+        val relaySecretRef = prefs[stringPreferencesKey("runtime_relay_secret_ref")]
+        assertNotNull(relaySecretRef)
+        assertEquals("secret-1", secretStore.secrets[relaySecretRef])
+
+        store.forgetRuntime()
+    }
+
+    @Test
+    fun pairingStoreDropsRelayRouteWhenStoredSecretRefCannotBeResolved() = runTest {
+        val store = pairingStore(FakeRelaySecretStore())
+        store.forgetRuntime()
+
+        ApplicationProvider.getApplicationContext<android.content.Context>()
+            .localAgentBridgeDataStore
+            .edit { prefs ->
+                prefs[stringPreferencesKey("runtime_device_id")] = "runtime-1"
+                prefs[stringPreferencesKey("runtime_name")] = "AetherLink Runtime"
+                prefs[stringPreferencesKey("runtime_fingerprint")] = "runtime-fingerprint"
+                prefs[stringPreferencesKey("runtime_public_key")] = "runtime-public-key"
+                prefs[stringPreferencesKey("runtime_route_token")] = "route-token"
+                prefs[stringPreferencesKey("runtime_relay_host")] = "relay.example.test"
+                prefs[intPreferencesKey("runtime_relay_port")] = 443
+                prefs[stringPreferencesKey("runtime_relay_id")] = "relay-1"
+                prefs[stringPreferencesKey("runtime_relay_secret_ref")] = "missing-secret-ref"
+                prefs[longPreferencesKey("runtime_relay_expires_at_epoch_millis")] = 4102444800000L
+                prefs[stringPreferencesKey("runtime_relay_nonce")] = "nonce-route-1"
+                prefs[stringPreferencesKey("runtime_relay_scope")] = "remote"
+            }
+
+        val trusted = store.trustedRuntime.first()
+        assertEquals("runtime-1", trusted?.deviceId)
+        assertNull(trusted?.relaySecret)
+        assertNull(trusted?.relayHost)
+
+        val prefs = ApplicationProvider.getApplicationContext<android.content.Context>()
+            .localAgentBridgeDataStore
+            .data
+            .first()
+        assertNoStoredRelayRoute(prefs)
 
         store.forgetRuntime()
     }
@@ -253,18 +389,28 @@ class PairingStoreTest {
         assertNull(trusted?.relayNonce)
         assertNull(trusted?.relayScope)
 
+        val prefs = ApplicationProvider.getApplicationContext<android.content.Context>()
+            .localAgentBridgeDataStore
+            .data
+            .first()
+        assertNoStoredRelayRoute(prefs)
+
         store.forgetRuntime()
     }
 
     @Test
     fun pairingStoreForgetRuntimeClearsRelayRoute() = runTest {
-        val store = pairingStore()
+        val secretStore = FakeRelaySecretStore()
+        val store = pairingStore(secretStore)
         store.forgetRuntime()
         store.trustRuntime(completeRelayRuntime())
+
+        assertTrue(secretStore.secrets.isNotEmpty())
 
         store.forgetRuntime()
 
         assertNull(store.trustedRuntime.first())
+        assertTrue(secretStore.secrets.isEmpty())
     }
 
     private fun trustedRuntime(
@@ -294,7 +440,34 @@ class PairingStoreTest {
         )
     }
 
-    private fun pairingStore(): PairingStore {
-        return PairingStore(ApplicationProvider.getApplicationContext())
+    private fun pairingStore(relaySecretStore: RelaySecretStore = FakeRelaySecretStore()): PairingStore {
+        return PairingStore(ApplicationProvider.getApplicationContext(), relaySecretStore)
+    }
+
+    private fun assertNoStoredRelayRoute(prefs: androidx.datastore.preferences.core.Preferences) {
+        assertNull(prefs[stringPreferencesKey("runtime_relay_host")])
+        assertNull(prefs[intPreferencesKey("runtime_relay_port")])
+        assertNull(prefs[stringPreferencesKey("runtime_relay_id")])
+        assertNull(prefs[stringPreferencesKey("runtime_relay_secret")])
+        assertNull(prefs[stringPreferencesKey("runtime_relay_secret_ref")])
+        assertNull(prefs[longPreferencesKey("runtime_relay_expires_at_epoch_millis")])
+        assertNull(prefs[stringPreferencesKey("runtime_relay_nonce")])
+        assertNull(prefs[stringPreferencesKey("runtime_relay_scope")])
+    }
+
+    private class FakeRelaySecretStore : RelaySecretStore {
+        val secrets = linkedMapOf<String, String>()
+
+        override fun saveSecret(handle: String, secret: String) {
+            secrets[handle] = secret
+        }
+
+        override fun readSecret(handle: String): String? {
+            return secrets[handle]
+        }
+
+        override fun removeSecret(handle: String) {
+            secrets.remove(handle)
+        }
     }
 }

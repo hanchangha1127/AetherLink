@@ -32,6 +32,17 @@ RUNTIME_LOCAL_STORE_SOURCE = (
     / "runtime"
     / "RuntimeLocalStore.kt"
 )
+RUNTIME_VIEW_MODEL_SOURCE = (
+    ANDROID_APP_ROOT
+    / "src"
+    / "main"
+    / "java"
+    / "com"
+    / "localagentbridge"
+    / "android"
+    / "runtime"
+    / "RuntimeClientViewModel.kt"
+)
 MAIN_ACTIVITY_SOURCE = (
     ANDROID_APP_ROOT
     / "src"
@@ -54,6 +65,20 @@ CLIENT_SCREENS_SOURCE = (
     / "ClientScreens.kt"
 )
 ANDROID_KOTLIN_SOURCE_ROOT = ANDROID_APP_ROOT / "src" / "main" / "java"
+RUNTIME_VIEW_MODEL_TEST_SOURCE = (
+    ANDROID_APP_ROOT
+    / "src"
+    / "test"
+    / "java"
+    / "com"
+    / "localagentbridge"
+    / "android"
+    / "runtime"
+    / "RuntimeClientViewModelTest.kt"
+)
+ANDROID_MANIFEST_SOURCE = ANDROID_APP_ROOT / "src" / "main" / "AndroidManifest.xml"
+ANDROID_LOCALE_CONFIG_SOURCE = ANDROID_APP_ROOT / "src" / "main" / "res" / "xml" / "locales_config.xml"
+ANDROID_XML_NS = "{http://schemas.android.com/apk/res/android}"
 LOCALE_DIRS = ("values-en", "values-ko", "values-ja", "values-zh-rCN", "values-fr")
 EXPECTED_RUNTIME_LANGUAGES = {
     "English": "en",
@@ -138,7 +163,7 @@ REQUIRED_RELEASE_COPY_VALUES = {
         "provider_error_code": "참조 코드: %1$s",
         "provider_show_diagnostics": "세부 정보 보기",
         "provider_hide_diagnostics": "세부 정보 숨기기",
-        "error_select_embedding_model": "Memory 색인 모델을 선택하세요.",
+        "error_select_embedding_model": "메모리 색인 모델을 선택하세요.",
         "assistant_reasoning_label": "생각",
         "assistant_reasoning_show": "생각 펼치기",
         "assistant_reasoning_hide": "생각 접기",
@@ -156,7 +181,7 @@ REQUIRED_RELEASE_COPY_VALUES = {
         "provider_error_code": "参照コード: %1$s",
         "provider_show_diagnostics": "詳細を表示",
         "provider_hide_diagnostics": "詳細を非表示",
-        "error_select_embedding_model": "Memory インデックスモデルを選択してください。",
+        "error_select_embedding_model": "メモリ インデックスモデルを選択してください。",
         "assistant_reasoning_label": "思考",
         "assistant_reasoning_show": "思考を表示",
         "assistant_reasoning_hide": "思考を非表示",
@@ -174,7 +199,7 @@ REQUIRED_RELEASE_COPY_VALUES = {
         "provider_error_code": "参考代码：%1$s",
         "provider_show_diagnostics": "显示详情",
         "provider_hide_diagnostics": "隐藏详情",
-        "error_select_embedding_model": "请选择 Memory 索引模型。",
+        "error_select_embedding_model": "请选择记忆索引模型。",
         "assistant_reasoning_label": "思考",
         "assistant_reasoning_show": "展开思考",
         "assistant_reasoning_hide": "收起思考",
@@ -192,7 +217,7 @@ REQUIRED_RELEASE_COPY_VALUES = {
         "provider_error_code": "Code de référence : %1$s",
         "provider_show_diagnostics": "Afficher les détails",
         "provider_hide_diagnostics": "Masquer les détails",
-        "error_select_embedding_model": "Choisissez un modèle d’indexation Memory.",
+        "error_select_embedding_model": "Choisissez un modèle d’indexation de la mémoire.",
         "assistant_reasoning_label": "Réflexion",
         "assistant_reasoning_show": "Afficher la réflexion",
         "assistant_reasoning_hide": "Masquer la réflexion",
@@ -220,6 +245,10 @@ FORBIDDEN_STALE_VALUE_PATTERNS = (
     re.compile(r"\b(?:enter .*Ollama|enter .*LM Studio)\b", re.IGNORECASE),
     re.compile(r"\b(?:manual endpoint|manual host|fixed IP|fixed address)\b", re.IGNORECASE),
     re.compile(r"\b(?:connect directly to Ollama|connect directly to LM Studio)\b", re.IGNORECASE),
+    re.compile(
+        r"\bTap Connect\b|Touchez Connecter|연결을 눌러|接続をタップ|点按.?连接",
+        re.IGNORECASE,
+    ),
     re.compile(
         r"\bruntime identit(?:y|ies)\b|trusted identity|"
         r"런타임 신원|신원 정보|신원 확인|"
@@ -344,6 +373,22 @@ def native_language_label_failures(values: dict[str, str], relative_path: Path) 
     return failures
 
 
+def untranslated_memory_noun_failures(
+    resource_dir_name: str,
+    values: dict[str, str],
+    relative_path: Path,
+) -> list[str]:
+    if resource_dir_name in {"values", "values-en"}:
+        return []
+    failures: list[str] = []
+    for name, value in values.items():
+        if re.search(r"\bMemory\b", value):
+            failures.append(
+                f"{relative_path}: non-English string {name!r} must translate the Memory feature noun"
+            )
+    return failures
+
+
 def check_runtime_language_selector(default_names: list[str]) -> list[str]:
     failures: list[str] = []
     ui_state_relative = RUNTIME_UI_STATE_SOURCE.relative_to(ROOT)
@@ -375,6 +420,89 @@ def check_runtime_language_selector(default_names: list[str]) -> list[str]:
     for key in REQUIRED_LANGUAGE_KEYS:
         if key not in default_names:
             failures.append(f"{ui_state_relative}: missing language resource key {key!r}")
+
+    return failures
+
+
+def check_android_locale_config() -> list[str]:
+    failures: list[str] = []
+    manifest_relative = ANDROID_MANIFEST_SOURCE.relative_to(ROOT)
+    locale_config_relative = ANDROID_LOCALE_CONFIG_SOURCE.relative_to(ROOT)
+    expected_languages = list(EXPECTED_RUNTIME_LANGUAGES.values())
+
+    if not ANDROID_MANIFEST_SOURCE.exists():
+        return [f"{manifest_relative}: missing Android manifest"]
+    if not ANDROID_LOCALE_CONFIG_SOURCE.exists():
+        return [f"{locale_config_relative}: missing Android locale config"]
+
+    manifest_root = ET.parse(ANDROID_MANIFEST_SOURCE).getroot()
+    application = manifest_root.find("application")
+    if application is None:
+        failures.append(f"{manifest_relative}: application element not found")
+    else:
+        locale_config_ref = application.attrib.get(f"{ANDROID_XML_NS}localeConfig")
+        if locale_config_ref != "@xml/locales_config":
+            failures.append(
+                f"{manifest_relative}: application android:localeConfig must reference "
+                f"'@xml/locales_config' (actual={locale_config_ref!r})"
+            )
+
+    locale_root = ET.parse(ANDROID_LOCALE_CONFIG_SOURCE).getroot()
+    locale_names = [
+        node.attrib.get(f"{ANDROID_XML_NS}name")
+        for node in locale_root.findall("locale")
+    ]
+    if locale_names != expected_languages:
+        failures.append(
+            f"{locale_config_relative}: locale list must match RuntimeAppLanguage "
+            f"(expected={expected_languages}, actual={locale_names})"
+        )
+
+    failures.extend(
+        missing_source_snippets(
+            MAIN_ACTIVITY_SOURCE,
+            (
+                "import android.app.LocaleManager",
+                "internal fun androidSystemAppLanguageTag(context: Context): String?",
+                "Build.VERSION_CODES.TIRAMISU",
+                "localeManager.applicationLocales",
+                "viewModel.reconcileSystemAppLanguageTag(androidSystemAppLanguageTag(baseContext))",
+            ),
+            "Android OS app-language handoff",
+        )
+    )
+    failures.extend(
+        missing_source_snippets(
+            RUNTIME_LOCAL_STORE_SOURCE,
+            (
+                "APP_LANGUAGE_SOURCE_SYSTEM",
+                "APP_LANGUAGE_SOURCE_IN_APP",
+                "val appLanguageSource: String? = APP_LANGUAGE_SOURCE_DEFAULT",
+                "internal fun PersistedRuntimeData.withSystemAppLanguageTag(languageTag: String?)",
+            ),
+            "Android app-language source persistence",
+        )
+    )
+    failures.extend(
+        missing_source_snippets(
+            RUNTIME_VIEW_MODEL_SOURCE,
+            (
+                "fun reconcileSystemAppLanguageTag(languageTag: String?)",
+                "persistedRuntimeData.withSystemAppLanguageTag(languageTag)",
+            ),
+            "Android app-language ViewModel reconciliation",
+        )
+    )
+    failures.extend(
+        missing_source_snippets(
+            RUNTIME_VIEW_MODEL_TEST_SOURCE,
+            (
+                "viewModelReconcilesSystemAppLanguageUntilInAppLanguageIsSelected",
+                "systemAppLanguageHelperDoesNotOverrideInAppLanguageSelection",
+            ),
+            "Android app-language handoff regression tests",
+        )
+    )
 
     return failures
 
@@ -586,6 +714,7 @@ def main() -> int:
 
             failures.extend(release_copy_value_failures(locale_dir_name, locale_values, locale_relative))
             failures.extend(native_language_label_failures(locale_values, locale_relative))
+            failures.extend(untranslated_memory_noun_failures(locale_dir_name, locale_values, locale_relative))
 
             if locale_names != default_names:
                 missing = [name for name in default_names if name not in locale_names]
@@ -633,6 +762,7 @@ def main() -> int:
                         )
 
         failures.extend(check_runtime_language_selector(default_names))
+        failures.extend(check_android_locale_config())
         failures.extend(check_runtime_theme_selector(default_names))
 
     failures.extend(raw_compose_visible_literal_matcher_self_test_failures())
@@ -652,7 +782,8 @@ def main() -> int:
         f"{module_count} module resource set(s), "
         f"{locale_count} locale(s), "
         f"{localized_resource_count} localized strings.xml file(s), "
-        "including plural resources and raw Compose visible-string guards."
+        "including plural resources, OS app-language handoff, translated Memory noun checks, "
+        "and raw Compose visible-string guards."
     )
     return 0
 

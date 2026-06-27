@@ -27,8 +27,10 @@
 "Model provider" = "モデルプロバイダー";
 "Quick Actions" = "クイックアクション";
 "Check Model Providers" = "モデルプロバイダーを確認";
+"Check model provider availability through AetherLink Runtime." = "AetherLink Runtime 経由でモデルプロバイダーの利用可否を確認します。";
 "Load Model List" = "モデル一覧を読み込む";
 "Load Local Models" = "モデルを読み込む";
+"Load the installed local model list through AetherLink Runtime." = "AetherLink Runtime 経由でインストール済みローカルモデルの一覧を読み込みます。";
 "Local Models" = "モデル";
 "Models" = "モデル";
 "Readiness" = "準備状況";
@@ -41,6 +43,7 @@
 "Needs attention" = "確認が必要";
 "Not ready" = "未準備";
 "Pending" = "保留中";
+"Activity item %@. Status %@." = "アクティビティ項目 %@。ステータス %@。";
 "Readiness %@. Status %@. %@" = "準備状況 %@。ステータス %@。%@";
 "Status item" = "ステータス項目";
 "Unknown status" = "不明な状態";
@@ -69,6 +72,8 @@
 "LM Studio connection error" = "LM Studio 接続エラー";
 "Port" = "ポート";
 "Generated automatically if blank" = "空欄の場合は自動で作成されます";
+"Empty" = "空";
+"Entered" = "入力済み";
 "Rotate Secret" = "キーを更新";
 "Generate Latest QR" = "最新 QR を生成";
 "Waiting for device" = "デバイス待機中";
@@ -97,6 +102,9 @@
 "Unknown provider" = "不明なプロバイダー";
 "Unknown source" = "不明なソース";
 "Size unknown" = "サイズ不明";
+"Model section" = "モデルセクション";
+"No model count" = "モデル数なし";
+"Model section %@. %@" = "モデルセクション %@。%@";
 "Model %@. ID %@. Type %@. Provider %@. Source %@. State %@. Size %@" = "モデル %@。ID %@。タイプ %@。プロバイダー %@。ソース %@。状態 %@。サイズ %@";
 "Model Residency" = "モデル常駐";
 "Model provider availability" = "モデルプロバイダーの可用性";
@@ -136,6 +144,7 @@
 "Generate New QR" = "新しい QR を生成";
 "Pairing QR code" = "ペアリング QR コード";
 "Pairing QR code unavailable" = "ペアリング QR コードを利用できません";
+"Pairing QR time remaining" = "ペアリング QR の残り時間";
 "Scan this QR from AetherLink." = "AetherLink でこの QR をスキャンしてください。";
 "After pairing, manage or remove trusted devices in Trusted Devices." = "ペアリング後は、信頼済みデバイスで信頼済みデバイスを管理または削除できます。";
 "Paired devices connect to AetherLink Runtime, not directly to model providers." = "ペアリング済みデバイスはモデルプロバイダーではなく AetherLink Runtime に接続します。";
@@ -145,10 +154,12 @@
 
 "Manage pairing trust and remove devices allowed to use AetherLink Runtime." = "ペアリングの信頼を管理し、AetherLink Runtime の使用を許可したデバイスを削除します。";
 "Refresh Devices" = "デバイスを更新";
+"Refresh trusted devices from AetherLink Runtime." = "AetherLink Runtime から信頼済みデバイスを更新します。";
 "Allowed Devices" = "許可済みデバイス";
 "No trusted devices" = "信頼済みデバイスはありません";
 "Pair a device before allowing runtime commands." = "ランタイムコマンドを許可する前に、デバイスをペアリングしてください。";
 "Paired %@ · ID ending %@" = "ペアリング済み %@ · ID 末尾 %@";
+"Paired %@. Device ID ending %@" = "ペアリング済み %@。デバイス ID 末尾 %@";
 "Key fingerprint %@" = "キー指紋 %@";
 "Pairing details unavailable." = "ペアリングの詳細は利用できません。";
 "Trusted device %@. %@. Key fingerprint %@" = "信頼済みデバイス %@。%@。キー指紋 %@";
@@ -167,6 +178,10 @@
 "Activity appears here after AetherLink Runtime starts receiving requests." = "AetherLink Runtime がリクエストを受信し始めると、ここにアクティビティが表示されます。";
 "Technical Details" = "詳細";
 "Technical details for %@" = "%@ の詳細";
+"Activity technical details expanded" = "アクティビティ詳細は展開済み";
+"Activity technical details collapsed" = "アクティビティ詳細は折りたたみ済み";
+"Collapse to hide activity technical details." = "アクティビティ詳細を非表示にするには折りたたみます。";
+"Expand to show activity technical details." = "アクティビティ詳細を表示するには展開します。";
 "Connection setup result" = "接続設定の結果";
 "Connection health" = "接続状態";
 "Connection preparation" = "接続準備";
@@ -177,8 +192,8 @@
 "AetherLink runtime stopped" = "AetherLink Runtime が停止しました";
 "Model provider health check passed" = "モデルプロバイダーのヘルスチェックに成功しました";
 "Pairing QR generated" = "ペアリング QR を生成しました";
-"Trusted %@" = "%@ を信頼しました";
-"Removed %@" = "%@ を削除しました";
+"Trusted device %@" = "信頼済みデバイス %@ を登録しました";
+"Removed trust for %@" = "%@ の信頼を解除しました";
 "Received device runtime request" = "デバイスランタイムリクエストを受信しました";
 "Loaded 1 model" = "1 個のモデルを読み込みました";
 "Loaded %@ models" = "%@ 個のモデルを読み込みました";
@@ -216,7 +231,11 @@
 "Reconnecting with saved connection details." = "保存済みの接続情報で再接続しています。";
 "Scan once from AetherLink to trust this AetherLink Runtime." = "AetherLink から一度スキャンして、この AetherLink Runtime を信頼します。";
 "Generate a pairing QR. AetherLink prepares connection details automatically when available." = "ペアリング QR を生成してください。利用可能な場合、AetherLink が接続情報を自動で準備します。";
+"Generate the latest pairing QR with saved connection details." = "保存済みの接続情報で最新のペアリング QR を生成します。";
 "Pairing QR is waiting for connection details." = "ペアリング QR は接続情報を待っています。";
+"Pairing QR generation is unavailable from this view." = "この画面ではペアリング QR を生成できません。";
+"Latest QR generation is unavailable from this view." = "この画面では最新の QR を生成できません。";
+"Connection details are not ready for QR generation. Check Connection Recovery settings." = "QR 生成用の接続情報は準備できていません。接続の復旧設定を確認してください。";
 "Connection details for %@ cannot be included in this QR. Advanced Connection Setup needs an address both devices can reach." = "%@ の接続情報をこの QR に含められません。接続の復旧には両方のデバイスから到達できるアドレスが必要です。";
 "Connection details are being prepared. Keep this window open; the QR appears when AetherLink Runtime is ready." = "接続情報を準備中です。このウィンドウを開いたままにすると、AetherLink Runtime の準備ができたときに QR が表示されます。";
 "Connection details for %@ are not ready yet. Keep this window open; the QR appears when AetherLink Runtime is ready." = "%@ の接続情報はまだ準備できていません。このウィンドウを開いたままにすると、AetherLink Runtime の準備ができたときに QR が表示されます。";
@@ -224,6 +243,7 @@
 "This QR includes connection details for %@, but the secure connection secret is missing." = "この QR には %@ の接続情報が含まれていますが、安全な接続シークレットがありません。";
 "Generate a pairing QR. AetherLink prepares connection details automatically and shows the QR when ready." = "ペアリング QR を生成してください。AetherLink が接続情報を自動で準備し、準備できると QR を表示します。";
 "Generate a pairing QR first. If automatic connection preparation is unavailable, use Advanced Connection Setup only when needed." = "まずペアリング QR を生成してください。自動接続準備を利用できない場合のみ、必要に応じて接続の復旧を使用します。";
+"Pairing QR status" = "ペアリング QR の状態";
 "This QR verifies AetherLink Runtime and includes connection details for pairing or refresh." = "この QR は AetherLink Runtime を確認し、ペアリングまたは更新用の接続情報を含みます。";
 "Local Network permission helps nearby discovery; trust stays tied to this AetherLink Runtime." = "ローカルネットワーク権限は近くの検出を補助します。信頼はこの AetherLink Runtime に結び付きます。";
 "Keep AetherLink Runtime open until pairing completes." = "ペアリングが完了するまで AetherLink Runtime を開いたままにしてください。";
@@ -240,10 +260,13 @@
 "Optional" = "任意";
 "Enable only when this bootstrap relay is reachable through a VPN, tunnel, or private overlay shared by both devices." = "両方のデバイスで共有する VPN、トンネル、またはプライベートオーバーレイ経由でこのブートストラップリレーに到達できる場合のみ有効にしてください。";
 "Save Bootstrap Relay" = "ブートストラップリレーを保存";
+"Save bootstrap relay settings for future pairing QR connection details." = "今後のペアリング QR 接続情報に使うブートストラップリレー設定を保存します。";
 "Bootstrap relay saved. Generate the latest QR and scan it in AetherLink to pair or refresh connectivity." = "ブートストラップリレーを保存しました。最新 QR を生成し、AetherLink でスキャンしてペアリングまたは接続を更新してください。";
 "Connection address" = "接続アドレス";
 "Connection setup secret" = "保護された接続キー";
 "Save Connection" = "接続を保存";
+"Save fallback connection details for future pairing QR routes." = "今後のペアリング QR ルートに使うフォールバック接続情報を保存します。";
+"Create a new connection setup secret for future pairing QR connection details." = "今後のペアリング QR 接続情報に使う新しい接続設定シークレットを作成します。";
 "Connection setup secret regenerated." = "保護された接続キーを更新しました。";
 "Disable Connection" = "接続を無効化";
 "Disable saved connection details for %@" = "%@ の保存済み接続情報を無効化";
@@ -306,12 +329,23 @@
 "Enter only the connection address. Put the port in the Port field." = "接続アドレスだけを入力してください。ポートはポート欄に入力してください。";
 "Nearby + cross-network" = "近距離 + 別ネットワーク";
 "Nearby only" = "近距離のみ";
-"No cross-network connection details are saved yet. Pairing still works nearby, and QR-based remote connection can be prepared later." = "別ネットワーク用の接続情報はまだ保存されていません。近くではペアリングでき、QR ベースのリモート接続は後で準備できます。";
+"No cross-network connection details are saved yet. Nearby pairing still works. For another network, use a reachable relay, VPN, or tunnel before generating the latest QR." = "別ネットワーク用の接続情報はまだ保存されていません。近くでのペアリングは引き続き機能します。別ネットワークでは、最新の QR を生成する前に到達可能なリレー、VPN、またはトンネルを使用してください。";
 "This connection address is local-network only. Use a public, VPN, or tunnel address for different networks." = "この接続アドレスはローカルネットワーク専用です。別ネットワークでは公開、VPN、またはトンネルアドレスを使用してください。";
 "This connection address is private. Use a public address, or enable Private Overlay Route only when a VPN or tunnel makes it reachable from both devices." = "この接続アドレスはプライベートアドレスです。公開アドレスを使用するか、VPN またはトンネルで両方のデバイスから到達できる場合にのみプライベートオーバーレイルートを有効にしてください。";
 "This connection address points back to AetherLink Runtime. A device on another network cannot reach it." = "この接続アドレスは AetherLink Runtime 自身を指しています。別ネットワーク上のデバイスからは到達できません。";
 "Trusted devices can find this AetherLink Runtime nearby after pairing." = "信頼済みデバイスはペアリング後、近くでこの AetherLink Runtime を見つけられます。";
 "Use Private Overlay Route" = "プライベートオーバーレイルートを使用";
+"Bootstrap relay Private Overlay Route" = "ブートストラップリレーのプライベートオーバーレイルート";
+"Fallback connection Private Overlay Route" = "フォールバック接続のプライベートオーバーレイルート";
+"Enabled" = "オン";
+"Disabled" = "オフ";
+"Connection Recovery settings" = "接続の復旧設定";
+"Connection Recovery settings expanded" = "接続の復旧設定は展開済み";
+"Connection Recovery settings collapsed" = "接続の復旧設定は折りたたみ済み";
+"Show or hide advanced connection recovery fields." = "高度な接続の復旧フィールドを表示または非表示にします。";
+"Connection diagnostics expanded" = "接続診断は展開済み";
+"Connection diagnostics collapsed" = "接続診断は折りたたみ済み";
+"Show or hide connection diagnostic details." = "接続診断の詳細を表示または非表示にします。";
 "Enable only when this private address is reachable through a VPN, tunnel, or private overlay shared by both devices." = "このプライベートアドレスが、両方のデバイスで共有する VPN、トンネル、またはプライベートオーバーレイ経由で到達できる場合にのみ有効にしてください。";
 "saved connection" = "保存済みの接続";
 
@@ -331,3 +365,4 @@
 "AetherLink will request fresh QR connection details from the saved bootstrap relay." = "AetherLink は保存済みブートストラップリレーから新しい QR 接続情報を要求します。";
 "AetherLink can prepare QR connection details when a pairing QR is generated." = "ペアリング QR の生成時に、AetherLink が QR 接続情報を準備できます。";
 "Add a reachable route before pairing from another network." = "別ネットワークからペアリングする前に、到達可能なルートを追加してください。";
+"%@. %@" = "%@。%@";

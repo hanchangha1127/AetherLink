@@ -19,6 +19,9 @@ import java.util.UUID
 private const val STORE_NAME = "runtime_local_store"
 private const val STORE_KEY = "runtime_data"
 private const val SUPPRESSED_REASON_DELETED = "deleted"
+internal const val APP_LANGUAGE_SOURCE_DEFAULT = "default"
+internal const val APP_LANGUAGE_SOURCE_SYSTEM = "system"
+internal const val APP_LANGUAGE_SOURCE_IN_APP = "in_app"
 
 class RuntimeLocalStore(
     context: Context,
@@ -61,6 +64,7 @@ data class PersistedRuntimeData(
     val suppressedRuntimeSessions: List<PersistedSuppressedRuntimeSession> = emptyList(),
     val memoryEntries: List<PersistedMemoryEntry> = emptyList(),
     val appLanguageTag: String = RuntimeAppLanguage.English.languageTag,
+    val appLanguageSource: String? = APP_LANGUAGE_SOURCE_DEFAULT,
     val appTheme: String = RuntimeAppTheme.System.storageValue,
     val pendingPairingRoute: PersistedPendingPairingRoute? = null,
 )
@@ -143,6 +147,19 @@ data class PersistedPendingPairingRoute(
 )
 
 internal fun PersistedRuntimeData.sanitized(): PersistedRuntimeData {
+    val cleanAppLanguageTag = RuntimeAppLanguage.normalizeLanguageTag(appLanguageTag)
+    val cleanAppLanguageSource = when (appLanguageSource?.trim()) {
+        APP_LANGUAGE_SOURCE_DEFAULT,
+        APP_LANGUAGE_SOURCE_SYSTEM,
+        APP_LANGUAGE_SOURCE_IN_APP -> appLanguageSource.trim()
+        else -> {
+            if (cleanAppLanguageTag == RuntimeAppLanguage.English.languageTag) {
+                APP_LANGUAGE_SOURCE_DEFAULT
+            } else {
+                APP_LANGUAGE_SOURCE_IN_APP
+            }
+        }
+    }
     val cleanSessions = sessions
         .filter { it.id.isNotBlank() }
         .distinctBy { it.id }
@@ -194,7 +211,8 @@ internal fun PersistedRuntimeData.sanitized(): PersistedRuntimeData {
         sessions = cleanSessions.sortedByDescending { it.updatedAtMillis },
         suppressedRuntimeSessions = cleanSuppressedRuntimeSessions.sortedByDescending { it.updatedAtMillis },
         memoryEntries = cleanMemory.sortedByDescending { it.updatedAtMillis },
-        appLanguageTag = RuntimeAppLanguage.normalizeLanguageTag(appLanguageTag),
+        appLanguageTag = cleanAppLanguageTag,
+        appLanguageSource = cleanAppLanguageSource,
         appTheme = RuntimeAppTheme.fromStorage(appTheme).storageValue,
         pendingPairingRoute = pendingPairingRoute?.sanitizedOrNull(),
     )
@@ -377,7 +395,20 @@ internal fun PersistedRuntimeData.withPairingOnboardingCompleted(): PersistedRun
 }
 
 internal fun PersistedRuntimeData.withAppLanguageTag(languageTag: String): PersistedRuntimeData {
-    return copy(appLanguageTag = RuntimeAppLanguage.normalizeLanguageTag(languageTag)).sanitized()
+    return copy(
+        appLanguageTag = RuntimeAppLanguage.normalizeLanguageTag(languageTag),
+        appLanguageSource = APP_LANGUAGE_SOURCE_IN_APP,
+    ).sanitized()
+}
+
+internal fun PersistedRuntimeData.withSystemAppLanguageTag(languageTag: String?): PersistedRuntimeData {
+    val cleanData = sanitized()
+    if (cleanData.appLanguageSource == APP_LANGUAGE_SOURCE_IN_APP) return cleanData
+    val normalizedLanguageTag = RuntimeAppLanguage.supportedLanguageTagOrNull(languageTag) ?: return cleanData
+    return cleanData.copy(
+        appLanguageTag = normalizedLanguageTag,
+        appLanguageSource = APP_LANGUAGE_SOURCE_SYSTEM,
+    ).sanitized()
 }
 
 internal fun PersistedRuntimeData.withAppTheme(theme: RuntimeAppTheme): PersistedRuntimeData {

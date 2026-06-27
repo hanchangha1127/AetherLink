@@ -1,8 +1,10 @@
 import Darwin
 import Foundation
+import CryptoKit
 import LMStudioBackend
 import OllamaBackend
 import Pairing
+import Security
 import Transport
 import TrustedDevices
 
@@ -236,6 +238,57 @@ public struct CompanionBootstrapRelaySettings: Equatable, Sendable {
     public var endpointLabel: String? {
         guard isEnabled, !endpoints.isEmpty else { return nil }
         return endpoints
+    }
+}
+
+public protocol CompanionRelaySecretStoring: Sendable {
+    func saveSecret(_ secret: String, for handle: String)
+    func readSecret(for handle: String) -> String?
+    func removeSecret(for handle: String)
+}
+
+public final class KeychainCompanionRelaySecretStore: CompanionRelaySecretStoring, @unchecked Sendable {
+    private let service: String
+
+    public init(service: String = "dev.aetherlink.relay-secret-store") {
+        self.service = service
+    }
+
+    public func saveSecret(_ secret: String, for handle: String) {
+        removeSecret(for: handle)
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: handle,
+            kSecValueData as String: Data(secret.utf8)
+        ]
+        SecItemAdd(query as CFDictionary, nil)
+    }
+
+    public func readSecret(for handle: String) -> String? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: handle,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+        var result: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
+              let data = result as? Data
+        else {
+            return nil
+        }
+        return String(data: data, encoding: .utf8)?.takeIfNotEmpty()
+    }
+
+    public func removeSecret(for handle: String) {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: handle
+        ]
+        SecItemDelete(query as CFDictionary)
     }
 }
 
@@ -547,6 +600,7 @@ public final class CompanionAppModel: ObservableObject {
     private let peerServer: any RuntimeTransport
     private let advertiser: any RuntimeAdvertiser
     private let relayClient: any RelayPeerTransport
+    private let relaySecretStore: any CompanionRelaySecretStoring
     private var remoteRelayRouteAllocator: any CompanionRemoteRelayRouteAllocating
     private let relayServiceRouteAllocator: any RelayServiceRouteAllocating
     private let environment: [String: String]
@@ -620,9 +674,13 @@ public final class CompanionAppModel: ObservableObject {
         relayServiceRouteAllocator: any RelayServiceRouteAllocating = TCPRelayServiceRouteAllocator(),
         environment: [String: String] = ProcessInfo.processInfo.environment,
         userDefaults: UserDefaults = .standard,
+        relaySecretStore: any CompanionRelaySecretStoring = KeychainCompanionRelaySecretStore(),
         runtimeRouteHostProvider: (() -> String?)? = nil
     ) {
-        let loadedBootstrapRelaySettings = Self.loadBootstrapRelaySettings(defaults: userDefaults)
+        let loadedBootstrapRelaySettings = Self.loadBootstrapRelaySettings(
+            defaults: userDefaults,
+            relaySecretStore: relaySecretStore
+        )
         self.backend = backend
         self.providerStatuses = Self.initialProviderStatuses(for: backend)
         self.peerServer = peerServer
@@ -632,6 +690,7 @@ public final class CompanionAppModel: ObservableObject {
         self.userDefaults = userDefaults
         self.bootstrapRelaySettings = loadedBootstrapRelaySettings
         self.relayClient = relayClient
+        self.relaySecretStore = relaySecretStore
         self.remoteRelayRouteAllocator = remoteRelayRouteAllocator ?? Self.makeRemoteRelayRouteAllocator(
             environment: environment,
             bootstrapRelaySettings: loadedBootstrapRelaySettings,
@@ -639,15 +698,20 @@ public final class CompanionAppModel: ObservableObject {
         )
         self.runtimeRouteHostProvider = runtimeRouteHostProvider ?? Self.defaultRuntimeRouteHost
         let macDeviceID = Self.loadOrCreateMacDeviceID(defaults: userDefaults)
-        let runtimeIdentity = Self.loadOrCreateRuntimeIdentityKey(deviceID: macDeviceID)
+        let runtimeIdentity = Self.loadOrCreateRuntimeIdentityKey(
+            deviceID: macDeviceID,
+            environment: environment
+        )
         self.macDeviceID = macDeviceID
         self.runtimeIdentityKey = runtimeIdentity.key
         self.runtimeIdentityWarning = runtimeIdentity.warning
         self.discoveryRouteToken = Self.loadOrCreateDiscoveryRouteToken(defaults: userDefaults)
         let relaySettings = Self.loadDevelopmentRelaySettings(
+            deviceID: macDeviceID,
             routeToken: discoveryRouteToken,
             environment: environment,
-            defaults: userDefaults
+            defaults: userDefaults,
+            relaySecretStore: relaySecretStore
         )
         let savedRelayLease = Self.loadSavedRemoteRouteLease(defaults: userDefaults)
         self.developmentRelaySettings = relaySettings
@@ -911,7 +975,10 @@ public final class CompanionAppModel: ObservableObject {
     }
 
     public func clearDevelopmentRelay() {
-        Self.clearSavedDevelopmentRelaySettings(defaults: userDefaults)
+        Self.clearSavedDevelopmentRelaySettings(
+            defaults: userDefaults,
+            relaySecretStore: relaySecretStore
+        )
         Self.clearSavedRemoteRouteLease(defaults: userDefaults)
         developmentRelaySettings = .disabled
         relayConfiguration = nil
@@ -942,7 +1009,11 @@ public final class CompanionAppModel: ObservableObject {
             allocationToken: allocationToken?.trimmingCharacters(in: .whitespacesAndNewlines),
             allowsPrivateOverlay: allowsPrivateOverlay
         )
-        Self.saveBootstrapRelaySettings(settings, defaults: userDefaults)
+        Self.saveBootstrapRelaySettings(
+            settings,
+            defaults: userDefaults,
+            relaySecretStore: relaySecretStore
+        )
         bootstrapRelaySettings = settings
         remoteRelayRouteAllocator = Self.makeRemoteRelayRouteAllocator(
             environment: environment,
@@ -968,7 +1039,10 @@ public final class CompanionAppModel: ObservableObject {
     }
 
     public func clearBootstrapRelay() {
-        Self.clearSavedBootstrapRelaySettings(defaults: userDefaults)
+        Self.clearSavedBootstrapRelaySettings(
+            defaults: userDefaults,
+            relaySecretStore: relaySecretStore
+        )
         bootstrapRelaySettings = .disabled
         remoteRelayRouteAllocator = Self.makeRemoteRelayRouteAllocator(
             environment: environment,
@@ -990,7 +1064,12 @@ public final class CompanionAppModel: ObservableObject {
             isEnvironmentOverride: false,
             allowsPrivateOverlay: developmentRelaySettings.allowsPrivateOverlay
         )
-        Self.saveDevelopmentRelaySettings(settings, defaults: userDefaults)
+        Self.saveDevelopmentRelaySettings(
+            settings,
+            deviceID: macDeviceID,
+            defaults: userDefaults,
+            relaySecretStore: relaySecretStore
+        )
         Self.clearSavedRemoteRouteLease(defaults: userDefaults)
         developmentRelaySettings = settings
         relayConfiguration = Self.relayConfiguration(for: settings, lease: nil)
@@ -1008,7 +1087,12 @@ public final class CompanionAppModel: ObservableObject {
     private func allocateRemoteRelayRouteIfAvailable(restartRelayClientIfRunning shouldRestartRelayClient: Bool = true) {
         do {
             let preferredRelaySecret = developmentRelaySettings.relaySecret?.takeIfNotEmpty()
-                ?? userDefaults.string(forKey: RelayDefaults.secret)?.takeIfNotEmpty()
+                ?? Self.loadSavedRelaySecret(
+                    deviceID: macDeviceID,
+                    relayID: developmentRelaySettings.relayID,
+                    defaults: userDefaults,
+                    relaySecretStore: relaySecretStore
+                )
             guard let allocation = try remoteRelayRouteAllocator.allocateRemoteRelayRoute(
                 runtimeDeviceID: macDeviceID,
                 routeToken: discoveryRouteToken,
@@ -1046,7 +1130,12 @@ public final class CompanionAppModel: ObservableObject {
                 isEnvironmentOverride: false,
                 allowsPrivateOverlay: allowsPrivateOverlayRelay
             )
-            Self.saveDevelopmentRelaySettings(settings, defaults: userDefaults)
+            Self.saveDevelopmentRelaySettings(
+                settings,
+                deviceID: macDeviceID,
+                defaults: userDefaults,
+                relaySecretStore: relaySecretStore
+            )
             if let lease = allocation.lease {
                 Self.saveRemoteRouteLease(lease, defaults: userDefaults)
             } else if Self.hasDynamicRelayAllocationEnvironment(environment) {
@@ -1217,7 +1306,12 @@ public final class CompanionAppModel: ObservableObject {
         _ settings: CompanionDevelopmentRelaySettings,
         lease: CompanionRemoteRouteLease?
     ) {
-        Self.saveDevelopmentRelaySettings(settings, defaults: userDefaults)
+        Self.saveDevelopmentRelaySettings(
+            settings,
+            deviceID: macDeviceID,
+            defaults: userDefaults,
+            relaySecretStore: relaySecretStore
+        )
         if let lease {
             Self.saveRemoteRouteLease(lease, defaults: userDefaults)
         } else {
@@ -1441,9 +1535,11 @@ public final class CompanionAppModel: ObservableObject {
     }
 
     private static func loadDevelopmentRelaySettings(
+        deviceID: String,
         routeToken: String,
         environment: [String: String],
-        defaults: UserDefaults
+        defaults: UserDefaults,
+        relaySecretStore: any CompanionRelaySecretStoring
     ) -> CompanionDevelopmentRelaySettings {
         if let host = environment["AETHERLINK_RELAY_HOST"]?.takeIfNotEmpty() {
             let port = UInt16(environment["AETHERLINK_RELAY_PORT"] ?? "") ?? 43171
@@ -1464,7 +1560,12 @@ public final class CompanionAppModel: ObservableObject {
             let relayID = environment["AETHERLINK_BOOTSTRAP_RELAY_ID"]?.takeIfNotEmpty() ?? routeToken
             let relaySecret = environment["AETHERLINK_BOOTSTRAP_RELAY_SECRET"]?.takeIfNotEmpty()
                 ?? environment["AETHERLINK_BOOTSTRAP_RELAY_FRAME_SECRET"]?.takeIfNotEmpty()
-                ?? defaults.string(forKey: RelayDefaults.secret)?.takeIfNotEmpty()
+                ?? loadSavedRelaySecret(
+                    deviceID: deviceID,
+                    relayID: relayID,
+                    defaults: defaults,
+                    relaySecretStore: relaySecretStore
+                )
             return CompanionDevelopmentRelaySettings(
                 isEnabled: true,
                 host: host,
@@ -1481,8 +1582,13 @@ public final class CompanionAppModel: ObservableObject {
         }
         let storedPort = defaults.integer(forKey: RelayDefaults.port)
         let port = UInt16(exactly: storedPort).flatMap { $0 == 0 ? nil : $0 } ?? 43171
-        let relaySecret = defaults.string(forKey: RelayDefaults.secret)?.takeIfNotEmpty()
         let relayID = defaults.string(forKey: RelayDefaults.relayID)?.takeIfNotEmpty() ?? routeToken
+        let relaySecret = loadSavedRelaySecret(
+            deviceID: deviceID,
+            relayID: relayID,
+            defaults: defaults,
+            relaySecretStore: relaySecretStore
+        )
         return CompanionDevelopmentRelaySettings(
             isEnabled: true,
             host: host,
@@ -1529,24 +1635,43 @@ public final class CompanionAppModel: ObservableObject {
 
     private static func saveDevelopmentRelaySettings(
         _ settings: CompanionDevelopmentRelaySettings,
-        defaults: UserDefaults
+        deviceID: String,
+        defaults: UserDefaults,
+        relaySecretStore: any CompanionRelaySecretStoring
     ) {
         defaults.set(settings.host, forKey: RelayDefaults.host)
         defaults.set(Int(settings.port), forKey: RelayDefaults.port)
         defaults.set(settings.relayID, forKey: RelayDefaults.relayID)
         defaults.set(settings.allowsPrivateOverlay, forKey: RelayDefaults.allowsPrivateOverlay)
+        let previousSecretRef = defaults.string(forKey: RelayDefaults.secretRef)?.takeIfNotEmpty()
         if let relaySecret = settings.relaySecret?.takeIfNotEmpty() {
-            defaults.set(relaySecret, forKey: RelayDefaults.secret)
+            let secretRef = relaySecretRef(deviceID: deviceID, relayID: settings.relayID)
+            relaySecretStore.saveSecret(relaySecret, for: secretRef)
+            defaults.set(secretRef, forKey: RelayDefaults.secretRef)
+            if let previousSecretRef, previousSecretRef != secretRef {
+                relaySecretStore.removeSecret(for: previousSecretRef)
+            }
         } else {
-            defaults.removeObject(forKey: RelayDefaults.secret)
+            if let previousSecretRef {
+                relaySecretStore.removeSecret(for: previousSecretRef)
+            }
+            defaults.removeObject(forKey: RelayDefaults.secretRef)
         }
+        defaults.removeObject(forKey: RelayDefaults.secret)
     }
 
-    private static func clearSavedDevelopmentRelaySettings(defaults: UserDefaults) {
+    private static func clearSavedDevelopmentRelaySettings(
+        defaults: UserDefaults,
+        relaySecretStore: any CompanionRelaySecretStoring
+    ) {
+        if let secretRef = defaults.string(forKey: RelayDefaults.secretRef)?.takeIfNotEmpty() {
+            relaySecretStore.removeSecret(for: secretRef)
+        }
         defaults.removeObject(forKey: RelayDefaults.host)
         defaults.removeObject(forKey: RelayDefaults.port)
         defaults.removeObject(forKey: RelayDefaults.relayID)
         defaults.removeObject(forKey: RelayDefaults.secret)
+        defaults.removeObject(forKey: RelayDefaults.secretRef)
         defaults.removeObject(forKey: RelayDefaults.allowsPrivateOverlay)
     }
 
@@ -1570,35 +1695,126 @@ public final class CompanionAppModel: ObservableObject {
         defaults.removeObject(forKey: RelayDefaults.leaseNonce)
     }
 
-    private static func loadBootstrapRelaySettings(defaults: UserDefaults) -> CompanionBootstrapRelaySettings {
+    private static func loadBootstrapRelaySettings(
+        defaults: UserDefaults,
+        relaySecretStore: any CompanionRelaySecretStoring
+    ) -> CompanionBootstrapRelaySettings {
         guard let endpoints = defaults.string(forKey: BootstrapRelayDefaults.endpoints)?.takeIfNotEmpty() else {
             return .disabled
         }
         return CompanionBootstrapRelaySettings(
             isEnabled: true,
             endpoints: endpoints,
-            allocationToken: defaults.string(forKey: BootstrapRelayDefaults.allocationToken)?.takeIfNotEmpty(),
+            allocationToken: loadSavedBootstrapAllocationToken(
+                endpoints: endpoints,
+                defaults: defaults,
+                relaySecretStore: relaySecretStore
+            ),
             allowsPrivateOverlay: defaults.bool(forKey: BootstrapRelayDefaults.allowsPrivateOverlay)
         )
     }
 
     private static func saveBootstrapRelaySettings(
         _ settings: CompanionBootstrapRelaySettings,
-        defaults: UserDefaults
+        defaults: UserDefaults,
+        relaySecretStore: any CompanionRelaySecretStoring
     ) {
         defaults.set(settings.endpoints, forKey: BootstrapRelayDefaults.endpoints)
         defaults.set(settings.allowsPrivateOverlay, forKey: BootstrapRelayDefaults.allowsPrivateOverlay)
+        let previousTokenRef = defaults.string(forKey: BootstrapRelayDefaults.allocationTokenRef)?.takeIfNotEmpty()
         if let allocationToken = settings.allocationToken?.takeIfNotEmpty() {
-            defaults.set(allocationToken, forKey: BootstrapRelayDefaults.allocationToken)
+            let tokenRef = bootstrapAllocationTokenRef(endpoints: settings.endpoints)
+            relaySecretStore.saveSecret(allocationToken, for: tokenRef)
+            defaults.set(tokenRef, forKey: BootstrapRelayDefaults.allocationTokenRef)
+            if let previousTokenRef, previousTokenRef != tokenRef {
+                relaySecretStore.removeSecret(for: previousTokenRef)
+            }
         } else {
-            defaults.removeObject(forKey: BootstrapRelayDefaults.allocationToken)
+            if let previousTokenRef {
+                relaySecretStore.removeSecret(for: previousTokenRef)
+            }
+            defaults.removeObject(forKey: BootstrapRelayDefaults.allocationTokenRef)
         }
+        defaults.removeObject(forKey: BootstrapRelayDefaults.allocationToken)
     }
 
-    private static func clearSavedBootstrapRelaySettings(defaults: UserDefaults) {
+    private static func clearSavedBootstrapRelaySettings(
+        defaults: UserDefaults,
+        relaySecretStore: any CompanionRelaySecretStoring
+    ) {
+        if let tokenRef = defaults.string(forKey: BootstrapRelayDefaults.allocationTokenRef)?.takeIfNotEmpty() {
+            relaySecretStore.removeSecret(for: tokenRef)
+        }
         defaults.removeObject(forKey: BootstrapRelayDefaults.endpoints)
         defaults.removeObject(forKey: BootstrapRelayDefaults.allocationToken)
+        defaults.removeObject(forKey: BootstrapRelayDefaults.allocationTokenRef)
         defaults.removeObject(forKey: BootstrapRelayDefaults.allowsPrivateOverlay)
+    }
+
+    private static func loadSavedRelaySecret(
+        deviceID: String,
+        relayID: String,
+        defaults: UserDefaults,
+        relaySecretStore: any CompanionRelaySecretStoring
+    ) -> String? {
+        let legacySecret = defaults.string(forKey: RelayDefaults.secret)?.takeIfNotEmpty()
+        let storedSecretRef = defaults.string(forKey: RelayDefaults.secretRef)?.takeIfNotEmpty()
+        if let legacySecret {
+            let secretRef = relaySecretRef(deviceID: deviceID, relayID: relayID)
+            relaySecretStore.saveSecret(legacySecret, for: secretRef)
+            defaults.set(secretRef, forKey: RelayDefaults.secretRef)
+            defaults.removeObject(forKey: RelayDefaults.secret)
+            if let storedSecretRef, storedSecretRef != secretRef {
+                relaySecretStore.removeSecret(for: storedSecretRef)
+            }
+            return legacySecret
+        }
+        guard let storedSecretRef else { return nil }
+        guard let secret = relaySecretStore.readSecret(for: storedSecretRef)?.takeIfNotEmpty() else {
+            defaults.removeObject(forKey: RelayDefaults.secretRef)
+            return nil
+        }
+        return secret
+    }
+
+    private static func loadSavedBootstrapAllocationToken(
+        endpoints: String,
+        defaults: UserDefaults,
+        relaySecretStore: any CompanionRelaySecretStoring
+    ) -> String? {
+        let legacyToken = defaults.string(forKey: BootstrapRelayDefaults.allocationToken)?.takeIfNotEmpty()
+        let storedTokenRef = defaults.string(forKey: BootstrapRelayDefaults.allocationTokenRef)?.takeIfNotEmpty()
+        if let legacyToken {
+            let tokenRef = bootstrapAllocationTokenRef(endpoints: endpoints)
+            relaySecretStore.saveSecret(legacyToken, for: tokenRef)
+            defaults.set(tokenRef, forKey: BootstrapRelayDefaults.allocationTokenRef)
+            defaults.removeObject(forKey: BootstrapRelayDefaults.allocationToken)
+            if let storedTokenRef, storedTokenRef != tokenRef {
+                relaySecretStore.removeSecret(for: storedTokenRef)
+            }
+            return legacyToken
+        }
+        guard let storedTokenRef else { return nil }
+        guard let token = relaySecretStore.readSecret(for: storedTokenRef)?.takeIfNotEmpty() else {
+            defaults.removeObject(forKey: BootstrapRelayDefaults.allocationTokenRef)
+            return nil
+        }
+        return token
+    }
+
+    private static func relaySecretRef(deviceID: String, relayID: String) -> String {
+        secretStoreRef(prefix: "relay-v1", parts: [deviceID, relayID])
+    }
+
+    private static func bootstrapAllocationTokenRef(endpoints: String) -> String {
+        secretStoreRef(prefix: "bootstrap-token-v1", parts: [endpoints])
+    }
+
+    private static func secretStoreRef(prefix: String, parts: [String]) -> String {
+        let joined = parts.joined(separator: "\n")
+        let digest = SHA256.hash(data: Data(joined.utf8))
+        let hex = digest.map { String(format: "%02x", $0) }.joined()
+        return "\(prefix)-\(hex)"
     }
 
     private static func generateRelaySecret() -> String {
@@ -1611,6 +1827,7 @@ public final class CompanionAppModel: ObservableObject {
         static let port = "aetherlink.relay.port"
         static let relayID = "aetherlink.relay.id"
         static let secret = "aetherlink.relay.secret"
+        static let secretRef = "aetherlink.relay.secret_ref"
         static let allowsPrivateOverlay = "aetherlink.relay.allows_private_overlay"
         static let leaseExpiresAt = "aetherlink.relay.lease_expires_at"
         static let leaseNonce = "aetherlink.relay.lease_nonce"
@@ -1619,6 +1836,7 @@ public final class CompanionAppModel: ObservableObject {
     private enum BootstrapRelayDefaults {
         static let endpoints = "aetherlink.bootstrap_relay.endpoints"
         static let allocationToken = "aetherlink.bootstrap_relay.allocation_token"
+        static let allocationTokenRef = "aetherlink.bootstrap_relay.allocation_token_ref"
         static let allowsPrivateOverlay = "aetherlink.bootstrap_relay.allows_private_overlay"
     }
 
@@ -1677,8 +1895,22 @@ public final class CompanionAppModel: ObservableObject {
     }
 
     private static func loadOrCreateRuntimeIdentityKey(
-        deviceID: String
+        deviceID: String,
+        environment: [String: String]
     ) -> (key: RuntimeIdentityKey, signer: (any RuntimeChallengeSigning)?, warning: String?) {
+        if let filePath = runtimeIdentityFilePathOverride(environment: environment) {
+            let fileStore = FileRuntimeIdentityKeyStore(fileURL: URL(fileURLWithPath: filePath))
+            do {
+                return (try fileStore.loadOrCreate(), fileStore, nil)
+            } catch {
+                return (
+                    RuntimeIdentityKey(publicKeyBase64: "", fingerprint: "dev-\(deviceID)"),
+                    nil,
+                    "Runtime identity file unavailable; using temporary fingerprint fallback."
+                )
+            }
+        }
+
         let store = RuntimeIdentityKeyStore()
         do {
             return (try store.loadOrCreate(), store, nil)
@@ -1698,6 +1930,20 @@ public final class CompanionAppModel: ObservableObject {
                 )
             }
         }
+    }
+
+    private static func runtimeIdentityFilePathOverride(environment: [String: String]) -> String? {
+        if let filePath = environment["AETHERLINK_RUNTIME_IDENTITY_FILE"]?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !filePath.isEmpty {
+            return filePath
+        }
+        if ProcessInfo.processInfo.processName == "xctest" ||
+            ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil {
+            return FileManager.default.temporaryDirectory
+                .appendingPathComponent("aetherlink-xctest-runtime-identity-\(ProcessInfo.processInfo.processIdentifier).json")
+                .path
+        }
+        return nil
     }
 
     nonisolated private static func defaultRuntimeRouteHost() -> String? {

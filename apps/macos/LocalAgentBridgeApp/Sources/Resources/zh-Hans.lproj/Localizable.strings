@@ -27,8 +27,10 @@
 "Model provider" = "模型提供方";
 "Quick Actions" = "快速操作";
 "Check Model Providers" = "检查模型提供方";
+"Check model provider availability through AetherLink Runtime." = "通过 AetherLink Runtime 检查模型提供方可用性。";
 "Load Model List" = "加载模型列表";
 "Load Local Models" = "加载模型";
+"Load the installed local model list through AetherLink Runtime." = "通过 AetherLink Runtime 加载已安装的本地模型列表。";
 "Local Models" = "模型";
 "Models" = "模型";
 "Readiness" = "就绪情况";
@@ -41,6 +43,7 @@
 "Needs attention" = "需要注意";
 "Not ready" = "未就绪";
 "Pending" = "待处理";
+"Activity item %@. Status %@." = "活动项 %@。状态 %@。";
 "Readiness %@. Status %@. %@" = "就绪情况 %@。状态 %@。%@";
 "Status item" = "状态项";
 "Unknown status" = "未知状态";
@@ -69,6 +72,8 @@
 "LM Studio connection error" = "LM Studio 连接错误";
 "Port" = "端口";
 "Generated automatically if blank" = "留空则自动创建";
+"Empty" = "空";
+"Entered" = "已输入";
 "Rotate Secret" = "刷新密钥";
 "Generate Latest QR" = "生成最新二维码";
 "Waiting for device" = "等待设备";
@@ -97,6 +102,9 @@
 "Unknown provider" = "未知提供方";
 "Unknown source" = "未知来源";
 "Size unknown" = "大小未知";
+"Model section" = "模型分区";
+"No model count" = "没有模型数量";
+"Model section %@. %@" = "模型分区 %@。%@";
 "Model %@. ID %@. Type %@. Provider %@. Source %@. State %@. Size %@" = "模型 %@。ID %@。类型 %@。提供方 %@。来源 %@。状态 %@。大小 %@";
 "Model Residency" = "模型驻留";
 "Model provider availability" = "模型提供方可用性";
@@ -136,6 +144,7 @@
 "Generate New QR" = "生成新二维码";
 "Pairing QR code" = "配对 QR 码";
 "Pairing QR code unavailable" = "配对 QR 码不可用";
+"Pairing QR time remaining" = "配对 QR 剩余时间";
 "Scan this QR from AetherLink." = "请在 AetherLink 中扫描此二维码。";
 "After pairing, manage or remove trusted devices in Trusted Devices." = "配对后，可在受信任设备中管理或移除受信任设备。";
 "Paired devices connect to AetherLink Runtime, not directly to model providers." = "已配对设备连接到 AetherLink Runtime，而不是直接连接模型提供方。";
@@ -145,10 +154,12 @@
 
 "Manage pairing trust and remove devices allowed to use AetherLink Runtime." = "管理配对信任，并移除可使用 AetherLink Runtime 的设备。";
 "Refresh Devices" = "刷新设备";
+"Refresh trusted devices from AetherLink Runtime." = "从 AetherLink Runtime 刷新受信任设备。";
 "Allowed Devices" = "允许的设备";
 "No trusted devices" = "没有受信任设备";
 "Pair a device before allowing runtime commands." = "允许运行时命令前，请先配对设备。";
 "Paired %@ · ID ending %@" = "已配对 %@ · ID 结尾 %@";
+"Paired %@. Device ID ending %@" = "已配对 %@。设备 ID 结尾 %@";
 "Key fingerprint %@" = "密钥指纹 %@";
 "Pairing details unavailable." = "配对详情不可用。";
 "Trusted device %@. %@. Key fingerprint %@" = "受信任设备 %@。%@。密钥指纹 %@";
@@ -167,6 +178,10 @@
 "Activity appears here after AetherLink Runtime starts receiving requests." = "AetherLink Runtime 开始接收请求后，活动会显示在这里。";
 "Technical Details" = "详情";
 "Technical details for %@" = "%@ 的详情";
+"Activity technical details expanded" = "活动详情已展开";
+"Activity technical details collapsed" = "活动详情已折叠";
+"Collapse to hide activity technical details." = "折叠以隐藏活动详情。";
+"Expand to show activity technical details." = "展开以显示活动详情。";
 "Connection setup result" = "连接设置结果";
 "Connection health" = "连接状态";
 "Connection preparation" = "连接准备";
@@ -177,8 +192,8 @@
 "AetherLink runtime stopped" = "AetherLink Runtime 已停止";
 "Model provider health check passed" = "模型提供方健康检查通过";
 "Pairing QR generated" = "已生成配对二维码";
-"Trusted %@" = "已信任 %@";
-"Removed %@" = "已移除 %@";
+"Trusted device %@" = "已信任设备 %@";
+"Removed trust for %@" = "已移除 %@ 的信任";
 "Received device runtime request" = "已收到设备运行时请求";
 "Loaded 1 model" = "已加载 1 个模型";
 "Loaded %@ models" = "已加载 %@ 个模型";
@@ -216,7 +231,11 @@
 "Reconnecting with saved connection details." = "正在使用已保存的连接信息重新连接。";
 "Scan once from AetherLink to trust this AetherLink Runtime." = "从 AetherLink 扫描一次以信任此 AetherLink Runtime。";
 "Generate a pairing QR. AetherLink prepares connection details automatically when available." = "生成配对二维码。可用时，AetherLink 会自动准备连接信息。";
+"Generate the latest pairing QR with saved connection details." = "使用已保存的连接信息生成最新配对二维码。";
 "Pairing QR is waiting for connection details." = "配对二维码正在等待连接信息。";
+"Pairing QR generation is unavailable from this view." = "此视图无法生成配对二维码。";
+"Latest QR generation is unavailable from this view." = "此视图无法生成最新二维码。";
+"Connection details are not ready for QR generation. Check Connection Recovery settings." = "用于生成二维码的连接信息尚未就绪。请检查连接恢复设置。";
 "Connection details for %@ cannot be included in this QR. Advanced Connection Setup needs an address both devices can reach." = "无法将 %@ 的连接信息写入此二维码。连接恢复需要两个设备都能访问的地址。";
 "Connection details are being prepared. Keep this window open; the QR appears when AetherLink Runtime is ready." = "正在准备连接信息。请保持此窗口打开，AetherLink Runtime 就绪后会显示二维码。";
 "Connection details for %@ are not ready yet. Keep this window open; the QR appears when AetherLink Runtime is ready." = "%@ 的连接信息尚未就绪。请保持此窗口打开，AetherLink Runtime 就绪后会显示二维码。";
@@ -224,6 +243,7 @@
 "This QR includes connection details for %@, but the secure connection secret is missing." = "此二维码包含 %@ 的连接信息，但缺少安全连接密钥。";
 "Generate a pairing QR. AetherLink prepares connection details automatically and shows the QR when ready." = "生成配对二维码。AetherLink 会自动准备连接信息，并在就绪后显示二维码。";
 "Generate a pairing QR first. If automatic connection preparation is unavailable, use Advanced Connection Setup only when needed." = "请先生成配对二维码。如果自动连接准备不可用，仅在需要时使用连接恢复。";
+"Pairing QR status" = "配对 QR 状态";
 "This QR verifies AetherLink Runtime and includes connection details for pairing or refresh." = "此二维码会验证 AetherLink Runtime，并包含配对或刷新所需的连接信息。";
 "Local Network permission helps nearby discovery; trust stays tied to this AetherLink Runtime." = "本地网络权限有助于附近发现；信任仍绑定到此 AetherLink Runtime。";
 "Keep AetherLink Runtime open until pairing completes." = "请保持 AetherLink Runtime 打开，直到配对完成。";
@@ -240,10 +260,13 @@
 "Optional" = "可选";
 "Enable only when this bootstrap relay is reachable through a VPN, tunnel, or private overlay shared by both devices." = "仅当两台设备通过共享的 VPN、隧道或私有覆盖网络可访问此引导中继时启用。";
 "Save Bootstrap Relay" = "保存引导中继";
+"Save bootstrap relay settings for future pairing QR connection details." = "保存用于后续配对二维码连接信息的引导中继设置。";
 "Bootstrap relay saved. Generate the latest QR and scan it in AetherLink to pair or refresh connectivity." = "已保存引导中继。生成最新二维码并在 AetherLink 中扫描，以配对或刷新连接。";
 "Connection address" = "连接地址";
 "Connection setup secret" = "受保护的连接密钥";
 "Save Connection" = "保存连接";
+"Save fallback connection details for future pairing QR routes." = "保存用于后续配对二维码路径的备用连接信息。";
+"Create a new connection setup secret for future pairing QR connection details." = "创建用于后续配对二维码连接信息的新连接设置密钥。";
 "Connection setup secret regenerated." = "已刷新受保护的连接密钥。";
 "Disable Connection" = "禁用连接";
 "Disable saved connection details for %@" = "禁用 %@ 的已保存连接信息";
@@ -306,12 +329,23 @@
 "Enter only the connection address. Put the port in the Port field." = "只输入连接地址。端口请填入端口字段。";
 "Nearby + cross-network" = "附近 + 跨网络";
 "Nearby only" = "仅附近";
-"No cross-network connection details are saved yet. Pairing still works nearby, and QR-based remote connection can be prepared later." = "尚未保存跨网络连接信息。附近配对仍可使用，基于二维码的远程连接可稍后准备。";
+"No cross-network connection details are saved yet. Nearby pairing still works. For another network, use a reachable relay, VPN, or tunnel before generating the latest QR." = "尚未保存跨网络连接信息。附近配对仍可使用。跨网络时，请先使用可访问的中继、VPN 或隧道，再生成最新二维码。";
 "This connection address is local-network only. Use a public, VPN, or tunnel address for different networks." = "此连接地址仅限本地网络。跨网络时请使用公共、VPN 或隧道地址。";
 "This connection address is private. Use a public address, or enable Private Overlay Route only when a VPN or tunnel makes it reachable from both devices." = "此连接地址是私有地址。请使用公共地址，或仅在 VPN 或隧道能让两个设备都访问它时启用私有覆盖路由。";
 "This connection address points back to AetherLink Runtime. A device on another network cannot reach it." = "此连接地址指向 AetherLink Runtime 自身。另一个网络上的设备无法访问。";
 "Trusted devices can find this AetherLink Runtime nearby after pairing." = "受信任设备配对后可在附近找到此 AetherLink Runtime。";
 "Use Private Overlay Route" = "使用私有覆盖路由";
+"Bootstrap relay Private Overlay Route" = "引导中继私有覆盖路由";
+"Fallback connection Private Overlay Route" = "备用连接私有覆盖路由";
+"Enabled" = "已启用";
+"Disabled" = "已关闭";
+"Connection Recovery settings" = "连接恢复设置";
+"Connection Recovery settings expanded" = "连接恢复设置已展开";
+"Connection Recovery settings collapsed" = "连接恢复设置已折叠";
+"Show or hide advanced connection recovery fields." = "显示或隐藏高级连接恢复字段。";
+"Connection diagnostics expanded" = "连接诊断已展开";
+"Connection diagnostics collapsed" = "连接诊断已折叠";
+"Show or hide connection diagnostic details." = "显示或隐藏连接诊断详情。";
 "Enable only when this private address is reachable through a VPN, tunnel, or private overlay shared by both devices." = "仅当此私有地址可通过两个设备共享的 VPN、隧道或私有覆盖网络访问时启用。";
 "saved connection" = "已保存的连接";
 
@@ -331,3 +365,4 @@
 "AetherLink will request fresh QR connection details from the saved bootstrap relay." = "AetherLink 将从已保存的引导中继请求新的二维码连接信息。";
 "AetherLink can prepare QR connection details when a pairing QR is generated." = "生成配对二维码时，AetherLink 可以准备二维码连接信息。";
 "Add a reachable route before pairing from another network." = "从另一个网络配对前，请添加可访问的路由。";
+"%@. %@" = "%@。%@";

@@ -267,6 +267,36 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(message?.payload["retryable"], .bool(true))
     }
 
+    @MainActor
+    func testRouteRefreshFailureRedactsRelaySecretsAndProviderEndpoints() async throws {
+        let sink = RecordingSink()
+        let routeRefresher = FakeRuntimeRouteRefresher(error: RuntimeRouteRefreshTestError(
+            message: "route.refresh failed relay_secret=relay-secret-1 route_token=route-token-1 https://provider.example.test:1234/v1/models http://127.0.0.1:11434/api/tags backend=192.168.1.23:11434"
+        ))
+        let router = makeRouter(
+            backend: MockBackend(),
+            routeRefresher: routeRefresher
+        )
+
+        router.handle(ProtocolEnvelope(type: MessageType.routeRefresh, requestID: "route-refresh-redacted"), sink: sink)
+
+        let message = try await sink.waitForMessages(count: 1).first
+        XCTAssertEqual(message?.type, MessageType.error)
+        XCTAssertEqual(message?.requestID, "route-refresh-redacted")
+        XCTAssertEqual(message?.payload["code"], .string("route_refresh_unavailable"))
+        XCTAssertEqual(message?.payload["message"], .string("AetherLink Runtime could not refresh remote route material."))
+        XCTAssertEqual(message?.payload["retryable"], .bool(true))
+        let payloadDescription = String(describing: message?.payload)
+        XCTAssertFalse(payloadDescription.contains("relay-secret-1"))
+        XCTAssertFalse(payloadDescription.contains("route-token-1"))
+        XCTAssertFalse(payloadDescription.contains("provider.example.test"))
+        XCTAssertFalse(payloadDescription.contains("127.0.0.1"))
+        XCTAssertFalse(payloadDescription.contains("192.168.1.23"))
+        XCTAssertFalse(payloadDescription.contains("11434"))
+        XCTAssertFalse(payloadDescription.contains("1234"))
+        XCTAssertEqual(routeRefresher.refreshCount, 1)
+    }
+
     func testChatSendStreamsDeltaAndDone() async throws {
         let sink = RecordingSink()
         let router = makeRouter(backend: MockBackend(
@@ -3419,6 +3449,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
     @MainActor
     func testCompanionAppModelDefaultPairingUsesRemoteRouteAllocator() async throws {
         let defaults = try isolatedDefaults()
+        let relaySecretStore = FakeCompanionRelaySecretStore()
         let relayClient = FakeRelayPeerClient()
         let allocator = FakeRemoteRelayRouteAllocator(
             allocation: CompanionRemoteRelayRouteAllocation(
@@ -3441,6 +3472,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
             relayClient: relayClient,
             remoteRelayRouteAllocator: allocator,
             userDefaults: defaults,
+            relaySecretStore: relaySecretStore,
             runtimeRouteHostProvider: { "192.168.1.44" }
         )
 
@@ -3455,7 +3487,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(relayClient.startedConfiguration?.host, "relay.bootstrap.test")
         XCTAssertEqual(relayClient.startedConfiguration?.relayNonce, "allocated-nonce-1")
         XCTAssertEqual(defaults.string(forKey: "aetherlink.relay.host"), "relay.bootstrap.test")
-        XCTAssertEqual(defaults.string(forKey: "aetherlink.relay.secret"), "secret-bootstrap-1")
+        assertStoredRelaySecret("secret-bootstrap-1", defaults: defaults, store: relaySecretStore)
 
         relayClient.emit(.waitingForPeer)
         await Task.yield()
@@ -3573,6 +3605,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         let defaults = try isolatedDefaults()
         defaults.set("relay-saved-dead.test:8443, relay-saved-good.test:443", forKey: "aetherlink.bootstrap_relay.endpoints")
         defaults.set("stored-allocation-token", forKey: "aetherlink.bootstrap_relay.allocation_token")
+        let relaySecretStore = FakeCompanionRelaySecretStore()
         let relayClient = FakeRelayPeerClient()
         let serviceAllocator = FakeRelayServiceRouteAllocator(
             allocations: [
@@ -3599,11 +3632,13 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
             relayServiceRouteAllocator: serviceAllocator,
             environment: [:],
             userDefaults: defaults,
+            relaySecretStore: relaySecretStore,
             runtimeRouteHostProvider: { "192.168.1.44" }
         )
 
         XCTAssertTrue(model.bootstrapRelaySettings.isEnabled)
         XCTAssertTrue(model.canPrepareRemoteRelayRouteAutomatically)
+        assertStoredBootstrapAllocationToken("stored-allocation-token", defaults: defaults, store: relaySecretStore)
 
         model.beginPairing()
 
@@ -3747,6 +3782,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         defaults.set(43171, forKey: "aetherlink.relay.port")
         defaults.set("relay-stale", forKey: "aetherlink.relay.id")
         defaults.set("saved-secret", forKey: "aetherlink.relay.secret")
+        let relaySecretStore = FakeCompanionRelaySecretStore()
         var events: [String] = []
         let relayClient = FakeRelayPeerClient {
             events.append("relay-start")
@@ -3778,6 +3814,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
                 "AETHERLINK_BOOTSTRAP_RELAY_ENDPOINTS": "relay.bootstrap.test:443"
             ],
             userDefaults: defaults,
+            relaySecretStore: relaySecretStore,
             runtimeRouteHostProvider: { "192.168.1.44" }
         )
 
@@ -3793,7 +3830,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(defaults.string(forKey: "aetherlink.relay.host"), "relay.bootstrap.test")
         XCTAssertEqual(defaults.integer(forKey: "aetherlink.relay.port"), 443)
         XCTAssertEqual(defaults.string(forKey: "aetherlink.relay.id"), "relay-renewed")
-        XCTAssertEqual(defaults.string(forKey: "aetherlink.relay.secret"), "saved-secret")
+        assertStoredRelaySecret("saved-secret", defaults: defaults, store: relaySecretStore)
         XCTAssertNil(model.pairingSession)
         XCTAssertFalse(model.logs.contains("Pairing code generated"))
     }
@@ -3805,6 +3842,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         defaults.set(43171, forKey: "aetherlink.relay.port")
         defaults.set("relay-saved", forKey: "aetherlink.relay.id")
         defaults.set("saved-secret", forKey: "aetherlink.relay.secret")
+        let relaySecretStore = FakeCompanionRelaySecretStore()
         let relayClient = FakeRelayPeerClient()
         let allocator = FakeRemoteRelayRouteAllocator(
             allocation: CompanionRemoteRelayRouteAllocation(
@@ -3824,6 +3862,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
             remoteRelayRouteAllocator: allocator,
             environment: [:],
             userDefaults: defaults,
+            relaySecretStore: relaySecretStore,
             runtimeRouteHostProvider: { "192.168.1.44" }
         )
 
@@ -3834,6 +3873,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(relayClient.startedConfiguration?.port, 43171)
         XCTAssertEqual(relayClient.startedConfiguration?.relayID, "relay-saved")
         XCTAssertEqual(relayClient.startedConfiguration?.relaySecret, "saved-secret")
+        assertStoredRelaySecret("saved-secret", defaults: defaults, store: relaySecretStore)
         XCTAssertNil(model.pairingSession)
         XCTAssertFalse(model.logs.contains("Pairing code generated"))
     }
@@ -3845,6 +3885,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         defaults.set(43171, forKey: "aetherlink.relay.port")
         defaults.set("relay-stale", forKey: "aetherlink.relay.id")
         defaults.set("saved-secret", forKey: "aetherlink.relay.secret")
+        let relaySecretStore = FakeCompanionRelaySecretStore()
         let relayClient = FakeRelayPeerClient()
         let allocator = FakeRemoteRelayRouteAllocator(
             allocation: CompanionRemoteRelayRouteAllocation(
@@ -3866,6 +3907,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
                 "AETHERLINK_BOOTSTRAP_RELAY_ENDPOINTS": "relay.bootstrap.test:443,relay.after-failure.test:443"
             ],
             userDefaults: defaults,
+            relaySecretStore: relaySecretStore,
             runtimeRouteHostProvider: { "192.168.1.44" }
         )
 
@@ -3891,6 +3933,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(relayClient.startedConfiguration?.relaySecret, "saved-secret")
         XCTAssertEqual(defaults.string(forKey: "aetherlink.relay.host"), "relay.after-failure.test")
         XCTAssertEqual(defaults.string(forKey: "aetherlink.relay.id"), "relay-after-failure")
+        assertStoredRelaySecret("saved-secret", defaults: defaults, store: relaySecretStore)
         XCTAssertNil(model.pairingSession)
     }
 
@@ -3901,6 +3944,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         defaults.set(43171, forKey: "aetherlink.relay.port")
         defaults.set("relay-saved", forKey: "aetherlink.relay.id")
         defaults.set("saved-secret", forKey: "aetherlink.relay.secret")
+        let relaySecretStore = FakeCompanionRelaySecretStore()
         let relayClient = FakeRelayPeerClient()
         let allocator = FakeRemoteRelayRouteAllocator(
             allocation: CompanionRemoteRelayRouteAllocation(
@@ -3920,6 +3964,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
             remoteRelayRouteAllocator: allocator,
             environment: [:],
             userDefaults: defaults,
+            relaySecretStore: relaySecretStore,
             runtimeRouteHostProvider: { "192.168.1.44" }
         )
 
@@ -3930,6 +3975,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertTrue(allocator.calls.isEmpty)
         XCTAssertEqual(relayClient.startedConfiguration?.host, "relay.saved.test")
         XCTAssertEqual(relayClient.startedConfiguration?.relayID, "relay-saved")
+        assertStoredRelaySecret("saved-secret", defaults: defaults, store: relaySecretStore)
         XCTAssertNil(model.pairingSession)
     }
 
@@ -4258,6 +4304,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
     @MainActor
     func testCompanionAppModelPersistsRelaySettingsAndIncludesRelayInQRCodeAfterRelayReady() async throws {
         let defaults = try isolatedDefaults()
+        let relaySecretStore = FakeCompanionRelaySecretStore()
         let transport = FakeRuntimeTransport()
         let relayClient = FakeRelayPeerClient()
         let serviceAllocator = FakeRelayServiceRouteAllocator(
@@ -4281,6 +4328,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
             relayClient: relayClient,
             relayServiceRouteAllocator: serviceAllocator,
             userDefaults: defaults,
+            relaySecretStore: relaySecretStore,
             runtimeRouteHostProvider: { "192.168.1.44" }
         )
 
@@ -4315,7 +4363,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertFalse(model.developmentRelaySettings.isEnvironmentOverride)
         XCTAssertEqual(defaults.string(forKey: "aetherlink.relay.host"), "relay.example.test")
         XCTAssertEqual(defaults.integer(forKey: "aetherlink.relay.port"), 43171)
-        XCTAssertEqual(defaults.string(forKey: "aetherlink.relay.secret"), "allocated-secret")
+        assertStoredRelaySecret("allocated-secret", defaults: defaults, store: relaySecretStore)
 
         let session = try XCTUnwrap(model.pairingSession)
         let qrItems = try queryItems(from: session.qrPayload)
@@ -4337,6 +4385,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
             advertiser: FakeRuntimeAdvertiser(),
             relayClient: restoredRelayClient,
             userDefaults: defaults,
+            relaySecretStore: relaySecretStore,
             runtimeRouteHostProvider: { "192.168.1.44" }
         )
         XCTAssertTrue(restoredModel.hasDevelopmentRelayRoute)
@@ -4347,7 +4396,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         restoredModel.regenerateDevelopmentRelaySecret()
         let regeneratedSecret = try XCTUnwrap(restoredModel.developmentRelaySettings.relaySecret)
         XCTAssertNotEqual(regeneratedSecret, "allocated-secret")
-        XCTAssertEqual(defaults.string(forKey: "aetherlink.relay.secret"), regeneratedSecret)
+        assertStoredRelaySecret(regeneratedSecret, defaults: defaults, store: relaySecretStore)
         restoredModel.start(port: 43211)
         restoredRelayClient.emit(.waitingForPeer)
         await Task.yield()
@@ -4365,7 +4414,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertFalse(restoredModel.relayFrameEncryptionEnabled)
         XCTAssertNil(defaults.string(forKey: "aetherlink.relay.host"))
         XCTAssertEqual(defaults.integer(forKey: "aetherlink.relay.port"), 0)
-        XCTAssertNil(defaults.string(forKey: "aetherlink.relay.secret"))
+        assertNoStoredRelaySecret(defaults: defaults, store: relaySecretStore)
         let clearedQueryItems = try queryItems(from: try XCTUnwrap(restoredModel.pairingSession).qrPayload)
         XCTAssertNil(clearedQueryItems["relay_host"])
         XCTAssertNil(clearedQueryItems["relay_port"])
@@ -4395,6 +4444,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
     @MainActor
     func testCompanionAppModelAllocatesRelayWhenSavingRelayWithAllocationAttempt() throws {
         let defaults = try isolatedDefaults()
+        let relaySecretStore = FakeCompanionRelaySecretStore()
         let lease = CompanionRemoteRouteLease(
             expiresAtEpochMillis: 4_102_444_800_000,
             nonce: "allocated-nonce"
@@ -4415,7 +4465,8 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
             peerServer: FakeRuntimeTransport(),
             advertiser: FakeRuntimeAdvertiser(),
             relayServiceRouteAllocator: serviceAllocator,
-            userDefaults: defaults
+            userDefaults: defaults,
+            relaySecretStore: relaySecretStore
         )
 
         let result = model.configureDevelopmentRelay(
@@ -4437,7 +4488,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(model.developmentRelaySettings.relaySecret, "allocated-secret")
         XCTAssertEqual(model.developmentRelayEndpoint, "relay.example.test:443")
         XCTAssertEqual(defaults.string(forKey: "aetherlink.relay.id"), "allocated-relay")
-        XCTAssertEqual(defaults.string(forKey: "aetherlink.relay.secret"), "allocated-secret")
+        assertStoredRelaySecret("allocated-secret", defaults: defaults, store: relaySecretStore)
         XCTAssertEqual(defaults.integer(forKey: "aetherlink.relay.lease_expires_at"), Int(lease.expiresAtEpochMillis))
         XCTAssertEqual(defaults.string(forKey: "aetherlink.relay.lease_nonce"), "allocated-nonce")
     }
@@ -4445,6 +4496,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
     @MainActor
     func testCompanionAppModelSavesBootstrapRelaySettingsAndAllocatesRoute() throws {
         let defaults = try isolatedDefaults()
+        let relaySecretStore = FakeCompanionRelaySecretStore()
         let serviceAllocator = FakeRelayServiceRouteAllocator(
             allocation: CompanionRemoteRelayRouteAllocation(
                 configuration: RelayPeerConfiguration(
@@ -4465,7 +4517,8 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
             advertiser: FakeRuntimeAdvertiser(),
             relayServiceRouteAllocator: serviceAllocator,
             environment: [:],
-            userDefaults: defaults
+            userDefaults: defaults,
+            relaySecretStore: relaySecretStore
         )
 
         let result = model.configureBootstrapRelay(
@@ -4480,13 +4533,13 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(model.bootstrapRelaySettings.allocationToken, "stored-bootstrap-token")
         XCTAssertTrue(model.bootstrapRelaySettings.allowsPrivateOverlay)
         XCTAssertEqual(defaults.string(forKey: "aetherlink.bootstrap_relay.endpoints"), "relay-bootstrap-saved.test:443")
-        XCTAssertEqual(defaults.string(forKey: "aetherlink.bootstrap_relay.allocation_token"), "stored-bootstrap-token")
+        assertStoredBootstrapAllocationToken("stored-bootstrap-token", defaults: defaults, store: relaySecretStore)
         XCTAssertTrue(defaults.bool(forKey: "aetherlink.bootstrap_relay.allows_private_overlay"))
         XCTAssertEqual(serviceAllocator.calls.first?.host, "relay-bootstrap-saved.test")
         XCTAssertEqual(serviceAllocator.calls.first?.port, 443)
         XCTAssertEqual(serviceAllocator.calls.first?.allocationToken, "stored-bootstrap-token")
         XCTAssertEqual(defaults.string(forKey: "aetherlink.relay.id"), "saved-bootstrap-relay")
-        XCTAssertEqual(defaults.string(forKey: "aetherlink.relay.secret"), "saved-bootstrap-secret")
+        assertStoredRelaySecret("saved-bootstrap-secret", defaults: defaults, store: relaySecretStore)
         XCTAssertEqual(defaults.integer(forKey: "aetherlink.relay.lease_expires_at"), 4_102_444_800_000)
         XCTAssertEqual(defaults.string(forKey: "aetherlink.relay.lease_nonce"), "saved-bootstrap-nonce")
     }
@@ -5030,6 +5083,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
     func testCompanionAppModelPersistsBootstrapAllocationLeaseForRestoredQRCode() async throws {
         let defaults = try isolatedDefaults()
         defaults.set("route-token-bootstrap", forKey: "aetherlink.discovery_route_token")
+        let relaySecretStore = FakeCompanionRelaySecretStore()
         let allocation = CompanionRemoteRelayRouteAllocation(
             configuration: RelayPeerConfiguration(
                 host: "relay.example.test",
@@ -5056,6 +5110,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
             remoteRelayRouteAllocator: allocator,
             environment: environment,
             userDefaults: defaults,
+            relaySecretStore: relaySecretStore,
             runtimeRouteHostProvider: { "192.168.1.44" }
         )
 
@@ -5074,7 +5129,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(qrItems["relay_scope"], "remote")
         XCTAssertNil(qrItems["host"])
         XCTAssertNil(qrItems["port"])
-        XCTAssertEqual(defaults.string(forKey: "aetherlink.relay.secret"), "allocated-secret-1")
+        assertStoredRelaySecret("allocated-secret-1", defaults: defaults, store: relaySecretStore)
         XCTAssertEqual(defaults.integer(forKey: "aetherlink.relay.lease_expires_at"), 4_102_444_800_000)
         XCTAssertEqual(defaults.string(forKey: "aetherlink.relay.lease_nonce"), "allocated-nonce-1")
 
@@ -5087,6 +5142,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
             remoteRelayRouteAllocator: FakeRemoteRelayRouteAllocator(allocation: nil),
             environment: environment,
             userDefaults: defaults,
+            relaySecretStore: relaySecretStore,
             runtimeRouteHostProvider: { "192.168.1.44" }
         )
 
@@ -5111,6 +5167,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         defaults.set("allocated-secret-1", forKey: "aetherlink.relay.secret")
         defaults.set(1_000, forKey: "aetherlink.relay.lease_expires_at")
         defaults.set("expired-nonce-1", forKey: "aetherlink.relay.lease_nonce")
+        let relaySecretStore = FakeCompanionRelaySecretStore()
         let relayClient = FakeRelayPeerClient()
         let allocator = FakeRemoteRelayRouteAllocator(
             allocation: CompanionRemoteRelayRouteAllocation(
@@ -5137,6 +5194,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
                 "AETHERLINK_BOOTSTRAP_RELAY_PORT": "443"
             ],
             userDefaults: defaults,
+            relaySecretStore: relaySecretStore,
             runtimeRouteHostProvider: { "192.168.1.44" }
         )
 
@@ -5156,6 +5214,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(allocator.calls.count, 2)
         XCTAssertEqual(allocator.calls.first?.preferredRelaySecret, "allocated-secret-1")
         XCTAssertEqual(allocator.calls.last?.preferredRelaySecret, "allocated-secret-2")
+        assertStoredRelaySecret("allocated-secret-2", defaults: defaults, store: relaySecretStore)
     }
 
     @MainActor
@@ -5455,15 +5514,33 @@ private func appendRawChatEventLogLine(_ line: String, to fileURL: URL) throws {
 @MainActor
 private final class FakeRuntimeRouteRefresher: RuntimeRouteRefreshing {
     private let result: RuntimeRouteRefreshResult?
+    private let error: (any Error)?
     private(set) var refreshCount = 0
 
     init(result: RuntimeRouteRefreshResult?) {
         self.result = result
+        self.error = nil
+    }
+
+    init(error: any Error) {
+        self.result = nil
+        self.error = error
     }
 
     func refreshRuntimeRoute() async throws -> RuntimeRouteRefreshResult? {
         refreshCount += 1
+        if let error {
+            throw error
+        }
         return result
+    }
+}
+
+private struct RuntimeRouteRefreshTestError: Error, LocalizedError {
+    var message: String
+
+    var errorDescription: String? {
+        message
     }
 }
 
@@ -5593,6 +5670,66 @@ private final class FakeRelayServiceRouteAllocator: RelayServiceRouteAllocating,
             throw RelayServiceRouteAllocationError.invalidResponse
         }
         return allocation
+    }
+}
+
+private final class FakeCompanionRelaySecretStore: CompanionRelaySecretStoring, @unchecked Sendable {
+    private(set) var secrets: [String: String] = [:]
+
+    func saveSecret(_ secret: String, for handle: String) {
+        secrets[handle] = secret
+    }
+
+    func readSecret(for handle: String) -> String? {
+        secrets[handle]
+    }
+
+    func removeSecret(for handle: String) {
+        secrets.removeValue(forKey: handle)
+    }
+}
+
+private func assertStoredRelaySecret(
+    _ expected: String,
+    defaults: UserDefaults,
+    store: FakeCompanionRelaySecretStore? = nil,
+    file: StaticString = #filePath,
+    line: UInt = #line
+) {
+    XCTAssertNil(defaults.string(forKey: "aetherlink.relay.secret"), file: file, line: line)
+    let secretRef = defaults.string(forKey: "aetherlink.relay.secret_ref")
+    XCTAssertFalse(secretRef?.isEmpty ?? true, file: file, line: line)
+    if let secretRef, let store {
+        XCTAssertEqual(store.secrets[secretRef], expected, file: file, line: line)
+    }
+}
+
+private func assertNoStoredRelaySecret(
+    defaults: UserDefaults,
+    store: FakeCompanionRelaySecretStore? = nil,
+    file: StaticString = #filePath,
+    line: UInt = #line
+) {
+    let secretRef = defaults.string(forKey: "aetherlink.relay.secret_ref")
+    XCTAssertNil(defaults.string(forKey: "aetherlink.relay.secret"), file: file, line: line)
+    XCTAssertNil(secretRef, file: file, line: line)
+    if let secretRef, let store {
+        XCTAssertNil(store.secrets[secretRef], file: file, line: line)
+    }
+}
+
+private func assertStoredBootstrapAllocationToken(
+    _ expected: String,
+    defaults: UserDefaults,
+    store: FakeCompanionRelaySecretStore? = nil,
+    file: StaticString = #filePath,
+    line: UInt = #line
+) {
+    XCTAssertNil(defaults.string(forKey: "aetherlink.bootstrap_relay.allocation_token"), file: file, line: line)
+    let tokenRef = defaults.string(forKey: "aetherlink.bootstrap_relay.allocation_token_ref")
+    XCTAssertFalse(tokenRef?.isEmpty ?? true, file: file, line: line)
+    if let tokenRef, let store {
+        XCTAssertEqual(store.secrets[tokenRef], expected, file: file, line: line)
     }
 }
 

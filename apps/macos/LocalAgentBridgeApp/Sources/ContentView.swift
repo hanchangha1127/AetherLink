@@ -25,6 +25,7 @@ struct ContentView: View {
                         .foregroundStyle(.tint)
                         .frame(width: 30, height: 30)
                         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
+                        .accessibilityHidden(true)
 
                     VStack(alignment: .leading, spacing: 2) {
                         Text(NSLocalizedString("AetherLink", comment: ""))
@@ -36,6 +37,8 @@ struct ContentView: View {
                 }
                 .padding(.horizontal, 14)
                 .padding(.top, 12)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(Text(sidebarBrandAccessibilityLabel()))
 
                 List(CompanionSection.allCases, selection: $selectedSection) { section in
                     Label(section.title, systemImage: section.systemImage)
@@ -80,12 +83,18 @@ struct ContentView: View {
                 } label: {
                     Label(NSLocalizedString("Check Model Providers", comment: ""), systemImage: "arrow.clockwise")
                 }
+                .help(modelProviderCheckActionAccessibilityHint())
+                .accessibilityValue(Text(modelProviderCheckActionAccessibilityValue()))
+                .accessibilityHint(Text(modelProviderCheckActionAccessibilityHint()))
 
                 Button {
                     Task { await model.loadModels() }
                 } label: {
                     Label(NSLocalizedString("Load Models", comment: ""), systemImage: "shippingbox")
                 }
+                .help(modelListLoadActionAccessibilityHint())
+                .accessibilityValue(Text(modelListLoadActionAccessibilityValue()))
+                .accessibilityHint(Text(modelListLoadActionAccessibilityHint()))
 
                 Button {
                     model.beginPairing()
@@ -98,7 +107,9 @@ struct ContentView: View {
                     }
                 }
                 .disabled(!canGeneratePairingQR)
-                .help(pairingQRGenerationCommandHelpText(isAvailable: canGeneratePairingQR))
+                .help(pairingQRGenerationActionAccessibilityHint(isAvailable: canGeneratePairingQR))
+                .accessibilityValue(Text(pairingQRGenerationActionAccessibilityValue(isAvailable: canGeneratePairingQR)))
+                .accessibilityHint(Text(pairingQRGenerationActionAccessibilityHint(isAvailable: canGeneratePairingQR)))
             }
         }
         .onAppear {
@@ -172,6 +183,29 @@ func pairingQRGenerationCommandHelpText(isAvailable: Bool) -> String {
         : NSLocalizedString("Pairing from another network needs connection details inside the pairing QR.", comment: "")
 }
 
+func pairingQRGenerationActionAccessibilityValue(
+    isAvailable: Bool,
+    hasAction: Bool = true
+) -> String {
+    isAvailable && hasAction
+        ? NSLocalizedString("Ready", comment: "")
+        : NSLocalizedString("Unavailable", comment: "")
+}
+
+func pairingQRGenerationActionAccessibilityHint(
+    isAvailable: Bool,
+    hasAction: Bool = true
+) -> String {
+    if !hasAction {
+        return NSLocalizedString("Pairing QR generation is unavailable from this view.", comment: "")
+    }
+    return pairingQRGenerationCommandHelpText(isAvailable: isAvailable)
+}
+
+func activePairingQRRenewalActionAccessibilityHint() -> String {
+    NSLocalizedString("Generate New QR", comment: "")
+}
+
 private struct AetherLinkAppearancePicker: View {
     @Binding var appearance: String
 
@@ -186,6 +220,7 @@ private struct AetherLinkAppearancePicker: View {
         }
         .pickerStyle(.menu)
         .controlSize(.small)
+        .accessibilityValue(Text(AetherLinkAppAppearance.normalized(appearance).title))
     }
 }
 
@@ -203,6 +238,7 @@ private struct AetherLinkLanguagePicker: View {
         }
         .pickerStyle(.menu)
         .controlSize(.small)
+        .accessibilityValue(Text(AetherLinkAppLanguage.normalized(languageTag).title))
     }
 }
 
@@ -269,4 +305,8 @@ func companionSectionAfterTrustedDeviceCountChange(
         current: current,
         trustedDeviceCount: trustedDeviceCount
     )
+}
+
+func sidebarBrandAccessibilityLabel() -> String {
+    NSLocalizedString("AetherLink Runtime", comment: "")
 }

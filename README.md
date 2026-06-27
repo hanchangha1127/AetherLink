@@ -327,6 +327,10 @@ English, Korean, Japanese, Simplified Chinese, and French. It confirms the files
 exist, can be linted as Apple strings property lists when `plutil` is available,
 and keep the same key set and order as English without duplicate keys.
 
+Android and macOS five-language app-language verification now covers Android
+resource parity, macOS localization parity, and the shared `chat.send.locale`
+handoff used by runtime-generated chat titles and follow-up suggestions.
+
 The copy hygiene check scans user-facing Android and macOS resources plus
 runtime/device-visible status strings for stale prototype wording. It blocks
 regressions such as visible model-provider implementation terms, legacy

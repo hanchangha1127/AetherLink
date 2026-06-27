@@ -46,8 +46,8 @@ object RuntimePairingPayloadParser {
         val pairingNonce = query["pairing_nonce"] ?: query["nonce"] ?: query["n"]
         val pairingCode = query["pairing_code"] ?: query["code"] ?: query["c"]
         val runtimeDeviceId = query["runtime_device_id"] ?: query["mac_device_id"] ?: query["device_id"] ?: query["rid"]
-        val runtimeName = (query["runtime_name"] ?: query["mac_name"] ?: query["name"] ?: query["rn"] ?: "AetherLink Runtime")
-            .decodeLegacyNamePlus()
+        val runtimeName = (query["runtime_name"] ?: query["mac_name"] ?: query["name"] ?: query["rn"])
+            .normalizedRuntimeName()
         val fingerprint = query["runtime_key_fingerprint"] ?: query["fingerprint"] ?: query["cert_fingerprint"] ?: query["rf"]
         val runtimePublicKeyBase64 = query["runtime_public_key"] ?: query["mac_public_key"] ?: query["public_key"] ?: query["rk"]
         val routeToken = query["route_token"] ?: query["discovery_token"] ?: query["rt"]
@@ -120,6 +120,9 @@ object RuntimePairingPayloadParser {
         require(pairingCode.matches(Regex("\\d{6}"))) { "Invalid pairing code" }
         require(!runtimeDeviceId.isNullOrBlank()) { "Missing runtime device id" }
         require(!fingerprint.isNullOrBlank()) { "Missing runtime fingerprint" }
+        routeToken?.let {
+            require(it.none(Char::isWhitespace)) { "Invalid route token" }
+        }
         val hasDirectEndpointField = host != null || rawPort != null
         if (hasDirectEndpointField && !hasExplicitRelayField) {
             require(host != null) { "Missing local diagnostic route host" }
@@ -194,9 +197,20 @@ object RuntimePairingPayloadParser {
     private fun String.decodeLegacyNamePlus(): String =
         replace('+', ' ')
 
+    private fun String?.normalizedRuntimeName(): String =
+        this
+            ?.decodeLegacyNamePlus()
+            ?.trim()
+            ?.replace(Regex("\\s+"), " ")
+            ?.take(RUNTIME_NAME_MAX_CHARS)
+            ?.takeIf { it.isNotBlank() }
+            ?: DEFAULT_RUNTIME_NAME
+
     private fun Long.normalizeRelayExpirationEpochMillis(): Long =
         if (this in 1 until MIN_REASONABLE_EPOCH_MILLIS) this * MILLIS_PER_SECOND else this
 
+    private const val DEFAULT_RUNTIME_NAME = "AetherLink Runtime"
+    private const val RUNTIME_NAME_MAX_CHARS = 80
     private const val MILLIS_PER_SECOND = 1_000L
     private const val MIN_REASONABLE_EPOCH_MILLIS = 100_000_000_000L
 }

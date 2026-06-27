@@ -33,7 +33,33 @@ struct CompanionPageHeader: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.bottom, 2)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(companionPageHeaderAccessibilityLabel(title: title, subtitle: subtitle)))
     }
+}
+
+func companionPageHeaderAccessibilityLabel(title: String, subtitle: String) -> String {
+    let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+    let cleanSubtitle = subtitle.trimmingCharacters(in: .whitespacesAndNewlines)
+
+    switch (cleanTitle.isEmpty, cleanSubtitle.isEmpty) {
+    case (false, false):
+        return String(
+            format: NSLocalizedString("%@. %@", comment: "Accessibility label joining a page title and subtitle."),
+            cleanTitle,
+            cleanSubtitle
+        )
+    case (false, true):
+        return cleanTitle
+    case (true, false):
+        return cleanSubtitle
+    case (true, true):
+        return ""
+    }
+}
+
+func companionEmptyStateAccessibilityLabel(title: String, description: String) -> String {
+    companionPageHeaderAccessibilityLabel(title: title, subtitle: description)
 }
 
 struct CompanionPanel<Content: View>: View {
@@ -169,6 +195,59 @@ func localizedBackendStatus(_ statuses: [CompanionProviderStatus]) -> String {
     }
 
     return NSLocalizedString("No model provider is responding.", comment: "")
+}
+
+struct MenuBarCommandTitles: Equatable {
+    let openAetherLink: String
+    let refresh: String
+    let loadModels: String
+    let quit: String
+}
+
+func menuBarRuntimeStatusText(_ status: CompanionTransportStatus) -> String {
+    String(
+        format: NSLocalizedString("Runtime: %@", comment: ""),
+        localizedTransportStatus(status)
+    )
+}
+
+func menuBarModelServiceStatusText(_ statuses: [CompanionProviderStatus]) -> String {
+    String(
+        format: NSLocalizedString("Model service: %@", comment: ""),
+        localizedBackendStatus(statuses)
+    )
+}
+
+func menuBarCommandTitles() -> MenuBarCommandTitles {
+    MenuBarCommandTitles(
+        openAetherLink: NSLocalizedString("Open AetherLink", comment: ""),
+        refresh: NSLocalizedString("Refresh", comment: ""),
+        loadModels: NSLocalizedString("Load Models", comment: ""),
+        quit: NSLocalizedString("Quit", comment: "")
+    )
+}
+
+func pairingQRGenerationCommandTitle(hasActiveSession: Bool) -> String {
+    if hasActiveSession {
+        return NSLocalizedString("Generate New QR", comment: "")
+    }
+    return NSLocalizedString("Generate Pairing QR", comment: "")
+}
+
+func modelProviderCheckActionAccessibilityValue() -> String {
+    NSLocalizedString("Ready", comment: "")
+}
+
+func modelProviderCheckActionAccessibilityHint() -> String {
+    NSLocalizedString("Check model provider availability through AetherLink Runtime.", comment: "")
+}
+
+func modelListLoadActionAccessibilityValue() -> String {
+    NSLocalizedString("Ready", comment: "")
+}
+
+func modelListLoadActionAccessibilityHint() -> String {
+    NSLocalizedString("Load the installed local model list through AetherLink Runtime.", comment: "")
 }
 
 private func localizedProviderAvailableStatus(_ provider: ModelProvider) -> String {

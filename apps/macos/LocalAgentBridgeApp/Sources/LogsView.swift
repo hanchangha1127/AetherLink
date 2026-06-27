@@ -15,12 +15,23 @@ struct LogsView: View {
 
             CompanionPanel(title: NSLocalizedString("Activity", comment: ""), systemImage: "clock.arrow.circlepath") {
                 if model.logs.isEmpty {
+                    let emptyActivityTitle = NSLocalizedString("No activity yet", comment: "")
+                    let emptyActivityDescription = NSLocalizedString("Activity appears here after AetherLink Runtime starts receiving requests.", comment: "")
                     ContentUnavailableView(
-                        NSLocalizedString("No activity yet", comment: ""),
+                        emptyActivityTitle,
                         systemImage: "list.bullet.rectangle",
-                        description: Text(NSLocalizedString("Activity appears here after AetherLink Runtime starts receiving requests.", comment: ""))
+                        description: Text(emptyActivityDescription)
                     )
                     .frame(maxWidth: .infinity, minHeight: 300)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(
+                        Text(
+                            companionEmptyStateAccessibilityLabel(
+                                title: emptyActivityTitle,
+                                description: emptyActivityDescription
+                            )
+                        )
+                    )
                 } else {
                     List(model.logs, id: \.self) { line in
                         LogRow(display: localizedLogDisplay(line), tone: logTone(line))
@@ -48,6 +59,7 @@ private struct LogRow: View {
                 .font(.caption)
                 .foregroundStyle(tone.color)
                 .frame(width: 16)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 4) {
                 Text(display.summary)
                     .font(.body)
@@ -66,10 +78,14 @@ private struct LogRow: View {
                             .font(.caption.weight(.medium))
                     }
                     .accessibilityLabel(Text(logTechnicalDetailsAccessibilityLabel(summary: display.summary)))
+                    .accessibilityValue(Text(logTechnicalDetailsAccessibilityValue(isExpanded: diagnosticsExpanded)))
+                    .accessibilityHint(Text(logTechnicalDetailsAccessibilityHint(isExpanded: diagnosticsExpanded)))
                     .tint(.secondary)
                 }
             }
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(Text(logRowAccessibilityLabel(summary: display.summary, tone: tone)))
     }
 }
 
@@ -94,6 +110,36 @@ private func logTone(_ line: String) -> StatusTone {
         return .ready
     }
     return .neutral
+}
+
+func logToneAccessibilityStatus(_ tone: StatusTone) -> String {
+    switch tone {
+    case .ready:
+        return NSLocalizedString("Ready", comment: "")
+    case .warning:
+        return NSLocalizedString("Needs attention", comment: "")
+    case .inactive:
+        return NSLocalizedString("Not ready", comment: "")
+    case .neutral:
+        return NSLocalizedString("Pending", comment: "")
+    }
+}
+
+func logRowAccessibilityLabel(summary: String, tone: StatusTone) -> String {
+    let normalizedSummary = summary
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+        .trimmingCharacters(in: CharacterSet(charactersIn: ".。"))
+    let rawEventSummary = normalizedSummary.isEmpty
+        ? NSLocalizedString("Runtime event recorded.", comment: "")
+        : normalizedSummary
+    let eventSummary = rawEventSummary
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+        .trimmingCharacters(in: CharacterSet(charactersIn: ".。"))
+    return String(
+        format: NSLocalizedString("Activity item %@. Status %@.", comment: ""),
+        eventSummary,
+        logToneAccessibilityStatus(tone)
+    )
 }
 
 func localizedLogDisplay(_ line: String) -> LogDisplay {
@@ -163,16 +209,16 @@ func localizedLogDisplay(_ line: String) -> LogDisplay {
         if line.hasPrefix("Trusted ") {
             return LogDisplay(
                 summary: String(
-                    format: NSLocalizedString("Trusted %@", comment: ""),
-                    String(line.dropFirst("Trusted ".count))
+                    format: NSLocalizedString("Trusted device %@", comment: ""),
+                    trustedDeviceAuditLogName(String(line.dropFirst("Trusted ".count)))
                 )
             )
         }
         if line.hasPrefix("Removed ") {
             return LogDisplay(
                 summary: String(
-                    format: NSLocalizedString("Removed %@", comment: ""),
-                    String(line.dropFirst("Removed ".count))
+                    format: NSLocalizedString("Removed trust for %@", comment: ""),
+                    trustedDeviceAuditLogName(String(line.dropFirst("Removed ".count)))
                 )
             )
         }
@@ -315,6 +361,13 @@ func localizedLogDisplay(_ line: String) -> LogDisplay {
     }
 }
 
+private func trustedDeviceAuditLogName(_ rawName: String) -> String {
+    let trimmedName = rawName.trimmingCharacters(in: .whitespacesAndNewlines)
+    return trimmedName.isEmpty
+        ? NSLocalizedString("Selected device", comment: "")
+        : trimmedName
+}
+
 func logTechnicalDetailsAccessibilityLabel(summary: String) -> String {
     let normalizedSummary = summary.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
         ?? NSLocalizedString("Runtime event recorded.", comment: "")
@@ -322,6 +375,18 @@ func logTechnicalDetailsAccessibilityLabel(summary: String) -> String {
         format: NSLocalizedString("Technical details for %@", comment: ""),
         normalizedSummary
     )
+}
+
+func logTechnicalDetailsAccessibilityValue(isExpanded: Bool) -> String {
+    isExpanded
+        ? NSLocalizedString("Activity technical details expanded", comment: "")
+        : NSLocalizedString("Activity technical details collapsed", comment: "")
+}
+
+func logTechnicalDetailsAccessibilityHint(isExpanded: Bool) -> String {
+    isExpanded
+        ? NSLocalizedString("Collapse to hide activity technical details.", comment: "")
+        : NSLocalizedString("Expand to show activity technical details.", comment: "")
 }
 
 private func detail(after prefix: String, in line: String) -> String? {

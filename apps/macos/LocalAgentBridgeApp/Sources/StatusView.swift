@@ -70,6 +70,11 @@ struct StatusView: View {
 
                 CompanionPanel(title: NSLocalizedString("Quick Actions", comment: ""), systemImage: "bolt.horizontal") {
                     HStack(spacing: 10) {
+                        let canRunPairingQRAction = canGeneratePairingQR && onGenerateRelayQRCode != nil
+                        let pairingQRActionHint = pairingQRGenerationActionAccessibilityHint(
+                            isAvailable: canGeneratePairingQR,
+                            hasAction: onGenerateRelayQRCode != nil
+                        )
                         Button {
                             onGenerateRelayQRCode?()
                         } label: {
@@ -80,8 +85,17 @@ struct StatusView: View {
                             }
                         }
                         .buttonStyle(.borderedProminent)
-                        .disabled(!canGeneratePairingQR || onGenerateRelayQRCode == nil)
-                        .help(pairingQRGenerationHelpText)
+                        .disabled(!canRunPairingQRAction)
+                        .help(pairingQRActionHint)
+                        .accessibilityValue(
+                            Text(
+                                pairingQRGenerationActionAccessibilityValue(
+                                    isAvailable: canGeneratePairingQR,
+                                    hasAction: onGenerateRelayQRCode != nil
+                                )
+                            )
+                        )
+                        .accessibilityHint(Text(pairingQRActionHint))
 
                         Button {
                             Task { await model.refreshBackendStatus() }
@@ -89,6 +103,9 @@ struct StatusView: View {
                             Label(NSLocalizedString("Check Model Providers", comment: ""), systemImage: "arrow.clockwise")
                         }
                         .buttonStyle(.bordered)
+                        .help(modelProviderCheckActionAccessibilityHint())
+                        .accessibilityValue(Text(modelProviderCheckActionAccessibilityValue()))
+                        .accessibilityHint(Text(modelProviderCheckActionAccessibilityHint()))
 
                         Button {
                             Task { await model.loadModels() }
@@ -96,6 +113,9 @@ struct StatusView: View {
                             Label(NSLocalizedString("Load Models", comment: ""), systemImage: "shippingbox")
                         }
                         .buttonStyle(.bordered)
+                        .help(modelListLoadActionAccessibilityHint())
+                        .accessibilityValue(Text(modelListLoadActionAccessibilityValue()))
+                        .accessibilityHint(Text(modelListLoadActionAccessibilityHint()))
                     }
                     .controlSize(.regular)
                 }
@@ -113,12 +133,23 @@ struct StatusView: View {
 
                 CompanionPanel(title: NSLocalizedString("Models", comment: ""), systemImage: "shippingbox") {
                     if model.models.isEmpty {
+                        let emptyModelsTitle = NSLocalizedString("No models loaded", comment: "")
+                        let emptyModelsDescription = NSLocalizedString("Load models available through AetherLink Runtime.", comment: "")
                         ContentUnavailableView(
-                            NSLocalizedString("No models loaded", comment: ""),
+                            emptyModelsTitle,
                             systemImage: "shippingbox",
-                            description: Text(NSLocalizedString("Load models available through AetherLink Runtime.", comment: ""))
+                            description: Text(emptyModelsDescription)
                         )
                         .frame(maxWidth: .infinity, minHeight: 180)
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(
+                            Text(
+                                companionEmptyStateAccessibilityLabel(
+                                    title: emptyModelsTitle,
+                                    description: emptyModelsDescription
+                                )
+                            )
+                        )
                     } else {
                         VStack(spacing: 0) {
                             ForEach(modelGroups) { group in
@@ -170,7 +201,7 @@ struct StatusView: View {
         if model.hasDevelopmentRelayRoute {
             return connectionRouteStatusDetail
         }
-        return NSLocalizedString("No cross-network connection details are saved yet. Pairing still works nearby, and QR-based remote connection can be prepared later.", comment: "")
+        return NSLocalizedString("No cross-network connection details are saved yet. Nearby pairing still works. For another network, use a reachable relay, VPN, or tunnel before generating the latest QR.", comment: "")
     }
 
     private var connectionRouteStatusDetail: String {
@@ -461,9 +492,7 @@ struct StatusView: View {
     }
 
     private var pairingQRGenerationHelpText: String {
-        canGeneratePairingQR
-            ? NSLocalizedString("Generate Pairing QR", comment: "")
-            : NSLocalizedString("Pairing from another network needs connection details inside the pairing QR.", comment: "")
+        pairingQRGenerationActionAccessibilityHint(isAvailable: canGeneratePairingQR)
     }
 }
 
@@ -668,6 +697,10 @@ private struct ModelGroupSection: View {
             }
             .padding(.top, 12)
             .padding(.bottom, 4)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(
+                Text(modelGroupHeaderAccessibilityLabel(title: group.title, count: group.countText))
+            )
 
             ForEach(group.models) { item in
                 ModelRow(model: item)
@@ -829,6 +862,18 @@ private struct ModelRow: View {
     }
 }
 
+func modelGroupHeaderAccessibilityLabel(title: String, count: String) -> String {
+    let normalizedTitle = trimmedNonEmpty(title)
+        ?? NSLocalizedString("Model section", comment: "")
+    let normalizedCount = trimmedNonEmpty(count)
+        ?? NSLocalizedString("No model count", comment: "")
+    return String(
+        format: NSLocalizedString("Model section %@. %@", comment: ""),
+        normalizedTitle,
+        normalizedCount
+    )
+}
+
 func modelRowAccessibilityLabel(
     name: String,
     identifier: String,
@@ -983,6 +1028,8 @@ private struct ProviderStatusRow: View {
                         }
                     )
                     .accessibilityLabel(Text(providerStatusTechnicalDetailsAccessibilityLabel(providerName: status.name)))
+                    .accessibilityValue(Text(providerStatusTechnicalDetailsAccessibilityValue(isExpanded: diagnosticsExpanded)))
+                    .accessibilityHint(Text(providerStatusTechnicalDetailsAccessibilityHint(isExpanded: diagnosticsExpanded)))
                     .tint(.secondary)
                 }
             }
@@ -1134,6 +1181,36 @@ func providerStatusTechnicalDetailsAccessibilityLabel(providerName: String) -> S
         format: NSLocalizedString("Technical details for %@", comment: ""),
         normalizedProviderName
     )
+}
+
+func providerStatusTechnicalDetailsAccessibilityValue(isExpanded: Bool) -> String {
+    switch AetherLinkAppLanguage.selected {
+    case .english:
+        return isExpanded ? "Provider details expanded" : "Provider details collapsed"
+    case .korean:
+        return isExpanded ? "제공자 세부 정보 펼쳐짐" : "제공자 세부 정보 접힘"
+    case .japanese:
+        return isExpanded ? "プロバイダー詳細は展開済み" : "プロバイダー詳細は折りたたみ済み"
+    case .simplifiedChinese:
+        return isExpanded ? "提供方详情已展开" : "提供方详情已折叠"
+    case .french:
+        return isExpanded ? "Détails du fournisseur développés" : "Détails du fournisseur réduits"
+    }
+}
+
+func providerStatusTechnicalDetailsAccessibilityHint(isExpanded: Bool) -> String {
+    switch AetherLinkAppLanguage.selected {
+    case .english:
+        return isExpanded ? "Collapse to hide provider details." : "Expand to show provider details."
+    case .korean:
+        return isExpanded ? "제공자 세부 정보를 숨기려면 접으세요." : "제공자 세부 정보를 보려면 펼치세요."
+    case .japanese:
+        return isExpanded ? "プロバイダー詳細を非表示にするには折りたたみます。" : "プロバイダー詳細を表示するには展開します。"
+    case .simplifiedChinese:
+        return isExpanded ? "折叠以隐藏提供方详情。" : "展开以显示提供方详情。"
+    case .french:
+        return isExpanded ? "Réduire pour masquer les détails du fournisseur." : "Développer pour afficher les détails du fournisseur."
+    }
 }
 
 func providerStatusPillAccessibilityLabel(providerName: String, status: String) -> String {

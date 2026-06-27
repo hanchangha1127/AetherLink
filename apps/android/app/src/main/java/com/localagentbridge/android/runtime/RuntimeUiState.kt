@@ -63,9 +63,12 @@ enum class RuntimeAppLanguage(val languageTag: String) {
             .filter { it.isNotBlank() }
             .toSet()
 
-        fun normalizeLanguageTag(languageTag: String): String {
-            val normalized = languageTag.trim().replace('_', '-')
-            if (normalized.isBlank()) return English.languageTag
+        fun supportedLanguageTagOrNull(languageTag: String?): String? {
+            val normalized = languageTag
+                ?.trim()
+                ?.replace('_', '-')
+                ?: return null
+            if (normalized.isBlank()) return null
             if (
                 normalized.equals("zh-CN", ignoreCase = true) ||
                 normalized.equals("zh-Hans", ignoreCase = true) ||
@@ -74,10 +77,17 @@ enum class RuntimeAppLanguage(val languageTag: String) {
             ) {
                 return SimplifiedChinese.languageTag
             }
+            val baseLanguage = normalized.substringBefore('-')
             return entries
-                .firstOrNull { it.languageTag.equals(normalized, ignoreCase = true) }
+                .firstOrNull { language ->
+                    language.languageTag.equals(normalized, ignoreCase = true) ||
+                        language.languageTag.equals(baseLanguage, ignoreCase = true)
+                }
                 ?.languageTag
-                ?: English.languageTag
+        }
+
+        fun normalizeLanguageTag(languageTag: String): String {
+            return supportedLanguageTagOrNull(languageTag) ?: English.languageTag
         }
     }
 }

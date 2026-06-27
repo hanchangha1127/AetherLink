@@ -1,12 +1,16 @@
 package com.localagentbridge.android
 
 import android.Manifest
+import android.app.LocaleManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.Configuration
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.LocaleList
+import android.provider.Settings
 import androidx.activity.SystemBarStyle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.LocalActivityResultRegistryOwner
@@ -111,12 +115,16 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -192,6 +200,14 @@ private fun Intent.developerDiagnosticsRequested(): Boolean {
     return getBooleanExtra(DEVELOPER_DIAGNOSTICS_EXTRA, false)
 }
 
+internal fun androidSystemAppLanguageTag(context: Context): String? {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return null
+    val localeManager = context.getSystemService(LocaleManager::class.java) ?: return null
+    val locales = localeManager.applicationLocales
+    if (locales.size() == 0) return null
+    return locales.get(0).toLanguageTag()
+}
+
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
 private fun LocalAgentBridgeApp(
@@ -201,6 +217,10 @@ private fun LocalAgentBridgeApp(
 ) {
     val viewModel: RuntimeClientViewModel = viewModel()
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val baseContext = LocalContext.current
+    LaunchedEffect(viewModel, baseContext) {
+        viewModel.reconcileSystemAppLanguageTag(androidSystemAppLanguageTag(baseContext))
+    }
     AetherLinkTheme(theme = state.selectedTheme) {
         Surface(
             modifier = Modifier.fillMaxSize(),
@@ -251,7 +271,7 @@ private fun LocalAgentBridgeApp(
             val attachmentPickerLauncher = rememberLauncherForActivityResult(
                 contract = ActivityResultContracts.OpenMultipleDocuments(),
             ) { uris ->
-                viewModel.addAttachments(uris)
+                handlePickedAttachments(uris, viewModel::addAttachments)
             }
             val handlePairingQr: (String) -> Unit = { rawValue ->
                 returnToChatAfterPairing = state.trustedRuntime == null ||
@@ -393,9 +413,12 @@ private fun LocalAgentBridgeApp(
             ) {
                 Row(modifier = Modifier.fillMaxSize()) {
                     if (usePermanentNavigation) {
+                        val newChatEnabled = newChatActionEnabled(state)
+                        val newChatStateDescription = newChatActionStateDescription(state)
                         AetherLinkPermanentNavigationRail(
                             selectedDestination = effectiveDestination,
-                            newChatEnabled = !state.isStreaming,
+                            newChatEnabled = newChatEnabled,
+                            newChatStateDescription = newChatStateDescription,
                             onNewChat = {
                                 viewModel.startNewChat()
                                 destination = AppDestination.Chat
@@ -521,6 +544,10 @@ internal fun AetherLinkTopAppBar(
     onSelectModel: (String) -> Unit,
 ) {
     val hapticFeedback = LocalHapticFeedback.current
+    val newChatEnabled = newChatActionEnabled(state)
+    val newChatStateDescription = newChatActionStateDescription(state)
+    val openNavigationActionLabel = stringResource(R.string.content_desc_open_navigation)
+    val newChatActionLabel = stringResource(R.string.new_chat)
 
     Column {
         TopAppBar(
@@ -545,10 +572,13 @@ internal fun AetherLinkTopAppBar(
                         hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
                         onOpenNavigation()
                     },
+                    modifier = Modifier.semantics {
+                        onClick(label = openNavigationActionLabel, action = null)
+                    },
                 ) {
                     Icon(
                         imageVector = Icons.Filled.Menu,
-                        contentDescription = stringResource(R.string.content_desc_open_navigation),
+                        contentDescription = openNavigationActionLabel,
                     )
                 }
             },
@@ -559,11 +589,15 @@ internal fun AetherLinkTopAppBar(
                             hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
                             onStartNewChat()
                         },
-                        enabled = !state.isStreaming,
+                        enabled = newChatEnabled,
+                        modifier = Modifier.semantics {
+                            stateDescription = newChatStateDescription
+                            onClick(label = newChatActionLabel, action = null)
+                        },
                     ) {
                         Icon(
                             imageVector = Icons.Filled.Edit,
-                            contentDescription = stringResource(R.string.new_chat),
+                            contentDescription = newChatActionLabel,
                         )
                     }
                 }
@@ -573,6 +607,19 @@ internal fun AetherLinkTopAppBar(
             color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.36f),
         )
     }
+}
+
+@Composable
+private fun newChatActionStateDescription(state: RuntimeUiState): String {
+    return when {
+        state.trustedRuntime == null -> stringResource(R.string.new_chat_state_pairing_required)
+        state.isStreaming -> stringResource(R.string.new_chat_state_wait_for_stream)
+        else -> stringResource(R.string.new_chat_state_ready)
+    }
+}
+
+internal fun newChatActionEnabled(state: RuntimeUiState): Boolean {
+    return state.trustedRuntime != null && !state.isStreaming
 }
 
 @Composable
@@ -607,13 +654,15 @@ private fun LocalizedContent(
 }
 
 @Composable
-private fun AetherLinkPermanentNavigationRail(
+internal fun AetherLinkPermanentNavigationRail(
     selectedDestination: AppDestination,
     newChatEnabled: Boolean,
+    newChatStateDescription: String,
     onNewChat: () -> Unit,
     onSelectDestination: (AppDestination) -> Unit,
 ) {
     val hapticFeedback = LocalHapticFeedback.current
+    val newChatActionLabel = stringResource(R.string.new_chat)
 
     NavigationRail(
         modifier = Modifier
@@ -627,10 +676,14 @@ private fun AetherLinkPermanentNavigationRail(
                     onNewChat()
                 },
                 enabled = newChatEnabled,
+                modifier = Modifier.semantics {
+                    stateDescription = newChatStateDescription
+                    onClick(label = newChatActionLabel, action = null)
+                },
             ) {
                 Icon(
                     imageVector = Icons.Filled.Edit,
-                    contentDescription = stringResource(R.string.new_chat),
+                    contentDescription = newChatActionLabel,
                 )
             }
         },
@@ -723,6 +776,7 @@ private fun ChatModelTopBarMenu(
         chooseModelLabel = stringResource(R.string.choose_model),
     )
     val modelPickerStateDescription = when {
+        state.isStreaming -> stringResource(R.string.model_picker_state_wait_for_stream)
         selectedModel != null -> selectedModel.name
         selectedModelUnavailable -> selectedModelRecoveryMessage
         state.isLoadingModels -> stringResource(R.string.loading_models)
@@ -730,6 +784,10 @@ private fun ChatModelTopBarMenu(
         else -> stringResource(R.string.chat_hint_select_model)
     }
     val trimmedModelSearchQuery = modelSearchQuery.trim()
+    val clearModelSearchContentDescription = stringResource(
+        R.string.clear_model_search_named,
+        trimmedModelSearchQuery.ifBlank { modelSearchQuery },
+    )
     val visibleModels = chatModelMenuModels(
         models = state.models,
         query = trimmedModelSearchQuery,
@@ -870,16 +928,21 @@ private fun ChatModelTopBarMenu(
                                     hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
                                     modelSearchQuery = ""
                                 },
+                                modifier = Modifier.semantics {
+                                    contentDescription = clearModelSearchContentDescription
+                                    onClick(label = clearModelSearchContentDescription, action = null)
+                                },
                             ) {
                                 Icon(
                                     imageVector = Icons.Filled.Close,
-                                    contentDescription = stringResource(R.string.clear_model_search),
+                                    contentDescription = null,
                                 )
                             }
                         }
                     },
                     modifier = Modifier
                         .fillMaxWidth()
+                        .testTag(CHAT_MODEL_SEARCH_TEST_TAG)
                         .padding(horizontal = 12.dp, vertical = 8.dp),
                 )
             }
@@ -943,11 +1006,26 @@ private fun ChatModelMenuItem(
     installing: Boolean,
     onSelect: () -> Unit,
 ) {
+    val statusLine = modelMenuStatusLine(model = model, installing = installing)
+    val rowContentDescription = chatModelMenuItemContentDescription(
+        model = model,
+        selected = selected,
+        statusLine = statusLine,
+    )
+    val rowActionLabel = stringResource(
+        if (!model.installed && !installing) {
+            R.string.install_model
+        } else {
+            R.string.choose_model
+        }
+    )
     DropdownMenuItem(
         modifier = chatModelMenuItemSemanticsModifier(
             model = model,
             selected = selected,
             installing = installing,
+            contentDescription = rowContentDescription,
+            actionLabel = rowActionLabel,
         ),
         text = {
             Column {
@@ -957,7 +1035,7 @@ private fun ChatModelMenuItem(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = modelMenuStatusLine(model = model, installing = installing),
+                    text = statusLine,
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -992,16 +1070,39 @@ private fun chatModelMenuItemSemanticsModifier(
     model: RuntimeModel,
     selected: Boolean,
     installing: Boolean,
+    contentDescription: String,
+    actionLabel: String,
 ): Modifier {
     val stateDescriptionRes = when {
         selected -> R.string.selection_state_selected
         !model.installed && !installing -> R.string.install_model
         else -> null
-    } ?: return Modifier
-    val selectedStateDescription = stringResource(stateDescriptionRes)
-    return Modifier.semantics {
-        stateDescription = selectedStateDescription
     }
+    val selectedStateDescription = stateDescriptionRes?.let { stringResource(it) }
+    return Modifier.semantics {
+        this.contentDescription = contentDescription
+        onClick(label = actionLabel, action = null)
+        if (selectedStateDescription != null) {
+            stateDescription = selectedStateDescription
+        }
+    }
+}
+
+@Composable
+private fun chatModelMenuItemContentDescription(
+    model: RuntimeModel,
+    selected: Boolean,
+    statusLine: String,
+): String {
+    return stringResource(
+        if (selected) {
+            R.string.chat_model_row_summary_selected
+        } else {
+            R.string.chat_model_row_summary
+        },
+        model.name,
+        statusLine,
+    )
 }
 
 internal fun chatModelMenuItemEnabled(model: RuntimeModel, installing: Boolean): Boolean {
@@ -1067,6 +1168,15 @@ internal fun attachmentPickerMimeTypes(state: RuntimeUiState): Array<String> {
         runtimeDocumentAttachmentMimeTypes + "image/*"
     } else {
         runtimeDocumentAttachmentMimeTypes
+    }
+}
+
+internal fun handlePickedAttachments(
+    uris: List<Uri>,
+    addAttachments: (List<Uri>) -> Unit,
+) {
+    if (uris.isNotEmpty()) {
+        addAttachments(uris)
     }
 }
 
@@ -1171,7 +1281,9 @@ private val modelDisplayProviderPrefixes = setOf(
 )
 
 internal const val DRAWER_HISTORY_TEST_TAG = "aetherlink_drawer_history"
+internal const val DRAWER_CHAT_SEARCH_TEST_TAG = "aetherlink_drawer_chat_search"
 internal const val DRAWER_SETTINGS_FOOTER_TEST_TAG = "aetherlink_drawer_settings_footer"
+internal const val CHAT_MODEL_SEARCH_TEST_TAG = "aetherlink_chat_model_search"
 
 @Composable
 internal fun AetherLinkNavigationDrawerContent(
@@ -1191,6 +1303,9 @@ internal fun AetherLinkNavigationDrawerContent(
     onSelectSettings: () -> Unit,
 ) {
     val hapticFeedback = LocalHapticFeedback.current
+    val newChatEnabled = newChatActionEnabled(state)
+    val newChatStateDescription = newChatActionStateDescription(state)
+    val newChatActionLabel = stringResource(R.string.new_chat)
 
     ModalDrawerSheet {
         Column(
@@ -1209,14 +1324,18 @@ internal fun AetherLinkNavigationDrawerContent(
                     hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
                     onNewChat()
                 },
-                enabled = !state.isStreaming,
+                enabled = newChatEnabled,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+                    .semantics {
+                        stateDescription = newChatStateDescription
+                        onClick(label = newChatActionLabel, action = null)
+                    },
             ) {
                 Icon(Icons.Filled.Add, contentDescription = null)
                 Spacer(Modifier.size(8.dp))
-                Text(stringResource(R.string.new_chat))
+                Text(newChatActionLabel)
             }
             Column(
                 modifier = Modifier
@@ -1368,6 +1487,7 @@ private fun ChatHistorySearchField(
     onQueryChange: (String) -> Unit,
     onClear: () -> Unit,
 ) {
+    val clearChatSearchContentDescription = stringResource(R.string.clear_chat_search_named, query)
     OutlinedTextField(
         value = query,
         onValueChange = onQueryChange,
@@ -1392,16 +1512,21 @@ private fun ChatHistorySearchField(
                     onClick = {
                         onClear()
                     },
+                    modifier = Modifier.semantics {
+                        contentDescription = clearChatSearchContentDescription
+                        onClick(label = clearChatSearchContentDescription, action = null)
+                    },
                 ) {
                     Icon(
                         imageVector = Icons.Filled.Close,
-                        contentDescription = stringResource(R.string.clear_chat_search),
+                        contentDescription = null,
                     )
                 }
             }
         },
         modifier = Modifier
             .fillMaxWidth()
+            .testTag(DRAWER_CHAT_SEARCH_TEST_TAG)
             .padding(horizontal = 12.dp, vertical = 4.dp),
     )
 }
@@ -1461,6 +1586,10 @@ internal fun ChatSessionDrawerItem(
     } else {
         stringResource(R.string.chat_session_row_summary, title, accessibleSubtitle)
     }
+    val renameActionContentDescription = stringResource(R.string.rename_chat_named, title)
+    val archiveActionContentDescription = stringResource(R.string.archive_chat_named, title)
+    val restoreActionContentDescription = stringResource(R.string.restore_chat_named, title)
+    val deleteActionContentDescription = stringResource(R.string.delete_chat_named, title)
 
     NavigationDrawerItem(
         selected = selected,
@@ -1520,6 +1649,10 @@ internal fun ChatSessionDrawerItem(
                         DropdownMenuItem(
                             text = { Text(stringResource(R.string.rename_chat)) },
                             leadingIcon = { Icon(Icons.Filled.Edit, contentDescription = null) },
+                            modifier = Modifier.semantics {
+                                contentDescription = renameActionContentDescription
+                                onClick(label = renameActionContentDescription, action = null)
+                            },
                             onClick = {
                                 isMenuExpanded = false
                                 onRename()
@@ -1530,6 +1663,10 @@ internal fun ChatSessionDrawerItem(
                         DropdownMenuItem(
                             text = { Text(stringResource(R.string.archive_chat)) },
                             leadingIcon = { Icon(Icons.Filled.Archive, contentDescription = null) },
+                            modifier = Modifier.semantics {
+                                contentDescription = archiveActionContentDescription
+                                onClick(label = archiveActionContentDescription, action = null)
+                            },
                             onClick = {
                                 isMenuExpanded = false
                                 onArchive()
@@ -1540,6 +1677,10 @@ internal fun ChatSessionDrawerItem(
                         DropdownMenuItem(
                             text = { Text(stringResource(R.string.restore_chat)) },
                             leadingIcon = { Icon(Icons.Filled.Unarchive, contentDescription = null) },
+                            modifier = Modifier.semantics {
+                                contentDescription = restoreActionContentDescription
+                                onClick(label = restoreActionContentDescription, action = null)
+                            },
                             onClick = {
                                 isMenuExpanded = false
                                 onRestore()
@@ -1550,6 +1691,10 @@ internal fun ChatSessionDrawerItem(
                         DropdownMenuItem(
                             text = { Text(stringResource(R.string.delete_chat)) },
                             leadingIcon = { Icon(Icons.Filled.Delete, contentDescription = null) },
+                            modifier = Modifier.semantics {
+                                contentDescription = deleteActionContentDescription
+                                onClick(label = deleteActionContentDescription, action = null)
+                            },
                             onClick = {
                                 isMenuExpanded = false
                                 onDelete()
@@ -1584,13 +1729,20 @@ private fun RuntimeChatSession.editableTitle(): String {
 private const val LEGACY_DEFAULT_CHAT_TITLE = "New chat"
 
 @Composable
-private fun RenameChatSessionDialog(
+internal fun RenameChatSessionDialog(
     title: String,
     onTitleChange: (String) -> Unit,
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
 ) {
     val hapticFeedback = LocalHapticFeedback.current
+    val trimmedTitle = title.trim()
+    val titleStateDescription = if (trimmedTitle.isBlank()) {
+        stringResource(R.string.rename_chat_title_state_empty)
+    } else {
+        stringResource(R.string.rename_chat_title_state_ready)
+    }
+    val titleContentDescription = stringResource(R.string.chat_title_label)
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1601,7 +1753,12 @@ private fun RenameChatSessionDialog(
                 onValueChange = onTitleChange,
                 label = { Text(stringResource(R.string.chat_title_label)) },
                 singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .semantics {
+                        contentDescription = titleContentDescription
+                        stateDescription = titleStateDescription
+                    },
             )
         },
         confirmButton = {
@@ -1610,7 +1767,10 @@ private fun RenameChatSessionDialog(
                     hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
                     onConfirm()
                 },
-                enabled = title.isNotBlank(),
+                enabled = trimmedTitle.isNotBlank(),
+                modifier = Modifier.semantics {
+                    stateDescription = titleStateDescription
+                },
             ) {
                 Text(stringResource(R.string.save))
             }
@@ -1748,37 +1908,88 @@ private fun PairingQrScannerScreen(
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
+    val activity = context as? ComponentActivity
+    val lifecycleOwner = LocalLifecycleOwner.current
     var torchEnabled by rememberSaveable { mutableStateOf(false) }
     var torchAvailable by rememberSaveable { mutableStateOf(false) }
+    var cameraPermissionRequested by rememberSaveable { mutableStateOf(false) }
     var hasCameraPermission by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
                 PackageManager.PERMISSION_GRANTED,
         )
     }
+    var shouldShowCameraPermissionRationale by remember {
+        mutableStateOf(
+            activity?.let {
+                ActivityCompat.shouldShowRequestPermissionRationale(it, Manifest.permission.CAMERA)
+            } == true,
+        )
+    }
+    val refreshCameraPermissionState = {
+        hasCameraPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
+            PackageManager.PERMISSION_GRANTED
+        shouldShowCameraPermissionRationale = activity?.let {
+            ActivityCompat.shouldShowRequestPermissionRationale(it, Manifest.permission.CAMERA)
+        } == true
+        if (hasCameraPermission) {
+            cameraPermissionRequested = false
+        }
+    }
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
     ) { granted ->
+        cameraPermissionRequested = true
         hasCameraPermission = granted
+        shouldShowCameraPermissionRationale = activity?.let {
+            ActivityCompat.shouldShowRequestPermissionRationale(it, Manifest.permission.CAMERA)
+        } == true
+    }
+    val requestCameraPermission = {
+        cameraPermissionRequested = true
+        permissionLauncher.launch(Manifest.permission.CAMERA)
+    }
+    val cameraPermissionPermanentlyDenied = !hasCameraPermission &&
+        cameraPermissionRequested &&
+        !shouldShowCameraPermissionRationale
+    val openAppSettings = {
+        context.startActivity(
+            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                data = Uri.fromParts("package", context.packageName, null)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            },
+        )
+    }
+
+    DisposableEffect(lifecycleOwner, context) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                refreshCameraPermissionState()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
     }
 
     LaunchedEffect(Unit) {
         if (!hasCameraPermission) {
-            permissionLauncher.launch(Manifest.permission.CAMERA)
+            requestCameraPermission()
         }
     }
 
     PairingQrScannerChrome(
         hasCameraPermission = hasCameraPermission,
+        cameraPermissionPermanentlyDenied = cameraPermissionPermanentlyDenied,
         torchAvailable = torchAvailable,
         torchEnabled = torchEnabled,
         onTorchToggle = {
             torchEnabled = !torchEnabled
         },
         onCancel = onCancel,
-        onRequestCameraPermission = {
-            permissionLauncher.launch(Manifest.permission.CAMERA)
-        },
+        onRequestCameraPermission = requestCameraPermission,
+        onOpenAppSettings = openAppSettings,
         modifier = modifier,
     ) {
         PairingQrCameraPreview(
@@ -1800,11 +2011,13 @@ private fun PairingQrScannerScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 internal fun PairingQrScannerChrome(
     hasCameraPermission: Boolean,
+    cameraPermissionPermanentlyDenied: Boolean = false,
     torchAvailable: Boolean,
     torchEnabled: Boolean,
     onTorchToggle: () -> Unit,
     onCancel: () -> Unit,
     onRequestCameraPermission: () -> Unit,
+    onOpenAppSettings: () -> Unit = {},
     modifier: Modifier = Modifier,
     cameraContent: @Composable () -> Unit = {},
 ) {
@@ -1921,6 +2134,27 @@ internal fun PairingQrScannerChrome(
                 }
             }
         } else {
+            val permissionTitle = stringResource(
+                if (cameraPermissionPermanentlyDenied) {
+                    R.string.qr_scanner_permission_blocked_title
+                } else {
+                    R.string.qr_scanner_permission_title
+                },
+            )
+            val permissionDetail = stringResource(
+                if (cameraPermissionPermanentlyDenied) {
+                    R.string.qr_scanner_permission_blocked_detail
+                } else {
+                    R.string.qr_scanner_permission_detail
+                },
+            )
+            val permissionAction = stringResource(
+                if (cameraPermissionPermanentlyDenied) {
+                    R.string.qr_scanner_permission_settings_action
+                } else {
+                    R.string.qr_scanner_permission_action
+                },
+            )
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -1930,13 +2164,13 @@ internal fun PairingQrScannerChrome(
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(
-                    text = stringResource(R.string.qr_scanner_permission_title),
+                    text = permissionTitle,
                     style = MaterialTheme.typography.titleLarge,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Spacer(Modifier.size(12.dp))
                 Text(
-                    text = stringResource(R.string.qr_scanner_permission_detail),
+                    text = permissionDetail,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
@@ -1945,10 +2179,23 @@ internal fun PairingQrScannerChrome(
                 Button(
                     onClick = {
                         hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
-                        onRequestCameraPermission()
+                        if (cameraPermissionPermanentlyDenied) {
+                            onOpenAppSettings()
+                        } else {
+                            onRequestCameraPermission()
+                        }
                     },
                 ) {
-                    Text(stringResource(R.string.qr_scanner_permission_action))
+                    Text(permissionAction)
+                }
+                Spacer(Modifier.size(8.dp))
+                TextButton(
+                    onClick = {
+                        hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Toggle)
+                        onCancel()
+                    },
+                ) {
+                    Text(stringResource(R.string.cancel))
                 }
             }
         }

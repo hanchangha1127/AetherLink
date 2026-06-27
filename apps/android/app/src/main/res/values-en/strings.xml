@@ -9,11 +9,17 @@
     <string name="section_state_collapsed">Collapsed</string>
     <string name="setting_state_on">On</string>
     <string name="setting_state_off">Off</string>
+    <string name="setting_action_enable_named">Enable %1$s</string>
+    <string name="setting_action_disable_named">Disable %1$s</string>
     <string name="new_chat">New Chat</string>
+    <string name="new_chat_state_ready">Ready to start a new chat.</string>
+    <string name="new_chat_state_wait_for_stream">Wait for the current response or cancel it before starting a new chat.</string>
+    <string name="new_chat_state_pairing_required">Pair with AetherLink Runtime before starting a new chat.</string>
     <string name="previous_chats">Previous chats</string>
     <string name="no_previous_chats">No previous chats yet.</string>
     <string name="chat_search_label">Search chats</string>
     <string name="clear_chat_search">Clear chat search</string>
+    <string name="clear_chat_search_named">Clear chat search for %1$s</string>
     <string name="no_chat_search_results">No matching chats.</string>
     <string name="untitled_chat">Untitled chat</string>
     <plurals name="chat_message_count">
@@ -30,6 +36,7 @@
     <string name="chat_session_row_summary">Chat %1$s. %2$s.</string>
     <string name="chat_session_row_summary_selected">Selected chat %1$s. %2$s.</string>
     <string name="rename_chat">Rename chat</string>
+    <string name="rename_chat_named">Rename chat %1$s</string>
     <string name="archive">Archive</string>
     <string name="archive_chat">Archive chat</string>
     <string name="archive_chat_named">Archive chat %1$s</string>
@@ -41,9 +48,13 @@
     <string name="restore_chat_named">Restore chat %1$s</string>
     <string name="chat_history_settings_title">Chat history</string>
     <string name="chat_history_settings_subtitle">Archive chats, restore them later, or permanently delete archived chats.</string>
+    <string name="chat_history_action_state_wait_for_stream">Wait for the current response before changing chat history.</string>
     <string name="chat_history_bulk_actions_title">Manage all chats</string>
     <string name="chat_history_bulk_actions_detail">All-chat actions stay closed until you open this section.</string>
     <string name="archive_all_chats">Archive all chats</string>
+    <string name="archive_all_chats_state_ready">Ready to archive all active chats.</string>
+    <string name="archive_all_chats_state_no_active">No active chats to archive.</string>
+    <string name="archive_all_chats_state_wait_for_stream">Wait for the current response before archiving chats.</string>
     <string name="archive_all_chats_confirm_first">Archive all active chats? They stay saved, leave the main list, and stop contributing to Memory.</string>
     <string name="archive_all_chats_confirm_second">Confirm again to archive every active chat. Archived chats can be restored later.</string>
     <string name="permanently_delete">Permanently delete</string>
@@ -52,13 +63,19 @@
     <string name="permanently_delete_chat_confirm_first">Permanently delete "%1$s"? This is available because the chat is archived.</string>
     <string name="permanently_delete_chat_confirm_second">Confirm permanent deletion of "%1$s". This cannot be undone.</string>
     <string name="permanently_delete_archived_chats">Permanently delete archived chats</string>
+    <string name="delete_archived_chats_state_ready">Ready to permanently delete archived chats.</string>
+    <string name="delete_archived_chats_state_no_archived">No archived chats to permanently delete.</string>
+    <string name="delete_archived_chats_state_wait_for_stream">Wait for the current response before permanently deleting archived chats.</string>
     <string name="delete_archived_chats_confirm_first">Permanently delete all archived chats? Active chats stay saved.</string>
     <string name="delete_archived_chats_confirm_second">Confirm permanent deletion of every archived chat. This cannot be undone.</string>
     <string name="continue_action">Continue</string>
     <string name="chat_title_label">Chat title</string>
+    <string name="rename_chat_title_state_empty">Enter a title before saving.</string>
+    <string name="rename_chat_title_state_ready">Ready to save.</string>
     <string name="save">Save</string>
     <string name="delete">Delete</string>
     <string name="delete_chat">Delete chat</string>
+    <string name="delete_chat_named">Delete chat %1$s</string>
     <string name="clear">Clear</string>
 
     <string name="pairing_title">Pair AetherLink</string>
@@ -67,11 +84,17 @@
     <string name="qr_pairing_detail">Scan the latest AetherLink QR. Trusted devices can scan again to refresh connectivity.</string>
     <string name="qr_pairing_security_note">AetherLink trusts only QR-verified AetherLink Runtime. Model providers stay private.</string>
     <string name="scan_qr">Scan QR</string>
+    <string name="scan_qr_state_ready">Ready to scan QR.</string>
+    <string name="scan_qr_state_connecting">Wait for the current connection attempt before scanning again.</string>
+    <string name="scan_latest_qr_state_ready">Ready to scan the latest QR.</string>
     <string name="qr_scanner_title">Scan AetherLink QR</string>
     <string name="qr_scanner_detail">Point the camera at the latest AetherLink Runtime QR. The QR must verify AetherLink Runtime and include a connection both devices can reach.</string>
     <string name="qr_scanner_permission_title">Camera access is needed</string>
     <string name="qr_scanner_permission_detail">AetherLink uses the camera only to scan pairing QR codes.</string>
     <string name="qr_scanner_permission_action">Allow camera</string>
+    <string name="qr_scanner_permission_blocked_title">Camera permission is blocked</string>
+    <string name="qr_scanner_permission_blocked_detail">Open app settings and allow Camera to scan AetherLink pairing QR codes.</string>
+    <string name="qr_scanner_permission_settings_action">Open app settings</string>
     <string name="qr_scanner_flashlight_on">Turn flashlight on</string>
     <string name="qr_scanner_flashlight_off">Turn flashlight off</string>
     <string name="qr_scanner_flashlight_state_on">Flashlight on</string>
@@ -81,6 +104,9 @@
     <string name="manual_qr_payload_detail">Diagnostic fallback only. Paste AetherLink Runtime QR text when camera scanning cannot be tested; normal pairing remains camera QR scanning.</string>
     <string name="manual_qr_payload_label">QR text</string>
     <string name="manual_qr_payload_submit">Use QR text</string>
+    <string name="manual_qr_payload_state_empty">Paste AetherLink Runtime QR text before continuing.</string>
+    <string name="manual_qr_payload_state_invalid">Use AetherLink Runtime QR text that starts with aetherlink://pair.</string>
+    <string name="manual_qr_payload_state_ready">Ready to use QR text.</string>
     <string name="trusted_runtime">Trusted runtime</string>
     <string name="no_trusted_runtime">No trusted runtime saved</string>
     <string name="trusted_runtime_detail">Trusted runtime details are saved on this device and can be removed at any time.</string>
@@ -92,15 +118,21 @@
     <string name="developer_routes_detail">Use these checks only when QR pairing cannot connect.</string>
     <string name="discover_runtimes">Find trusted routes</string>
     <string name="discovering_runtimes">Discovering runtimes</string>
+    <string name="discover_runtimes_state_ready">Ready to find trusted routes.</string>
+    <string name="discover_runtimes_state_running">Trusted route discovery is already running.</string>
+    <string name="stop_discovery_state_ready">Ready to stop trusted route discovery.</string>
+    <string name="stop_discovery_state_idle">Start trusted route discovery before stopping it.</string>
     <string name="pending_pairing_route_title">QR scanned</string>
     <string name="pending_pairing_route_detail">This QR identified %1$s, but it cannot reconnect across networks without protected connection details. Generate the latest QR in AetherLink Runtime and scan it again.</string>
     <string name="pending_pairing_route_status">Waiting for %1$s</string>
+    <string name="pending_pairing_route_accessibility_summary">QR scanned. This QR identified %1$s, but it cannot reconnect across networks without protected connection details. Generate the latest QR in AetherLink Runtime and scan it again. Waiting for %1$s</string>
     <string name="discovery_detail">Find a reachable AetherLink Runtime, then scan its QR code to establish trust.</string>
     <string name="stop">Stop</string>
     <string name="use">Use</string>
     <string name="use_trusted_connection">Use trusted connection</string>
     <string name="use_trusted_connection_named">Use trusted connection for %1$s</string>
     <string name="forget">Forget</string>
+    <string name="forget_trusted_runtime_named">Forget trusted runtime %1$s</string>
     <string name="forget_trusted_runtime_confirm_title">Forget trusted runtime?</string>
     <string name="forget_trusted_runtime_confirm_message">Remove the saved trusted runtime from this device? Model access stays behind AetherLink Runtime until you pair again.</string>
     <string name="forget_trusted_runtime_confirm_action">Forget runtime</string>
@@ -110,8 +142,10 @@
     <string name="runtime_port">Connection port</string>
     <string name="pairing_code">Pairing QR</string>
     <string name="connect_runtime">Connect</string>
-    <string name="connect_remote_route">Connect</string>
+    <string name="connect_remote_route">Connect trusted route</string>
     <string name="connecting">Connecting</string>
+    <string name="connect_runtime_state_ready">Ready to connect.</string>
+    <string name="connect_runtime_state_connecting">Connection attempt in progress.</string>
     <string name="discovered_runtimes">Trusted route diagnostics</string>
     <string name="no_discovered_runtimes">No trusted route discovered yet.</string>
     <string name="discovery_identity_trusted_match">Trusted runtime</string>
@@ -120,12 +154,14 @@
     <string name="discovery_identity_different_trusted_runtime">Different trusted runtime</string>
     <string name="discovery_route_qr_required">QR required</string>
     <string name="discovery_route_not_trusted">Not trusted</string>
+    <string name="discovered_runtime_unavailable_summary">%1$s. %2$s. %3$s.</string>
     <string name="connect_requires_pairing">Scan the AetherLink Runtime QR first. Route diagnostics stay off until trust is established.</string>
 
     <string name="status_title">Pairing &amp; Connection</string>
     <string name="status_subtitle">Scan a pairing QR, then AetherLink restores trusted connections automatically.</string>
     <string name="status_connected_summary">This device and the trusted runtime are connected.</string>
     <string name="status_disconnected_summary">Connect to the trusted runtime to use models.</string>
+    <string name="status_hero_accessibility_summary">%1$s. %2$s</string>
     <string name="status_connected_trusted_title">Connected through trusted runtime</string>
     <string name="status_connected_trusted_detail">Authenticated with %1$s. Chat and models stay routed through AetherLink Runtime.</string>
     <string name="status_connected_diagnostics_title">Connected through troubleshooting</string>
@@ -139,7 +175,7 @@
     <string name="status_relay_ready_title">Ready to reconnect</string>
     <string name="status_relay_ready_detail">%1$s is trusted. AetherLink will restore the connection when available.</string>
     <string name="status_connect_ready_title">Trusted runtime saved</string>
-    <string name="status_connect_ready_detail">Tap Connect to restore %1$s.</string>
+    <string name="status_connect_ready_detail">Use Connect to restore %1$s.</string>
     <string name="runtime">AetherLink Runtime</string>
     <string name="backend">Model service</string>
     <string name="endpoint">Route</string>
@@ -156,7 +192,7 @@
     <string name="connected">Connected</string>
     <string name="auto_reconnect">Auto reconnect</string>
     <string name="auto_reconnect_detail">Reconnect to the trusted runtime automatically when this device returns to the app.</string>
-    <string name="auto_reconnect_paused">Auto reconnect is paused. Tap Connect to resume trusted runtime restore.</string>
+    <string name="auto_reconnect_paused">Auto reconnect is paused. Use Connect to resume trusted runtime restore.</string>
     <string name="health">Health</string>
     <string name="disconnect">Disconnect</string>
     <string name="yes">Yes</string>
@@ -177,6 +213,8 @@
     <string name="provider_status_ready">Ready</string>
     <string name="provider_status_unavailable">Unavailable</string>
     <string name="provider_status_ready_detail">%1$s is responding through AetherLink Runtime.</string>
+    <string name="provider_status_row_summary">%1$s, %2$s. %3$s</string>
+    <string name="provider_status_row_summary_retryable">%1$s, %2$s. %3$s %4$s</string>
     <string name="provider_status_summary_all_ready">All model services ready</string>
     <string name="provider_status_summary_none_ready">Model services need attention</string>
     <string name="provider_status_summary_mixed">%1$d of %2$d model services ready</string>
@@ -188,6 +226,8 @@
     <string name="provider_retryable_hint">Try again after the provider is running.</string>
     <string name="provider_show_diagnostics">Show details</string>
     <string name="provider_hide_diagnostics">Hide details</string>
+    <string name="provider_show_diagnostics_for">Show details for %1$s</string>
+    <string name="provider_hide_diagnostics_for">Hide details for %1$s</string>
 
     <string name="models_title">Models</string>
     <string name="choose_model">Choose model</string>
@@ -198,10 +238,16 @@
     <string name="model_unavailable">Model unavailable</string>
     <string name="selected_model_unavailable">Selected model is missing from the runtime list. Refresh or choose another.</string>
     <string name="selected_model_restoring">Restoring the saved model selection from AetherLink Runtime.</string>
+    <string name="model_refresh_state_ready">Ready to refresh models.</string>
+    <string name="model_refresh_state_loading">Model refresh in progress.</string>
+    <string name="model_refresh_state_connect_first">Connect to the trusted runtime before refreshing models.</string>
+    <string name="model_picker_state_wait_for_stream">Wait for the current response or cancel it before changing models.</string>
     <string name="models_from_runtime">Models are loaded through AetherLink Runtime, not directly from this app.</string>
     <string name="models_need_connection">Connect to the trusted runtime before loading models.</string>
     <string name="model_backend_value">Model service: %1$s</string>
     <string name="model_status_value">%1$s - %2$s</string>
+    <string name="chat_model_row_summary">Chat model %1$s. %2$s.</string>
+    <string name="chat_model_row_summary_selected">Selected chat model %1$s. %2$s.</string>
     <string name="model_installed">Installed</string>
     <string name="model_running">Running</string>
     <string name="model_not_installed">Not installed</string>
@@ -217,6 +263,7 @@
     <string name="loading_models">Loading models...</string>
     <string name="model_search_label">Search models</string>
     <string name="clear_model_search">Clear model search</string>
+    <string name="clear_model_search_named">Clear model search for %1$s</string>
     <string name="no_model_search_results_title">No matching models</string>
     <string name="no_model_search_results">Try another model name, provider, service, or source.</string>
 
@@ -262,9 +309,13 @@
     <string name="chat_needs_runtime">Connect to the trusted runtime before chatting.</string>
     <string name="chat_backend_unavailable_title">Model service needs attention</string>
     <string name="chat_backend_unavailable_detail">Check the model service in AetherLink Runtime, then refresh health.</string>
+    <string name="chat_backend_unavailable_summary">%1$s. %2$s</string>
     <string name="refresh_health">Refresh health</string>
+    <string name="refresh_health_state_ready">Ready to refresh runtime health.</string>
+    <string name="disconnect_runtime_state_ready">Ready to disconnect from the trusted runtime.</string>
     <string name="chat_hint_pairing">Scan the pairing QR before sending.</string>
     <string name="chat_hint_connect">Connect to the trusted runtime first.</string>
+    <string name="chat_hint_scan_latest_qr">Scan the latest AetherLink Runtime QR before sending.</string>
     <string name="chat_hint_select_model">Select a model before sending.</string>
     <string name="chat_hint_model_unavailable">Refresh models or choose another model before sending.</string>
     <string name="chat_hint_install_model">Install or choose an installed model before sending.</string>
@@ -277,12 +328,17 @@
     <string name="role_assistant_initial">A</string>
     <string name="assistant_typing">Generating...</string>
     <string name="assistant_reasoning_label">Thinking</string>
+    <string name="assistant_reasoning_summary">%1$s. %2$s. %3$s</string>
     <string name="assistant_reasoning_show">Show thinking</string>
     <string name="assistant_reasoning_hide">Hide thinking</string>
     <string name="suggested_next_questions">Next questions</string>
     <string name="generating_suggestions">Generating next questions...</string>
     <string name="content_desc_suggested_question">Suggested question: %1$s</string>
+    <string name="action_use_suggested_question">Insert suggested question</string>
     <string name="copy_message">Copy message</string>
+    <string name="copy_code_block">Copy code block</string>
+    <string name="copy_code_block_named">Copy %1$s code block %2$d</string>
+    <string name="copy_code_block_numbered">Copy code block %1$d</string>
     <string name="message_copied">Copied</string>
 
     <string name="settings_title">Settings</string>
@@ -290,6 +346,7 @@
     <string name="companion_only_title">Private model access</string>
     <string name="companion_only_detail">AetherLink keeps model access on the trusted runtime. This device controls the session.</string>
     <string name="preferences_title">Preferences</string>
+    <string name="preference_option_accessibility_summary">%1$s: %2$s</string>
     <string name="appearance_title">Appearance</string>
     <string name="appearance_system">Follows system</string>
     <string name="appearance_light">Light</string>
@@ -305,6 +362,11 @@
     <string name="embedding_model_title">Memory indexing model</string>
     <string name="embedding_model_subtitle">Choose the embedding model AetherLink Runtime uses for memory and retrieval.</string>
     <string name="embedding_model_none_detail">No memory indexing model selected.</string>
+    <string name="embedding_model_none_row_summary">Memory indexing option. %1$s. %2$s</string>
+    <string name="embedding_model_none_row_summary_selected">Selected memory indexing option. %1$s. %2$s</string>
+    <string name="embedding_model_row_summary">Memory indexing model %1$s. %2$s.</string>
+    <string name="embedding_model_row_summary_selected">Selected memory indexing model %1$s. %2$s.</string>
+    <string name="saved_embedding_model_row_summary">Saved memory indexing model %1$s. %2$s</string>
     <string name="selected_embedding_model">Selected memory indexing model</string>
     <string name="selected_embedding_model_unavailable">Saved memory indexing model is missing from the runtime list. Refresh or choose another.</string>
     <string name="selected_embedding_model_restoring">Restoring the saved memory indexing model from AetherLink Runtime.</string>
@@ -315,6 +377,8 @@
     <string name="memory_add_label">Add memory</string>
     <string name="memory_add_placeholder">Preference, project detail, or instruction to remember</string>
     <string name="memory_add">Add Memory</string>
+    <string name="memory_add_state_enter_memory">Enter a memory before adding.</string>
+    <string name="memory_add_state_ready">Ready to add memory.</string>
     <string name="memory_empty">No memories saved yet.</string>
     <string name="memory_empty_disconnected">Connect to the trusted runtime to load saved memory.</string>
     <string name="memory_connect_to_load">Connect to the trusted runtime to load and manage memory.</string>
@@ -407,6 +471,7 @@
     <string name="error_internal_error">AetherLink Runtime hit an internal error.</string>
     <string name="error_unknown">The request could not be completed.</string>
     <string name="error_detail">More information: %1$s</string>
+    <string name="error_accessibility_summary">%1$s. %2$s</string>
     <string name="route_diagnostic_local_missing_remote_pending">Connection details are not saved yet. Scan the latest AetherLink Runtime QR with connection details.</string>
     <string name="route_diagnostic_direct_failed_remote_pending">The local route did not answer. Scan the latest AetherLink Runtime QR with connection details.</string>
     <string name="route_diagnostic_remote_pending">Remote connection details are missing. Nearby discovery works only when both devices can see the same local route; scan the latest QR with connection details.</string>
@@ -425,5 +490,7 @@
     <string name="content_desc_remove_attachment">Remove attachment %1$s</string>
     <string name="content_desc_send">Send message</string>
     <string name="content_desc_cancel_generation">Cancel generation</string>
+    <string name="cancel_generation_state_ready">Ready to stop the current response.</string>
     <string name="content_desc_jump_to_latest">Jump to latest message</string>
+    <string name="jump_to_latest_state_ready">Ready to return to the latest message.</string>
 </resources>

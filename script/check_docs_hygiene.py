@@ -26,6 +26,14 @@ class DocsContract:
     guidance: str
 
 
+@dataclass(frozen=True)
+class DocsFileContract:
+    name: str
+    target: str
+    required_patterns: tuple[re.Pattern[str], ...]
+    guidance: str
+
+
 RULES = (
     DocsRule(
         "companion-runtime",
@@ -93,9 +101,7 @@ HYGIENE_TARGETS = (
     "examples/README.md",
 )
 
-CONTRACT_TARGETS = HYGIENE_TARGETS + (
-    "docs/progress.md",
-)
+CONTRACT_TARGETS = HYGIENE_TARGETS
 
 CONTRACTS = (
     DocsContract(
@@ -155,6 +161,30 @@ CONTRACTS = (
     ),
 )
 
+FILE_CONTRACTS = (
+    DocsFileContract(
+        "protocol-locale-contract",
+        "docs/protocol.md",
+        (
+            re.compile(r"\bchat\.send\.locale\b", re.IGNORECASE),
+            re.compile(r"\bEnglish, Korean, Japanese, Simplified Chinese, and French\b", re.IGNORECASE),
+        ),
+        "docs/protocol.md must directly define the runtime locale handoff and the five-language launch set.",
+    ),
+    DocsFileContract(
+        "readme-cross-platform-language-verification",
+        "README.md",
+        (
+            re.compile(r"\bAndroid and macOS five-language app-language verification\b", re.IGNORECASE),
+            re.compile(r"\bchat\.send\.locale\b", re.IGNORECASE),
+        ),
+        "README.md must keep cross-platform language verification and chat.send.locale handoff visible outside historical progress logs.",
+    ),
+)
+
+
+PROGRESS_DOC = ROOT / "docs/progress.md"
+
 
 def target_files() -> list[Path]:
     return [path for path in (ROOT / target for target in HYGIENE_TARGETS) if path.is_file()]
@@ -167,6 +197,94 @@ def contract_text() -> str:
         if path.is_file():
             chunks.append(path.read_text(encoding="utf-8", errors="replace"))
     return "\n".join(chunks)
+
+
+def file_contract_text(target: str) -> str:
+    path = ROOT / target
+    if not path.is_file():
+        return ""
+    return path.read_text(encoding="utf-8", errors="replace")
+
+
+def latest_progress_entry() -> tuple[int, str]:
+    if not PROGRESS_DOC.is_file():
+        return (0, "")
+
+    lines = PROGRESS_DOC.read_text(encoding="utf-8", errors="replace").splitlines()
+    implemented_index = next(
+        (index for index, line in enumerate(lines) if line.strip() == "## Implemented So Far"),
+        -1,
+    )
+    if implemented_index < 0:
+        return (0, "")
+
+    start_index = next(
+        (
+            index
+            for index in range(implemented_index + 1, len(lines))
+            if lines[index].startswith("### ")
+        ),
+        -1,
+    )
+    if start_index < 0:
+        return (0, "")
+
+    end_index = next(
+        (
+            index
+            for index in range(start_index + 1, len(lines))
+            if lines[index].startswith("### ")
+        ),
+        len(lines),
+    )
+    return (start_index + 1, "\n".join(lines[start_index:end_index]))
+
+
+def latest_progress_evidence_failures() -> list[str]:
+    failures: list[str] = []
+    start_line, entry = latest_progress_entry()
+    if not entry:
+        return [
+            "docs/progress.md: missing latest implemented progress entry under '## Implemented So Far'."
+        ]
+
+    required_patterns = (
+        (
+            re.compile(r"^### \d{4}-\d{2}-\d{2} .+", re.MULTILINE),
+            "Latest progress entry must start with a dated implementation heading.",
+        ),
+        (
+            re.compile(r"\bno-device\b", re.IGNORECASE),
+            "Latest progress entry must state whether verification was no-device.",
+        ),
+        (
+            re.compile(r"\bCaveat:", re.IGNORECASE),
+            "Latest progress entry must include an explicit caveat.",
+        ),
+        (
+            re.compile(r"\bphysical\b|\bcamera QR\b|\breal different-network\b", re.IGNORECASE),
+            "Latest progress caveat must name physical or real-network coverage limits.",
+        ),
+        (
+            re.compile(r"\bVerified after this change:", re.IGNORECASE),
+            "Latest progress entry must list current verification commands.",
+        ),
+        (
+            re.compile(r"`(?:swift|python3|JAVA_HOME=|git diff|bash)\b", re.IGNORECASE),
+            "Latest progress entry must include concrete verification commands in backticks.",
+        ),
+    )
+
+    for pattern, guidance in required_patterns:
+        if not pattern.search(entry):
+            failures.append(f"docs/progress.md:{start_line}: {guidance}")
+
+    if "artifacts/" in entry and "device/runtime state" not in entry:
+        failures.append(
+            f"docs/progress.md:{start_line}: Progress entries that cite artifacts must explain the device/runtime state."
+        )
+
+    return failures
 
 
 def main() -> int:
@@ -191,6 +309,27 @@ def main() -> int:
                 f"documentation-contract:{contract.name}: {contract.guidance} "
                 f"Missing pattern(s): {', '.join(missing)}"
             )
+
+    for contract in FILE_CONTRACTS:
+        target_text = file_contract_text(contract.target)
+        if not target_text:
+            failures.append(
+                f"documentation-file-contract:{contract.name}: Missing target file {contract.target}. "
+                f"{contract.guidance}"
+            )
+            continue
+        missing = [
+            pattern.pattern
+            for pattern in contract.required_patterns
+            if not pattern.search(target_text)
+        ]
+        if missing:
+            failures.append(
+                f"documentation-file-contract:{contract.name}: {contract.guidance} "
+                f"Missing pattern(s): {', '.join(missing)}"
+            )
+
+    failures.extend(latest_progress_evidence_failures())
 
     if failures:
         print("Docs hygiene check failed:", file=sys.stderr)

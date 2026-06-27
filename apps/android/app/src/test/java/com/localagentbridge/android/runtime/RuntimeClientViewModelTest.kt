@@ -1230,6 +1230,19 @@ class RuntimeClientViewModelTest {
                 restoreEnabled = true,
             )
         )
+        assertFalse(
+            shouldRetryTrustedRuntimeConnectFailure(
+                state = RuntimeUiState(
+                    trustedRuntime = trusted,
+                    error = RuntimeUiError(
+                        code = "remote_route_auth_failed",
+                        diagnosticCode = "route_diagnostic_relay_auth_failed",
+                    ),
+                ),
+                target = target,
+                restoreEnabled = true,
+            )
+        )
     }
 
     @Test
@@ -2622,6 +2635,10 @@ class RuntimeClientViewModelTest {
                 "route_diagnostic_remote_route_expired",
                 viewModel.state.value.error?.diagnosticCode,
             )
+            assertFalse(viewModel.state.value.isConnected)
+            assertFalse(viewModel.state.value.isConnecting)
+            assertEquals("failed", viewModel.state.value.runtimeStatus)
+            assertNull(viewModel.state.value.activeRouteKind)
             assertNull(viewModel.privateField<Any>("routeRefreshLeaseJob"))
 
             advanceTimeBy(ROUTE_REFRESH_RETRY_DELAY_MS + 1)
@@ -5087,6 +5104,62 @@ class RuntimeClientViewModelTest {
 
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
+    fun viewModelReconcilesSystemAppLanguageUntilInAppLanguageIsSelected() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val localStore = FakeRuntimeLocalDataStore()
+            fun createViewModel(): RuntimeClientViewModel {
+                return RuntimeClientViewModel(
+                    application = Application(),
+                    dependencies = RuntimeClientViewModelDependencies(
+                        json = json,
+                        transportClient = RuntimeTransportClient(),
+                        transportConnector = RuntimeTransportConnector { _, _, _ ->
+                            error("Direct TCP should not be used for app language handoff")
+                        },
+                        relayConnector = RuntimeRelayConnector { _, _ ->
+                            error("Relay should not be used for app language handoff")
+                        },
+                        discovery = EmptyRuntimeDiscoverySource,
+                        trustedRuntimeStore = FakeTrustedRuntimeStore(),
+                        deviceIdentityProvider = FakeDeviceIdentityProvider(testDeviceIdentity()),
+                        localDataStore = localStore,
+                        lifecycleCallbacksRegistrar = NoopRuntimeLifecycleCallbacksRegistrar,
+                        currentTimeMillis = { 1_000L },
+                    ),
+                )
+            }
+
+            val first = createViewModel()
+            advanceUntilIdle()
+            first.reconcileSystemAppLanguageTag("ko-KR")
+            advanceUntilIdle()
+
+            assertEquals(RuntimeAppLanguage.Korean.languageTag, first.state.value.selectedLanguageTag)
+            assertEquals(RuntimeAppLanguage.Korean.languageTag, localStore.data.appLanguageTag)
+            assertEquals(APP_LANGUAGE_SOURCE_SYSTEM, localStore.data.appLanguageSource)
+
+            first.setAppLanguageTag("fr-FR")
+            advanceUntilIdle()
+            assertEquals(RuntimeAppLanguage.French.languageTag, first.state.value.selectedLanguageTag)
+            assertEquals(APP_LANGUAGE_SOURCE_IN_APP, localStore.data.appLanguageSource)
+
+            val recreated = createViewModel()
+            advanceUntilIdle()
+            recreated.reconcileSystemAppLanguageTag("ja-JP")
+            advanceUntilIdle()
+
+            assertEquals(RuntimeAppLanguage.French.languageTag, recreated.state.value.selectedLanguageTag)
+            assertEquals(RuntimeAppLanguage.French.languageTag, localStore.data.appLanguageTag)
+            assertEquals(APP_LANGUAGE_SOURCE_IN_APP, localStore.data.appLanguageSource)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
     fun viewModelPublicSettingsSettersPersistAcrossRecreation() = runTest {
         val mainDispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(mainDispatcher)
@@ -6881,6 +6954,61 @@ class RuntimeClientViewModelTest {
 
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
+    fun relayReceiveAuthenticationFailureClearsStoredRelayAndStopsAutoReconnect() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val channel = FailingReceiveRuntimeProtocolChannel(
+                javax.crypto.AEADBadTagException("Tag mismatch")
+            )
+            val trustedStore = FakeEmittingTrustedRuntimeStore(trustedRuntimeForViewModelTests())
+            var relayConnectionAttempts = 0
+            val viewModel = RuntimeClientViewModel(
+                application = Application(),
+                dependencies = RuntimeClientViewModelDependencies(
+                    json = json,
+                    transportClient = RuntimeTransportClient(),
+                    transportConnector = RuntimeTransportConnector { _, _, _ ->
+                        error("Direct TCP should not be used for trusted relay auto-reconnect")
+                    },
+                    relayConnector = RuntimeRelayConnector { _, _ ->
+                        relayConnectionAttempts += 1
+                        channel
+                    },
+                    discovery = EmptyRuntimeDiscoverySource,
+                    trustedRuntimeStore = trustedStore,
+                    deviceIdentityProvider = FakeDeviceIdentityProvider(testDeviceIdentity()),
+                    localDataStore = FakeRuntimeLocalDataStore(
+                        initialData = PersistedRuntimeData(trustedRuntimeAutoReconnectEnabled = true),
+                    ),
+                    lifecycleCallbacksRegistrar = NoopRuntimeLifecycleCallbacksRegistrar,
+                    currentTimeMillis = { 1_000L },
+                ),
+            )
+            advanceUntilIdle()
+
+            assertEquals("remote_route_auth_failed", viewModel.state.value.error?.code)
+            assertEquals(
+                "route_diagnostic_relay_auth_failed",
+                viewModel.state.value.error?.diagnosticCode,
+            )
+            assertNull(viewModel.state.value.trustedRuntime?.relayHost)
+            assertNull(viewModel.state.value.trustedRuntime?.relaySecret)
+            assertNull(trustedStore.trusted?.relayHost)
+            assertNull(trustedStore.trusted?.relaySecret)
+            assertEquals(1, relayConnectionAttempts)
+
+            advanceTimeBy(2_000L)
+            advanceUntilIdle()
+
+            assertEquals(1, relayConnectionAttempts)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
     fun viewModelShowsExpiredRemoteRouteWhenTrustedRelayLeaseExpiredOnInit() = runTest {
         val mainDispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(mainDispatcher)
@@ -6926,7 +7054,10 @@ class RuntimeClientViewModelTest {
                 "route_diagnostic_remote_route_expired",
                 viewModel.state.value.error?.diagnosticCode,
             )
-            assertEquals("relay.example.test", viewModel.state.value.trustedRuntime?.relayHost)
+            assertNull(viewModel.state.value.trustedRuntime?.relayHost)
+            assertNull(viewModel.state.value.trustedRuntime?.relaySecret)
+            assertNull(trustedStore.trusted?.relayHost)
+            assertNull(trustedStore.trusted?.relaySecret)
         } finally {
             Dispatchers.resetMain()
         }
@@ -6986,7 +7117,10 @@ class RuntimeClientViewModelTest {
             advanceUntilIdle()
 
             assertEquals("remote_route_expired", viewModel.state.value.error?.code)
-            assertEquals("expired-relay.example.test", viewModel.state.value.trustedRuntime?.relayHost)
+            assertNull(viewModel.state.value.trustedRuntime?.relayHost)
+            assertNull(viewModel.state.value.trustedRuntime?.relaySecret)
+            assertNull(trustedStore.trusted?.relayHost)
+            assertNull(trustedStore.trusted?.relaySecret)
             assertEquals(0, directConnectionAttempts)
             assertEquals(0, relayConnectionAttempts)
 
@@ -7846,6 +7980,7 @@ class RuntimeClientViewModelTest {
 
         assertEquals(RuntimeAppLanguage.English.languageTag, data.appLanguageTag)
         assertEquals(RuntimeAppLanguage.English.languageTag, data.sanitized().appLanguageTag)
+        assertEquals(APP_LANGUAGE_SOURCE_DEFAULT, data.sanitized().appLanguageSource)
     }
 
     @Test
@@ -7871,6 +8006,28 @@ class RuntimeClientViewModelTest {
         assertEquals(RuntimeAppLanguage.SimplifiedChinese.languageTag, simplifiedChineseAndroidQualifier.appLanguageTag)
         assertEquals(RuntimeAppLanguage.English.languageTag, invalid.appLanguageTag)
         assertEquals(RuntimeAppLanguage.English.languageTag, legacyBlankLanguage.appLanguageTag)
+        assertEquals(RuntimeAppLanguage.Korean.languageTag, RuntimeAppLanguage.normalizeLanguageTag("ko-KR"))
+        assertEquals(RuntimeAppLanguage.Japanese.languageTag, RuntimeAppLanguage.normalizeLanguageTag("ja-JP"))
+        assertEquals(RuntimeAppLanguage.French.languageTag, RuntimeAppLanguage.normalizeLanguageTag("fr-FR"))
+        assertEquals(RuntimeAppLanguage.English.languageTag, RuntimeAppLanguage.normalizeLanguageTag("en-US"))
+        assertEquals(APP_LANGUAGE_SOURCE_IN_APP, korean.appLanguageSource)
+    }
+
+    @Test
+    fun systemAppLanguageHelperDoesNotOverrideInAppLanguageSelection() {
+        val systemLanguage = PersistedRuntimeData().withSystemAppLanguageTag("ko-KR")
+        val inAppLanguage = systemLanguage.withAppLanguageTag("fr-FR")
+        val ignoredSystemUpdate = inAppLanguage.withSystemAppLanguageTag("ja-JP")
+        val unsupportedSystemUpdate = PersistedRuntimeData().withSystemAppLanguageTag("de-DE")
+
+        assertEquals(RuntimeAppLanguage.Korean.languageTag, systemLanguage.appLanguageTag)
+        assertEquals(APP_LANGUAGE_SOURCE_SYSTEM, systemLanguage.appLanguageSource)
+        assertEquals(RuntimeAppLanguage.French.languageTag, inAppLanguage.appLanguageTag)
+        assertEquals(APP_LANGUAGE_SOURCE_IN_APP, inAppLanguage.appLanguageSource)
+        assertEquals(RuntimeAppLanguage.French.languageTag, ignoredSystemUpdate.appLanguageTag)
+        assertEquals(APP_LANGUAGE_SOURCE_IN_APP, ignoredSystemUpdate.appLanguageSource)
+        assertEquals(RuntimeAppLanguage.English.languageTag, unsupportedSystemUpdate.appLanguageTag)
+        assertEquals(APP_LANGUAGE_SOURCE_DEFAULT, unsupportedSystemUpdate.appLanguageSource)
     }
 
     @Test
@@ -8742,6 +8899,28 @@ class RuntimeClientViewModelTest {
 
         override suspend fun receive(): ProtocolEnvelope {
             error("Test channel does not receive frames")
+        }
+
+        override fun close() {
+            closed = true
+        }
+    }
+
+    private class FailingReceiveRuntimeProtocolChannel(
+        private val receiveFailure: Throwable,
+    ) : RuntimeProtocolChannel {
+        val sentEnvelopes = mutableListOf<ProtocolEnvelope>()
+        private var closed = false
+
+        override val isConnected: Boolean
+            get() = !closed
+
+        override suspend fun send(envelope: ProtocolEnvelope) {
+            sentEnvelopes += envelope
+        }
+
+        override suspend fun receive(): ProtocolEnvelope {
+            throw receiveFailure
         }
 
         override fun close() {

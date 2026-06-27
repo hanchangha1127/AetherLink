@@ -28,42 +28,44 @@ struct LocalAgentBridgeApp: App {
                     Task { await model.refreshBackendStatus() }
                 }
                 .keyboardShortcut("r", modifiers: [.command])
+                .help(modelProviderCheckActionAccessibilityHint())
             }
         }
 
         MenuBarExtra(NSLocalizedString("AetherLink", comment: ""), systemImage: "bolt.horizontal.circle") {
-            Text(
-                String(
-                    format: NSLocalizedString("Runtime: %@", comment: ""),
-                    localizedTransportStatus(model.transportState)
-                )
-            )
-            Text(
-                String(
-                    format: NSLocalizedString("Model service: %@", comment: ""),
-                    localizedBackendStatus(model.providerStatuses)
-                )
-            )
+            let commandTitles = menuBarCommandTitles()
+
+            Text(menuBarRuntimeStatusText(model.transportState))
+            Text(menuBarModelServiceStatusText(model.providerStatuses))
             Divider()
-            Button(NSLocalizedString("Open AetherLink", comment: "")) {
+            Button(commandTitles.openAetherLink) {
                 openWindow(id: "main")
                 NSApp.activate(ignoringOtherApps: true)
             }
-            Button(NSLocalizedString("Refresh", comment: "")) {
+            Button(commandTitles.refresh) {
                 Task { await model.refreshBackendStatus() }
             }
-            Button(NSLocalizedString("Load Models", comment: "")) {
+            .help(modelProviderCheckActionAccessibilityHint())
+            .accessibilityValue(Text(modelProviderCheckActionAccessibilityValue()))
+            .accessibilityHint(Text(modelProviderCheckActionAccessibilityHint()))
+            Button(commandTitles.loadModels) {
                 Task { await model.loadModels() }
             }
-            Button(NSLocalizedString("Generate Pairing QR", comment: "")) {
+            .help(modelListLoadActionAccessibilityHint())
+            .accessibilityValue(Text(modelListLoadActionAccessibilityValue()))
+            .accessibilityHint(Text(modelListLoadActionAccessibilityHint()))
+            Button(pairingQRGenerationCommandTitle(hasActiveSession: model.pairingSession != nil)) {
                 model.beginPairing()
                 requestedSection = .pairing
                 openWindow(id: "main")
                 NSApp.activate(ignoringOtherApps: true)
             }
             .disabled(!canGeneratePairingQR)
+            .help(pairingQRGenerationActionAccessibilityHint(isAvailable: canGeneratePairingQR))
+            .accessibilityValue(Text(pairingQRGenerationActionAccessibilityValue(isAvailable: canGeneratePairingQR)))
+            .accessibilityHint(Text(pairingQRGenerationActionAccessibilityHint(isAvailable: canGeneratePairingQR)))
             Divider()
-            Button(NSLocalizedString("Quit", comment: "")) {
+            Button(commandTitles.quit) {
                 NSApp.terminate(nil)
             }
         }

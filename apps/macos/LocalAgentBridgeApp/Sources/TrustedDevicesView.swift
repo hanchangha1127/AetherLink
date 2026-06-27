@@ -27,16 +27,30 @@ struct TrustedDevicesView: View {
                     Label(NSLocalizedString("Refresh Devices", comment: ""), systemImage: "arrow.clockwise")
                 }
                 .buttonStyle(.bordered)
+                .help(trustedDeviceRefreshActionAccessibilityHint())
+                .accessibilityValue(Text(trustedDeviceRefreshActionAccessibilityValue()))
+                .accessibilityHint(Text(trustedDeviceRefreshActionAccessibilityHint()))
             }
 
             CompanionPanel(title: NSLocalizedString("Allowed Devices", comment: ""), systemImage: "person.badge.key.fill") {
                 if model.trustedDevices.isEmpty {
+                    let emptyTrustedDevicesTitle = NSLocalizedString("No trusted devices", comment: "")
+                    let emptyTrustedDevicesDescription = NSLocalizedString("Pair a device before allowing runtime commands.", comment: "")
                     ContentUnavailableView(
-                        NSLocalizedString("No trusted devices", comment: ""),
+                        emptyTrustedDevicesTitle,
                         systemImage: "lock.slash",
-                        description: Text(NSLocalizedString("Pair a device before allowing runtime commands.", comment: ""))
+                        description: Text(emptyTrustedDevicesDescription)
                     )
                     .frame(maxWidth: .infinity, minHeight: 280)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(
+                        Text(
+                            companionEmptyStateAccessibilityLabel(
+                                title: emptyTrustedDevicesTitle,
+                                description: emptyTrustedDevicesDescription
+                            )
+                        )
+                    )
                 } else {
                     List(model.trustedDevices) { device in
                         TrustedDeviceRow(
@@ -134,7 +148,8 @@ private struct TrustedDeviceRow: View {
                 Text(
                     trustedDeviceRowAccessibilityLabel(
                         name: name,
-                        pairedSummary: pairedSummary,
+                        pairedAt: pairedAt,
+                        deviceID: id,
                         keyFingerprint: keyFingerprint
                     )
                 )
@@ -179,16 +194,25 @@ func trustedDeviceRemovalMessage(for device: TrustedDevice?) -> String {
     )
 }
 
-func trustedDeviceRowAccessibilityLabel(name: String, pairedSummary: String, keyFingerprint: String) -> String {
+func trustedDevicePairingAccessibilitySummary(pairedAt: Date?, deviceID: String) -> String {
+    let trimmedID = deviceID.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let pairedAt, !trimmedID.isEmpty else {
+        return NSLocalizedString("Pairing details unavailable.", comment: "")
+    }
+
+    return String(
+        format: NSLocalizedString("Paired %@. Device ID ending %@", comment: ""),
+        localizedCompanionDateString(from: pairedAt),
+        shortIdentifier(trimmedID)
+    )
+}
+
+func trustedDeviceRowAccessibilityLabel(name: String, pairedAt: Date?, deviceID: String, keyFingerprint: String) -> String {
     let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
     let deviceName = trimmedName.isEmpty
         ? NSLocalizedString("Selected device", comment: "")
         : trimmedName
-    let trimmedPairedSummary = pairedSummary.trimmingCharacters(in: .whitespacesAndNewlines)
-    let resolvedPairedSummary = trimmedPairedSummary.isEmpty
-        ? NSLocalizedString("Pairing details unavailable.", comment: "")
-        : trimmedPairedSummary
-    let pairedSentence = resolvedPairedSummary
+    let pairedSentence = trustedDevicePairingAccessibilitySummary(pairedAt: pairedAt, deviceID: deviceID)
         .trimmingCharacters(in: .whitespacesAndNewlines)
         .trimmingCharacters(in: CharacterSet(charactersIn: ".。"))
     let trimmedFingerprint = keyFingerprint.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -217,4 +241,12 @@ func trustedDeviceRemoveAccessibilityLabel(name: String, keyFingerprint: String)
         deviceName,
         fingerprint
     )
+}
+
+func trustedDeviceRefreshActionAccessibilityValue() -> String {
+    NSLocalizedString("Ready", comment: "")
+}
+
+func trustedDeviceRefreshActionAccessibilityHint() -> String {
+    NSLocalizedString("Refresh trusted devices from AetherLink Runtime.", comment: "")
 }

@@ -54,7 +54,11 @@ enum AetherLinkAppLanguage: String, CaseIterable, Identifiable {
             normalized.caseInsensitiveCompare("zh-Hans-CN") == .orderedSame {
             return .simplifiedChinese
         }
-        return allCases.first { $0.rawValue.caseInsensitiveCompare(normalized) == .orderedSame }
+        let baseLanguage = normalized.split(separator: "-", maxSplits: 1).first.map(String.init) ?? normalized
+        return allCases.first { language in
+            language.rawValue.caseInsensitiveCompare(normalized) == .orderedSame ||
+                language.rawValue.caseInsensitiveCompare(baseLanguage) == .orderedSame
+        }
             ?? defaultLanguage
     }
 

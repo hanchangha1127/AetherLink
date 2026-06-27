@@ -490,7 +490,12 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                 payload: payload
             ))
         } catch {
-            sink.send(errorEnvelope(requestID: envelope.requestID, error: error))
+            sink.send(errorEnvelope(
+                requestID: envelope.requestID,
+                code: "route_refresh_unavailable",
+                message: "AetherLink Runtime could not refresh remote route material.",
+                retryable: true
+            ))
         }
     }
 

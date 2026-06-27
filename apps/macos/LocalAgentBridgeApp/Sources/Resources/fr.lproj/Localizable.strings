@@ -27,8 +27,10 @@
 "Model provider" = "Fournisseur de modèles";
 "Quick Actions" = "Actions rapides";
 "Check Model Providers" = "Vérifier les fournisseurs de modèles";
+"Check model provider availability through AetherLink Runtime." = "Vérifie la disponibilité des fournisseurs de modèles via AetherLink Runtime.";
 "Load Model List" = "Charger la liste des modèles";
 "Load Local Models" = "Charger les modèles";
+"Load the installed local model list through AetherLink Runtime." = "Charge la liste des modèles locaux installés via AetherLink Runtime.";
 "Local Models" = "Modèles";
 "Models" = "Modèles";
 "Readiness" = "Préparation";
@@ -41,6 +43,7 @@
 "Needs attention" = "Attention requise";
 "Not ready" = "Pas prêt";
 "Pending" = "En attente";
+"Activity item %@. Status %@." = "Élément d’activité %@. État %@.";
 "Readiness %@. Status %@. %@" = "Préparation %@. État %@. %@";
 "Status item" = "Élément d’état";
 "Unknown status" = "État inconnu";
@@ -69,6 +72,8 @@
 "LM Studio connection error" = "Erreur de connexion LM Studio";
 "Port" = "Port";
 "Generated automatically if blank" = "Créée automatiquement si le champ est vide";
+"Empty" = "Vide";
+"Entered" = "Renseigné";
 "Rotate Secret" = "Actualiser la clé";
 "Generate Latest QR" = "Générer le dernier QR";
 "Waiting for device" = "En attente de l’appareil";
@@ -97,6 +102,9 @@
 "Unknown provider" = "Fournisseur inconnu";
 "Unknown source" = "Source inconnue";
 "Size unknown" = "Taille inconnue";
+"Model section" = "Section de modèles";
+"No model count" = "Aucun nombre de modèles";
+"Model section %@. %@" = "Section de modèles %@. %@";
 "Model %@. ID %@. Type %@. Provider %@. Source %@. State %@. Size %@" = "Modèle %@. ID %@. Type %@. Fournisseur %@. Source %@. État %@. Taille %@";
 "Model Residency" = "Résidence du modèle";
 "Model provider availability" = "Disponibilité des fournisseurs de modèles";
@@ -136,6 +144,7 @@
 "Generate New QR" = "Générer un nouveau QR";
 "Pairing QR code" = "QR code de jumelage";
 "Pairing QR code unavailable" = "QR code de jumelage indisponible";
+"Pairing QR time remaining" = "Temps restant du QR de jumelage";
 "Scan this QR from AetherLink." = "Scannez ce QR dans AetherLink.";
 "After pairing, manage or remove trusted devices in Trusted Devices." = "Après le jumelage, gérez ou retirez les appareils approuvés dans Appareils approuvés.";
 "Paired devices connect to AetherLink Runtime, not directly to model providers." = "Les appareils jumelés se connectent à AetherLink Runtime, pas directement aux fournisseurs de modèles.";
@@ -145,10 +154,12 @@
 
 "Manage pairing trust and remove devices allowed to use AetherLink Runtime." = "Gérez la confiance de jumelage et retirez les appareils autorisés à utiliser AetherLink Runtime.";
 "Refresh Devices" = "Actualiser les appareils";
+"Refresh trusted devices from AetherLink Runtime." = "Actualise les appareils approuvés depuis AetherLink Runtime.";
 "Allowed Devices" = "Appareils autorisés";
 "No trusted devices" = "Aucun appareil approuvé";
 "Pair a device before allowing runtime commands." = "Jumelez un appareil avant d’autoriser les commandes du runtime.";
 "Paired %@ · ID ending %@" = "Jumelé %@ · ID finissant par %@";
+"Paired %@. Device ID ending %@" = "Jumelé %@. ID de l’appareil finissant par %@";
 "Key fingerprint %@" = "Empreinte de clé %@";
 "Pairing details unavailable." = "Détails de jumelage indisponibles.";
 "Trusted device %@. %@. Key fingerprint %@" = "Appareil approuvé %@. %@. Empreinte de clé %@";
@@ -167,6 +178,10 @@
 "Activity appears here after AetherLink Runtime starts receiving requests." = "L’activité apparaîtra ici après les premières requêtes reçues par AetherLink Runtime.";
 "Technical Details" = "Détails";
 "Technical details for %@" = "Détails pour %@";
+"Activity technical details expanded" = "Détails d’activité développés";
+"Activity technical details collapsed" = "Détails d’activité réduits";
+"Collapse to hide activity technical details." = "Réduire pour masquer les détails d’activité.";
+"Expand to show activity technical details." = "Développer pour afficher les détails d’activité.";
 "Connection setup result" = "Résultat de configuration de connexion";
 "Connection health" = "État de connexion";
 "Connection preparation" = "Préparation de connexion";
@@ -177,8 +192,8 @@
 "AetherLink runtime stopped" = "AetherLink Runtime arrêté";
 "Model provider health check passed" = "Vérification de santé du fournisseur de modèles réussie";
 "Pairing QR generated" = "QR de jumelage généré";
-"Trusted %@" = "%@ approuvé";
-"Removed %@" = "%@ retiré";
+"Trusted device %@" = "Appareil %@ approuvé";
+"Removed trust for %@" = "Approbation retirée pour %@";
 "Received device runtime request" = "Requête runtime d’appareil reçue";
 "Loaded 1 model" = "1 modèle chargé";
 "Loaded %@ models" = "%@ modèles chargés";
@@ -216,7 +231,11 @@
 "Reconnecting with saved connection details." = "Reconnexion avec les informations enregistrées.";
 "Scan once from AetherLink to trust this AetherLink Runtime." = "Scannez une fois depuis AetherLink pour approuver cet AetherLink Runtime.";
 "Generate a pairing QR. AetherLink prepares connection details automatically when available." = "Générez un QR de jumelage. AetherLink prépare automatiquement les informations de connexion quand c’est possible.";
+"Generate the latest pairing QR with saved connection details." = "Générer le dernier QR de jumelage avec les informations de connexion enregistrées.";
 "Pairing QR is waiting for connection details." = "Le QR de jumelage attend les informations de connexion.";
+"Pairing QR generation is unavailable from this view." = "La génération du QR de jumelage n'est pas disponible depuis cette vue.";
+"Latest QR generation is unavailable from this view." = "La génération du dernier QR n'est pas disponible depuis cette vue.";
+"Connection details are not ready for QR generation. Check Connection Recovery settings." = "Les informations de connexion ne sont pas prêtes pour générer le QR. Vérifiez les réglages de récupération de connexion.";
 "Connection details for %@ cannot be included in this QR. Advanced Connection Setup needs an address both devices can reach." = "Les informations de connexion de %@ ne peuvent pas être incluses dans ce QR. La récupération de connexion nécessite une adresse joignable par les deux appareils.";
 "Connection details are being prepared. Keep this window open; the QR appears when AetherLink Runtime is ready." = "Préparation des informations de connexion. Gardez cette fenêtre ouverte; le QR apparaît quand AetherLink Runtime est prêt.";
 "Connection details for %@ are not ready yet. Keep this window open; the QR appears when AetherLink Runtime is ready." = "Les informations de connexion de %@ ne sont pas encore prêtes. Gardez cette fenêtre ouverte; le QR apparaît quand AetherLink Runtime est prêt.";
@@ -224,6 +243,7 @@
 "This QR includes connection details for %@, but the secure connection secret is missing." = "Ce QR inclut les informations de connexion de %@, mais le secret de connexion sécurisé est manquant.";
 "Generate a pairing QR. AetherLink prepares connection details automatically and shows the QR when ready." = "Générez un QR de jumelage. AetherLink prépare automatiquement les informations de connexion et affiche le QR lorsqu’il est prêt.";
 "Generate a pairing QR first. If automatic connection preparation is unavailable, use Advanced Connection Setup only when needed." = "Générez d’abord un QR de jumelage. Si la préparation automatique est indisponible, utilisez la récupération de connexion uniquement si nécessaire.";
+"Pairing QR status" = "État du QR de jumelage";
 "This QR verifies AetherLink Runtime and includes connection details for pairing or refresh." = "Ce QR vérifie AetherLink Runtime et inclut les informations de connexion pour le jumelage ou l’actualisation.";
 "Local Network permission helps nearby discovery; trust stays tied to this AetherLink Runtime." = "L’autorisation Réseau local facilite la découverte à proximité; la confiance reste liée à cet AetherLink Runtime.";
 "Keep AetherLink Runtime open until pairing completes." = "Gardez AetherLink Runtime ouvert jusqu’à la fin du jumelage.";
@@ -240,10 +260,13 @@
 "Optional" = "Facultatif";
 "Enable only when this bootstrap relay is reachable through a VPN, tunnel, or private overlay shared by both devices." = "Activez ceci uniquement lorsque ce relais d’amorçage est joignable via un VPN, un tunnel ou un overlay privé partagé par les deux appareils.";
 "Save Bootstrap Relay" = "Enregistrer le relais d’amorçage";
+"Save bootstrap relay settings for future pairing QR connection details." = "Enregistre les réglages du relais d’amorçage pour les futures informations de connexion du QR de jumelage.";
 "Bootstrap relay saved. Generate the latest QR and scan it in AetherLink to pair or refresh connectivity." = "Relais d’amorçage enregistré. Générez le dernier QR et scannez-le dans AetherLink pour jumeler ou actualiser la connexion.";
 "Connection address" = "Adresse de connexion";
 "Connection setup secret" = "Clé de connexion protégée";
 "Save Connection" = "Enregistrer la connexion";
+"Save fallback connection details for future pairing QR routes." = "Enregistre les informations de connexion de secours pour les futurs itinéraires QR de jumelage.";
+"Create a new connection setup secret for future pairing QR connection details." = "Crée un nouveau secret de configuration de connexion pour les futurs QR de jumelage.";
 "Connection setup secret regenerated." = "Clé de connexion protégée actualisée.";
 "Disable Connection" = "Désactiver la connexion";
 "Disable saved connection details for %@" = "Désactiver les informations de connexion enregistrées pour %@";
@@ -306,12 +329,23 @@
 "Enter only the connection address. Put the port in the Port field." = "Saisissez uniquement l'adresse de connexion. Indiquez le port dans le champ Port.";
 "Nearby + cross-network" = "Proximité + autre réseau";
 "Nearby only" = "Proximité uniquement";
-"No cross-network connection details are saved yet. Pairing still works nearby, and QR-based remote connection can be prepared later." = "Les détails de connexion interréseau ne sont pas encore enregistrés. L'association fonctionne toujours à proximité, et la connexion à distance par QR pourra être préparée plus tard.";
+"No cross-network connection details are saved yet. Nearby pairing still works. For another network, use a reachable relay, VPN, or tunnel before generating the latest QR." = "Aucune information de connexion interréseau n’est encore enregistrée. Le jumelage à proximité fonctionne toujours. Pour un autre réseau, utilisez un relais, VPN ou tunnel joignable avant de générer le dernier QR.";
 "This connection address is local-network only. Use a public, VPN, or tunnel address for different networks." = "Cette adresse de connexion est limitée au réseau local. Pour des réseaux différents, utilisez une adresse publique, VPN ou tunnel.";
 "This connection address is private. Use a public address, or enable Private Overlay Route only when a VPN or tunnel makes it reachable from both devices." = "Cette adresse de connexion est privée. Utilisez une adresse publique, ou activez la route en superposition privée uniquement si un VPN ou un tunnel la rend joignable par les deux appareils.";
 "This connection address points back to AetherLink Runtime. A device on another network cannot reach it." = "Cette adresse de connexion pointe vers AetherLink Runtime lui-même. Un appareil sur un autre réseau ne peut pas l'atteindre.";
 "Trusted devices can find this AetherLink Runtime nearby after pairing." = "Les appareils de confiance peuvent trouver cet AetherLink Runtime à proximité après l'association.";
 "Use Private Overlay Route" = "Utiliser la route en superposition privée";
+"Bootstrap relay Private Overlay Route" = "Route en superposition privée du relais d’amorçage";
+"Fallback connection Private Overlay Route" = "Route en superposition privée de la connexion de secours";
+"Enabled" = "Activé";
+"Disabled" = "Désactivé";
+"Connection Recovery settings" = "Réglages de récupération de connexion";
+"Connection Recovery settings expanded" = "Réglages de récupération de connexion développés";
+"Connection Recovery settings collapsed" = "Réglages de récupération de connexion réduits";
+"Show or hide advanced connection recovery fields." = "Afficher ou masquer les champs avancés de récupération de connexion.";
+"Connection diagnostics expanded" = "Diagnostics de connexion développés";
+"Connection diagnostics collapsed" = "Diagnostics de connexion réduits";
+"Show or hide connection diagnostic details." = "Afficher ou masquer les détails de diagnostic de connexion.";
 "Enable only when this private address is reachable through a VPN, tunnel, or private overlay shared by both devices." = "Activez cette option uniquement si cette adresse privée est joignable via un VPN, un tunnel ou une superposition privée partagée par les deux appareils.";
 "saved connection" = "connexion enregistrée";
 
@@ -331,3 +365,4 @@
 "AetherLink will request fresh QR connection details from the saved bootstrap relay." = "AetherLink demandera de nouvelles informations de connexion QR au relais d'amorçage enregistré.";
 "AetherLink can prepare QR connection details when a pairing QR is generated." = "AetherLink peut préparer les informations de connexion QR lors de la génération d'un QR de jumelage.";
 "Add a reachable route before pairing from another network." = "Ajoutez une route joignable avant le jumelage depuis un autre réseau.";
+"%@. %@" = "%@. %@";

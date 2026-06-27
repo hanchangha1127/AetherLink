@@ -27,8 +27,10 @@
 "Model provider" = "모델 제공자";
 "Quick Actions" = "빠른 작업";
 "Check Model Providers" = "모델 제공자 확인";
+"Check model provider availability through AetherLink Runtime." = "AetherLink Runtime을 통해 모델 제공자 사용 가능 여부를 확인합니다.";
 "Load Model List" = "모델 목록 불러오기";
 "Load Local Models" = "모델 불러오기";
+"Load the installed local model list through AetherLink Runtime." = "AetherLink Runtime을 통해 설치된 로컬 모델 목록을 불러옵니다.";
 "Local Models" = "모델";
 "Models" = "모델";
 "Readiness" = "준비 상태";
@@ -41,6 +43,7 @@
 "Needs attention" = "확인 필요";
 "Not ready" = "준비 안 됨";
 "Pending" = "대기 중";
+"Activity item %@. Status %@." = "활동 항목 %@. 상태 %@.";
 "Readiness %@. Status %@. %@" = "준비 상태 %@. 상태 %@. %@";
 "Status item" = "상태 항목";
 "Unknown status" = "알 수 없음";
@@ -69,6 +72,8 @@
 "LM Studio connection error" = "LM Studio 연결 오류";
 "Port" = "포트";
 "Generated automatically if blank" = "비워두면 자동으로 생성됩니다";
+"Empty" = "비어 있음";
+"Entered" = "입력됨";
 "Rotate Secret" = "키 새로 고침";
 "Generate Latest QR" = "최신 QR 생성";
 "Waiting for device" = "기기 대기 중";
@@ -97,6 +102,9 @@
 "Unknown provider" = "알 수 없는 제공자";
 "Unknown source" = "알 수 없는 출처";
 "Size unknown" = "크기 알 수 없음";
+"Model section" = "모델 섹션";
+"No model count" = "모델 수 없음";
+"Model section %@. %@" = "모델 섹션 %@. %@";
 "Model %@. ID %@. Type %@. Provider %@. Source %@. State %@. Size %@" = "모델 %@. ID %@. 유형 %@. 제공자 %@. 출처 %@. 상태 %@. 크기 %@";
 "Model Residency" = "모델 상주";
 "Model provider availability" = "모델 제공자 사용 가능 여부";
@@ -136,6 +144,7 @@
 "Generate New QR" = "새 QR 생성";
 "Pairing QR code" = "페어링 QR 코드";
 "Pairing QR code unavailable" = "페어링 QR 코드를 사용할 수 없음";
+"Pairing QR time remaining" = "페어링 QR 남은 시간";
 "Scan this QR from AetherLink." = "AetherLink에서 이 QR을 스캔하세요.";
 "After pairing, manage or remove trusted devices in Trusted Devices." = "페어링 후 신뢰 기기에서 신뢰 기기를 관리하거나 제거할 수 있습니다.";
 "Paired devices connect to AetherLink Runtime, not directly to model providers." = "페어링된 기기는 모델 제공자가 아니라 AetherLink Runtime에 연결합니다.";
@@ -145,10 +154,12 @@
 
 "Manage pairing trust and remove devices allowed to use AetherLink Runtime." = "AetherLink Runtime 사용이 허용된 기기의 신뢰를 관리하고 제거합니다.";
 "Refresh Devices" = "기기 새로고침";
+"Refresh trusted devices from AetherLink Runtime." = "AetherLink Runtime에서 신뢰 기기 목록을 새로고침합니다.";
 "Allowed Devices" = "허용된 기기";
 "No trusted devices" = "신뢰 기기 없음";
 "Pair a device before allowing runtime commands." = "런타임 명령을 허용하기 전에 기기를 페어링하세요.";
 "Paired %@ · ID ending %@" = "%@ 페어링됨 · ID 끝자리 %@";
+"Paired %@. Device ID ending %@" = "%@ 페어링됨. 기기 ID 끝자리 %@";
 "Key fingerprint %@" = "키 지문 %@";
 "Pairing details unavailable." = "페어링 세부 정보를 사용할 수 없습니다.";
 "Trusted device %@. %@. Key fingerprint %@" = "신뢰 기기 %@. %@. 키 지문 %@";
@@ -167,6 +178,10 @@
 "Activity appears here after AetherLink Runtime starts receiving requests." = "AetherLink Runtime이 요청을 받기 시작하면 활동이 여기에 표시됩니다.";
 "Technical Details" = "세부 정보";
 "Technical details for %@" = "%@의 세부 정보";
+"Activity technical details expanded" = "활동 세부 정보 펼쳐짐";
+"Activity technical details collapsed" = "활동 세부 정보 접힘";
+"Collapse to hide activity technical details." = "활동 세부 정보를 숨기려면 접으세요.";
+"Expand to show activity technical details." = "활동 세부 정보를 보려면 펼치세요.";
 "Connection setup result" = "연결 설정 결과";
 "Connection health" = "연결 상태";
 "Connection preparation" = "연결 준비";
@@ -177,8 +192,8 @@
 "AetherLink runtime stopped" = "AetherLink Runtime 중지됨";
 "Model provider health check passed" = "모델 제공자 상태 확인 성공";
 "Pairing QR generated" = "페어링 QR 생성됨";
-"Trusted %@" = "%@ 신뢰됨";
-"Removed %@" = "%@ 삭제됨";
+"Trusted device %@" = "신뢰 기기 %@ 등록됨";
+"Removed trust for %@" = "%@ 신뢰 해제됨";
 "Received device runtime request" = "기기 런타임 요청 수신";
 "Loaded 1 model" = "모델 1개 불러옴";
 "Loaded %@ models" = "모델 %@개 불러옴";
@@ -216,7 +231,11 @@
 "Reconnecting with saved connection details." = "저장된 연결 정보로 다시 연결 중입니다.";
 "Scan once from AetherLink to trust this AetherLink Runtime." = "AetherLink에서 한 번 스캔해 이 AetherLink Runtime을 신뢰하세요.";
 "Generate a pairing QR. AetherLink prepares connection details automatically when available." = "페어링 QR을 생성하세요. 가능하면 AetherLink가 연결 정보를 자동으로 준비합니다.";
+"Generate the latest pairing QR with saved connection details." = "저장된 연결 정보로 최신 페어링 QR을 생성합니다.";
 "Pairing QR is waiting for connection details." = "페어링 QR이 연결 정보를 기다리는 중입니다.";
+"Pairing QR generation is unavailable from this view." = "이 화면에서는 페어링 QR을 생성할 수 없습니다.";
+"Latest QR generation is unavailable from this view." = "이 화면에서는 최신 QR을 생성할 수 없습니다.";
+"Connection details are not ready for QR generation. Check Connection Recovery settings." = "QR 생성을 위한 연결 정보가 준비되지 않았습니다. 연결 복구 설정을 확인하세요.";
 "Connection details for %@ cannot be included in this QR. Advanced Connection Setup needs an address both devices can reach." = "%@의 연결 정보를 이 QR에 포함할 수 없습니다. 연결 복구에는 두 기기 모두에서 접근 가능한 주소가 필요합니다.";
 "Connection details are being prepared. Keep this window open; the QR appears when AetherLink Runtime is ready." = "연결 정보를 준비 중입니다. 이 창을 열어두면 AetherLink Runtime이 준비되었을 때 QR이 표시됩니다.";
 "Connection details for %@ are not ready yet. Keep this window open; the QR appears when AetherLink Runtime is ready." = "%@의 연결 정보가 아직 준비되지 않았습니다. 이 창을 열어두면 AetherLink Runtime이 준비되었을 때 QR이 표시됩니다.";
@@ -224,6 +243,7 @@
 "This QR includes connection details for %@, but the secure connection secret is missing." = "이 QR에는 %@의 연결 정보가 포함되어 있지만 보안 연결 암호가 없습니다.";
 "Generate a pairing QR. AetherLink prepares connection details automatically and shows the QR when ready." = "페어링 QR을 생성하세요. AetherLink가 연결 정보를 자동으로 준비하고 준비되면 QR을 표시합니다.";
 "Generate a pairing QR first. If automatic connection preparation is unavailable, use Advanced Connection Setup only when needed." = "먼저 페어링 QR을 생성하세요. 자동 연결 준비를 사용할 수 없을 때만 연결 복구를 사용하세요.";
+"Pairing QR status" = "페어링 QR 상태";
 "This QR verifies AetherLink Runtime and includes connection details for pairing or refresh." = "이 QR은 AetherLink Runtime을 확인하고 페어링 또는 갱신에 필요한 연결 정보를 포함합니다.";
 "Local Network permission helps nearby discovery; trust stays tied to this AetherLink Runtime." = "로컬 네트워크 권한은 가까운 기기 발견을 돕고, 신뢰는 이 AetherLink Runtime에 연결됩니다.";
 "Keep AetherLink Runtime open until pairing completes." = "페어링이 완료될 때까지 AetherLink Runtime을 열어두세요.";
@@ -240,10 +260,13 @@
 "Optional" = "선택 사항";
 "Enable only when this bootstrap relay is reachable through a VPN, tunnel, or private overlay shared by both devices." = "두 기기가 공유하는 VPN, 터널 또는 프라이빗 오버레이를 통해 이 부트스트랩 릴레이에 접근할 수 있을 때만 켜세요.";
 "Save Bootstrap Relay" = "부트스트랩 릴레이 저장";
+"Save bootstrap relay settings for future pairing QR connection details." = "향후 페어링 QR 연결 정보에 사용할 부트스트랩 릴레이 설정을 저장합니다.";
 "Bootstrap relay saved. Generate the latest QR and scan it in AetherLink to pair or refresh connectivity." = "부트스트랩 릴레이를 저장했습니다. 최신 QR을 생성하고 AetherLink에서 스캔해 페어링하거나 연결을 갱신하세요.";
 "Connection address" = "연결 주소";
 "Connection setup secret" = "보호된 연결 키";
 "Save Connection" = "연결 저장";
+"Save fallback connection details for future pairing QR routes." = "향후 페어링 QR 경로에 사용할 예비 연결 정보를 저장합니다.";
+"Create a new connection setup secret for future pairing QR connection details." = "향후 페어링 QR 연결 정보에 사용할 새 연결 설정 비밀값을 생성합니다.";
 "Connection setup secret regenerated." = "보호된 연결 키를 새로 고쳤습니다.";
 "Disable Connection" = "연결 끄기";
 "Disable saved connection details for %@" = "%@ 정보 끄기";
@@ -306,12 +329,23 @@
 "Enter only the connection address. Put the port in the Port field." = "연결 주소만 입력하세요. 포트는 포트 필드에 입력하세요.";
 "Nearby + cross-network" = "근거리 + 다른 네트워크";
 "Nearby only" = "근거리만";
-"No cross-network connection details are saved yet. Pairing still works nearby, and QR-based remote connection can be prepared later." = "다른 네트워크용 연결 정보가 아직 저장되어 있지 않습니다. 근처에서는 페어링이 동작하며, QR 기반 원격 연결은 나중에 준비할 수 있습니다.";
+"No cross-network connection details are saved yet. Nearby pairing still works. For another network, use a reachable relay, VPN, or tunnel before generating the latest QR." = "다른 네트워크용 연결 정보가 아직 저장되어 있지 않습니다. 근처 페어링은 계속 동작합니다. 다른 네트워크에서는 최신 QR을 생성하기 전에 접근 가능한 릴레이, VPN 또는 터널을 사용하세요.";
 "This connection address is local-network only. Use a public, VPN, or tunnel address for different networks." = "이 연결 주소는 로컬 네트워크 전용입니다. 다른 네트워크에서는 공용, VPN 또는 터널 주소를 사용하세요.";
 "This connection address is private. Use a public address, or enable Private Overlay Route only when a VPN or tunnel makes it reachable from both devices." = "이 연결 주소는 사설 주소입니다. 공용 주소를 사용하거나, VPN 또는 터널로 두 기기 모두에서 접근 가능할 때만 사설 오버레이 경로를 켜세요.";
 "This connection address points back to AetherLink Runtime. A device on another network cannot reach it." = "이 연결 주소는 AetherLink Runtime 자신을 가리킵니다. 다른 네트워크의 기기는 접근할 수 없습니다.";
 "Trusted devices can find this AetherLink Runtime nearby after pairing." = "신뢰된 기기는 페어링 후 근처에서 이 AetherLink Runtime을 찾을 수 있습니다.";
 "Use Private Overlay Route" = "사설 오버레이 경로 사용";
+"Bootstrap relay Private Overlay Route" = "부트스트랩 릴레이 사설 오버레이 경로";
+"Fallback connection Private Overlay Route" = "예비 연결 사설 오버레이 경로";
+"Enabled" = "켜짐";
+"Disabled" = "꺼짐";
+"Connection Recovery settings" = "연결 복구 설정";
+"Connection Recovery settings expanded" = "연결 복구 설정 펼쳐짐";
+"Connection Recovery settings collapsed" = "연결 복구 설정 접힘";
+"Show or hide advanced connection recovery fields." = "고급 연결 복구 필드를 표시하거나 숨깁니다.";
+"Connection diagnostics expanded" = "연결 진단 펼쳐짐";
+"Connection diagnostics collapsed" = "연결 진단 접힘";
+"Show or hide connection diagnostic details." = "연결 진단 세부 정보를 표시하거나 숨깁니다.";
 "Enable only when this private address is reachable through a VPN, tunnel, or private overlay shared by both devices." = "이 사설 주소가 두 기기에서 공유하는 VPN, 터널 또는 사설 오버레이를 통해 접근 가능할 때만 켜세요.";
 "saved connection" = "저장된 연결";
 
@@ -331,3 +365,4 @@
 "AetherLink will request fresh QR connection details from the saved bootstrap relay." = "AetherLink가 저장된 부트스트랩 릴레이에서 새 QR 연결 정보를 요청합니다.";
 "AetherLink can prepare QR connection details when a pairing QR is generated." = "페어링 QR을 생성할 때 AetherLink가 QR 연결 정보를 준비할 수 있습니다.";
 "Add a reachable route before pairing from another network." = "다른 네트워크에서 페어링하기 전에 접근 가능한 경로를 추가하세요.";
+"%@. %@" = "%@. %@";

@@ -27,8 +27,10 @@
 "Model provider" = "Model provider";
 "Quick Actions" = "Quick Actions";
 "Check Model Providers" = "Check Model Providers";
+"Check model provider availability through AetherLink Runtime." = "Check model provider availability through AetherLink Runtime.";
 "Load Model List" = "Load Model List";
 "Load Local Models" = "Load Models";
+"Load the installed local model list through AetherLink Runtime." = "Load the installed local model list through AetherLink Runtime.";
 "Local Models" = "Models";
 "Models" = "Models";
 "Readiness" = "Readiness";
@@ -41,6 +43,7 @@
 "Needs attention" = "Needs attention";
 "Not ready" = "Not ready";
 "Pending" = "Pending";
+"Activity item %@. Status %@." = "Activity item %@. Status %@.";
 "Readiness %@. Status %@. %@" = "Readiness %@. Status %@. %@";
 "Status item" = "Status item";
 "Unknown status" = "Unknown status";
@@ -69,6 +72,8 @@
 "LM Studio connection error" = "LM Studio connection error";
 "Port" = "Port";
 "Generated automatically if blank" = "Created automatically if left blank";
+"Empty" = "Empty";
+"Entered" = "Entered";
 "Rotate Secret" = "Refresh Key";
 "Generate Latest QR" = "Generate Latest QR";
 "Waiting for device" = "Waiting for device";
@@ -97,6 +102,9 @@
 "Unknown provider" = "Unknown provider";
 "Unknown source" = "Unknown source";
 "Size unknown" = "Size unknown";
+"Model section" = "Model section";
+"No model count" = "No model count";
+"Model section %@. %@" = "Model section %@. %@";
 "Model %@. ID %@. Type %@. Provider %@. Source %@. State %@. Size %@" = "Model %@. ID %@. Type %@. Provider %@. Source %@. State %@. Size %@";
 "Model Residency" = "Model Residency";
 "Model provider availability" = "Model provider availability";
@@ -136,6 +144,7 @@
 "Generate New QR" = "Generate New QR";
 "Pairing QR code" = "Pairing QR code";
 "Pairing QR code unavailable" = "Pairing QR code unavailable";
+"Pairing QR time remaining" = "Pairing QR time remaining";
 "Scan this QR from AetherLink." = "Scan this QR from AetherLink.";
 "After pairing, manage or remove trusted devices in Trusted Devices." = "After pairing, manage or remove trusted devices in Trusted Devices.";
 "Paired devices connect to AetherLink Runtime, not directly to model providers." = "Paired devices connect to AetherLink Runtime, not directly to model providers.";
@@ -145,10 +154,12 @@
 
 "Manage pairing trust and remove devices allowed to use AetherLink Runtime." = "Manage pairing trust and remove devices allowed to use AetherLink Runtime.";
 "Refresh Devices" = "Refresh Devices";
+"Refresh trusted devices from AetherLink Runtime." = "Refresh trusted devices from AetherLink Runtime.";
 "Allowed Devices" = "Allowed Devices";
 "No trusted devices" = "No trusted devices";
 "Pair a device before allowing runtime commands." = "Pair a device before allowing runtime commands.";
 "Paired %@ · ID ending %@" = "Paired %@ · ID ending %@";
+"Paired %@. Device ID ending %@" = "Paired %@. Device ID ending %@";
 "Key fingerprint %@" = "Key fingerprint %@";
 "Pairing details unavailable." = "Pairing details unavailable.";
 "Trusted device %@. %@. Key fingerprint %@" = "Trusted device %@. %@. Key fingerprint %@";
@@ -167,6 +178,10 @@
 "Activity appears here after AetherLink Runtime starts receiving requests." = "Activity appears here after AetherLink Runtime starts receiving requests.";
 "Technical Details" = "Details";
 "Technical details for %@" = "Details for %@";
+"Activity technical details expanded" = "Activity details expanded";
+"Activity technical details collapsed" = "Activity details collapsed";
+"Collapse to hide activity technical details." = "Collapse to hide activity details.";
+"Expand to show activity technical details." = "Expand to show activity details.";
 "Connection setup result" = "Connection setup result";
 "Connection health" = "Connection health";
 "Connection preparation" = "Connection preparation";
@@ -177,8 +192,8 @@
 "AetherLink runtime stopped" = "AetherLink Runtime stopped";
 "Model provider health check passed" = "Model provider health check passed";
 "Pairing QR generated" = "Pairing QR generated";
-"Trusted %@" = "Trusted %@";
-"Removed %@" = "Removed %@";
+"Trusted device %@" = "Trusted device %@";
+"Removed trust for %@" = "Removed trust for %@";
 "Received device runtime request" = "Received device runtime request";
 "Loaded 1 model" = "Loaded 1 model";
 "Loaded %@ models" = "Loaded %@ models";
@@ -216,7 +231,11 @@
 "Reconnecting with saved connection details." = "Reconnecting with saved connection details.";
 "Scan once from AetherLink to trust this AetherLink Runtime." = "Scan once from AetherLink to trust this AetherLink Runtime.";
 "Generate a pairing QR. AetherLink prepares connection details automatically when available." = "Generate a pairing QR. AetherLink prepares connection details automatically when available.";
+"Generate the latest pairing QR with saved connection details." = "Generate the latest pairing QR with saved connection details.";
 "Pairing QR is waiting for connection details." = "Pairing QR is waiting for connection details.";
+"Pairing QR generation is unavailable from this view." = "Pairing QR generation is unavailable from this view.";
+"Latest QR generation is unavailable from this view." = "Latest QR generation is unavailable from this view.";
+"Connection details are not ready for QR generation. Check Connection Recovery settings." = "Connection details are not ready for QR generation. Check Connection Recovery settings.";
 "Connection details for %@ cannot be included in this QR. Advanced Connection Setup needs an address both devices can reach." = "Connection details for %@ cannot be included in this QR. Connection Recovery needs an address both devices can reach.";
 "Connection details are being prepared. Keep this window open; the QR appears when AetherLink Runtime is ready." = "Connection details are being prepared. Keep this window open; the QR appears when AetherLink Runtime is ready.";
 "Connection details for %@ are not ready yet. Keep this window open; the QR appears when AetherLink Runtime is ready." = "Connection details for %@ are not ready yet. Keep this window open; the QR appears when AetherLink Runtime is ready.";
@@ -224,6 +243,7 @@
 "This QR includes connection details for %@, but the secure connection secret is missing." = "This QR includes connection details for %@, but the secure connection secret is missing.";
 "Generate a pairing QR. AetherLink prepares connection details automatically and shows the QR when ready." = "Generate a pairing QR. AetherLink prepares connection details automatically and shows the QR when ready.";
 "Generate a pairing QR first. If automatic connection preparation is unavailable, use Advanced Connection Setup only when needed." = "Generate a pairing QR first. If automatic connection preparation is unavailable, use Connection Recovery only when needed.";
+"Pairing QR status" = "Pairing QR status";
 "This QR verifies AetherLink Runtime and includes connection details for pairing or refresh." = "This QR verifies AetherLink Runtime and includes connection details for pairing or refresh.";
 "Local Network permission helps nearby discovery; trust stays tied to this AetherLink Runtime." = "Local Network permission helps nearby discovery; trust stays tied to this AetherLink Runtime.";
 "Keep AetherLink Runtime open until pairing completes." = "Keep AetherLink Runtime open until pairing completes.";
@@ -240,10 +260,13 @@
 "Optional" = "Optional";
 "Enable only when this bootstrap relay is reachable through a VPN, tunnel, or private overlay shared by both devices." = "Enable only when this bootstrap relay is reachable through a VPN, tunnel, or private overlay shared by both devices.";
 "Save Bootstrap Relay" = "Save Bootstrap Relay";
+"Save bootstrap relay settings for future pairing QR connection details." = "Save bootstrap relay settings for future pairing QR connection details.";
 "Bootstrap relay saved. Generate the latest QR and scan it in AetherLink to pair or refresh connectivity." = "Bootstrap relay saved. Generate the latest QR and scan it in AetherLink to pair or refresh connectivity.";
 "Connection address" = "Connection address";
 "Connection setup secret" = "Protected connection key";
 "Save Connection" = "Save Connection";
+"Save fallback connection details for future pairing QR routes." = "Save fallback connection details for future pairing QR routes.";
+"Create a new connection setup secret for future pairing QR connection details." = "Create a new connection setup secret for future pairing QR connection details.";
 "Connection setup secret regenerated." = "Protected connection key refreshed.";
 "Disable Connection" = "Disable Connection";
 "Disable saved connection details for %@" = "Disable saved connection details for %@";
@@ -306,12 +329,23 @@
 "Enter only the connection address. Put the port in the Port field." = "Enter only the connection address. Put the port in the Port field.";
 "Nearby + cross-network" = "Nearby + cross-network";
 "Nearby only" = "Nearby only";
-"No cross-network connection details are saved yet. Pairing still works nearby, and QR-based remote connection can be prepared later." = "No cross-network connection details are saved yet. Pairing still works nearby, and QR-based remote connection can be prepared later.";
+"No cross-network connection details are saved yet. Nearby pairing still works. For another network, use a reachable relay, VPN, or tunnel before generating the latest QR." = "No cross-network connection details are saved yet. Nearby pairing still works. For another network, use a reachable relay, VPN, or tunnel before generating the latest QR.";
 "This connection address is local-network only. Use a public, VPN, or tunnel address for different networks." = "This connection address is local-network only. Use a public, VPN, or tunnel address for different networks.";
 "This connection address is private. Use a public address, or enable Private Overlay Route only when a VPN or tunnel makes it reachable from both devices." = "This connection address is private. Use a public address, or enable Private Overlay Route only when a VPN or tunnel makes it reachable from both devices.";
 "This connection address points back to AetherLink Runtime. A device on another network cannot reach it." = "This connection address points back to AetherLink Runtime. A device on another network cannot reach it.";
 "Trusted devices can find this AetherLink Runtime nearby after pairing." = "Trusted devices can find this AetherLink Runtime nearby after pairing.";
 "Use Private Overlay Route" = "Use Private Overlay Route";
+"Bootstrap relay Private Overlay Route" = "Bootstrap relay Private Overlay Route";
+"Fallback connection Private Overlay Route" = "Fallback connection Private Overlay Route";
+"Enabled" = "Enabled";
+"Disabled" = "Disabled";
+"Connection Recovery settings" = "Connection Recovery settings";
+"Connection Recovery settings expanded" = "Connection Recovery settings expanded";
+"Connection Recovery settings collapsed" = "Connection Recovery settings collapsed";
+"Show or hide advanced connection recovery fields." = "Show or hide advanced connection recovery fields.";
+"Connection diagnostics expanded" = "Connection diagnostics expanded";
+"Connection diagnostics collapsed" = "Connection diagnostics collapsed";
+"Show or hide connection diagnostic details." = "Show or hide connection diagnostic details.";
 "Enable only when this private address is reachable through a VPN, tunnel, or private overlay shared by both devices." = "Enable only when this private address is reachable through a VPN, tunnel, or private overlay shared by both devices.";
 "saved connection" = "saved connection";
 
@@ -331,3 +365,4 @@
 "AetherLink will request fresh QR connection details from the saved bootstrap relay." = "AetherLink will request fresh QR connection details from the saved bootstrap relay.";
 "AetherLink can prepare QR connection details when a pairing QR is generated." = "AetherLink can prepare QR connection details when a pairing QR is generated.";
 "Add a reachable route before pairing from another network." = "Add a reachable route before pairing from another network.";
+"%@. %@" = "%@. %@";

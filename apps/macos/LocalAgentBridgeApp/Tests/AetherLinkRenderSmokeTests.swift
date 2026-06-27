@@ -162,10 +162,16 @@ final class AetherLinkRenderSmokeTests: XCTestCase {
 
     private func renderSmokeModel() -> CompanionAppModel {
         CompanionAppModel(
-            environment: [:],
+            environment: isolatedRuntimeIdentityEnvironment(),
             userDefaults: isolatedDefaults(),
             runtimeRouteHostProvider: { "127.0.0.1" }
         )
+    }
+
+    private func isolatedRuntimeIdentityEnvironment() -> [String: String] {
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("aetherlink-render-runtime-identity-\(UUID().uuidString).json")
+        return ["AETHERLINK_RUNTIME_IDENTITY_FILE": fileURL.path]
     }
 }
 

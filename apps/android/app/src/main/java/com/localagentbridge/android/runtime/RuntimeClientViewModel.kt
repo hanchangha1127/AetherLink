@@ -544,6 +544,13 @@ class RuntimeClientViewModel internal constructor(
         )
     }
 
+    fun reconcileSystemAppLanguageTag(languageTag: String?) {
+        val cleanData = persistedRuntimeData.withSystemAppLanguageTag(languageTag)
+        if (cleanData != persistedRuntimeData) {
+            publishPersistedRuntimeData(cleanData, save = true)
+        }
+    }
+
     fun setAppTheme(theme: RuntimeAppTheme) {
         publishPersistedRuntimeData(
             persistedRuntimeData.withAppTheme(theme),
@@ -1689,14 +1696,31 @@ class RuntimeClientViewModel internal constructor(
                             clearPendingSuggestions()
                             clearPendingTitleRequest()
                             val current = state.value
+                            val uiError = current.runtimeReceiveFailureUiError(error)
+                            val trustedRuntimeWithoutFailedRelay = if (uiError.requiresFreshRemoteRouteBeforeReconnect()) {
+                                current.trustedRuntime?.withoutRelayRoute()
+                            } else {
+                                null
+                            }
                             val updatedState = current.withRuntimeReceiveFailure(
-                                current.runtimeReceiveFailureUiError(error),
-                            )
+                                uiError,
+                            ).let { failedState ->
+                                trustedRuntimeWithoutFailedRelay?.let { runtime ->
+                                    failedState.withTrustedRuntimeRouteFields(runtime, runtime.endpointHint)
+                                } ?: failedState
+                            }
                             mutableState.value = updatedState
+                            trustedRuntimeWithoutFailedRelay?.toTrustedRuntimeOrNull()?.let { trusted ->
+                                viewModelScope.launch {
+                                    pairingStore.trustRuntime(trusted)
+                                }
+                            }
                             if (current.activeRequestId != null) {
                                 persistActiveMessages(updatedState.messages, clearError = false)
                             }
-                            scheduleTrustedRuntimeReconnect()
+                            if (!uiError.requiresFreshRemoteRouteBeforeReconnect()) {
+                                scheduleTrustedRuntimeReconnect()
+                            }
                         }
                         return@launch
                     }
@@ -1707,6 +1731,7 @@ class RuntimeClientViewModel internal constructor(
     private fun scheduleTrustedRuntimeReconnect() {
         if (!shouldRestoreTrustedRuntimeConnection) return
         val current = state.value
+        if (current.error.requiresFreshRemoteRouteBeforeReconnect()) return
         if (publishTrustedRemoteRouteExpiredIfNeeded(current)) return
         if (current.shouldDiscoverTrustedRuntimeRoute()) {
             ensureTrustedRuntimeDiscovery()
@@ -1990,6 +2015,10 @@ class RuntimeClientViewModel internal constructor(
         if (trustedRuntime.relayExpiresAtEpochMillis == null) return
         mutableState.update {
             it.copy(
+                isConnected = false,
+                isConnecting = false,
+                runtimeStatus = "failed",
+                activeRouteKind = null,
                 routeRefreshNoticeRuntimeName = null,
                 error = RuntimeUiError(
                     code = "remote_route_expired",
@@ -2538,8 +2567,9 @@ class RuntimeClientViewModel internal constructor(
         if (!current.trustedRuntime.hasExpiredRelayRoute(dependencies.currentTimeMillis())) {
             return false
         }
+        val trustedRuntimeWithoutExpiredRelay = current.trustedRuntime?.withoutRelayRoute()
         mutableState.update {
-            it.copy(
+            val expiredState = it.copy(
                 isConnected = false,
                 isConnecting = false,
                 runtimeStatus = "failed",
@@ -2549,6 +2579,14 @@ class RuntimeClientViewModel internal constructor(
                     diagnosticCode = "route_diagnostic_remote_route_expired",
                 ),
             )
+            trustedRuntimeWithoutExpiredRelay?.let { runtime ->
+                expiredState.withTrustedRuntimeRouteFields(runtime, runtime.endpointHint)
+            } ?: expiredState
+        }
+        trustedRuntimeWithoutExpiredRelay?.toTrustedRuntimeOrNull()?.let { trusted ->
+            viewModelScope.launch {
+                pairingStore.trustRuntime(trusted)
+            }
         }
         return true
     }
@@ -2929,6 +2967,7 @@ internal fun shouldRetryTrustedRuntimeConnectFailure(
     restoreEnabled: Boolean,
 ): Boolean {
     if (!restoreEnabled || state.isConnected || state.isConnecting) return false
+    if (state.error.requiresFreshRemoteRouteBeforeReconnect()) return false
     val identity = target.identity ?: return false
     val trustedRuntime = state.trustedRuntime ?: return false
     return trustedRuntime.matchesIdentity(identity)
@@ -3308,6 +3347,38 @@ internal fun RuntimeUiState.withTrustedRuntimeRouteFields(
         } else {
             endpoint?.source ?: runtimeEndpointSource
         },
+    )
+}
+
+private fun RuntimeTrustedRuntime.withoutRelayRoute(): RuntimeTrustedRuntime {
+    return copy(
+        relayHost = null,
+        relayPort = null,
+        relayId = null,
+        relaySecret = null,
+        relayExpiresAtEpochMillis = null,
+        relayNonce = null,
+        relayScope = null,
+    )
+}
+
+private fun RuntimeTrustedRuntime.toTrustedRuntimeOrNull(): TrustedRuntime? {
+    val cleanFingerprint = fingerprint?.takeIf(String::isNotBlank) ?: return null
+    return TrustedRuntime(
+        deviceId = deviceId,
+        name = name,
+        fingerprint = cleanFingerprint,
+        publicKeyBase64 = publicKeyBase64,
+        routeToken = routeToken,
+        host = endpointHint?.host,
+        port = endpointHint?.port,
+        relayHost = relayHost,
+        relayPort = relayPort,
+        relayId = relayId,
+        relaySecret = relaySecret,
+        relayExpiresAtEpochMillis = relayExpiresAtEpochMillis,
+        relayNonce = relayNonce,
+        relayScope = relayScope,
     )
 }
 
@@ -3964,6 +4035,11 @@ private fun Throwable.isRelayFrameAuthenticationFailure(): Boolean {
         current = current.cause
     }
     return false
+}
+
+private fun RuntimeUiError?.requiresFreshRemoteRouteBeforeReconnect(): Boolean {
+    return this?.code == "remote_route_auth_failed" ||
+        this?.diagnosticCode == "route_diagnostic_relay_auth_failed"
 }
 
 internal fun RuntimeUiState.withPairingRequiredRuntimeState(detail: String?): RuntimeUiState {

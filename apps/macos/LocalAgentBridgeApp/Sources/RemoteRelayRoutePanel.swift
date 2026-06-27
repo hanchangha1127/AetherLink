@@ -84,13 +84,29 @@ struct RemoteRelayRoutePanel: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             if settings.isEnabled {
+                let canGenerateLatestQRCode = model.isDevelopmentRelayQRCodeReady &&
+                    onGenerateRelayQRCode != nil
+                let generateLatestQRHint = connectionRecoveryGenerateLatestQRActionAccessibilityHint(
+                    isRouteReadyForQRCode: model.isDevelopmentRelayQRCodeReady,
+                    hasAction: onGenerateRelayQRCode != nil
+                )
                 Button {
                     generateRelayQRCode()
                 } label: {
                     Label(NSLocalizedString("Generate Latest QR", comment: ""), systemImage: "qrcode")
                 }
                 .buttonStyle(.bordered)
-                .disabled(!model.isDevelopmentRelayRouteEligibleForQRCode || onGenerateRelayQRCode == nil)
+                .disabled(!canGenerateLatestQRCode)
+                .help(generateLatestQRHint)
+                .accessibilityValue(
+                    Text(
+                        connectionRecoveryGenerateLatestQRActionAccessibilityValue(
+                            isRouteReadyForQRCode: model.isDevelopmentRelayQRCodeReady,
+                            hasAction: onGenerateRelayQRCode != nil
+                        )
+                    )
+                )
+                .accessibilityHint(Text(generateLatestQRHint))
 
                 if !model.isDevelopmentRelayQRCodeReady {
                     Label(relayQRCodeReadinessText(settings: settings), systemImage: "info.circle")
@@ -116,8 +132,12 @@ struct RemoteRelayRoutePanel: View {
                             .fixedSize(horizontal: false, vertical: true)
                         TextField(NSLocalizedString("Bootstrap relay endpoints", comment: ""), text: $bootstrapEndpoints)
                             .textFieldStyle(.roundedBorder)
+                            .accessibilityLabel(Text(NSLocalizedString("Bootstrap relay endpoints", comment: "")))
+                            .accessibilityValue(Text(connectionRecoveryTextFieldAccessibilityValue(bootstrapEndpoints)))
                         SecureField(NSLocalizedString("Bootstrap allocation token", comment: ""), text: $bootstrapAllocationToken, prompt: Text(NSLocalizedString("Optional", comment: "")))
                             .textFieldStyle(.roundedBorder)
+                            .accessibilityLabel(Text(NSLocalizedString("Bootstrap allocation token", comment: "")))
+                            .accessibilityValue(Text(connectionRecoveryOptionalSecureFieldAccessibilityValue(bootstrapAllocationToken)))
                         Toggle(isOn: $bootstrapAllowsPrivateOverlay) {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(NSLocalizedString("Use Private Overlay Route", comment: ""))
@@ -128,12 +148,19 @@ struct RemoteRelayRoutePanel: View {
                             }
                         }
                         .toggleStyle(.checkbox)
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(Text(connectionRecoveryBootstrapPrivateOverlayRouteAccessibilityLabel()))
+                        .accessibilityValue(Text(connectionRecoveryPrivateOverlayRouteAccessibilityValue(isEnabled: bootstrapAllowsPrivateOverlay)))
+                        .accessibilityHint(Text(NSLocalizedString("Enable only when this bootstrap relay is reachable through a VPN, tunnel, or private overlay shared by both devices.", comment: "")))
                         Button {
                             saveBootstrapRelay()
                         } label: {
                             Label(NSLocalizedString("Save Bootstrap Relay", comment: ""), systemImage: "externaldrive.badge.checkmark")
                         }
                         .buttonStyle(.bordered)
+                        .help(connectionRecoverySaveBootstrapRelayActionAccessibilityHint())
+                        .accessibilityValue(Text(NSLocalizedString("Ready", comment: "")))
+                        .accessibilityHint(Text(connectionRecoverySaveBootstrapRelayActionAccessibilityHint()))
                     }
 
                     Divider()
@@ -141,13 +168,19 @@ struct RemoteRelayRoutePanel: View {
                     HStack(spacing: 8) {
                         TextField(NSLocalizedString("Connection address", comment: ""), text: $host)
                             .textFieldStyle(.roundedBorder)
+                            .accessibilityLabel(Text(NSLocalizedString("Connection address", comment: "")))
+                            .accessibilityValue(Text(connectionRecoveryTextFieldAccessibilityValue(host)))
                         TextField(NSLocalizedString("Port", comment: ""), text: $port)
                             .textFieldStyle(.roundedBorder)
                             .frame(width: 86)
+                            .accessibilityLabel(Text(NSLocalizedString("Port", comment: "")))
+                            .accessibilityValue(Text(connectionRecoveryTextFieldAccessibilityValue(port)))
                     }
 
                     SecureField(NSLocalizedString("Connection setup secret", comment: ""), text: $relaySecret, prompt: Text(NSLocalizedString("Generated automatically if blank", comment: "")))
                         .textFieldStyle(.roundedBorder)
+                        .accessibilityLabel(Text(NSLocalizedString("Connection setup secret", comment: "")))
+                        .accessibilityValue(Text(connectionRecoveryGeneratedSecretAccessibilityValue(relaySecret)))
 
                     if shouldShowPrivateOverlayToggle {
                         Toggle(isOn: $allowsPrivateOverlay) {
@@ -160,15 +193,26 @@ struct RemoteRelayRoutePanel: View {
                             }
                         }
                         .toggleStyle(.checkbox)
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(Text(connectionRecoveryFallbackPrivateOverlayRouteAccessibilityLabel()))
+                        .accessibilityValue(Text(connectionRecoveryPrivateOverlayRouteAccessibilityValue(isEnabled: allowsPrivateOverlay)))
+                        .accessibilityHint(Text(NSLocalizedString("Enable only when this private address is reachable through a VPN, tunnel, or private overlay shared by both devices.", comment: "")))
                     }
 
                     HStack(spacing: 8) {
+                        let saveConnectionActionValue = connectionRecoverySaveConnectionActionAccessibilityValue(
+                            host: host,
+                            port: port
+                        )
                         Button {
                             saveRelay()
                         } label: {
                             Label(NSLocalizedString("Save Connection", comment: ""), systemImage: "externaldrive.badge.checkmark")
                         }
                         .buttonStyle(.bordered)
+                        .help(connectionRecoverySaveConnectionActionAccessibilityHint())
+                        .accessibilityValue(Text(saveConnectionActionValue))
+                        .accessibilityHint(Text(connectionRecoverySaveConnectionActionAccessibilityHint()))
 
                         Button {
                             model.regenerateDevelopmentRelaySecret()
@@ -179,6 +223,9 @@ struct RemoteRelayRoutePanel: View {
                             Label(NSLocalizedString("Rotate Secret", comment: ""), systemImage: "key")
                         }
                         .buttonStyle(.bordered)
+                        .help(connectionRecoveryRotateSecretActionAccessibilityHint())
+                        .accessibilityValue(Text(NSLocalizedString("Ready", comment: "")))
+                        .accessibilityHint(Text(connectionRecoveryRotateSecretActionAccessibilityHint()))
 
                         if settings.isEnabled {
                             Button(role: .destructive) {
@@ -197,6 +244,11 @@ struct RemoteRelayRoutePanel: View {
                     .font(.caption.weight(.medium))
             }
             .tint(.secondary)
+            .accessibilityLabel(Text(connectionRecoveryDisclosureAccessibilityLabel()))
+            .accessibilityValue(
+                Text(connectionRecoveryDisclosureAccessibilityValue(isExpanded: isAdvancedRouteSettingsExpanded))
+            )
+            .accessibilityHint(Text(connectionRecoveryDisclosureAccessibilityHint()))
 
             relayHostWarning(settings: settings)
         }
@@ -399,7 +451,7 @@ struct RemoteRelayRoutePanel: View {
             return
         }
         guard let normalizedHost = normalizedRelayHost(trimmedHost) else {
-            message = NSLocalizedString("Enter only a connection address. Put the port in the port field.", comment: "")
+            message = NSLocalizedString("Enter only the connection address. Put the port in the Port field.", comment: "")
             messageTone = .warning
             diagnosticMessage = nil
             return
@@ -583,7 +635,23 @@ private struct DiagnosticDisclosure: View {
         }
         .tint(.secondary)
         .accessibilityLabel(Text(routeDiagnosticDisclosureAccessibilityLabel(context: accessibilityContext)))
+        .accessibilityValue(Text(routeDiagnosticDisclosureAccessibilityValue(isExpanded: isExpanded)))
+        .accessibilityHint(Text(routeDiagnosticDisclosureAccessibilityHint()))
     }
+}
+
+func connectionRecoveryDisclosureAccessibilityLabel() -> String {
+    NSLocalizedString("Connection Recovery settings", comment: "")
+}
+
+func connectionRecoveryDisclosureAccessibilityValue(isExpanded: Bool) -> String {
+    isExpanded
+        ? NSLocalizedString("Connection Recovery settings expanded", comment: "")
+        : NSLocalizedString("Connection Recovery settings collapsed", comment: "")
+}
+
+func connectionRecoveryDisclosureAccessibilityHint() -> String {
+    NSLocalizedString("Show or hide advanced connection recovery fields.", comment: "")
 }
 
 func routeDiagnosticDisclosureAccessibilityLabel(context: String) -> String {
@@ -595,6 +663,16 @@ func routeDiagnosticDisclosureAccessibilityLabel(context: String) -> String {
         format: NSLocalizedString("Technical details for %@", comment: ""),
         resolvedContext
     )
+}
+
+func routeDiagnosticDisclosureAccessibilityValue(isExpanded: Bool) -> String {
+    isExpanded
+        ? NSLocalizedString("Connection diagnostics expanded", comment: "")
+        : NSLocalizedString("Connection diagnostics collapsed", comment: "")
+}
+
+func routeDiagnosticDisclosureAccessibilityHint() -> String {
+    NSLocalizedString("Show or hide connection diagnostic details.", comment: "")
 }
 
 func relayStatusRowAccessibilityLabel(title: String, value: String, detail: String) -> String {
@@ -621,6 +699,96 @@ func disableConnectionAccessibilityLabel(endpoint: String?) -> String {
         format: NSLocalizedString("Disable saved connection details for %@", comment: ""),
         resolvedEndpoint
     )
+}
+
+func connectionRecoveryTextFieldAccessibilityValue(_ value: String) -> String {
+    value.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        ?? NSLocalizedString("Empty", comment: "")
+}
+
+func connectionRecoveryOptionalSecureFieldAccessibilityValue(_ value: String) -> String {
+    connectionRecoverySecureFieldAccessibilityValue(
+        value,
+        emptyValue: NSLocalizedString("Optional", comment: "")
+    )
+}
+
+func connectionRecoveryGeneratedSecretAccessibilityValue(_ value: String) -> String {
+    connectionRecoverySecureFieldAccessibilityValue(
+        value,
+        emptyValue: NSLocalizedString("Generated automatically if blank", comment: "")
+    )
+}
+
+func connectionRecoveryGenerateLatestQRActionAccessibilityValue(
+    isRouteReadyForQRCode: Bool,
+    hasAction: Bool = true
+) -> String {
+    isRouteReadyForQRCode && hasAction
+        ? NSLocalizedString("Ready", comment: "")
+        : NSLocalizedString("Unavailable", comment: "")
+}
+
+func connectionRecoveryGenerateLatestQRActionAccessibilityHint(
+    isRouteReadyForQRCode: Bool,
+    hasAction: Bool = true
+) -> String {
+    if !hasAction {
+        return NSLocalizedString("Latest QR generation is unavailable from this view.", comment: "")
+    }
+    if !isRouteReadyForQRCode {
+        return NSLocalizedString("Connection details are not ready for QR generation. Check Connection Recovery settings.", comment: "")
+    }
+    return NSLocalizedString("Generate the latest pairing QR with saved connection details.", comment: "")
+}
+
+func connectionRecoverySaveBootstrapRelayActionAccessibilityHint() -> String {
+    NSLocalizedString("Save bootstrap relay settings for future pairing QR connection details.", comment: "")
+}
+
+func connectionRecoverySaveConnectionActionAccessibilityHint() -> String {
+    NSLocalizedString("Save fallback connection details for future pairing QR routes.", comment: "")
+}
+
+func connectionRecoverySaveConnectionActionAccessibilityValue(host: String, port: String) -> String {
+    let trimmedHost = host.trimmingCharacters(in: .whitespacesAndNewlines)
+    if trimmedHost.isEmpty {
+        return NSLocalizedString("Enter a connection address.", comment: "")
+    }
+    if normalizedRelayHost(trimmedHost) == nil {
+        return NSLocalizedString("Enter only the connection address. Put the port in the Port field.", comment: "")
+    }
+    guard let relayPort = UInt16(port.trimmingCharacters(in: .whitespacesAndNewlines)), relayPort > 0 else {
+        return NSLocalizedString("Enter a valid connection port.", comment: "")
+    }
+    return NSLocalizedString("Ready", comment: "")
+}
+
+func connectionRecoveryRotateSecretActionAccessibilityHint() -> String {
+    NSLocalizedString("Create a new connection setup secret for future pairing QR connection details.", comment: "")
+}
+
+func connectionRecoveryBootstrapPrivateOverlayRouteAccessibilityLabel() -> String {
+    NSLocalizedString("Bootstrap relay Private Overlay Route", comment: "")
+}
+
+func connectionRecoveryFallbackPrivateOverlayRouteAccessibilityLabel() -> String {
+    NSLocalizedString("Fallback connection Private Overlay Route", comment: "")
+}
+
+func connectionRecoveryPrivateOverlayRouteAccessibilityValue(isEnabled: Bool) -> String {
+    isEnabled
+        ? NSLocalizedString("Enabled", comment: "")
+        : NSLocalizedString("Disabled", comment: "")
+}
+
+private func connectionRecoverySecureFieldAccessibilityValue(
+    _ value: String,
+    emptyValue: String
+) -> String {
+    value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        ? emptyValue
+        : NSLocalizedString("Entered", comment: "")
 }
 
 func sanitizedRouteDiagnosticDisclosureText(_ diagnostic: String) -> String {
