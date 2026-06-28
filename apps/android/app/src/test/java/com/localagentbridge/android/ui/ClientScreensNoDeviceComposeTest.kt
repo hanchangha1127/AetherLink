@@ -20,6 +20,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHeightIsAtLeast
@@ -46,6 +47,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTouchInput
@@ -74,6 +76,7 @@ import com.localagentbridge.android.DRAWER_HISTORY_TEST_TAG
 import com.localagentbridge.android.DRAWER_SETTINGS_FOOTER_TEST_TAG
 import com.localagentbridge.android.R
 import com.localagentbridge.android.RenameChatSessionDialog
+import com.localagentbridge.android.runtime.MAX_PENDING_ATTACHMENTS
 import com.localagentbridge.android.runtime.MODEL_KIND_CHAT
 import com.localagentbridge.android.runtime.MODEL_KIND_EMBEDDING
 import com.localagentbridge.android.runtime.RuntimeAppTheme
@@ -159,6 +162,153 @@ class ClientScreensNoDeviceComposeTest {
             .performClick()
 
         assertEquals(1, scanClicks)
+    }
+
+    @Test
+    fun settingsScreenHeadersExposeHeadingSemanticsAcrossSupportedLanguages() {
+        val languageTags = listOf("en", "ko", "ja", "zh-CN", "fr")
+        val currentLanguage = mutableStateOf(languageTags.first())
+
+        compose.setContent {
+            MaterialTheme {
+                LocalizedTestContent(languageTag = currentLanguage.value) {
+                    SettingsScreen(
+                        state = RuntimeUiState(
+                            selectedLanguageTag = currentLanguage.value,
+                            trustedRuntime = RuntimeTrustedRuntime(
+                                deviceId = "runtime-1",
+                                name = "AetherLink Runtime",
+                            ),
+                        ),
+                        onHostChange = {},
+                        onPortChange = {},
+                        onUseUsbReverse = {},
+                        onUseEmulator = {},
+                        onStartDiscovery = {},
+                        onStopDiscovery = {},
+                        onUseDiscoveredRuntime = {},
+                        onForgetTrustedRuntime = {},
+                        onScanPairingQr = {},
+                        onSubmitPairingPayload = {},
+                        onConnect = {},
+                        onRefreshHealth = {},
+                        onRequestModels = {},
+                        onDisconnect = {},
+                        onSetAutoReconnectEnabled = {},
+                        onSetLanguageTag = {},
+                        onSetTheme = {},
+                        onSelectEmbeddingModel = {},
+                        onAddMemoryEntry = {},
+                        onRemoveMemoryEntry = {},
+                        onSetMemoryEntryEnabled = { _, _ -> },
+                        onArchiveChatSession = {},
+                        onRestoreChatSession = {},
+                        onPermanentlyDeleteChatSession = {},
+                        onArchiveAllChatSessions = {},
+                        onPermanentlyDeleteArchivedChatSessions = {},
+                        showDeveloperDiagnostics = false,
+                        modifier = Modifier.testTag(settingsHeadersListTestTag),
+                    )
+                }
+            }
+        }
+
+        languageTags.forEach { languageTag ->
+            val localizedContext = ApplicationProvider
+                .getApplicationContext<Context>()
+                .localizedContext(languageTag)
+            compose.runOnUiThread {
+                currentLanguage.value = languageTag
+            }
+            compose.waitForIdle()
+
+            listOf(
+                R.string.settings_title,
+                R.string.status_title,
+                R.string.preferences_title,
+                R.string.embedding_model_title,
+                R.string.memory_title,
+                R.string.chat_history_settings_title,
+            ).forEach { titleRes ->
+                val headingMatcher = hasText(localizedContext.getString(titleRes)) and hasHeading()
+                compose.onNodeWithTag(settingsHeadersListTestTag)
+                    .performScrollToNode(headingMatcher)
+                compose.onNode(headingMatcher)
+                    .assertIsDisplayed()
+            }
+        }
+    }
+
+    @Test
+    fun settingsPreferenceGroupLabelsExposeHeadingSemanticsAcrossSupportedLanguages() {
+        val languageTags = listOf("en", "ko", "ja", "zh-CN", "fr")
+        val currentLanguage = mutableStateOf(languageTags.first())
+
+        compose.setContent {
+            MaterialTheme {
+                LocalizedTestContent(languageTag = currentLanguage.value) {
+                    SettingsScreen(
+                        state = RuntimeUiState(
+                            selectedLanguageTag = currentLanguage.value,
+                            selectedTheme = RuntimeAppTheme.Dark,
+                            trustedRuntime = RuntimeTrustedRuntime(
+                                deviceId = "runtime-1",
+                                name = "AetherLink Runtime",
+                            ),
+                        ),
+                        onHostChange = {},
+                        onPortChange = {},
+                        onUseUsbReverse = {},
+                        onUseEmulator = {},
+                        onStartDiscovery = {},
+                        onStopDiscovery = {},
+                        onUseDiscoveredRuntime = {},
+                        onForgetTrustedRuntime = {},
+                        onScanPairingQr = {},
+                        onSubmitPairingPayload = {},
+                        onConnect = {},
+                        onRefreshHealth = {},
+                        onRequestModels = {},
+                        onDisconnect = {},
+                        onSetAutoReconnectEnabled = {},
+                        onSetLanguageTag = {},
+                        onSetTheme = {},
+                        onSelectEmbeddingModel = {},
+                        onAddMemoryEntry = {},
+                        onRemoveMemoryEntry = {},
+                        onSetMemoryEntryEnabled = { _, _ -> },
+                        onArchiveChatSession = {},
+                        onRestoreChatSession = {},
+                        onPermanentlyDeleteChatSession = {},
+                        onArchiveAllChatSessions = {},
+                        onPermanentlyDeleteArchivedChatSessions = {},
+                        showDeveloperDiagnostics = false,
+                        modifier = Modifier.testTag(settingsHeadersListTestTag),
+                    )
+                }
+            }
+        }
+
+        languageTags.forEach { languageTag ->
+            val localizedContext = ApplicationProvider
+                .getApplicationContext<Context>()
+                .localizedContext(languageTag)
+            compose.runOnUiThread {
+                currentLanguage.value = languageTag
+            }
+            compose.waitForIdle()
+
+            listOf(
+                R.string.appearance_title,
+                R.string.language_title,
+            ).forEach { titleRes ->
+                val headingMatcher = hasText(localizedContext.getString(titleRes)) and hasHeading()
+                compose.onNodeWithTag(settingsHeadersListTestTag)
+                    .performScrollToNode(headingMatcher)
+                compose.onNode(headingMatcher)
+                    .assertIsDisplayed()
+            }
+        }
     }
 
     @Test
@@ -331,7 +481,8 @@ class ClientScreensNoDeviceComposeTest {
 
         compose.onNode(
             hasText("Scan QR") and
-                hasStateDescription("Wait for the current connection attempt before scanning again."),
+                hasStateDescription("Wait for the current connection attempt before scanning again.") and
+                hasClickActionLabel("Scan QR"),
         ).assertIsNotEnabled()
 
         assertEquals(0, scanClicks)
@@ -384,7 +535,8 @@ class ClientScreensNoDeviceComposeTest {
 
         compose.onNode(
             hasText("Connecting") and
-                hasStateDescription("Connection attempt in progress."),
+                hasStateDescription("Connection attempt in progress.") and
+                hasClickActionLabel("Connecting"),
         ).assertIsNotEnabled()
 
         assertEquals(0, connectClicks)
@@ -436,6 +588,7 @@ class ClientScreensNoDeviceComposeTest {
 
         compose.onNode(
             hasText("Pairing & Connection") and
+                hasHeading() and
                 hasStateDescription("Collapsed") and
                 hasClickActionLabel("Expand section"),
         )
@@ -446,6 +599,7 @@ class ClientScreensNoDeviceComposeTest {
         ).assertCountEquals(0)
         compose.onNode(
             hasText("Pairing & Connection") and
+                hasHeading() and
                 hasStateDescription("Collapsed") and
                 hasClickActionLabel("Expand section"),
         )
@@ -453,6 +607,7 @@ class ClientScreensNoDeviceComposeTest {
 
         compose.onNode(
             hasText("Pairing & Connection") and
+                hasHeading() and
                 hasStateDescription("Expanded") and
                 hasClickActionLabel("Collapse section"),
         )
@@ -608,6 +763,14 @@ class ClientScreensNoDeviceComposeTest {
                 R.string.forget_trusted_runtime_named,
                 runtimeName,
             )
+            val expectedConfirmActionLabel = localizedContext.getString(
+                R.string.forget_trusted_runtime_confirm_action_named,
+                runtimeName,
+            )
+            val expectedCancelActionLabel = localizedContext.getString(
+                R.string.forget_trusted_runtime_cancel_action_named,
+                runtimeName,
+            )
 
             compose.runOnUiThread {
                 currentLanguage.value = languageTag
@@ -623,6 +786,25 @@ class ClientScreensNoDeviceComposeTest {
                 .performScrollTo()
                 .assertIsDisplayed()
                 .assertIsEnabled()
+                .performClick()
+            compose.waitForIdle()
+
+            compose.onNode(
+                hasContentDescription(expectedConfirmActionLabel) and
+                    hasClickActionLabel(expectedConfirmActionLabel),
+                useUnmergedTree = true,
+            )
+                .assertIsDisplayed()
+                .assertIsEnabled()
+            compose.onNode(
+                hasContentDescription(expectedCancelActionLabel) and
+                    hasClickActionLabel(expectedCancelActionLabel),
+                useUnmergedTree = true,
+            )
+                .assertIsDisplayed()
+                .assertIsEnabled()
+                .performClick()
+            compose.waitForIdle()
         }
     }
 
@@ -694,6 +876,244 @@ class ClientScreensNoDeviceComposeTest {
     }
 
     @Test
+    fun navigationDrawerSettingsFooterLocalizesActionSemanticsAcrossSupportedLanguages() {
+        val languageTags = listOf("en", "ko", "ja", "zh-CN", "fr")
+        val currentLanguage = mutableStateOf(languageTags.first())
+        val settingsClicks = mutableListOf<String>()
+
+        compose.setContent {
+            MaterialTheme {
+                LocalizedTestContent(languageTag = currentLanguage.value) {
+                    Surface(modifier = Modifier.fillMaxSize()) {
+                        AetherLinkNavigationDrawerContent(
+                            state = RuntimeUiState(),
+                            effectiveDestination = AppDestination.Chat,
+                            chatSearchQuery = "",
+                            hasAnyChatSessions = false,
+                            hasChatSearchQuery = false,
+                            hasChatSearchResults = false,
+                            filteredChatSessions = emptyList(),
+                            onChatSearchQueryChange = {},
+                            onClearChatSearch = {},
+                            onNewChat = {},
+                            onSelectChatSession = {},
+                            onRenameChatSession = {},
+                            onArchiveChatSession = {},
+                            onSelectSettings = { settingsClicks += currentLanguage.value },
+                        )
+                    }
+                }
+            }
+        }
+
+        languageTags.forEach { languageTag ->
+            val localizedContext = ApplicationProvider
+                .getApplicationContext<Context>()
+                .localizedContext(languageTag)
+            val settingsLabel = localizedContext.getString(AppDestination.Settings.labelRes)
+            compose.runOnUiThread {
+                currentLanguage.value = languageTag
+            }
+            compose.waitForIdle()
+
+            compose.onNodeWithText(settingsLabel, useUnmergedTree = true)
+                .assertIsDisplayed()
+            compose.onNode(
+                hasClickActionLabel(settingsLabel),
+                useUnmergedTree = true,
+            )
+                .assertIsDisplayed()
+                .assertIsEnabled()
+                .performClick()
+        }
+
+        assertEquals(languageTags, settingsClicks)
+    }
+
+    @Test
+    fun navigationDrawerPreviousChatsLabelIsAHeadingAcrossSupportedLanguages() {
+        val languageTags = listOf("en", "ko", "ja", "zh-CN", "fr")
+        val currentLanguage = mutableStateOf(languageTags.first())
+
+        compose.setContent {
+            MaterialTheme {
+                LocalizedTestContent(languageTag = currentLanguage.value) {
+                    Surface(modifier = Modifier.fillMaxSize()) {
+                        AetherLinkNavigationDrawerContent(
+                            state = RuntimeUiState(),
+                            effectiveDestination = AppDestination.Chat,
+                            chatSearchQuery = "",
+                            hasAnyChatSessions = false,
+                            hasChatSearchQuery = false,
+                            hasChatSearchResults = true,
+                            filteredChatSessions = emptyList(),
+                            onChatSearchQueryChange = {},
+                            onClearChatSearch = {},
+                            onNewChat = {},
+                            onSelectChatSession = {},
+                            onRenameChatSession = {},
+                            onArchiveChatSession = {},
+                            onSelectSettings = {},
+                        )
+                    }
+                }
+            }
+        }
+
+        languageTags.forEach { languageTag ->
+            val localizedContext = ApplicationProvider
+                .getApplicationContext<Context>()
+                .localizedContext(languageTag)
+            compose.runOnUiThread {
+                currentLanguage.value = languageTag
+            }
+            compose.waitForIdle()
+
+            compose.onNode(
+                hasText(localizedContext.getString(R.string.previous_chats)) and hasHeading(),
+                useUnmergedTree = true,
+            )
+                .assertIsDisplayed()
+        }
+    }
+
+    @Test
+    fun navigationDrawerEmptyHistoryAnnouncesLocalizedLiveRegionAcrossSupportedLanguages() {
+        val languageTags = listOf("en", "ko", "ja", "zh-CN", "fr")
+        val currentLanguage = mutableStateOf(languageTags.first())
+
+        compose.setContent {
+            MaterialTheme {
+                LocalizedTestContent(languageTag = currentLanguage.value) {
+                    Surface(modifier = Modifier.fillMaxSize()) {
+                        AetherLinkNavigationDrawerContent(
+                            state = RuntimeUiState(),
+                            effectiveDestination = AppDestination.Chat,
+                            chatSearchQuery = "",
+                            hasAnyChatSessions = false,
+                            hasChatSearchQuery = false,
+                            hasChatSearchResults = false,
+                            filteredChatSessions = emptyList(),
+                            onChatSearchQueryChange = {},
+                            onClearChatSearch = {},
+                            onNewChat = {},
+                            onSelectChatSession = {},
+                            onRenameChatSession = {},
+                            onArchiveChatSession = {},
+                            onSelectSettings = {},
+                        )
+                    }
+                }
+            }
+        }
+
+        languageTags.forEach { languageTag ->
+            val localizedContext = ApplicationProvider
+                .getApplicationContext<Context>()
+                .localizedContext(languageTag)
+            val emptyText = localizedContext.getString(R.string.no_previous_chats)
+            compose.runOnUiThread {
+                currentLanguage.value = languageTag
+            }
+            compose.waitForIdle()
+
+            compose.onNodeWithText(emptyText)
+                .performScrollTo()
+                .assertIsDisplayed()
+            compose.onNode(
+                hasContentDescription(emptyText) and hasPoliteLiveRegion(),
+                useUnmergedTree = true,
+            )
+                .performScrollTo()
+                .assertIsDisplayed()
+        }
+    }
+
+    @Test
+    fun navigationDrawerRuntimeSummaryShowsSavedMissingModelRecovery() {
+        val languageTags = listOf("en", "ko", "ja", "zh-CN", "fr")
+        val currentLanguage = mutableStateOf(languageTags.first())
+        val sessions = listOf(
+            RuntimeChatSession(
+                id = "session-1",
+                title = "Runtime pairing notes",
+                modelId = "ollama:missing-chat",
+                updatedAtMillis = 2_000L,
+                messageCount = 4,
+            ),
+        )
+        val availableChatModel = RuntimeModel(
+            id = "ollama:qwen3:8b",
+            name = "Qwen3 8B",
+            modelKind = MODEL_KIND_CHAT,
+            capabilities = listOf("chat"),
+            installed = true,
+            source = "local",
+        )
+
+        compose.setContent {
+            MaterialTheme {
+                LocalizedTestContent(languageTag = currentLanguage.value) {
+                    Surface(modifier = Modifier.fillMaxSize()) {
+                        AetherLinkNavigationDrawerContent(
+                            state = RuntimeUiState(
+                                isConnected = true,
+                                runtimeStatus = "authenticated",
+                                trustedRuntime = RuntimeTrustedRuntime(
+                                    deviceId = "runtime-1",
+                                    name = "AetherLink Runtime",
+                                ),
+                                selectedModelId = "ollama:missing-chat",
+                                models = listOf(availableChatModel),
+                                chatSessions = sessions,
+                                activeChatSessionId = "session-1",
+                            ),
+                            effectiveDestination = AppDestination.Chat,
+                            chatSearchQuery = "",
+                            hasAnyChatSessions = sessions.isNotEmpty(),
+                            hasChatSearchQuery = false,
+                            hasChatSearchResults = true,
+                            filteredChatSessions = sessions,
+                            onChatSearchQueryChange = {},
+                            onClearChatSearch = {},
+                            onNewChat = {},
+                            onSelectChatSession = {},
+                            onRenameChatSession = {},
+                            onArchiveChatSession = {},
+                            onSelectSettings = {},
+                        )
+                    }
+                }
+            }
+        }
+
+        languageTags.forEach { languageTag ->
+            val localizedContext = ApplicationProvider
+                .getApplicationContext<Context>()
+                .localizedContext(languageTag)
+            compose.runOnUiThread {
+                currentLanguage.value = languageTag
+            }
+            compose.waitForIdle()
+
+            val unavailableDetail = localizedContext.getString(R.string.selected_model_unavailable)
+            val expectedRuntimeSummary = localizedContext.getString(
+                R.string.drawer_runtime_summary_accessibility_with_detail,
+                "AetherLink Runtime",
+                localizedContext.getString(R.string.status_connected),
+                "missing-chat",
+                unavailableDetail,
+            )
+            compose.onNode(
+                hasContentDescription(expectedRuntimeSummary),
+                useUnmergedTree = true,
+            )
+                .assertIsDisplayed()
+            assertNoVisibleText(localizedContext.getString(R.string.model_none))
+        }
+    }
+
+    @Test
     fun navigationDrawerChatSearchFiltersClearsAndUsesHapticFeedback() {
         val hapticFeedback = RecordingHapticFeedback()
         val searchChanges = mutableListOf<String>()
@@ -721,9 +1141,11 @@ class ClientScreensNoDeviceComposeTest {
                 CompositionLocalProvider(LocalHapticFeedback provides hapticFeedback) {
                     Surface(modifier = Modifier.fillMaxSize()) {
                         val searchQuery = query.value
-                        val filteredSessions = sessions.filter { session ->
-                            session.title.orEmpty().contains(searchQuery, ignoreCase = true)
-                        }
+                        val filteredSessions = filterChatHistorySessions(
+                            sessions = sessions,
+                            query = searchQuery,
+                            untitledTitle = "Untitled chat",
+                        )
                         AetherLinkNavigationDrawerContent(
                             state = RuntimeUiState(
                                 isConnected = true,
@@ -794,6 +1216,128 @@ class ClientScreensNoDeviceComposeTest {
             .performScrollTo()
             .assertIsDisplayed()
         compose.onAllNodesWithText("No matching chats.").assertCountEquals(0)
+    }
+
+    @Test
+    fun chatDrawerSearchMatchesModelAndRuntimeMetadata() {
+        val query = mutableStateOf("")
+        val sessions = listOf(
+            RuntimeChatSession(
+                id = "session-research",
+                title = "Research notes",
+                modelId = "ollama:qwen3:8b",
+                updatedAtMillis = 2_000L,
+                messageCount = 4,
+            ),
+            RuntimeChatSession(
+                id = "session-error",
+                title = "Trip plan",
+                modelId = "lm_studio:local-model",
+                updatedAtMillis = 1_000L,
+                messageCount = 3,
+                lastEvent = "chat.error",
+                lastErrorCode = "backend_unavailable",
+            ),
+            RuntimeChatSession(
+                id = "session-draft",
+                title = "New chat",
+                updatedAtMillis = 500L,
+                messageCount = 1,
+            ),
+        )
+        val qwenModel = RuntimeModel(
+            id = "ollama:qwen3:8b",
+            name = "Qwen3 8B",
+        )
+
+        compose.setContent {
+            MaterialTheme {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    val searchQuery = query.value
+                    val filteredSessions = filterChatHistorySessions(
+                        sessions = sessions,
+                        query = searchQuery,
+                        untitledTitle = "Untitled chat",
+                    )
+                    AetherLinkNavigationDrawerContent(
+                        state = RuntimeUiState(
+                            isConnected = true,
+                            runtimeStatus = "authenticated",
+                            trustedRuntime = RuntimeTrustedRuntime(
+                                deviceId = "runtime-1",
+                                name = "AetherLink Runtime",
+                            ),
+                            chatSessions = sessions,
+                            activeChatSessionId = "session-research",
+                            models = listOf(qwenModel),
+                        ),
+                        effectiveDestination = AppDestination.Chat,
+                        chatSearchQuery = searchQuery,
+                        hasAnyChatSessions = sessions.isNotEmpty(),
+                        hasChatSearchQuery = searchQuery.isNotBlank(),
+                        hasChatSearchResults = filteredSessions.isNotEmpty(),
+                        filteredChatSessions = filteredSessions,
+                        onChatSearchQueryChange = { query.value = it },
+                        onClearChatSearch = { query.value = "" },
+                        onNewChat = {},
+                        onSelectChatSession = {},
+                        onRenameChatSession = {},
+                        onArchiveChatSession = {},
+                        onSelectSettings = {},
+                    )
+                }
+            }
+        }
+
+        compose.onNodeWithTag(DRAWER_CHAT_SEARCH_TEST_TAG)
+            .performScrollTo()
+            .performTextInput("qwen")
+        compose.waitForIdle()
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val qwenModelText = context.getString(R.string.chat_session_model_value, "Qwen3 8B")
+        val qwenStatus = context.resources.getQuantityString(R.plurals.chat_message_count, 4, 4)
+        val qwenSelectedSummary = context.getString(
+            R.string.chat_session_row_summary_selected_with_model,
+            "Research notes",
+            qwenStatus,
+            qwenModelText,
+        )
+        compose.onNodeWithText("Research notes")
+            .performScrollTo()
+            .assertIsDisplayed()
+        compose.onNodeWithText(qwenModelText)
+            .performScrollTo()
+            .assertIsDisplayed()
+        compose.onNode(hasContentDescription(qwenSelectedSummary), useUnmergedTree = true)
+            .performScrollTo()
+            .assertIsDisplayed()
+        assertNoVisibleText("Trip plan")
+
+        compose.runOnUiThread {
+            query.value = ""
+        }
+        compose.waitForIdle()
+        compose.onNodeWithTag(DRAWER_CHAT_SEARCH_TEST_TAG)
+            .performScrollTo()
+            .performTextInput("backend unavailable")
+        compose.waitForIdle()
+        compose.onNodeWithText("Trip plan")
+            .performScrollTo()
+            .assertIsDisplayed()
+        assertNoVisibleText("Research notes")
+
+        compose.runOnUiThread {
+            query.value = ""
+        }
+        compose.waitForIdle()
+        compose.onNodeWithTag(DRAWER_CHAT_SEARCH_TEST_TAG)
+            .performScrollTo()
+            .performTextInput("untitled")
+        compose.waitForIdle()
+        compose.onNodeWithText("Untitled chat")
+            .performScrollTo()
+            .assertIsDisplayed()
+        assertNoVisibleText("Trip plan")
     }
 
     @Test
@@ -893,7 +1437,7 @@ class ClientScreensNoDeviceComposeTest {
                 .performScrollTo()
                 .assertIsDisplayed()
             compose.onNodeWithText(expected.searchLabel).assertIsDisplayed()
-            compose.onNodeWithText(expected.noResults)
+            compose.onNode(hasText(expected.noResults) and hasPoliteLiveRegion())
                 .performScrollTo()
                 .assertIsDisplayed()
             compose.onNodeWithTag(DRAWER_CHAT_SEARCH_TEST_TAG)
@@ -939,6 +1483,16 @@ class ClientScreensNoDeviceComposeTest {
                             ),
                             selectedModelId = chatModel.id,
                             models = listOf(chatModel, embeddingModel),
+                            activeChatSessionId = "session-roadmap",
+                            chatSessions = listOf(
+                                RuntimeChatSession(
+                                    id = "session-roadmap",
+                                    title = "Runtime roadmap",
+                                    modelId = chatModel.id,
+                                    updatedAtMillis = 2_000L,
+                                    messageCount = 4,
+                                ),
+                            ),
                         ),
                         effectiveDestination = AppDestination.Chat,
                         destinationTitle = "Chat",
@@ -956,6 +1510,12 @@ class ClientScreensNoDeviceComposeTest {
                 hasClickActionLabel("Open navigation menu"),
         ).assertIsDisplayed().performClick()
         compose.onNodeWithText("Qwen3 8B").assertIsDisplayed()
+        compose.onNode(
+            hasText("Runtime roadmap") and
+                hasContentDescription("Current chat Runtime roadmap") and
+                hasHeading(),
+            useUnmergedTree = true,
+        ).assertIsDisplayed()
         compose.onNode(
             hasContentDescription("New Chat") and
                 hasStateDescription("Ready to start a new chat.") and
@@ -1271,6 +1831,52 @@ class ClientScreensNoDeviceComposeTest {
     }
 
     @Test
+    fun permanentNavigationRailSettingsItemLocalizesActionSemantics() {
+        val languageTags = listOf("en", "ko", "ja", "zh-CN", "fr")
+        val currentLanguage = mutableStateOf(languageTags.first())
+        val selectedDestinations = mutableListOf<AppDestination>()
+
+        compose.setContent {
+            MaterialTheme {
+                LocalizedTestContent(languageTag = currentLanguage.value) {
+                    AetherLinkPermanentNavigationRail(
+                        selectedDestination = AppDestination.Chat,
+                        chatEnabled = true,
+                        chatStateDescription = "Ready to open chat.",
+                        newChatEnabled = true,
+                        newChatStateDescription = "Ready to start a new chat.",
+                        onNewChat = {},
+                        onSelectDestination = { selectedDestinations += it },
+                    )
+                }
+            }
+        }
+
+        languageTags.forEach { languageTag ->
+            val localizedContext = ApplicationProvider
+                .getApplicationContext<Context>()
+                .localizedContext(languageTag)
+            val settingsLabel = localizedContext.getString(AppDestination.Settings.labelRes)
+            compose.runOnUiThread {
+                currentLanguage.value = languageTag
+            }
+            compose.waitForIdle()
+
+            compose.onNodeWithText(settingsLabel, useUnmergedTree = true)
+                .assertIsDisplayed()
+            compose.onNode(
+                hasClickActionLabel(settingsLabel),
+                useUnmergedTree = true,
+            )
+                .assertIsDisplayed()
+                .assertIsEnabled()
+                .performClick()
+        }
+
+        assertEquals(List(languageTags.size) { AppDestination.Settings }, selectedDestinations)
+    }
+
+    @Test
     fun settingsPrimaryConnectionSectionReopensWhenPairingBecomesRequired() {
         val settingsState = mutableStateOf(
             RuntimeUiState(
@@ -1578,12 +2184,18 @@ class ClientScreensNoDeviceComposeTest {
 
             compose.onNodeWithText(expected.refreshAction)
                 .assertIsDisplayed()
-            compose.onNode(hasStateDescription(expected.refreshState) and hasClickAction())
+            compose.onNode(
+                hasStateDescription(expected.refreshState) and
+                    hasClickActionLabel(expected.refreshAction),
+            )
                 .assertIsDisplayed()
                 .assertIsEnabled()
             compose.onNodeWithText(expected.disconnectAction)
                 .assertIsDisplayed()
-            compose.onNode(hasStateDescription(expected.disconnectState) and hasClickAction())
+            compose.onNode(
+                hasStateDescription(expected.disconnectState) and
+                    hasClickActionLabel(expected.disconnectAction),
+            )
                 .assertIsDisplayed()
                 .assertIsEnabled()
         }
@@ -1735,6 +2347,7 @@ class ClientScreensNoDeviceComposeTest {
             hasText("Show details") and
                 hasContentDescription("Show details for Ollama") and
                 hasStateDescription("Collapsed") and
+                hasClickActionLabel("Show details for Ollama") and
                 hasClickAction(),
         )
             .performScrollTo()
@@ -1747,6 +2360,7 @@ class ClientScreensNoDeviceComposeTest {
             hasText("Hide details") and
                 hasContentDescription("Hide details for Ollama") and
                 hasStateDescription("Expanded") and
+                hasClickActionLabel("Hide details for Ollama") and
                 hasClickAction(),
         )
             .performScrollTo()
@@ -1755,6 +2369,7 @@ class ClientScreensNoDeviceComposeTest {
             hasText("Show details") and
                 hasContentDescription("Show details for LM Studio") and
                 hasStateDescription("Collapsed") and
+                hasClickActionLabel("Show details for LM Studio") and
                 hasClickAction(),
         )
             .performScrollTo()
@@ -1771,6 +2386,7 @@ class ClientScreensNoDeviceComposeTest {
             hasText("Show details") and
                 hasContentDescription("Show details for LM Studio") and
                 hasStateDescription("Collapsed") and
+                hasClickActionLabel("Show details for LM Studio") and
                 hasClickAction(),
         )
             .performScrollTo()
@@ -1781,6 +2397,7 @@ class ClientScreensNoDeviceComposeTest {
             hasText("Hide details") and
                 hasContentDescription("Hide details for LM Studio") and
                 hasStateDescription("Expanded") and
+                hasClickActionLabel("Hide details for LM Studio") and
                 hasClickAction(),
         )
             .performScrollTo()
@@ -2780,10 +3397,18 @@ class ClientScreensNoDeviceComposeTest {
             )
                 .performScrollTo()
                 .assertIsDisplayed()
-            compose.onNode(hasText(expected.startLabel) and hasStateDescription(expected.startReadyState))
+            compose.onNode(
+                hasText(expected.startLabel) and
+                    hasStateDescription(expected.startReadyState) and
+                    hasClickActionLabel(expected.startLabel),
+            )
                 .performScrollTo()
                 .assertIsEnabled()
-            compose.onNode(hasText(expected.stopLabel) and hasStateDescription(expected.stopIdleState))
+            compose.onNode(
+                hasText(expected.stopLabel) and
+                    hasStateDescription(expected.stopIdleState) and
+                    hasClickActionLabel(expected.stopLabel),
+            )
                 .performScrollTo()
                 .assertIsNotEnabled()
 
@@ -2791,10 +3416,18 @@ class ClientScreensNoDeviceComposeTest {
                 isDiscovering.value = true
             }
             compose.waitForIdle()
-            compose.onNode(hasText(expected.runningLabel) and hasStateDescription(expected.startRunningState))
+            compose.onNode(
+                hasText(expected.runningLabel) and
+                    hasStateDescription(expected.startRunningState) and
+                    hasClickActionLabel(expected.runningLabel),
+            )
                 .performScrollTo()
                 .assertIsNotEnabled()
-            compose.onNode(hasText(expected.stopLabel) and hasStateDescription(expected.stopReadyState))
+            compose.onNode(
+                hasText(expected.stopLabel) and
+                    hasStateDescription(expected.stopReadyState) and
+                    hasClickActionLabel(expected.stopLabel),
+            )
                 .performScrollTo()
                 .assertIsEnabled()
         }
@@ -2999,10 +3632,13 @@ class ClientScreensNoDeviceComposeTest {
             val languageTag: String,
             val archiveAllContinue: String,
             val archiveAllConfirm: String,
+            val archiveAllCancel: String,
             val deleteArchivedContinue: String,
             val deleteArchivedConfirm: String,
+            val deleteArchivedCancel: String,
             val deleteChatContinue: String,
             val deleteChatConfirm: String,
+            val deleteChatCancel: String,
         )
 
         val expectedCopies = listOf(
@@ -3010,46 +3646,61 @@ class ClientScreensNoDeviceComposeTest {
                 languageTag = "en",
                 archiveAllContinue = "Continue: Archive all chats",
                 archiveAllConfirm = "Confirm: Archive all chats",
+                archiveAllCancel = "Cancel: Archive all chats",
                 deleteArchivedContinue = "Continue: Permanently delete archived chats",
                 deleteArchivedConfirm = "Confirm: Permanently delete archived chats",
+                deleteArchivedCancel = "Cancel: Permanently delete archived chats",
                 deleteChatContinue = "Continue: Permanently delete chat Archived project chat",
                 deleteChatConfirm = "Confirm: Permanently delete chat Archived project chat",
+                deleteChatCancel = "Cancel: Permanently delete chat Archived project chat",
             ),
             ExpectedConfirmationCopy(
                 languageTag = "ko",
                 archiveAllContinue = "계속: 모든 채팅 보관",
                 archiveAllConfirm = "확인: 모든 채팅 보관",
+                archiveAllCancel = "취소: 모든 채팅 보관",
                 deleteArchivedContinue = "계속: 보관된 채팅 영구 삭제",
                 deleteArchivedConfirm = "확인: 보관된 채팅 영구 삭제",
+                deleteArchivedCancel = "취소: 보관된 채팅 영구 삭제",
                 deleteChatContinue = "계속: Archived project chat 채팅 영구 삭제",
                 deleteChatConfirm = "확인: Archived project chat 채팅 영구 삭제",
+                deleteChatCancel = "취소: Archived project chat 채팅 영구 삭제",
             ),
             ExpectedConfirmationCopy(
                 languageTag = "ja",
                 archiveAllContinue = "続ける: すべてのチャットをアーカイブ",
                 archiveAllConfirm = "確認: すべてのチャットをアーカイブ",
+                archiveAllCancel = "キャンセル: すべてのチャットをアーカイブ",
                 deleteArchivedContinue = "続ける: アーカイブ済みチャットを完全に削除",
                 deleteArchivedConfirm = "確認: アーカイブ済みチャットを完全に削除",
+                deleteArchivedCancel = "キャンセル: アーカイブ済みチャットを完全に削除",
                 deleteChatContinue = "続ける: 「Archived project chat」を完全に削除",
                 deleteChatConfirm = "確認: 「Archived project chat」を完全に削除",
+                deleteChatCancel = "キャンセル: 「Archived project chat」を完全に削除",
             ),
             ExpectedConfirmationCopy(
                 languageTag = "zh-CN",
                 archiveAllContinue = "继续：归档所有聊天",
                 archiveAllConfirm = "确认：归档所有聊天",
+                archiveAllCancel = "取消：归档所有聊天",
                 deleteArchivedContinue = "继续：永久删除已归档聊天",
                 deleteArchivedConfirm = "确认：永久删除已归档聊天",
+                deleteArchivedCancel = "取消：永久删除已归档聊天",
                 deleteChatContinue = "继续：永久删除聊天“Archived project chat”",
                 deleteChatConfirm = "确认：永久删除聊天“Archived project chat”",
+                deleteChatCancel = "取消：永久删除聊天“Archived project chat”",
             ),
             ExpectedConfirmationCopy(
                 languageTag = "fr",
                 archiveAllContinue = "Continuer : Archiver tous les chats",
                 archiveAllConfirm = "Confirmer : Archiver tous les chats",
+                archiveAllCancel = "Annuler : Archiver tous les chats",
                 deleteArchivedContinue = "Continuer : Supprimer définitivement les chats archivés",
                 deleteArchivedConfirm = "Confirmer : Supprimer définitivement les chats archivés",
+                deleteArchivedCancel = "Annuler : Supprimer définitivement les chats archivés",
                 deleteChatContinue = "Continuer : Supprimer définitivement le chat « Archived project chat »",
                 deleteChatConfirm = "Confirmer : Supprimer définitivement le chat « Archived project chat »",
+                deleteChatCancel = "Annuler : Supprimer définitivement le chat « Archived project chat »",
             ),
         )
 
@@ -3073,6 +3724,10 @@ class ClientScreensNoDeviceComposeTest {
                 localizedContext.getString(R.string.confirmation_final_action_named, archiveAll),
             )
             assertEquals(
+                expected.archiveAllCancel,
+                localizedContext.getString(R.string.confirmation_cancel_action_named, archiveAll),
+            )
+            assertEquals(
                 expected.deleteArchivedContinue,
                 localizedContext.getString(R.string.confirmation_continue_action_named, deleteArchived),
             )
@@ -3081,12 +3736,20 @@ class ClientScreensNoDeviceComposeTest {
                 localizedContext.getString(R.string.confirmation_final_action_named, deleteArchived),
             )
             assertEquals(
+                expected.deleteArchivedCancel,
+                localizedContext.getString(R.string.confirmation_cancel_action_named, deleteArchived),
+            )
+            assertEquals(
                 expected.deleteChatContinue,
                 localizedContext.getString(R.string.confirmation_continue_action_named, deleteChat),
             )
             assertEquals(
                 expected.deleteChatConfirm,
                 localizedContext.getString(R.string.confirmation_final_action_named, deleteChat),
+            )
+            assertEquals(
+                expected.deleteChatCancel,
+                localizedContext.getString(R.string.confirmation_cancel_action_named, deleteChat),
             )
         }
     }
@@ -3227,10 +3890,18 @@ class ClientScreensNoDeviceComposeTest {
             }
             compose.waitForIdle()
             scrollUntilTextIsVisible(expected.archiveAction)
-            compose.onNode(hasText(expected.archiveAction) and hasStateDescription(expected.archiveState))
+            compose.onNode(
+                hasText(expected.archiveAction) and
+                    hasStateDescription(expected.archiveState) and
+                    hasClickActionLabel(expected.archiveAction),
+            )
                 .performScrollTo()
                 .assertIsNotEnabled()
-            compose.onNode(hasText(expected.deleteAction) and hasStateDescription(expected.deleteState))
+            compose.onNode(
+                hasText(expected.deleteAction) and
+                    hasStateDescription(expected.deleteState) and
+                    hasClickActionLabel(expected.deleteAction),
+            )
                 .performScrollTo()
                 .assertIsNotEnabled()
         }
@@ -3447,6 +4118,129 @@ class ClientScreensNoDeviceComposeTest {
     }
 
     @Test
+    fun settingsChatHistoryRowsExposeLocalizedModelMetadata() {
+        val languageTags = listOf("en", "ko", "ja", "zh-CN", "fr")
+        val languageTag = mutableStateOf(languageTags.first())
+        val activeTitle = "Active model chat"
+        val archivedTitle = "Archived model chat"
+        val activeModel = RuntimeModel(
+            id = "ollama:qwen3:8b",
+            name = "Qwen3 8B",
+            modelKind = MODEL_KIND_CHAT,
+            capabilities = listOf("chat"),
+            installed = true,
+            source = "local",
+        )
+
+        compose.setContent {
+            MaterialTheme {
+                val selectedLanguageTag = languageTag.value
+                LocalizedTestContent(languageTag = selectedLanguageTag) {
+                    SettingsScreen(
+                        state = RuntimeUiState(
+                            selectedLanguageTag = selectedLanguageTag,
+                            models = listOf(activeModel),
+                            chatSessions = listOf(
+                                RuntimeChatSession(
+                                    id = "active-model-chat",
+                                    title = activeTitle,
+                                    modelId = activeModel.id,
+                                    messageCount = 1,
+                                    updatedAtMillis = 2_000L,
+                                ),
+                            ),
+                            archivedChatSessions = listOf(
+                                RuntimeChatSession(
+                                    id = "archived-model-chat",
+                                    title = archivedTitle,
+                                    modelId = "ollama:qwen2.5:7b",
+                                    messageCount = 3,
+                                    archivedAtMillis = 3_000L,
+                                    updatedAtMillis = 3_000L,
+                                ),
+                            ),
+                        ),
+                        onHostChange = {},
+                        onPortChange = {},
+                        onUseUsbReverse = {},
+                        onUseEmulator = {},
+                        onStartDiscovery = {},
+                        onStopDiscovery = {},
+                        onUseDiscoveredRuntime = {},
+                        onForgetTrustedRuntime = {},
+                        onScanPairingQr = {},
+                        onSubmitPairingPayload = {},
+                        onConnect = {},
+                        onRefreshHealth = {},
+                        onRequestModels = {},
+                        onDisconnect = {},
+                        onSetAutoReconnectEnabled = {},
+                        onSetLanguageTag = {},
+                        onSetTheme = {},
+                        onSelectEmbeddingModel = {},
+                        onAddMemoryEntry = {},
+                        onRemoveMemoryEntry = {},
+                        onSetMemoryEntryEnabled = { _, _ -> },
+                        onArchiveChatSession = {},
+                        onRestoreChatSession = {},
+                        onPermanentlyDeleteChatSession = {},
+                        onArchiveAllChatSessions = {},
+                        onPermanentlyDeleteArchivedChatSessions = {},
+                        showDeveloperDiagnostics = false,
+                    )
+                }
+            }
+        }
+
+        scrollUntilTextIsVisible("Chat history")
+        compose.onNodeWithText("Chat history")
+            .assertIsDisplayed()
+            .performClick()
+        compose.waitForIdle()
+
+        languageTags.forEach { nextLanguageTag ->
+            compose.runOnUiThread {
+                languageTag.value = nextLanguageTag
+            }
+            compose.waitForIdle()
+
+            val context = ApplicationProvider
+                .getApplicationContext<Context>()
+                .localizedContext(nextLanguageTag)
+            val activeStatus = context.resources.getQuantityString(R.plurals.chat_message_count, 1, 1)
+            val archivedStatus = context.getString(R.string.archived_chat)
+            val activeModelText = context.getString(R.string.chat_session_model_value, "Qwen3 8B")
+            val archivedModelText = context.getString(R.string.chat_session_model_value, "qwen2.5:7b")
+            val activeSummary = context.getString(
+                R.string.chat_session_row_summary_with_model,
+                activeTitle,
+                activeStatus,
+                activeModelText,
+            )
+            val archivedSummary = context.getString(
+                R.string.chat_session_row_summary_with_model,
+                archivedTitle,
+                archivedStatus,
+                archivedModelText,
+            )
+
+            compose.onNodeWithText(activeModelText)
+                .performScrollTo()
+                .assertIsDisplayed()
+            compose.onNodeWithText(archivedModelText)
+                .performScrollTo()
+                .assertIsDisplayed()
+            compose.onNode(hasContentDescription(activeSummary), useUnmergedTree = true)
+                .performScrollTo()
+                .assertIsDisplayed()
+            compose.onNode(hasContentDescription(archivedSummary), useUnmergedTree = true)
+                .performScrollTo()
+                .assertIsDisplayed()
+            assertNoVisibleText("ollama:qwen2.5:7b")
+        }
+    }
+
+    @Test
     fun settingsBulkChatHistoryActionsExplainMissingChatDisabledStates() {
         val uiState = mutableStateOf(
             RuntimeUiState(
@@ -3625,6 +4419,11 @@ class ClientScreensNoDeviceComposeTest {
         compose.onNodeWithText("Permanently delete chat").assertExists()
         assertEquals(listOf(HapticFeedbackType.TextHandleMove), hapticFeedback.events)
         compose.onNode(
+            hasContentDescription("Cancel: Permanently delete chat Archived project chat") and
+                hasClickActionLabel("Cancel: Permanently delete chat Archived project chat"),
+            useUnmergedTree = true,
+        ).assertIsDisplayed()
+        compose.onNode(
             hasContentDescription("Continue: Permanently delete chat Archived project chat") and
                 hasClickActionLabel("Continue: Permanently delete chat Archived project chat"),
             useUnmergedTree = true,
@@ -3638,6 +4437,11 @@ class ClientScreensNoDeviceComposeTest {
         compose.onNode(
             hasContentDescription("Confirm: Permanently delete chat Archived project chat") and
                 hasClickActionLabel("Confirm: Permanently delete chat Archived project chat"),
+            useUnmergedTree = true,
+        ).assertIsDisplayed()
+        compose.onNode(
+            hasContentDescription("Cancel: Permanently delete chat Archived project chat") and
+                hasClickActionLabel("Cancel: Permanently delete chat Archived project chat"),
             useUnmergedTree = true,
         ).assertIsDisplayed()
         compose.onAllNodesWithText("Permanently delete").onLast().performClick()
@@ -3679,11 +4483,20 @@ class ClientScreensNoDeviceComposeTest {
                 hasSetTextAction(),
         ).assertIsDisplayed()
 
+        compose.onNodeWithText("Save").assertIsDisplayed()
         compose.onNode(
-            hasText("Save") and
+            hasContentDescription("Confirm: Rename chat") and
                 hasStateDescription("Enter a title before saving.") and
+                hasClickActionLabel("Confirm: Rename chat") and
                 hasClickAction(),
+            useUnmergedTree = true,
         ).assertIsNotEnabled()
+        compose.onNodeWithText("Cancel").assertIsDisplayed()
+        compose.onNode(
+            hasContentDescription("Cancel: Rename chat") and
+                hasClickActionLabel("Cancel: Rename chat"),
+            useUnmergedTree = true,
+        ).assertIsDisplayed()
 
         compose.onNode(hasContentDescription("Chat title") and hasSetTextAction())
             .performTextInput("Project Alpha")
@@ -3696,9 +4509,11 @@ class ClientScreensNoDeviceComposeTest {
 
         hapticFeedback.events.clear()
         compose.onNode(
-            hasText("Save") and
+            hasContentDescription("Confirm: Rename chat") and
                 hasStateDescription("Ready to save.") and
+                hasClickActionLabel("Confirm: Rename chat") and
                 hasClickAction(),
+            useUnmergedTree = true,
         ).assertIsEnabled().performClick()
 
         assertEquals(1, confirmClicks)
@@ -3916,7 +4731,7 @@ class ClientScreensNoDeviceComposeTest {
                 .performScrollTo()
                 .assertIsDisplayed()
             compose.onNodeWithText(expected.searchLabel).assertIsDisplayed()
-            compose.onNodeWithText(expected.noResults)
+            compose.onNode(hasText(expected.noResults) and hasPoliteLiveRegion())
                 .performScrollTo()
                 .assertIsDisplayed()
             compose.onNodeWithContentDescription(expected.clearLabel, useUnmergedTree = true)
@@ -4000,6 +4815,78 @@ class ClientScreensNoDeviceComposeTest {
             .assertIsDisplayed()
         compose.onNodeWithContentDescription("Chat options for One note", useUnmergedTree = true)
             .assertIsDisplayed()
+    }
+
+    @Test
+    fun chatDrawerDisabledItemsExplainStreamingLockoutAcrossSupportedLanguages() {
+        val languageTags = listOf("en", "ko", "ja", "zh-CN", "fr")
+        val languageTag = mutableStateOf(languageTags.first())
+        var rowClicks = 0
+        val hapticFeedback = RecordingHapticFeedback()
+
+        compose.setContent {
+            MaterialTheme {
+                CompositionLocalProvider(LocalHapticFeedback provides hapticFeedback) {
+                    LocalizedTestContent(languageTag = languageTag.value) {
+                        ChatSessionDrawerItem(
+                            session = RuntimeChatSession(
+                                id = "trip-chat",
+                                title = "Trip plan",
+                                updatedAtMillis = 2_000L,
+                                messageCount = 3,
+                            ),
+                            selected = false,
+                            enabled = false,
+                            onClick = { rowClicks += 1 },
+                            onRename = {},
+                            onArchive = {},
+                            onRestore = null,
+                            onDelete = null,
+                        )
+                    }
+                }
+            }
+        }
+
+        languageTags.forEach { nextLanguageTag ->
+            compose.runOnUiThread {
+                languageTag.value = nextLanguageTag
+            }
+            compose.waitForIdle()
+
+            val context = ApplicationProvider
+                .getApplicationContext<Context>()
+                .localizedContext(nextLanguageTag)
+            val messageCount = context.resources.getQuantityString(
+                R.plurals.chat_message_count,
+                3,
+                3,
+            )
+            val rowSummary = context.getString(
+                R.string.chat_session_row_summary,
+                "Trip plan",
+                messageCount,
+            )
+            val optionsLabel = context.getString(R.string.chat_session_more_named, "Trip plan")
+            val disabledState = context.getString(R.string.chat_history_action_state_wait_for_stream)
+
+            compose.onNode(
+                hasContentDescription(rowSummary) and hasStateDescription(disabledState),
+            )
+                .assertIsDisplayed()
+                .assertIsNotEnabled()
+                .performClick()
+            compose.onNode(
+                hasContentDescription(optionsLabel) and
+                    hasClickActionLabel(optionsLabel) and
+                    hasStateDescription(disabledState),
+                useUnmergedTree = true,
+            )
+                .assertIsDisplayed()
+                .assertIsNotEnabled()
+            assertEquals(0, rowClicks)
+            assertEquals(emptyList<HapticFeedbackType>(), hapticFeedback.events)
+        }
     }
 
     @Test
@@ -4207,6 +5094,7 @@ class ClientScreensNoDeviceComposeTest {
 
             compose.onNodeWithContentDescription(expected.options, useUnmergedTree = true)
                 .assertIsDisplayed()
+                .assert(hasClickActionLabel(expected.options))
                 .performClick()
             compose.waitForIdle()
 
@@ -4363,7 +5251,10 @@ class ClientScreensNoDeviceComposeTest {
 
         compose.onNodeWithText("Refresh health")
             .assertIsDisplayed()
-        compose.onNode(hasStateDescription("Ready to refresh runtime health.") and hasClickAction())
+        compose.onNode(
+            hasStateDescription("Ready to refresh runtime health.") and
+                hasClickActionLabel("Refresh health"),
+        )
             .assertIsDisplayed()
             .assertIsEnabled()
             .performClick()
@@ -4455,7 +5346,10 @@ class ClientScreensNoDeviceComposeTest {
 
             compose.onNodeWithText(expected.refreshAction)
                 .assertIsDisplayed()
-            compose.onNode(hasStateDescription(expected.refreshState) and hasClickAction())
+            compose.onNode(
+                hasStateDescription(expected.refreshState) and
+                    hasClickActionLabel(expected.refreshAction),
+            )
                 .assertIsDisplayed()
                 .assertIsEnabled()
         }
@@ -4654,7 +5548,8 @@ class ClientScreensNoDeviceComposeTest {
         compose.onNodeWithContentDescription("Attach files").assertIsNotEnabled()
         compose.onNode(
             hasText("Scan QR") and
-                hasStateDescription("Ready to scan QR."),
+                hasStateDescription("Ready to scan QR.") and
+                hasClickActionLabel("Scan QR"),
         ).assertIsDisplayed().performClick()
 
         assertEquals(1, scanQrClicks)
@@ -4696,7 +5591,8 @@ class ClientScreensNoDeviceComposeTest {
 
         compose.onNode(
             hasText("Connecting") and
-                hasStateDescription("Connection attempt in progress."),
+                hasStateDescription("Connection attempt in progress.") and
+                hasClickActionLabel("Connecting"),
         ).assertIsNotEnabled()
 
         assertEquals(0, connectClicks)
@@ -4863,8 +5759,12 @@ class ClientScreensNoDeviceComposeTest {
         }
 
         compose.onNodeWithText("The response remains in history.").assertIsDisplayed()
+        val noticeSummary = "Connection status. Refresh needed. $routeGuidance"
         compose.onNode(
-            hasStateDescription(routeGuidance) and
+            hasContentDescription(noticeSummary) and
+                hasStateDescription("Refresh needed") and
+                hasClickActionLabel("Scan latest QR") and
+                hasPoliteLiveRegion() and
                 hasClickAction(),
             useUnmergedTree = true,
         )
@@ -5278,6 +6178,7 @@ class ClientScreensNoDeviceComposeTest {
         )
         val currentState = mutableStateOf(expectedStates.first())
         val currentInput = mutableStateOf("")
+        val currentAttachmentCount = mutableStateOf(0)
         val chatModel = RuntimeModel(
             id = "ollama:qwen3:8b",
             name = "Qwen3 8B",
@@ -5304,6 +6205,7 @@ class ClientScreensNoDeviceComposeTest {
                                 selectedModelId = chatModel.id,
                                 models = listOf(chatModel),
                                 chatInput = currentInput.value,
+                                pendingAttachments = pendingDocumentAttachments(currentAttachmentCount.value),
                                 selectedLanguageTag = expected.languageTag,
                             ),
                             onInputChange = {},
@@ -5326,6 +6228,7 @@ class ClientScreensNoDeviceComposeTest {
             compose.runOnUiThread {
                 currentState.value = expected
                 currentInput.value = ""
+                currentAttachmentCount.value = 0
             }
             compose.waitForIdle()
             compose.onNode(
@@ -5339,6 +6242,7 @@ class ClientScreensNoDeviceComposeTest {
 
             compose.runOnUiThread {
                 currentInput.value = "Hello"
+                currentAttachmentCount.value = 0
             }
             compose.waitForIdle()
             compose.onNode(
@@ -5348,6 +6252,34 @@ class ClientScreensNoDeviceComposeTest {
             ).assertIsEnabled()
             compose.onNode(
                 hasContentDescription(expected.messageField) and hasStateDescription(expected.readyState),
+            ).assertIsEnabled()
+
+            val localizedContext = ApplicationProvider
+                .getApplicationContext<Context>()
+                .localizedContext(expected.languageTag)
+            val attachmentCountState = localizedContext.resources.getQuantityString(
+                R.plurals.attach_files_state_count,
+                1,
+                1,
+                MAX_PENDING_ATTACHMENTS,
+            )
+            val readyWithAttachmentState = localizedContext.getString(
+                R.string.chat_hint_ready_with_attachments,
+                attachmentCountState,
+            )
+
+            compose.runOnUiThread {
+                currentInput.value = ""
+                currentAttachmentCount.value = 1
+            }
+            compose.waitForIdle()
+            compose.onNode(
+                hasContentDescription(expected.sendAction) and
+                    hasStateDescription(readyWithAttachmentState) and
+                    hasClickActionLabel(expected.sendAction),
+            ).assertIsEnabled()
+            compose.onNode(
+                hasContentDescription(expected.messageField) and hasStateDescription(readyWithAttachmentState),
             ).assertIsEnabled()
         }
     }
@@ -5591,6 +6523,100 @@ class ClientScreensNoDeviceComposeTest {
     }
 
     @Test
+    fun chatScreenAttachButtonAnnouncesAttachmentCountAndLimitAcrossSupportedLanguages() {
+        val languageTags = listOf("en", "ko", "ja", "zh-CN", "fr")
+        val currentLanguage = mutableStateOf(languageTags.first())
+        val attachmentCount = mutableStateOf(1)
+        var attachClicks = 0
+        val chatModel = RuntimeModel(
+            id = "ollama:qwen3:8b",
+            name = "Qwen3 8B",
+            modelKind = MODEL_KIND_CHAT,
+            capabilities = listOf("chat"),
+            installed = true,
+            source = "local",
+        )
+
+        compose.setContent {
+            MaterialTheme {
+                LocalizedTestContent(languageTag = currentLanguage.value) {
+                    ChatScreen(
+                        state = RuntimeUiState(
+                            isConnected = true,
+                            runtimeStatus = "authenticated",
+                            trustedRuntime = RuntimeTrustedRuntime(
+                                deviceId = "runtime-1",
+                                name = "AetherLink Runtime",
+                            ),
+                            backendAvailable = true,
+                            selectedLanguageTag = currentLanguage.value,
+                            selectedModelId = chatModel.id,
+                            models = listOf(chatModel),
+                            pendingAttachments = pendingDocumentAttachments(attachmentCount.value),
+                        ),
+                        onInputChange = {},
+                        onSend = {},
+                        onCancel = {},
+                        onConnect = {},
+                        onScanPairingQr = {},
+                        onRefreshHealth = {},
+                        onAttachFiles = { attachClicks += 1 },
+                        onRemoveAttachment = {},
+                        onSuggestionClick = {},
+                        onScanLatestQr = {},
+                    )
+                }
+            }
+        }
+
+        languageTags.forEach { languageTag ->
+            val localizedContext = ApplicationProvider
+                .getApplicationContext<Context>()
+                .localizedContext(languageTag)
+            val attachAction = localizedContext.getString(R.string.content_desc_attach_files)
+
+            compose.runOnUiThread {
+                currentLanguage.value = languageTag
+                attachmentCount.value = 1
+            }
+            compose.waitForIdle()
+
+            val countState = localizedContext.resources.getQuantityString(
+                R.plurals.attach_files_state_count,
+                1,
+                1,
+                MAX_PENDING_ATTACHMENTS,
+            )
+            compose.onNode(
+                hasContentDescription(attachAction) and
+                    hasStateDescription(countState) and
+                    hasClickActionLabel(attachAction),
+            )
+                .assertIsEnabled()
+                .performClick()
+
+            compose.runOnUiThread {
+                attachmentCount.value = MAX_PENDING_ATTACHMENTS
+            }
+            compose.waitForIdle()
+
+            val limitState = localizedContext.getString(
+                R.string.attach_files_state_limit_reached,
+                MAX_PENDING_ATTACHMENTS,
+                MAX_PENDING_ATTACHMENTS,
+            )
+            compose.onNode(
+                hasContentDescription(attachAction) and
+                    hasStateDescription(limitState) and
+                    hasClickActionLabel(attachAction),
+            )
+                .assertIsNotEnabled()
+        }
+
+        assertEquals(languageTags.size, attachClicks)
+    }
+
+    @Test
     fun chatScreenAttachmentChipsExposeFileStateToAccessibility() {
         val chatModel = RuntimeModel(
             id = "ollama:qwen3:8b",
@@ -5803,6 +6829,96 @@ class ClientScreensNoDeviceComposeTest {
     }
 
     @Test
+    fun chatScreenMessageRowsExposeLocalizedRoleAccessibilitySummaries() {
+        val languageTags = listOf("en", "ko", "ja", "zh-CN", "fr")
+        val currentLanguage = mutableStateOf(languageTags.first())
+        val chatModel = RuntimeModel(
+            id = "ollama:qwen3:8b",
+            name = "Qwen3 8B",
+            modelKind = MODEL_KIND_CHAT,
+            capabilities = listOf("chat"),
+            installed = true,
+            source = "local",
+        )
+        val userMessage = "Review the relay plan."
+        val assistantMessage = "AetherLink keeps model access behind the trusted runtime."
+
+        compose.setContent {
+            MaterialTheme {
+                LocalizedTestContent(languageTag = currentLanguage.value) {
+                    ChatScreen(
+                        state = RuntimeUiState(
+                            isConnected = true,
+                            runtimeStatus = "authenticated",
+                            trustedRuntime = RuntimeTrustedRuntime(
+                                deviceId = "runtime-1",
+                                name = "AetherLink Runtime",
+                            ),
+                            backendAvailable = true,
+                            selectedLanguageTag = currentLanguage.value,
+                            selectedModelId = chatModel.id,
+                            models = listOf(chatModel),
+                            messages = listOf(
+                                RuntimeChatMessage(
+                                    id = "user-role-summary",
+                                    role = "user",
+                                    content = userMessage,
+                                ),
+                                RuntimeChatMessage(
+                                    id = "assistant-role-summary",
+                                    role = "assistant",
+                                    content = assistantMessage,
+                                ),
+                            ),
+                        ),
+                        onInputChange = {},
+                        onSend = {},
+                        onCancel = {},
+                        onConnect = {},
+                        onScanPairingQr = {},
+                        onRefreshHealth = {},
+                        onAttachFiles = {},
+                        onRemoveAttachment = {},
+                        onSuggestionClick = {},
+                        onScanLatestQr = {},
+                    )
+                }
+            }
+        }
+
+        languageTags.forEach { languageTag ->
+            val localizedContext = ApplicationProvider
+                .getApplicationContext<Context>()
+                .localizedContext(languageTag)
+            compose.runOnUiThread {
+                currentLanguage.value = languageTag
+            }
+            compose.waitForIdle()
+
+            val copyAction = localizedContext.getString(R.string.copy_message)
+            val userSummary = localizedContext.getString(
+                R.string.chat_message_accessibility_summary,
+                localizedContext.getString(R.string.role_user),
+                userMessage,
+            )
+            val assistantSummary = localizedContext.getString(
+                R.string.chat_message_accessibility_summary,
+                localizedContext.getString(R.string.role_assistant),
+                assistantMessage,
+            )
+
+            compose.onNode(
+                hasContentDescription(userSummary) and hasLongClickActionLabel(copyAction),
+                useUnmergedTree = true,
+            ).assertIsDisplayed()
+            compose.onNode(
+                hasContentDescription(assistantSummary) and hasLongClickActionLabel(copyAction),
+                useUnmergedTree = true,
+            ).assertIsDisplayed()
+        }
+    }
+
+    @Test
     fun chatScreenRendersReasoningCollapsedAndExpandable() {
         val hapticFeedback = RecordingHapticFeedback()
         val chatModel = RuntimeModel(
@@ -5885,6 +7001,71 @@ class ClientScreensNoDeviceComposeTest {
             useUnmergedTree = true,
         ).assertIsDisplayed()
         assertEquals(listOf(HapticFeedbackType.TextHandleMove), hapticFeedback.events)
+    }
+
+    @Test
+    fun chatScreenKeepsOpenStreamingReasoningExpandedInitially() {
+        val chatModel = RuntimeModel(
+            id = "ollama:reasoning",
+            name = "Reasoning Model",
+            modelKind = MODEL_KIND_CHAT,
+            capabilities = listOf("chat"),
+            installed = true,
+            source = "local",
+        )
+        val openReasoning = "first step\nsecond step\nthird step\nfourth step"
+
+        compose.setContent {
+            MaterialTheme {
+                ChatScreen(
+                    state = RuntimeUiState(
+                        isConnected = true,
+                        runtimeStatus = "authenticated",
+                        trustedRuntime = RuntimeTrustedRuntime(
+                            deviceId = "runtime-1",
+                            name = "AetherLink Runtime",
+                        ),
+                        backendAvailable = true,
+                        selectedModelId = chatModel.id,
+                        models = listOf(chatModel),
+                        messages = listOf(
+                            RuntimeChatMessage(
+                                id = "assistant-1",
+                                role = "assistant",
+                                reasoning = openReasoning,
+                                isReasoningOpen = true,
+                                content = "",
+                            ),
+                        ),
+                        isStreaming = true,
+                        selectedTheme = RuntimeAppTheme.System,
+                    ),
+                    onInputChange = {},
+                    onSend = {},
+                    onCancel = {},
+                    onConnect = {},
+                    onScanPairingQr = {},
+                    onRefreshHealth = {},
+                    onAttachFiles = {},
+                    onRemoveAttachment = {},
+                    onSuggestionClick = {},
+                    onScanLatestQr = {},
+                )
+            }
+        }
+
+        compose.onNodeWithText(openReasoning).assertIsDisplayed()
+        compose.onNodeWithText("Hide thinking").assertIsDisplayed()
+        compose.onNode(
+            hasContentDescription("Thinking. Expanded. first step second step third step fourth step") and
+                hasStateDescription("Expanded") and
+                hasClickActionLabel("Hide thinking") and
+                hasClickAction(),
+            useUnmergedTree = true,
+        )
+            .assertIsDisplayed()
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.LiveRegion, LiveRegionMode.Polite))
+        compose.onAllNodesWithText("Generating...").assertCountEquals(0)
     }
 
     @Test
@@ -6030,6 +7211,83 @@ class ClientScreensNoDeviceComposeTest {
             compose.onNodeWithText(expectedTyping).assertIsDisplayed()
             compose.onNode(
                 hasContentDescription(expectedTyping) and hasPoliteLiveRegion(),
+                useUnmergedTree = true,
+            ).assertIsDisplayed()
+        }
+    }
+
+    @Test
+    fun chatScreenStreamingAssistantContentAnnouncesLatestReplyAcrossSupportedLanguages() {
+        val languageTags = listOf("en", "ko", "ja", "zh-CN", "fr")
+        val language = mutableStateOf(languageTags.first())
+        val streamingContent = "Checking the trusted route..."
+        val chatModel = RuntimeModel(
+            id = "ollama:qwen3:8b",
+            name = "Qwen3 8B",
+            modelKind = MODEL_KIND_CHAT,
+            capabilities = listOf("chat"),
+            installed = true,
+            source = "local",
+        )
+
+        compose.setContent {
+            LocalizedTestContent(languageTag = language.value) {
+                MaterialTheme {
+                    ChatScreen(
+                        state = RuntimeUiState(
+                            isConnected = true,
+                            runtimeStatus = "authenticated",
+                            trustedRuntime = RuntimeTrustedRuntime(
+                                deviceId = "runtime-1",
+                                name = "AetherLink Runtime",
+                            ),
+                            backendAvailable = true,
+                            selectedLanguageTag = language.value,
+                            selectedModelId = chatModel.id,
+                            models = listOf(chatModel),
+                            messages = listOf(
+                                RuntimeChatMessage(
+                                    id = "assistant-streaming",
+                                    role = "assistant",
+                                    content = streamingContent,
+                                ),
+                            ),
+                            isStreaming = true,
+                            activeRequestId = "request-1",
+                        ),
+                        onInputChange = {},
+                        onSend = {},
+                        onCancel = {},
+                        onConnect = {},
+                        onScanPairingQr = {},
+                        onRefreshHealth = {},
+                        onAttachFiles = {},
+                        onRemoveAttachment = {},
+                        onSuggestionClick = {},
+                        onScanLatestQr = {},
+                    )
+                }
+            }
+        }
+
+        languageTags.forEach { languageTag ->
+            language.value = languageTag
+            compose.waitForIdle()
+
+            val localizedContext = ApplicationProvider
+                .getApplicationContext<Context>()
+                .localizedContext(languageTag)
+            val expectedSummary = localizedContext.getString(
+                R.string.chat_message_accessibility_summary,
+                localizedContext.getString(R.string.role_assistant),
+                streamingContent,
+            )
+
+            compose.onNodeWithText(streamingContent).assertIsDisplayed()
+            compose.onNode(
+                hasContentDescription(expectedSummary) and
+                    hasPoliteLiveRegion() and
+                    hasLongClickActionLabel(localizedContext.getString(R.string.copy_message)),
                 useUnmergedTree = true,
             ).assertIsDisplayed()
         }
@@ -6480,7 +7738,9 @@ class ClientScreensNoDeviceComposeTest {
             compose.waitForIdle()
 
             compose.onNode(
-                hasContentDescription(expected.jumpAction) and hasStateDescription(expected.jumpState),
+                hasContentDescription(expected.jumpAction) and
+                    hasStateDescription(expected.jumpState) and
+                    hasClickActionLabel(expected.jumpAction),
             )
                 .assertIsDisplayed()
                 .assertIsEnabled()
@@ -6503,6 +7763,13 @@ class ClientScreensNoDeviceComposeTest {
             "ja" to "最新の AetherLink Runtime QR をスキャンしてください。別のネットワークから接続するには、両方のデバイスから到達できるリレー、VPN、トンネル、またはプライベートオーバーレイ経路が QR に含まれている必要があります。",
             "zh-CN" to "请扫描最新的 AetherLink Runtime 二维码。若要从其他网络连接，二维码必须包含两台设备都能访问的中继、VPN、隧道或私有覆盖网络路径。",
             "fr" to "Scannez le dernier QR AetherLink Runtime. Pour se connecter depuis un autre réseau, le QR doit inclure une route relais, VPN, tunnel ou overlay privé joignable par les deux appareils.",
+        )
+        val expectedSecurityNotes = mapOf(
+            "en" to "AetherLink trusts only QR-verified AetherLink Runtime. Model providers stay private.",
+            "ko" to "AetherLink는 QR로 확인된 AetherLink Runtime만 신뢰합니다. 모델 제공자는 비공개로 유지됩니다.",
+            "ja" to "AetherLink は QR で確認された AetherLink Runtime だけを信頼します。モデルプロバイダーは非公開のままです。",
+            "zh-CN" to "AetherLink 只信任通过二维码验证的 AetherLink Runtime。模型提供方保持私有。",
+            "fr" to "AetherLink ne fait confiance qu’aux AetherLink Runtime vérifiés par QR. Les fournisseurs de modèles restent privés.",
         )
 
         compose.setContent {
@@ -6537,6 +7804,7 @@ class ClientScreensNoDeviceComposeTest {
                         onArchiveAllChatSessions = {},
                         onPermanentlyDeleteArchivedChatSessions = {},
                         showDeveloperDiagnostics = false,
+                        modifier = Modifier.width(260.dp).height(760.dp),
                     )
                 }
             }
@@ -6548,7 +7816,12 @@ class ClientScreensNoDeviceComposeTest {
             }
             compose.waitForIdle()
             compose.onNodeWithText(expectedTitle).assertIsDisplayed()
-            compose.onNodeWithText(expectedPairingDetails.getValue(languageTag)).assertExists()
+            compose.onNodeWithText(expectedPairingDetails.getValue(languageTag))
+                .performScrollTo()
+                .assertIsDisplayed()
+            compose.onNodeWithText(expectedSecurityNotes.getValue(languageTag))
+                .performScrollTo()
+                .assertIsDisplayed()
         }
     }
 
@@ -6674,6 +7947,8 @@ class ClientScreensNoDeviceComposeTest {
             val appearanceSummary: String,
             val languageSummary: String,
             val selectedState: String,
+            val appearanceAction: String,
+            val languageAction: String,
         )
 
         val expectedRows = listOf(
@@ -6683,6 +7958,8 @@ class ClientScreensNoDeviceComposeTest {
                 appearanceSummary = "Appearance: Dark",
                 languageSummary = "Language: 日本語",
                 selectedState = "Selected",
+                appearanceAction = "Select Appearance: Dark",
+                languageAction = "Select Language: 日本語",
             ),
             ExpectedPreferenceRows(
                 languageTag = "ko",
@@ -6690,6 +7967,35 @@ class ClientScreensNoDeviceComposeTest {
                 appearanceSummary = "화면 모드: 다크",
                 languageSummary = "언어: 한국어",
                 selectedState = "선택됨",
+                appearanceAction = "화면 모드: 다크 선택",
+                languageAction = "언어: 한국어 선택",
+            ),
+            ExpectedPreferenceRows(
+                languageTag = "ja",
+                selectedLanguageTag = "ja",
+                appearanceSummary = "外観: ダーク",
+                languageSummary = "言語: 日本語",
+                selectedState = "選択済み",
+                appearanceAction = "外観: ダーク を選択",
+                languageAction = "言語: 日本語 を選択",
+            ),
+            ExpectedPreferenceRows(
+                languageTag = "zh-CN",
+                selectedLanguageTag = "zh-CN",
+                appearanceSummary = "外观: 深色",
+                languageSummary = "语言: 简体中文",
+                selectedState = "已选择",
+                appearanceAction = "选择 外观: 深色",
+                languageAction = "选择 语言: 简体中文",
+            ),
+            ExpectedPreferenceRows(
+                languageTag = "fr",
+                selectedLanguageTag = "fr",
+                appearanceSummary = "Apparence: Sombre",
+                languageSummary = "Langue: Français",
+                selectedState = "Sélectionné",
+                appearanceAction = "Sélectionner Apparence: Sombre",
+                languageAction = "Sélectionner Langue: Français",
             ),
         )
         val currentRows = mutableStateOf(expectedRows.first())
@@ -6751,12 +8057,16 @@ class ClientScreensNoDeviceComposeTest {
             compose.waitForIdle()
 
             compose.onNode(
-                hasContentDescription(expected.appearanceSummary) and hasStateDescription(expected.selectedState),
+                hasContentDescription(expected.appearanceSummary) and
+                    hasStateDescription(expected.selectedState) and
+                    hasClickActionLabel(expected.appearanceAction),
                 useUnmergedTree = true,
             )
                 .assertIsDisplayed()
             compose.onNode(
-                hasContentDescription(expected.languageSummary) and hasStateDescription(expected.selectedState),
+                hasContentDescription(expected.languageSummary) and
+                    hasStateDescription(expected.selectedState) and
+                    hasClickActionLabel(expected.languageAction),
                 useUnmergedTree = true,
             )
                 .performScrollTo()
@@ -6870,6 +8180,122 @@ class ClientScreensNoDeviceComposeTest {
         )
             .performScrollTo()
             .assertIsNotEnabled()
+    }
+
+    @Test
+    fun settingsEmbeddingModelControlsAreDisabledWhileStreaming() {
+        var selectedEmbeddingModelId: String? = null
+        var refreshRequests = 0
+        val chatModel = RuntimeModel(
+            id = "ollama:qwen3:8b",
+            name = "Qwen3 8B",
+            modelKind = MODEL_KIND_CHAT,
+            capabilities = listOf("chat"),
+            installed = true,
+            source = "local",
+        )
+        val selectedEmbeddingModel = RuntimeModel(
+            id = "ollama:nomic-embed-text",
+            name = "Nomic Embed Text",
+            modelKind = MODEL_KIND_EMBEDDING,
+            capabilities = listOf("embedding"),
+            installed = true,
+            source = "local",
+        )
+        val alternateEmbeddingModel = RuntimeModel(
+            id = "ollama:mxbai-embed-large",
+            name = "Mxbai Embed Large",
+            modelKind = MODEL_KIND_EMBEDDING,
+            capabilities = listOf("embedding"),
+            installed = true,
+            source = "local",
+        )
+
+        compose.setContent {
+            MaterialTheme {
+                SettingsScreen(
+                    state = RuntimeUiState(
+                        isConnected = true,
+                        isStreaming = true,
+                        runtimeStatus = "authenticated",
+                        trustedRuntime = RuntimeTrustedRuntime(
+                            deviceId = "runtime-1",
+                            name = "AetherLink Runtime",
+                        ),
+                        backendAvailable = true,
+                        selectedLanguageTag = "en",
+                        selectedEmbeddingModelId = selectedEmbeddingModel.id,
+                        models = listOf(chatModel, selectedEmbeddingModel, alternateEmbeddingModel),
+                    ),
+                    onHostChange = {},
+                    onPortChange = {},
+                    onUseUsbReverse = {},
+                    onUseEmulator = {},
+                    onStartDiscovery = {},
+                    onStopDiscovery = {},
+                    onUseDiscoveredRuntime = {},
+                    onForgetTrustedRuntime = {},
+                    onScanPairingQr = {},
+                    onSubmitPairingPayload = {},
+                    onConnect = {},
+                    onRefreshHealth = {},
+                    onRequestModels = { refreshRequests += 1 },
+                    onDisconnect = {},
+                    onSetAutoReconnectEnabled = {},
+                    onSetLanguageTag = {},
+                    onSetTheme = {},
+                    onSelectEmbeddingModel = { selectedEmbeddingModelId = it },
+                    onAddMemoryEntry = {},
+                    onRemoveMemoryEntry = {},
+                    onSetMemoryEntryEnabled = { _, _ -> },
+                    onArchiveChatSession = {},
+                    onRestoreChatSession = {},
+                    onPermanentlyDeleteChatSession = {},
+                    onArchiveAllChatSessions = {},
+                    onPermanentlyDeleteArchivedChatSessions = {},
+                    showDeveloperDiagnostics = false,
+                )
+            }
+        }
+
+        repeat(3) {
+            compose.onRoot().performTouchInput { swipeUp() }
+            compose.waitForIdle()
+        }
+        compose.onNodeWithText("Memory indexing model")
+            .assertIsDisplayed()
+            .performClick()
+        compose.waitForIdle()
+        repeat(2) {
+            compose.onRoot().performTouchInput { swipeUp() }
+            compose.waitForIdle()
+        }
+
+        val waitForStream = "Wait for the current response or cancel it before changing models."
+        compose.onNode(
+            hasContentDescription("Selected memory indexing model Nomic Embed Text. Ollama - Installed.") and
+                hasStateDescription(waitForStream),
+            useUnmergedTree = true,
+        )
+            .performScrollTo()
+            .assertIsNotEnabled()
+        compose.onNode(
+            hasContentDescription("Memory indexing model Mxbai Embed Large. Ollama - Installed.") and
+                hasStateDescription(waitForStream),
+            useUnmergedTree = true,
+        )
+            .performScrollTo()
+            .assertIsNotEnabled()
+            .performClick()
+        compose.onNode(
+            hasText("Refresh models") and hasStateDescription(waitForStream),
+        )
+            .performScrollTo()
+            .assertIsNotEnabled()
+            .performClick()
+
+        assertEquals(null, selectedEmbeddingModelId)
+        assertEquals(0, refreshRequests)
     }
 
     @Test
@@ -7102,7 +8528,9 @@ class ClientScreensNoDeviceComposeTest {
                 compose.waitForIdle()
             }
             val refreshAction = compose.onNode(
-                hasText(expected.buttonLabel) and hasStateDescription(expected.stateDescription),
+                hasText(expected.buttonLabel) and
+                    hasStateDescription(expected.stateDescription) and
+                    hasClickActionLabel(expected.buttonLabel),
             ).performScrollTo()
             if (expected.enabled) {
                 refreshAction.assertIsEnabled().performClick()
@@ -7112,6 +8540,159 @@ class ClientScreensNoDeviceComposeTest {
         }
 
         assertEquals(5, requestModelsClicks)
+    }
+
+    @Test
+    fun settingsEmbeddingModelEmptyStatesAnnounceLocalizedLiveRegion() {
+        data class ExpectedEmbeddingModelEmptyState(
+            val languageTag: String,
+            val sectionTitle: String,
+            val emptyText: String,
+            val isConnected: Boolean,
+        )
+
+        val expectedStates = listOf(
+            ExpectedEmbeddingModelEmptyState(
+                languageTag = "en",
+                sectionTitle = "Memory indexing model",
+                emptyText = "No memory indexing models are available from AetherLink Runtime.",
+                isConnected = true,
+            ),
+            ExpectedEmbeddingModelEmptyState(
+                languageTag = "ko",
+                sectionTitle = "메모리 색인 모델",
+                emptyText = "AetherLink Runtime에서 사용할 수 있는 메모리 색인 모델이 없습니다.",
+                isConnected = true,
+            ),
+            ExpectedEmbeddingModelEmptyState(
+                languageTag = "ja",
+                sectionTitle = "メモリ インデックスモデル",
+                emptyText = "AetherLink Runtime から利用できるメモリ インデックスモデルはありません。",
+                isConnected = true,
+            ),
+            ExpectedEmbeddingModelEmptyState(
+                languageTag = "zh-CN",
+                sectionTitle = "记忆索引模型",
+                emptyText = "AetherLink Runtime 没有可用的记忆索引模型。",
+                isConnected = true,
+            ),
+            ExpectedEmbeddingModelEmptyState(
+                languageTag = "fr",
+                sectionTitle = "Modèle d’indexation de la mémoire",
+                emptyText = "Aucun modèle d’indexation de la mémoire n’est disponible depuis AetherLink Runtime.",
+                isConnected = true,
+            ),
+            ExpectedEmbeddingModelEmptyState(
+                languageTag = "en",
+                sectionTitle = "Memory indexing model",
+                emptyText = "Connect to the trusted runtime before choosing an embedding model.",
+                isConnected = false,
+            ),
+            ExpectedEmbeddingModelEmptyState(
+                languageTag = "ko",
+                sectionTitle = "메모리 색인 모델",
+                emptyText = "임베딩 모델을 선택하기 전에 신뢰된 런타임에 연결하세요.",
+                isConnected = false,
+            ),
+            ExpectedEmbeddingModelEmptyState(
+                languageTag = "ja",
+                sectionTitle = "メモリ インデックスモデル",
+                emptyText = "埋め込みモデルを選ぶ前に、信頼済みランタイムに接続してください。",
+                isConnected = false,
+            ),
+            ExpectedEmbeddingModelEmptyState(
+                languageTag = "zh-CN",
+                sectionTitle = "记忆索引模型",
+                emptyText = "选择嵌入模型前，请先连接受信任的运行时。",
+                isConnected = false,
+            ),
+            ExpectedEmbeddingModelEmptyState(
+                languageTag = "fr",
+                sectionTitle = "Modèle d’indexation de la mémoire",
+                emptyText = "Connectez-vous au runtime de confiance avant de choisir un modèle d’embedding.",
+                isConnected = false,
+            ),
+        )
+        val currentState = mutableStateOf(expectedStates.first())
+
+        compose.setContent {
+            MaterialTheme {
+                val expected = currentState.value
+                LocalizedTestContent(languageTag = expected.languageTag) {
+                    key(expected.languageTag, expected.isConnected) {
+                        SettingsScreen(
+                            state = RuntimeUiState(
+                                isConnected = expected.isConnected,
+                                runtimeStatus = if (expected.isConnected) "authenticated" else "disconnected",
+                                trustedRuntime = RuntimeTrustedRuntime(
+                                    deviceId = "runtime-1",
+                                    name = "AetherLink Runtime",
+                                ),
+                                backendAvailable = expected.isConnected,
+                                selectedLanguageTag = expected.languageTag,
+                                selectedTheme = RuntimeAppTheme.System,
+                                models = emptyList(),
+                            ),
+                            onHostChange = {},
+                            onPortChange = {},
+                            onUseUsbReverse = {},
+                            onUseEmulator = {},
+                            onStartDiscovery = {},
+                            onStopDiscovery = {},
+                            onUseDiscoveredRuntime = {},
+                            onForgetTrustedRuntime = {},
+                            onScanPairingQr = {},
+                            onSubmitPairingPayload = {},
+                            onConnect = {},
+                            onRefreshHealth = {},
+                            onRequestModels = {},
+                            onDisconnect = {},
+                            onSetAutoReconnectEnabled = {},
+                            onSetLanguageTag = {},
+                            onSetTheme = {},
+                            onSelectEmbeddingModel = {},
+                            onAddMemoryEntry = {},
+                            onRemoveMemoryEntry = {},
+                            onSetMemoryEntryEnabled = { _, _ -> },
+                            onArchiveChatSession = {},
+                            onRestoreChatSession = {},
+                            onPermanentlyDeleteChatSession = {},
+                            onArchiveAllChatSessions = {},
+                            onPermanentlyDeleteArchivedChatSessions = {},
+                            showDeveloperDiagnostics = false,
+                        )
+                    }
+                }
+            }
+        }
+
+        expectedStates.forEach { expected ->
+            compose.runOnUiThread {
+                currentState.value = expected
+            }
+            compose.waitForIdle()
+            repeat(3) {
+                compose.onRoot().performTouchInput { swipeUp() }
+                compose.waitForIdle()
+            }
+            compose.onNodeWithText(expected.sectionTitle)
+                .assertIsDisplayed()
+                .performClick()
+            compose.waitForIdle()
+            repeat(2) {
+                compose.onRoot().performTouchInput { swipeUp() }
+                compose.waitForIdle()
+            }
+            compose.onNodeWithText(expected.emptyText)
+                .performScrollTo()
+                .assertIsDisplayed()
+            compose.onNode(
+                hasContentDescription(expected.emptyText) and hasPoliteLiveRegion(),
+                useUnmergedTree = true,
+            )
+                .performScrollTo()
+                .assertIsDisplayed()
+        }
     }
 
     @Test
@@ -7511,11 +9092,19 @@ class ClientScreensNoDeviceComposeTest {
                 hasContentDescription("Remove memory Project Alpha prefers concise Korean summaries") and
                 hasClickActionLabel("Remove memory Project Alpha prefers concise Korean summaries"),
         ).assertIsDisplayed()
+        compose.onNode(
+            hasText("Cancel") and
+                hasContentDescription("Cancel: Remove memory Project Alpha prefers concise Korean summaries") and
+                hasClickActionLabel("Cancel: Remove memory Project Alpha prefers concise Korean summaries"),
+        ).assertIsDisplayed()
         assertEquals(
             listOf(HapticFeedbackType.TextHandleMove, HapticFeedbackType.TextHandleMove),
             hapticFeedback.events,
         )
-        compose.onNodeWithText("Cancel").performClick()
+        compose.onNode(
+            hasText("Cancel") and
+                hasContentDescription("Cancel: Remove memory Project Alpha prefers concise Korean summaries"),
+        ).performClick()
         assertEquals(
             listOf(
                 HapticFeedbackType.TextHandleMove,
@@ -7635,6 +9224,203 @@ class ClientScreensNoDeviceComposeTest {
     }
 
     @Test
+    fun settingsMemoryActionsWaitForStreamAcrossSupportedLanguages() {
+        val languageTags = listOf("en", "ko", "ja", "zh-CN", "fr")
+        val currentLanguage = mutableStateOf(languageTags.first())
+        val memory = RuntimeMemoryEntry(
+            id = "memory-streaming",
+            content = "Use metric units for travel planning",
+            enabled = true,
+            createdAtMillis = 1_000L,
+            updatedAtMillis = 2_000L,
+        )
+
+        compose.setContent {
+            MaterialTheme {
+                LocalizedTestContent(languageTag = currentLanguage.value) {
+                    key(currentLanguage.value) {
+                        SettingsScreen(
+                            state = RuntimeUiState(
+                                isConnected = true,
+                                isStreaming = true,
+                                runtimeStatus = "streaming",
+                                trustedRuntime = RuntimeTrustedRuntime(
+                                    deviceId = "runtime-1",
+                                    name = "AetherLink Runtime",
+                                ),
+                                selectedLanguageTag = currentLanguage.value,
+                                memoryEntries = listOf(memory),
+                            ),
+                            onHostChange = {},
+                            onPortChange = {},
+                            onUseUsbReverse = {},
+                            onUseEmulator = {},
+                            onStartDiscovery = {},
+                            onStopDiscovery = {},
+                            onUseDiscoveredRuntime = {},
+                            onForgetTrustedRuntime = {},
+                            onScanPairingQr = {},
+                            onSubmitPairingPayload = {},
+                            onConnect = {},
+                            onRefreshHealth = {},
+                            onRequestModels = {},
+                            onDisconnect = {},
+                            onSetAutoReconnectEnabled = {},
+                            onSetLanguageTag = {},
+                            onSetTheme = {},
+                            onSelectEmbeddingModel = {},
+                            onAddMemoryEntry = {},
+                            onRemoveMemoryEntry = {},
+                            onSetMemoryEntryEnabled = { _, _ -> },
+                            onArchiveChatSession = {},
+                            onRestoreChatSession = {},
+                            onPermanentlyDeleteChatSession = {},
+                            onArchiveAllChatSessions = {},
+                            onPermanentlyDeleteArchivedChatSessions = {},
+                            showDeveloperDiagnostics = false,
+                        )
+                    }
+                }
+            }
+        }
+
+        languageTags.forEach { languageTag ->
+            val localizedContext = ApplicationProvider
+                .getApplicationContext<Context>()
+                .localizedContext(languageTag)
+            val memorySection = localizedContext.getString(R.string.memory_title)
+            val memoryAddLabel = localizedContext.getString(R.string.memory_add_label)
+            val addButton = localizedContext.getString(R.string.memory_add)
+            val streamingLock = localizedContext.getString(R.string.memory_action_state_wait_for_stream)
+            val pauseMemory = localizedContext.getString(R.string.memory_pause_named, memory.content)
+            val removeMemory = localizedContext.getString(R.string.memory_remove_named, memory.content)
+
+            compose.runOnUiThread {
+                currentLanguage.value = languageTag
+            }
+            compose.waitForIdle()
+            scrollUntilTextIsVisible(memorySection)
+            compose.onNodeWithText(memorySection)
+                .performScrollTo()
+                .performClick()
+            compose.waitForIdle()
+
+            compose.onNode(hasContentDescription(memoryAddLabel) and hasStateDescription(streamingLock))
+                .performScrollTo()
+                .assertIsNotEnabled()
+            compose.onNode(
+                hasText(addButton) and
+                    hasStateDescription(streamingLock) and
+                    hasClickActionLabel(addButton) and
+                    SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button),
+            )
+                .performScrollTo()
+                .assertIsNotEnabled()
+            compose.onNodeWithContentDescription(pauseMemory, useUnmergedTree = true)
+                .performScrollTo()
+                .assert(hasStateDescription(streamingLock))
+                .assertIsNotEnabled()
+            compose.onNodeWithContentDescription(removeMemory, useUnmergedTree = true)
+                .performScrollTo()
+                .assert(hasStateDescription(streamingLock))
+                .assertIsNotEnabled()
+        }
+    }
+
+    @Test
+    fun settingsMemoryEmptyStatesAnnounceLocalizedLiveRegion() {
+        data class ExpectedMemoryEmptyState(
+            val languageTag: String,
+            val connected: Boolean,
+            val emptyTextRes: Int,
+        )
+
+        val expectedStates = listOf(
+            ExpectedMemoryEmptyState("en", connected = false, R.string.memory_empty_disconnected),
+            ExpectedMemoryEmptyState("en", connected = true, R.string.memory_empty),
+            ExpectedMemoryEmptyState("ko", connected = false, R.string.memory_empty_disconnected),
+            ExpectedMemoryEmptyState("ko", connected = true, R.string.memory_empty),
+            ExpectedMemoryEmptyState("ja", connected = false, R.string.memory_empty_disconnected),
+            ExpectedMemoryEmptyState("ja", connected = true, R.string.memory_empty),
+            ExpectedMemoryEmptyState("zh-CN", connected = false, R.string.memory_empty_disconnected),
+            ExpectedMemoryEmptyState("zh-CN", connected = true, R.string.memory_empty),
+            ExpectedMemoryEmptyState("fr", connected = false, R.string.memory_empty_disconnected),
+            ExpectedMemoryEmptyState("fr", connected = true, R.string.memory_empty),
+        )
+        val currentState = mutableStateOf(expectedStates.first())
+
+        compose.setContent {
+            MaterialTheme {
+                val expected = currentState.value
+                LocalizedTestContent(languageTag = expected.languageTag) {
+                    key(expected.languageTag, expected.connected) {
+                        SettingsScreen(
+                            state = RuntimeUiState(
+                                isConnected = expected.connected,
+                                runtimeStatus = if (expected.connected) "authenticated" else "disconnected",
+                                trustedRuntime = RuntimeTrustedRuntime(
+                                    deviceId = "runtime-1",
+                                    name = "AetherLink Runtime",
+                                ),
+                                selectedLanguageTag = expected.languageTag,
+                            ),
+                            onHostChange = {},
+                            onPortChange = {},
+                            onUseUsbReverse = {},
+                            onUseEmulator = {},
+                            onStartDiscovery = {},
+                            onStopDiscovery = {},
+                            onUseDiscoveredRuntime = {},
+                            onForgetTrustedRuntime = {},
+                            onScanPairingQr = {},
+                            onSubmitPairingPayload = {},
+                            onConnect = {},
+                            onRefreshHealth = {},
+                            onRequestModels = {},
+                            onDisconnect = {},
+                            onSetAutoReconnectEnabled = {},
+                            onSetLanguageTag = {},
+                            onSetTheme = {},
+                            onSelectEmbeddingModel = {},
+                            onAddMemoryEntry = {},
+                            onRemoveMemoryEntry = {},
+                            onSetMemoryEntryEnabled = { _, _ -> },
+                            onArchiveChatSession = {},
+                            onRestoreChatSession = {},
+                            onPermanentlyDeleteChatSession = {},
+                            onArchiveAllChatSessions = {},
+                            onPermanentlyDeleteArchivedChatSessions = {},
+                            showDeveloperDiagnostics = false,
+                        )
+                    }
+                }
+            }
+        }
+
+        expectedStates.forEach { expected ->
+            val localizedContext = ApplicationProvider
+                .getApplicationContext<Context>()
+                .localizedContext(expected.languageTag)
+            val memorySection = localizedContext.getString(R.string.memory_title)
+            val emptyText = localizedContext.getString(expected.emptyTextRes)
+
+            compose.runOnUiThread {
+                currentState.value = expected
+            }
+            compose.waitForIdle()
+            scrollUntilTextIsVisible(memorySection)
+            compose.onNodeWithText(memorySection)
+                .performScrollTo()
+                .performClick()
+            compose.waitForIdle()
+
+            compose.onNode(hasContentDescription(emptyText) and hasPoliteLiveRegion())
+                .performScrollTo()
+                .assertIsDisplayed()
+        }
+    }
+
+    @Test
     fun settingsMemoryAddControlsLocalizeReadinessStateAcrossSupportedLanguages() {
         val languageTags = listOf("en", "ko", "ja", "zh-CN", "fr")
         val currentLanguage = mutableStateOf(languageTags.first())
@@ -7718,6 +9504,7 @@ class ClientScreensNoDeviceComposeTest {
             compose.onNode(
                 hasText(addButton) and
                     hasStateDescription(lockedState) and
+                    hasClickActionLabel(addButton) and
                     SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button),
             )
                 .performScrollTo()
@@ -7740,6 +9527,7 @@ class ClientScreensNoDeviceComposeTest {
             compose.onNode(
                 hasText(addButton) and
                     hasStateDescription(emptyState) and
+                    hasClickActionLabel(addButton) and
                     SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button),
             )
                 .performScrollTo()
@@ -7756,6 +9544,7 @@ class ClientScreensNoDeviceComposeTest {
             compose.onNode(
                 hasText(addButton) and
                     hasStateDescription(readyState) and
+                    hasClickActionLabel(addButton) and
                     SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button),
             )
                 .performScrollTo()
@@ -7915,6 +9704,70 @@ class ClientScreensNoDeviceComposeTest {
     }
 
     @Test
+    fun chatTopBarModelPickerShowsSavedMissingChatModelRecovery() {
+        val selectedChatModelIds = mutableListOf<String>()
+        var requestModelsClicks = 0
+        val availableChatModel = RuntimeModel(
+            id = "ollama:qwen3:8b",
+            name = "Qwen3 8B",
+            modelKind = MODEL_KIND_CHAT,
+            capabilities = listOf("chat"),
+            installed = true,
+            source = "local",
+        )
+
+        compose.setContent {
+            MaterialTheme {
+                ChatTopAppBarTitle(
+                    state = RuntimeUiState(
+                        isConnected = true,
+                        runtimeStatus = "authenticated",
+                        backendAvailable = true,
+                        selectedModelId = "ollama:missing-chat",
+                        models = listOf(availableChatModel),
+                    ),
+                    onRequestModels = { requestModelsClicks += 1 },
+                    onSelectModel = { selectedChatModelIds += it },
+                )
+            }
+        }
+
+        compose.onNode(
+            hasText("Choose model") and
+                hasContentDescription(
+                    "Chat model picker. Choose model. Selected model is missing from the runtime list. Refresh or choose another.",
+                ) and
+                hasStateDescription("Selected model is missing from the runtime list. Refresh or choose another."),
+        )
+            .assertIsDisplayed()
+            .assertIsEnabled()
+            .performClick()
+        compose.waitForIdle()
+
+        compose.onNode(
+            hasContentDescription("Refresh models") and
+                hasStateDescription("Ready to refresh models."),
+            useUnmergedTree = true,
+        )
+            .assertIsDisplayed()
+            .assertIsEnabled()
+            .performClick()
+        compose.waitForIdle()
+        assertEquals(1, requestModelsClicks)
+
+        compose.onNodeWithText("missing-chat")
+            .assertIsDisplayed()
+        compose.onNodeWithText("Selected model is missing from the runtime list. Refresh or choose another.")
+            .assertIsDisplayed()
+        compose.onNodeWithText("Qwen3 8B")
+            .assertIsDisplayed()
+            .performClick()
+        compose.waitForIdle()
+
+        assertEquals(listOf("ollama:qwen3:8b"), selectedChatModelIds)
+    }
+
+    @Test
     fun chatTopBarModelPickerDoesNotShowStaleSavedModelWhenDisconnected() {
         compose.setContent {
             MaterialTheme {
@@ -7934,13 +9787,424 @@ class ClientScreensNoDeviceComposeTest {
 
         compose.onNode(
             hasText("Choose model") and
-                hasContentDescription("Chat model picker. Choose model. Disconnected.") and
-                hasStateDescription("Disconnected.") and
+                hasContentDescription("Chat model picker. Choose model. Disconnected") and
+                hasStateDescription("Disconnected") and
                 hasClickActionLabel("Choose model"),
         )
             .assertIsDisplayed()
             .assertIsEnabled()
         assertNoVisibleText("dev-mock")
+    }
+
+    @Test
+    fun chatTopBarModelPickerEmptyStatesShowLocalizedTitleAndLiveRegion() {
+        data class ExpectedEmptyModelState(
+            val languageTag: String,
+            val isConnected: Boolean,
+            val title: String,
+            val detail: String,
+            val summary: String,
+        )
+
+        val expectations = listOf(
+            ExpectedEmptyModelState(
+                "en",
+                isConnected = true,
+                title = "No models loaded",
+                detail = "Load models through AetherLink Runtime.",
+                summary = "No models loaded. Load models through AetherLink Runtime.",
+            ),
+            ExpectedEmptyModelState(
+                "en",
+                isConnected = false,
+                title = "Runtime required",
+                detail = "Connect to the trusted runtime before loading models.",
+                summary = "Runtime required. Connect to the trusted runtime before loading models.",
+            ),
+            ExpectedEmptyModelState(
+                "ko",
+                isConnected = true,
+                title = "불러온 모델 없음",
+                detail = "AetherLink Runtime을 통해 모델을 불러오세요.",
+                summary = "불러온 모델 없음. AetherLink Runtime을 통해 모델을 불러오세요.",
+            ),
+            ExpectedEmptyModelState(
+                "ko",
+                isConnected = false,
+                title = "런타임 필요",
+                detail = "모델을 불러오려면 먼저 신뢰된 런타임에 연결하세요.",
+                summary = "런타임 필요. 모델을 불러오려면 먼저 신뢰된 런타임에 연결하세요.",
+            ),
+            ExpectedEmptyModelState(
+                "ja",
+                isConnected = true,
+                title = "読み込まれたモデルはありません",
+                detail = "AetherLink Runtime を通じてモデルを読み込んでください。",
+                summary = "読み込まれたモデルはありません。AetherLink Runtime を通じてモデルを読み込んでください。",
+            ),
+            ExpectedEmptyModelState(
+                "ja",
+                isConnected = false,
+                title = "ランタイムが必要です",
+                detail = "モデルを読み込む前に、信頼済みランタイムに接続してください。",
+                summary = "ランタイムが必要です。モデルを読み込む前に、信頼済みランタイムに接続してください。",
+            ),
+            ExpectedEmptyModelState(
+                "zh-CN",
+                isConnected = true,
+                title = "未加载模型",
+                detail = "通过 AetherLink Runtime 加载模型。",
+                summary = "未加载模型。通过 AetherLink Runtime 加载模型。",
+            ),
+            ExpectedEmptyModelState(
+                "zh-CN",
+                isConnected = false,
+                title = "需要运行时",
+                detail = "加载模型前，请连接到受信任的运行时。",
+                summary = "需要运行时。加载模型前，请连接到受信任的运行时。",
+            ),
+            ExpectedEmptyModelState(
+                "fr",
+                isConnected = true,
+                title = "Aucun modèle chargé",
+                detail = "Chargez les modèles via AetherLink Runtime.",
+                summary = "Aucun modèle chargé. Chargez les modèles via AetherLink Runtime.",
+            ),
+            ExpectedEmptyModelState(
+                "fr",
+                isConnected = false,
+                title = "Runtime requis",
+                detail = "Connectez-vous au runtime de confiance avant de charger les modèles.",
+                summary = "Runtime requis. Connectez-vous au runtime de confiance avant de charger les modèles.",
+            ),
+        )
+
+        expectations.forEach { expectation ->
+            val localizedContext = ApplicationProvider
+                .getApplicationContext<Context>()
+                .localizedContext(expectation.languageTag)
+            assertEquals(
+                expectation.title,
+                localizedContext.getString(if (expectation.isConnected) {
+                    R.string.no_models_connected_title
+                } else {
+                    R.string.no_models_disconnected_title
+                }),
+            )
+            assertEquals(
+                expectation.detail,
+                localizedContext.getString(if (expectation.isConnected) {
+                    R.string.no_models_connected
+                } else {
+                    R.string.no_models_disconnected
+                }),
+            )
+            assertEquals(
+                expectation.summary,
+                localizedContext.getString(
+                    R.string.model_picker_empty_state_summary,
+                    expectation.title,
+                    expectation.detail,
+                ),
+            )
+        }
+
+        val localizedContext = ApplicationProvider
+            .getApplicationContext<Context>()
+            .localizedContext("en")
+        val title = localizedContext.getString(R.string.no_models_connected_title)
+        val detail = localizedContext.getString(R.string.no_models_connected)
+        val summary = localizedContext.getString(R.string.model_picker_empty_state_summary, title, detail)
+
+        compose.setContent {
+            MaterialTheme {
+                LocalizedTestContent(languageTag = "en") {
+                    Column(modifier = Modifier.width(360.dp).height(260.dp)) {
+                        ChatTopAppBarTitle(
+                            state = RuntimeUiState(
+                                isConnected = true,
+                                runtimeStatus = "authenticated",
+                                backendAvailable = true,
+                                models = emptyList(),
+                            ),
+                            onRequestModels = {},
+                            onSelectModel = {},
+                        )
+                    }
+                }
+            }
+        }
+
+        compose.onNodeWithText(localizedContext.getString(R.string.choose_model))
+            .assertIsDisplayed()
+            .performClick()
+        compose.waitForIdle()
+
+        compose.onNodeWithText(title, useUnmergedTree = true).assertExists()
+        compose.onNodeWithText(detail, useUnmergedTree = true).assertExists()
+        compose.onNode(
+            hasContentDescription(summary) and hasPoliteLiveRegion(),
+            useUnmergedTree = true,
+        ).assertExists()
+    }
+
+    @Test
+    fun chatTopBarShowsActiveChatTitleAndLocalizedFallback() {
+        data class ExpectedActiveTitle(
+            val languageTag: String,
+            val storedTitle: String,
+        )
+
+        val selectedChatModel = RuntimeModel(
+            id = "ollama:qwen3:8b",
+            name = "Qwen3 8B",
+            modelKind = MODEL_KIND_CHAT,
+            capabilities = listOf("chat"),
+            installed = true,
+            source = "local",
+        )
+        val expectations = listOf(
+            ExpectedActiveTitle(languageTag = "en", storedTitle = "Runtime roadmap"),
+            ExpectedActiveTitle(languageTag = "en", storedTitle = "New chat"),
+            ExpectedActiveTitle(languageTag = "ko", storedTitle = "New chat"),
+            ExpectedActiveTitle(languageTag = "ja", storedTitle = "New chat"),
+            ExpectedActiveTitle(languageTag = "zh-CN", storedTitle = "New chat"),
+            ExpectedActiveTitle(languageTag = "fr", storedTitle = "New chat"),
+        )
+        val currentExpectation = mutableStateOf(expectations.first())
+        val selectedModelIds = mutableListOf<String>()
+
+        compose.setContent {
+            MaterialTheme {
+                val expected = currentExpectation.value
+                LocalizedTestContent(languageTag = expected.languageTag) {
+                    key(expected.languageTag, expected.storedTitle) {
+                        ChatTopAppBarTitle(
+                            state = RuntimeUiState(
+                                isConnected = true,
+                                runtimeStatus = "authenticated",
+                                backendAvailable = true,
+                                selectedModelId = selectedChatModel.id,
+                                models = listOf(selectedChatModel),
+                                activeChatSessionId = "session-active",
+                                chatSessions = listOf(
+                                    RuntimeChatSession(
+                                        id = "session-active",
+                                        title = expected.storedTitle,
+                                        modelId = selectedChatModel.id,
+                                        updatedAtMillis = 2_000L,
+                                        messageCount = 4,
+                                    ),
+                                ),
+                            ),
+                            onRequestModels = {},
+                            onSelectModel = { selectedModelIds += it },
+                        )
+                    }
+                }
+            }
+        }
+
+        expectations.forEach { expected ->
+            val localizedContext = ApplicationProvider
+                .getApplicationContext<Context>()
+                .localizedContext(expected.languageTag)
+            val expectedTitle = if (expected.storedTitle == "New chat") {
+                localizedContext.getString(R.string.untitled_chat)
+            } else {
+                expected.storedTitle
+            }
+            val expectedSummary = localizedContext.getString(
+                R.string.chat_top_bar_active_title_summary,
+                expectedTitle,
+            )
+
+            compose.runOnUiThread {
+                currentExpectation.value = expected
+            }
+            compose.waitForIdle()
+
+            compose.onNode(
+                hasText(expectedTitle) and hasContentDescription(expectedSummary),
+                useUnmergedTree = true,
+            )
+                .assertIsDisplayed()
+
+            if (expected.storedTitle == "Runtime roadmap") {
+                compose.onNodeWithText("Qwen3 8B")
+                    .assertIsDisplayed()
+                    .performClick()
+                compose.waitForIdle()
+                compose.onNodeWithText("Refresh models").assertIsDisplayed()
+            } else {
+                assertNoVisibleText("New chat")
+            }
+        }
+
+        assertEquals(emptyList<String>(), selectedModelIds)
+    }
+
+    @Test
+    fun chatTopBarModelPickerRefreshRowLocalizesReadinessStates() {
+        data class ExpectedRefreshRow(
+            val languageTag: String,
+            val isConnected: Boolean,
+            val isLoadingModels: Boolean,
+            val refreshEnabled: Boolean,
+        )
+
+        val selectedChatModel = RuntimeModel(
+            id = "ollama:qwen3:8b",
+            name = "Qwen3 8B",
+            modelKind = MODEL_KIND_CHAT,
+            capabilities = listOf("chat"),
+            installed = true,
+            source = "local",
+        )
+        val expectations = listOf(
+            ExpectedRefreshRow(
+                languageTag = "en",
+                isConnected = true,
+                isLoadingModels = false,
+                refreshEnabled = true,
+            ),
+            ExpectedRefreshRow(
+                languageTag = "ko",
+                isConnected = true,
+                isLoadingModels = false,
+                refreshEnabled = true,
+            ),
+            ExpectedRefreshRow(
+                languageTag = "ja",
+                isConnected = true,
+                isLoadingModels = false,
+                refreshEnabled = true,
+            ),
+            ExpectedRefreshRow(
+                languageTag = "zh-CN",
+                isConnected = true,
+                isLoadingModels = false,
+                refreshEnabled = true,
+            ),
+            ExpectedRefreshRow(
+                languageTag = "fr",
+                isConnected = true,
+                isLoadingModels = false,
+                refreshEnabled = true,
+            ),
+            ExpectedRefreshRow(
+                languageTag = "en",
+                isConnected = true,
+                isLoadingModels = true,
+                refreshEnabled = false,
+            ),
+            ExpectedRefreshRow(
+                languageTag = "ko",
+                isConnected = false,
+                isLoadingModels = false,
+                refreshEnabled = false,
+            ),
+        )
+        val currentExpectation = mutableStateOf(expectations.first())
+        var requestModelsClicks = 0
+
+        compose.setContent {
+            MaterialTheme {
+                val expected = currentExpectation.value
+                val selectedModelId = if (expected.isConnected && !expected.isLoadingModels) {
+                    selectedChatModel.id
+                } else {
+                    null
+                }
+                val models = if (expected.isConnected && !expected.isLoadingModels) {
+                    listOf(selectedChatModel)
+                } else {
+                    emptyList()
+                }
+                LocalizedTestContent(languageTag = expected.languageTag) {
+                    key(expected.languageTag, expected.isConnected, expected.isLoadingModels) {
+                        ChatTopAppBarTitle(
+                            state = RuntimeUiState(
+                                isConnected = expected.isConnected,
+                                runtimeStatus = if (expected.isConnected) "authenticated" else "disconnected",
+                                backendAvailable = expected.isConnected,
+                                isLoadingModels = expected.isLoadingModels,
+                                selectedModelId = selectedModelId,
+                                models = models,
+                            ),
+                            onRequestModels = { requestModelsClicks += 1 },
+                            onSelectModel = {},
+                        )
+                    }
+                }
+            }
+        }
+
+        var expectedRefreshClicks = 0
+        expectations.forEach { expected ->
+            val localizedContext = ApplicationProvider
+                .getApplicationContext<Context>()
+                .localizedContext(expected.languageTag)
+            val pickerLabel = when {
+                expected.isLoadingModels -> localizedContext.getString(R.string.loading_models)
+                expected.isConnected -> selectedChatModel.name
+                else -> localizedContext.getString(R.string.choose_model)
+            }
+            val pickerStateDescription = when {
+                expected.isLoadingModels -> localizedContext.getString(R.string.loading_models)
+                expected.isConnected -> selectedChatModel.name
+                else -> localizedContext.getString(R.string.chat_status_disconnected)
+            }
+            val pickerContentDescription = if (expected.isConnected && !expected.isLoadingModels) {
+                localizedContext.getString(
+                    R.string.chat_model_picker_summary_selected,
+                    selectedChatModel.name,
+                )
+            } else {
+                localizedContext.getString(
+                    R.string.chat_model_picker_summary,
+                    pickerLabel,
+                    pickerStateDescription,
+                )
+            }
+            val refreshLabel = if (expected.isLoadingModels) {
+                localizedContext.getString(R.string.loading_models)
+            } else {
+                localizedContext.getString(R.string.load_models)
+            }
+            val refreshStateDescription = when {
+                expected.isLoadingModels -> localizedContext.getString(R.string.model_refresh_state_loading)
+                expected.isConnected -> localizedContext.getString(R.string.model_refresh_state_ready)
+                else -> localizedContext.getString(R.string.model_refresh_state_connect_first)
+            }
+
+            compose.runOnUiThread {
+                currentExpectation.value = expected
+            }
+            compose.waitForIdle()
+
+            compose.onNode(hasContentDescription(pickerContentDescription))
+                .assertIsDisplayed()
+                .performClick()
+            compose.waitForIdle()
+
+            val refreshRow = compose.onNode(
+                hasContentDescription(refreshLabel) and
+                    hasStateDescription(refreshStateDescription),
+            )
+                .assertIsDisplayed()
+            if (expected.refreshEnabled) {
+                refreshRow
+                    .assertIsEnabled()
+                    .assert(hasClickActionLabel(refreshLabel))
+                    .performClick()
+                expectedRefreshClicks += 1
+            } else {
+                refreshRow.assertIsNotEnabled()
+            }
+        }
+
+        assertEquals(expectedRefreshClicks, requestModelsClicks)
     }
 
     @Test
@@ -8037,6 +10301,69 @@ class ClientScreensNoDeviceComposeTest {
                 .assertIsDisplayed()
                 .assertIsNotEnabled()
         }
+    }
+
+    @Test
+    fun chatTopBarModelPickerClosesOpenMenuWhenStreamingStarts() {
+        var requestModelsClicks = 0
+        val selectedChatModel = RuntimeModel(
+            id = "ollama:qwen3:8b",
+            name = "Qwen3 8B",
+            modelKind = MODEL_KIND_CHAT,
+            capabilities = listOf("chat"),
+            installed = true,
+            source = "local",
+        )
+        val alternateChatModel = RuntimeModel(
+            id = "ollama:llama3.1:8b",
+            name = "Llama 3.1 8B",
+            modelKind = MODEL_KIND_CHAT,
+            capabilities = listOf("chat"),
+            installed = true,
+            source = "local",
+        )
+        val state = mutableStateOf(
+            RuntimeUiState(
+                isConnected = true,
+                runtimeStatus = "authenticated",
+                backendAvailable = true,
+                selectedModelId = selectedChatModel.id,
+                models = listOf(selectedChatModel, alternateChatModel),
+            ),
+        )
+        val selectedModels = mutableListOf<String>()
+
+        compose.setContent {
+            MaterialTheme {
+                ChatTopAppBarTitle(
+                    state = state.value,
+                    onRequestModels = { requestModelsClicks += 1 },
+                    onSelectModel = { selectedModels += it },
+                )
+            }
+        }
+
+        compose.onNodeWithContentDescription("Chat model picker. Selected chat model Qwen3 8B.")
+            .assertIsDisplayed()
+            .performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("Llama 3.1 8B")
+            .assertIsDisplayed()
+
+        compose.runOnUiThread {
+            state.value = state.value.copy(isStreaming = true)
+        }
+        compose.waitForIdle()
+
+        compose.onAllNodesWithText("Llama 3.1 8B")
+            .assertCountEquals(0)
+        compose.onNodeWithContentDescription(
+            "Chat model picker. Qwen3 8B. Wait for the current response or cancel it before changing models.",
+        )
+            .assertIsDisplayed()
+            .assertIsNotEnabled()
+        assertEquals(emptyList<String>(), selectedModels)
+        assertEquals(0, requestModelsClicks)
     }
 
     @Test
@@ -8180,6 +10507,12 @@ class ClientScreensNoDeviceComposeTest {
             useUnmergedTree = true,
         )
             .assertCountEquals(1)
+        compose.onNode(
+            hasContentDescription("Try another model name, provider, service, or source.") and
+                hasPoliteLiveRegion(),
+            useUnmergedTree = true,
+        )
+            .assertExists()
         compose.onNodeWithContentDescription("Clear model search for missing", useUnmergedTree = true)
             .assertIsDisplayed()
             .assert(hasClickActionLabel("Clear model search for missing"))
@@ -8866,6 +11199,100 @@ class ClientScreensNoDeviceComposeTest {
     }
 
     @Test
+    fun chatScreenSuggestedQuestionsAnnounceLocalizedCountAcrossSupportedLanguages() {
+        val languageTags = listOf("en", "ko", "ja", "zh-CN", "fr")
+        val languageTag = mutableStateOf(languageTags.first())
+        val chatModel = RuntimeModel(
+            id = "ollama:qwen3:8b",
+            name = "Qwen3 8B",
+            modelKind = MODEL_KIND_CHAT,
+            capabilities = listOf("chat"),
+            installed = true,
+            source = "local",
+        )
+
+        compose.setContent {
+            LocalizedTestContent(languageTag = languageTag.value) {
+                MaterialTheme {
+                    ChatScreen(
+                        state = RuntimeUiState(
+                            isConnected = true,
+                            runtimeStatus = "authenticated",
+                            trustedRuntime = RuntimeTrustedRuntime(
+                                deviceId = "runtime-1",
+                                name = "AetherLink Runtime",
+                            ),
+                            backendAvailable = true,
+                            selectedLanguageTag = languageTag.value,
+                            selectedModelId = chatModel.id,
+                            models = listOf(chatModel),
+                            messages = listOf(
+                                RuntimeChatMessage(
+                                    id = "user-1",
+                                    role = "user",
+                                    content = "Plan the next step.",
+                                ),
+                                RuntimeChatMessage(
+                                    id = "assistant-1",
+                                    role = "assistant",
+                                    content = "The next step is to verify QR pairing.",
+                                    suggestions = listOf(
+                                        "Follow up?",
+                                        "Summarize again?",
+                                        "Check route status",
+                                    ),
+                                ),
+                            ),
+                        ),
+                        onInputChange = {},
+                        onSend = {},
+                        onCancel = {},
+                        onConnect = {},
+                        onScanPairingQr = {},
+                        onRefreshHealth = {},
+                        onAttachFiles = {},
+                        onRemoveAttachment = {},
+                        onSuggestionClick = {},
+                        onScanLatestQr = {},
+                    )
+                }
+            }
+        }
+
+        languageTags.forEach { nextLanguageTag ->
+            compose.runOnUiThread {
+                languageTag.value = nextLanguageTag
+            }
+            compose.waitForIdle()
+
+            val localizedContext = ApplicationProvider
+                .getApplicationContext<Context>()
+                .localizedContext(nextLanguageTag)
+            val expectedCountSummary = localizedContext.resources.getQuantityString(
+                R.plurals.suggested_questions_state_count,
+                3,
+                3,
+            )
+            val expectedSuggestionDescription = localizedContext.getString(
+                R.string.content_desc_suggested_question,
+                "Summarize again?",
+            )
+            val expectedClickLabel = localizedContext.getString(R.string.action_use_suggested_question)
+
+            compose.onNode(
+                hasContentDescription(expectedCountSummary) and hasPoliteLiveRegion(),
+                useUnmergedTree = true,
+            ).assertIsDisplayed()
+            compose.onNode(
+                hasContentDescription(expectedSuggestionDescription) and
+                    hasClickActionLabel(expectedClickLabel) and
+                    hasClickAction(),
+                useUnmergedTree = true,
+            ).assertIsDisplayed()
+        }
+    }
+
+    @Test
     fun chatScreenGeneratingSuggestionsRowAnnouncesAcrossSupportedLanguages() {
         val languageTag = mutableStateOf("en")
         val chatModel = RuntimeModel(
@@ -8935,6 +11362,94 @@ class ClientScreensNoDeviceComposeTest {
                 .assertIsDisplayed()
                 .assert(hasPoliteLiveRegion())
         }
+    }
+
+    @Test
+    fun chatScreenStreamingSuggestedQuestionChipsAreDisabledAcrossSupportedLanguages() {
+        val clickedSuggestions = mutableListOf<String>()
+        val hapticFeedback = RecordingHapticFeedback()
+        val languageTag = mutableStateOf("en")
+        val chatModel = RuntimeModel(
+            id = "ollama:qwen3:8b",
+            name = "Qwen3 8B",
+            modelKind = MODEL_KIND_CHAT,
+            capabilities = listOf("chat"),
+            installed = true,
+            source = "local",
+        )
+
+        compose.setContent {
+            MaterialTheme {
+                LocalizedTestContent(languageTag = languageTag.value) {
+                    CompositionLocalProvider(LocalHapticFeedback provides hapticFeedback) {
+                        ChatScreen(
+                            state = RuntimeUiState(
+                                isConnected = true,
+                                runtimeStatus = "streaming",
+                                trustedRuntime = RuntimeTrustedRuntime(
+                                    deviceId = "runtime-1",
+                                    name = "AetherLink Runtime",
+                                ),
+                                backendAvailable = true,
+                                selectedLanguageTag = languageTag.value,
+                                selectedModelId = chatModel.id,
+                                models = listOf(chatModel),
+                                isStreaming = true,
+                                activeRequestId = "request-1",
+                                messages = listOf(
+                                    RuntimeChatMessage(
+                                        id = "user-1",
+                                        role = "user",
+                                        content = "Plan the next step.",
+                                    ),
+                                    RuntimeChatMessage(
+                                        id = "assistant-1",
+                                        role = "assistant",
+                                        content = "The next step is to verify QR pairing.",
+                                        suggestions = listOf("Check route status"),
+                                    ),
+                                ),
+                            ),
+                            onInputChange = {},
+                            onSend = {},
+                            onCancel = {},
+                            onConnect = {},
+                            onScanPairingQr = {},
+                            onRefreshHealth = {},
+                            onAttachFiles = {},
+                            onRemoveAttachment = {},
+                            onSuggestionClick = { clickedSuggestions += it },
+                            onScanLatestQr = {},
+                        )
+                    }
+                }
+            }
+        }
+
+        listOf("en", "ko", "ja", "zh-CN", "fr").forEach { nextLanguageTag ->
+            compose.runOnUiThread {
+                languageTag.value = nextLanguageTag
+            }
+            compose.waitForIdle()
+
+            val localizedContext = ApplicationProvider
+                .getApplicationContext<Context>()
+                .localizedContext(nextLanguageTag)
+            val expectedSuggestionDescription = localizedContext.getString(
+                R.string.content_desc_suggested_question,
+                "Check route status",
+            )
+            val expectedDisabledState = localizedContext.getString(
+                R.string.suggested_question_state_wait_for_stream,
+            )
+
+            compose.onNodeWithContentDescription(expectedSuggestionDescription, useUnmergedTree = true)
+                .assertIsDisplayed()
+                .assertIsNotEnabled()
+                .assert(hasStateDescription(expectedDisabledState))
+        }
+        assertEquals(emptyList<String>(), clickedSuggestions)
+        assertEquals(emptyList<HapticFeedbackType>(), hapticFeedback.events)
     }
 
     @Test
@@ -9034,6 +11549,19 @@ class ClientScreensNoDeviceComposeTest {
         assertEquals(0, compose.onAllNodesWithText(text).fetchSemanticsNodes().size)
     }
 
+    private fun pendingDocumentAttachments(count: Int): List<RuntimePendingAttachment> {
+        return (1..count).map { index ->
+            RuntimePendingAttachment(
+                id = "attachment-document-$index",
+                type = "document",
+                name = "brief-$index.pdf",
+                mimeType = "application/pdf",
+                sizeBytes = 0L,
+                dataBase64 = "ZmlsZQ==",
+            )
+        }
+    }
+
     private fun hasLongClickActionLabel(label: String): SemanticsMatcher {
         return SemanticsMatcher("has long-click action label $label") { node ->
             node.config.getOrNull(SemanticsActions.OnLongClick)?.label == label
@@ -9045,6 +11573,12 @@ class ClientScreensNoDeviceComposeTest {
             node.config.getOrNull(SemanticsActions.OnClick)?.label == label
         }
     }
+
+    private fun hasHeading(): SemanticsMatcher {
+        return SemanticsMatcher.expectValue(SemanticsProperties.Heading, Unit)
+    }
+
+    private val settingsHeadersListTestTag = "settings_headers_list"
 
     private fun hasPoliteLiveRegion(): SemanticsMatcher {
         return SemanticsMatcher.expectValue(

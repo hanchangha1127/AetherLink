@@ -94,6 +94,7 @@ struct TrustedDevicesView: View {
             }
             .accessibilityLabel(Text(trustedDeviceConfirmRemoveAccessibilityLabel(for: pendingRemovalDevice)))
             Button(NSLocalizedString("Cancel", comment: ""), role: .cancel) {}
+                .accessibilityLabel(Text(trustedDeviceCancelRemoveAccessibilityLabel(for: pendingRemovalDevice)))
         } message: {
             Text(trustedDeviceRemovalMessage(for: pendingRemovalDevice))
         }
@@ -165,6 +166,7 @@ private struct TrustedDeviceRow: View {
             .buttonStyle(.bordered)
             .controlSize(.small)
             .accessibilityLabel(Text(trustedDeviceRemoveAccessibilityLabel(name: name, keyFingerprint: keyFingerprint)))
+            .accessibilityHint(Text(trustedDeviceRemoveAccessibilityHint(name: name)))
         }
     }
 }
@@ -197,8 +199,15 @@ func trustedDeviceRemovalMessage(for device: TrustedDevice?) -> String {
 
 func trustedDevicePairingAccessibilitySummary(pairedAt: Date?, deviceID: String) -> String {
     let trimmedID = deviceID.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard let pairedAt, !trimmedID.isEmpty else {
+    guard !trimmedID.isEmpty else {
         return NSLocalizedString("Pairing details unavailable.", comment: "")
+    }
+
+    guard let pairedAt else {
+        return String(
+            format: NSLocalizedString("Device ID ending %@", comment: ""),
+            shortIdentifier(trimmedID)
+        )
     }
 
     return String(
@@ -244,6 +253,17 @@ func trustedDeviceRemoveAccessibilityLabel(name: String, keyFingerprint: String)
     )
 }
 
+func trustedDeviceRemoveAccessibilityHint(name: String) -> String {
+    let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+    let deviceName = trimmedName.isEmpty
+        ? NSLocalizedString("Selected device", comment: "")
+        : trimmedName
+    return String(
+        format: NSLocalizedString("After removal, %@ must pair again before it can use AetherLink Runtime.", comment: ""),
+        deviceName
+    )
+}
+
 func trustedDeviceConfirmRemoveAccessibilityLabel(for device: TrustedDevice?) -> String {
     let trimmedName = device?.name.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     let deviceName = trimmedName.isEmpty
@@ -252,6 +272,19 @@ func trustedDeviceConfirmRemoveAccessibilityLabel(for device: TrustedDevice?) ->
     let keyFingerprint = trustedDeviceKeyFingerprint(device?.publicKeyBase64 ?? "")
     return String(
         format: NSLocalizedString("Confirm removing trust for %@. Key fingerprint %@", comment: ""),
+        deviceName,
+        keyFingerprint
+    )
+}
+
+func trustedDeviceCancelRemoveAccessibilityLabel(for device: TrustedDevice?) -> String {
+    let trimmedName = device?.name.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    let deviceName = trimmedName.isEmpty
+        ? NSLocalizedString("Selected device", comment: "")
+        : trimmedName
+    let keyFingerprint = trustedDeviceKeyFingerprint(device?.publicKeyBase64 ?? "")
+    return String(
+        format: NSLocalizedString("Cancel removing trust for %@. Key fingerprint %@", comment: ""),
         deviceName,
         keyFingerprint
     )

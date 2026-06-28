@@ -622,6 +622,27 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(messages.last?.reasoning, "Checking route material.")
     }
 
+    func testRuntimeChatStoreZeroLimitsReturnEmptyWithoutReadingLog() throws {
+        let directoryURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        let fileURL = directoryURL.appendingPathComponent("runtime-chat-events.jsonl")
+        try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+        try Data("not json\n".utf8).write(to: fileURL)
+        let store = JSONLRuntimeChatEventStore(fileURL: fileURL)
+
+        XCTAssertEqual(try store.listSessions(limit: 0), [])
+        XCTAssertEqual(try store.listSessions(limit: -1, includeArchived: true), [])
+        XCTAssertEqual(try store.listMessages(sessionID: "session-read", limit: 0), [])
+        XCTAssertEqual(try store.listMessages(sessionID: "session-read", limit: -1), [])
+        XCTAssertThrowsError(try store.listSessions(limit: 1)) { error in
+            guard case RuntimeChatEventStoreError.corruptEventLog(let line, _)? = error as? RuntimeChatEventStoreError else {
+                XCTFail("Expected corrupt event log error, got \(error)")
+                return
+            }
+            XCTAssertEqual(line, 1)
+        }
+    }
+
     func testRuntimeChatStoreReconstructsMultipleTurnsAndUsesStoredTitle() throws {
         let fileURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
@@ -705,6 +726,37 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
             "What happens next?",
             "The trusted device authenticates before model commands."
         ])
+    }
+
+    func testRuntimeChatStoreTreatsNonPositiveLimitsAsEmptyHistoryWindows() throws {
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathComponent("runtime-chat-events.jsonl")
+        let store = JSONLRuntimeChatEventStore(fileURL: fileURL)
+
+        try store.append(RuntimeChatStoredEvent(
+            timestamp: Date(timeIntervalSince1970: 208),
+            kind: .request,
+            requestID: "turn-limited",
+            sessionID: "session-limited",
+            model: "llama3.1:8b",
+            messages: [ChatMessage(role: "user", content: "Keep the history window bounded.")]
+        ))
+        try store.append(RuntimeChatStoredEvent(
+            timestamp: Date(timeIntervalSince1970: 209),
+            kind: .assistantDelta,
+            requestID: "turn-limited",
+            sessionID: "session-limited",
+            model: "llama3.1:8b",
+            delta: "Only return requested history."
+        ))
+
+        XCTAssertEqual(try store.listSessions(limit: 1).map(\.sessionID), ["session-limited"])
+        XCTAssertEqual(try store.listMessages(sessionID: "session-limited", limit: 1).map(\.content), ["Only return requested history."])
+        XCTAssertTrue(try store.listSessions(limit: 0).isEmpty)
+        XCTAssertTrue(try store.listSessions(limit: -1, includeArchived: true).isEmpty)
+        XCTAssertTrue(try store.listMessages(sessionID: "session-limited", limit: 0).isEmpty)
+        XCTAssertTrue(try store.listMessages(sessionID: "session-limited", limit: -1).isEmpty)
     }
 
     func testRuntimeChatStoreSessionSummaryExposesCancelledAndErrorProcessingState() throws {
@@ -1044,6 +1096,96 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         }
     }
 
+    func testRuntimeChatHistorySemanticallyInvalidEventReturnsStructuredError() async throws {
+        let sink = RecordingSink()
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathComponent("runtime-chat-events.jsonl")
+        let store = JSONLRuntimeChatEventStore(fileURL: fileURL)
+        try store.append(RuntimeChatStoredEvent(
+            timestamp: Date(timeIntervalSince1970: 335),
+            kind: .request,
+            requestID: "turn-semantic-route",
+            sessionID: "session-semantic-route",
+            model: "llama3.1:8b",
+            messages: [ChatMessage(role: "user", content: "Valid history must not be partially returned.")]
+        ))
+        try appendRawChatEventLogLine(
+            #"{"id":"event-semantic-invalid","kind":"request","messages":[{"content":"blank role","role":"   "}],"model":"llama3.1:8b","request_id":"turn-semantic-invalid","session_id":"session-semantic-route","timestamp":"1970-01-01T00:05:36Z"}"#,
+            to: fileURL
+        )
+        let router = makeRouter(
+            backend: MockBackend(),
+            chatEventStore: store
+        )
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionsList,
+            requestID: "sessions-semantic-corrupt",
+            payload: ["limit": .number(20)]
+        ), sink: sink)
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatMessagesList,
+            requestID: "messages-semantic-corrupt",
+            payload: [
+                "session_id": .string("session-semantic-route"),
+                "limit": .number(20)
+            ]
+        ), sink: sink)
+
+        let responses = try await sink.waitForMessages(count: 2)
+        for requestID in ["sessions-semantic-corrupt", "messages-semantic-corrupt"] {
+            let response = responses.first { $0.requestID == requestID }
+            XCTAssertEqual(response?.type, MessageType.error)
+            XCTAssertEqual(response?.payload["code"], .string("chat_store_unavailable"))
+            if case .string(let message)? = response?.payload["message"] {
+                XCTAssertTrue(message.contains("corrupt at line 2"))
+                XCTAssertTrue(message.contains("chat request message role is empty"))
+                XCTAssertFalse(message.contains("Valid history must not be partially returned."))
+            } else {
+                XCTFail("Expected structured chat-store error message for \(requestID)")
+            }
+        }
+    }
+
+    func testRuntimeChatHistoryHandlersReturnEmptyForNonPositiveLimitsWithoutReadingStore() async throws {
+        let sink = RecordingSink()
+        let directoryURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        let fileURL = directoryURL.appendingPathComponent("runtime-chat-events.jsonl")
+        try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+        try Data("not json\n".utf8).write(to: fileURL)
+        let store = JSONLRuntimeChatEventStore(fileURL: fileURL)
+        let router = makeRouter(
+            backend: MockBackend(),
+            chatEventStore: store
+        )
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatSessionsList,
+            requestID: "sessions-empty-window",
+            payload: ["limit": .number(0)]
+        ), sink: sink)
+        router.handle(ProtocolEnvelope(
+            type: MessageType.chatMessagesList,
+            requestID: "messages-empty-window",
+            payload: [
+                "session_id": .string("session-read"),
+                "limit": .number(-1)
+            ]
+        ), sink: sink)
+
+        let responses = try await sink.waitForMessages(count: 2)
+        let sessionsResponse = responses.first { $0.requestID == "sessions-empty-window" }
+        let messagesResponse = responses.first { $0.requestID == "messages-empty-window" }
+
+        XCTAssertEqual(sessionsResponse?.type, MessageType.chatSessionsList)
+        XCTAssertEqual(sessionsResponse?.payload["sessions"], .array([]))
+        XCTAssertEqual(messagesResponse?.type, MessageType.chatMessagesList)
+        XCTAssertEqual(messagesResponse?.payload["session_id"], .string("session-read"))
+        XCTAssertEqual(messagesResponse?.payload["messages"], .array([]))
+    }
+
     func testRuntimeChatSessionLifecycleMessagesMutateRuntimeStore() async throws {
         let sink = RecordingSink()
         let fileURL = FileManager.default.temporaryDirectory
@@ -1252,6 +1394,98 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
             return
         }
         XCTAssertTrue(emptyEntries.isEmpty)
+    }
+
+    func testRuntimeMemoryStoreReportsCorruptJSONLLineInsteadOfDroppingIt() throws {
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathComponent("runtime-memory-events.jsonl")
+        let memoryStore = JSONLRuntimeMemoryStore(fileURL: fileURL)
+        _ = try memoryStore.upsert(
+            id: "memory-1",
+            content: "This runtime memory must not hide a corrupt tail event.",
+            enabled: true,
+            timestamp: Date(timeIntervalSince1970: 400)
+        )
+        try appendRawMemoryEventLogLine(
+            #"{"secret_memory":"should-not-leak","broken":}"#,
+            to: fileURL
+        )
+
+        XCTAssertThrowsError(try memoryStore.list()) { error in
+            guard case RuntimeMemoryStoreError.corruptEventLog(let line, let reason) = error else {
+                XCTFail("Expected corrupt memory event log error, got \(error)")
+                return
+            }
+            XCTAssertEqual(line, 2)
+            XCTAssertFalse(reason.isEmpty)
+            XCTAssertFalse(error.localizedDescription.contains("should-not-leak"))
+        }
+    }
+
+    func testRuntimeMemoryStoreReportsSemanticallyInvalidUpsertLine() throws {
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathComponent("runtime-memory-events.jsonl")
+        let memoryStore = JSONLRuntimeMemoryStore(fileURL: fileURL)
+        _ = try memoryStore.upsert(
+            id: "memory-1",
+            content: "Runtime memory should not be silently dropped.",
+            enabled: true,
+            timestamp: Date(timeIntervalSince1970: 405)
+        )
+        try appendRawMemoryEventLogLine(
+            #"{"content":"   ","enabled":true,"id":"memory-2","kind":"upsert","timestamp":"1970-01-01T00:06:46Z"}"#,
+            to: fileURL
+        )
+
+        XCTAssertThrowsError(try memoryStore.list()) { error in
+            guard case RuntimeMemoryStoreError.corruptEventLog(let line, let reason) = error else {
+                XCTFail("Expected corrupt memory event log error, got \(error)")
+                return
+            }
+            XCTAssertEqual(line, 2)
+            XCTAssertEqual(reason, "memory upsert content is empty")
+            XCTAssertFalse(error.localizedDescription.contains("Runtime memory should not be silently dropped."))
+        }
+    }
+
+    func testRuntimeMemoryListCorruptStoreReturnsStructuredError() async throws {
+        let sink = RecordingSink()
+        let fileURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathComponent("runtime-memory-events.jsonl")
+        let memoryStore = JSONLRuntimeMemoryStore(fileURL: fileURL)
+        _ = try memoryStore.upsert(
+            id: "memory-1",
+            content: "Runtime memory is persisted on the host.",
+            enabled: true,
+            timestamp: Date(timeIntervalSince1970: 410)
+        )
+        try appendRawMemoryEventLogLine(
+            #"{"secret_memory":"should-not-leak","broken":}"#,
+            to: fileURL
+        )
+        let router = makeRouter(
+            backend: MockBackend(),
+            memoryStore: memoryStore
+        )
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.memoryList,
+            requestID: "memory-corrupt"
+        ), sink: sink)
+
+        let response = try await sink.waitForMessages(count: 1).first
+        XCTAssertEqual(response?.type, MessageType.error)
+        XCTAssertEqual(response?.requestID, "memory-corrupt")
+        XCTAssertEqual(response?.payload["code"], .string("memory_store_unavailable"))
+        if case .string(let message)? = response?.payload["message"] {
+            XCTAssertTrue(message.contains("corrupt at line 2"))
+            XCTAssertFalse(message.contains("should-not-leak"))
+        } else {
+            XCTFail("Expected structured memory-store error message")
+        }
     }
 
     func testChatSendPrependsRuntimeCapabilityGuard() async throws {
@@ -1735,20 +1969,24 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
     func testChatSendAppendsDocumentAttachmentTextAndPreservesImageAttachment() async throws {
         let sink = RecordingSink()
         let capturedRequest = LockedBox<ChatRequest?>(nil)
-        let router = makeRouter(backend: MockBackend(
-            models: [
-                ModelInfo(
-                    id: "llama3.2-vision",
-                    name: "llama3.2-vision",
-                    capabilities: ["chat", "vision"],
-                    installed: true
-                )
-            ],
-            chatEvents: [.done(inputTokens: 1, outputTokens: 1)],
-            onChatRequest: { request in
-                capturedRequest.value = request
-            }
-        ))
+        let store = RecordingRuntimeChatEventStore()
+        let router = makeRouter(
+            backend: MockBackend(
+                models: [
+                    ModelInfo(
+                        id: "llama3.2-vision",
+                        name: "llama3.2-vision",
+                        capabilities: ["chat", "vision"],
+                        installed: true
+                    )
+                ],
+                chatEvents: [.done(inputTokens: 1, outputTokens: 1)],
+                onChatRequest: { request in
+                    capturedRequest.value = request
+                }
+            ),
+            chatEventStore: store
+        )
         let documentText = "Roadmap item: add offline document summaries."
         let imageDataBase64 = "iVBORw0KGgo="
         let envelope = ProtocolEnvelope(
@@ -1802,6 +2040,25 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
                 mimeType: "image/png",
                 name: "diagram.png",
                 dataBase64: imageDataBase64
+            )
+        ])
+
+        let requestEvent = try XCTUnwrap(store.events.first { $0.kind == .request })
+        let storedMessage = try XCTUnwrap(requestEvent.messages?.first(where: { $0.role == "user" }))
+        XCTAssertEqual(storedMessage.content, "Summarize this.")
+        XCTAssertFalse(storedMessage.content.contains("[Attached document: roadmap.md (text/plain)]"))
+        XCTAssertFalse(storedMessage.content.contains(documentText))
+        XCTAssertEqual(storedMessage.attachments, [
+            ChatAttachment(
+                type: "document",
+                mimeType: "text/plain",
+                name: "roadmap.md",
+                text: documentText
+            ),
+            ChatAttachment(
+                type: "image",
+                mimeType: "image/png",
+                name: "diagram.png"
             )
         ])
     }
@@ -5132,6 +5389,9 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         assertStoredRelaySecret("allocated-secret-1", defaults: defaults, store: relaySecretStore)
         XCTAssertEqual(defaults.integer(forKey: "aetherlink.relay.lease_expires_at"), 4_102_444_800_000)
         XCTAssertEqual(defaults.string(forKey: "aetherlink.relay.lease_nonce"), "allocated-nonce-1")
+        XCTAssertEqual(defaults.string(forKey: "aetherlink.relay.lease_host"), "relay.example.test")
+        XCTAssertEqual(defaults.integer(forKey: "aetherlink.relay.lease_port"), 443)
+        XCTAssertEqual(defaults.string(forKey: "aetherlink.relay.lease_id"), "route-token-bootstrap")
 
         let restoredRelayClient = FakeRelayPeerClient()
         let restoredModel = CompanionAppModel(
@@ -5158,6 +5418,48 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(restoredQRItems["relay_nonce"], "allocated-nonce-1")
         XCTAssertNil(restoredQRItems["host"])
         XCTAssertNil(restoredQRItems["port"])
+    }
+
+    @MainActor
+    func testCompanionAppModelDoesNotReuseSavedLeaseForDifferentRelayRoute() async throws {
+        let defaults = try isolatedDefaults()
+        defaults.set("relay-current", forKey: "aetherlink.relay.id")
+        defaults.set("secret-current", forKey: "aetherlink.relay.secret")
+        defaults.set(4_102_444_800_000, forKey: "aetherlink.relay.lease_expires_at")
+        defaults.set("stale-nonce", forKey: "aetherlink.relay.lease_nonce")
+        defaults.set("relay.previous.test", forKey: "aetherlink.relay.lease_host")
+        defaults.set(443, forKey: "aetherlink.relay.lease_port")
+        defaults.set("relay-previous", forKey: "aetherlink.relay.lease_id")
+        let relayClient = FakeRelayPeerClient()
+        let serviceAllocator = FakeRelayServiceRouteAllocator(allocation: nil)
+        let model = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: FakeRuntimeTransport(),
+            advertiser: FakeRuntimeAdvertiser(),
+            relayClient: relayClient,
+            relayServiceRouteAllocator: serviceAllocator,
+            environment: [
+                "AETHERLINK_RELAY_HOST": "relay.current.test",
+                "AETHERLINK_RELAY_PORT": "443",
+                "AETHERLINK_RELAY_ID": "relay-current",
+                "AETHERLINK_RELAY_SECRET": "secret-current"
+            ],
+            userDefaults: defaults,
+            runtimeRouteHostProvider: { "192.168.1.44" }
+        )
+
+        model.start(port: 43210)
+        relayClient.emit(.waitingForPeer)
+        await Task.yield()
+        model.beginPairing()
+
+        XCTAssertNil(model.pairingSession)
+        XCTAssertNil(relayClient.startedConfiguration?.relayNonce)
+        XCTAssertFalse(model.isDevelopmentRelayRoutePreparedForQRCode)
+        XCTAssertFalse(model.isDevelopmentRelayQRCodeReady)
+        XCTAssertEqual(serviceAllocator.calls.count, 1)
+        XCTAssertEqual(model.remoteRoutePreparationIssue?.kind, .routeLeaseRefreshFailed)
+        XCTAssertEqual(model.remoteRoutePreparationIssue?.endpoint, "relay.current.test:443")
     }
 
     @MainActor
@@ -5505,6 +5807,13 @@ private func makeRouter(
 }
 
 private func appendRawChatEventLogLine(_ line: String, to fileURL: URL) throws {
+    let handle = try FileHandle(forWritingTo: fileURL)
+    defer { try? handle.close() }
+    try handle.seekToEnd()
+    try handle.write(contentsOf: Data((line + "\n").utf8))
+}
+
+private func appendRawMemoryEventLogLine(_ line: String, to fileURL: URL) throws {
     let handle = try FileHandle(forWritingTo: fileURL)
     defer { try? handle.close() }
     try handle.seekToEnd()

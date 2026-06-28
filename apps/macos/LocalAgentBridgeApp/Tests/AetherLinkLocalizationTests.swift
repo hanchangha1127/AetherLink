@@ -56,6 +56,45 @@ final class AetherLinkLocalizationTests: XCTestCase {
         }
     }
 
+    func testSidebarPreferencePickerAccessibilityHintsUseSelectedLanguage() {
+        let expectations: [(languageTag: String, appearanceHint: String, languageHint: String)] = [
+            (
+                "en",
+                "Choose how AetherLink Runtime appears. This setting is saved for future launches.",
+                "Choose the app language. This setting is saved for future launches."
+            ),
+            (
+                "ko",
+                "AetherLink Runtime의 외관을 선택합니다. 이 설정은 다음 실행에도 저장됩니다.",
+                "앱 언어를 선택합니다. 이 설정은 다음 실행에도 저장됩니다."
+            ),
+            (
+                "ja",
+                "AetherLink Runtime の外観を選択します。この設定は次回起動時にも保存されます。",
+                "アプリの言語を選択します。この設定は次回起動時にも保存されます。"
+            ),
+            (
+                "zh-Hans",
+                "选择 AetherLink Runtime 的外观。此设置会保存到以后启动时使用。",
+                "选择应用语言。此设置会保存到以后启动时使用。"
+            ),
+            (
+                "fr",
+                "Choisissez l’apparence d’AetherLink Runtime. Ce réglage est enregistré pour les prochains lancements.",
+                "Choisissez la langue de l’app. Ce réglage est enregistré pour les prochains lancements."
+            ),
+        ]
+
+        XCTAssertEqual(expectations.map(\.languageTag), AetherLinkAppLanguage.allCases.map(\.rawValue))
+
+        for expectation in expectations {
+            withStoredAppLanguage(expectation.languageTag) {
+                XCTAssertEqual(appAppearancePickerAccessibilityHint(), expectation.appearanceHint)
+                XCTAssertEqual(appLanguagePickerAccessibilityHint(), expectation.languageHint)
+            }
+        }
+    }
+
     func testAppLanguageDefaultsToEnglish() {
         XCTAssertEqual(AetherLinkAppLanguage.defaultLanguage, .english)
         XCTAssertEqual(AetherLinkAppLanguage.normalized(nil), .english)
@@ -226,6 +265,32 @@ final class AetherLinkLocalizationTests: XCTestCase {
         }
     }
 
+    func testCompanionPanelHeaderAccessibilityLabelUsesSelectedLanguageAndFallbacks() {
+        let expectations: [(languageTag: String, label: String)] = [
+            ("en", "Readiness"),
+            ("ko", "준비 상태"),
+            ("ja", "準備状況"),
+            ("zh-Hans", "就绪情况"),
+            ("fr", "Préparation"),
+        ]
+
+        XCTAssertEqual(expectations.map(\.languageTag), AetherLinkAppLanguage.allCases.map(\.rawValue))
+
+        for expectation in expectations {
+            withStoredAppLanguage(expectation.languageTag) {
+                XCTAssertEqual(
+                    companionPanelHeaderAccessibilityLabel(title: NSLocalizedString("Readiness", comment: "")),
+                    expectation.label
+                )
+            }
+        }
+
+        withStoredAppLanguage("en") {
+            XCTAssertEqual(companionPanelHeaderAccessibilityLabel(title: " Quick Actions "), "Quick Actions")
+            XCTAssertEqual(companionPanelHeaderAccessibilityLabel(title: "   "), "")
+        }
+    }
+
     func testCompanionEmptyStateAccessibilityLabelUsesSelectedLanguageAndFallbacks() {
         let expectations: [(languageTag: String, label: String)] = [
             (
@@ -271,16 +336,56 @@ final class AetherLinkLocalizationTests: XCTestCase {
         }
     }
 
+    func testModelProviderEmptyStateAccessibilityLabelUsesSelectedLanguage() {
+        let expectations: [(languageTag: String, label: String)] = [
+            (
+                "en",
+                "No model providers available. AetherLink Runtime has not reported any model providers yet."
+            ),
+            (
+                "ko",
+                "사용 가능한 모델 제공자 없음. AetherLink Runtime이 아직 모델 제공자를 보고하지 않았습니다."
+            ),
+            (
+                "ja",
+                "利用可能なモデルプロバイダーはありません。AetherLink Runtime はまだモデルプロバイダーを報告していません。"
+            ),
+            (
+                "zh-Hans",
+                "没有可用的模型提供方。AetherLink Runtime 尚未报告模型提供方信息。"
+            ),
+            (
+                "fr",
+                "Aucun fournisseur de modèles disponible. AetherLink Runtime n’a pas encore signalé de fournisseur de modèles."
+            ),
+        ]
+
+        XCTAssertEqual(expectations.map(\.languageTag), AetherLinkAppLanguage.allCases.map(\.rawValue))
+
+        for expectation in expectations {
+            withStoredAppLanguage(expectation.languageTag) {
+                XCTAssertEqual(
+                    companionEmptyStateAccessibilityLabel(
+                        title: NSLocalizedString("No model providers available", comment: ""),
+                        description: NSLocalizedString("AetherLink Runtime has not reported any model providers yet.", comment: "")
+                    ),
+                    expectation.label
+                )
+            }
+        }
+    }
+
     func testPairingQRCodeAccessibilityCopyUsesSelectedLanguageAndState() {
         let routeExpirationDate = Date(timeIntervalSince1970: 1_000)
         let expectations: [
-            (languageTag: String, label: String, activeValue: String, expiredValue: String, hint: String, routeExpirationFormat: String)
+            (languageTag: String, label: String, activeValue: String, expiredValue: String, unavailableValue: String, hint: String, routeExpirationFormat: String)
         ] = [
             (
                 "en",
                 "Pairing QR code",
                 "Scan this QR from AetherLink.",
                 "Pairing QR expired. Generate a new QR.",
+                "Pairing QR code unavailable",
                 "This QR verifies AetherLink Runtime and includes connection details for pairing or refresh.",
                 "Connection details from this QR expire at %@. Generate a new QR if a device scans later."
             ),
@@ -289,6 +394,7 @@ final class AetherLinkLocalizationTests: XCTestCase {
                 "페어링 QR 코드",
                 "AetherLink에서 이 QR을 스캔하세요.",
                 "페어링 QR이 만료되었습니다. 새 QR을 생성하세요.",
+                "페어링 QR 코드를 사용할 수 없음",
                 "이 QR은 AetherLink Runtime을 확인하고 페어링 또는 갱신에 필요한 연결 정보를 포함합니다.",
                 "이 QR의 연결 정보는 %@에 만료됩니다. 기기가 나중에 스캔한다면 새 QR을 생성하세요."
             ),
@@ -297,6 +403,7 @@ final class AetherLinkLocalizationTests: XCTestCase {
                 "ペアリング QR コード",
                 "AetherLink でこの QR をスキャンしてください。",
                 "ペアリング QR の有効期限が切れました。新しい QR を生成してください。",
+                "ペアリング QR コードを利用できません",
                 "この QR は AetherLink Runtime を確認し、ペアリングまたは更新用の接続情報を含みます。",
                 "この QR の接続情報は %@ に期限切れになります。後でデバイスがスキャンする場合は新しい QR を生成してください。"
             ),
@@ -305,6 +412,7 @@ final class AetherLinkLocalizationTests: XCTestCase {
                 "配对 QR 码",
                 "请在 AetherLink 中扫描此二维码。",
                 "配对二维码已过期。请生成新二维码。",
+                "配对 QR 码不可用",
                 "此二维码会验证 AetherLink Runtime，并包含配对或刷新所需的连接信息。",
                 "此二维码中的连接信息将于 %@ 过期。如果设备稍后扫描，请生成新的二维码。"
             ),
@@ -313,6 +421,7 @@ final class AetherLinkLocalizationTests: XCTestCase {
                 "QR code de jumelage",
                 "Scannez ce QR dans AetherLink.",
                 "Le QR de jumelage a expiré. Générez un nouveau QR.",
+                "QR code de jumelage indisponible",
                 "Ce QR vérifie AetherLink Runtime et inclut les informations de connexion pour le jumelage ou l’actualisation.",
                 "Les informations de connexion de ce QR expirent à %@. Générez un nouveau QR si un appareil scanne plus tard."
             ),
@@ -330,6 +439,8 @@ final class AetherLinkLocalizationTests: XCTestCase {
                 XCTAssertEqual(pairingQRCodeAccessibilityLabel(), expectation.label)
                 XCTAssertEqual(pairingQRCodeAccessibilityValue(isExpired: false), expectation.activeValue)
                 XCTAssertEqual(pairingQRCodeAccessibilityValue(isExpired: true), expectation.expiredValue)
+                XCTAssertEqual(pairingQRCodeAccessibilityValue(isExpired: false, isAvailable: false), expectation.unavailableValue)
+                XCTAssertEqual(pairingQRCodeAccessibilityValue(isExpired: true, isAvailable: false), expectation.unavailableValue)
                 XCTAssertEqual(pairingQRCodeAccessibilityHint(), expectation.hint)
                 XCTAssertEqual(pairingQRRemoteRouteExpirationText(routeExpirationDate), routeExpirationText)
                 XCTAssertEqual(
@@ -503,6 +614,57 @@ final class AetherLinkLocalizationTests: XCTestCase {
         XCTAssertEqual(groups.first(where: { $0.kind == .chat })?.models.map(\.id), ["local-chat"])
         XCTAssertEqual(groups.first(where: { $0.kind == .embedding })?.models.map(\.id), ["local-embedding"])
         XCTAssertFalse(groups.flatMap(\.models).contains { $0.source == .cloud || !$0.installed })
+    }
+
+    func testRuntimeOverviewTreatsHiddenModelsAsNotLoaded() {
+        let hiddenOnlyGroups = visibleModelGroups(for: [
+            ModelInfo(
+                id: "provider-managed-chat",
+                name: "Provider Managed Chat",
+                kind: .chat,
+                installed: true,
+                source: .cloud,
+                remoteModel: "remote-chat"
+            ),
+            ModelInfo(
+                id: "uninstalled-chat",
+                name: "Uninstalled Chat",
+                kind: .chat,
+                installed: false,
+                source: .local
+            ),
+            ModelInfo(
+                id: "provider-managed-embedding",
+                name: "Provider Managed Embedding",
+                kind: .embedding,
+                installed: true,
+                source: .cloud,
+                remoteModel: "remote-embedding"
+            ),
+            ModelInfo(
+                id: "uninstalled-embedding",
+                name: "Uninstalled Embedding",
+                kind: .embedding,
+                installed: false,
+                source: .local
+            ),
+        ])
+        let visibleModelCount = hiddenOnlyGroups.reduce(0) { count, group in count + group.models.count }
+
+        XCTAssertTrue(hiddenOnlyGroups.isEmpty)
+        XCTAssertEqual(visibleModelCount, 0)
+        XCTAssertEqual(
+            statusRuntimeOverviewFocus(
+                isRuntimeAdvertising: true,
+                isBackendReady: true,
+                hasTrustedDevices: true,
+                hasLoadedModels: visibleModelCount > 0,
+                hasRoutePreparationIssue: false,
+                hasDevelopmentRelayRoute: false,
+                isDevelopmentRelayQRCodeReady: false
+            ),
+            .models
+        )
     }
 
     func testModelRowAccessibilityLabelUsesModelContext() {
@@ -758,31 +920,36 @@ final class AetherLinkLocalizationTests: XCTestCase {
     }
 
     func testActivityTechnicalDetailsAccessibilityLabelUsesEventContext() {
-        let expectations: [(languageTag: String, label: String, fallbackLabel: String)] = [
+        let expectations: [(languageTag: String, label: String, punctuatedLabel: String, fallbackLabel: String)] = [
             (
                 "en",
                 "Details for Received device runtime request",
-                "Details for Runtime event recorded."
+                "Details for Saved connection details removed",
+                "Details for Runtime event recorded"
             ),
             (
                 "ko",
                 "기기 런타임 요청 수신의 세부 정보",
-                "런타임 이벤트가 기록되었습니다.의 세부 정보"
+                "저장된 연결 정보를 제거했습니다의 세부 정보",
+                "런타임 이벤트가 기록되었습니다의 세부 정보"
             ),
             (
                 "ja",
                 "デバイスランタイムリクエストを受信しました の詳細",
-                "ランタイムイベントを記録しました。 の詳細"
+                "保存済みの接続情報を削除しました の詳細",
+                "ランタイムイベントを記録しました の詳細"
             ),
             (
                 "zh-Hans",
                 "已收到设备运行时请求 的详情",
-                "已记录运行时事件。 的详情"
+                "已移除保存的连接信息 的详情",
+                "已记录运行时事件 的详情"
             ),
             (
                 "fr",
                 "Détails pour Requête runtime d’appareil reçue",
-                "Détails pour Événement du runtime enregistré."
+                "Détails pour Informations de connexion enregistrées supprimées",
+                "Détails pour Événement du runtime enregistré"
             ),
         ]
 
@@ -791,7 +958,9 @@ final class AetherLinkLocalizationTests: XCTestCase {
         for expectation in expectations {
             withStoredAppLanguage(expectation.languageTag) {
                 let receivedSummary = localizedLogDisplay("Received chat.send").summary
+                let punctuatedSummary = localizedLogDisplay("Remote route disabled").summary
                 XCTAssertEqual(logTechnicalDetailsAccessibilityLabel(summary: " \(receivedSummary) "), expectation.label)
+                XCTAssertEqual(logTechnicalDetailsAccessibilityLabel(summary: " \(punctuatedSummary)． "), expectation.punctuatedLabel)
                 XCTAssertEqual(logTechnicalDetailsAccessibilityLabel(summary: " "), expectation.fallbackLabel)
             }
         }
@@ -906,6 +1075,55 @@ final class AetherLinkLocalizationTests: XCTestCase {
                 let warningSummary = localizedLogDisplay("Runtime listener failed: port unavailable").summary
                 XCTAssertEqual(logRowAccessibilityLabel(summary: warningSummary, tone: .warning), expectation.warningLabel)
                 XCTAssertEqual(logRowAccessibilityLabel(summary: " ", tone: .neutral), expectation.fallbackLabel)
+            }
+        }
+    }
+
+    func testActivityRouteSuccessLogRowsUseReadyTone() {
+        let expectations: [(languageTag: String, readyLabel: String)] = [
+            (
+                "en",
+                "Activity item Connection details are ready. Status Ready."
+            ),
+            (
+                "ko",
+                "활동 항목 연결 정보가 준비되었습니다. 상태 준비됨."
+            ),
+            (
+                "ja",
+                "アクティビティ項目 接続情報の準備ができました。ステータス 準備完了。"
+            ),
+            (
+                "zh-Hans",
+                "活动项 连接信息已就绪。状态 就绪。"
+            ),
+            (
+                "fr",
+                "Élément d’activité Informations de connexion prêtes. État Prêt."
+            ),
+        ]
+
+        XCTAssertEqual(expectations.map(\.languageTag), AetherLinkAppLanguage.allCases.map(\.rawValue))
+
+        for expectation in expectations {
+            withStoredAppLanguage(expectation.languageTag) {
+                let readyLine = "Remote route ready: relay.example.test:43171"
+                let readySummary = localizedLogDisplay(readyLine).summary
+
+                XCTAssertEqual(activityLogTone(for: "Route secret regenerated"), .ready)
+                XCTAssertEqual(activityLogTone(for: "Remote route enabled: relay.example.test:43171"), .ready)
+                XCTAssertEqual(activityLogTone(for: "Remote route configured: relay.example.test:43171"), .ready)
+                XCTAssertEqual(activityLogTone(for: "Remote route allocated: relay.example.test:43171"), .ready)
+                XCTAssertEqual(activityLogTone(for: "Remote route bootstrap allocated route abc"), .ready)
+                XCTAssertEqual(activityLogTone(for: readyLine), .ready)
+                XCTAssertEqual(activityLogTone(for: "Remote route ready: relay.example.test:43171"), .ready)
+                XCTAssertEqual(activityLogTone(for: "Remote route lease refreshed: relay.example.test:43171"), .ready)
+                XCTAssertEqual(activityLogTone(for: "Remote route allocation failed: denied"), .warning)
+                XCTAssertEqual(
+                    logRowAccessibilityLabel(summary: readySummary, tone: activityLogTone(for: readyLine)),
+                    expectation.readyLabel,
+                    expectation.languageTag
+                )
             }
         }
     }
@@ -1532,27 +1750,32 @@ final class AetherLinkLocalizationTests: XCTestCase {
         }
     }
 
-    func testReadinessRowAccessibilityLabelUsesTitleStatusAndDetail() {
-        let expectations: [(languageTag: String, label: String)] = [
+    func testReadinessRowAccessibilityLabelUsesTitleStatusDetailAndFallbacks() {
+        let expectations: [(languageTag: String, label: String, fallbackLabel: String)] = [
             (
                 "en",
-                "Readiness AetherLink Runtime. Status Ready. Ready for paired devices."
+                "Readiness AetherLink Runtime. Status Ready. Ready for paired devices.",
+                "Readiness Readiness item. Status Unknown status. No readiness details"
             ),
             (
                 "ko",
-                "준비 상태 AetherLink 런타임. 상태 준비됨. 페어링된 기기 연결 준비됨."
+                "준비 상태 AetherLink 런타임. 상태 준비됨. 페어링된 기기 연결 준비됨.",
+                "준비 상태 준비 항목. 상태 알 수 없음. 준비 세부 정보 없음"
             ),
             (
                 "ja",
-                "準備状況 AetherLink ランタイム。ステータス 準備完了。ペアリング済みデバイスの準備完了。"
+                "準備状況 AetherLink ランタイム。ステータス 準備完了。ペアリング済みデバイスの準備完了。",
+                "準備状況 準備項目。ステータス 不明な状態。準備状況の詳細なし"
             ),
             (
                 "zh-Hans",
-                "就绪情况 AetherLink 运行时。状态 就绪。已准备好连接已配对设备。"
+                "就绪情况 AetherLink 运行时。状态 就绪。已准备好连接已配对设备。",
+                "就绪情况 就绪项。状态 未知状态。无就绪详情"
             ),
             (
                 "fr",
-                "Préparation Runtime AetherLink. État Prêt. Prêt pour les appareils jumelés."
+                "Préparation Runtime AetherLink. État Prêt. Prêt pour les appareils jumelés.",
+                "Préparation Élément de préparation. État État inconnu. Aucun détail de préparation"
             ),
         ]
 
@@ -1567,6 +1790,10 @@ final class AetherLinkLocalizationTests: XCTestCase {
                         detail: NSLocalizedString("Ready for paired devices.", comment: "")
                     ),
                     expectation.label
+                )
+                XCTAssertEqual(
+                    readinessRowAccessibilityLabel(title: " ", status: " ", detail: " "),
+                    expectation.fallbackLabel
                 )
             }
         }
@@ -1734,6 +1961,77 @@ final class AetherLinkLocalizationTests: XCTestCase {
                     expectation.diagnosticCollapsed
                 )
                 XCTAssertEqual(routeDiagnosticDisclosureAccessibilityHint(), expectation.diagnosticHint)
+            }
+        }
+    }
+
+    func testConnectionRecoveryResultAccessibilityLabelUsesSelectedLanguageAndTone() {
+        let expectations: [(
+            languageTag: String,
+            ready: String,
+            warning: String,
+            fallback: String
+        )] = [
+            (
+                "en",
+                "Connection Recovery result. Status Ready. Connection details prepared.",
+                "Connection Recovery result. Status Needs attention. Check Connection Recovery.",
+                "Connection Recovery result. Status Pending. No details available."
+            ),
+            (
+                "ko",
+                "연결 복구 결과. 상태 준비됨. 연결 세부 정보가 준비되었습니다.",
+                "연결 복구 결과. 상태 확인 필요. 연결 복구를 확인하세요.",
+                "연결 복구 결과. 상태 대기 중. 사용 가능한 세부 정보가 없습니다."
+            ),
+            (
+                "ja",
+                "接続の復旧結果。ステータス 準備完了。接続詳細を準備しました。",
+                "接続の復旧結果。ステータス 確認が必要。接続の復旧を確認してください。",
+                "接続の復旧結果。ステータス 保留中。利用できる詳細はありません。"
+            ),
+            (
+                "zh-Hans",
+                "连接恢复结果。状态 就绪。连接详情已准备好。",
+                "连接恢复结果。状态 需要注意。检查连接恢复。",
+                "连接恢复结果。状态 待处理。没有可用详情。"
+            ),
+            (
+                "fr",
+                "Résultat de récupération de connexion. État Prêt. Détails de connexion préparés.",
+                "Résultat de récupération de connexion. État Attention requise. Vérifiez la récupération de connexion.",
+                "Résultat de récupération de connexion. État En attente. Aucun détail disponible."
+            ),
+        ]
+
+        XCTAssertEqual(expectations.map(\.languageTag), AetherLinkAppLanguage.allCases.map(\.rawValue))
+
+        for expectation in expectations {
+            withStoredAppLanguage(expectation.languageTag) {
+                XCTAssertEqual(
+                    connectionRecoveryResultAccessibilityLabel(
+                        message: localizedConnectionRecoveryResultTestMessage(
+                            "Connection details prepared.",
+                            expectation.languageTag
+                        ),
+                        tone: .ready
+                    ),
+                    expectation.ready
+                )
+                XCTAssertEqual(
+                    connectionRecoveryResultAccessibilityLabel(
+                        message: localizedConnectionRecoveryResultTestMessage(
+                            "Check Connection Recovery.",
+                            expectation.languageTag
+                        ),
+                        tone: .warning
+                    ),
+                    expectation.warning
+                )
+                XCTAssertEqual(
+                    connectionRecoveryResultAccessibilityLabel(message: "   ", tone: .neutral),
+                    expectation.fallback
+                )
             }
         }
     }
@@ -1931,6 +2229,53 @@ final class AetherLinkLocalizationTests: XCTestCase {
         }
     }
 
+    func testConnectionRecoverySaveBootstrapRelayAccessibilityValueUsesSelectedLanguage() {
+        let expectations: [(languageTag: String, ready: String, clearsSavedRelay: String)] = [
+            (
+                "en",
+                "Ready",
+                "Will remove saved bootstrap relay"
+            ),
+            (
+                "ko",
+                "준비됨",
+                "저장된 부트스트랩 릴레이를 제거합니다"
+            ),
+            (
+                "ja",
+                "準備完了",
+                "保存済みブートストラップリレーを削除します"
+            ),
+            (
+                "zh-Hans",
+                "就绪",
+                "将移除已保存的引导中继"
+            ),
+            (
+                "fr",
+                "Prêt",
+                "Supprimera le relais d’amorçage enregistré"
+            ),
+        ]
+
+        XCTAssertEqual(expectations.map(\.languageTag), AetherLinkAppLanguage.allCases.map(\.rawValue))
+
+        for expectation in expectations {
+            withStoredAppLanguage(expectation.languageTag) {
+                XCTAssertEqual(
+                    connectionRecoverySaveBootstrapRelayActionAccessibilityValue(endpoints: "relay.example.test:43171"),
+                    expectation.ready,
+                    expectation.languageTag
+                )
+                XCTAssertEqual(
+                    connectionRecoverySaveBootstrapRelayActionAccessibilityValue(endpoints: "   "),
+                    expectation.clearsSavedRelay,
+                    expectation.languageTag
+                )
+            }
+        }
+    }
+
     func testConnectionRecoverySaveConnectionAccessibilityValueExplainsInvalidInputs() {
         let expectations: [(
             languageTag: String,
@@ -2053,32 +2398,37 @@ final class AetherLinkLocalizationTests: XCTestCase {
         }
     }
 
-    func testDisableConnectionAccessibilityLabelUsesRouteContext() {
-        let expectations: [(languageTag: String, label: String, fallbackLabel: String)] = [
+    func testRemoveSavedConnectionDetailsAccessibilityLabelUsesRouteContext() {
+        let expectations: [(languageTag: String, actionTitle: String, label: String, fallbackLabel: String)] = [
             (
                 "en",
-                "Disable saved connection details for relay.example.test:43171",
-                "Disable saved connection details for saved connection"
+                "Remove Saved Connection Details",
+                "Remove saved connection details for relay.example.test:43171",
+                "Remove saved connection details for saved connection"
             ),
             (
                 "ko",
-                "relay.example.test:43171 정보 끄기",
-                "저장된 연결 정보 끄기"
+                "저장된 연결 정보 제거",
+                "relay.example.test:43171의 저장된 연결 정보 제거",
+                "저장된 연결의 저장된 연결 정보 제거"
             ),
             (
                 "ja",
-                "relay.example.test:43171 の保存済み接続情報を無効化",
-                "保存済みの接続 の保存済み接続情報を無効化"
+                "保存済み接続情報を削除",
+                "relay.example.test:43171 の保存済み接続情報を削除",
+                "保存済みの接続 の保存済み接続情報を削除"
             ),
             (
                 "zh-Hans",
-                "禁用 relay.example.test:43171 的已保存连接信息",
-                "禁用 已保存的连接 的已保存连接信息"
+                "移除已保存的连接信息",
+                "移除 relay.example.test:43171 的已保存连接信息",
+                "移除 已保存的连接 的已保存连接信息"
             ),
             (
                 "fr",
-                "Désactiver les informations de connexion enregistrées pour relay.example.test:43171",
-                "Désactiver les informations de connexion enregistrées pour connexion enregistrée"
+                "Supprimer les informations de connexion enregistrées",
+                "Supprimer les informations de connexion enregistrées pour relay.example.test:43171",
+                "Supprimer les informations de connexion enregistrées pour connexion enregistrée"
             ),
         ]
 
@@ -2087,11 +2437,60 @@ final class AetherLinkLocalizationTests: XCTestCase {
         for expectation in expectations {
             withStoredAppLanguage(expectation.languageTag) {
                 XCTAssertEqual(
-                    disableConnectionAccessibilityLabel(endpoint: " relay.example.test:43171 "),
+                    NSLocalizedString("Remove Saved Connection Details", comment: ""),
+                    expectation.actionTitle
+                )
+                XCTAssertEqual(
+                    removeSavedConnectionDetailsAccessibilityLabel(endpoint: " relay.example.test:43171 "),
                     expectation.label
                 )
                 XCTAssertEqual(
-                    disableConnectionAccessibilityLabel(endpoint: " "),
+                    removeSavedConnectionDetailsAccessibilityLabel(endpoint: " "),
+                    expectation.fallbackLabel
+                )
+            }
+        }
+    }
+
+    func testCancelRemoveSavedConnectionDetailsAccessibilityLabelUsesRouteContext() {
+        let expectations: [(languageTag: String, label: String, fallbackLabel: String)] = [
+            (
+                "en",
+                "Cancel removing saved connection details for relay.example.test:43171",
+                "Cancel removing saved connection details for saved connection"
+            ),
+            (
+                "ko",
+                "relay.example.test:43171의 저장된 연결 정보 제거 취소",
+                "저장된 연결의 저장된 연결 정보 제거 취소"
+            ),
+            (
+                "ja",
+                "relay.example.test:43171 の保存済み接続情報の削除をキャンセル",
+                "保存済みの接続 の保存済み接続情報の削除をキャンセル"
+            ),
+            (
+                "zh-Hans",
+                "取消移除 relay.example.test:43171 的已保存连接信息",
+                "取消移除 已保存的连接 的已保存连接信息"
+            ),
+            (
+                "fr",
+                "Annuler la suppression des informations de connexion enregistrées pour relay.example.test:43171",
+                "Annuler la suppression des informations de connexion enregistrées pour connexion enregistrée"
+            ),
+        ]
+
+        XCTAssertEqual(expectations.map(\.languageTag), AetherLinkAppLanguage.allCases.map(\.rawValue))
+
+        for expectation in expectations {
+            withStoredAppLanguage(expectation.languageTag) {
+                XCTAssertEqual(
+                    cancelRemoveSavedConnectionDetailsAccessibilityLabel(endpoint: " relay.example.test:43171 "),
+                    expectation.label
+                )
+                XCTAssertEqual(
+                    cancelRemoveSavedConnectionDetailsAccessibilityLabel(endpoint: " "),
                     expectation.fallbackLabel
                 )
             }
@@ -2294,6 +2693,55 @@ final class AetherLinkLocalizationTests: XCTestCase {
         }
     }
 
+    func testProviderStatusRowAccessibilityLabelUsesProviderContext() {
+        let expectations: [(languageTag: String, label: String, fallbackLabel: String)] = [
+            (
+                "en",
+                "Provider Ollama. Status Available. Model provider is responding.",
+                "Provider Model provider. Status Not checked. No provider details"
+            ),
+            (
+                "ko",
+                "Ollama. 상태 사용 가능. 모델 제공자가 응답 중입니다.",
+                "모델 제공자. 상태 확인 전. 제공자 세부 정보 없음"
+            ),
+            (
+                "ja",
+                "Ollama。状態 利用可能。モデルプロバイダーが応答しています。",
+                "モデルプロバイダー。状態 未確認。プロバイダー詳細なし"
+            ),
+            (
+                "zh-Hans",
+                "Ollama。状态 可用。模型提供方正在响应。",
+                "模型提供方。状态 未检查。没有提供方详情"
+            ),
+            (
+                "fr",
+                "Fournisseur Ollama. État Disponible. Le fournisseur de modèles répond.",
+                "Fournisseur Fournisseur de modèles. État Non vérifié. Aucun détail sur le fournisseur"
+            ),
+        ]
+
+        XCTAssertEqual(expectations.map(\.languageTag), AetherLinkAppLanguage.allCases.map(\.rawValue))
+
+        for expectation in expectations {
+            withStoredAppLanguage(expectation.languageTag) {
+                XCTAssertEqual(
+                    providerStatusRowAccessibilityLabel(
+                        providerName: " Ollama ",
+                        status: NSLocalizedString("Available", comment: ""),
+                        detail: NSLocalizedString("Model provider is responding.", comment: "")
+                    ),
+                    expectation.label
+                )
+                XCTAssertEqual(
+                    providerStatusRowAccessibilityLabel(providerName: " ", status: " ", detail: " "),
+                    expectation.fallbackLabel
+                )
+            }
+        }
+    }
+
     func testTrustedDeviceKeyFingerprintUsesPublicKeyHashOnly() {
         XCTAssertEqual(trustedDeviceKeyFingerprint(" aGVsbG8= "), "2C:F2:4D:BA:5F:B0")
     }
@@ -2394,27 +2842,83 @@ final class AetherLinkLocalizationTests: XCTestCase {
         }
     }
 
-    func testTrustedDeviceRowAccessibilityLabelUsesDeviceContext() {
-        let date = Date(timeIntervalSince1970: 0)
-        let expectations: [(languageTag: String, fallbackLabel: String)] = [
+    func testTrustedDeviceCancelRemoveActionAccessibilityLabelUsesDeviceContext() {
+        let device = TrustedDevice(
+            id: "device-1",
+            name: "Pixel",
+            publicKeyBase64: "aGVsbG8=",
+            pairedAt: Date(timeIntervalSince1970: 0)
+        )
+        let expectations: [(languageTag: String, label: String, fallbackLabel: String)] = [
             (
                 "en",
+                "Cancel removing trust for Pixel. Key fingerprint 2C:F2:4D:BA:5F:B0",
+                "Cancel removing trust for Selected device. Key fingerprint Unavailable"
+            ),
+            (
+                "ko",
+                "Pixel 신뢰 해제 취소. 키 지문 2C:F2:4D:BA:5F:B0",
+                "선택한 항목 신뢰 해제 취소. 키 지문 사용 불가"
+            ),
+            (
+                "ja",
+                "Pixel の信頼解除をキャンセル。キー指紋 2C:F2:4D:BA:5F:B0",
+                "選択したデバイス の信頼解除をキャンセル。キー指紋 利用不可"
+            ),
+            (
+                "zh-Hans",
+                "取消移除 Pixel 的信任。密钥指纹 2C:F2:4D:BA:5F:B0",
+                "取消移除 所选设备 的信任。密钥指纹 不可用"
+            ),
+            (
+                "fr",
+                "Annuler le retrait de l’approbation de Pixel. Empreinte de clé 2C:F2:4D:BA:5F:B0",
+                "Annuler le retrait de l’approbation de Appareil sélectionné. Empreinte de clé Indisponible"
+            ),
+        ]
+
+        XCTAssertEqual(expectations.map(\.languageTag), AetherLinkAppLanguage.allCases.map(\.rawValue))
+
+        for expectation in expectations {
+            withStoredAppLanguage(expectation.languageTag) {
+                XCTAssertEqual(
+                    trustedDeviceCancelRemoveAccessibilityLabel(for: device),
+                    expectation.label
+                )
+                XCTAssertEqual(
+                    trustedDeviceCancelRemoveAccessibilityLabel(for: nil),
+                    expectation.fallbackLabel
+                )
+            }
+        }
+    }
+
+    func testTrustedDeviceRowAccessibilityLabelUsesDeviceContext() {
+        let date = Date(timeIntervalSince1970: 0)
+        let expectations: [(languageTag: String, fallbackPairingSummary: String, fallbackLabel: String)] = [
+            (
+                "en",
+                "Device ID ending ice-1",
                 "Trusted device Selected device. Pairing details unavailable. Key fingerprint Unavailable"
             ),
             (
                 "ko",
+                "기기 ID 끝자리 ice-1",
                 "신뢰 기기 선택한 항목. 페어링 세부 정보를 사용할 수 없습니다. 키 지문 사용 불가"
             ),
             (
                 "ja",
+                "デバイス ID 末尾 ice-1",
                 "信頼済みデバイス 選択したデバイス。ペアリングの詳細は利用できません。キー指紋 利用不可"
             ),
             (
                 "zh-Hans",
+                "设备 ID 结尾 ice-1",
                 "受信任设备 所选设备。配对详情不可用。密钥指纹 不可用"
             ),
             (
                 "fr",
+                "ID de l’appareil finissant par ice-1",
                 "Appareil approuvé Appareil sélectionné. Détails de jumelage indisponibles. Empreinte de clé Indisponible"
             ),
         ]
@@ -2438,6 +2942,26 @@ final class AetherLinkLocalizationTests: XCTestCase {
                 XCTAssertEqual(
                     trustedDevicePairingAccessibilitySummary(pairedAt: date, deviceID: " ice-1 "),
                     pairingSummary,
+                    expectation.languageTag
+                )
+                XCTAssertEqual(
+                    trustedDevicePairingAccessibilitySummary(pairedAt: nil, deviceID: " ice-1 "),
+                    expectation.fallbackPairingSummary,
+                    expectation.languageTag
+                )
+                XCTAssertEqual(
+                    trustedDeviceRowAccessibilityLabel(
+                        name: " Pixel ",
+                        pairedAt: nil,
+                        deviceID: " ice-1 ",
+                        keyFingerprint: " 2C:F2:4D:BA:5F:B0 "
+                    ),
+                    String(
+                        format: NSLocalizedString("Trusted device %@. %@. Key fingerprint %@", comment: ""),
+                        "Pixel",
+                        expectation.fallbackPairingSummary,
+                        "2C:F2:4D:BA:5F:B0"
+                    ),
                     expectation.languageTag
                 )
                 XCTAssertEqual(
@@ -2585,6 +3109,51 @@ final class AetherLinkLocalizationTests: XCTestCase {
                 XCTAssertEqual(
                     trustedDeviceRemoveAccessibilityLabel(name: " ", keyFingerprint: " "),
                     expectation.fallbackLabel
+                )
+            }
+        }
+    }
+
+    func testTrustedDeviceRemoveButtonAccessibilityHintUsesSelectedLanguage() {
+        let expectations: [(languageTag: String, hint: String, fallbackHint: String)] = [
+            (
+                "en",
+                "After removal, Pixel must pair again before it can use AetherLink Runtime.",
+                "After removal, Selected device must pair again before it can use AetherLink Runtime."
+            ),
+            (
+                "ko",
+                "제거 후 Pixel은(는) AetherLink Runtime을 사용하려면 다시 페어링해야 합니다.",
+                "제거 후 선택한 항목은(는) AetherLink Runtime을 사용하려면 다시 페어링해야 합니다."
+            ),
+            (
+                "ja",
+                "削除後、Pixel は AetherLink Runtime を使用する前に再度ペアリングが必要です。",
+                "削除後、選択したデバイス は AetherLink Runtime を使用する前に再度ペアリングが必要です。"
+            ),
+            (
+                "zh-Hans",
+                "移除后，Pixel 必须重新配对才能使用 AetherLink Runtime。",
+                "移除后，所选设备 必须重新配对才能使用 AetherLink Runtime。"
+            ),
+            (
+                "fr",
+                "Après le retrait, Pixel doit être jumelé à nouveau avant de pouvoir utiliser AetherLink Runtime.",
+                "Après le retrait, Appareil sélectionné doit être jumelé à nouveau avant de pouvoir utiliser AetherLink Runtime."
+            ),
+        ]
+
+        XCTAssertEqual(expectations.map(\.languageTag), AetherLinkAppLanguage.allCases.map(\.rawValue))
+
+        for expectation in expectations {
+            withStoredAppLanguage(expectation.languageTag) {
+                XCTAssertEqual(
+                    trustedDeviceRemoveAccessibilityHint(name: " Pixel "),
+                    expectation.hint
+                )
+                XCTAssertEqual(
+                    trustedDeviceRemoveAccessibilityHint(name: " "),
+                    expectation.fallbackHint
                 )
             }
         }
@@ -2986,6 +3555,32 @@ final class AetherLinkLocalizationTests: XCTestCase {
                 "Connection details are ready. Generate the latest QR to pair this device."
             )
         }
+    }
+
+    private func localizedConnectionRecoveryResultTestMessage(_ key: String, _ languageTag: String) -> String {
+        let messages: [String: [String: String]] = [
+            "en": [
+                "Connection details prepared.": "Connection details prepared.",
+                "Check Connection Recovery.": "Check Connection Recovery.",
+            ],
+            "ko": [
+                "Connection details prepared.": "연결 세부 정보가 준비되었습니다.",
+                "Check Connection Recovery.": "연결 복구를 확인하세요.",
+            ],
+            "ja": [
+                "Connection details prepared.": "接続詳細を準備しました。",
+                "Check Connection Recovery.": "接続の復旧を確認してください。",
+            ],
+            "zh-Hans": [
+                "Connection details prepared.": "连接详情已准备好。",
+                "Check Connection Recovery.": "检查连接恢复。",
+            ],
+            "fr": [
+                "Connection details prepared.": "Détails de connexion préparés.",
+                "Check Connection Recovery.": "Vérifiez la récupération de connexion.",
+            ],
+        ]
+        return messages[languageTag]?[key] ?? key
     }
 
     private func localizedConnectionFieldLabel(_ key: String, _ languageTag: String) -> String {

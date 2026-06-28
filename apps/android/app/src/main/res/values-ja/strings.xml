@@ -23,6 +23,7 @@
     <string name="clear_chat_search_named">「%1$s」のチャット検索をクリア</string>
     <string name="no_chat_search_results">一致するチャットはありません。</string>
     <string name="untitled_chat">無題のチャット</string>
+    <string name="chat_top_bar_active_title_summary">現在のチャット「%1$s」</string>
     <plurals name="chat_message_count">
         <item quantity="one">メッセージ %1$d 件</item>
         <item quantity="other">メッセージ %1$d 件</item>
@@ -34,8 +35,11 @@
     <string name="chat_session_status_in_progress">進行中</string>
     <string name="chat_session_more">チャットオプション</string>
     <string name="chat_session_more_named">「%1$s」のチャットオプション</string>
+    <string name="chat_session_model_value">モデル: %1$s</string>
     <string name="chat_session_row_summary">チャット「%1$s」。%2$s。</string>
+    <string name="chat_session_row_summary_with_model">チャット「%1$s」。%2$s。%3$s。</string>
     <string name="chat_session_row_summary_selected">選択中のチャット「%1$s」。%2$s。</string>
+    <string name="chat_session_row_summary_selected_with_model">選択中のチャット「%1$s」。%2$s。%3$s。</string>
     <string name="rename_chat">チャット名を変更</string>
     <string name="rename_chat_named">「%1$s」の名前を変更</string>
     <string name="archive">アーカイブ</string>
@@ -72,6 +76,7 @@
     <string name="continue_action">続ける</string>
     <string name="confirmation_continue_action_named">続ける: %1$s</string>
     <string name="confirmation_final_action_named">確認: %1$s</string>
+    <string name="confirmation_cancel_action_named">キャンセル: %1$s</string>
     <string name="chat_title_label">チャットタイトル</string>
     <string name="rename_chat_title_state_empty">保存する前にタイトルを入力してください。</string>
     <string name="rename_chat_title_state_ready">保存できます。</string>
@@ -92,6 +97,7 @@
     <string name="scan_latest_qr_state_ready">最新の QR をスキャンできます。</string>
     <string name="qr_scanner_title">AetherLink QR をスキャン</string>
     <string name="qr_scanner_detail">カメラを最新の AetherLink Runtime QR に向けてください。QR は AetherLink Runtime を確認し、両方のデバイスから到達できる接続情報を含む必要があります。</string>
+    <string name="qr_scanner_close_action">QR スキャナーを閉じる</string>
     <string name="qr_scanner_permission_title">カメラアクセスが必要です</string>
     <string name="qr_scanner_permission_detail">AetherLink はペアリング QR コードのスキャンにのみカメラを使用します。</string>
     <string name="qr_scanner_permission_action">カメラを許可</string>
@@ -142,6 +148,8 @@
     <string name="forget_trusted_runtime_confirm_title">信頼済みランタイムを削除しますか？</string>
     <string name="forget_trusted_runtime_confirm_message">このデバイスに保存された信頼済みランタイムを削除しますか？再度ペアリングするまで、モデルアクセスは AetherLink Runtime 経由のままです。</string>
     <string name="forget_trusted_runtime_confirm_action">ランタイムを削除</string>
+    <string name="forget_trusted_runtime_confirm_action_named">信頼済みランタイム「%1$s」の削除を確定</string>
+    <string name="forget_trusted_runtime_cancel_action_named">信頼済みランタイム「%1$s」の削除をキャンセル</string>
     <string name="usb_reverse">USB 接続</string>
     <string name="emulator">エミュレーター接続</string>
     <string name="runtime_host">接続アドレス</string>
@@ -240,6 +248,8 @@
     <string name="models_subtitle">AetherLink Runtime が公開しているモデルを選択します。</string>
     <string name="load_models">モデルを更新</string>
     <string name="selected_model">選択中のモデル</string>
+    <string name="drawer_runtime_summary_accessibility">ランタイム %1$s。状態: %2$s。選択中のモデル: %3$s。</string>
+    <string name="drawer_runtime_summary_accessibility_with_detail">ランタイム %1$s。状態: %2$s。選択中のモデル: %3$s。%4$s</string>
     <string name="selection_state_selected">選択済み</string>
     <string name="model_unavailable">モデルは利用できません</string>
     <string name="selected_model_unavailable">選択中のモデルはランタイム一覧にありません。更新するか別のモデルを選択してください。</string>
@@ -264,6 +274,7 @@
     <string name="model_size_value">サイズ: %1$s</string>
     <string name="install_model">モデルをインストール</string>
     <string name="installing_model">インストール中...</string>
+    <string name="model_picker_empty_state_summary">%1$s。%2$s</string>
     <string name="no_models_connected_title">読み込まれたモデルはありません</string>
     <string name="no_models_connected">AetherLink Runtime を通じてモデルを読み込んでください。</string>
     <string name="no_models_disconnected_title">ランタイムが必要です</string>
@@ -291,6 +302,11 @@
     <string name="cancel">キャンセル</string>
     <string name="attach_files">ファイルを添付</string>
     <string name="attach_files_state_ready">ファイルを添付できます。</string>
+    <plurals name="attach_files_state_count">
+        <item quantity="one">%2$d個中%1$d個のファイルが添付されています。</item>
+        <item quantity="other">%2$d個中%1$d個のファイルが添付されています。</item>
+    </plurals>
+    <string name="attach_files_state_limit_reached">%2$d個中%1$d個のファイルが添付されています。添付の上限に達しました。</string>
     <string name="attach_files_state_unavailable">添付は利用できません。</string>
     <string name="remove_attachment">添付を削除</string>
     <string name="attachment_type_image">画像</string>
@@ -333,18 +349,25 @@
     <string name="chat_hint_wait_for_stream">現在の応答を待つか、キャンセルしてください。</string>
     <string name="chat_hint_enter_message">送信するメッセージを入力してください。</string>
     <string name="chat_hint_ready">送信できます。</string>
+    <string name="chat_hint_ready_with_attachments">送信できます。%1$s</string>
     <string name="role_user">あなた</string>
     <string name="role_assistant">アシスタント</string>
     <string name="role_assistant_initial">A</string>
+    <string name="chat_message_accessibility_summary">%1$s: %2$s</string>
     <string name="assistant_typing">回答を生成中...</string>
     <string name="assistant_reasoning_label">思考</string>
     <string name="assistant_reasoning_summary">%1$s。%2$s。%3$s</string>
     <string name="assistant_reasoning_show">思考を表示</string>
     <string name="assistant_reasoning_hide">思考を非表示</string>
     <string name="suggested_next_questions">次の質問</string>
+    <plurals name="suggested_questions_state_count">
+        <item quantity="one">おすすめの次の質問が%1$d件あります。</item>
+        <item quantity="other">おすすめの次の質問が%1$d件あります。</item>
+    </plurals>
     <string name="generating_suggestions">次の質問を生成中...</string>
     <string name="content_desc_suggested_question">おすすめの質問: %1$s</string>
     <string name="action_use_suggested_question">おすすめの質問を入力</string>
+    <string name="suggested_question_state_wait_for_stream">おすすめの質問を使う前に、現在の応答が完了するまで待ってください。</string>
     <string name="copy_message">メッセージをコピー</string>
     <string name="copy_code_block">コードブロックをコピー</string>
     <string name="copy_code_block_named">%1$s コードブロック %2$d をコピー</string>
@@ -357,6 +380,7 @@
     <string name="companion_only_detail">AetherLink はモデルアクセスを信頼済みランタイム内に保ちます。このデバイスがセッションを制御します。</string>
     <string name="preferences_title">環境設定</string>
     <string name="preference_option_accessibility_summary">%1$s: %2$s</string>
+    <string name="preference_option_action_select">%1$s を選択</string>
     <string name="appearance_title">外観</string>
     <string name="appearance_system">システムに従う</string>
     <string name="appearance_light">ライト</string>
@@ -389,6 +413,7 @@
     <string name="memory_add">メモリを追加</string>
     <string name="memory_add_state_enter_memory">追加するメモリを入力してください。</string>
     <string name="memory_add_state_ready">メモリを追加できます。</string>
+    <string name="memory_action_state_wait_for_stream">メモリを変更する前に、現在の応答が完了するまで待ってください。</string>
     <string name="memory_empty">保存済みメモリはまだありません。</string>
     <string name="memory_empty_disconnected">保存済みメモリを読み込むには、信頼済みランタイムに接続してください。</string>
     <string name="memory_connect_to_load">メモリを読み込み、管理するには、信頼済みランタイムに接続してください。</string>
@@ -455,7 +480,7 @@
     <string name="error_receive_failed">AetherLink Runtime 接続が閉じられました。</string>
     <string name="error_remote_route_auth_failed">接続を検証できませんでした。最新の AetherLink QR をスキャンして再試行してください。</string>
     <string name="error_generation_cancelled">生成はキャンセルされました。</string>
-    <string name="error_generation_in_progress">チャットを切り替える前に、現在の応答を待つかキャンセルしてください。</string>
+    <string name="error_generation_in_progress">変更する前に、現在の応答を待つかキャンセルしてください。</string>
     <string name="error_chat_session_not_found">このチャットが見つかりませんでした。</string>
     <string name="error_chat_session_must_be_archived_before_delete">完全に削除する前に、このチャットをアーカイブしてください。</string>
     <string name="error_chat_session_sync_failed">このチャットの変更を AetherLink Runtime と同期できませんでした。</string>

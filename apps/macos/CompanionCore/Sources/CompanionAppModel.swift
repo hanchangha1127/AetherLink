@@ -713,7 +713,10 @@ public final class CompanionAppModel: ObservableObject {
             defaults: userDefaults,
             relaySecretStore: relaySecretStore
         )
-        let savedRelayLease = Self.loadSavedRemoteRouteLease(defaults: userDefaults)
+        let savedRelayLease = Self.loadSavedRemoteRouteLease(
+            defaults: userDefaults,
+            relaySettings: relaySettings
+        )
         self.developmentRelaySettings = relaySettings
         self.relayConfiguration = Self.relayConfiguration(for: relaySettings, lease: savedRelayLease)
         self.allocatedRemoteRouteLease = savedRelayLease
@@ -1137,7 +1140,7 @@ public final class CompanionAppModel: ObservableObject {
                 relaySecretStore: relaySecretStore
             )
             if let lease = allocation.lease {
-                Self.saveRemoteRouteLease(lease, defaults: userDefaults)
+                Self.saveRemoteRouteLease(lease, relaySettings: settings, defaults: userDefaults)
             } else if Self.hasDynamicRelayAllocationEnvironment(environment) {
                 Self.clearSavedRemoteRouteLease(defaults: userDefaults)
             }
@@ -1313,7 +1316,7 @@ public final class CompanionAppModel: ObservableObject {
             relaySecretStore: relaySecretStore
         )
         if let lease {
-            Self.saveRemoteRouteLease(lease, defaults: userDefaults)
+            Self.saveRemoteRouteLease(lease, relaySettings: settings, defaults: userDefaults)
         } else {
             Self.clearSavedRemoteRouteLease(defaults: userDefaults)
         }
@@ -1675,24 +1678,43 @@ public final class CompanionAppModel: ObservableObject {
         defaults.removeObject(forKey: RelayDefaults.allowsPrivateOverlay)
     }
 
-    private static func loadSavedRemoteRouteLease(defaults: UserDefaults) -> CompanionRemoteRouteLease? {
+    private static func loadSavedRemoteRouteLease(
+        defaults: UserDefaults,
+        relaySettings: CompanionDevelopmentRelaySettings
+    ) -> CompanionRemoteRouteLease? {
         let expiresAtEpochMillis = Int64(defaults.integer(forKey: RelayDefaults.leaseExpiresAt))
         guard expiresAtEpochMillis > 0,
               let nonce = defaults.string(forKey: RelayDefaults.leaseNonce)?.takeIfNotEmpty()
         else {
             return nil
         }
+        guard defaults.string(forKey: RelayDefaults.leaseHost) == relaySettings.host,
+              UInt16(exactly: defaults.integer(forKey: RelayDefaults.leasePort)) == relaySettings.port,
+              defaults.string(forKey: RelayDefaults.leaseRelayID) == relaySettings.relayID
+        else {
+            return nil
+        }
         return CompanionRemoteRouteLease(expiresAtEpochMillis: expiresAtEpochMillis, nonce: nonce)
     }
 
-    private static func saveRemoteRouteLease(_ lease: CompanionRemoteRouteLease, defaults: UserDefaults) {
+    private static func saveRemoteRouteLease(
+        _ lease: CompanionRemoteRouteLease,
+        relaySettings: CompanionDevelopmentRelaySettings,
+        defaults: UserDefaults
+    ) {
         defaults.set(Int(lease.expiresAtEpochMillis), forKey: RelayDefaults.leaseExpiresAt)
         defaults.set(lease.nonce, forKey: RelayDefaults.leaseNonce)
+        defaults.set(relaySettings.host, forKey: RelayDefaults.leaseHost)
+        defaults.set(Int(relaySettings.port), forKey: RelayDefaults.leasePort)
+        defaults.set(relaySettings.relayID, forKey: RelayDefaults.leaseRelayID)
     }
 
     private static func clearSavedRemoteRouteLease(defaults: UserDefaults) {
         defaults.removeObject(forKey: RelayDefaults.leaseExpiresAt)
         defaults.removeObject(forKey: RelayDefaults.leaseNonce)
+        defaults.removeObject(forKey: RelayDefaults.leaseHost)
+        defaults.removeObject(forKey: RelayDefaults.leasePort)
+        defaults.removeObject(forKey: RelayDefaults.leaseRelayID)
     }
 
     private static func loadBootstrapRelaySettings(
@@ -1831,6 +1853,9 @@ public final class CompanionAppModel: ObservableObject {
         static let allowsPrivateOverlay = "aetherlink.relay.allows_private_overlay"
         static let leaseExpiresAt = "aetherlink.relay.lease_expires_at"
         static let leaseNonce = "aetherlink.relay.lease_nonce"
+        static let leaseHost = "aetherlink.relay.lease_host"
+        static let leasePort = "aetherlink.relay.lease_port"
+        static let leaseRelayID = "aetherlink.relay.lease_id"
     }
 
     private enum BootstrapRelayDefaults {

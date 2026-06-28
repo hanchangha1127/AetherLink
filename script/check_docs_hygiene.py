@@ -172,6 +172,16 @@ FILE_CONTRACTS = (
         "docs/protocol.md must directly define the runtime locale handoff and the five-language launch set.",
     ),
     DocsFileContract(
+        "protocol-runtime-memory-client-boundary",
+        "docs/protocol.md",
+        (
+            re.compile(r"\bCurrent clients\b.*\b(?:should not|do not)\b.*\bcached memory\b.*\bchat\.send\b", re.IGNORECASE | re.DOTALL),
+            re.compile(r"\bCompatibility clients?\b", re.IGNORECASE),
+            re.compile(r"\bruntime-owned memory store\b|\bruntime-owned memory\b", re.IGNORECASE),
+        ),
+        "docs/protocol.md must distinguish current client behavior from stale compatibility memory stripping.",
+    ),
+    DocsFileContract(
         "readme-cross-platform-language-verification",
         "README.md",
         (

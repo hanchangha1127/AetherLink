@@ -23,6 +23,7 @@
     <string name="clear_chat_search_named">Effacer la recherche de chats pour %1$s</string>
     <string name="no_chat_search_results">Aucun chat correspondant.</string>
     <string name="untitled_chat">Chat sans titre</string>
+    <string name="chat_top_bar_active_title_summary">Chat actuel %1$s</string>
     <plurals name="chat_message_count">
         <item quantity="one">%1$d message</item>
         <item quantity="other">%1$d messages</item>
@@ -34,8 +35,11 @@
     <string name="chat_session_status_in_progress">En cours</string>
     <string name="chat_session_more">Options du chat</string>
     <string name="chat_session_more_named">Options du chat « %1$s »</string>
+    <string name="chat_session_model_value">Modèle : %1$s</string>
     <string name="chat_session_row_summary">Chat « %1$s ». %2$s.</string>
+    <string name="chat_session_row_summary_with_model">Chat « %1$s ». %2$s. %3$s.</string>
     <string name="chat_session_row_summary_selected">Chat sélectionné « %1$s ». %2$s.</string>
+    <string name="chat_session_row_summary_selected_with_model">Chat sélectionné « %1$s ». %2$s. %3$s.</string>
     <string name="rename_chat">Renommer le chat</string>
     <string name="rename_chat_named">Renommer le chat « %1$s »</string>
     <string name="archive">Archiver</string>
@@ -72,6 +76,7 @@
     <string name="continue_action">Continuer</string>
     <string name="confirmation_continue_action_named">Continuer : %1$s</string>
     <string name="confirmation_final_action_named">Confirmer : %1$s</string>
+    <string name="confirmation_cancel_action_named">Annuler : %1$s</string>
     <string name="chat_title_label">Titre du chat</string>
     <string name="rename_chat_title_state_empty">Saisissez un titre avant d’enregistrer.</string>
     <string name="rename_chat_title_state_ready">Prêt à enregistrer.</string>
@@ -92,6 +97,7 @@
     <string name="scan_latest_qr_state_ready">Prêt à scanner le dernier QR.</string>
     <string name="qr_scanner_title">Scanner le QR AetherLink</string>
     <string name="qr_scanner_detail">Pointez la caméra vers le dernier QR AetherLink Runtime. Le QR doit vérifier AetherLink Runtime et inclure une connexion joignable par les deux appareils.</string>
+    <string name="qr_scanner_close_action">Fermer le scanner QR</string>
     <string name="qr_scanner_permission_title">Accès caméra requis</string>
     <string name="qr_scanner_permission_detail">AetherLink utilise la caméra uniquement pour scanner les QR de jumelage.</string>
     <string name="qr_scanner_permission_action">Autoriser la caméra</string>
@@ -142,6 +148,8 @@
     <string name="forget_trusted_runtime_confirm_title">Oublier le runtime de confiance ?</string>
     <string name="forget_trusted_runtime_confirm_message">Retirer le runtime de confiance enregistré de cet appareil ? L’accès aux modèles reste derrière AetherLink Runtime jusqu’au prochain jumelage.</string>
     <string name="forget_trusted_runtime_confirm_action">Oublier le runtime</string>
+    <string name="forget_trusted_runtime_confirm_action_named">Confirmer l’oubli du runtime de confiance « %1$s »</string>
+    <string name="forget_trusted_runtime_cancel_action_named">Annuler l’oubli du runtime de confiance « %1$s »</string>
     <string name="usb_reverse">Connexion USB</string>
     <string name="emulator">Connexion émulateur</string>
     <string name="runtime_host">Adresse de connexion</string>
@@ -240,6 +248,8 @@
     <string name="models_subtitle">Choisissez un modèle exposé par AetherLink Runtime.</string>
     <string name="load_models">Actualiser les modèles</string>
     <string name="selected_model">Modèle sélectionné</string>
+    <string name="drawer_runtime_summary_accessibility">Runtime %1$s. État : %2$s. Modèle sélectionné : %3$s.</string>
+    <string name="drawer_runtime_summary_accessibility_with_detail">Runtime %1$s. État : %2$s. Modèle sélectionné : %3$s. %4$s</string>
     <string name="selection_state_selected">Sélectionné</string>
     <string name="model_unavailable">Modèle indisponible</string>
     <string name="selected_model_unavailable">Le modèle sélectionné manque dans la liste du runtime. Actualisez ou choisissez-en un autre.</string>
@@ -264,6 +274,7 @@
     <string name="model_size_value">Taille : %1$s</string>
     <string name="install_model">Installer le modèle</string>
     <string name="installing_model">Installation...</string>
+    <string name="model_picker_empty_state_summary">%1$s. %2$s</string>
     <string name="no_models_connected_title">Aucun modèle chargé</string>
     <string name="no_models_connected">Chargez les modèles via AetherLink Runtime.</string>
     <string name="no_models_disconnected_title">Runtime requis</string>
@@ -291,6 +302,11 @@
     <string name="cancel">Annuler</string>
     <string name="attach_files">Joindre des fichiers</string>
     <string name="attach_files_state_ready">Prêt à joindre des fichiers.</string>
+    <plurals name="attach_files_state_count">
+        <item quantity="one">%1$d fichier joint sur %2$d.</item>
+        <item quantity="other">%1$d fichiers joints sur %2$d.</item>
+    </plurals>
+    <string name="attach_files_state_limit_reached">%1$d fichiers joints sur %2$d. Limite de pièces jointes atteinte.</string>
     <string name="attach_files_state_unavailable">Pièces jointes indisponibles.</string>
     <string name="remove_attachment">Retirer la pièce jointe</string>
     <string name="attachment_type_image">Image</string>
@@ -333,18 +349,25 @@
     <string name="chat_hint_wait_for_stream">Attendez la réponse en cours ou annulez-la.</string>
     <string name="chat_hint_enter_message">Saisissez un message à envoyer.</string>
     <string name="chat_hint_ready">Prêt à envoyer.</string>
+    <string name="chat_hint_ready_with_attachments">Prêt à envoyer. %1$s</string>
     <string name="role_user">Vous</string>
     <string name="role_assistant">Assistant</string>
     <string name="role_assistant_initial">A</string>
+    <string name="chat_message_accessibility_summary">%1$s : %2$s</string>
     <string name="assistant_typing">Génération...</string>
     <string name="assistant_reasoning_label">Réflexion</string>
     <string name="assistant_reasoning_summary">%1$s. %2$s. %3$s</string>
     <string name="assistant_reasoning_show">Afficher la réflexion</string>
     <string name="assistant_reasoning_hide">Masquer la réflexion</string>
     <string name="suggested_next_questions">Questions suivantes</string>
+    <plurals name="suggested_questions_state_count">
+        <item quantity="one">%1$d question suivante suggérée disponible.</item>
+        <item quantity="other">%1$d questions suivantes suggérées disponibles.</item>
+    </plurals>
     <string name="generating_suggestions">Génération des questions suivantes...</string>
     <string name="content_desc_suggested_question">Question suggérée : %1$s</string>
     <string name="action_use_suggested_question">Insérer la question suggérée</string>
+    <string name="suggested_question_state_wait_for_stream">Attendez la fin de la réponse en cours avant d’utiliser une question suggérée.</string>
     <string name="copy_message">Copier le message</string>
     <string name="copy_code_block">Copier le bloc de code</string>
     <string name="copy_code_block_named">Copier le bloc de code %1$s %2$d</string>
@@ -357,6 +380,7 @@
     <string name="companion_only_detail">AetherLink garde l’accès aux modèles dans le runtime approuvé. Cet appareil contrôle la session.</string>
     <string name="preferences_title">Préférences</string>
     <string name="preference_option_accessibility_summary">%1$s: %2$s</string>
+    <string name="preference_option_action_select">Sélectionner %1$s</string>
     <string name="appearance_title">Apparence</string>
     <string name="appearance_system">Suit le système</string>
     <string name="appearance_light">Clair</string>
@@ -389,6 +413,7 @@
     <string name="memory_add">Ajouter la mémoire</string>
     <string name="memory_add_state_enter_memory">Saisissez une mémoire à ajouter.</string>
     <string name="memory_add_state_ready">Prêt à ajouter la mémoire.</string>
+    <string name="memory_action_state_wait_for_stream">Attendez la fin de la réponse en cours avant de modifier la mémoire.</string>
     <string name="memory_empty">Aucune mémoire enregistrée pour le moment.</string>
     <string name="memory_empty_disconnected">Connectez-vous au runtime de confiance pour charger la mémoire enregistrée.</string>
     <string name="memory_connect_to_load">Connectez-vous au runtime de confiance pour charger et gérer la mémoire.</string>
@@ -455,7 +480,7 @@
     <string name="error_receive_failed">La connexion à AetherLink Runtime a été fermée.</string>
     <string name="error_remote_route_auth_failed">La connexion n’a pas pu être vérifiée. Scannez le dernier QR AetherLink et réessayez.</string>
     <string name="error_generation_cancelled">Génération annulée.</string>
-    <string name="error_generation_in_progress">Attendez la réponse en cours ou annulez-la avant de changer de chat.</string>
+    <string name="error_generation_in_progress">Attendez la réponse en cours ou annulez-la avant d’apporter des modifications.</string>
     <string name="error_chat_session_not_found">Ce chat est introuvable.</string>
     <string name="error_chat_session_must_be_archived_before_delete">Archivez ce chat avant de le supprimer définitivement.</string>
     <string name="error_chat_session_sync_failed">Impossible de synchroniser cette modification avec AetherLink Runtime.</string>

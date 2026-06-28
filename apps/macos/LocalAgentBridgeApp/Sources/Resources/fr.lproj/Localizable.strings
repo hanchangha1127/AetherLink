@@ -11,7 +11,9 @@
 "System" = "Système";
 "Light" = "Clair";
 "Dark" = "Sombre";
+"Choose how AetherLink Runtime appears. This setting is saved for future launches." = "Choisissez l’apparence d’AetherLink Runtime. Ce réglage est enregistré pour les prochains lancements.";
 "Language" = "Langue";
+"Choose the app language. This setting is saved for future launches." = "Choisissez la langue de l’app. Ce réglage est enregistré pour les prochains lancements.";
 "English" = "Anglais";
 "Korean" = "Coréen";
 "Japanese" = "Japonais";
@@ -45,8 +47,10 @@
 "Pending" = "En attente";
 "Activity item %@. Status %@." = "Élément d’activité %@. État %@.";
 "Readiness %@. Status %@. %@" = "Préparation %@. État %@. %@";
+"Readiness item" = "Élément de préparation";
 "Status item" = "Élément d’état";
 "Unknown status" = "État inconnu";
+"No readiness details" = "Aucun détail de préparation";
 "No status details" = "Aucun détail d’état";
 "Status %@. Current state %@. %@" = "État %@. État actuel %@. %@";
 "Runtime overview" = "Vue d’ensemble du runtime";
@@ -79,6 +83,8 @@
 "Waiting for device" = "En attente de l’appareil";
 "Connected to %@ and waiting for relay acknowledgement." = "Connecté à %@, en attente de l’accusé de réception de route.";
 "Model provider status has not been checked yet." = "L’état des fournisseurs de modèles n’a pas encore été vérifié.";
+"No model providers available" = "Aucun fournisseur de modèles disponible";
+"AetherLink Runtime has not reported any model providers yet." = "AetherLink Runtime n’a pas encore signalé de fournisseur de modèles.";
 "%d of %d available" = "%d sur %d disponibles";
 "1 model provider available" = "1 fournisseur de modèles disponible";
 "%d model providers available" = "%d fournisseurs de modèles disponibles";
@@ -160,12 +166,15 @@
 "Pair a device before allowing runtime commands." = "Jumelez un appareil avant d’autoriser les commandes du runtime.";
 "Paired %@ · ID ending %@" = "Jumelé %@ · ID finissant par %@";
 "Paired %@. Device ID ending %@" = "Jumelé %@. ID de l’appareil finissant par %@";
+"Device ID ending %@" = "ID de l’appareil finissant par %@";
 "Key fingerprint %@" = "Empreinte de clé %@";
 "Pairing details unavailable." = "Détails de jumelage indisponibles.";
 "Trusted device %@. %@. Key fingerprint %@" = "Appareil approuvé %@. %@. Empreinte de clé %@";
 "Remove Trust" = "Retirer l’approbation";
 "Remove trust for %@. Key fingerprint %@" = "Retirer l’approbation de %@. Empreinte de clé %@";
+"After removal, %@ must pair again before it can use AetherLink Runtime." = "Après le retrait, %@ doit être jumelé à nouveau avant de pouvoir utiliser AetherLink Runtime.";
 "Confirm removing trust for %@. Key fingerprint %@" = "Confirmer le retrait de l’approbation de %@. Empreinte de clé %@";
+"Cancel removing trust for %@. Key fingerprint %@" = "Annuler le retrait de l’approbation de %@. Empreinte de clé %@";
 "Remove trusted device?" = "Retirer l’appareil approuvé ?";
 "%@ will need to pair again before it can use AetherLink Runtime." = "%@ devra être jumelé à nouveau avant de pouvoir utiliser AetherLink Runtime.";
 "%@ will need to pair again before it can use AetherLink Runtime. Key fingerprint %@" = "%@ devra être jumelé à nouveau avant de pouvoir utiliser AetherLink Runtime. Empreinte de clé %@";
@@ -184,6 +193,7 @@
 "Collapse to hide activity technical details." = "Réduire pour masquer les détails d’activité.";
 "Expand to show activity technical details." = "Développer pour afficher les détails d’activité.";
 "Connection Recovery result" = "Résultat de récupération de connexion";
+"%@. Status %@. %@" = "%@. État %@. %@";
 "Connection health" = "État de connexion";
 "Connection preparation" = "Préparation de connexion";
 "Connection diagnostics" = "Diagnostics de connexion";
@@ -207,6 +217,8 @@
 "Model provider needs attention." = "Le fournisseur de modèles demande une vérification.";
 "Model provider is available." = "Le fournisseur de modèles est disponible.";
 "Provider %@ status %@" = "État de %@ : %@";
+"Provider %@. Status %@. %@" = "Fournisseur %@. État %@. %@";
+"No provider details" = "Aucun détail sur le fournisseur";
 "Model residency updated." = "Résidence du modèle mise à jour.";
 "Runtime event recorded." = "Événement du runtime enregistré.";
 
@@ -222,7 +234,7 @@
 "Ready for devices" = "Prêt pour les appareils";
 "AetherLink Runtime needs attention" = "AetherLink Runtime demande une vérification";
 "No activity yet" = "Aucune activité pour l’instant";
-"Advanced connection disabled." = "Connexion avancée désactivée.";
+"Saved connection details removed." = "Informations de connexion enregistrées supprimées.";
 "AetherLink Runtime needs attention." = "AetherLink Runtime demande une vérification.";
 "Connection details saved." = "Informations de connexion enregistrées.";
 "Connection details are ready." = "Informations de connexion prêtes.";
@@ -262,6 +274,7 @@
 "Enable only when this bootstrap relay is reachable through a VPN, tunnel, or private overlay shared by both devices." = "Activez ceci uniquement lorsque ce relais d’amorçage est joignable via un VPN, un tunnel ou un overlay privé partagé par les deux appareils.";
 "Save Bootstrap Relay" = "Enregistrer le relais d’amorçage";
 "Save bootstrap relay settings for future pairing QR connection details." = "Enregistre les réglages du relais d’amorçage pour les futures informations de connexion du QR de jumelage.";
+"Will remove saved bootstrap relay" = "Supprimera le relais d’amorçage enregistré";
 "Bootstrap relay saved. Generate the latest QR and scan it in AetherLink to pair or refresh connectivity." = "Relais d’amorçage enregistré. Générez le dernier QR et scannez-le dans AetherLink pour jumeler ou actualiser la connexion.";
 "Connection address" = "Adresse de connexion";
 "Connection setup secret" = "Clé de connexion protégée";
@@ -269,9 +282,10 @@
 "Save fallback connection details for future pairing QR routes." = "Enregistre les informations de connexion de secours pour les futurs itinéraires QR de jumelage.";
 "Create a new connection setup secret for future pairing QR connection details." = "Crée un nouveau secret de configuration de connexion pour les futurs QR de jumelage.";
 "Connection setup secret regenerated." = "Clé de connexion protégée actualisée.";
-"Disable Connection" = "Désactiver la connexion";
-"Disable saved connection details for %@" = "Désactiver les informations de connexion enregistrées pour %@";
-"Disable saved connection details?" = "Désactiver les informations de connexion enregistrées ?";
+"Remove Saved Connection Details" = "Supprimer les informations de connexion enregistrées";
+"Remove saved connection details for %@" = "Supprimer les informations de connexion enregistrées pour %@";
+"Cancel removing saved connection details for %@" = "Annuler la suppression des informations de connexion enregistrées pour %@";
+"Remove saved connection details?" = "Supprimer les informations de connexion enregistrées ?";
 "Saved connection details will be removed. Devices on another network may need a fresh pairing QR before they can reconnect." = "Les informations de connexion enregistrées seront supprimées. Les appareils sur un autre réseau peuvent avoir besoin d’un nouveau QR de jumelage avant de se reconnecter.";
 "Connection details saved" = "Informations de connexion enregistrées";
 "No connection details" = "Aucune information de connexion";

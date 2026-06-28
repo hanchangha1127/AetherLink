@@ -14,6 +14,7 @@ import com.localagentbridge.android.core.protocol.ChatSessionSummaryPayload
 import com.localagentbridge.android.core.protocol.ChatStoredMessagePayload
 import com.localagentbridge.android.core.protocol.ErrorPayload
 import com.localagentbridge.android.core.protocol.MemoryEntryPayload
+import com.localagentbridge.android.core.protocol.MemoryListResultPayload
 import com.localagentbridge.android.core.protocol.MessageType
 import com.localagentbridge.android.core.protocol.ModelInfoPayload
 import com.localagentbridge.android.core.protocol.ModelPullPayload
@@ -672,7 +673,7 @@ class RuntimeClientViewModelTest {
     }
 
     @Test
-    fun trustedRuntimeRestoreShouldStartDiscoveryEvenWithRelayRoute() {
+    fun trustedRuntimeRestoreDoesNotStartDiscoveryWhenRelayRouteIsAvailable() {
         val state = RuntimeUiState(
             trustedRuntime = RuntimeTrustedRuntime(
                 deviceId = "runtime-relay",
@@ -688,7 +689,10 @@ class RuntimeClientViewModelTest {
             ),
         )
 
-        assertTrue(state.shouldDiscoverTrustedRuntimeRoute())
+        assertFalse(state.shouldDiscoverTrustedRuntimeRoute())
+        val target = requireNotNull(autoReconnectTrustedRuntimeConnectionTarget(state))
+        assertEquals("runtime-relay", target.identity?.deviceId)
+        assertNull(target.endpointHint)
     }
 
     @Test
@@ -2058,7 +2062,7 @@ class RuntimeClientViewModelTest {
 
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
-    fun routeRefreshQrPersistsRelayRouteBeforeReconnectRetry() = runTest {
+    fun routeRefreshQrDropsUnreachableRelayRouteAndRequiresFreshQrRecovery() = runTest {
         val mainDispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(mainDispatcher)
         try {
@@ -2114,19 +2118,25 @@ class RuntimeClientViewModelTest {
             viewModel.trustRuntimeFromPairingQr(rawUri)
             advanceUntilIdle()
 
-            val trusted = trustedRuntimeStore.trusted ?: error("Expected refreshed trusted runtime")
             assertEquals(0, directConnectionAttempts)
-            assertEquals(2, relayConnectionAttempts)
-            assertEquals("relay-refresh.example.test", trusted.relayHost)
-            assertEquals(443, trusted.relayPort)
-            assertEquals("relay-refresh", trusted.relayId)
-            assertEquals("secret-refresh", trusted.relaySecret)
-            assertEquals(4102444800000L, trusted.relayExpiresAtEpochMillis)
-            assertEquals("nonce-refresh-route", trusted.relayNonce)
-            assertEquals("remote", trusted.relayScope)
+            assertEquals(1, relayConnectionAttempts)
+            val trusted = trustedRuntimeStore.trusted ?: error("Expected trusted runtime to remain pinned")
+            assertEquals("runtime-1", trusted.deviceId)
+            assertEquals("runtime-fingerprint", trusted.fingerprint)
+            assertEquals("runtime-public-key", trusted.publicKeyBase64)
+            assertEquals("route-1", trusted.routeToken)
+            assertNull(trusted.relayHost)
+            assertNull(trusted.relayPort)
+            assertNull(trusted.relayId)
+            assertNull(trusted.relaySecret)
+            assertNull(trusted.relayExpiresAtEpochMillis)
+            assertNull(trusted.relayNonce)
+            assertNull(trusted.relayScope)
             assertNull(localStore.data.pendingPairingRoute)
-            assertEquals("relay-refresh.example.test", viewModel.state.value.trustedRuntime?.relayHost)
+            assertNull(viewModel.state.value.trustedRuntime?.relayHost)
             assertEquals("runtime-1", viewModel.state.value.trustedRuntime?.deviceId)
+            assertEquals("remote_route_unreachable", viewModel.state.value.error?.code)
+            assertEquals("route_diagnostic_relay_failed", viewModel.state.value.error?.diagnosticCode)
         } finally {
             Dispatchers.resetMain()
         }
@@ -3235,6 +3245,45 @@ class RuntimeClientViewModelTest {
         assertEquals("secret-1", refreshed?.relaySecret)
         assertEquals(4102444800000L, refreshed?.relayExpiresAtEpochMillis)
         assertEquals("nonce-route-1", refreshed?.relayNonce)
+    }
+
+    @Test
+    fun routeRefreshQrWithoutPublicKeyCanRefreshPinnedRuntimeRelayRoute() {
+        val current = RuntimeTrustedRuntime(
+            deviceId = "runtime-1",
+            name = "AetherLink Runtime",
+            fingerprint = "runtime-fingerprint",
+            publicKeyBase64 = "runtime-public-key",
+            routeToken = "route-old",
+            endpointHint = null,
+        )
+        val payload = runtimePairingPayload(
+            runtimePublicKeyBase64 = null,
+            routeToken = "route-new",
+            host = null,
+            port = null,
+            relayHost = "relay.example.test",
+            relayPort = 443,
+            relayId = "relay-new",
+            relaySecret = "secret-new",
+            relayExpiresAtEpochMillis = 4102444800000L,
+            relayNonce = "nonce-route-new",
+        )
+
+        val refreshed = trustedRuntimeFromRouteRefreshQr(current, payload)
+
+        assertEquals("runtime-1", refreshed?.deviceId)
+        assertEquals("runtime-fingerprint", refreshed?.fingerprint)
+        assertEquals("runtime-public-key", refreshed?.publicKeyBase64)
+        assertEquals("route-new", refreshed?.routeToken)
+        assertNull(refreshed?.host)
+        assertNull(refreshed?.port)
+        assertEquals("relay.example.test", refreshed?.relayHost)
+        assertEquals(443, refreshed?.relayPort)
+        assertEquals("relay-new", refreshed?.relayId)
+        assertEquals("secret-new", refreshed?.relaySecret)
+        assertEquals(4102444800000L, refreshed?.relayExpiresAtEpochMillis)
+        assertEquals("nonce-route-new", refreshed?.relayNonce)
     }
 
     @Test
@@ -4800,6 +4849,299 @@ class RuntimeClientViewModelTest {
 
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
+    fun streamingBlocksModelSelectionAndInstallRequests() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val selectedModel = textChatModel()
+            val selectedEmbeddingModel = embeddingModel()
+            val alternateEmbeddingModel = selectedEmbeddingModel.copy(
+                id = "ollama:mxbai-embed-large",
+                name = "mxbai-embed-large",
+            )
+            val alternateModel = selectedModel.copy(
+                id = "ollama:qwen3:8b",
+                name = "Qwen3 8B",
+            )
+            val uninstalledModel = selectedModel.copy(
+                id = "ollama:gemma3:12b",
+                name = "Gemma 3 12B",
+                installed = false,
+            )
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(
+                    selectedModel,
+                    alternateModel,
+                    uninstalledModel,
+                    selectedEmbeddingModel,
+                    alternateEmbeddingModel,
+                ),
+                selectedModelId = selectedModel.id,
+                selectedEmbeddingModelId = selectedEmbeddingModel.id,
+            )
+
+            fixture.viewModel.replaceStateForTest {
+                it.copy(isStreaming = true, error = null)
+            }
+
+            fixture.viewModel.selectModel(alternateModel.id)
+            advanceUntilIdle()
+
+            assertEquals(selectedModel.id, fixture.viewModel.state.value.selectedModelId)
+            assertEquals(selectedModel.id, fixture.localStore.data.selectedModelId)
+            assertEquals("generation_in_progress", fixture.viewModel.state.value.error?.code)
+
+            fixture.viewModel.replaceStateForTest {
+                it.copy(error = null)
+            }
+            fixture.viewModel.requestModelInstall(uninstalledModel.id)
+            advanceUntilIdle()
+
+            assertEquals(selectedModel.id, fixture.viewModel.state.value.selectedModelId)
+            assertEquals(selectedModel.id, fixture.localStore.data.selectedModelId)
+            assertNull(fixture.viewModel.state.value.installingModelId)
+            assertEquals("generation_in_progress", fixture.viewModel.state.value.error?.code)
+            assertFalse(fixture.channel.sentEnvelopes.any { it.type == MessageType.ModelsPull })
+
+            fixture.viewModel.replaceStateForTest {
+                it.copy(error = null)
+            }
+            fixture.viewModel.selectEmbeddingModel(alternateEmbeddingModel.id)
+            advanceUntilIdle()
+
+            assertEquals(selectedEmbeddingModel.id, fixture.viewModel.state.value.selectedEmbeddingModelId)
+            assertEquals(selectedEmbeddingModel.id, fixture.localStore.data.selectedEmbeddingModelId)
+            assertEquals("generation_in_progress", fixture.viewModel.state.value.error?.code)
+
+            fixture.viewModel.replaceStateForTest {
+                it.copy(error = null)
+            }
+            fixture.viewModel.selectEmbeddingModel(null)
+            advanceUntilIdle()
+
+            assertEquals(selectedEmbeddingModel.id, fixture.viewModel.state.value.selectedEmbeddingModelId)
+            assertEquals(selectedEmbeddingModel.id, fixture.localStore.data.selectedEmbeddingModelId)
+            assertEquals("generation_in_progress", fixture.viewModel.state.value.error?.code)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun streamingBlocksReentrantChatSendRequests() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val selectedModel = textChatModel()
+            val existingMessages = listOf(
+                RuntimeChatMessage(
+                    id = "user-active",
+                    role = "user",
+                    content = "First prompt",
+                ),
+                RuntimeChatMessage(
+                    id = "assistant-active",
+                    role = "assistant",
+                    content = "Partial answer",
+                ),
+            )
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(selectedModel),
+                selectedModelId = selectedModel.id,
+            )
+            fixture.viewModel.replaceStateForTest {
+                it.copy(
+                    isStreaming = true,
+                    activeRequestId = "active-request",
+                    activeChatSessionId = "session-active",
+                    chatInput = "Second prompt",
+                    messages = existingMessages,
+                    error = null,
+                )
+            }
+
+            fixture.viewModel.sendChatMessage()
+            advanceUntilIdle()
+
+            val state = fixture.viewModel.state.value
+            assertEquals("generation_in_progress", state.error?.code)
+            assertEquals("active-request", state.activeRequestId)
+            assertTrue(state.isStreaming)
+            assertEquals("Second prompt", state.chatInput)
+            assertEquals(existingMessages, state.messages)
+            assertFalse(fixture.channel.sentEnvelopes.any { it.type == MessageType.ChatSend })
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun streamingBlocksMemoryMutations() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+            )
+            val memoryEntry = RuntimeMemoryEntry(
+                id = "memory-active",
+                content = "Keep answers concise",
+                enabled = true,
+                createdAtMillis = 1_000L,
+                updatedAtMillis = 1_000L,
+            )
+            fixture.viewModel.replaceStateForTest {
+                it.copy(
+                    isStreaming = true,
+                    memoryEntries = listOf(memoryEntry),
+                    error = null,
+                )
+            }
+
+            fixture.viewModel.addMemoryEntry("New memory")
+            advanceUntilIdle()
+
+            assertEquals(listOf(memoryEntry), fixture.viewModel.state.value.memoryEntries)
+            assertEquals("generation_in_progress", fixture.viewModel.state.value.error?.code)
+
+            fixture.viewModel.replaceStateForTest { it.copy(error = null) }
+            fixture.viewModel.setMemoryEntryEnabled(memoryEntry.id, enabled = false)
+            advanceUntilIdle()
+
+            assertEquals(listOf(memoryEntry), fixture.viewModel.state.value.memoryEntries)
+            assertEquals("generation_in_progress", fixture.viewModel.state.value.error?.code)
+
+            fixture.viewModel.replaceStateForTest { it.copy(error = null) }
+            fixture.viewModel.removeMemoryEntry(memoryEntry.id)
+            advanceUntilIdle()
+
+            assertEquals(listOf(memoryEntry), fixture.viewModel.state.value.memoryEntries)
+            assertEquals("generation_in_progress", fixture.viewModel.state.value.error?.code)
+            assertFalse(fixture.channel.sentEnvelopes.any { it.type == MessageType.MemoryUpsert })
+            assertFalse(fixture.channel.sentEnvelopes.any { it.type == MessageType.MemoryDelete })
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun runtimeMemoryListRendersInMemoryButRedactsDeviceStorage() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = true,
+            )
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.MemoryList,
+                    serializer = MemoryListResultPayload.serializer(),
+                    payload = MemoryListResultPayload(
+                        entries = listOf(
+                            MemoryEntryPayload(
+                                id = "memory-runtime",
+                                content = "Runtime-owned memory body",
+                                enabled = true,
+                                createdAt = "2026-06-25T00:00:00Z",
+                                updatedAt = "2026-06-25T00:01:00Z",
+                            ),
+                        ),
+                    ),
+                    requestId = "memory-list",
+                ),
+            )
+            advanceUntilIdle()
+
+            assertEquals(
+                listOf("Runtime-owned memory body"),
+                fixture.viewModel.state.value.memoryEntries.map { it.content },
+            )
+            assertTrue(fixture.localStore.data.memoryEntries.isEmpty())
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun streamingBlocksRuntimeRouteTrustAndConnectionMutations() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+            )
+            fixture.viewModel.replaceStateForTest {
+                it.copy(
+                    runtimeHost = "192.168.1.20",
+                    runtimePort = "43170",
+                    runtimeEndpointSource = RuntimeEndpointSource.Manual,
+                    pairingCode = "000000",
+                    isDiscovering = true,
+                    isStreaming = true,
+                    activeRequestId = "active-request",
+                    error = null,
+                )
+            }
+            val sentEnvelopeCount = fixture.channel.sentEnvelopes.size
+
+            fixture.viewModel.updateHost("10.0.0.2")
+            fixture.viewModel.updatePort("54321")
+            fixture.viewModel.useUsbReverseEndpoint()
+            fixture.viewModel.useEmulatorEndpoint()
+            fixture.viewModel.updatePairingCode("123456")
+            fixture.viewModel.useDiscoveredRuntime(
+                RuntimeDiscoveredRuntime(
+                    serviceName = "AetherLink Runtime",
+                    host = "192.168.1.44",
+                    port = 43170,
+                    routeToken = "route-token-1",
+                    deviceId = "runtime-1",
+                    fingerprint = "runtime-fingerprint",
+                )
+            )
+            fixture.viewModel.setTrustedRuntimeAutoReconnectEnabled(false)
+            fixture.viewModel.connectToTrustedRuntime()
+            fixture.viewModel.startDiscovery()
+            fixture.viewModel.stopDiscovery()
+            fixture.viewModel.trustRuntimeFromPairingQr(
+                "aetherlink://pair?v=1&n=nonce-streaming&c=123456" +
+                    "&rid=runtime-2&rn=AetherLink%20Runtime&rf=runtime-fingerprint-2" +
+                    "&rk=runtime-public-key-2&rt=route-token-2",
+            )
+            fixture.viewModel.requestRuntimeHealth()
+            fixture.viewModel.requestModels()
+            fixture.viewModel.forgetTrustedRuntime()
+            fixture.viewModel.disconnect()
+            advanceUntilIdle()
+
+            val state = fixture.viewModel.state.value
+            assertEquals("192.168.1.20", state.runtimeHost)
+            assertEquals("43170", state.runtimePort)
+            assertEquals(RuntimeEndpointSource.Manual, state.runtimeEndpointSource)
+            assertEquals("000000", state.pairingCode)
+            assertTrue(state.isDiscovering)
+            assertTrue(state.isStreaming)
+            assertEquals("active-request", state.activeRequestId)
+            assertTrue(state.isConnected)
+            assertTrue(fixture.channel.isConnected)
+            assertEquals("runtime-1", state.trustedRuntime?.deviceId)
+            assertTrue(fixture.localStore.data.trustedRuntimeAutoReconnectEnabled)
+            assertNull(fixture.localStore.data.pendingPairingRoute)
+            assertEquals(sentEnvelopeCount, fixture.channel.sentEnvelopes.size)
+            assertEquals("generation_in_progress", state.error?.code)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
     fun modelsResultMissingInstalledOrSourceDoesNotBecomeSelectableChatModel() = runTest {
         val mainDispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(mainDispatcher)
@@ -6071,6 +6413,90 @@ class RuntimeClientViewModelTest {
         }
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun updateChatInputRejectsWhileStreamingAndPreservesDraft() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val viewModel = RuntimeClientViewModel(
+                application = Application(),
+                dependencies = RuntimeClientViewModelDependencies(
+                    json = json,
+                    transportClient = RuntimeTransportClient(),
+                    transportConnector = RuntimeTransportConnector { _, _, _ ->
+                        error("Chat input changes should not open direct transport")
+                    },
+                    relayConnector = RuntimeRelayConnector { _, _ ->
+                        error("Chat input changes should not open relay transport")
+                    },
+                    discovery = EmptyRuntimeDiscoverySource,
+                    trustedRuntimeStore = FakeTrustedRuntimeStore(),
+                    deviceIdentityProvider = FakeDeviceIdentityProvider(testDeviceIdentity()),
+                    localDataStore = FakeRuntimeLocalDataStore(),
+                    lifecycleCallbacksRegistrar = NoopRuntimeLifecycleCallbacksRegistrar,
+                ),
+            )
+            advanceUntilIdle()
+            viewModel.replaceStateForTest {
+                it.copy(
+                    chatInput = "keep this draft",
+                    isStreaming = true,
+                    error = null,
+                )
+            }
+
+            viewModel.updateChatInput("stale IME value")
+
+            assertEquals("keep this draft", viewModel.state.value.chatInput)
+            assertEquals("generation_in_progress", viewModel.state.value.error?.code)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun useSuggestedQuestionRejectsWhileStreamingAndPreservesDraft() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val viewModel = RuntimeClientViewModel(
+                application = Application(),
+                dependencies = RuntimeClientViewModelDependencies(
+                    json = json,
+                    transportClient = RuntimeTransportClient(),
+                    transportConnector = RuntimeTransportConnector { _, _, _ ->
+                        error("Suggested question should not open direct transport")
+                    },
+                    relayConnector = RuntimeRelayConnector { _, _ ->
+                        error("Suggested question should not open relay transport")
+                    },
+                    discovery = EmptyRuntimeDiscoverySource,
+                    trustedRuntimeStore = FakeTrustedRuntimeStore(),
+                    deviceIdentityProvider = FakeDeviceIdentityProvider(testDeviceIdentity()),
+                    localDataStore = FakeRuntimeLocalDataStore(),
+                    lifecycleCallbacksRegistrar = NoopRuntimeLifecycleCallbacksRegistrar,
+                ),
+            )
+            advanceUntilIdle()
+            viewModel.replaceStateForTest {
+                it.copy(
+                    chatInput = "keep this draft",
+                    isStreaming = true,
+                    error = null,
+                )
+            }
+
+            viewModel.useSuggestedQuestion("  Replace draft?  ")
+
+            assertEquals("keep this draft", viewModel.state.value.chatInput)
+            assertEquals("generation_in_progress", viewModel.state.value.error?.code)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
     @Test
     fun staleReasoningDeltaForDifferentRequestIdIsIgnored() {
         val state = RuntimeUiState(
@@ -6268,6 +6694,85 @@ class RuntimeClientViewModelTest {
 
         assertEquals(partialAssistant, afterPartialError.messages.last())
         assertEquals(reasoningAssistant, afterReasoningDone.messages.last())
+    }
+
+    @Test
+    fun activeStreamTerminationClosesTrailingAssistantReasoningState() {
+        val userMessage = RuntimeChatMessage(id = "user", role = "user", content = "Question")
+        val priorAssistant = RuntimeChatMessage(
+            id = "assistant-prior",
+            role = "assistant",
+            content = "Earlier answer",
+            reasoning = "Older reasoning",
+            isReasoningOpen = true,
+            inlineReasoningPendingTag = "<thi",
+        )
+        val activeAssistant = RuntimeChatMessage(
+            id = "assistant-active",
+            role = "assistant",
+            content = "Partial answer",
+            reasoning = "Active reasoning",
+            isReasoningOpen = true,
+            inlineReasoningPendingTag = "</thi",
+        )
+        val state = RuntimeUiState(
+            messages = listOf(priorAssistant, userMessage, activeAssistant),
+            isConnected = true,
+            isStreaming = true,
+            isLoadingSuggestions = true,
+            activeRequestId = "active-request",
+            runtimeStatus = "connected",
+        )
+
+        val afterDone = state.withChatDone(
+            envelope(
+                type = MessageType.ChatDone,
+                requestId = "active-request",
+                serializer = ChatDonePayload.serializer(),
+                payload = ChatDonePayload(),
+            ),
+            ChatDonePayload(),
+        )
+        val afterCancel = state.withChatCancelAck(
+            envelope(
+                type = MessageType.ChatCancel,
+                requestId = "cancel-request",
+                serializer = ChatCancelPayload.serializer(),
+                payload = ChatCancelPayload(targetRequestId = "active-request"),
+            ),
+            ChatCancelPayload(targetRequestId = "active-request"),
+        )
+        val afterError = state.withRuntimeError(
+            envelope(
+                type = MessageType.Error,
+                requestId = "active-request",
+                serializer = ErrorPayload.serializer(),
+                payload = ErrorPayload(
+                    code = "backend_failed",
+                    message = "Backend failed",
+                    retryable = false,
+                ),
+            ),
+            ErrorPayload(
+                code = "backend_failed",
+                message = "Backend failed",
+                retryable = false,
+            ),
+            pendingModelPullRequestId = null,
+        )
+        val afterReceiveFailure = state.withRuntimeReceiveFailure("socket closed")
+
+        listOf(afterDone, afterCancel, afterError, afterReceiveFailure).forEach { updated ->
+            assertEquals(priorAssistant, updated.messages.first())
+            val trailingAssistant = updated.messages.last()
+            assertEquals("assistant-active", trailingAssistant.id)
+            assertEquals("Partial answer", trailingAssistant.content)
+            assertEquals("Active reasoning", trailingAssistant.reasoning)
+            assertFalse(trailingAssistant.isReasoningOpen)
+            assertEquals("", trailingAssistant.inlineReasoningPendingTag)
+            assertFalse(updated.isStreaming)
+            assertNull(updated.activeRequestId)
+        }
     }
 
     @Test
@@ -6626,7 +7131,7 @@ class RuntimeClientViewModelTest {
     }
 
     @Test
-    fun deviceStorageSnapshotDropsRuntimeOwnedMessageBodiesButKeepsLocalDrafts() {
+    fun deviceStorageSnapshotDropsRuntimeOwnedDataButKeepsLocalDrafts() {
         val data = PersistedRuntimeData()
             .withPersistedMessages(
                 sessionId = "runtime-session",
@@ -6643,9 +7148,21 @@ class RuntimeClientViewModelTest {
                 nowMillis = 200L,
                 runtimeBacked = false,
             )
+            .withRuntimeMemoryEntry(
+                entry = MemoryEntryPayload(
+                    id = "memory-1",
+                    content = "Runtime-owned memory body",
+                    enabled = true,
+                    createdAt = "2026-06-25T00:00:00Z",
+                    updatedAt = "2026-06-25T00:01:00Z",
+                ),
+                nowMillis = 300L,
+            )
 
-        val storageSnapshot = data.withoutRuntimeOwnedMessageBodies()
+        val storageSnapshot = data.withoutRuntimeOwnedLocalData()
 
+        assertEquals(listOf("Runtime-owned memory body"), data.memoryEntries.map { it.content })
+        assertTrue(storageSnapshot.memoryEntries.isEmpty())
         assertTrue(storageSnapshot.sessions.first { it.id == "runtime-session" }.runtimeOwned)
         assertTrue(storageSnapshot.sessions.first { it.id == "runtime-session" }.messages.isEmpty())
         assertEquals(2, runtimeChatSessions(storageSnapshot).first { it.id == "runtime-session" }.messageCount)
@@ -6682,7 +7199,7 @@ class RuntimeClientViewModelTest {
                 nowMillis = 400L,
             )
 
-        val storageSnapshot = data.withoutRuntimeOwnedMessageBodies()
+        val storageSnapshot = data.withoutRuntimeOwnedLocalData()
         val runtimeArchived = storageSnapshot.sessions.first { it.id == "runtime-archived" }
         val localArchived = storageSnapshot.sessions.first { it.id == "local-archived" }
 
@@ -6717,7 +7234,7 @@ class RuntimeClientViewModelTest {
                         ),
                     ),
                 ),
-                redactRuntimeOwnedBodiesOnSave = true,
+                redactRuntimeOwnedLocalDataOnSave = true,
             )
             val trustedStore = FakeEmittingTrustedRuntimeStore(
                 TrustedRuntime(
@@ -7513,6 +8030,54 @@ class RuntimeClientViewModelTest {
     }
 
     @Test
+    fun runtimeLifecycleAckDoesNotMutateLocalOnlySessionWithSameId() {
+        val data = PersistedRuntimeData()
+            .withPersistedMessages(
+                sessionId = "local-collision",
+                messages = listOf(RuntimeChatMessage(role = "user", content = "Keep this local note")),
+                nowMillis = 100L,
+                runtimeBacked = false,
+            )
+        val deleteAck = data.withRuntimeChatSessionLifecycleResult(
+            result = ChatSessionLifecyclePayload(
+                sessionId = "local-collision",
+                status = "deleted",
+                deletedAt = "2026-06-23T09:07:05Z",
+            ),
+            nowMillis = 200L,
+        )
+        val archiveAck = data.withRuntimeChatSessionLifecycleResult(
+            result = ChatSessionLifecyclePayload(
+                sessionId = "local-collision",
+                status = "archived",
+                archivedAt = "2026-06-23T09:08:05Z",
+            ),
+            nowMillis = 300L,
+        )
+        val restoreAck = data
+            .withArchivedChatSession(sessionId = "local-collision", nowMillis = 400L)
+            .withRuntimeChatSessionLifecycleResult(
+                result = ChatSessionLifecyclePayload(
+                    sessionId = "local-collision",
+                    status = "restored",
+                    restoredAt = "2026-06-23T09:09:05Z",
+                ),
+                nowMillis = 500L,
+            )
+
+        assertEquals(listOf("local-collision"), runtimeChatSessions(deleteAck).map { it.id })
+        assertEquals("Keep this local note", activeSessionMessages(deleteAck).single().content)
+        assertTrue(deleteAck.suppressedRuntimeSessions.isEmpty())
+
+        assertEquals(listOf("local-collision"), runtimeChatSessions(archiveAck).map { it.id })
+        assertTrue(archivedRuntimeChatSessions(archiveAck).isEmpty())
+
+        assertTrue(runtimeChatSessions(restoreAck).isEmpty())
+        assertEquals(listOf("local-collision"), archivedRuntimeChatSessions(restoreAck).map { it.id })
+        assertEquals(400L, archivedRuntimeChatSessions(restoreAck).single().archivedAtMillis)
+    }
+
+    @Test
     fun runtimeSessionSummariesClearActiveSessionWhenRuntimeOwnedActiveSessionDisappears() {
         val data = PersistedRuntimeData(
             activeSessionId = "runtime-old",
@@ -7534,6 +8099,38 @@ class RuntimeClientViewModelTest {
 
         assertNull(merged.activeSessionId)
         assertTrue(runtimeChatSessions(merged).isEmpty())
+    }
+
+    @Test
+    fun runtimeMessagesDoNotResurrectSessionMissingFromLatestRuntimeSummary() {
+        val data = PersistedRuntimeData(
+            activeSessionId = "runtime-old",
+            sessions = listOf(
+                PersistedChatSession(
+                    id = "runtime-old",
+                    title = "Old runtime",
+                    createdAtMillis = 10L,
+                    updatedAtMillis = 10L,
+                    runtimeOwned = true,
+                    runtimeMessageCount = 1,
+                ),
+            ),
+        )
+
+        val afterSummarySync = data.withRuntimeChatSessionSummaries(
+            sessions = emptyList(),
+            nowMillis = 100L,
+        )
+        val afterLateMessageSync = afterSummarySync.withRuntimeChatMessages(
+            sessionId = "runtime-old",
+            messages = listOf(ChatStoredMessagePayload(role = "user", content = "Stale runtime prompt")),
+            nowMillis = 200L,
+        )
+
+        assertNull(afterLateMessageSync.activeSessionId)
+        assertTrue(afterLateMessageSync.sessions.none { it.id == "runtime-old" })
+        assertTrue(runtimeChatSessions(afterLateMessageSync).isEmpty())
+        assertTrue(activeSessionMessages(afterLateMessageSync).isEmpty())
     }
 
     @Test
@@ -8216,7 +8813,7 @@ class RuntimeClientViewModelTest {
         try {
             val fixture = createAuthenticatedRuntimeClientFixture(
                 models = listOf(textChatModel()),
-                redactRuntimeOwnedBodiesOnSave = true,
+                redactRuntimeOwnedLocalDataOnSave = true,
             )
             fixture.viewModel.replaceStateForTest {
                 it.copy(chatInput = "Explain runtime-owned chat storage")
@@ -8435,6 +9032,55 @@ class RuntimeClientViewModelTest {
             val state = fixture.viewModel.state.value
             assertEquals(listOf(image), state.pendingAttachments)
             assertNull(state.error)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun streamingBlocksPendingAttachmentMutation() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val documentReference = "content://attachments/notes"
+            val attachmentReader = FakeRuntimeAttachmentReader(
+                mapOf(
+                    documentReference to RuntimeAttachmentFile(
+                        name = "notes.txt",
+                        mimeType = "text/plain",
+                        reportedSizeBytes = 5L,
+                        bytes = "notes".encodeToByteArray(),
+                    ),
+                )
+            )
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                attachmentReader = attachmentReader,
+            )
+            val existingAttachment = textAttachment()
+            fixture.viewModel.replaceStateForTest {
+                it.copy(
+                    isStreaming = true,
+                    pendingAttachments = listOf(existingAttachment),
+                    error = null,
+                )
+            }
+
+            fixture.viewModel.addAttachmentReferences(listOf(documentReference))
+            advanceUntilIdle()
+
+            assertTrue(attachmentReader.metadataRequests.isEmpty())
+            assertTrue(attachmentReader.readRequests.isEmpty())
+            assertEquals(listOf(existingAttachment), fixture.viewModel.state.value.pendingAttachments)
+            assertEquals("generation_in_progress", fixture.viewModel.state.value.error?.code)
+
+            fixture.viewModel.replaceStateForTest { it.copy(error = null) }
+            fixture.viewModel.removePendingAttachment(existingAttachment.id)
+            advanceUntilIdle()
+
+            assertEquals(listOf(existingAttachment), fixture.viewModel.state.value.pendingAttachments)
+            assertEquals("generation_in_progress", fixture.viewModel.state.value.error?.code)
         } finally {
             Dispatchers.resetMain()
         }
@@ -8771,7 +9417,7 @@ class RuntimeClientViewModelTest {
     }
 
     @Test
-    fun chatSendMessagesPrependsCapabilityGuardAndOnlyEnabledMemoryAsSystemContext() {
+    fun chatSendMessagesPrependsCapabilityGuardWithoutClientSuppliedMemoryContext() {
         val messages = listOf(
             RuntimeChatMessage(role = "system", content = "UI-only system"),
             RuntimeChatMessage(role = "user", content = "Hello"),
@@ -8800,11 +9446,10 @@ class RuntimeClientViewModelTest {
         assertEquals(AETHERLINK_RUNTIME_CAPABILITY_GUARD, payloadMessages[0].content)
         assertTrue(payloadMessages[0].content.contains("does not provide live web search"))
         assertTrue(payloadMessages[0].content.contains("Do not claim that you can search the web"))
-        assertEquals("system", payloadMessages[1].role)
-        assertEquals("Runtime user memory:\n- Prefers concise answers", payloadMessages[1].content)
-        assertEquals("user", payloadMessages[2].role)
-        assertEquals("Hello", payloadMessages[2].content)
-        assertEquals(3, payloadMessages.size)
+        assertEquals("user", payloadMessages[1].role)
+        assertEquals("Hello", payloadMessages[1].content)
+        assertTrue(payloadMessages.none { it.content.contains("Runtime user memory:") })
+        assertEquals(2, payloadMessages.size)
     }
 
     @Test
@@ -9051,7 +9696,7 @@ class RuntimeClientViewModelTest {
 
     private class FakeRuntimeLocalDataStore(
         initialData: PersistedRuntimeData = PersistedRuntimeData(),
-        private val redactRuntimeOwnedBodiesOnSave: Boolean = false,
+        private val redactRuntimeOwnedLocalDataOnSave: Boolean = false,
     ) : RuntimeLocalDataStore {
         var data: PersistedRuntimeData = initialData
             private set
@@ -9059,8 +9704,8 @@ class RuntimeClientViewModelTest {
         override fun load(): PersistedRuntimeData = data
 
         override fun save(data: PersistedRuntimeData) {
-            this.data = if (redactRuntimeOwnedBodiesOnSave) {
-                data.withoutRuntimeOwnedMessageBodies()
+            this.data = if (redactRuntimeOwnedLocalDataOnSave) {
+                data.withoutRuntimeOwnedLocalData()
             } else {
                 data
             }
@@ -9156,16 +9801,18 @@ class RuntimeClientViewModelTest {
         models: List<RuntimeModel>,
         modelPayloads: List<ModelInfoPayload> = models.map { it.toModelInfoPayload() },
         selectedModelId: String = models.first().id,
+        selectedEmbeddingModelId: String? = null,
         attachmentReader: RuntimeAttachmentReader? = null,
-        redactRuntimeOwnedBodiesOnSave: Boolean = false,
+        redactRuntimeOwnedLocalDataOnSave: Boolean = false,
     ): RuntimeClientFixture {
         val channel = ScriptedRuntimeProtocolChannel()
         val localStore = FakeRuntimeLocalDataStore(
             initialData = PersistedRuntimeData(
                 selectedModelId = selectedModelId,
+                selectedEmbeddingModelId = selectedEmbeddingModelId,
                 trustedRuntimeAutoReconnectEnabled = false,
             ),
-            redactRuntimeOwnedBodiesOnSave = redactRuntimeOwnedBodiesOnSave,
+            redactRuntimeOwnedLocalDataOnSave = redactRuntimeOwnedLocalDataOnSave,
         )
         val trustedStore = FakeEmittingTrustedRuntimeStore(trustedRuntimeForViewModelTests())
         val viewModel = RuntimeClientViewModel(

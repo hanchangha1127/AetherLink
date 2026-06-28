@@ -1520,6 +1520,40 @@ class AppNavigationTest {
     }
 
     @Test
+    fun chatHistorySearchMatchesResolvedModelDisplayName() {
+        val model = RuntimeModel(
+            id = "runtime-model-opaque-1",
+            name = "Qwen3 8B",
+        )
+        val sessions = listOf(
+            RuntimeChatSession(
+                id = "session-model-display-name",
+                title = "Runtime roadmap",
+                modelId = model.id,
+                updatedAtMillis = 2_000L,
+                messageCount = 4,
+            ),
+            RuntimeChatSession(
+                id = "session-other",
+                title = "Trip plan",
+                modelId = "runtime-model-opaque-2",
+                updatedAtMillis = 1_000L,
+                messageCount = 2,
+            ),
+        )
+
+        assertEquals(
+            listOf("session-model-display-name"),
+            filterChatHistorySessions(
+                sessions = sessions,
+                query = "qwen",
+                untitledTitle = "Untitled chat",
+                models = listOf(model),
+            ).map { it.id },
+        )
+    }
+
+    @Test
     fun chatHistorySessionStatusSummarizesRuntimeProcessingMetadata() {
         fun session(
             lastEvent: String? = null,
@@ -1921,6 +1955,16 @@ class AppNavigationTest {
             memoryActionsEnabled(
                 RuntimeUiState(
                     isConnected = false,
+                    trustedRuntime = trustedRuntime(),
+                ),
+            ),
+        )
+        assertEquals(
+            false,
+            memoryActionsEnabled(
+                RuntimeUiState(
+                    isConnected = true,
+                    isStreaming = true,
                     trustedRuntime = trustedRuntime(),
                 ),
             ),

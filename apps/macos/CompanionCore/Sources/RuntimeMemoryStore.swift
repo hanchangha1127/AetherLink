@@ -35,6 +35,7 @@ public struct RuntimeMemoryDeleteResult: Equatable, Sendable {
 public enum RuntimeMemoryStoreError: Error, LocalizedError, Equatable {
     case emptyContent
     case missingID
+    case corruptEventLog(line: Int, reason: String)
 
     public var errorDescription: String? {
         switch self {
@@ -42,6 +43,8 @@ public enum RuntimeMemoryStoreError: Error, LocalizedError, Equatable {
             return "Memory content must not be empty."
         case .missingID:
             return "Memory id must not be empty."
+        case .corruptEventLog(let line, let reason):
+            return "Runtime memory event log is corrupt at line \(line): \(reason)"
         }
     }
 }
@@ -158,13 +161,67 @@ public final class JSONLRuntimeMemoryStore: RuntimeMemoryStore, @unchecked Senda
         guard !data.isEmpty else { return [] }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        return String(decoding: data, as: UTF8.self)
-            .split(separator: "\n")
-            .compactMap { line in
-                guard let lineData = line.data(using: .utf8) else { return nil }
-                return try? decoder.decode(RuntimeMemoryStoredEvent.self, from: lineData)
+        let lines = String(decoding: data, as: UTF8.self)
+            .components(separatedBy: .newlines)
+        var events: [RuntimeMemoryStoredEvent] = []
+        for (index, line) in lines.enumerated() {
+            guard !line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                continue
             }
-            .sorted { $0.timestamp < $1.timestamp }
+            do {
+                let event = try decoder.decode(RuntimeMemoryStoredEvent.self, from: Data(line.utf8))
+                try Self.validateStoredEvent(event, line: index + 1)
+                events.append(event)
+            } catch {
+                if let storeError = error as? RuntimeMemoryStoreError {
+                    throw storeError
+                }
+                throw RuntimeMemoryStoreError.corruptEventLog(
+                    line: index + 1,
+                    reason: Self.decodeFailureReason(error)
+                )
+            }
+        }
+        return events.sorted { $0.timestamp < $1.timestamp }
+    }
+
+    private static func decodeFailureReason(_ error: Error) -> String {
+        if let decodingError = error as? DecodingError {
+            switch decodingError {
+            case .dataCorrupted:
+                return "data corrupted"
+            case .keyNotFound(let key, _):
+                return "missing key '\(key.stringValue)'"
+            case .typeMismatch(let type, _):
+                return "type mismatch for \(type)"
+            case .valueNotFound(let type, _):
+                return "missing value for \(type)"
+            @unknown default:
+                return "decode failed"
+            }
+        }
+        return "decode failed"
+    }
+
+    private static func validateStoredEvent(_ event: RuntimeMemoryStoredEvent, line: Int) throws {
+        guard !event.id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw RuntimeMemoryStoreError.corruptEventLog(
+                line: line,
+                reason: "memory event id is empty"
+            )
+        }
+        switch event.kind {
+        case .upsert:
+            guard let content = event.content?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !content.isEmpty else {
+                throw RuntimeMemoryStoreError.corruptEventLog(
+                    line: line,
+                    reason: "memory upsert content is empty"
+                )
+            }
+        case .delete:
+            break
+        }
     }
 
     private func appendUnlocked(_ event: RuntimeMemoryStoredEvent) throws {

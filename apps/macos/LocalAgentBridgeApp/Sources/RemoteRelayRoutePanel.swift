@@ -22,7 +22,7 @@ struct RemoteRelayRoutePanel: View {
     @State private var messageTone = StatusTone.neutral
     @State private var diagnosticMessage: String?
     @State private var isAdvancedRouteSettingsExpanded = false
-    @State private var isDisableConnectionConfirmationPresented = false
+    @State private var isRemoveSavedConnectionDetailsConfirmationPresented = false
 
     var body: some View {
         CompanionPanel(title: NSLocalizedString("Advanced Connection Setup", comment: ""), systemImage: "point.3.connected.trianglepath.dotted") {
@@ -39,6 +39,10 @@ struct RemoteRelayRoutePanel: View {
                         .font(.caption)
                         .foregroundStyle(messageTone.color)
                         .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(
+                            Text(connectionRecoveryResultAccessibilityLabel(message: message, tone: messageTone))
+                        )
                 }
 
                 if let diagnosticMessage {
@@ -58,17 +62,31 @@ struct RemoteRelayRoutePanel: View {
             syncFromModel()
         }
         .confirmationDialog(
-            NSLocalizedString("Disable saved connection details?", comment: ""),
-            isPresented: $isDisableConnectionConfirmationPresented,
+            NSLocalizedString("Remove saved connection details?", comment: ""),
+            isPresented: $isRemoveSavedConnectionDetailsConfirmationPresented,
             titleVisibility: .visible
         ) {
-            Button(NSLocalizedString("Disable Connection", comment: ""), role: .destructive) {
+            Button(NSLocalizedString("Remove Saved Connection Details", comment: ""), role: .destructive) {
                 model.clearDevelopmentRelay()
                 syncFromModel()
-                message = NSLocalizedString("Advanced connection disabled.", comment: "")
+                message = NSLocalizedString("Saved connection details removed.", comment: "")
                 messageTone = .neutral
             }
+            .accessibilityLabel(
+                Text(
+                    removeSavedConnectionDetailsAccessibilityLabel(
+                        endpoint: model.developmentRelaySettings.endpointLabel
+                    )
+                )
+            )
             Button(NSLocalizedString("Cancel", comment: ""), role: .cancel) {}
+                .accessibilityLabel(
+                    Text(
+                        cancelRemoveSavedConnectionDetailsAccessibilityLabel(
+                            endpoint: model.developmentRelaySettings.endpointLabel
+                        )
+                    )
+                )
         } message: {
             Text(NSLocalizedString("Saved connection details will be removed. Devices on another network may need a fresh pairing QR before they can reconnect.", comment: ""))
         }
@@ -159,7 +177,7 @@ struct RemoteRelayRoutePanel: View {
                         }
                         .buttonStyle(.bordered)
                         .help(connectionRecoverySaveBootstrapRelayActionAccessibilityHint())
-                        .accessibilityValue(Text(NSLocalizedString("Ready", comment: "")))
+                        .accessibilityValue(Text(connectionRecoverySaveBootstrapRelayActionAccessibilityValue(endpoints: bootstrapEndpoints)))
                         .accessibilityHint(Text(connectionRecoverySaveBootstrapRelayActionAccessibilityHint()))
                     }
 
@@ -229,12 +247,12 @@ struct RemoteRelayRoutePanel: View {
 
                         if settings.isEnabled {
                             Button(role: .destructive) {
-                                isDisableConnectionConfirmationPresented = true
+                                isRemoveSavedConnectionDetailsConfirmationPresented = true
                             } label: {
-                                Label(NSLocalizedString("Disable Connection", comment: ""), systemImage: "xmark.circle")
+                                Label(NSLocalizedString("Remove Saved Connection Details", comment: ""), systemImage: "xmark.circle")
                             }
                             .buttonStyle(.bordered)
-                            .accessibilityLabel(Text(disableConnectionAccessibilityLabel(endpoint: settings.endpointLabel)))
+                            .accessibilityLabel(Text(removeSavedConnectionDetailsAccessibilityLabel(endpoint: settings.endpointLabel)))
                         }
                     }
                 }
@@ -559,7 +577,7 @@ struct RemoteRelayRoutePanel: View {
     private func relaySaveMessage(for result: CompanionRelayConfigurationResult, fallback: String) -> String {
         switch result {
         case .disabled:
-            return NSLocalizedString("Advanced connection disabled.", comment: "")
+            return NSLocalizedString("Saved connection details removed.", comment: "")
         case .savedStatic:
             return fallback
         case .allocated:
@@ -675,6 +693,28 @@ func routeDiagnosticDisclosureAccessibilityHint() -> String {
     NSLocalizedString("Show or hide connection diagnostic details.", comment: "")
 }
 
+func connectionRecoveryResultAccessibilityLabel(message: String, tone: StatusTone) -> String {
+    let resolvedMessage = message.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        ?? NSLocalizedString("No details available.", comment: "")
+    let status: String
+    switch tone {
+    case .ready:
+        status = NSLocalizedString("Ready", comment: "")
+    case .warning:
+        status = NSLocalizedString("Needs attention", comment: "")
+    case .inactive:
+        status = NSLocalizedString("Not ready", comment: "")
+    case .neutral:
+        status = NSLocalizedString("Pending", comment: "")
+    }
+    return String(
+        format: NSLocalizedString("%@. Status %@. %@", comment: ""),
+        NSLocalizedString("Connection Recovery result", comment: ""),
+        status,
+        resolvedMessage
+    )
+}
+
 func relayStatusRowAccessibilityLabel(title: String, value: String, detail: String) -> String {
     let resolvedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
         ?? NSLocalizedString("Connection setting", comment: "")
@@ -690,13 +730,24 @@ func relayStatusRowAccessibilityLabel(title: String, value: String, detail: Stri
     )
 }
 
-func disableConnectionAccessibilityLabel(endpoint: String?) -> String {
+func removeSavedConnectionDetailsAccessibilityLabel(endpoint: String?) -> String {
     let trimmedEndpoint = endpoint?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     let resolvedEndpoint = trimmedEndpoint.isEmpty
         ? NSLocalizedString("saved connection", comment: "")
         : trimmedEndpoint
     return String(
-        format: NSLocalizedString("Disable saved connection details for %@", comment: ""),
+        format: NSLocalizedString("Remove saved connection details for %@", comment: ""),
+        resolvedEndpoint
+    )
+}
+
+func cancelRemoveSavedConnectionDetailsAccessibilityLabel(endpoint: String?) -> String {
+    let trimmedEndpoint = endpoint?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    let resolvedEndpoint = trimmedEndpoint.isEmpty
+        ? NSLocalizedString("saved connection", comment: "")
+        : trimmedEndpoint
+    return String(
+        format: NSLocalizedString("Cancel removing saved connection details for %@", comment: ""),
         resolvedEndpoint
     )
 }
@@ -744,6 +795,12 @@ func connectionRecoveryGenerateLatestQRActionAccessibilityHint(
 
 func connectionRecoverySaveBootstrapRelayActionAccessibilityHint() -> String {
     NSLocalizedString("Save bootstrap relay settings for future pairing QR connection details.", comment: "")
+}
+
+func connectionRecoverySaveBootstrapRelayActionAccessibilityValue(endpoints: String) -> String {
+    endpoints.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        ? NSLocalizedString("Will remove saved bootstrap relay", comment: "")
+        : NSLocalizedString("Ready", comment: "")
 }
 
 func connectionRecoverySaveConnectionActionAccessibilityHint() -> String {

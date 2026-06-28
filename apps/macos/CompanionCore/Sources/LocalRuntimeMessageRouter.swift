@@ -502,14 +502,15 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
     private func handleChatSend(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) async {
         var storageContext: RuntimeChatStorageContext?
         do {
-            let clientRequest = try chatRequest(from: envelope)
+            let parsedClientRequest = try parsedChatRequest(from: envelope)
+            let clientRequest = parsedClientRequest.request
             let locale = optionalString("locale", in: envelope.payload)
             storageContext = RuntimeChatStorageContext(
                 requestID: envelope.requestID,
                 sessionID: clientRequest.sessionID,
                 model: clientRequest.model
             )
-            let storedMessages = Self.chatStorageMessages(from: clientRequest.messages)
+            let storedMessages = Self.chatStorageMessages(from: parsedClientRequest.storageMessages)
             let guardedRequest = Self.chatRequestWithRuntimeCapabilityGuard(clientRequest)
             let memoryEntries: [RuntimeMemoryEntry]
             do {
@@ -814,7 +815,11 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
 
     private func handleChatSessionsList(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) {
         do {
-            let limit = optionalInt("limit", in: envelope.payload).map { min(max($0, 1), 200) } ?? 100
+            let limit = boundedWindowLimit(
+                optionalInt("limit", in: envelope.payload),
+                defaultLimit: 100,
+                maxLimit: 200
+            )
             let includeArchived = optionalBool("include_archived", in: envelope.payload) ?? false
             let sessions = try chatEventStore.listSessions(limit: limit, includeArchived: includeArchived)
             sink.send(ProtocolEnvelope(
@@ -854,7 +859,11 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
     private func handleChatMessagesList(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) {
         do {
             let sessionID = try requiredString("session_id", in: envelope.payload)
-            let limit = optionalInt("limit", in: envelope.payload).map { min(max($0, 1), 500) } ?? 200
+            let limit = boundedWindowLimit(
+                optionalInt("limit", in: envelope.payload),
+                defaultLimit: 200,
+                maxLimit: 500
+            )
             let messages = try chatEventStore.listMessages(sessionID: sessionID, limit: limit)
             sink.send(ProtocolEnvelope(
                 type: MessageType.chatMessagesList,
@@ -1023,6 +1032,10 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
     }
 
     private func chatRequest(from envelope: ProtocolEnvelope) throws -> ChatRequest {
+        try parsedChatRequest(from: envelope).request
+    }
+
+    private func parsedChatRequest(from envelope: ProtocolEnvelope) throws -> RuntimeParsedChatRequest {
         let sessionID = try requiredString("session_id", in: envelope.payload)
         let model = try requiredString("model", in: envelope.payload)
         let messagesValue = try requiredValue("messages", in: envelope.payload)
@@ -1030,27 +1043,36 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
             throw LocalRuntimeRouterError.invalidPayload("messages must be an array")
         }
 
-        let messages = try messageValues.map { value -> ChatMessage in
+        let parsedMessages = try messageValues.map { value -> RuntimeParsedChatMessage in
             guard case .object(let object) = value else {
                 throw LocalRuntimeRouterError.invalidPayload("Each message must be an object")
             }
+            let role = try requiredString("role", in: object)
+            let baseContent = try requiredString("content", in: object)
             let parsedAttachments = try chatAttachments(from: object)
             let processed = try processChatAttachments(parsedAttachments)
-            return ChatMessage(
-                role: try requiredString("role", in: object),
-                content: content(
-                    try requiredString("content", in: object),
-                    appending: processed.promptText
+            return RuntimeParsedChatMessage(
+                backendMessage: ChatMessage(
+                    role: role,
+                    content: content(baseContent, appending: processed.promptText),
+                    attachments: processed.preservedAttachments
                 ),
-                attachments: processed.preservedAttachments
+                storageMessage: ChatMessage(
+                    role: role,
+                    content: baseContent,
+                    attachments: processed.preservedAttachments
+                ),
             )
         }
 
-        return ChatRequest(
-            generationID: envelope.requestID,
-            sessionID: sessionID,
-            model: model,
-            messages: messages
+        return RuntimeParsedChatRequest(
+            request: ChatRequest(
+                generationID: envelope.requestID,
+                sessionID: sessionID,
+                model: model,
+                messages: parsedMessages.map(\.backendMessage)
+            ),
+            storageMessages: parsedMessages.map(\.storageMessage)
         )
     }
 
@@ -1414,9 +1436,17 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
     }
 
     private static func chatStorageMessages(from messages: [ChatMessage]) -> [ChatMessage] {
-        messages.filter { message in
-            !message.isAetherLinkCapabilityGuard && !message.isRuntimeUserMemoryContext
-        }
+        messages
+            .filter { message in
+                !message.isAetherLinkCapabilityGuard && !message.isRuntimeUserMemoryContext
+            }
+            .map { message in
+                ChatMessage(
+                    role: message.role,
+                    content: message.content,
+                    attachments: message.attachments.map(\.withoutInlineDataForStorage)
+                )
+            }
     }
 
     private static func chatRequestWithRuntimeMemory(
@@ -1770,6 +1800,16 @@ private struct RuntimeChatStorageContext {
     var model: String
 }
 
+private struct RuntimeParsedChatRequest {
+    var request: ChatRequest
+    var storageMessages: [ChatMessage]
+}
+
+private struct RuntimeParsedChatMessage {
+    var backendMessage: ChatMessage
+    var storageMessage: ChatMessage
+}
+
 private extension RuntimeChatSessionMutation {
     var messageType: String {
         switch self {
@@ -1849,7 +1889,7 @@ private enum LocalRuntimeRouterError: Error, LocalizedError {
         case .chatStoreUnavailable(let message):
             return "The runtime could not access chat history on this host: \(message)"
         case .memoryStoreUnavailable(let message):
-            return "The runtime could not save memory information on this host: \(message)"
+            return "The runtime could not access memory on this host: \(message)"
         }
     }
 }
@@ -1997,6 +2037,16 @@ private extension ChatAttachment {
         let normalizedType = type.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let normalizedMimeType = mimeType.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         return normalizedType == "image" || normalizedMimeType.hasPrefix("image/")
+    }
+
+    var withoutInlineDataForStorage: ChatAttachment {
+        ChatAttachment(
+            type: type,
+            mimeType: mimeType,
+            name: name,
+            dataBase64: nil,
+            text: text
+        )
     }
 }
 
@@ -2236,6 +2286,11 @@ private func optionalInt(_ key: String, in payload: [String: JSONValue]) -> Int?
     default:
         return nil
     }
+}
+
+private func boundedWindowLimit(_ value: Int?, defaultLimit: Int, maxLimit: Int) -> Int {
+    guard let value else { return defaultLimit }
+    return min(max(value, 0), maxLimit)
 }
 
 private func optionalBool(_ key: String, in payload: [String: JSONValue]) -> Bool? {

@@ -16,6 +16,8 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
@@ -68,11 +70,16 @@ class PairingQrScannerChromeNoDeviceComposeTest {
             currentExpectation.value = expected
             compose.waitForIdle()
 
-            compose.onNodeWithText(expected.title).assertIsDisplayed()
-            compose.onNodeWithText(expected.permissionTitle).assertIsDisplayed()
+            compose.onNodeWithText(expected.title)
+                .assertIsDisplayed()
+                .assert(hasHeading())
+            compose.onNodeWithText(expected.permissionTitle)
+                .assertIsDisplayed()
+                .assert(hasHeading())
             compose.onNodeWithText(expected.permissionDetail).assertIsDisplayed()
             compose.onAllNodesWithTag(CAMERA_PREVIEW_TAG).assertCountEquals(0)
             compose.onAllNodesWithContentDescription(expected.flashlightOn).assertCountEquals(0)
+            compose.onNodeWithContentDescription(expected.closeScanner).assertIsDisplayed()
             compose.onNodeWithText(expected.cancel).assertIsDisplayed()
 
             hapticFeedback.events.clear()
@@ -120,11 +127,16 @@ class PairingQrScannerChromeNoDeviceComposeTest {
             currentExpectation.value = expected
             compose.waitForIdle()
 
-            compose.onNodeWithText(expected.title).assertIsDisplayed()
-            compose.onNodeWithText(expected.blockedPermissionTitle).assertIsDisplayed()
+            compose.onNodeWithText(expected.title)
+                .assertIsDisplayed()
+                .assert(hasHeading())
+            compose.onNodeWithText(expected.blockedPermissionTitle)
+                .assertIsDisplayed()
+                .assert(hasHeading())
             compose.onNodeWithText(expected.blockedPermissionDetail).assertIsDisplayed()
             compose.onAllNodesWithTag(CAMERA_PREVIEW_TAG).assertCountEquals(0)
             compose.onAllNodesWithContentDescription(expected.flashlightOn).assertCountEquals(0)
+            compose.onNodeWithContentDescription(expected.closeScanner).assertIsDisplayed()
             compose.onNodeWithText(expected.cancel).assertIsDisplayed()
 
             hapticFeedback.events.clear()
@@ -183,9 +195,12 @@ class PairingQrScannerChromeNoDeviceComposeTest {
             torchEnabled.value = false
             compose.waitForIdle()
 
-            compose.onNodeWithText(expected.title).assertIsDisplayed()
+            compose.onNodeWithText(expected.title)
+                .assertIsDisplayed()
+                .assert(hasHeading())
             compose.onNodeWithText(expected.detail).assertIsDisplayed()
             compose.onNodeWithTag(CAMERA_PREVIEW_TAG).assertIsDisplayed()
+            compose.onNodeWithContentDescription(expected.closeScanner).assertIsDisplayed()
             compose.onNodeWithTag(PAIRING_QR_FLASHLIGHT_BUTTON_TEST_TAG, useUnmergedTree = true)
                 .assert(hasStateDescription(expected.flashlightStateOff))
 
@@ -250,6 +265,7 @@ class PairingQrScannerChromeNoDeviceComposeTest {
                 flashlightStateOff = localizedContext.getString(
                     R.string.qr_scanner_flashlight_state_off
                 ),
+                closeScanner = localizedContext.getString(R.string.qr_scanner_close_action),
                 cancel = localizedContext.getString(R.string.cancel),
             )
         }
@@ -261,6 +277,10 @@ class PairingQrScannerChromeNoDeviceComposeTest {
         configuration.setLocale(locale)
         configuration.setLocales(LocaleList(locale))
         return createConfigurationContext(configuration)
+    }
+
+    private fun hasHeading(): SemanticsMatcher {
+        return SemanticsMatcher.expectValue(SemanticsProperties.Heading, Unit)
     }
 
     private class RecordingHapticFeedback : HapticFeedback {
@@ -285,6 +305,7 @@ class PairingQrScannerChromeNoDeviceComposeTest {
         val flashlightOff: String,
         val flashlightStateOn: String,
         val flashlightStateOff: String,
+        val closeScanner: String,
         val cancel: String,
     )
 

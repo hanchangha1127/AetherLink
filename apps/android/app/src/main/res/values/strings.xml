@@ -23,6 +23,7 @@
     <string name="clear_chat_search_named">Clear chat search for %1$s</string>
     <string name="no_chat_search_results">No matching chats.</string>
     <string name="untitled_chat">Untitled chat</string>
+    <string name="chat_top_bar_active_title_summary">Current chat %1$s</string>
     <plurals name="chat_message_count">
         <item quantity="one">%1$d message</item>
         <item quantity="other">%1$d messages</item>
@@ -34,8 +35,11 @@
     <string name="chat_session_status_in_progress">In progress</string>
     <string name="chat_session_more">Chat options</string>
     <string name="chat_session_more_named">Chat options for %1$s</string>
+    <string name="chat_session_model_value">Model: %1$s</string>
     <string name="chat_session_row_summary">Chat %1$s. %2$s.</string>
+    <string name="chat_session_row_summary_with_model">Chat %1$s. %2$s. %3$s.</string>
     <string name="chat_session_row_summary_selected">Selected chat %1$s. %2$s.</string>
+    <string name="chat_session_row_summary_selected_with_model">Selected chat %1$s. %2$s. %3$s.</string>
     <string name="rename_chat">Rename chat</string>
     <string name="rename_chat_named">Rename chat %1$s</string>
     <string name="archive">Archive</string>
@@ -72,6 +76,7 @@
     <string name="continue_action">Continue</string>
     <string name="confirmation_continue_action_named">Continue: %1$s</string>
     <string name="confirmation_final_action_named">Confirm: %1$s</string>
+    <string name="confirmation_cancel_action_named">Cancel: %1$s</string>
     <string name="chat_title_label">Chat title</string>
     <string name="rename_chat_title_state_empty">Enter a title before saving.</string>
     <string name="rename_chat_title_state_ready">Ready to save.</string>
@@ -92,6 +97,7 @@
     <string name="scan_latest_qr_state_ready">Ready to scan the latest QR.</string>
     <string name="qr_scanner_title">Scan AetherLink QR</string>
     <string name="qr_scanner_detail">Point the camera at the latest AetherLink Runtime QR. The QR must verify AetherLink Runtime and include a connection both devices can reach.</string>
+    <string name="qr_scanner_close_action">Close QR scanner</string>
     <string name="qr_scanner_permission_title">Camera access is needed</string>
     <string name="qr_scanner_permission_detail">AetherLink uses the camera only to scan pairing QR codes.</string>
     <string name="qr_scanner_permission_action">Allow camera</string>
@@ -142,6 +148,8 @@
     <string name="forget_trusted_runtime_confirm_title">Forget trusted runtime?</string>
     <string name="forget_trusted_runtime_confirm_message">Remove the saved trusted runtime from this device? Model access stays behind AetherLink Runtime until you pair again.</string>
     <string name="forget_trusted_runtime_confirm_action">Forget runtime</string>
+    <string name="forget_trusted_runtime_confirm_action_named">Confirm forgetting trusted runtime %1$s</string>
+    <string name="forget_trusted_runtime_cancel_action_named">Cancel forgetting trusted runtime %1$s</string>
     <string name="usb_reverse">USB connection</string>
     <string name="emulator">Emulator connection</string>
     <string name="runtime_host">Connection address</string>
@@ -240,6 +248,8 @@
     <string name="models_subtitle">Choose a model exposed by AetherLink Runtime.</string>
     <string name="load_models">Refresh models</string>
     <string name="selected_model">Selected model</string>
+    <string name="drawer_runtime_summary_accessibility">Runtime %1$s. Status: %2$s. Selected model: %3$s.</string>
+    <string name="drawer_runtime_summary_accessibility_with_detail">Runtime %1$s. Status: %2$s. Selected model: %3$s. %4$s</string>
     <string name="selection_state_selected">Selected</string>
     <string name="model_unavailable">Model unavailable</string>
     <string name="selected_model_unavailable">Selected model is missing from the runtime list. Refresh or choose another.</string>
@@ -264,6 +274,7 @@
     <string name="model_size_value">Size: %1$s</string>
     <string name="install_model">Install model</string>
     <string name="installing_model">Installing...</string>
+    <string name="model_picker_empty_state_summary">%1$s. %2$s</string>
     <string name="no_models_connected_title">No models loaded</string>
     <string name="no_models_connected">Load models through AetherLink Runtime.</string>
     <string name="no_models_disconnected_title">Runtime required</string>
@@ -291,6 +302,11 @@
     <string name="cancel">Cancel</string>
     <string name="attach_files">Attach files</string>
     <string name="attach_files_state_ready">Ready to attach files.</string>
+    <plurals name="attach_files_state_count">
+        <item quantity="one">%1$d of %2$d file attached.</item>
+        <item quantity="other">%1$d of %2$d files attached.</item>
+    </plurals>
+    <string name="attach_files_state_limit_reached">%1$d of %2$d files attached. Attachment limit reached.</string>
     <string name="attach_files_state_unavailable">Attachments unavailable.</string>
     <string name="remove_attachment">Remove attachment</string>
     <string name="attachment_type_image">Image</string>
@@ -333,18 +349,25 @@
     <string name="chat_hint_wait_for_stream">Wait for the current response or cancel it.</string>
     <string name="chat_hint_enter_message">Enter a message to send.</string>
     <string name="chat_hint_ready">Ready to send.</string>
+    <string name="chat_hint_ready_with_attachments">Ready to send. %1$s</string>
     <string name="role_user">You</string>
     <string name="role_assistant">Assistant</string>
     <string name="role_assistant_initial">A</string>
+    <string name="chat_message_accessibility_summary">%1$s: %2$s</string>
     <string name="assistant_typing">Generating...</string>
     <string name="assistant_reasoning_label">Thinking</string>
     <string name="assistant_reasoning_summary">%1$s. %2$s. %3$s</string>
     <string name="assistant_reasoning_show">Show thinking</string>
     <string name="assistant_reasoning_hide">Hide thinking</string>
     <string name="suggested_next_questions">Next questions</string>
+    <plurals name="suggested_questions_state_count">
+        <item quantity="one">%1$d suggested next question available.</item>
+        <item quantity="other">%1$d suggested next questions available.</item>
+    </plurals>
     <string name="generating_suggestions">Generating next questions...</string>
     <string name="content_desc_suggested_question">Suggested question: %1$s</string>
     <string name="action_use_suggested_question">Insert suggested question</string>
+    <string name="suggested_question_state_wait_for_stream">Wait for the current response before using a suggested question.</string>
     <string name="copy_message">Copy message</string>
     <string name="copy_code_block">Copy code block</string>
     <string name="copy_code_block_named">Copy %1$s code block %2$d</string>
@@ -357,6 +380,7 @@
     <string name="companion_only_detail">AetherLink keeps model access on the trusted runtime. This device controls the session.</string>
     <string name="preferences_title">Preferences</string>
     <string name="preference_option_accessibility_summary">%1$s: %2$s</string>
+    <string name="preference_option_action_select">Select %1$s</string>
     <string name="appearance_title">Appearance</string>
     <string name="appearance_system">Follows system</string>
     <string name="appearance_light">Light</string>
@@ -389,6 +413,7 @@
     <string name="memory_add">Add Memory</string>
     <string name="memory_add_state_enter_memory">Enter a memory before adding.</string>
     <string name="memory_add_state_ready">Ready to add memory.</string>
+    <string name="memory_action_state_wait_for_stream">Wait for the current response before changing memory.</string>
     <string name="memory_empty">No memories saved yet.</string>
     <string name="memory_empty_disconnected">Connect to the trusted runtime to load saved memory.</string>
     <string name="memory_connect_to_load">Connect to the trusted runtime to load and manage memory.</string>
@@ -455,7 +480,7 @@
     <string name="error_receive_failed">AetherLink Runtime connection closed.</string>
     <string name="error_remote_route_auth_failed">Connection could not be verified. Scan the latest AetherLink QR and try again.</string>
     <string name="error_generation_cancelled">Generation cancelled.</string>
-    <string name="error_generation_in_progress">Wait for the current response or cancel it before switching chats.</string>
+    <string name="error_generation_in_progress">Wait for the current response or cancel it before making changes.</string>
     <string name="error_chat_session_not_found">This chat could not be found.</string>
     <string name="error_chat_session_must_be_archived_before_delete">Archive this chat before permanently deleting it.</string>
     <string name="error_chat_session_sync_failed">Could not sync this chat change with AetherLink Runtime.</string>

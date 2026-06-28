@@ -67,8 +67,11 @@ REQUIRED_APPEARANCE_KEYS = (
     "Dark",
 )
 REQUIRED_CONNECTION_SAFETY_KEYS = (
-    "Disable saved connection details?",
-    "Disable saved connection details for %@",
+    "Remove Saved Connection Details",
+    "Remove saved connection details?",
+    "Remove saved connection details for %@",
+    "Cancel removing saved connection details for %@",
+    "Saved connection details removed.",
     "Saved connection details will be removed. Devices on another network may need a fresh pairing QR before they can reconnect.",
 )
 REQUIRED_ACTIVITY_REDACTION_KEYS = (
@@ -83,9 +86,11 @@ REQUIRED_TRUSTED_DEVICE_KEYS = (
     "Key fingerprint %@",
     "%@ will need to pair again before it can use AetherLink Runtime. Key fingerprint %@",
     "Selected device",
+    "Cancel removing trust for %@. Key fingerprint %@",
 )
 REQUIRED_REMOTE_ROUTE_PREPARATION_KEYS = (
     "Connection Recovery result",
+    "%@. Status %@. %@",
     "Connection health",
     "Connection preparation",
     "Connection diagnostics",
@@ -502,11 +507,25 @@ def check_app_appearance_wiring() -> list[str]:
         "func sidebarBrandAccessibilityLabel() -> String",
         ".accessibilityValue(Text(AetherLinkAppAppearance.normalized(appearance).title))",
         ".accessibilityValue(Text(AetherLinkAppLanguage.normalized(languageTag).title))",
+        ".accessibilityHint(Text(appAppearancePickerAccessibilityHint()))",
+        ".accessibilityHint(Text(appLanguagePickerAccessibilityHint()))",
+        "Choose how AetherLink Runtime appears. This setting is saved for future launches.",
+        "Choose the app language. This setting is saved for future launches.",
     )
 
     return [
         *missing_source_snippets(APP_ENTRY_SOURCE, app_entry_snippets, "macOS app appearance wiring"),
         *missing_source_snippets(APP_CONTENT_SOURCE, content_view_snippets, "macOS sidebar appearance wiring"),
+        *missing_source_snippets(
+            LOCALIZATION_TEST_SOURCE,
+            (
+                "testSidebarPreferencePickerAccessibilityHintsUseSelectedLanguage",
+                "appAppearancePickerAccessibilityHint()",
+                "appLanguagePickerAccessibilityHint()",
+                "This setting is saved for future launches.",
+            ),
+            "macOS sidebar preference picker accessibility hint tests",
+        ),
     ]
 
 
@@ -514,6 +533,7 @@ def check_companion_page_header_accessibility() -> list[str]:
     companion_chrome_snippets = (
         ".accessibilityElement(children: .ignore)",
         ".accessibilityLabel(Text(companionPageHeaderAccessibilityLabel(title: title, subtitle: subtitle)))",
+        ".accessibilityAddTraits(.isHeader)",
         "func companionPageHeaderAccessibilityLabel(title: String, subtitle: String) -> String",
         "NSLocalizedString(\"%@. %@\"",
     )
@@ -522,6 +542,20 @@ def check_companion_page_header_accessibility() -> list[str]:
         COMPANION_CHROME_SOURCE,
         companion_chrome_snippets,
         "macOS page header accessibility wiring",
+    )
+
+
+def check_companion_panel_header_accessibility() -> list[str]:
+    companion_chrome_snippets = (
+        ".accessibilityLabel(Text(companionPanelHeaderAccessibilityLabel(title: title)))",
+        ".accessibilityAddTraits(.isHeader)",
+        "func companionPanelHeaderAccessibilityLabel(title: String) -> String",
+    )
+
+    return missing_source_snippets(
+        COMPANION_CHROME_SOURCE,
+        companion_chrome_snippets,
+        "macOS panel header accessibility wiring",
     )
 
 
@@ -534,6 +568,9 @@ def check_companion_empty_state_accessibility() -> list[str]:
         ".accessibilityLabel(\n                            Text(\n                                companionEmptyStateAccessibilityLabel(",
         "emptyModelsTitle",
         "emptyModelsDescription",
+        "emptyModelProvidersTitle",
+        "emptyModelProvidersDescription",
+        "ContentUnavailableView(\n                            emptyModelProvidersTitle,",
         "emptyPairingTitle",
         "emptyPairingDescription",
         "emptyTrustedDevicesTitle",
@@ -550,7 +587,7 @@ def check_companion_empty_state_accessibility() -> list[str]:
         ),
         *missing_source_snippets(
             STATUS_VIEW_SOURCE,
-            empty_state_source_snippets[:3],
+            empty_state_source_snippets[:6],
             "macOS Status empty state accessibility wiring",
         ),
         *missing_source_snippets(
@@ -663,18 +700,31 @@ def check_remote_connection_destructive_confirmation() -> list[str]:
     failures.extend(missing_source_snippets(
         REMOTE_RELAY_ROUTE_PANEL_SOURCE,
         (
-            "@State private var isDisableConnectionConfirmationPresented = false",
-            "isDisableConnectionConfirmationPresented = true",
-            '.confirmationDialog(\n            NSLocalizedString("Disable saved connection details?", comment: "")',
+            "@State private var isRemoveSavedConnectionDetailsConfirmationPresented = false",
+            "isRemoveSavedConnectionDetailsConfirmationPresented = true",
+            '.confirmationDialog(\n            NSLocalizedString("Remove saved connection details?", comment: "")',
             "model.clearDevelopmentRelay()",
-            'Button(NSLocalizedString("Disable Connection", comment: ""), role: .destructive)',
-            ".accessibilityLabel(Text(disableConnectionAccessibilityLabel(endpoint: settings.endpointLabel)))",
-            "func disableConnectionAccessibilityLabel(endpoint: String?) -> String",
-            "Disable saved connection details for %@",
+            'Button(NSLocalizedString("Remove Saved Connection Details", comment: ""), role: .destructive)',
+            ".accessibilityLabel(\n                Text(\n                    removeSavedConnectionDetailsAccessibilityLabel(",
+            ".accessibilityLabel(Text(removeSavedConnectionDetailsAccessibilityLabel(endpoint: settings.endpointLabel)))",
+            "func removeSavedConnectionDetailsAccessibilityLabel(endpoint: String?) -> String",
+            "Remove saved connection details for %@",
             'Button(NSLocalizedString("Cancel", comment: ""), role: .cancel)',
+            ".accessibilityLabel(\n                    Text(\n                        cancelRemoveSavedConnectionDetailsAccessibilityLabel(",
+            "func cancelRemoveSavedConnectionDetailsAccessibilityLabel(endpoint: String?) -> String",
+            "Cancel removing saved connection details for %@",
             'Text(NSLocalizedString("Saved connection details will be removed. Devices on another network may need a fresh pairing QR before they can reconnect.", comment: ""))',
         ),
         "macOS remote connection destructive confirmation",
+    ))
+    failures.extend(missing_source_snippets(
+        LOCALIZATION_TEST_SOURCE,
+        (
+            "testRemoveSavedConnectionDetailsAccessibilityLabelUsesRouteContext",
+            "testCancelRemoveSavedConnectionDetailsAccessibilityLabelUsesRouteContext",
+            "cancelRemoveSavedConnectionDetailsAccessibilityLabel(",
+        ),
+        "macOS remote connection destructive confirmation localization tests",
     ))
     failures.extend(missing_source_snippets(
         REMOTE_RELAY_ROUTE_PANEL_SOURCE,
@@ -685,6 +735,10 @@ def check_remote_connection_destructive_confirmation() -> list[str]:
             "routeDiagnosticDisclosureAccessibilityLabel(context: accessibilityContext)",
             "routeDiagnosticDisclosureAccessibilityValue(isExpanded: isExpanded)",
             "routeDiagnosticDisclosureAccessibilityHint()",
+            "connectionRecoveryResultAccessibilityLabel(message: message, tone: messageTone)",
+            "func connectionRecoveryResultAccessibilityLabel(message: String, tone: StatusTone) -> String",
+            "No details available.",
+            "%@. Status %@. %@",
             "func routeDiagnosticDisclosureAccessibilityLabel(context: String) -> String",
             "func routeDiagnosticDisclosureAccessibilityValue(isExpanded: Bool) -> String",
             "func routeDiagnosticDisclosureAccessibilityHint() -> String",
@@ -713,6 +767,8 @@ def check_remote_connection_destructive_confirmation() -> list[str]:
             "connectionRecoveryGenerateLatestQRActionAccessibilityValue(",
             "connectionRecoveryGenerateLatestQRActionAccessibilityHint(",
             "connectionRecoverySaveBootstrapRelayActionAccessibilityHint(",
+            "connectionRecoverySaveBootstrapRelayActionAccessibilityValue(",
+            "connectionRecoverySaveBootstrapRelayActionAccessibilityValue(endpoints: String)",
             "connectionRecoverySaveConnectionActionAccessibilityValue(",
             "connectionRecoverySaveConnectionActionAccessibilityValue(host: String, port: String)",
             "connectionRecoverySaveConnectionActionAccessibilityHint(",
@@ -725,7 +781,7 @@ def check_remote_connection_destructive_confirmation() -> list[str]:
             ".accessibilityLabel(Text(connectionRecoveryFallbackPrivateOverlayRouteAccessibilityLabel()))",
             ".accessibilityValue(Text(connectionRecoveryPrivateOverlayRouteAccessibilityValue(isEnabled: bootstrapAllowsPrivateOverlay)))",
             ".accessibilityValue(Text(connectionRecoveryPrivateOverlayRouteAccessibilityValue(isEnabled: allowsPrivateOverlay)))",
-            ".accessibilityValue(Text(NSLocalizedString(\"Ready\", comment: \"\")))",
+            ".accessibilityValue(Text(connectionRecoverySaveBootstrapRelayActionAccessibilityValue(endpoints: bootstrapEndpoints)))",
             ".accessibilityValue(Text(saveConnectionActionValue))",
             ".accessibilityHint(Text(generateLatestQRHint))",
             ".accessibilityHint(Text(NSLocalizedString(\"Enable only when this bootstrap relay is reachable through a VPN, tunnel, or private overlay shared by both devices.\", comment: \"\")))",
@@ -742,6 +798,7 @@ def check_remote_connection_destructive_confirmation() -> list[str]:
             "Connection details are not ready for QR generation. Check Connection Recovery settings.",
             "Latest QR generation is unavailable from this view.",
             "Save bootstrap relay settings for future pairing QR connection details.",
+            "Will remove saved bootstrap relay",
             "Save fallback connection details for future pairing QR routes.",
             "Create a new connection setup secret for future pairing QR connection details.",
         ),
@@ -760,6 +817,21 @@ def check_remote_connection_destructive_confirmation() -> list[str]:
             "connectionRecoveryDisclosureAccessibilityValue(isExpanded: false)",
             "routeDiagnosticDisclosureAccessibilityValue(isExpanded: true)",
             "routeDiagnosticDisclosureAccessibilityValue(isExpanded: false)",
+            "testConnectionRecoveryResultAccessibilityLabelUsesSelectedLanguageAndTone",
+            "connectionRecoveryResultAccessibilityLabel(",
+            "Connection Recovery result. Status Ready. Connection details prepared.",
+            "연결 복구 결과. 상태 준비됨. 연결 세부 정보가 준비되었습니다.",
+            "接続の復旧結果。ステータス 準備完了。接続詳細を準備しました。",
+            "连接恢复结果。状态 就绪。连接详情已准备好。",
+            "Résultat de récupération de connexion. État Prêt. Détails de connexion préparés.",
+            "testConnectionRecoverySaveBootstrapRelayAccessibilityValueUsesSelectedLanguage",
+            "connectionRecoverySaveBootstrapRelayActionAccessibilityValue(endpoints: \"relay.example.test:43171\")",
+            "connectionRecoverySaveBootstrapRelayActionAccessibilityValue(endpoints: \"   \")",
+            "Will remove saved bootstrap relay",
+            "저장된 부트스트랩 릴레이를 제거합니다",
+            "保存済みブートストラップリレーを削除します",
+            "将移除已保存的引导中继",
+            "Supprimera le relais d’amorçage enregistré",
             "testConnectionRecoverySaveConnectionAccessibilityValueExplainsInvalidInputs",
             "connectionRecoverySaveConnectionActionAccessibilityValue(host: \"relay.example.test\", port: \"43171\")",
             "connectionRecoverySaveConnectionActionAccessibilityValue(host: \"   \", port: \"43171\")",
@@ -808,11 +880,17 @@ def check_activity_log_redaction() -> list[str]:
             "logTechnicalDetailsAccessibilityValue(isExpanded: diagnosticsExpanded)",
             "logTechnicalDetailsAccessibilityHint(isExpanded: diagnosticsExpanded)",
             "func logTechnicalDetailsAccessibilityLabel(summary: String) -> String",
+            "normalizedLogAccessibilitySummary(summary)",
+            "normalizedLogAccessibilitySummaryFragment",
+            "logAccessibilityTerminalPunctuation",
             "func logTechnicalDetailsAccessibilityValue(isExpanded: Bool) -> String",
             "func logTechnicalDetailsAccessibilityHint(isExpanded: Bool) -> String",
             "logRowAccessibilityLabel(summary: display.summary, tone: tone)",
             "func logRowAccessibilityLabel(summary: String, tone: StatusTone) -> String",
+            "func activityLogTone(for line: String) -> StatusTone",
             "func logToneAccessibilityStatus(_ tone: StatusTone) -> String",
+            "Remote route ready:",
+            "Remote route lease refreshed:",
             "Activity item %@. Status %@.",
             "Technical details for %@",
             "Activity technical details expanded",
@@ -824,6 +902,15 @@ def check_activity_log_redaction() -> list[str]:
             "trustedDeviceAuditLogName(",
         ),
         "macOS activity technical-details accessibility label",
+    ))
+    failures.extend(missing_source_snippets(
+        LOCALIZATION_TEST_SOURCE,
+        (
+            "testActivityRouteSuccessLogRowsUseReadyTone",
+            "activityLogTone(for: \"Remote route ready: relay.example.test:43171\")",
+            "Activity item Connection details are ready. Status Ready.",
+        ),
+        "macOS activity route-success ready-tone regression",
     ))
     return failures
 
@@ -929,6 +1016,8 @@ def check_provider_status_redaction() -> list[str]:
             "readinessRowAccessibilityLabel(",
             "func readinessRowAccessibilityLabel(title: String, status: String, detail: String) -> String",
             "Readiness %@. Status %@. %@",
+            "Readiness item",
+            "No readiness details",
             "runtimeOverviewAccessibilityLabel(",
             "func runtimeOverviewAccessibilityLabel(title: String, status: String, detail: String, footnote: String) -> String",
             "Runtime overview %@. Status %@. %@ %@",
@@ -939,6 +1028,7 @@ def check_provider_status_redaction() -> list[str]:
             "func modelRowAccessibilityLabel(",
             "Model %@. ID %@. Type %@. Provider %@. Source %@. State %@. Size %@",
             "modelGroupHeaderAccessibilityLabel(title: group.title, count: group.countText)",
+            ".accessibilityAddTraits(.isHeader)",
             "func modelGroupHeaderAccessibilityLabel(title: String, count: String) -> String",
             "Model section %@. %@",
             "providerStatusTechnicalDetailsAccessibilityLabel(providerName: status.name)",
@@ -957,13 +1047,29 @@ def check_provider_status_redaction() -> list[str]:
             "providerStatusPillAccessibilityLabel(",
             "func providerStatusPillAccessibilityLabel(providerName: String, status: String) -> String",
             "Provider %@ status %@",
+            "providerStatusRowAccessibilityLabel(",
+            "func providerStatusRowAccessibilityLabel(providerName: String, status: String, detail: String) -> String",
+            "Provider %@. Status %@. %@",
+            "Image(systemName: status.systemImage)",
+            ".accessibilityHidden(true)",
         ),
-        "macOS Status readiness and Model Providers technical-details accessibility labels",
+        "macOS Status readiness and Model Providers decorative-icon accessibility labels",
+    ) + missing_source_snippets(
+        LOCALIZATION_TEST_SOURCE,
+        (
+            "testModelGroupHeaderAccessibilityLabelUsesSelectedLanguage",
+            "testReadinessRowAccessibilityLabelUsesTitleStatusDetailAndFallbacks",
+            "testProviderStatusRowAccessibilityLabelUsesProviderContext",
+            "No readiness details",
+            "providerStatusRowAccessibilityLabel(",
+            "No provider details",
+        ),
+        "macOS Status model group and provider row accessibility tests",
     )
 
 
 def check_trusted_device_identity_display() -> list[str]:
-    return missing_source_snippets(
+    failures = missing_source_snippets(
         TRUSTED_DEVICES_VIEW_SOURCE,
         (
             "trustedDeviceKeyFingerprint(device.publicKeyBase64)",
@@ -973,6 +1079,8 @@ def check_trusted_device_identity_display() -> list[str]:
             ".accessibilityHidden(true)",
             "trustedDevicePairingAccessibilitySummary(pairedAt: pairedAt, deviceID: deviceID)",
             "func trustedDevicePairingAccessibilitySummary(pairedAt: Date?, deviceID: String) -> String",
+            "guard let pairedAt else",
+            "Device ID ending %@",
             "Paired %@. Device ID ending %@",
             "trustedDeviceRowAccessibilityLabel(",
             "func trustedDeviceRowAccessibilityLabel(name: String, pairedAt: Date?, deviceID: String, keyFingerprint: String) -> String",
@@ -983,9 +1091,16 @@ def check_trusted_device_identity_display() -> list[str]:
             ".accessibilityLabel(Text(trustedDeviceConfirmRemoveAccessibilityLabel(for: pendingRemovalDevice)))",
             "func trustedDeviceConfirmRemoveAccessibilityLabel(for device: TrustedDevice?) -> String",
             "Confirm removing trust for %@. Key fingerprint %@",
+            'Button(NSLocalizedString("Cancel", comment: ""), role: .cancel)',
+            ".accessibilityLabel(Text(trustedDeviceCancelRemoveAccessibilityLabel(for: pendingRemovalDevice)))",
+            "func trustedDeviceCancelRemoveAccessibilityLabel(for device: TrustedDevice?) -> String",
+            "Cancel removing trust for %@. Key fingerprint %@",
             "trustedDeviceRemoveAccessibilityLabel(name: name, keyFingerprint: keyFingerprint)",
             "func trustedDeviceRemoveAccessibilityLabel(name: String, keyFingerprint: String) -> String",
             "Remove trust for %@. Key fingerprint %@",
+            ".accessibilityHint(Text(trustedDeviceRemoveAccessibilityHint(name: name)))",
+            "func trustedDeviceRemoveAccessibilityHint(name: String) -> String",
+            "After removal, %@ must pair again before it can use AetherLink Runtime.",
             "trustedDeviceRefreshActionAccessibilityHint()",
             "func trustedDeviceRefreshActionAccessibilityHint() -> String",
             "trustedDeviceRefreshActionAccessibilityValue()",
@@ -994,6 +1109,21 @@ def check_trusted_device_identity_display() -> list[str]:
         ),
         "macOS trusted-device identity display",
     )
+    failures.extend(missing_source_snippets(
+        LOCALIZATION_TEST_SOURCE,
+        (
+            "testTrustedDeviceConfirmRemoveActionAccessibilityLabelUsesDeviceContext",
+            "testTrustedDeviceCancelRemoveActionAccessibilityLabelUsesDeviceContext",
+            "trustedDevicePairingAccessibilitySummary(pairedAt: nil, deviceID: \" ice-1 \")",
+            "pairedAt: nil,\n                        deviceID: \" ice-1 \",",
+            "fallbackPairingSummary",
+            "testTrustedDeviceRemoveButtonAccessibilityHintUsesSelectedLanguage",
+            "trustedDeviceRemoveAccessibilityHint(name: \" Pixel \")",
+            "trustedDeviceCancelRemoveAccessibilityLabel(",
+        ),
+        "macOS trusted-device removal dialog localization tests",
+    ))
+    return failures
 
 
 def check_remote_route_preparation_issue_display() -> list[str]:
@@ -1018,10 +1148,31 @@ def check_remote_route_preparation_issue_display() -> list[str]:
     failures.extend(missing_source_snippets(
         SOURCE_ROOT / "PairingView.swift",
         (
+            "let qrImage = pairingQRCodeImage(from: qrPayload)",
+            "let isAvailable = qrImage != nil",
+            "QRCodeView(image: qrImage)",
+            "func pairingQRCodeImage(from text: String) -> NSImage?",
+            "pairingQRCodeAccessibilityValue(isExpired: isExpired, isAvailable: isAvailable)",
+            "func pairingQRCodeAccessibilityValue(isExpired: Bool, isAvailable: Bool = true) -> String",
+            "Pairing QR code unavailable",
             "pairingQRCodeAccessibilityHint(remoteRouteExpiresAt:",
             "pairingQRRemoteRouteExpirationText(",
         ),
-        "macOS Pairing QR remote-route expiry accessibility hint",
+        "macOS Pairing QR availability and remote-route accessibility state",
+    ))
+    failures.extend(missing_source_snippets(
+        LOCALIZATION_TEST_SOURCE,
+        (
+            "unavailableValue",
+            "pairingQRCodeAccessibilityValue(isExpired: false, isAvailable: false)",
+            "pairingQRCodeAccessibilityValue(isExpired: true, isAvailable: false)",
+            "Pairing QR code unavailable",
+            "페어링 QR 코드를 사용할 수 없음",
+            "ペアリング QR コードを利用できません",
+            "配对 QR 码不可用",
+            "QR code de jumelage indisponible",
+        ),
+        "macOS Pairing QR unavailable accessibility regression",
     ))
     failures.extend(missing_source_snippets(
         STATUS_VIEW_SOURCE,
@@ -1129,6 +1280,7 @@ def main() -> int:
     failures.extend(check_app_appearance_selector())
     failures.extend(check_app_appearance_wiring())
     failures.extend(check_companion_page_header_accessibility())
+    failures.extend(check_companion_panel_header_accessibility())
     failures.extend(check_companion_empty_state_accessibility())
     failures.extend(raw_swiftui_visible_literal_matcher_self_test_failures())
     failures.extend(check_no_raw_swiftui_visible_literals())

@@ -11,7 +11,9 @@
 "System" = "跟随系统";
 "Light" = "浅色";
 "Dark" = "深色";
+"Choose how AetherLink Runtime appears. This setting is saved for future launches." = "选择 AetherLink Runtime 的外观。此设置会保存到以后启动时使用。";
 "Language" = "语言";
+"Choose the app language. This setting is saved for future launches." = "选择应用语言。此设置会保存到以后启动时使用。";
 "English" = "英语";
 "Korean" = "韩语";
 "Japanese" = "日语";
@@ -45,8 +47,10 @@
 "Pending" = "待处理";
 "Activity item %@. Status %@." = "活动项 %@。状态 %@。";
 "Readiness %@. Status %@. %@" = "就绪情况 %@。状态 %@。%@";
+"Readiness item" = "就绪项";
 "Status item" = "状态项";
 "Unknown status" = "未知状态";
+"No readiness details" = "无就绪详情";
 "No status details" = "无状态详情";
 "Status %@. Current state %@. %@" = "状态卡 %@。当前状态 %@。%@";
 "Runtime overview" = "运行时概览";
@@ -79,6 +83,8 @@
 "Waiting for device" = "等待设备";
 "Connected to %@ and waiting for relay acknowledgement." = "已连接到 %@，正在等待路径确认。";
 "Model provider status has not been checked yet." = "尚未检查模型提供方状态。";
+"No model providers available" = "没有可用的模型提供方";
+"AetherLink Runtime has not reported any model providers yet." = "AetherLink Runtime 尚未报告模型提供方信息。";
 "%d of %d available" = "%d/%d 可用";
 "1 model provider available" = "1 个模型提供方可用";
 "%d model providers available" = "%d 个模型提供方可用";
@@ -160,12 +166,15 @@
 "Pair a device before allowing runtime commands." = "允许运行时命令前，请先配对设备。";
 "Paired %@ · ID ending %@" = "已配对 %@ · ID 结尾 %@";
 "Paired %@. Device ID ending %@" = "已配对 %@。设备 ID 结尾 %@";
+"Device ID ending %@" = "设备 ID 结尾 %@";
 "Key fingerprint %@" = "密钥指纹 %@";
 "Pairing details unavailable." = "配对详情不可用。";
 "Trusted device %@. %@. Key fingerprint %@" = "受信任设备 %@。%@。密钥指纹 %@";
 "Remove Trust" = "移除信任";
 "Remove trust for %@. Key fingerprint %@" = "移除 %@ 的信任。密钥指纹 %@";
+"After removal, %@ must pair again before it can use AetherLink Runtime." = "移除后，%@ 必须重新配对才能使用 AetherLink Runtime。";
 "Confirm removing trust for %@. Key fingerprint %@" = "确认移除 %@ 的信任。密钥指纹 %@";
+"Cancel removing trust for %@. Key fingerprint %@" = "取消移除 %@ 的信任。密钥指纹 %@";
 "Remove trusted device?" = "移除受信任设备？";
 "%@ will need to pair again before it can use AetherLink Runtime." = "%@ 需要重新配对后才能使用 AetherLink Runtime。";
 "%@ will need to pair again before it can use AetherLink Runtime. Key fingerprint %@" = "%@ 需要重新配对后才能使用 AetherLink Runtime。密钥指纹 %@";
@@ -184,6 +193,7 @@
 "Collapse to hide activity technical details." = "折叠以隐藏活动详情。";
 "Expand to show activity technical details." = "展开以显示活动详情。";
 "Connection Recovery result" = "连接恢复结果";
+"%@. Status %@. %@" = "%@。状态 %@。%@";
 "Connection health" = "连接状态";
 "Connection preparation" = "连接准备";
 "Connection diagnostics" = "连接诊断";
@@ -207,6 +217,8 @@
 "Model provider needs attention." = "模型提供方需要检查。";
 "Model provider is available." = "模型提供方可用。";
 "Provider %@ status %@" = "%@ 状态 %@";
+"Provider %@. Status %@. %@" = "%@。状态 %@。%@";
+"No provider details" = "没有提供方详情";
 "Model residency updated." = "模型驻留状态已更新。";
 "Runtime event recorded." = "已记录运行时事件。";
 
@@ -222,7 +234,7 @@
 "Ready for devices" = "已准备连接设备";
 "AetherLink Runtime needs attention" = "AetherLink Runtime 需要检查";
 "No activity yet" = "暂无活动";
-"Advanced connection disabled." = "已禁用高级连接。";
+"Saved connection details removed." = "已移除保存的连接信息。";
 "AetherLink Runtime needs attention." = "AetherLink Runtime 需要检查。";
 "Connection details saved." = "连接信息已保存。";
 "Connection details are ready." = "连接信息已就绪。";
@@ -262,6 +274,7 @@
 "Enable only when this bootstrap relay is reachable through a VPN, tunnel, or private overlay shared by both devices." = "仅当两台设备通过共享的 VPN、隧道或私有覆盖网络可访问此引导中继时启用。";
 "Save Bootstrap Relay" = "保存引导中继";
 "Save bootstrap relay settings for future pairing QR connection details." = "保存用于后续配对二维码连接信息的引导中继设置。";
+"Will remove saved bootstrap relay" = "将移除已保存的引导中继";
 "Bootstrap relay saved. Generate the latest QR and scan it in AetherLink to pair or refresh connectivity." = "已保存引导中继。生成最新二维码并在 AetherLink 中扫描，以配对或刷新连接。";
 "Connection address" = "连接地址";
 "Connection setup secret" = "受保护的连接密钥";
@@ -269,9 +282,10 @@
 "Save fallback connection details for future pairing QR routes." = "保存用于后续配对二维码路径的备用连接信息。";
 "Create a new connection setup secret for future pairing QR connection details." = "创建用于后续配对二维码连接信息的新连接设置密钥。";
 "Connection setup secret regenerated." = "已刷新受保护的连接密钥。";
-"Disable Connection" = "禁用连接";
-"Disable saved connection details for %@" = "禁用 %@ 的已保存连接信息";
-"Disable saved connection details?" = "禁用已保存的连接信息？";
+"Remove Saved Connection Details" = "移除已保存的连接信息";
+"Remove saved connection details for %@" = "移除 %@ 的已保存连接信息";
+"Cancel removing saved connection details for %@" = "取消移除 %@ 的已保存连接信息";
+"Remove saved connection details?" = "要移除已保存的连接信息吗？";
 "Saved connection details will be removed. Devices on another network may need a fresh pairing QR before they can reconnect." = "已保存的连接信息将被移除。其他网络上的设备可能需要新的配对二维码才能重新连接。";
 "Connection details saved" = "连接信息已保存";
 "No connection details" = "无连接信息";

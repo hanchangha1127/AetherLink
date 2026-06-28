@@ -4,6 +4,8 @@ import com.localagentbridge.android.core.transport.RuntimeEndpointHint
 import com.localagentbridge.android.core.transport.RuntimeEndpointSource
 import java.util.UUID
 
+internal const val MAX_PENDING_ATTACHMENTS = 4
+
 data class RuntimeUiState(
     val runtimeHost: String = "",
     val runtimePort: String = "",

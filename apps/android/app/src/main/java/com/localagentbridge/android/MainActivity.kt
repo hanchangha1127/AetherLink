@@ -105,6 +105,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.hapticfeedback.HapticFeedback
@@ -114,10 +115,16 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -145,7 +152,9 @@ import com.localagentbridge.android.ui.AetherLinkInteractionFeedback
 import com.localagentbridge.android.ui.ChatScreen
 import com.localagentbridge.android.ui.SettingsScreen
 import com.localagentbridge.android.ui.aetherLinkHapticFeedbackType
+import com.localagentbridge.android.ui.chatHistorySessionModelDisplayName
 import com.localagentbridge.android.ui.chatHistorySessionStatusRes
+import com.localagentbridge.android.ui.filterChatHistorySessions
 import com.localagentbridge.android.ui.runtimeProviderDisplayName
 import kotlinx.coroutines.launch
 import java.net.URI
@@ -295,10 +304,12 @@ private fun LocalAgentBridgeApp(
             val hasChatSearchQuery = trimmedChatSearchQuery.isNotEmpty()
             val hasAnyChatSessions = state.chatSessions.isNotEmpty()
             val filteredChatSessions = if (hasChatSearchQuery) {
-                state.chatSessions.filter { session ->
-                    session.localizedTitle(untitledChatTitle)
-                        .contains(trimmedChatSearchQuery, ignoreCase = true)
-                }
+                filterChatHistorySessions(
+                    sessions = state.chatSessions,
+                    query = trimmedChatSearchQuery,
+                    untitledTitle = untitledChatTitle,
+                    models = state.models,
+                )
             } else {
                 state.chatSessions
             }
@@ -604,7 +615,12 @@ internal fun AetherLinkTopAppBar(
                         onSelectModel = onSelectModel,
                     )
                 } else {
-                    Text(destinationTitle)
+                    Text(
+                        text = destinationTitle,
+                        modifier = Modifier.semantics {
+                            heading()
+                        },
+                    )
                 }
             },
             navigationIcon = {
@@ -707,6 +723,7 @@ internal fun AetherLinkPermanentNavigationRail(
     val hapticFeedback = LocalHapticFeedback.current
     val newChatActionLabel = stringResource(R.string.new_chat)
     val chatActionLabel = stringResource(AppDestination.Chat.labelRes)
+    val settingsActionLabel = stringResource(AppDestination.Settings.labelRes)
 
     NavigationRail(
         modifier = Modifier
@@ -764,6 +781,9 @@ internal fun AetherLinkPermanentNavigationRail(
                 hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.SelectionChange)
                 onSelectDestination(AppDestination.Settings)
             },
+            modifier = Modifier.semantics {
+                onClick(label = settingsActionLabel, action = null)
+            },
             icon = {
                 Icon(
                     imageVector = Icons.Filled.Settings,
@@ -787,7 +807,15 @@ internal fun ChatTopAppBarTitle(
     onRequestModels: () -> Unit,
     onSelectModel: (String) -> Unit,
 ) {
+    val activeChatTitle = chatTopBarActiveTitle(
+        state = state,
+        untitledTitle = stringResource(R.string.untitled_chat),
+    )
+    val activeChatTitleSummary = activeChatTitle?.let { title ->
+        stringResource(R.string.chat_top_bar_active_title_summary, title)
+    }
     Row(
+        modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
     ) {
@@ -796,7 +824,30 @@ internal fun ChatTopAppBarTitle(
             onRequestModels = onRequestModels,
             onSelectModel = onSelectModel,
         )
+        if (activeChatTitle != null) {
+            Text(
+                text = activeChatTitle,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier
+                    .weight(1f)
+                    .semantics {
+                        contentDescription = activeChatTitleSummary ?: activeChatTitle
+                        heading()
+                    },
+            )
+        }
     }
+}
+
+internal fun chatTopBarActiveTitle(state: RuntimeUiState, untitledTitle: String): String? {
+    val activeSessionId = state.activeChatSessionId ?: return null
+    return state.chatSessions
+        .firstOrNull { it.id == activeSessionId }
+        ?.localizedTitle(untitledTitle)
+        ?: untitledTitle
 }
 
 @Composable
@@ -813,7 +864,12 @@ private fun ChatModelTopBarMenu(
         selectedModelId = state.selectedModelId,
     )
     val selectedModel = chatModels.firstOrNull { it.id == state.selectedModelId }
-    val selectedModelUnavailable = state.selectedModelId != null && selectedModel == null
+    val selectedModelUnavailable = state.selectedModelId != null &&
+        selectedModel == null &&
+        (state.isConnected || state.isLoadingModels)
+    val selectedModelUnavailableLabel = state.selectedModelId
+        ?.takeIf { selectedModelUnavailable }
+        ?.let(::savedModelDisplayName)
     val selectedModelRecoveryMessage = when {
         state.isLoadingModels -> stringResource(R.string.selected_model_restoring)
         state.isConnected -> stringResource(R.string.selected_model_unavailable)
@@ -827,9 +883,9 @@ private fun ChatModelTopBarMenu(
     val modelPickerStateDescription = when {
         state.isStreaming -> stringResource(R.string.model_picker_state_wait_for_stream)
         selectedModel != null -> selectedModel.name
-        selectedModelUnavailable -> selectedModelRecoveryMessage
         state.isLoadingModels -> stringResource(R.string.loading_models)
         !state.isConnected -> stringResource(R.string.chat_status_disconnected)
+        selectedModelUnavailable -> selectedModelRecoveryMessage
         else -> stringResource(R.string.chat_hint_select_model)
     }
     val modelPickerContentDescription = if (selectedModel != null && !state.isStreaming) {
@@ -842,6 +898,24 @@ private fun ChatModelTopBarMenu(
         )
     }
     val modelPickerActionLabel = stringResource(R.string.choose_model)
+    val modelMenuActionsEnabled = !state.isStreaming
+    LaunchedEffect(state.isStreaming) {
+        if (state.isStreaming) {
+            isExpanded = false
+        }
+    }
+    val modelRefreshEnabled = modelMenuActionsEnabled && state.isConnected && !state.isLoadingModels
+    val modelRefreshLabel = if (state.isLoadingModels) {
+        stringResource(R.string.loading_models)
+    } else {
+        stringResource(R.string.load_models)
+    }
+    val modelRefreshStateDescription = when {
+        state.isStreaming -> stringResource(R.string.model_picker_state_wait_for_stream)
+        state.isLoadingModels -> stringResource(R.string.model_refresh_state_loading)
+        state.isConnected -> stringResource(R.string.model_refresh_state_ready)
+        else -> stringResource(R.string.model_refresh_state_connect_first)
+    }
     val trimmedModelSearchQuery = modelSearchQuery.trim()
     val clearModelSearchContentDescription = stringResource(
         R.string.clear_model_search_named,
@@ -902,21 +976,24 @@ private fun ChatModelTopBarMenu(
             )
         }
         DropdownMenu(
-            expanded = isExpanded,
+            expanded = isExpanded && modelMenuActionsEnabled,
             onDismissRequest = { isExpanded = false },
             modifier = Modifier
                 .widthIn(min = 260.dp, max = 360.dp)
                 .heightIn(max = 420.dp),
         ) {
             DropdownMenuItem(
+                modifier = Modifier.semantics(mergeDescendants = true) {
+                    contentDescription = modelRefreshLabel
+                    stateDescription = modelRefreshStateDescription
+                    if (modelRefreshEnabled) {
+                        onClick(label = modelRefreshLabel, action = null)
+                    }
+                },
                 text = {
                     Column {
                         Text(
-                            text = if (state.isLoadingModels) {
-                                stringResource(R.string.loading_models)
-                            } else {
-                                stringResource(R.string.load_models)
-                            },
+                            text = modelRefreshLabel,
                         )
                         Text(
                             text = selectedModel?.let { model ->
@@ -937,7 +1014,7 @@ private fun ChatModelTopBarMenu(
                     }
                 },
                 leadingIcon = { Icon(Icons.Filled.Refresh, contentDescription = null) },
-                enabled = state.isConnected && !state.isLoadingModels,
+                enabled = modelRefreshEnabled,
                 onClick = {
                     hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
                     onRequestModels()
@@ -948,7 +1025,8 @@ private fun ChatModelTopBarMenu(
                 DropdownInfoItem {
                     Column {
                         Text(
-                            text = stringResource(R.string.selected_model_unavailable),
+                            text = selectedModelUnavailableLabel
+                                ?: stringResource(R.string.selected_model),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
@@ -1008,24 +1086,60 @@ private fun ChatModelTopBarMenu(
                 )
             }
             if (chatModels.isEmpty()) {
+                val emptyStateTitle = stringResource(
+                    if (state.isConnected) {
+                        R.string.no_models_connected_title
+                    } else {
+                        R.string.no_models_disconnected_title
+                    },
+                )
+                val emptyStateDetail = stringResource(
+                    if (state.isConnected) {
+                        R.string.no_models_connected
+                    } else {
+                        R.string.no_models_disconnected
+                    },
+                )
+                val emptyStateSummary = stringResource(
+                    R.string.model_picker_empty_state_summary,
+                    emptyStateTitle,
+                    emptyStateDetail,
+                )
                 DropdownInfoItem {
-                    Text(
-                        text = if (state.isConnected) {
-                            stringResource(R.string.no_models_connected)
-                        } else {
-                            stringResource(R.string.no_models_disconnected)
+                    Column(
+                        modifier = Modifier.semantics(mergeDescendants = true) {
+                            contentDescription = emptyStateSummary
+                            liveRegion = LiveRegionMode.Polite
                         },
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    ) {
+                        Text(
+                            text = emptyStateTitle,
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            text = emptyStateDetail,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
             } else {
                 if (visibleModels.isEmpty()) {
+                    val noModelSearchResultsText = stringResource(R.string.no_model_search_results)
                     DropdownInfoItem {
                         Text(
-                            text = stringResource(R.string.no_model_search_results),
+                            text = noModelSearchResultsText,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.semantics {
+                                contentDescription = noModelSearchResultsText
+                                liveRegion = LiveRegionMode.Polite
+                            },
                         )
                     }
                 }
@@ -1034,6 +1148,7 @@ private fun ChatModelTopBarMenu(
                         model = model,
                         selected = model.id == state.selectedModelId,
                         installing = model.id == state.installingModelId,
+                        actionsEnabled = modelMenuActionsEnabled,
                         onSelect = {
                             hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.SelectionChange)
                             onSelectModel(model.id)
@@ -1065,6 +1180,7 @@ private fun ChatModelMenuItem(
     model: RuntimeModel,
     selected: Boolean,
     installing: Boolean,
+    actionsEnabled: Boolean = true,
     onSelect: () -> Unit,
 ) {
     val statusLine = modelMenuStatusLine(model = model, installing = installing)
@@ -1085,6 +1201,7 @@ private fun ChatModelMenuItem(
             model = model,
             selected = selected,
             installing = installing,
+            actionsEnabled = actionsEnabled,
             contentDescription = rowContentDescription,
             actionLabel = rowActionLabel,
         ),
@@ -1121,7 +1238,7 @@ private fun ChatModelMenuItem(
                 )
             }
         },
-        enabled = chatModelMenuItemEnabled(model, installing),
+        enabled = actionsEnabled && chatModelMenuItemEnabled(model, installing),
         onClick = onSelect,
     )
 }
@@ -1131,10 +1248,13 @@ private fun chatModelMenuItemSemanticsModifier(
     model: RuntimeModel,
     selected: Boolean,
     installing: Boolean,
+    actionsEnabled: Boolean,
     contentDescription: String,
     actionLabel: String,
 ): Modifier {
+    val enabled = actionsEnabled && chatModelMenuItemEnabled(model, installing)
     val stateDescriptionRes = when {
+        !actionsEnabled -> R.string.model_picker_state_wait_for_stream
         selected -> R.string.selection_state_selected
         !model.installed && !installing -> R.string.install_model
         else -> null
@@ -1142,7 +1262,9 @@ private fun chatModelMenuItemSemanticsModifier(
     val selectedStateDescription = stateDescriptionRes?.let { stringResource(it) }
     return Modifier.semantics {
         this.contentDescription = contentDescription
-        onClick(label = actionLabel, action = null)
+        if (enabled) {
+            onClick(label = actionLabel, action = null)
+        }
         if (selectedStateDescription != null) {
             stateDescription = selectedStateDescription
         }
@@ -1419,23 +1541,35 @@ internal fun AetherLinkNavigationDrawerContent(
                     )
                 }
                 if (hasChatSearchQuery && !hasChatSearchResults) {
+                    val noSearchResultsText = stringResource(R.string.no_chat_search_results)
                     Text(
-                        text = stringResource(R.string.no_chat_search_results),
+                        text = noSearchResultsText,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = 28.dp, vertical = 8.dp),
+                        modifier = Modifier
+                            .padding(horizontal = 28.dp, vertical = 8.dp)
+                            .semantics {
+                                liveRegion = LiveRegionMode.Polite
+                            },
                     )
                 } else if (!hasChatSearchQuery && state.chatSessions.isEmpty()) {
+                    val noPreviousChatsText = stringResource(R.string.no_previous_chats)
                     Text(
-                        text = stringResource(R.string.no_previous_chats),
+                        text = noPreviousChatsText,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = 28.dp, vertical = 8.dp),
+                        modifier = Modifier
+                            .padding(horizontal = 28.dp, vertical = 8.dp)
+                            .semantics {
+                                contentDescription = noPreviousChatsText
+                                liveRegion = LiveRegionMode.Polite
+                            },
                     )
                 } else {
                     filteredChatSessions.forEach { session ->
                         ChatSessionDrawerItem(
                             session = session,
+                            models = state.models,
                             selected = effectiveDestination == AppDestination.Chat &&
                                 session.id == state.activeChatSessionId,
                             enabled = !state.isStreaming,
@@ -1473,10 +1607,21 @@ internal fun AetherLinkNavigationDrawerContent(
 private fun DrawerRuntimeSummary(state: RuntimeUiState) {
     val chatModels = chatModelMenuModels(state.models)
     val selectedModel = chatModels.firstOrNull { it.id == state.selectedModelId }
+    val selectedModelUnavailable = state.selectedModelId != null &&
+        selectedModel == null &&
+        (state.isConnected || state.isLoadingModels)
     val runtimeName = state.trustedRuntime?.name ?: stringResource(R.string.no_trusted_runtime)
     val modelName = selectedModel?.name
+        ?: state.selectedModelId
+            ?.takeIf { selectedModelUnavailable }
+            ?.let(::savedModelDisplayName)
         ?: chatModelPickerFallbackDisplayName(state)
         ?: stringResource(R.string.model_none)
+    val modelDetail = when {
+        !selectedModelUnavailable -> null
+        state.isLoadingModels -> stringResource(R.string.selected_model_restoring)
+        else -> stringResource(R.string.selected_model_unavailable)
+    }
     val connectionLabel = when {
         state.isConnected -> stringResource(R.string.status_connected)
         state.isConnecting -> stringResource(R.string.status_connecting)
@@ -1488,11 +1633,28 @@ private fun DrawerRuntimeSummary(state: RuntimeUiState) {
         state.isConnecting -> MaterialTheme.colorScheme.secondary
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
+    val runtimeSummaryAccessibility = modelDetail?.let { detail ->
+        stringResource(
+            R.string.drawer_runtime_summary_accessibility_with_detail,
+            runtimeName,
+            connectionLabel,
+            modelName,
+            detail,
+        )
+    } ?: stringResource(
+        R.string.drawer_runtime_summary_accessibility,
+        runtimeName,
+        connectionLabel,
+        modelName,
+    )
 
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 2.dp),
+            .padding(horizontal = 12.dp, vertical = 2.dp)
+            .clearAndSetSemantics {
+                contentDescription = runtimeSummaryAccessibility
+            },
         shape = RoundedCornerShape(18.dp),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.52f),
         contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1541,6 +1703,15 @@ private fun DrawerRuntimeSummary(state: RuntimeUiState) {
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            if (modelDetail != null) {
+                Text(
+                    text = modelDetail,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }
@@ -1601,13 +1772,18 @@ private fun DrawerSectionLabel(text: String) {
         text = text,
         style = MaterialTheme.typography.labelMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(horizontal = 28.dp, vertical = 8.dp),
+        modifier = Modifier
+            .padding(horizontal = 28.dp, vertical = 8.dp)
+            .semantics {
+                heading()
+            },
     )
 }
 
 @Composable
 internal fun ChatSessionDrawerItem(
     session: RuntimeChatSession,
+    models: List<RuntimeModel> = emptyList(),
     selected: Boolean,
     enabled: Boolean,
     onClick: () -> Unit,
@@ -1644,16 +1820,31 @@ internal fun ChatSessionDrawerItem(
         R.string.chat_session_status_in_progress -> MaterialTheme.colorScheme.primary
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
+    val modelText = chatHistorySessionModelDisplayName(session = session, models = models)
+        ?.let { modelName -> stringResource(R.string.chat_session_model_value, modelName) }
     val accessibleSubtitle = subtitle.ifBlank { stringResource(R.string.new_chat) }
-    val chatSessionContentDescription = if (selected) {
-        stringResource(R.string.chat_session_row_summary_selected, title, accessibleSubtitle)
-    } else {
-        stringResource(R.string.chat_session_row_summary, title, accessibleSubtitle)
+    val chatSessionContentDescription = when {
+        selected && modelText != null -> {
+            stringResource(
+                R.string.chat_session_row_summary_selected_with_model,
+                title,
+                accessibleSubtitle,
+                modelText,
+            )
+        }
+        selected -> stringResource(R.string.chat_session_row_summary_selected, title, accessibleSubtitle)
+        modelText != null -> stringResource(R.string.chat_session_row_summary_with_model, title, accessibleSubtitle, modelText)
+        else -> stringResource(R.string.chat_session_row_summary, title, accessibleSubtitle)
     }
     val renameActionContentDescription = stringResource(R.string.rename_chat_named, title)
     val archiveActionContentDescription = stringResource(R.string.archive_chat_named, title)
     val restoreActionContentDescription = stringResource(R.string.restore_chat_named, title)
     val deleteActionContentDescription = stringResource(R.string.delete_chat_named, title)
+    val disabledStateDescription = if (enabled) {
+        null
+    } else {
+        stringResource(R.string.chat_history_action_state_wait_for_stream)
+    }
 
     NavigationDrawerItem(
         selected = selected,
@@ -1691,6 +1882,15 @@ internal fun ChatSessionDrawerItem(
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
+                    if (modelText != null) {
+                        Text(
+                            text = modelText,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
                 IconButton(
                     onClick = {
@@ -1698,11 +1898,17 @@ internal fun ChatSessionDrawerItem(
                         isMenuExpanded = true
                     },
                     enabled = enabled,
-                    modifier = Modifier.size(32.dp),
+                    modifier = Modifier
+                        .size(32.dp)
+                        .semantics {
+                            contentDescription = chatSessionOptionsContentDescription
+                            onClick(label = chatSessionOptionsContentDescription, action = null)
+                            disabledStateDescription?.let { stateDescription = it }
+                        },
                 ) {
                     Icon(
                         imageVector = Icons.Filled.MoreVert,
-                        contentDescription = chatSessionOptionsContentDescription,
+                        contentDescription = null,
                     )
                 }
                 DropdownMenu(
@@ -1770,8 +1976,13 @@ internal fun ChatSessionDrawerItem(
         },
         modifier = Modifier
             .padding(horizontal = 12.dp)
+            .alpha(if (enabled) 1f else 0.46f)
             .semantics {
                 contentDescription = chatSessionContentDescription
+                disabledStateDescription?.let {
+                    stateDescription = it
+                    disabled()
+                }
             },
     )
 }
@@ -1807,10 +2018,19 @@ internal fun RenameChatSessionDialog(
         stringResource(R.string.rename_chat_title_state_ready)
     }
     val titleContentDescription = stringResource(R.string.chat_title_label)
+    val renameSubject = stringResource(R.string.rename_chat)
+    val confirmRenameActionLabel = stringResource(
+        R.string.confirmation_final_action_named,
+        renameSubject,
+    )
+    val cancelRenameActionLabel = stringResource(
+        R.string.confirmation_cancel_action_named,
+        renameSubject,
+    )
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.rename_chat)) },
+        title = { Text(renameSubject) },
         text = {
             OutlinedTextField(
                 value = title,
@@ -1833,7 +2053,9 @@ internal fun RenameChatSessionDialog(
                 },
                 enabled = trimmedTitle.isNotBlank(),
                 modifier = Modifier.semantics {
+                    contentDescription = confirmRenameActionLabel
                     stateDescription = titleStateDescription
+                    onClick(label = confirmRenameActionLabel, action = null)
                 },
             ) {
                 Text(stringResource(R.string.save))
@@ -1844,6 +2066,10 @@ internal fun RenameChatSessionDialog(
                 onClick = {
                     hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Toggle)
                     onDismiss()
+                },
+                modifier = Modifier.semantics {
+                    contentDescription = cancelRenameActionLabel
+                    onClick(label = cancelRenameActionLabel, action = null)
                 },
             ) {
                 Text(stringResource(R.string.cancel))
@@ -1870,7 +2096,11 @@ private fun DrawerDestinationItem(
             )
         },
         label = { Text(label) },
-        modifier = Modifier.padding(horizontal = 12.dp),
+        modifier = Modifier
+            .padding(horizontal = 12.dp)
+            .semantics {
+                onClick(label = label, action = null)
+            },
     )
 }
 
@@ -2091,17 +2321,28 @@ internal fun PairingQrScannerChrome(
         modifier = modifier,
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.qr_scanner_title)) },
+                title = {
+                    Text(
+                        text = stringResource(R.string.qr_scanner_title),
+                        modifier = Modifier.semantics {
+                            heading()
+                        },
+                    )
+                },
                 navigationIcon = {
+                    val closeScannerActionLabel = stringResource(R.string.qr_scanner_close_action)
                     IconButton(
                         onClick = {
                             hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Toggle)
                             onCancel()
                         },
+                        modifier = Modifier.semantics {
+                            onClick(label = closeScannerActionLabel, action = null)
+                        },
                     ) {
                         Icon(
                             imageVector = Icons.Filled.Close,
-                            contentDescription = stringResource(R.string.cancel),
+                            contentDescription = closeScannerActionLabel,
                         )
                     }
                 },
@@ -2231,6 +2472,9 @@ internal fun PairingQrScannerChrome(
                     text = permissionTitle,
                     style = MaterialTheme.typography.titleLarge,
                     color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.semantics {
+                        heading()
+                    },
                 )
                 Spacer(Modifier.size(12.dp))
                 Text(

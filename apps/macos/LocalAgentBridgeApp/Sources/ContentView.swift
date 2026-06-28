@@ -233,6 +233,7 @@ private struct AetherLinkAppearancePicker: View {
         .pickerStyle(.menu)
         .controlSize(.small)
         .accessibilityValue(Text(AetherLinkAppAppearance.normalized(appearance).title))
+        .accessibilityHint(Text(appAppearancePickerAccessibilityHint()))
     }
 }
 
@@ -251,7 +252,16 @@ private struct AetherLinkLanguagePicker: View {
         .pickerStyle(.menu)
         .controlSize(.small)
         .accessibilityValue(Text(AetherLinkAppLanguage.normalized(languageTag).title))
+        .accessibilityHint(Text(appLanguagePickerAccessibilityHint()))
     }
+}
+
+func appAppearancePickerAccessibilityHint() -> String {
+    NSLocalizedString("Choose how AetherLink Runtime appears. This setting is saved for future launches.", comment: "")
+}
+
+func appLanguagePickerAccessibilityHint() -> String {
+    NSLocalizedString("Choose the app language. This setting is saved for future launches.", comment: "")
 }
 
 enum CompanionSection: String, CaseIterable, Identifiable {

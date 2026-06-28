@@ -121,11 +121,31 @@ struct StatusView: View {
                 }
 
                 CompanionPanel(title: NSLocalizedString("Model Providers", comment: ""), systemImage: "server.rack") {
-                    VStack(spacing: 0) {
-                        ForEach(providerStatuses) { provider in
-                            ProviderStatusRow(status: provider)
-                            if provider.id != providerStatuses.last?.id {
-                                Divider()
+                    if providerStatuses.isEmpty {
+                        let emptyModelProvidersTitle = NSLocalizedString("No model providers available", comment: "")
+                        let emptyModelProvidersDescription = NSLocalizedString("AetherLink Runtime has not reported any model providers yet.", comment: "")
+                        ContentUnavailableView(
+                            emptyModelProvidersTitle,
+                            systemImage: "server.rack",
+                            description: Text(emptyModelProvidersDescription)
+                        )
+                        .frame(maxWidth: .infinity, minHeight: 160)
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(
+                            Text(
+                                companionEmptyStateAccessibilityLabel(
+                                    title: emptyModelProvidersTitle,
+                                    description: emptyModelProvidersDescription
+                                )
+                            )
+                        )
+                    } else {
+                        VStack(spacing: 0) {
+                            ForEach(providerStatuses) { provider in
+                                ProviderStatusRow(status: provider)
+                                if provider.id != providerStatuses.last?.id {
+                                    Divider()
+                                }
                             }
                         }
                     }
@@ -408,7 +428,7 @@ struct StatusView: View {
             isRuntimeAdvertising: model.transportState.state == .advertising,
             isBackendReady: backendSummary.tone == .ready,
             hasTrustedDevices: !model.trustedDevices.isEmpty,
-            hasLoadedModels: !model.models.isEmpty,
+            hasLoadedModels: visibleModelCount > 0,
             hasRoutePreparationIssue: model.remoteRoutePreparationIssue != nil,
             hasDevelopmentRelayRoute: model.hasDevelopmentRelayRoute,
             isDevelopmentRelayQRCodeReady: model.isDevelopmentRelayQRCodeReady
@@ -701,6 +721,7 @@ private struct ModelGroupSection: View {
             .accessibilityLabel(
                 Text(modelGroupHeaderAccessibilityLabel(title: group.title, count: group.countText))
             )
+            .accessibilityAddTraits(.isHeader)
 
             ForEach(group.models) { item in
                 ModelRow(model: item)
@@ -984,11 +1005,17 @@ private struct ReadinessItem: Identifiable {
 }
 
 func readinessRowAccessibilityLabel(title: String, status: String, detail: String) -> String {
-    String(
+    let normalizedTitle = trimmedNonEmpty(title)
+        ?? NSLocalizedString("Readiness item", comment: "")
+    let normalizedStatus = trimmedNonEmpty(status)
+        ?? NSLocalizedString("Unknown status", comment: "")
+    let normalizedDetail = trimmedNonEmpty(detail)
+        ?? NSLocalizedString("No readiness details", comment: "")
+    return String(
         format: NSLocalizedString("Readiness %@. Status %@. %@", comment: ""),
-        title.trimmingCharacters(in: .whitespacesAndNewlines),
-        status.trimmingCharacters(in: .whitespacesAndNewlines),
-        detail.trimmingCharacters(in: .whitespacesAndNewlines)
+        normalizedTitle,
+        normalizedStatus,
+        normalizedDetail
     )
 }
 
@@ -1002,6 +1029,7 @@ private struct ProviderStatusRow: View {
                 .font(.body)
                 .foregroundStyle(status.tone.color)
                 .frame(width: 22)
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(status.name)
@@ -1047,6 +1075,15 @@ private struct ProviderStatusRow: View {
                 )
         }
         .padding(.vertical, 10)
+        .accessibilityLabel(
+            Text(
+                providerStatusRowAccessibilityLabel(
+                    providerName: status.name,
+                    status: status.value,
+                    detail: status.detail
+                )
+            )
+        )
     }
 }
 
@@ -1226,6 +1263,21 @@ func providerStatusPillAccessibilityLabel(providerName: String, status: String) 
         format: NSLocalizedString("Provider %@ status %@", comment: ""),
         normalizedProviderName,
         normalizedStatus
+    )
+}
+
+func providerStatusRowAccessibilityLabel(providerName: String, status: String, detail: String) -> String {
+    let normalizedProviderName = trimmedNonEmpty(providerName)
+        ?? NSLocalizedString("Model provider", comment: "")
+    let normalizedStatus = trimmedNonEmpty(status)
+        ?? NSLocalizedString("Not checked", comment: "")
+    let normalizedDetail = trimmedNonEmpty(detail)
+        ?? NSLocalizedString("No provider details", comment: "")
+    return String(
+        format: NSLocalizedString("Provider %@. Status %@. %@", comment: ""),
+        normalizedProviderName,
+        normalizedStatus,
+        normalizedDetail
     )
 }
 

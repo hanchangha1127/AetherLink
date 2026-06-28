@@ -35,6 +35,7 @@ struct CompanionPageHeader: View {
         .padding(.bottom, 2)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(companionPageHeaderAccessibilityLabel(title: title, subtitle: subtitle)))
+        .accessibilityAddTraits(.isHeader)
     }
 }
 
@@ -82,6 +83,9 @@ struct CompanionPanel<Content: View>: View {
             Label(title, systemImage: systemImage)
                 .font(.headline)
                 .foregroundStyle(.primary)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(Text(companionPanelHeaderAccessibilityLabel(title: title)))
+                .accessibilityAddTraits(.isHeader)
 
             content
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -93,6 +97,10 @@ struct CompanionPanel<Content: View>: View {
                 .strokeBorder(.separator.opacity(0.5), lineWidth: 1)
         }
     }
+}
+
+func companionPanelHeaderAccessibilityLabel(title: String) -> String {
+    title.trimmingCharacters(in: .whitespacesAndNewlines)
 }
 
 struct StatusPill: View {

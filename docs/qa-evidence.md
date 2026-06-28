@@ -9,6 +9,612 @@ This document separates current verification evidence from historical captures.
 - Do not use an old screenshot or XML dump as proof that the current UI copy, route behavior, QR pairing, or localization is still correct.
 - New `artifacts/*.png` and `artifacts/*.xml` files are ignored by default so stale generated captures are not accidentally committed.
 
+## 2026-06-28 Streaming Route Lockout And Runtime Chat Semantic Validation
+
+The latest evidence is no-device Android JVM, macOS SwiftPM, and script evidence only because the Android phone was disconnected during this pass:
+
+- Android route/trust/connection controls now reject user-triggered mutations while a response is streaming and surface `generation_in_progress`.
+- `RuntimeClientViewModelTest.streamingBlocksRuntimeRouteTrustAndConnectionMutations` verifies endpoint, pairing code, discovery, trust, connection, persisted reconnect, pending pairing route, and envelope state are preserved during streaming.
+- macOS runtime chat history replay now rejects semantically invalid decoded JSONL events instead of returning partial history from a corrupt store.
+- `LocalRuntimeMessageRouterTests.testRuntimeChatHistorySemanticallyInvalidEventReturnsStructuredError` verifies invalid chat request message roles return structured `chat_store_unavailable` errors for session and message history requests without leaking prior transcript text.
+- `script/check_copy_hygiene.py` and the aggregate no-device gate now require these contracts.
+- Latest focused evidence: the Android full `RuntimeClientViewModelTest` suite passed with Android Studio JBR, and the macOS semantic chat corruption, runtime chat history, and runtime chat store Swift filters passed.
+- Latest static evidence: copy hygiene, docs hygiene, shell syntax, and diff whitespace checks passed.
+- Latest aggregate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh` passed after this change with log `/tmp/aetherlink-no-device-route-chat-semantic-final.log`.
+- Caveat: this does not prove physical Android install, camera QR scanning, real device haptics, launcher or Dock screenshots, physical/live-backend streamed chat/cancel, or real different-network runtime connectivity.
+
+## 2026-06-28 Stream Termination Reasoning Closure and Runtime Memory Semantic Validation
+
+The latest evidence is no-device Android JVM, macOS SwiftPM, and script evidence only because the Android phone was disconnected during this pass:
+
+- Android stream termination now closes the trailing active assistant reasoning state and clears any pending inline reasoning tag on `chat.done`, `chat.cancel`, active runtime error, and receive failure.
+- `RuntimeClientViewModelTest.activeStreamTerminationClosesTrailingAssistantReasoningState` verifies the active assistant message keeps its answer and reasoning text, older assistant messages remain unchanged, and only the active trailing reasoning state closes.
+- macOS runtime memory replay now validates decoded JSONL event semantics, so blank ids and blank upsert content are treated as corrupt log lines instead of being silently dropped.
+- `LocalRuntimeMessageRouterTests.testRuntimeMemoryStoreReportsSemanticallyInvalidUpsertLine` verifies a decodable but blank-content upsert line returns `RuntimeMemoryStoreError.corruptEventLog(line:reason:)`.
+- `script/check_copy_hygiene.py` and the aggregate no-device gate now require these contracts.
+- Latest focused evidence: the Android stream-termination reasoning test passed, and the macOS runtime memory semantic corruption Swift test passed.
+- Latest static evidence: copy hygiene and shell syntax checks passed.
+- Latest aggregate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh` passed after this change with log `/tmp/aetherlink-no-device-reasoning-memory-semantic-final.log`.
+- Caveat: this does not prove physical Android install, camera QR scanning, real device haptics, launcher or Dock screenshots, physical/live-backend streamed chat/cancel, or real different-network runtime connectivity.
+
+## 2026-06-28 Streaming Memory Mutation Guard and Runtime Memory Corrupt-Log Visibility
+
+The latest evidence is no-device Android JVM, macOS SwiftPM, and script evidence only because the Android phone was disconnected during this pass:
+
+- Android runtime memory add, remove, and enable/disable commands now reject while a response is streaming, preserve the current memory list, and surface `generation_in_progress` without sending `memory.upsert` or `memory.delete`.
+- `RuntimeClientViewModelTest.streamingBlocksMemoryMutations` verifies active-generation memory mutations do not change local memory state or send runtime memory envelopes.
+- macOS runtime memory JSONL storage now throws `RuntimeMemoryStoreError.corruptEventLog(line:reason:)` for corrupt non-empty lines instead of silently dropping them.
+- `LocalRuntimeMessageRouterTests.testRuntimeMemoryStoreReportsCorruptJSONLLineInsteadOfDroppingIt` verifies the store reports the corrupt line and sanitizes the decode failure message.
+- `LocalRuntimeMessageRouterTests.testRuntimeMemoryListCorruptStoreReturnsStructuredError` verifies `memory.list` returns `memory_store_unavailable` without leaking raw corrupt-line contents.
+- `script/check_copy_hygiene.py` and the aggregate no-device gate now require these contracts.
+- Latest focused evidence: the Android streaming memory mutation ViewModel test passed, and the two macOS runtime memory corruption Swift tests passed.
+- Latest static evidence: copy hygiene and shell syntax checks passed.
+- Latest aggregate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh` passed after this change with log `/tmp/aetherlink-no-device-memory-guards-final.log`.
+- Caveat: this does not prove physical Android install, camera QR scanning, real device haptics, launcher or Dock screenshots, physical/live-backend streamed chat/cancel, or real different-network runtime connectivity.
+
+## 2026-06-28 Streaming Composer Input Guard and Runtime History Handler Empty Windows
+
+The latest evidence is no-device Android JVM, macOS SwiftPM, and script evidence only because the Android phone was disconnected during this pass:
+
+- Android `RuntimeClientViewModel.updateChatInput(...)` now rejects stale composer input callbacks while streaming, preserving the current draft and surfacing `generation_in_progress`.
+- `RuntimeClientViewModelTest.updateChatInputRejectsWhileStreamingAndPreservesDraft` verifies a stale IME-style input change cannot mutate the draft during an active response.
+- macOS runtime history protocol handlers now preserve `limit: 0` and negative limits as empty windows for `chat.sessions.list` and `chat.messages.list`, instead of coercing them to one item.
+- `LocalRuntimeMessageRouterTests.testRuntimeChatHistoryHandlersReturnEmptyForNonPositiveLimitsWithoutReadingStore` verifies the router returns empty session/message payloads for nonpositive limits without reading a corrupt JSONL store.
+- `script/check_copy_hygiene.py` and the aggregate no-device gate now require these contracts.
+- Latest focused evidence: the Android streaming input/suggested-question ViewModel tests passed, and the macOS runtime history handler/store/corrupt-store Swift tests passed.
+- Latest static evidence: copy hygiene and shell syntax checks passed.
+- Latest aggregate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh` passed after this change with log `/tmp/aetherlink-no-device-input-router-limit-20260628092723.log`.
+- Caveat: this does not prove physical Android install, camera QR scanning, real device haptics, launcher or Dock screenshots, physical/live-backend streamed chat/cancel, or real different-network runtime connectivity.
+
+## 2026-06-28 Suggested Question Streaming Lockout and Runtime History Zero-Limit Bypass
+
+The latest evidence is no-device Android JVM, macOS SwiftPM, and script evidence only because the Android phone was disconnected during this pass:
+
+- Android suggested-question chips now stay visible but disabled while a response is streaming. They expose a localized wait-for-stream state description, use muted visual treatment, and do not dispatch haptics or fill the composer.
+- `RuntimeClientViewModelTest.useSuggestedQuestionRejectsWhileStreamingAndPreservesDraft` verifies a stale suggested-question callback during streaming returns `generation_in_progress` and preserves the current composer draft.
+- `ClientScreensNoDeviceComposeTest.chatScreenStreamingSuggestedQuestionChipsAreDisabledAcrossSupportedLanguages` verifies the disabled chip semantics and localized state across English, Korean, Japanese, Simplified Chinese, and French.
+- macOS runtime chat history zero and negative limits now return empty results before reading the JSONL log, so defensive empty-window requests do not surface corrupt-log errors.
+- `LocalRuntimeMessageRouterTests.testRuntimeChatStoreZeroLimitsReturnEmptyWithoutReadingLog` verifies zero and negative session/message limits skip a corrupt JSONL file, while a positive limit still surfaces the corrupt-log error.
+- `script/check_copy_hygiene.py` and the aggregate no-device gate now require these contracts.
+- Latest focused evidence: the Android suggested-question ViewModel/Compose tests passed, and the macOS zero-limit/nonpositive-limit Swift tests passed.
+- Latest static evidence: Android string parity, copy hygiene, shell syntax, and the no-device success-marker log check passed.
+- Latest aggregate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh` passed after this change with log `/tmp/aetherlink-no-device-suggestion-zero-limit-20260628091750.log`.
+- Caveat: this does not prove physical Android install, camera QR scanning, real device haptics, launcher or Dock screenshots, physical/live-backend streamed chat/cancel, or real different-network runtime connectivity.
+
+## 2026-06-28 Runtime History Limits and Route Cleanup Guards
+
+The latest evidence is no-device Android JVM, macOS SwiftPM, and script evidence only because the Android phone was disconnected during this pass:
+
+- Android runtime lifecycle acknowledgements now ignore Android-local chat sessions with colliding ids, so runtime `archive`, `restore`, or `delete` acknowledgements cannot mutate local-only history.
+- `RuntimeClientViewModelTest.runtimeLifecycleAckDoesNotMutateLocalOnlySessionWithSameId` verifies delete, archive, and restore acknowledgements do not change a local-only session with the same id.
+- Android trusted runtime restore no longer starts local discovery when a trusted relay route is already available; the stored relay route remains the reconnect target.
+- `RuntimeClientViewModelTest.trustedRuntimeRestoreDoesNotStartDiscoveryWhenRelayRouteIsAvailable` verifies relay reconnect suppresses unnecessary discovery.
+- Android route-refresh QR handling now verifies the unreachable-relay cleanup path. The failed relay route is removed from trusted runtime state, no pending pairing route remains, and the UI exposes `remote_route_unreachable` / `route_diagnostic_relay_failed` so the user can scan a fresh QR.
+- `RuntimeClientViewModelTest.routeRefreshQrDropsUnreachableRelayRouteAndRequiresFreshQrRecovery` verifies the cleanup and error path.
+- macOS runtime chat history limits now treat nonpositive `listSessions` and `listMessages` limits as empty windows instead of returning all stored history.
+- `LocalRuntimeMessageRouterTests.testRuntimeChatStoreTreatsNonPositiveLimitsAsEmptyHistoryWindows` verifies `limit: 0` and `limit: -1` return no sessions/messages.
+- `script/check_copy_hygiene.py` and the aggregate no-device gate now require these contracts.
+- Latest focused evidence: the Android four-test runtime-history/route cleanup set passed, and the macOS attachment/history two-test set passed.
+- Latest static evidence: Android string parity, macOS localization parity, docs hygiene, copy hygiene, shell syntax, and diff whitespace checks passed.
+- Latest aggregate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh` passed after this change with log `/tmp/aetherlink-no-device-runtime-history-limits-20260628090413.log`.
+- Caveat: this does not prove physical Android install, camera QR scanning, real device haptics, launcher or Dock screenshots, physical/live-backend streamed chat/cancel, or real different-network runtime connectivity.
+
+## 2026-06-28 Runtime-Owned History Cache and Attachment Storage Separation
+
+The latest evidence is no-device Android JVM, macOS SwiftPM, and script evidence only because the Android phone was disconnected during this pass:
+
+- Android runtime-owned chat message sync now only updates a session that still exists in the latest runtime-owned cache. A late `chat.messages.list` response for a session removed by `chat.sessions.list` no longer recreates the stale session or active message list.
+- `RuntimeClientViewModelTest.runtimeMessagesDoNotResurrectSessionMissingFromLatestRuntimeSummary` verifies the stale runtime-owned session stays absent after a late message sync.
+- macOS runtime chat routing now separates backend-visible augmented prompts from storage-visible history messages. Extracted document text is still sent to the backend, while stored runtime history keeps the original client-visible body and strips inline image/binary data from stored attachment metadata.
+- `LocalRuntimeMessageRouterTests.testChatSendAppendsDocumentAttachmentTextAndPreservesImageAttachment` verifies backend prompt augmentation and stored-history redaction in the same chat-send flow.
+- `script/check_copy_hygiene.py` now requires the Android stale-message regression, the runtime-cache source guard, the macOS backend/storage split, and stored-message redaction assertions.
+- Latest focused evidence: the Android stale runtime-owned message sync regression and macOS attachment/history routing regression passed.
+- Latest static evidence: Android string parity, macOS localization parity, docs hygiene, copy hygiene, shell syntax, and diff whitespace checks passed.
+- Latest aggregate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh` passed after this change with log `/tmp/aetherlink-no-device-runtime-history-storage-20260628085202.log`.
+- Caveat: this does not prove physical Android install, camera QR scanning, real device haptics, launcher or Dock screenshots, physical/live-backend streamed chat/cancel, or real different-network runtime connectivity.
+
+## 2026-06-28 QR Route Refresh and Saved Relay Lease Binding
+
+The latest evidence is no-device Android JVM, macOS SwiftPM, and script evidence only because the Android phone was disconnected during this pass:
+
+- Android route-refresh QR handling now accepts a valid latest QR for an already pinned runtime even when the QR omits `runtime_public_key` / `rk`. Device id and fingerprint still have to match, and the previously pinned public key is retained.
+- `RuntimeClientViewModelTest.routeRefreshQrWithoutPublicKeyCanRefreshPinnedRuntimeRelayRoute` verifies the optional-public-key route-refresh path updates relay host/port/id/secret/lease/nonce while preserving the pinned runtime public key.
+- macOS remote QR generation no longer restores a saved relay lease unless the lease was allocated for the current relay host, port, and route id.
+- `LocalRuntimeMessageRouterTests.testCompanionAppModelDoesNotReuseSavedLeaseForDifferentRelayRoute` verifies stale saved lease metadata does not produce a QR and forces fresh route material before pairing.
+- `script/check_copy_hygiene.py` now requires both route-refresh and saved-lease route-binding regressions.
+- Latest focused evidence: the Android QR route-refresh test and macOS stale-lease regression passed.
+- Latest static evidence: Android string parity, macOS localization parity, docs hygiene, copy hygiene, shell syntax, and diff whitespace checks passed.
+- Latest aggregate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh` passed after this change with log `/tmp/aetherlink-no-device-qr-route-refresh-lease-binding-20260628084120.log`.
+- Caveat: this does not prove physical Android install, camera QR scanning, real device haptics, launcher or Dock screenshots, physical/live-backend streamed chat/cancel, or real different-network runtime connectivity.
+
+## 2026-06-28 Drawer Disabled Visual State And Connection Recovery Result Tone
+
+The latest evidence is no-device Android Compose, macOS SwiftPM, and script evidence only because the Android phone was disconnected during this pass:
+
+- Android previous-chat drawer rows that are locked during streaming now expose a visibly disabled alpha state while keeping the existing disabled semantics and localized wait-for-stream reason.
+- The drawer disabled-row regression verifies five localized states and confirms a disabled row click does not select a chat or emit haptic feedback.
+- macOS Connection Recovery result messages now expose localized ready/warning/pending tone in the accessibility label, rather than relying only on color and SF Symbol tone.
+- `AetherLinkLocalizationTests.testConnectionRecoveryResultAccessibilityLabelUsesSelectedLanguageAndTone` verifies ready, warning, and fallback result labels across English, Korean, Japanese, Simplified Chinese, and French.
+- Latest focused evidence: the Android drawer disabled-row Compose test and macOS Connection Recovery result accessibility XCTest passed.
+- Latest static evidence: macOS localization parity, copy hygiene, shell syntax, and scoped diff whitespace checks passed after the guard updates.
+- Caveat: this does not prove physical TalkBack or VoiceOver traversal, physical Android install, camera QR scanning, real device haptics, live different-network runtime connectivity, or physical model streaming/cancel.
+
+## 2026-06-28 macOS Pairing QR Unavailable Accessibility Value
+
+The latest evidence is macOS source/SwiftPM/script evidence only because the Android phone was disconnected during this pass:
+
+- Pairing QR accessibility now uses the same QR generation result as rendering, so a failed QR image generation reports `Pairing QR code unavailable` instead of the scan-ready value.
+- `pairingQRCodeAccessibilityValue(isExpired:isAvailable:)` verifies active, expired, and unavailable states without rendering SwiftUI.
+- `AetherLinkLocalizationTests.testPairingQRCodeAccessibilityCopyUsesSelectedLanguageAndState` verifies the unavailable QR state across English, Korean, Japanese, Simplified Chinese, and French.
+- `script/check_macos_localization.py` and `script/check_copy_hygiene.py` now require the availability-aware QR accessibility wiring and focused localization regression.
+- Latest focused evidence: `swift build --product AetherLink` and the focused Pairing QR localization test passed.
+- Latest static evidence: macOS localization parity, copy hygiene, docs hygiene, shell syntax, scoped diff whitespace, and full diff whitespace checks passed.
+- Latest aggregate evidence: `script/check_no_device_quality.sh` passed after this change, including Android string parity, copy hygiene, docs hygiene, QR/relay smoke, Android no-device tests, macOS localization/render smoke, document ingestion tests, model routing tests, and runtime router tests.
+- Caveat: this does not prove live VoiceOver traversal, rendered macOS screen capture, physical Android install, camera QR scanning, real device haptics, live different-network runtime connectivity, or physical model streaming/cancel.
+
+## 2026-06-28 Android Drawer And Rename Dialog Action Labels
+
+The latest evidence is Android source/JVM/Robolectric/script evidence only because the Android phone was disconnected during this pass:
+
+- Chat history row overflow buttons now expose contextual `Chat options for <title>` click action labels, including when disabled by an active stream.
+- The rename chat dialog now exposes contextual `Confirm: Rename chat` and `Cancel: Rename chat` accessibility labels while keeping the visible button text compact.
+- `ClientScreensNoDeviceComposeTest.chatDrawerDisabledItemsExplainStreamingLockoutAcrossSupportedLanguages` verifies the disabled overflow button action label and streaming lockout reason across English, Korean, Japanese, Simplified Chinese, and French.
+- `ClientScreensNoDeviceComposeTest.chatDrawerOverflowMenuActionsKeepChatContextAcrossSupportedLanguages` verifies the active overflow button action label and menu item labels across the same five languages.
+- `ClientScreensNoDeviceComposeTest.renameChatSessionDialogExposesTitleReadinessAndHaptics` verifies rename title readiness plus contextual Save/Cancel labels.
+- `script/check_copy_hygiene.py` now requires the source semantics wiring, focused Compose regressions, and no-device coverage labels for these actions.
+- Latest focused evidence: the drawer disabled-overflow, drawer active-overflow, and rename-dialog regressions passed together.
+- Latest static evidence: Android string parity, copy hygiene, docs hygiene, shell syntax, scoped diff whitespace, and full diff whitespace checks passed.
+- Latest aggregate evidence: `script/check_no_device_quality.sh` passed after this change, including Android string parity, copy hygiene, docs hygiene, QR/relay smoke, Android no-device tests, macOS localization/render smoke, document ingestion tests, model routing tests, and runtime router tests.
+- Caveat: this does not prove physical TalkBack action announcements, physical Android install, camera QR scanning, real device haptics, live different-network runtime connectivity, or physical model streaming/cancel.
+
+## 2026-06-28 Android QR Scanner And Chat Action Labels
+
+The latest evidence is Android source/JVM/Robolectric/script evidence only because the Android phone was disconnected during this pass:
+
+- QR scanner top-bar close now exposes a contextual localized `Close QR scanner` accessibility label instead of sharing the generic bottom `Cancel` label.
+- Chat jump-to-latest now exposes its localized `Jump to latest message` copy as an explicit accessibility click action label.
+- Provider diagnostics toggles now expose contextual `Show details for <provider>` and `Hide details for <provider>` click action labels.
+- `PairingQrScannerChromeNoDeviceComposeTest` verifies the scanner close label across English, Korean, Japanese, Simplified Chinese, and French.
+- `ClientScreensNoDeviceComposeTest.chatScreenJumpToLatestActionExplainsStateAcrossSupportedLanguages` verifies the jump-to-latest action label across supported app languages.
+- `ClientScreensNoDeviceComposeTest.connectionStatusProviderDiagnosticsToggleExposesExpandedState` verifies provider diagnostics show/hide action labels for Ollama and LM Studio rows.
+- `script/check_copy_hygiene.py` now requires the source semantics wiring, focused Compose regressions, and no-device coverage labels for these actions.
+- Latest focused evidence: the QR scanner chrome, chat jump-to-latest, and provider diagnostics regressions passed together.
+- Latest static evidence: Android string parity, copy hygiene, shell syntax, scoped diff whitespace, docs hygiene, and full diff whitespace checks passed.
+- Latest aggregate evidence: `script/check_no_device_quality.sh` passed after this change, including Android string parity, copy hygiene, docs hygiene, QR/relay smoke, Android no-device tests, macOS localization/render smoke, document ingestion tests, model routing tests, and runtime router tests.
+- Caveat: this does not prove physical TalkBack action announcements, physical Android install, camera QR scanning, real device haptics, live different-network runtime connectivity, or physical model streaming/cancel.
+
+## 2026-06-28 Android Settings Repeated Action Labels
+
+The latest evidence is Android source/JVM/Robolectric/script evidence only because the Android phone was disconnected during this pass:
+
+- Settings route discovery controls now expose explicit localized click action labels for find/running/stop states while preserving their localized state descriptions.
+- Settings Memory indexing model refresh now exposes the localized visible label as the accessibility action label across ready, loading, and disconnected states.
+- Settings Memory `Add Memory` now exposes a localized action label across locked, empty, and ready states while keeping the existing readiness state description.
+- Chat history bulk `Archive all chats` and `Permanently delete archived chats` controls now expose localized action labels, including when disabled by an active stream.
+- `ClientScreensNoDeviceComposeTest.settingsDiscoveryActionsExplainIdleAndRunningStatesAcrossSupportedLanguages`, `settingsModelRefreshActionLocalizesReadinessStates`, `settingsMemoryAddControlsLocalizeReadinessStateAcrossSupportedLanguages`, and `settingsBulkChatHistoryActionsExplainStreamingDisabledStateAcrossSupportedLanguages` verify the action-label behavior across English, Korean, Japanese, Simplified Chinese, and French where those tests already cover localization.
+- `script/check_copy_hygiene.py` now requires the source semantics wiring, focused Compose regressions, and no-device coverage labels for these repeated Settings actions.
+- Latest focused evidence: the four Android Settings action-label regressions passed together.
+- Latest static evidence: Android string parity, copy hygiene, docs hygiene, shell syntax, and diff whitespace checks passed.
+- Latest aggregate evidence: `script/check_no_device_quality.sh` passed after this change, including Android no-device Compose tests, macOS localization/build tests, QR/relay smoke, model routing checks, document ingestion tests, and runtime router tests.
+- Caveat: this does not prove physical TalkBack action announcements, physical Android install, camera QR scanning, real device haptics, live different-network runtime connectivity, or physical model streaming/cancel.
+
+## 2026-06-28 Android Primary Action And Preference Action Labels
+
+The latest evidence is Android source/JVM/Robolectric/script evidence only because the Android phone was disconnected during this pass:
+
+- Settings QR pairing `Scan QR`, Settings trusted-runtime `Connect`, Chat empty-state `Connect`/`Scan QR`, and backend-unavailable `Refresh health` now expose explicit localized click action labels instead of relying on generic click actions.
+- Settings Appearance and Language radio rows now expose localized `Select ...` action labels while preserving their localized selected-state descriptions.
+- `ClientScreensNoDeviceComposeTest.settingsPairingScanQrActionExplainsDisabledConnectingState`, `settingsPairingConnectActionExplainsDisabledConnectingState`, and `settingsPreferenceRowsExposeSelectedStateToAccessibility` verify Settings action labels and selected preference row semantics.
+- `ClientScreensNoDeviceComposeTest.chatScreenBackendUnavailableBannerExposesAccessibilitySummaryAndRefreshCallback`, `chatScreenBackendUnavailableRefreshActionExplainsStateAcrossSupportedLanguages`, `chatScreenUntrustedRuntimeShowsQrFirstPairingCallToAction`, and `chatScreenConnectActionExplainsDisabledConnectingState` verify Chat/backend action labels and state descriptions.
+- `script/check_copy_hygiene.py` now requires the source semantics wiring, new preference action string key, focused Compose regressions, and no-device coverage labels.
+- Latest focused evidence: Settings and Chat/backend action-label regressions passed.
+- Latest static evidence: copy hygiene, shell syntax, and scoped diff whitespace checks passed before the aggregate run.
+- Latest aggregate evidence: `script/check_no_device_quality.sh` passed after this change, including Android string parity, copy hygiene, docs hygiene, QR/relay smoke, Android no-device tests, macOS localization/render smoke, document ingestion tests, model routing tests, and runtime router tests.
+- Caveat: this does not prove physical TalkBack action announcements, physical Android install, camera QR scanning, real device haptics, live different-network runtime connectivity, or physical model streaming/cancel.
+
+## 2026-06-28 Android Drawer Footer And Connected Action Labels
+
+The latest evidence is Android source/JVM/Robolectric/script evidence only because the Android phone was disconnected during this pass:
+
+- Android navigation drawer destination rows now expose explicit localized click action labels, including the footer Settings action.
+- Android connected status actions now expose explicit localized click action labels for Refresh health and Disconnect, while preserving their localized readiness state descriptions.
+- `ClientScreensNoDeviceComposeTest.navigationDrawerSettingsFooterLocalizesActionSemanticsAcrossSupportedLanguages` verifies the drawer Settings footer action label in English, Korean, Japanese, Simplified Chinese, and French.
+- `ClientScreensNoDeviceComposeTest.connectionStatusConnectedActionsExplainStateAcrossSupportedLanguages` verifies the connected Refresh/Disconnect action labels and state descriptions across English, Korean, Japanese, Simplified Chinese, and French.
+- `script/check_copy_hygiene.py` now requires the drawer destination action wiring, connected action-label wiring, focused Compose regressions, and no-device coverage labels.
+- Latest focused evidence: both Android action-label regressions passed. The initial parallel Gradle run hit a test-results file `NoSuchFileException`, and the same drawer footer test passed when rerun by itself.
+- Latest aggregate evidence: `script/check_no_device_quality.sh` passed after this change, including Android string parity, copy hygiene, docs hygiene, QR/relay smoke, Android no-device tests, macOS localization/render smoke, document ingestion tests, model routing tests, and runtime router tests.
+- Caveat: this does not prove physical TalkBack action announcements, physical Android install, camera QR scanning, real device haptics, live different-network runtime connectivity, or physical model streaming/cancel.
+
+## 2026-06-28 Android Drawer Empty History And Rail Settings Accessibility
+
+The latest evidence is Android source/JVM/Robolectric/script evidence only because the Android phone was disconnected during this pass:
+
+- Android navigation drawer empty-history copy now exposes the localized `No previous chats yet.` state as a polite live region.
+- Android permanent navigation rail Settings item now exposes an explicit localized click action label across the five supported app languages.
+- `ClientScreensNoDeviceComposeTest.navigationDrawerEmptyHistoryAnnouncesLocalizedLiveRegionAcrossSupportedLanguages` verifies the drawer empty-history state in English, Korean, Japanese, Simplified Chinese, and French.
+- `ClientScreensNoDeviceComposeTest.permanentNavigationRailSettingsItemLocalizesActionSemantics` verifies the large-screen Settings rail action label in English, Korean, Japanese, Simplified Chinese, and French.
+- `script/check_copy_hygiene.py` now requires the drawer empty-history source pattern, permanent rail Settings action wiring, focused Compose regressions, and no-device coverage labels.
+- Latest focused evidence: both Android navigation accessibility regressions passed.
+- Latest aggregate evidence: `script/check_no_device_quality.sh` passed after this change, including Android string parity, copy hygiene, docs hygiene, QR/relay smoke, Android no-device tests, macOS localization/render smoke, document ingestion tests, model routing tests, and runtime router tests.
+- Caveat: this does not prove physical TalkBack announcement timing, physical Android install, camera QR scanning, real device haptics, live different-network runtime connectivity, or physical model streaming/cancel.
+
+## 2026-06-28 macOS Provider Status Decorative Icon Accessibility
+
+The latest evidence is macOS SwiftUI source/script evidence only because the Android phone was disconnected during this pass:
+
+- macOS Model Providers status rows now hide their decorative status icon from assistive technologies.
+- The provider row summary and provider status pill remain the accessible sources for provider name, status, and detail.
+- `script/check_macos_localization.py` now requires the provider status icon source pattern and `.accessibilityHidden(true)` wiring.
+- `script/check_copy_hygiene.py` now requires the macOS localization guard snippet and no-device coverage label.
+- Latest focused evidence: macOS localization parity, copy hygiene, no-device shell syntax validation, and scoped diff whitespace checks passed.
+- Latest aggregate evidence: `script/check_no_device_quality.sh` passed after this change, including Android string parity, copy hygiene, docs hygiene, QR/relay smoke, Android no-device tests, macOS localization/render smoke, document ingestion tests, model routing tests, and runtime router tests.
+- Caveat: this does not prove live VoiceOver traversal, rendered macOS screen capture, physical Android install, camera QR scanning, live different-network runtime connectivity, or physical model streaming/cancel.
+
+## 2026-06-28 Android Memory Empty-State Live Region
+
+The latest evidence is Android source/JVM/Robolectric/script evidence only because the Android phone was disconnected during this pass:
+
+- Android Settings Memory empty states now expose their localized disconnected and connected-empty copy as polite live regions.
+- `ClientScreensNoDeviceComposeTest.settingsMemoryEmptyStatesAnnounceLocalizedLiveRegion` verifies `memory_empty_disconnected` and `memory_empty` across English, Korean, Japanese, Simplified Chinese, and French.
+- `script/check_copy_hygiene.py` now requires the Memory empty-state source pattern, focused Compose regression, and no-device coverage label.
+- Latest focused evidence: Android Settings Memory empty-state live-region regression passed.
+- Latest aggregate evidence: `script/check_no_device_quality.sh` passed after this change, including Android string parity, copy hygiene, docs hygiene, QR/relay smoke, Android no-device tests, macOS localization/render smoke, document ingestion tests, model routing tests, and runtime router tests.
+- Caveat: this does not prove physical TalkBack announcement timing, physical Android install, camera QR scanning, real device haptics, live different-network runtime connectivity, or physical model streaming/cancel.
+
+## 2026-06-28 Android Drawer Section Heading Accessibility
+
+The latest evidence is Android source/JVM/Robolectric/script evidence only because the Android phone was disconnected during this pass:
+
+- Android navigation drawer now exposes the visible `Previous chats` section label as a TalkBack heading.
+- `ClientScreensNoDeviceComposeTest.navigationDrawerPreviousChatsLabelIsAHeadingAcrossSupportedLanguages` verifies the localized drawer section heading across English, Korean, Japanese, Simplified Chinese, and French.
+- `script/check_copy_hygiene.py` now requires the drawer section heading source pattern, focused Compose regression, and no-device coverage label.
+- Latest focused evidence: Android drawer section heading accessibility regression passed.
+- Latest aggregate evidence: `script/check_no_device_quality.sh` passed after this change, including Android string parity, copy hygiene, docs hygiene, QR/relay smoke, Android no-device tests, macOS localization/render smoke, document ingestion tests, model routing tests, and runtime router tests.
+- Caveat: this does not prove physical TalkBack traversal order, physical Android install, camera QR scanning, real device haptics, live different-network runtime connectivity, or physical model streaming/cancel.
+
+## 2026-06-28 Critical QR Copy And Activity Label Polish
+
+The latest evidence is Android/macOS source/JVM/Robolectric/XCTest/script evidence only because the Android phone was disconnected during this pass:
+
+- Android Settings pairing copy now keeps the critical QR route detail and security note fully visible instead of truncating them with ellipsis.
+- `ClientScreensNoDeviceComposeTest.settingsScreenRendersPairingCopyAcrossLaunchLanguages` verifies the QR detail and security note display across English, Korean, Japanese, Simplified Chinese, and French on a narrow settings surface.
+- macOS Activity technical-details labels now strip terminal punctuation from event summaries before localized formatting, avoiding awkward punctuation before language particles.
+- `AetherLinkLocalizationTests.testActivityTechnicalDetailsAccessibilityLabelUsesEventContext` verifies normal, punctuated, and fallback Activity detail labels across all five supported app languages.
+- `script/check_copy_hygiene.py` now rejects ellipsis on critical Android QR route/security copy and requires the macOS Activity normalization wiring.
+- `script/check_macos_localization.py` now requires the shared Activity summary normalization and terminal punctuation trimming set.
+- Latest focused evidence: Android QR copy visibility regression and macOS Activity detail-label grammar regression passed.
+- Latest aggregate evidence: `script/check_no_device_quality.sh` passed after this change, including Android string parity, copy hygiene, docs hygiene, QR/relay smoke, Android no-device tests, macOS localization/render smoke, document ingestion tests, model routing tests, and runtime router tests.
+- Caveat: this does not prove physical Android rendering, physical TalkBack or VoiceOver output, physical Android install, camera QR scanning, real device haptics, live different-network runtime connectivity, or physical model streaming/cancel.
+
+## 2026-06-28 Android Attachment-Only Composer Readiness
+
+The latest evidence is Android source/JVM/Robolectric/script evidence only because the Android phone was disconnected during this pass:
+
+- Android Chat composer attachment-only sends now expose a readiness state that includes the localized attachment count.
+- The readiness state reuses the same localized plural count as the attachment button and appends it to the localized `Ready to send` state.
+- `ClientScreensNoDeviceComposeTest.chatScreenSendButtonLocalizesReadinessStateAcrossSupportedLanguages` verifies the empty-message attachment-only path across English, Korean, Japanese, Simplified Chinese, and French for both the message field and send button.
+- `script/check_copy_hygiene.py` now requires the source readiness wiring, localized resource, focused Compose regression, and no-device coverage label.
+- Latest focused evidence: Android attachment-only composer readiness regression passed.
+- Latest aggregate evidence: `script/check_no_device_quality.sh` passed after this change, including Android string parity, copy hygiene, docs hygiene, QR/relay smoke, Android no-device tests, macOS localization/render smoke, document ingestion tests, model routing tests, and runtime router tests.
+- Caveat: this does not prove physical TalkBack announcement timing, physical Android install, physical file picker behavior, camera QR scanning, real device haptics, live different-network runtime connectivity, or physical model streaming/cancel.
+
+## 2026-06-28 Android Open Reasoning Initial Expansion
+
+The latest evidence is Android source/JVM/Robolectric/script evidence only because the Android phone was disconnected during this pass:
+
+- Android Chat now initializes assistant reasoning expansion from `RuntimeChatMessage.isReasoningOpen` so an actively open reasoning stream starts expanded.
+- Actively open reasoning streams expose a polite live region so assistive technology can receive streamed thinking updates separately from final answer content.
+- Completed reasoning remains muted, compact, and collapsed by default unless the user expands it.
+- Manual user expansion or collapse remains local UI state and is not overwritten by later recomposition.
+- `ClientScreensNoDeviceComposeTest.chatScreenKeepsOpenStreamingReasoningExpandedInitially` verifies the open-streaming path shows the full reasoning text, exposes `Expanded`, `Hide thinking`, and `LiveRegionMode.Polite`, and does not show the generic assistant typing placeholder while reasoning is open.
+- `script/check_copy_hygiene.py` now requires the source state-sync wiring, live-region wiring, focused Compose regression, and no-device coverage label.
+- Latest focused evidence: Android open reasoning initial-expansion and live-region regression passed.
+- Latest aggregate evidence: `script/check_no_device_quality.sh` passed after this change, including Android string parity, copy hygiene, docs hygiene, QR/relay smoke, Android no-device tests, macOS localization/render smoke, document ingestion tests, model routing tests, and runtime router tests.
+- Caveat: this does not prove physical TalkBack announcement timing, physical Android install, camera QR scanning, real model reasoning streams, real device haptics, live different-network runtime connectivity, or physical model streaming/cancel.
+
+## 2026-06-28 Android Embedding Model Empty-State Live Region
+
+The latest evidence is Android source/JVM/Robolectric/script evidence only because the Android phone was disconnected during this pass:
+
+- Android Settings Memory indexing model empty states now expose their localized text as a polite live region.
+- The disconnected state says the user must connect to the trusted runtime before choosing an embedding model.
+- The connected-empty state says no memory indexing models are available from AetherLink Runtime.
+- `ClientScreensNoDeviceComposeTest.settingsEmbeddingModelEmptyStatesAnnounceLocalizedLiveRegion` verifies both empty states across English, Korean, Japanese, Simplified Chinese, and French.
+- `script/check_copy_hygiene.py` now requires the source live-region wiring, focused Compose regression, and no-device coverage label.
+- Latest focused evidence: Android embedding-model empty-state live-region regression passed.
+- Latest aggregate evidence: `script/check_no_device_quality.sh` passed after this change, including Android string parity, copy hygiene, docs hygiene, QR/relay smoke, Android no-device tests, macOS localization/render smoke, and runtime router tests.
+- Caveat: this does not prove physical TalkBack announcement timing, physical Android install, camera QR scanning, real device haptics, live different-network runtime connectivity, or physical model streaming/cancel.
+
+## 2026-06-28 macOS Model Provider Empty-State Accessibility
+
+The latest evidence is macOS source/XCTest/script evidence only because the Android phone was disconnected during this pass:
+
+- macOS Status now renders a localized empty state when the model-provider list is empty instead of leaving the `Model Providers` panel blank.
+- The empty state is localized across English, Korean, Japanese, Simplified Chinese, and French.
+- The empty state exposes a merged VoiceOver label through `companionEmptyStateAccessibilityLabel`, matching the existing Models, Pairing, Trusted Devices, and Activity empty-state pattern.
+- `AetherLinkLocalizationTests.testModelProviderEmptyStateAccessibilityLabelUsesSelectedLanguage` verifies the localized title/body accessibility summary across all five supported app languages.
+- `script/check_macos_localization.py` now requires the provider empty-state title, description, `ContentUnavailableView`, and accessibility-label wiring in `StatusView`.
+- Latest focused evidence: macOS model-provider empty-state accessibility regression passed.
+- Latest aggregate evidence: `script/check_no_device_quality.sh` passed after this change, including copy hygiene, docs hygiene, macOS localization parity, macOS render smoke, Android no-device checks, QR/relay smoke, and runtime router tests.
+- Caveat: this does not prove physical Android install, camera QR scanning, real device haptics, live different-network runtime connectivity, or physical model streaming/cancel.
+
+## 2026-06-28 Android Model Picker Empty-State Live Region
+
+The latest evidence is source/JVM/Robolectric/script evidence only because the Android phone was disconnected during this pass:
+
+- Android chat top-bar model picker empty states now render localized title plus detail instead of a single body line.
+- `model_picker_empty_state_summary` is localized across English, Korean, Japanese, Simplified Chinese, and French, preserving locale-specific punctuation for the accessibility summary.
+- The model picker empty-state container exposes the localized title/body summary as a merged polite live region.
+- `ClientScreensNoDeviceComposeTest.chatTopBarModelPickerEmptyStatesShowLocalizedTitleAndLiveRegion` verifies exact title/detail/summary resources for connected and disconnected empty states across all five supported app languages, and verifies rendered connected empty-state title/detail/live-region behavior.
+- `script/check_copy_hygiene.py` now requires the model picker empty-state source pattern, focused Compose regression, summary resource, and no-device coverage label.
+- Latest focused evidence: Android model picker empty-state live-region regression passed.
+- Latest aggregate evidence: the full `script/check_no_device_quality.sh` gate passed after this change.
+- Caveat: this does not prove physical TalkBack announcement timing, physical install, camera QR scanning, real device haptics, live different-network runtime connectivity, or physical model streaming/cancel.
+
+## 2026-06-28 Android Streaming Assistant Content Live Region
+
+The latest evidence is source/JVM/Robolectric/script evidence only because the Android phone was disconnected during this pass:
+
+- Android Chat now exposes the latest non-empty assistant reply as a polite live region while that reply is still actively streaming.
+- The existing blank `Generating...` streaming placeholder remains covered separately; this pass covers the later state where actual assistant text has started arriving.
+- The live region uses the localized `chat_message_accessibility_summary`, so TalkBack can announce the assistant role plus current streamed content instead of only the initial placeholder.
+- `ClientScreensNoDeviceComposeTest.chatScreenStreamingAssistantContentAnnouncesLatestReplyAcrossSupportedLanguages` verifies the live-region behavior across English, Korean, Japanese, Simplified Chinese, and French and confirms the message copy long-click action remains present.
+- `script/check_copy_hygiene.py` now requires the streaming assistant content source pattern, focused Compose regression, and no-device coverage label.
+- Latest focused evidence: Android streaming assistant content live-region regression passed.
+- Latest aggregate evidence: the full `script/check_no_device_quality.sh` gate passed after this change.
+- Caveat: this does not prove physical TalkBack announcement timing, physical install, camera QR scanning, real device haptics, live different-network runtime connectivity, or physical model streaming/cancel.
+
+## 2026-06-28 Android Model Search No-Results Live Region
+
+The latest evidence is source/JVM/Robolectric/script evidence only because the Android phone was disconnected during this pass:
+
+- Android chat top-bar model picker search now exposes the localized model no-results state as a polite live region.
+- Visible copy is unchanged; the dynamic `Try another model name, provider, service, or source.` state is now easier for TalkBack users to notice after a model search query changes.
+- `ClientScreensNoDeviceComposeTest.chatTopBarModelPickerSearchClearsWithContextAndHapticFeedback` verifies the English no-results live-region node and existing haptic/search clear interaction.
+- `ClientScreensNoDeviceComposeTest.chatTopBarModelPickerSearchLocalizesClearAndNoResultsAcrossSupportedLanguages` verifies localized model no-results resource copy and clear-action localization across English, Korean, Japanese, Simplified Chinese, and French.
+- `script/check_copy_hygiene.py` now requires the model-picker source pattern, focused Compose regression, and no-device coverage label.
+- Latest focused evidence: Android model search no-results live-region regressions passed.
+- Latest aggregate evidence: the full `script/check_no_device_quality.sh` gate passed after this change.
+- Caveat: this does not prove physical TalkBack announcement timing, physical install, camera QR scanning, real device haptics, live different-network runtime connectivity, or physical model streaming/cancel.
+
+## 2026-06-28 Android Chat Search No-Results Live Region
+
+The latest evidence is source/JVM/Robolectric/script evidence only because the Android phone was disconnected during this pass:
+
+- Android navigation drawer previous-chat search and Settings Chat History search now expose the localized no-results state as a polite live region.
+- Visible copy is unchanged; the dynamic `No matching chats.` state is now easier for TalkBack users to notice after a search query changes.
+- `ClientScreensNoDeviceComposeTest.navigationDrawerChatSearchLocalizesClearAndNoResultsAcrossSupportedLanguages` verifies drawer no-results live-region behavior across English, Korean, Japanese, Simplified Chinese, and French.
+- `ClientScreensNoDeviceComposeTest.settingsChatHistorySearchLocalizesClearAndNoResultsAcrossSupportedLanguages` verifies Settings chat-history no-results live-region behavior across the same five languages.
+- `script/check_copy_hygiene.py` now requires the drawer and Settings source patterns, focused Compose regressions, and no-device coverage label.
+- Latest focused evidence: Android chat search no-results live-region regressions passed.
+- Latest aggregate evidence: the full `script/check_no_device_quality.sh` gate passed after this change.
+- Caveat: this does not prove physical TalkBack announcement timing, physical install, camera QR scanning, real device haptics, live different-network runtime connectivity, or physical model streaming/cancel.
+
+## 2026-06-28 Android Preference Group Heading Accessibility
+
+The latest evidence is source/JVM/Robolectric/script evidence only because the Android phone was disconnected during this pass:
+
+- Android Settings Preferences now exposes the visible `Appearance` and `Language` group labels as TalkBack headings.
+- `ClientScreensNoDeviceComposeTest.settingsPreferenceGroupLabelsExposeHeadingSemanticsAcrossSupportedLanguages` verifies those localized headings across English, Korean, Japanese, Simplified Chinese, and French.
+- `script/check_copy_hygiene.py` now requires the heading semantics source pattern, focused Compose regression, and no-device coverage label.
+- Latest focused evidence: Android preference group heading accessibility regression passed.
+- Latest aggregate evidence: the full `script/check_no_device_quality.sh` gate passed after this change.
+- Caveat: this does not prove physical TalkBack traversal order, physical install, camera QR scanning, real device haptics, live different-network runtime connectivity, or physical model streaming/cancel.
+
+## 2026-06-28 macOS Destructive Confirmation Cancel Accessibility
+
+The latest evidence is source/XCTest/script evidence only because the Android phone was disconnected during this pass:
+
+- macOS Trusted Devices remove-trust confirmation now gives the visible `Cancel` action a contextual accessibility label containing the selected device and key fingerprint.
+- macOS Connection Recovery saved-connection removal confirmation now gives both destructive confirm and cancel actions contextual accessibility labels tied to the saved endpoint or localized fallback.
+- `Cancel removing trust for %@. Key fingerprint %@` and `Cancel removing saved connection details for %@` are localized across English, Korean, Japanese, Simplified Chinese, and French.
+- `AetherLinkLocalizationTests.testTrustedDeviceCancelRemoveActionAccessibilityLabelUsesDeviceContext` verifies trusted-device cancel labels and fallbacks across all five supported app languages.
+- `AetherLinkLocalizationTests.testCancelRemoveSavedConnectionDetailsAccessibilityLabelUsesRouteContext` verifies saved-connection cancel labels and fallbacks across all five supported app languages.
+- `script/check_macos_localization.py` and `script/check_copy_hygiene.py` now require the new dialog helpers, localization keys, focused tests, and no-device coverage labels.
+- Latest focused evidence: macOS destructive confirmation cancel regressions passed.
+- Latest aggregate evidence: the full `script/check_no_device_quality.sh` gate passed after this change.
+- Caveat: this does not prove live VoiceOver output, physical rendered screenshots, physical Android install, camera QR scanning, live different-network runtime connectivity, or physical model streaming/cancel.
+
+## 2026-06-28 macOS Model Provider Row And Model Group Heading Accessibility
+
+The latest evidence is source/XCTest/script evidence only because the Android phone was disconnected during this pass:
+
+- macOS Model Providers rows now expose a localized provider-row accessibility summary containing provider name, status, and detail.
+- `Provider %@. Status %@. %@` and `No provider details` are localized across English, Korean, Japanese, Simplified Chinese, and French.
+- macOS model group headers now keep the existing localized `Model section ...` label and add the VoiceOver heading trait.
+- `AetherLinkLocalizationTests.testProviderStatusRowAccessibilityLabelUsesProviderContext` verifies provider-row labels and fallbacks across all five supported app languages.
+- `script/check_macos_localization.py` requires the provider-row helper, provider-row format, focused XCTest, and model-group heading trait.
+- Copy hygiene now requires no-device coverage labels `macOS provider row accessibility summaries` and `macOS model group header heading trait`.
+- Latest focused evidence: macOS provider-row accessibility regression passed.
+- Latest aggregate evidence: the full `script/check_no_device_quality.sh` gate passed after this change.
+- Caveat: this does not prove live VoiceOver output, physical rendered screenshots, physical Android install, camera QR scanning, live different-network runtime connectivity, or physical model streaming/cancel.
+
+## 2026-06-28 Android Suggested Questions And Memory Confirmation Accessibility
+
+The latest evidence is source/JVM/Robolectric/script evidence only because the Android phone was disconnected during this pass:
+
+- Android suggested next-question groups now expose a localized count summary as a polite live region, while individual chips keep contextual suggested-question labels and insert-action labels.
+- `suggested_questions_state_count` plural copy is localized across English, Korean, Japanese, Simplified Chinese, and French.
+- Android memory deletion confirmation now gives the visible cancel button a contextual accessibility label and click label tied to the memory being removed.
+- `ClientScreensNoDeviceComposeTest.chatScreenSuggestedQuestionsAnnounceLocalizedCountAcrossSupportedLanguages` verifies the suggested-question count summary and chip action labels across all five supported app languages.
+- `ClientScreensNoDeviceComposeTest.settingsMemoryRowsExposeContextualActionAccessibility` verifies the memory remove confirmation confirm/cancel labels and haptic sequence.
+- Copy hygiene now requires the suggested-question count resource/source/test contract, the no-device coverage label `Android suggested-question count live-region accessibility`, and the contextual memory delete cancel contract.
+- Latest focused evidence: Android suggested-question count and memory contextual action regressions passed.
+- Latest aggregate evidence: the full `script/check_no_device_quality.sh` gate passed after this change.
+- Caveat: this does not prove physical TalkBack traversal order, physical install, camera QR scanning, live different-network runtime connectivity, or physical model streaming/cancel.
+
+## 2026-06-28 Android Composer Attachment Count Limit Accessibility
+
+The latest evidence is source/JVM/Robolectric/script evidence only because the Android phone was disconnected during this pass:
+
+- Android chat composer attachment action now announces the current pending attachment count and the maximum attachment limit through its accessibility state.
+- The pending attachment limit is now a shared runtime constant, so ViewModel enforcement and composer accessibility copy use the same `MAX_PENDING_ATTACHMENTS` value.
+- `attach_files_state_count` plural copy and `attach_files_state_limit_reached` are localized across English, Korean, Japanese, Simplified Chinese, and French.
+- `ClientScreensNoDeviceComposeTest.chatScreenAttachButtonAnnouncesAttachmentCountAndLimitAcrossSupportedLanguages` verifies the count state, limit-reached disabled state, and localized attach click label across all five supported app languages.
+- Copy hygiene now requires the shared limit, plural resource usage, limit-reached resource usage, focused Compose regression, and no-device coverage summary label `Android composer attachment count limit accessibility`.
+- Latest focused evidence: Android composer attachment count/limit accessibility regression passed.
+- Latest aggregate evidence: the full `script/check_no_device_quality.sh` gate passed after this change.
+- Caveat: this does not prove physical TalkBack traversal order, physical install, camera QR scanning, live different-network runtime connectivity, or physical model streaming/cancel.
+
+## 2026-06-28 Android Message Role Accessibility Summaries
+
+The latest evidence is source/JVM/Robolectric/script evidence only because the Android phone was disconnected during this pass:
+
+- Android chat transcript rows now expose localized role-plus-message accessibility summaries for user and assistant messages.
+- The same message semantic targets keep the localized long-click copy action, so the speaker summary does not remove message-copy accessibility.
+- `chat_message_accessibility_summary` is localized across English, Korean, Japanese, Simplified Chinese, and French.
+- `ClientScreensNoDeviceComposeTest.chatScreenMessageRowsExposeLocalizedRoleAccessibilitySummaries` verifies user and assistant summaries plus copy long-click labels across all five supported app languages.
+- Copy hygiene now requires the summary resource, source wiring, focused Compose regression, and the no-device coverage summary label `Android message role accessibility summaries`.
+- Latest focused evidence: Android message role accessibility summary regression passed.
+- Latest aggregate evidence: the full `script/check_no_device_quality.sh` gate passed after this change.
+- Caveat: this does not prove physical TalkBack traversal order, physical install, camera QR scanning, live different-network runtime connectivity, or physical model streaming/cancel.
+
+## 2026-06-28 Android Heading Accessibility Semantics
+
+The latest evidence is source/JVM/Robolectric/script evidence only because the Android phone was disconnected during this pass:
+
+- Android app, Settings, and QR scanner landmarks now expose heading semantics for the top app bar title, active chat title, QR scanner title, QR scanner permission title, reusable screen headers, Settings expandable section rows, Preferences title, and QR pairing panel title.
+- `ClientScreensNoDeviceComposeTest.settingsScreenHeadersExposeHeadingSemanticsAcrossSupportedLanguages` verifies Settings headings across English, Korean, Japanese, Simplified Chinese, and French.
+- Existing top-bar and QR scanner no-device regressions now assert heading semantics on their visible titles.
+- Copy hygiene now requires heading imports/wiring, the focused Compose regressions, and the no-device coverage summary labels `Android screen heading semantics` plus `Android QR scanner heading semantics`.
+- Latest focused evidence: Android heading semantics regressions passed.
+- Latest aggregate evidence: the full `script/check_no_device_quality.sh` gate passed after this change.
+- Caveat: this does not prove physical TalkBack traversal order, physical install, camera QR scanning, live different-network runtime connectivity, or physical model streaming/cancel.
+
+## 2026-06-28 macOS Header Heading Accessibility
+
+The latest evidence is source/XCTest/script evidence only because the Android phone was disconnected during this pass:
+
+- Shared macOS page headers now keep their localized title-plus-subtitle accessibility label and add the VoiceOver heading trait.
+- Shared macOS panel headers now expose one localized heading label for repeated cards such as Readiness, Quick Actions, Model Providers, Models, Pairing QR, Allowed Devices, Advanced Connection Setup, and Activity.
+- `AetherLinkLocalizationTests/testCompanionPanelHeaderAccessibilityLabelUsesSelectedLanguageAndFallbacks` verifies panel header label fallback and English, Korean, Japanese, Simplified Chinese, and French `Readiness` labels.
+- `script/check_macos_localization.py` and `script/check_copy_hygiene.py` now require the page-header and panel-header heading traits, and the no-device quality summary names `macOS page header heading trait` plus `macOS panel header heading trait`.
+- Latest focused evidence: `swift test --filter 'AetherLinkLocalizationTests/testCompanionPageHeaderAccessibilityLabelUsesSelectedLanguageAndFallbacks|AetherLinkLocalizationTests/testCompanionPanelHeaderAccessibilityLabelUsesSelectedLanguageAndFallbacks'` passed.
+- Latest aggregate evidence: the full `script/check_no_device_quality.sh` gate passed after this change.
+- Caveat: this does not prove physical VoiceOver navigation order, optical QR scan, live different-network runtime connectivity, or physical model streaming/cancel.
+
+## 2026-06-28 Android Drawer Runtime Summary Accessibility
+
+The latest evidence is source/JVM/Robolectric/script evidence only because the Android phone was disconnected during this pass:
+
+- The drawer runtime summary now exposes one localized accessibility summary for runtime name, connection status, selected model, and the missing-model recovery detail.
+- `ClientScreensNoDeviceComposeTest.navigationDrawerRuntimeSummaryShowsSavedMissingModelRecovery` verifies the summary content description across English, Korean, Japanese, Simplified Chinese, and French.
+- Copy hygiene now requires the localized summary resources, `clearAndSetSemantics`, the focused Compose assertion, and the no-device coverage summary label `Android drawer runtime summary accessibility`.
+- Latest focused evidence: Android `ClientScreensNoDeviceComposeTest.navigationDrawerRuntimeSummaryShowsSavedMissingModelRecovery` passed.
+- Latest aggregate evidence: the full `script/check_no_device_quality.sh` gate passed after this change.
+- Caveat: this does not prove physical TalkBack announcement order, physical haptic feel, optical QR scan, live different-network runtime connectivity, or physical model streaming/cancel.
+
+## 2026-06-28 Android Drawer Chat Model Metadata
+
+The latest evidence is source/JVM/Robolectric/script evidence only because the Android phone was disconnected during this pass:
+
+- Android previous-chat drawer rows now show saved chat model metadata when available, matching the Settings history model display behavior.
+- The selected drawer row accessibility summary now includes both selected-chat context and model metadata.
+- `ClientScreensNoDeviceComposeTest.chatDrawerSearchMatchesModelAndRuntimeMetadata` verifies that searching by model id shows the matching row, displays `Model: Qwen3 8B`, and exposes the selected row summary with that model text.
+- Copy hygiene now requires drawer model metadata wiring, the selected-with-model string resource, the focused Compose evidence, and the no-device coverage summary label `Android drawer chat model metadata`.
+- Caveat: this does not prove physical TalkBack announcement order, physical haptic feel, optical QR scan, live different-network runtime connectivity, or physical model streaming/cancel.
+
+## 2026-06-28 Android Chat-History Confirmation Cancel Accessibility
+
+The latest evidence is source/JVM/Robolectric/script evidence only because the Android phone was disconnected during this pass:
+
+- Android two-step chat-history confirmations now give the visible `Cancel` button contextual accessibility labels for the exact pending action.
+- `confirmation_cancel_action_named` is localized across English, Korean, Japanese, Simplified Chinese, and French, matching the existing contextual continue/final-confirm resources.
+- `ClientScreensNoDeviceComposeTest.chatHistoryConfirmationActionLabelsLocalizeSubjectsAcrossSupportedLanguages` verifies the five-language cancel strings for bulk archive, bulk permanent delete, and single archived-chat permanent delete.
+- `ClientScreensNoDeviceComposeTest.settingsScreenPerChatHistoryActionsUseConfirmationHaptics` verifies the actual dialog exposes `Cancel: Permanently delete chat Archived project chat` as both content description and click-action label at both confirmation steps.
+- Copy hygiene now requires the cancel resource, semantic wiring, focused Compose evidence, and the no-device coverage summary label `chat history destructive confirmation and cancel action labels`.
+- Caveat: this does not prove physical TalkBack announcement order, physical haptic feel, optical QR scan, live different-network runtime connectivity, or physical model streaming/cancel.
+
+## 2026-06-28 Settings Chat History Model Metadata
+
+The latest evidence is source/JVM/Robolectric/script evidence only because the Android phone was disconnected during this pass:
+
+- Android Settings chat-history rows now show localized model metadata when a saved session carries `modelId`.
+- Row accessibility summaries include the same localized model phrase, so assistive tech can identify which model was used without reopening the chat.
+- `ClientScreensNoDeviceComposeTest.settingsChatHistoryRowsExposeLocalizedModelMetadata` covers active and archived chats across English, Korean, Japanese, Simplified Chinese, and French, including fallback from `ollama:qwen2.5:7b` to `qwen2.5:7b`.
+- Copy hygiene now requires the focused Compose test and the no-device coverage summary label `Settings chat history model metadata`.
+- Latest focused evidence: Android `ClientScreensNoDeviceComposeTest.settingsChatHistoryRowsExposeLocalizedModelMetadata` passed.
+- Latest aggregate evidence: the full `script/check_no_device_quality.sh` gate passed after this change.
+- Caveat: this does not prove physical TalkBack order, physical haptic feel, optical QR scan, live different-network runtime connectivity, or physical model streaming/cancel.
+
+## 2026-06-28 Android Drawer Saved Missing Model Recovery
+
+The latest evidence is source/JVM/Robolectric/script evidence only because the Android phone was disconnected during this pass:
+
+- The drawer runtime summary now shows a saved missing chat model name and the localized recovery message instead of falling back to `No model selected`.
+- `ClientScreensNoDeviceComposeTest.navigationDrawerRuntimeSummaryShowsSavedMissingModelRecovery` covers the connected-runtime missing-model state across English, Korean, Japanese, Simplified Chinese, and French.
+- Copy hygiene now requires the focused Compose test and the no-device coverage summary label `Android drawer saved missing model recovery`.
+- Latest focused evidence: Android `ClientScreensNoDeviceComposeTest.navigationDrawerRuntimeSummaryShowsSavedMissingModelRecovery` passed.
+- Latest aggregate evidence: the full `script/check_no_device_quality.sh` gate passed after this change.
+- Caveat: this does not prove physical TalkBack order, physical haptic feel, optical QR scan, live different-network runtime connectivity, or physical model streaming/cancel.
+
+## 2026-06-28 Android Chat Top-Bar Saved Missing Model Recovery
+
+The latest evidence is source/JVM/Robolectric/script evidence only because the Android phone was disconnected during this pass:
+
+- The chat top-bar model picker keeps the closed button conservative when a saved chat model is missing, but the expanded menu now shows the saved missing model name and the recovery copy.
+- `ClientScreensNoDeviceComposeTest.chatTopBarModelPickerShowsSavedMissingChatModelRecovery` covers a connected runtime returning a different chat model list, refresh action availability, missing saved-model visibility, recovery copy, and replacing the saved model with an available chat model.
+- Copy hygiene now requires the focused Compose test and the no-device coverage summary label `Android chat top-bar saved missing model recovery`.
+- Latest focused evidence: Android `ClientScreensNoDeviceComposeTest.chatTopBarModelPickerShowsSavedMissingChatModelRecovery` and `appTopBarKeepsNavigationModelPickerAndNewChatChrome` passed together.
+- Latest aggregate evidence: the full `script/check_no_device_quality.sh` gate passed after this change.
+- Caveat: this does not prove physical TalkBack order, physical haptic feel, optical QR scan, live different-network runtime connectivity, or physical model streaming/cancel.
+
+## 2026-06-28 Android App Top-Bar Active Chat Shell Coverage
+
+The latest evidence is source/JVM/Robolectric/script evidence only because the Android phone was disconnected during this pass:
+
+- The full `AetherLinkTopAppBar` regression now verifies that the active chat title appears beside the model picker with the localized accessibility summary.
+- The same shell test still preserves the ChatGPT-like chrome contract: navigation button, model picker near the sidebar action, New Chat action, chat-model-only picker content, and no visible generic composer placeholder copy.
+- Latest focused evidence: Android `ClientScreensNoDeviceComposeTest.appTopBarKeepsNavigationModelPickerAndNewChatChrome` passed, and was re-run with the saved missing model recovery regression after the menu change.
+- Latest aggregate evidence: the full `script/check_no_device_quality.sh` gate passed after this change.
+- Caveat: this does not prove physical TalkBack order, physical haptic feel, optical QR scan, live different-network runtime connectivity, or physical model streaming/cancel.
+
+## 2026-06-28 Android Drawer Rich Chat Search
+
+The latest evidence is source/JVM/Robolectric/script evidence only because the Android phone was disconnected during this pass:
+
+- Android drawer chat search now reuses `filterChatHistorySessions`, matching the richer Settings history search behavior.
+- Drawer search now matches model ids, runtime event names, finish reasons, error codes, and localized untitled-chat fallback text instead of only visible titles.
+- `ClientScreensNoDeviceComposeTest.chatDrawerSearchMatchesModelAndRuntimeMetadata` covers model-id search, runtime error metadata search, and untitled fallback search from the drawer.
+- Copy hygiene now requires the focused Compose test and the no-device coverage summary label `Android drawer rich chat search`.
+- Latest focused evidence: the drawer rich-search Compose regression passed, Android string parity passed, copy hygiene passed, docs hygiene passed, whitespace diff checks passed, and the full no-device quality gate passed.
+- Caveat: this does not prove physical TalkBack order, physical haptic feel, optical QR scan, live different-network runtime connectivity, or physical model streaming/cancel.
+
+## 2026-06-28 Android Chat Top-Bar Active Chat Title
+
+The latest evidence is source/JVM/Robolectric/script evidence only because the Android phone was disconnected during this pass:
+
+- Android now shows the active chat title in the chat top bar beside the model picker, with a compact ellipsized label.
+- `chat_top_bar_active_title_summary` localizes the title accessibility summary across English, Korean, Japanese, Simplified Chinese, and French.
+- `ClientScreensNoDeviceComposeTest.chatTopBarShowsActiveChatTitleAndLocalizedFallback` covers a real active title, preserves model-picker interaction, and verifies the legacy `New chat` title falls back to each locale's untitled-chat label instead of showing raw placeholder text.
+- Copy hygiene now requires `ClientScreensNoDeviceComposeTest.chatTopBarShowsActiveChatTitleAndLocalizedFallback`.
+- The no-device quality gate now includes the focused active-title Compose regression in the Android test selection.
+- Copy hygiene also requires the no-device coverage summary label `Android chat top-bar active chat title`.
+- Latest focused evidence: the active-title Compose regression passed, Android string parity passed, copy hygiene passed, docs hygiene passed, whitespace diff checks passed, and the full no-device quality gate passed.
+- Caveat: this does not prove physical TalkBack order, physical haptic feel, optical QR scan, live different-network runtime connectivity, or physical model streaming/cancel.
+
+## 2026-06-28 Android Chat Model Refresh Menu Accessibility
+
+The latest evidence is source/JVM/Robolectric/script evidence only because the Android phone was disconnected during this pass:
+
+- The chat top-bar model menu `Refresh models` row now exposes localized ready, loading, and disconnected/connect-first state descriptions.
+- `ClientScreensNoDeviceComposeTest.chatTopBarModelPickerRefreshRowLocalizesReadinessStates` covers English, Korean, Japanese, Simplified Chinese, and French refresh-row labels, state descriptions, enabled state, and click action labels.
+- Copy hygiene now requires the refresh-row regression and the no-device coverage summary names `Android chat top-bar model refresh action accessibility state`.
+- The full no-device quality gate passed after adding the chat top-bar model refresh row state regression to the default `ClientScreensNoDeviceComposeTest` run and coverage summary.
+- Caveat: this does not prove physical TalkBack order, physical haptic feel, optical QR scan, live different-network runtime connectivity, or physical model streaming/cancel.
+
+## 2026-06-28 Android Chat Top-Bar And Route Notice Polish
+
+The latest evidence is source/JVM/Robolectric/script evidence only because the Android phone was disconnected during this pass:
+
+- The chat top-bar model picker no longer renders a stale saved model id such as `dev-mock` as the visible active model when the app is disconnected and no model list is being restored.
+- `AppNavigationTest.chatModelPickerClosedLabelHidesSavedModelWhenDisconnectedAndNotRestoring` covers the helper-level fallback to `Choose model`.
+- `ClientScreensNoDeviceComposeTest.chatTopBarModelPickerDoesNotShowStaleSavedModelWhenDisconnected` covers the rendered top-bar chip content description, disconnected state, action label, and absence of stale saved-model text.
+- `ClientScreensNoDeviceComposeTest.chatScreenRouteAvailabilityNoticeExposesStateAndAction` covers the compact chat route-recovery notice merged content description, `Refresh needed` state, `Scan latest QR` action label, polite live region, click behavior, and haptic dispatch.
+- Copy hygiene now requires these regressions and the no-device coverage summary names `Android chat top-bar stale saved model suppression`.
+- The full no-device quality gate passed after adding the stale saved-model suppression and compact route-notice accessibility regressions to the default coverage summary.
+- Caveat: this does not prove physical rendering, real haptic feel, optical QR scan, live different-network runtime connectivity, or physical model streaming/cancel.
+
 ## 2026-06-27 Android Attachment-Only Prompt Resource Localization
 
 The latest evidence is source/unit/script evidence plus physical-device install/launch:
@@ -172,7 +778,7 @@ The latest evidence includes source/Robolectric/script evidence plus physical in
 - Android assistant reasoning rows now merge the label, toggle, preview, and decorative children into one accessibility element while preserving the short dim collapsed preview and expandable full thinking text.
 - Android chat-history two-step confirmation buttons keep compact visible labels, but expose contextual accessibility action labels for bulk archive, bulk permanent delete, and single archived-chat permanent delete flows.
 - Focused no-device Compose/resource coverage verifies the destructive confirmation labels and five-language string formatting across English, Korean, Japanese, Simplified Chinese, and French.
-- Copy hygiene and the no-device coverage summary now require `chat history destructive confirmation action labels`.
+- Copy hygiene and the no-device coverage summary now require `chat history destructive confirmation and cancel action labels`.
 - Latest focused evidence: Android reasoning regressions passed, Android chat-history confirmation regressions passed, Android string parity passed, copy hygiene passed, docs hygiene passed, whitespace diff checks passed, and the full no-device quality gate passed.
 - Physical device evidence: `SM_S936N` was detected by ADB, `:app:assembleDebug` passed, the debug APK installed successfully with `adb install -r`, `pidof` returned `19015`, and `dumpsys window` reported `com.localagentbridge.android/.MainActivity` as focused after launch.
 - Not covered: real TalkBack announcement order, physical haptic feel, optical QR scanning, live provider streaming/cancel, and real different-network runtime connectivity.
@@ -592,7 +1198,7 @@ The Android phone is currently disconnected. The latest no-device UI evidence is
 - Android Settings Memory indexing model rows now have no-device localization/accessibility evidence: the no-model option, selected installed embedding model row, uninstalled embedding model row, and saved-but-missing embedding model row expose contextual assistive-tech summaries across English, Korean, Japanese, Simplified Chinese, and French.
 - Android Settings Memory add action now has no-device localization/accessibility evidence: the Add Memory button exposes localized state descriptions for trusted-runtime locked, empty-input, and ready-to-add states across English, Korean, Japanese, Simplified Chinese, and French.
 - macOS Connection Recovery route diagnostics now have no-device localization/accessibility evidence: repeated technical-details disclosures expose connection setup result, connection health, or connection preparation context to assistive tech, while the visible disclosure label stays compact.
-- macOS Connection Recovery disable action now has no-device localization/accessibility evidence: the destructive `Disable Connection` button keeps compact visible text but exposes the saved endpoint or saved-connection fallback across English, Korean, Japanese, Simplified Chinese, and French.
+- macOS Connection Recovery saved-connection removal now has no-device localization/accessibility evidence: the destructive `Remove Saved Connection Details` button clearly names the data being removed and exposes the saved endpoint or saved-connection fallback across English, Korean, Japanese, Simplified Chinese, and French.
 - macOS Status Readiness now has no-device localization/accessibility evidence: each readiness row exposes title, status, and detail in one localized assistive-tech summary across all five supported languages.
 - macOS quick actions now have no-device localization/accessibility evidence: `Check Model Providers` and `Load Models` share localized readiness values and action hints across Status, toolbar, command/menu-bar surfaces in English, Korean, Japanese, Simplified Chinese, and French.
 - macOS menu-bar Pairing QR command now has no-device localization evidence: it uses the same active-session title contract as the toolbar and Status quick action, showing `Generate Pairing QR` before a QR exists and `Generate New QR` while a pairing session is active across all five supported languages.
@@ -750,7 +1356,7 @@ The Android phone is currently disconnected. The latest no-device UI evidence is
 - Latest focused macOS accessibility evidence: `swift test --filter AetherLinkLocalizationTests/testModelRowAccessibilityLabelUsesModelContext`, `python3 script/check_macos_localization.py`, `python3 script/check_copy_hygiene.py`, and `git diff --check` passed after the macOS model row accessibility polish pass.
 - Latest focused macOS accessibility evidence: `swift test --filter AetherLinkLocalizationTests/testRuntimeOverviewAccessibilityLabelUsesTitleStatusDetailAndFootnote`, `swift test --filter AetherLinkLocalizationTests/testStatusCardAccessibilityLabelUsesTitleStatusAndDetail`, `python3 script/check_macos_localization.py`, `python3 script/check_copy_hygiene.py`, and `git diff --check` passed after the macOS runtime status summary accessibility polish pass.
 - Latest focused macOS accessibility evidence: `swift test --filter AetherLinkLocalizationTests/testProviderStatusPillAccessibilityLabelUsesProviderContext`, `python3 script/check_macos_localization.py`, `python3 script/check_copy_hygiene.py`, and `git diff --check` passed after the macOS provider-status pill accessibility polish pass.
-- Latest focused macOS accessibility evidence: `swift test --filter AetherLinkLocalizationTests/testDisableConnectionAccessibilityLabelUsesRouteContext`, `python3 script/check_macos_localization.py`, `python3 script/check_copy_hygiene.py`, and `git diff --check` passed after the macOS connection-disable accessibility polish pass.
+- Latest focused macOS accessibility evidence: `swift test --filter AetherLinkLocalizationTests/testRemoveSavedConnectionDetailsAccessibilityLabelUsesRouteContext`, `python3 script/check_macos_localization.py`, `python3 script/check_copy_hygiene.py`, and `git diff --check` passed after the macOS saved-connection removal accessibility polish pass.
 - Latest focused macOS localization evidence: `swift test --filter AetherLinkLocalizationTests/testTrustedDeviceRemovalMessageUsesSelectedLanguageAndKeyFingerprint --filter AetherLinkLocalizationTests/testTrustedDeviceRemoveButtonAccessibilityLabelUsesDeviceContext`, `python3 script/check_macos_localization.py`, `python3 script/check_copy_hygiene.py`, and `python3 script/check_docs_hygiene.py` passed after the macOS trusted-device removal localization polish pass.
 - Latest focused copy evidence: `python3 script/check_android_string_parity.py` and `python3 script/check_copy_hygiene.py` passed after the Android client UI copy boundary guard pass.
 - This does not prove physical install, camera QR scan, real device haptics, launcher screenshots, live-backend chat/cancel, or real different-network runtime connectivity.
@@ -1921,6 +2527,24 @@ Some existing historical XML dumps and screenshots may still show older copy suc
 - Latest focused evidence: `python3 script/check_docs_hygiene.py` passed after this update.
 - Caveat: the Android phone was disconnected, so this does not prove physical install, QR camera pairing, physical TalkBack or VoiceOver output, live streamed chat/cancel, or real different-network runtime connectivity.
 
+## 2026-06-28 Android Trusted Runtime Forget Confirmation Action Labels
+
+- Scope: no-device Android Compose/source/script evidence for the Settings trusted-runtime forget confirmation dialog.
+- Result: the confirmation dialog keeps compact visible copy, while the destructive confirm action and cancel action now expose localized runtime-specific accessibility labels and click action labels.
+- Result: the same saved runtime name is carried from the initial `Forget` launcher into the final confirmation semantics, reducing ambiguity before a trust-removal action.
+- Guardrail: copy hygiene now requires the named confirmation/cancel resources, their semantic wiring, the five-language Compose regression, and the aggregate no-device summary phrase `Android trusted-runtime forget confirmation action labels`.
+- Latest focused evidence: Android `settingsTrustedRuntimeForgetActionNamesRuntimeAcrossSupportedLanguages` passed across English, Korean, Japanese, Simplified Chinese, and French, along with Android string parity, copy hygiene, docs hygiene, diff whitespace, and the aggregate no-device quality gate.
+- Caveat: the Android phone was disconnected, so this does not prove physical TalkBack output, physical install, real haptic output, camera QR scanning, live streamed chat/cancel, or real different-network runtime connectivity.
+
+## 2026-06-28 Android Drawer Streaming Lockout Accessibility State
+
+- Scope: no-device Android Compose/source/script evidence for previous-chat drawer rows while streaming is active.
+- Result: disabled previous-chat drawer rows now expose an explicit disabled semantic state and the localized wait-for-stream reason as a state description.
+- Result: the drawer overflow button for each locked chat row exposes the same localized state description, so the disabled action is not silent for accessibility users.
+- Guardrail: copy hygiene now requires the disabled semantic-state wiring, the disabled state-description wiring, the focused five-language Compose regression, and the aggregate no-device summary phrase `Android drawer streaming lockout accessibility state`.
+- Latest focused evidence: Android `chatDrawerDisabledItemsExplainStreamingLockoutAcrossSupportedLanguages` passed across English, Korean, Japanese, Simplified Chinese, and French, along with Android string parity, copy hygiene, docs hygiene, diff whitespace, and the aggregate no-device quality gate.
+- Caveat: the Android phone was disconnected, so this does not prove physical TalkBack output, physical install, camera QR scanning, live streamed chat/cancel, or real different-network runtime connectivity.
+
 ## 2026-06-27 macOS Connection Recovery Disclosure Accessibility State
 
 - Scope: no-device macOS SwiftUI source, XCTest, localization, and script evidence for disclosure expanded/collapsed state.
@@ -1956,3 +2580,114 @@ Some existing historical XML dumps and screenshots may still show older copy suc
 - Guardrail: macOS localization now requires the provider disclosure state wiring and helper snippets, and the aggregate no-device summary includes `macOS provider technical-details accessibility state`.
 - Latest focused evidence: macOS `testProviderStatusTechnicalDetailsAccessibilityStateUsesSelectedLanguage` passed, along with macOS localization parity, no-device shell syntax validation, and scoped `git diff --check`.
 - Caveat: this does not prove live VoiceOver output, rendered macOS screen capture, physical Android reconnect, camera QR scanning, live streamed chat/cancel, or real different-network runtime connectivity.
+
+## 2026-06-28 Android Memory Streaming Lockout and macOS Bootstrap Save State
+
+- Scope: no-device Android Compose/source/string evidence plus macOS SwiftUI source/XCTest/localization evidence.
+- Result: Android Settings Memory add, toggle, and remove actions are disabled during active response streaming and expose the localized wait-for-stream state in all five supported app languages.
+- Result: macOS Connection Recovery Save Bootstrap Relay now exposes an input-sensitive accessibility value, distinguishing ready-to-save endpoints from blank input that clears the saved bootstrap relay.
+- Guardrail: copy hygiene now requires the Android streaming-aware memory gate, the five-language Compose regression, the macOS Save Bootstrap Relay value helper, its five-language XCTest, and aggregate no-device coverage labels.
+- Latest focused evidence: Android `memoryActionsRequireConnectedTrustedRuntime`, `settingsMemoryEmptyStatesAnnounceLocalizedLiveRegion`, and `settingsMemoryActionsWaitForStreamAcrossSupportedLanguages` passed, macOS `testConnectionRecoverySaveBootstrapRelayAccessibilityValueUsesSelectedLanguage` passed, and Android string parity, macOS localization, and copy hygiene passed.
+- Latest aggregate evidence: `script/check_no_device_quality.sh` passed after the fix, including QR/relay smoke, Android no-device tests, macOS localization/render smoke, model routing tests, document ingestion tests, and runtime router tests.
+- Caveat: the Android phone was disconnected, so this does not prove physical install, physical TalkBack or VoiceOver output, real haptic feel, camera QR scanning, live streamed chat/cancel, or real different-network runtime connectivity.
+
+## 2026-06-28 Android Model Picker Streaming Transition Lockout and macOS Activity Ready Tone
+
+- Scope: no-device Android Compose/ViewModel evidence plus macOS SwiftUI source/XCTest/localization evidence.
+- Result: Android closes an already-open Chat top-bar model picker when streaming starts, disables refresh/model rows during the transition, and rejects ViewModel model selection or pull requests with `generation_in_progress` while a response is active.
+- Result: macOS Activity now announces successful Connection Recovery route events as Ready instead of Pending, matching the saved/ready route state that users inspect after pairing recovery actions.
+- Guardrail: copy hygiene now requires the Android source guards, focused Compose regression, ViewModel regression, macOS activity tone helper, route-success XCTest, and no-device summary labels.
+- Latest focused evidence: Android `chatTopBarModelPickerClosesOpenMenuWhenStreamingStarts` and `streamingBlocksModelSelectionAndInstallRequests` passed, macOS `testActivityRouteSuccessLogRowsUseReadyTone` passed, and macOS localization plus copy hygiene passed.
+- Latest aggregate evidence: `script/check_no_device_quality.sh` passed after the fix, including Android no-device UI/ViewModel tests, macOS localization/render checks, runtime routing, model routing, relay route, chat-store, memory, compaction, reasoning, and suggestion tests.
+- Caveat: the Android phone was disconnected, so this does not prove physical install, physical TalkBack or VoiceOver output, real haptic feel, camera QR scanning, live streamed chat/cancel, or real different-network runtime connectivity.
+
+## 2026-06-28 Android Streaming Send Guard and macOS Local Model Readiness
+
+- Scope: no-device Android ViewModel evidence plus macOS SwiftUI source/XCTest evidence.
+- Result: Android now blocks `sendChatMessage()` while `isStreaming` is true, preserving the active request id, current input, current messages, and existing stream state instead of dispatching a second `chat.send`.
+- Result: macOS Status overview now uses the same installed-local visibility policy as the Models panel when deciding whether model loading is complete. Hidden provider-managed/cloud and uninstalled models do not count as ready.
+- Guardrail: copy hygiene now requires the Android source guard, the focused ViewModel regression, the macOS installed-local readiness source contract, the focused XCTest, and the no-device summary labels.
+- Latest focused evidence: Android `streamingBlocksReentrantChatSendRequests` passed, macOS `testRuntimeOverviewTreatsHiddenModelsAsNotLoaded` passed, and copy hygiene, macOS localization, docs hygiene, shell syntax, and diff whitespace checks passed.
+- Latest aggregate evidence: `script/check_no_device_quality.sh` passed after the fix, including Android ViewModel tests, macOS localization/render checks, QR/relay smoke, runtime routing, model routing, chat-store, memory, compaction, reasoning, and suggestion tests.
+- Caveat: the Android phone was disconnected, so this does not prove physical install, physical TalkBack or VoiceOver output, real haptic feel, camera QR scanning, live streamed chat/cancel, or real different-network runtime connectivity.
+
+## 2026-06-28 Android Streaming Attachment Lockout and macOS Readiness Fallbacks
+
+- Scope: no-device Android ViewModel evidence plus macOS SwiftUI source/XCTest/localization evidence.
+- Result: Android now blocks `addAttachmentReferences(...)` and `removePendingAttachment(...)` while `isStreaming` is true. The focused regression proves no attachment metadata or bytes are read, the existing pending attachment list is preserved, and `generation_in_progress` is surfaced.
+- Result: macOS readiness row accessibility labels now fall back to localized `Readiness item`, `Unknown status`, and `No readiness details` values when defensive empty strings reach the helper.
+- Guardrail: copy hygiene now requires the Android streaming attachment source/test contract, macOS localization now requires the readiness fallback resources and XCTest, and the no-device gate names both contracts in its readiness addendum.
+- Latest focused evidence: Android `streamingBlocksPendingAttachmentMutation` passed, macOS `testReadinessRowAccessibilityLabelUsesTitleStatusDetailAndFallbacks` passed, and macOS localization plus copy hygiene passed.
+- Latest aggregate evidence: `script/check_no_device_quality.sh` passed after the fix, including Android attachment/ViewModel tests, macOS localization/render checks, QR/relay smoke, runtime routing, model routing, chat-store, memory, compaction, reasoning, and suggestion tests.
+- Caveat: the Android phone was disconnected, so this does not prove physical install, physical TalkBack or VoiceOver output, real haptic feel, camera QR scanning, live streamed chat/cancel, or real different-network runtime connectivity.
+
+## 2026-06-28 Android Streaming Embedding Guard and macOS Trusted Device Context
+
+- Scope: no-device Android ViewModel/string evidence plus macOS SwiftUI source/XCTest/localization evidence.
+- Result: Android now blocks chat embedding model selection and clearing while `isStreaming` is true. The focused regression proves the selected embedding model remains persisted, no pull envelope is sent for model install paths, and `generation_in_progress` is surfaced.
+- Result: the localized `generation_in_progress` copy now says to wait before making changes instead of only before switching chats.
+- Result: macOS trusted-device row accessibility now preserves the device ID suffix when paired date metadata is missing but device ID remains available. The focused XCTest covers all five supported app languages and the final row label.
+- Guardrail: copy hygiene now requires the Android embedding streaming guard and focused regression snippets. macOS localization and copy hygiene require the missing-date trusted-device ID fallback, and the no-device gate names both contracts in its readiness addendum.
+- Latest focused evidence: Android `streamingBlocksModelSelectionAndInstallRequests` passed, macOS `testTrustedDeviceRowAccessibilityLabelUsesDeviceContext` passed, Android string parity, macOS localization, copy hygiene, shell syntax, and diff whitespace checks passed.
+- Latest aggregate evidence: `script/check_no_device_quality.sh` passed after the fix (`/tmp/aetherlink-no-device-embedding-trusted-20260628080918.log`), including Android ViewModel tests, macOS localization/render checks, QR/relay smoke, runtime routing, model routing, chat-store, memory, compaction, reasoning, and suggestion tests.
+- Caveat: the Android phone was disconnected, so this does not prove physical install, physical TalkBack or VoiceOver output, real haptic feel, camera QR scanning, live streamed chat/cancel, or real different-network runtime connectivity.
+
+## 2026-06-28 Android Settings Embedding Streaming Lockout and macOS Remove Trust Hint
+
+- Scope: no-device Android Settings Compose evidence plus macOS SwiftUI source/XCTest/localization evidence.
+- Result: Android Settings disables memory indexing model refresh/select controls while `isStreaming` is true. The focused Compose regression proves selected/alternate embedding rows and Refresh models are disabled, expose the wait-for-stream state description, and do not call selection or refresh callbacks.
+- Result: macOS Trusted Devices destructive `Remove Trust` row buttons now expose a localized VoiceOver hint explaining that the device must pair again before it can use AetherLink Runtime after removal.
+- Guardrail: copy hygiene now requires the Android Settings embedding streaming source/test contract and the macOS trusted-device remove hint source/test/localization contract. The no-device gate names `Settings embedding model streaming lockout accessibility state` and `macOS trusted-device remove accessibility hints`.
+- Latest focused evidence: Android `settingsEmbeddingModelControlsAreDisabledWhileStreaming` passed, macOS `testTrustedDeviceRemoveButtonAccessibilityHintUsesSelectedLanguage` passed, Android string parity, macOS localization, copy hygiene, shell syntax, and diff whitespace checks passed.
+- Latest aggregate evidence: `script/check_no_device_quality.sh` passed after the fix (`/tmp/aetherlink-no-device-settings-embedding-trusted-hint-20260628081942.log`), including Android Compose/ViewModel tests, macOS localization/render checks, QR/relay smoke, runtime routing, model routing, chat-store, memory, compaction, reasoning, and suggestion tests.
+- Caveat: the Android phone was disconnected, so this does not prove physical install, physical TalkBack or VoiceOver output, real haptic feel, camera QR scanning, live streamed chat/cancel, or real different-network runtime connectivity.
+
+## 2026-06-28 Android Chat History Display-Model Search and macOS Preference Hints
+
+- Scope: no-device Android helper/JVM evidence plus macOS SwiftUI source/XCTest/localization evidence.
+- Result: Android chat history search now matches resolved model display names. The focused JVM regression proves searching `qwen` finds a session whose stored `modelId` is opaque but resolves through the current model list to `Qwen3 8B`.
+- Result: macOS sidebar Appearance and Language pickers now expose localized VoiceOver hints that the chosen preference is saved for future launches.
+- Guardrail: copy hygiene now requires the Android display-model search regression and the macOS sidebar preference hint source/test/localization contract. The no-device gate names `Android chat history display-model search` and `macOS sidebar preference picker accessibility hints`.
+- Latest focused evidence: Android `chatHistorySearchMatchesResolvedModelDisplayName` passed, macOS `testSidebarPreferencePickerAccessibilityHintsUseSelectedLanguage` passed, Android string parity, macOS localization, copy hygiene, shell syntax, and diff whitespace checks passed.
+- Latest aggregate evidence: `script/check_no_device_quality.sh` passed after the fix (`/tmp/aetherlink-no-device-chat-history-sidebar-hints-20260628082854.log`), including Android Compose/ViewModel/JVM tests, macOS localization/render checks, QR/relay smoke, runtime routing, model routing, chat-store, memory, compaction, reasoning, and suggestion tests.
+- Caveat: the Android phone was disconnected, so this does not prove physical install, physical TalkBack or VoiceOver output, real haptic feel, camera QR scanning, live streamed chat/cancel, or real different-network runtime connectivity.
+
+## 2026-06-28 Android Runtime-Owned Memory Storage Redaction
+
+- Scope: no-device Android source/JVM/script evidence for keeping runtime-owned memory and processing data authoritative on the runtime host.
+- Result: Android `RuntimeLocalStore` now writes through `withoutRuntimeOwnedLocalData()`, clearing runtime-owned chat message bodies and runtime memory entries before they reach device-local storage.
+- Result: `runtimeMemoryListRendersInMemoryButRedactsDeviceStorage` proves runtime memory still appears in the connected UI state while the saved device snapshot remains empty.
+- Guardrail: copy hygiene now requires the redaction helper, memory-entry clearing, and the focused storage redaction regressions. The aggregate no-device gate now includes both focused Android tests and names `Android runtime-owned local memory storage redaction`.
+- Latest focused evidence: Android `runtimeMemoryListRendersInMemoryButRedactsDeviceStorage` and `deviceStorageSnapshotDropsRuntimeOwnedDataButKeepsLocalDrafts` passed.
+- Latest aggregate evidence: `script/check_no_device_quality.sh` passed after the fix, including Android source/JVM storage redaction tests, script hygiene, docs hygiene, Android string parity, macOS localization, Swift build/tests, QR/relay smoke, runtime routing, memory, compaction, reasoning, and suggestion tests.
+- Caveat: the Android phone was disconnected, so this does not prove physical install, camera QR scanning, physical haptics, live streamed chat/cancel, or real different-network runtime connectivity.
+
+## 2026-06-28 Android Chat Send Runtime-Memory Boundary
+
+- Scope: no-device Android source/JVM/script evidence for keeping memory prompt injection runtime-owned.
+- Result: Android `chatSendMessages(...)` no longer turns UI memory entries into a client-supplied `Runtime user memory:` system prompt. The payload keeps the capability guard, client-visible conversation, and final user attachments.
+- Result: `chatSendMessagesPrependsCapabilityGuardWithoutClientSuppliedMemoryContext` proves enabled and disabled memory entries are ignored by chat payload assembly, so the runtime host remains responsible for memory injection from its own store.
+- Guardrail: copy hygiene now fails if Android payload assembly reintroduces `Runtime user memory:`, and the aggregate no-device gate now runs the updated focused regression.
+- Latest focused evidence: Android `chatSendMessagesPrependsCapabilityGuardWithoutClientSuppliedMemoryContext` passed.
+- Latest aggregate evidence: `script/check_no_device_quality.sh` passed after the fix, including Android chat payload memory suppression, storage redaction, script hygiene, docs hygiene, Android string parity, macOS localization, Swift build/tests, QR/relay smoke, runtime routing, memory, compaction, reasoning, and suggestion tests.
+- Caveat: the Android phone was disconnected, so this does not prove physical install, camera QR scanning, physical haptics, live streamed chat/cancel, or real different-network runtime connectivity.
+
+## 2026-06-28 Runtime Memory Client Boundary Follow-up
+
+- Scope: documentation-only current-session record for the runtime-memory client boundary; GPT-5.3-Codex-Spark was not used.
+- Result: current clients must not prepend cached memory context into `chat.send` / `messages`; memory prompt injection is runtime-owned.
+- Result: stale `Runtime user memory:` client input is compatibility-only and is stripped/rebuilt by the runtime from the runtime memory store.
+- Guardrail: docs hygiene now requires `docs/protocol.md` to keep current-client memory prompt suppression, compatibility-client stale-memory stripping, and runtime-owned memory storage visible together.
+- Latest focused evidence: docs hygiene, copy hygiene, shell syntax, and whitespace checks passed after the documentation contract update.
+- Latest aggregate evidence: `script/check_no_device_quality.sh` passed after the documentation contract update.
+- Caveat: the Android phone was disconnected, so QR pairing, real different-network routing, live streamed chat/cancel, physical install, and live device validation remain pending.
+
+## 2026-06-28 Android Private-Overlay Real Relay TCP Pairing Path
+
+- Scope: no-device Android app integration evidence for private-overlay QR relay pairing; GPT-5.3-Codex-Spark was not used.
+- Result: `RuntimeRelayTcpClient` now has a socket-factory seam that leaves production dialing unchanged while allowing tests to preserve non-loopback QR route material and dial a local fake relay.
+- Result: `privateOverlayRelayQrPairingUsesRealRelayTcpClientAndPersistsOverlayRoute` proves a `relay_scope=private_overlay` QR with `100.64.1.10`, relay secret, lease expiration, and relay nonce goes through the real Android relay TCP client, handshake, AES-GCM relay frame encryption, pairing request/response, trusted-route persistence, and active relay route state.
+- Guardrail: copy hygiene now requires the private-overlay real relay TCP regression and the aggregate no-device summary label `Android private-overlay real relay TCP pairing path`.
+- Latest focused evidence: Android `RuntimeClientViewModelRelayIntegrationTest` passed, core transport `RuntimeRelayRoutePreparationTest` passed, copy hygiene passed, docs hygiene passed, shell syntax passed, and whitespace checks passed after the patch.
+- Latest aggregate evidence: `script/check_no_device_quality.sh` passed after adding the private-overlay real relay TCP pairing path to the default gate.
+- Caveat: the Android phone was disconnected, so this does not prove physical install, camera QR scanning, real device haptics, live provider-backed streamed chat/cancel, or actual different-network reachability through a public relay/VPN/tunnel/private overlay.

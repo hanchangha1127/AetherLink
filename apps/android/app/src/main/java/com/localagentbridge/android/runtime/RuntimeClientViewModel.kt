@@ -430,6 +430,7 @@ class RuntimeClientViewModel internal constructor(
     }
 
     fun updateHost(value: String) {
+        if (rejectUserMutationWhileStreaming()) return
         mutableState.update {
             it.copy(
                 runtimeHost = value.trim(),
@@ -439,6 +440,7 @@ class RuntimeClientViewModel internal constructor(
     }
 
     fun updatePort(value: String) {
+        if (rejectUserMutationWhileStreaming()) return
         mutableState.update {
             it.copy(
                 runtimePort = value.filter(Char::isDigit).take(5),
@@ -448,6 +450,7 @@ class RuntimeClientViewModel internal constructor(
     }
 
     fun useUsbReverseEndpoint() {
+        if (rejectUserMutationWhileStreaming()) return
         mutableState.update {
             it.copy(
                 runtimeHost = "127.0.0.1",
@@ -459,6 +462,7 @@ class RuntimeClientViewModel internal constructor(
     }
 
     fun useEmulatorEndpoint() {
+        if (rejectUserMutationWhileStreaming()) return
         mutableState.update {
             it.copy(
                 runtimeHost = "10.0.2.2",
@@ -470,16 +474,25 @@ class RuntimeClientViewModel internal constructor(
     }
 
     fun updatePairingCode(value: String) {
+        if (rejectUserMutationWhileStreaming()) return
         mutableState.update { it.copy(pairingCode = value.filter(Char::isDigit).take(6)) }
     }
 
     fun updateChatInput(value: String) {
+        if (state.value.isStreaming) {
+            showError("generation_in_progress")
+            return
+        }
         mutableState.update { it.copy(chatInput = value) }
     }
 
     fun useSuggestedQuestion(question: String) {
         val trimmed = question.trim()
         if (trimmed.isBlank()) return
+        if (state.value.isStreaming) {
+            showError("generation_in_progress")
+            return
+        }
         mutableState.update { it.copy(chatInput = trimmed, error = null) }
     }
 
@@ -490,6 +503,10 @@ class RuntimeClientViewModel internal constructor(
     internal fun addAttachmentReferences(references: List<String>) {
         if (references.isEmpty()) return
         viewModelScope.launch {
+            if (state.value.isStreaming) {
+                showError("generation_in_progress")
+                return@launch
+            }
             val availableSlots = (MAX_PENDING_ATTACHMENTS - state.value.pendingAttachments.size)
                 .coerceAtLeast(0)
             if (availableSlots == 0) {
@@ -538,6 +555,10 @@ class RuntimeClientViewModel internal constructor(
     }
 
     fun removePendingAttachment(attachmentId: String) {
+        if (state.value.isStreaming) {
+            showError("generation_in_progress")
+            return
+        }
         mutableState.update { current ->
             current.copy(
                 pendingAttachments = current.pendingAttachments.filterNot { it.id == attachmentId },
@@ -742,6 +763,10 @@ class RuntimeClientViewModel internal constructor(
     fun addMemoryEntry(content: String) {
         val cleanContent = content.trim()
         if (cleanContent.isBlank()) return
+        if (state.value.isStreaming) {
+            showError("generation_in_progress")
+            return
+        }
         if (!canSendRuntimeMemoryCommand()) {
             showError("memory_runtime_required")
             return
@@ -761,6 +786,10 @@ class RuntimeClientViewModel internal constructor(
     fun removeMemoryEntry(entryId: String) {
         val cleanId = entryId.trim()
         if (cleanId.isBlank()) return
+        if (state.value.isStreaming) {
+            showError("generation_in_progress")
+            return
+        }
         if (!canSendRuntimeMemoryCommand()) {
             showError("memory_runtime_required")
             return
@@ -776,6 +805,10 @@ class RuntimeClientViewModel internal constructor(
 
     fun setMemoryEntryEnabled(entryId: String, enabled: Boolean) {
         val entry = state.value.memoryEntries.firstOrNull { it.id == entryId } ?: return
+        if (state.value.isStreaming) {
+            showError("generation_in_progress")
+            return
+        }
         if (!canSendRuntimeMemoryCommand()) {
             showError("memory_runtime_required")
             return
@@ -794,6 +827,7 @@ class RuntimeClientViewModel internal constructor(
     }
 
     fun setTrustedRuntimeAutoReconnectEnabled(enabled: Boolean) {
+        if (rejectUserMutationWhileStreaming()) return
         persistTrustedRuntimeAutoReconnectEnabled(enabled)
         if (!enabled) {
             reconnectJob?.cancel()
@@ -804,6 +838,7 @@ class RuntimeClientViewModel internal constructor(
     }
 
     fun connectToTrustedRuntime() {
+        if (rejectUserMutationWhileStreaming()) return
         persistTrustedRuntimeAutoReconnectEnabled(true)
         reconnectJob?.cancel()
         reconnectJob = null
@@ -851,6 +886,7 @@ class RuntimeClientViewModel internal constructor(
     }
 
     fun trustRuntimeFromPairingQr(rawValue: String) {
+        if (rejectUserMutationWhileStreaming()) return
         viewModelScope.launch {
             cancelPendingPairingRetry()
             cancelPendingPairingDiscoveryTimeout()
@@ -910,7 +946,7 @@ class RuntimeClientViewModel internal constructor(
             mutableState.value = plan.pendingState
 
             if (plan.shouldStartDiscovery) {
-                startDiscovery()
+                startDiscoveryInternal()
             }
 
             val target = plan.target
@@ -1004,7 +1040,7 @@ class RuntimeClientViewModel internal constructor(
         }
 
         if (payload.shouldWaitForDiscoveryRoute()) {
-            startDiscovery()
+            startDiscoveryInternal()
             schedulePendingPairingDiscoveryTimeout(payload)
         }
 
@@ -1036,6 +1072,11 @@ class RuntimeClientViewModel internal constructor(
     }
 
     fun startDiscovery() {
+        if (rejectUserMutationWhileStreaming()) return
+        startDiscoveryInternal()
+    }
+
+    private fun startDiscoveryInternal() {
         discoveryJob?.cancel()
         discoveryJob = viewModelScope.launch {
             mutableState.update {
@@ -1082,7 +1123,7 @@ class RuntimeClientViewModel internal constructor(
 
     private fun ensureTrustedRuntimeDiscovery() {
         if (discoveryJob?.isActive == true) return
-        startDiscovery()
+        startDiscoveryInternal()
     }
 
     private suspend fun connectToPendingPairingRuntimeIfNeeded() {
@@ -1209,6 +1250,11 @@ class RuntimeClientViewModel internal constructor(
     }
 
     fun stopDiscovery() {
+        if (rejectUserMutationWhileStreaming()) return
+        stopDiscoveryInternal()
+    }
+
+    private fun stopDiscoveryInternal() {
         discoveryJob?.cancel()
         discoveryJob = null
         cancelPendingPairingRetry()
@@ -1223,6 +1269,7 @@ class RuntimeClientViewModel internal constructor(
     }
 
     fun useDiscoveredRuntime(peer: RuntimeDiscoveredRuntime) {
+        if (rejectUserMutationWhileStreaming()) return
         val current = state.value
         if (!discoveredRuntimeSelectableForTrustState(current, pendingPairingPayload, peer)) {
             mutableState.update {
@@ -1249,6 +1296,7 @@ class RuntimeClientViewModel internal constructor(
     }
 
     fun forgetTrustedRuntime() {
+        if (rejectUserMutationWhileStreaming()) return
         persistTrustedRuntimeAutoReconnectEnabled(false)
         closeRuntimeConnection()
         viewModelScope.launch {
@@ -1258,6 +1306,7 @@ class RuntimeClientViewModel internal constructor(
     }
 
     fun disconnect() {
+        if (rejectUserMutationWhileStreaming()) return
         persistTrustedRuntimeAutoReconnectEnabled(false)
         closeRuntimeConnection()
     }
@@ -1300,6 +1349,11 @@ class RuntimeClientViewModel internal constructor(
     }
 
     fun requestRuntimeHealth() {
+        if (rejectUserMutationWhileStreaming()) return
+        requestRuntimeHealthInternal()
+    }
+
+    private fun requestRuntimeHealthInternal() {
         if (!isSessionAuthenticated) {
             showError("authentication_required")
             return
@@ -1308,6 +1362,11 @@ class RuntimeClientViewModel internal constructor(
     }
 
     fun requestModels() {
+        if (rejectUserMutationWhileStreaming()) return
+        requestModelsInternal()
+    }
+
+    private fun requestModelsInternal() {
         if (!isSessionAuthenticated) {
             showError("authentication_required")
             return
@@ -1420,7 +1479,12 @@ class RuntimeClientViewModel internal constructor(
     }
 
     fun selectModel(modelId: String) {
-        val model = state.value.models.firstOrNull { it.id == modelId }
+        val current = state.value
+        if (current.isStreaming) {
+            showError("generation_in_progress")
+            return
+        }
+        val model = current.models.firstOrNull { it.id == modelId }
         if (model != null && !model.isChatModel()) {
             showError("select_chat_model")
             return
@@ -1437,6 +1501,10 @@ class RuntimeClientViewModel internal constructor(
     }
 
     fun selectEmbeddingModel(modelId: String?) {
+        if (state.value.isStreaming) {
+            showError("generation_in_progress")
+            return
+        }
         if (modelId == null) {
             persistSelectedEmbeddingModel(null)
             return
@@ -1454,6 +1522,10 @@ class RuntimeClientViewModel internal constructor(
     }
 
     fun requestModelInstall(modelId: String) {
+        if (state.value.isStreaming) {
+            showError("generation_in_progress")
+            return
+        }
         if (!isSessionAuthenticated) {
             showError("authentication_required")
             return
@@ -1495,6 +1567,10 @@ class RuntimeClientViewModel internal constructor(
 
     fun sendChatMessage() {
         val current = state.value
+        if (current.isStreaming) {
+            showError("generation_in_progress")
+            return
+        }
         val text = current.chatInput.trim()
         if (text.isEmpty() && current.pendingAttachments.isEmpty()) return
         when (current.selectedModelSendState()) {
@@ -1786,7 +1862,7 @@ class RuntimeClientViewModel internal constructor(
         }
     }
 
-    private fun handleEnvelope(envelope: ProtocolEnvelope) {
+    private suspend fun handleEnvelope(envelope: ProtocolEnvelope) {
         when (envelope.type) {
             MessageType.AuthChallenge -> handleAuthChallenge(envelope)
             MessageType.AuthResponse -> handleAuthResponse(envelope)
@@ -1813,31 +1889,29 @@ class RuntimeClientViewModel internal constructor(
         }
     }
 
-    private fun handleAuthChallenge(envelope: ProtocolEnvelope) {
+    private suspend fun handleAuthChallenge(envelope: ProtocolEnvelope) {
         val payload = decodePayload(AuthChallengePayload.serializer(), envelope.payload) ?: return
-        viewModelScope.launch {
-            runCatching {
-                val identity = deviceIdentityStore.loadOrCreate()
-                if (!verifyRuntimeAuthChallenge(payload, identity.deviceId)) {
-                    isSessionAuthenticated = false
-                    showError("runtime_authentication_failed")
-                    return@launch
-                }
-                sendEnvelope(
-                    envelope(
-                        type = MessageType.AuthResponse,
-                        serializer = AuthResponsePayload.serializer(),
-                        payload = AuthResponsePayload(
-                            deviceId = identity.deviceId,
-                            nonce = payload.nonce,
-                            signature = identity.sign(payload.nonce.encodeToByteArray()),
-                        ),
-                        requestId = envelope.requestId,
-                    )
-                )
-            }.onFailure { error ->
-                showError("authentication_failed", error.message)
+        runCatching {
+            val identity = deviceIdentityStore.loadOrCreate()
+            if (!verifyRuntimeAuthChallenge(payload, identity.deviceId)) {
+                isSessionAuthenticated = false
+                showError("runtime_authentication_failed")
+                return
             }
+            sendEnvelopeInternal(
+                envelope(
+                    type = MessageType.AuthResponse,
+                    serializer = AuthResponsePayload.serializer(),
+                    payload = AuthResponsePayload(
+                        deviceId = identity.deviceId,
+                        nonce = payload.nonce,
+                        signature = identity.sign(payload.nonce.encodeToByteArray()),
+                    ),
+                    requestId = envelope.requestId,
+                )
+            )
+        }.onFailure { error ->
+            showError("authentication_failed", error.message)
         }
     }
 
@@ -1876,7 +1950,7 @@ class RuntimeClientViewModel internal constructor(
             }
             requestRuntimeRouteRefresh()
             scheduleRuntimeRouteRefreshLease()
-            requestRuntimeHealth()
+            requestRuntimeHealthInternal()
             requestRuntimeChatSessions()
             requestRuntimeMemory()
         } else {
@@ -1935,7 +2009,7 @@ class RuntimeClientViewModel internal constructor(
             }
             requestRuntimeRouteRefresh()
             scheduleRuntimeRouteRefreshLease()
-            requestRuntimeHealth()
+            requestRuntimeHealthInternal()
             requestRuntimeChatSessions()
             requestRuntimeMemory()
         }
@@ -2087,7 +2161,7 @@ class RuntimeClientViewModel internal constructor(
             )
         }
         if (isSessionAuthenticated) {
-            requestModels()
+            requestModelsInternal()
             requestRuntimeChatSessions()
             requestRuntimeMemory()
         }
@@ -2193,7 +2267,7 @@ class RuntimeClientViewModel internal constructor(
                         error = null,
                     )
                 }
-                requestModels()
+                requestModelsInternal()
             }
         }
     }
@@ -2483,82 +2557,86 @@ class RuntimeClientViewModel internal constructor(
 
     private fun sendEnvelope(envelope: ProtocolEnvelope) {
         viewModelScope.launch {
-            runCatching {
-                Log.d(TAG, "Sending ${envelope.type} request_id=${envelope.requestId}")
-                val channel = requireNotNull(activeChannel) { "Runtime transport is not connected" }
-                channel.send(envelope)
-            }
-                .onFailure { error ->
-                    Log.e(TAG, "Runtime send failed", error)
-                    val current = state.value
-                    val isActiveChatSend = envelope.type == MessageType.ChatSend &&
-                        current.activeRequestId == envelope.requestId
-                    val isSuggestionRequest = envelope.type == MessageType.ChatSuggestionsRequest &&
-                        pendingSuggestionRequestId == envelope.requestId
-                    val isTitleRequest = envelope.type == MessageType.ChatTitleRequest &&
-                        pendingTitleRequestId == envelope.requestId
-                    val isSessionLifecycleRequest = pendingChatSessionLifecycleRequestIds.remove(envelope.requestId)
-                    val isSessionRenameRequest = pendingChatSessionRenameRequestIds.remove(envelope.requestId)
-                    val isMemoryListRequest = envelope.type == MessageType.MemoryList &&
-                        pendingMemoryListRequestId == envelope.requestId
-                    val isRouteRefreshRequest = envelope.type == MessageType.RouteRefresh &&
-                        pendingRouteRefreshRequestId == envelope.requestId
-                    val isRuntimeHistoryRequest = (
-                        envelope.type == MessageType.ChatSessionsList &&
-                            pendingChatSessionsRequestId == envelope.requestId
-                        ) || (
-                        envelope.type == MessageType.ChatMessagesList &&
-                            pendingChatMessagesRequestId == envelope.requestId
-                        )
-                    if (isSuggestionRequest) {
-                        clearPendingSuggestions()
-                        mutableState.update { it.copy(isLoadingSuggestions = false) }
-                        return@onFailure
-                    }
-                    if (isRuntimeHistoryRequest) {
-                        clearPendingRuntimeHistoryRequests()
-                        return@onFailure
-                    }
-                    if (isMemoryListRequest) {
-                        pendingMemoryListRequestId = null
-                        return@onFailure
-                    }
-                    if (isRouteRefreshRequest) {
-                        pendingRouteRefreshRequestId = null
-                        scheduleRuntimeRouteRefreshRetry()
-                        return@onFailure
-                    }
-                    if (isTitleRequest) {
-                        clearPendingTitleRequest()
-                        return@onFailure
-                    }
-                    if (isSessionLifecycleRequest) {
-                        showError("chat_session_sync_failed", error.message)
-                        return@onFailure
-                    }
-                    if (isSessionRenameRequest) {
-                        showError("chat_session_sync_failed", error.message)
-                        return@onFailure
-                    }
-                    val cleanedMessages = if (isActiveChatSend) {
-                        current.messages.withoutTrailingBlankAssistantPlaceholder()
-                    } else {
-                        current.messages
-                    }
-                    mutableState.value = current.copy(
-                        isConnected = activeChannel?.isConnected == true,
-                        isStreaming = false,
-                        isLoadingModels = false,
-                        installingModelId = null,
-                        activeRequestId = null,
-                        messages = cleanedMessages,
-                        error = RuntimeUiError("send_failed", error.message)
-                    )
-                    if (isActiveChatSend) {
-                        persistActiveMessages(cleanedMessages, clearError = false)
-                    }
-                }
+            sendEnvelopeInternal(envelope)
         }
+    }
+
+    private suspend fun sendEnvelopeInternal(envelope: ProtocolEnvelope) {
+        runCatching {
+            Log.d(TAG, "Sending ${envelope.type} request_id=${envelope.requestId}")
+            val channel = requireNotNull(activeChannel) { "Runtime transport is not connected" }
+            channel.send(envelope)
+        }
+            .onFailure { error ->
+                Log.e(TAG, "Runtime send failed", error)
+                val current = state.value
+                val isActiveChatSend = envelope.type == MessageType.ChatSend &&
+                    current.activeRequestId == envelope.requestId
+                val isSuggestionRequest = envelope.type == MessageType.ChatSuggestionsRequest &&
+                    pendingSuggestionRequestId == envelope.requestId
+                val isTitleRequest = envelope.type == MessageType.ChatTitleRequest &&
+                    pendingTitleRequestId == envelope.requestId
+                val isSessionLifecycleRequest = pendingChatSessionLifecycleRequestIds.remove(envelope.requestId)
+                val isSessionRenameRequest = pendingChatSessionRenameRequestIds.remove(envelope.requestId)
+                val isMemoryListRequest = envelope.type == MessageType.MemoryList &&
+                    pendingMemoryListRequestId == envelope.requestId
+                val isRouteRefreshRequest = envelope.type == MessageType.RouteRefresh &&
+                    pendingRouteRefreshRequestId == envelope.requestId
+                val isRuntimeHistoryRequest = (
+                    envelope.type == MessageType.ChatSessionsList &&
+                        pendingChatSessionsRequestId == envelope.requestId
+                    ) || (
+                    envelope.type == MessageType.ChatMessagesList &&
+                        pendingChatMessagesRequestId == envelope.requestId
+                    )
+                if (isSuggestionRequest) {
+                    clearPendingSuggestions()
+                    mutableState.update { it.copy(isLoadingSuggestions = false) }
+                    return@onFailure
+                }
+                if (isRuntimeHistoryRequest) {
+                    clearPendingRuntimeHistoryRequests()
+                    return@onFailure
+                }
+                if (isMemoryListRequest) {
+                    pendingMemoryListRequestId = null
+                    return@onFailure
+                }
+                if (isRouteRefreshRequest) {
+                    pendingRouteRefreshRequestId = null
+                    scheduleRuntimeRouteRefreshRetry()
+                    return@onFailure
+                }
+                if (isTitleRequest) {
+                    clearPendingTitleRequest()
+                    return@onFailure
+                }
+                if (isSessionLifecycleRequest) {
+                    showError("chat_session_sync_failed", error.message)
+                    return@onFailure
+                }
+                if (isSessionRenameRequest) {
+                    showError("chat_session_sync_failed", error.message)
+                    return@onFailure
+                }
+                val cleanedMessages = if (isActiveChatSend) {
+                    current.messages.withoutTrailingBlankAssistantPlaceholder()
+                } else {
+                    current.messages
+                }
+                mutableState.value = current.copy(
+                    isConnected = activeChannel?.isConnected == true,
+                    isStreaming = false,
+                    isLoadingModels = false,
+                    installingModelId = null,
+                    activeRequestId = null,
+                    messages = cleanedMessages,
+                    error = RuntimeUiError("send_failed", error.message)
+                )
+                if (isActiveChatSend) {
+                    persistActiveMessages(cleanedMessages, clearError = false)
+                }
+            }
     }
 
     private fun <T> envelope(
@@ -2588,6 +2666,12 @@ class RuntimeClientViewModel internal constructor(
 
     private fun showError(code: String, detail: String? = null) {
         mutableState.update { it.copy(error = RuntimeUiError(code, detail)) }
+    }
+
+    private fun rejectUserMutationWhileStreaming(): Boolean {
+        if (!state.value.isStreaming) return false
+        showError("generation_in_progress")
+        return true
     }
 
     private fun publishTrustedRemoteRouteExpiredIfNeeded(
@@ -2757,7 +2841,7 @@ class RuntimeClientViewModel internal constructor(
 
     override fun onCleared() {
         dependencies.lifecycleCallbacksRegistrar.unregister(getApplication(), lifecycleCallbacks)
-        stopDiscovery()
+        stopDiscoveryInternal()
         closeRuntimeConnection()
         super.onCleared()
     }
@@ -2765,7 +2849,6 @@ class RuntimeClientViewModel internal constructor(
     private companion object {
         const val TAG = "RuntimeClientVM"
         const val MAX_ATTACHMENT_BYTES = 15 * 1024 * 1024
-        const val MAX_PENDING_ATTACHMENTS = 4
         const val RECONNECT_DELAY_MS = 750L
         const val MAX_PENDING_PAIRING_RETRY_ATTEMPTS = 120
         const val PENDING_PAIRING_DISCOVERY_TIMEOUT_MS = 15_000L
@@ -3516,10 +3599,7 @@ internal fun trustedRuntimeFromRouteRefreshQr(
     if (!hasRelayRoute) return null
     if (current.deviceId != payload.runtimeDeviceId) return null
     if (current.fingerprint != null && current.fingerprint != payload.fingerprint) return null
-    if (
-        current.publicKeyBase64 != null &&
-        payload.runtimePublicKeyBase64 != current.publicKeyBase64
-    ) {
+    if (!runtimePublicKeyMatches(current.publicKeyBase64, payload.runtimePublicKeyBase64)) {
         return null
     }
     return TrustedRuntime(
@@ -3958,16 +4038,7 @@ internal fun RuntimeUiState.withChatDone(
     if (activeRequestId != envelope.requestId) return this
     return copy(
         messages = messages
-            .map { message ->
-                if (message.role == "assistant") {
-                    message.copy(
-                        isReasoningOpen = false,
-                        inlineReasoningPendingTag = "",
-                    )
-                } else {
-                    message
-                }
-            }
+            .withClosedTrailingAssistantReasoning()
             .withoutTrailingBlankAssistantPlaceholder(),
         isStreaming = false,
         activeRequestId = null,
@@ -3993,7 +4064,9 @@ internal fun RuntimeUiState.withChatCancelAck(
         return this
     }
     return copy(
-        messages = messages.withoutTrailingBlankAssistantPlaceholder(),
+        messages = messages
+            .withClosedTrailingAssistantReasoning()
+            .withoutTrailingBlankAssistantPlaceholder(),
         isStreaming = false,
         activeRequestId = null,
         error = null,
@@ -4011,7 +4084,9 @@ internal fun RuntimeUiState.withRuntimeError(
         ?: RuntimeUiError("runtime_error")
     val updated = copy(
         messages = if (isActiveChatError) {
-            messages.withoutTrailingBlankAssistantPlaceholder()
+            messages
+                .withClosedTrailingAssistantReasoning()
+                .withoutTrailingBlankAssistantPlaceholder()
         } else {
             messages
         },
@@ -4053,7 +4128,9 @@ internal fun RuntimeUiState.withRuntimeReceiveFailure(error: RuntimeUiError): Ru
         runtimeStatus = "disconnected",
         activeRouteKind = null,
         messages = if (activeRequestId != null) {
-            messages.withoutTrailingBlankAssistantPlaceholder()
+            messages
+                .withClosedTrailingAssistantReasoning()
+                .withoutTrailingBlankAssistantPlaceholder()
         } else {
             messages
         },
@@ -4120,6 +4197,20 @@ private fun List<RuntimeChatMessage>.withoutTrailingBlankAssistantPlaceholder():
     } else {
         this
     }
+}
+
+private fun List<RuntimeChatMessage>.withClosedTrailingAssistantReasoning(): List<RuntimeChatMessage> {
+    val trailingMessage = lastOrNull()
+    if (
+        trailingMessage?.role != "assistant" ||
+        (!trailingMessage.isReasoningOpen && trailingMessage.inlineReasoningPendingTag.isBlank())
+    ) {
+        return this
+    }
+    return dropLast(1) + trailingMessage.copy(
+        isReasoningOpen = false,
+        inlineReasoningPendingTag = "",
+    )
 }
 
 internal fun String.extractInlineReasoning(startsInReasoning: Boolean = false): InlineReasoningDelta {

@@ -255,13 +255,15 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
     }
 
     public func listSessions(limit: Int = 100, includeArchived: Bool = false) throws -> [RuntimeChatStoredSession] {
-        try lock.withLock {
+        guard limit > 0 else { return [] }
+        return try lock.withLock {
             try Self.sessions(from: readEvents(), limit: limit, includeArchived: includeArchived)
         }
     }
 
     public func listMessages(sessionID: String, limit: Int = 200) throws -> [RuntimeChatStoredMessage] {
-        try lock.withLock {
+        guard limit > 0 else { return [] }
+        return try lock.withLock {
             try Self.messages(from: readEvents(), sessionID: sessionID, limit: limit)
         }
     }
@@ -323,8 +325,13 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
             }
             let lineData = Data(line.utf8)
             do {
-                events.append(try decoder.decode(RuntimeChatStoredEvent.self, from: lineData))
+                let event = try decoder.decode(RuntimeChatStoredEvent.self, from: lineData)
+                try Self.validateStoredEvent(event, line: index + 1)
+                events.append(event)
             } catch {
+                if let storeError = error as? RuntimeChatEventStoreError {
+                    throw storeError
+                }
                 throw RuntimeChatEventStoreError.corruptEventLog(
                     line: index + 1,
                     reason: Self.decodeFailureReason(error)
@@ -350,6 +357,48 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
             }
         }
         return "decode failed"
+    }
+
+    private static func validateStoredEvent(_ event: RuntimeChatStoredEvent, line: Int) throws {
+        try requireNonBlank(event.id, line: line, reason: "chat event id is empty")
+        try requireNonBlank(event.requestID, line: line, reason: "chat request id is empty")
+        try requireNonBlank(event.sessionID, line: line, reason: "chat session id is empty")
+
+        switch event.kind {
+        case .request:
+            guard let messages = event.messages, !messages.isEmpty else {
+                throw RuntimeChatEventStoreError.corruptEventLog(
+                    line: line,
+                    reason: "chat request messages are empty"
+                )
+            }
+            for message in messages {
+                try requireNonBlank(message.role, line: line, reason: "chat request message role is empty")
+            }
+        case .title:
+            try requireNonBlank(event.title, line: line, reason: "chat title is empty")
+        case .assistantDelta:
+            try requireNonBlank(event.delta, line: line, reason: "chat assistant delta is empty")
+        case .reasoningDelta:
+            try requireNonBlank(event.reasoningDelta, line: line, reason: "chat reasoning delta is empty")
+        case .error:
+            guard let error = event.error else {
+                throw RuntimeChatEventStoreError.corruptEventLog(
+                    line: line,
+                    reason: "chat error payload is missing"
+                )
+            }
+            try requireNonBlank(error.code, line: line, reason: "chat error code is empty")
+            try requireNonBlank(error.message, line: line, reason: "chat error message is empty")
+        case .done, .cancelled, .archived, .restored, .deleted:
+            break
+        }
+    }
+
+    private static func requireNonBlank(_ value: String?, line: Int, reason: String) throws {
+        guard let value, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw RuntimeChatEventStoreError.corruptEventLog(line: line, reason: reason)
+        }
     }
 
     private func appendUnlocked(_ event: RuntimeChatStoredEvent) throws {
@@ -601,12 +650,14 @@ private extension ChatMessage {
 
 private extension Array {
     func limited(to limit: Int) -> [Element] {
-        guard limit > 0, count > limit else { return self }
+        guard limit > 0 else { return [] }
+        guard count > limit else { return self }
         return Array(prefix(limit))
     }
 
     func limited(toLast limit: Int) -> [Element] {
-        guard limit > 0, count > limit else { return self }
+        guard limit > 0 else { return [] }
+        guard count > limit else { return self }
         return Array(suffix(limit))
     }
 }

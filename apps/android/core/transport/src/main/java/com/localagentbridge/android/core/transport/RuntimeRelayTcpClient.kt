@@ -16,15 +16,13 @@ import javax.crypto.spec.SecretKeySpec
 
 class RuntimeRelayTcpClient(
     private val codec: ProtocolCodec = ProtocolCodec(),
+    private val socketFactory: RuntimeRelaySocketFactory = RuntimeRelaySocketFactory.default,
 ) : RuntimeRelayConnector {
     override suspend fun connect(
         route: PreparedRemoteRuntimeRoute.Relay,
         timeoutMillis: Int,
     ): RuntimeProtocolChannel = withContext(Dispatchers.IO) {
-        val socket = Socket()
-        socket.tcpNoDelay = true
-        socket.soTimeout = timeoutMillis
-        socket.connect(InetSocketAddress(route.host, route.port), timeoutMillis)
+        val socket = socketFactory.connect(route, timeoutMillis)
         val channel = RelayProtocolChannel(
             socket = socket,
             codec = codec,
@@ -86,6 +84,20 @@ class RuntimeRelayTcpClient(
 
     private companion object {
         const val RELAY_READY_LINE = "AETHERLINK_RELAY ready"
+    }
+}
+
+fun interface RuntimeRelaySocketFactory {
+    fun connect(route: PreparedRemoteRuntimeRoute.Relay, timeoutMillis: Int): Socket
+
+    companion object {
+        val default = RuntimeRelaySocketFactory { route, timeoutMillis ->
+            Socket().apply {
+                tcpNoDelay = true
+                soTimeout = timeoutMillis
+                connect(InetSocketAddress(route.host, route.port), timeoutMillis)
+            }
+        }
     }
 }
 

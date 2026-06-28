@@ -223,7 +223,9 @@ private struct ActivePairingCard: View {
     }
 
     private func qrCode(isExpired: Bool) -> some View {
-        QRCodeView(text: qrPayload)
+        let qrImage = pairingQRCodeImage(from: qrPayload)
+        let isAvailable = qrImage != nil
+        return QRCodeView(image: qrImage)
             .frame(width: 276, height: 276)
             .padding(14)
             .background(Color.white, in: RoundedRectangle(cornerRadius: 8))
@@ -250,7 +252,7 @@ private struct ActivePairingCard: View {
             .accessibilityElement(children: .ignore)
             .accessibilityAddTraits(.isImage)
             .accessibilityLabel(Text(pairingQRCodeAccessibilityLabel()))
-            .accessibilityValue(Text(pairingQRCodeAccessibilityValue(isExpired: isExpired)))
+            .accessibilityValue(Text(pairingQRCodeAccessibilityValue(isExpired: isExpired, isAvailable: isAvailable)))
             .accessibilityHint(Text(pairingQRCodeAccessibilityHint(remoteRouteExpiresAt: remoteRouteExpiresAt)))
     }
 
@@ -371,10 +373,10 @@ private struct PairingRouteNoticeLabel: View {
 }
 
 private struct QRCodeView: View {
-    let text: String
+    let image: NSImage?
 
     var body: some View {
-        if let image = Self.image(from: text) {
+        if let image {
             Image(nsImage: image)
                 .interpolation(.none)
                 .resizable()
@@ -387,34 +389,37 @@ private struct QRCodeView: View {
                 .accessibilityLabel(Text(NSLocalizedString("Pairing QR code unavailable", comment: "")))
         }
     }
+}
 
-    private static func image(from text: String) -> NSImage? {
-        let filter = CIFilter.qrCodeGenerator()
-        filter.message = Data(text.utf8)
-        filter.correctionLevel = "M"
+func pairingQRCodeImage(from text: String) -> NSImage? {
+    let filter = CIFilter.qrCodeGenerator()
+    filter.message = Data(text.utf8)
+    filter.correctionLevel = "M"
 
-        let colorFilter = CIFilter.falseColor()
-        colorFilter.inputImage = filter.outputImage
-        colorFilter.color0 = CIColor(red: 0, green: 0, blue: 0)
-        colorFilter.color1 = CIColor(red: 1, green: 1, blue: 1)
+    let colorFilter = CIFilter.falseColor()
+    colorFilter.inputImage = filter.outputImage
+    colorFilter.color0 = CIColor(red: 0, green: 0, blue: 0)
+    colorFilter.color1 = CIColor(red: 1, green: 1, blue: 1)
 
-        guard let outputImage = colorFilter.outputImage else { return nil }
-        let scaledImage = outputImage.transformed(by: CGAffineTransform(scaleX: 12, y: 12))
-        guard let cgImage = CIContext().createCGImage(scaledImage, from: scaledImage.extent) else {
-            return nil
-        }
-        return NSImage(
-            cgImage: cgImage,
-            size: NSSize(width: scaledImage.extent.width, height: scaledImage.extent.height)
-        )
+    guard let outputImage = colorFilter.outputImage else { return nil }
+    let scaledImage = outputImage.transformed(by: CGAffineTransform(scaleX: 12, y: 12))
+    guard let cgImage = CIContext().createCGImage(scaledImage, from: scaledImage.extent) else {
+        return nil
     }
+    return NSImage(
+        cgImage: cgImage,
+        size: NSSize(width: scaledImage.extent.width, height: scaledImage.extent.height)
+    )
 }
 
 func pairingQRCodeAccessibilityLabel() -> String {
     NSLocalizedString("Pairing QR code", comment: "")
 }
 
-func pairingQRCodeAccessibilityValue(isExpired: Bool) -> String {
+func pairingQRCodeAccessibilityValue(isExpired: Bool, isAvailable: Bool = true) -> String {
+    if !isAvailable {
+        return NSLocalizedString("Pairing QR code unavailable", comment: "")
+    }
     if isExpired {
         return NSLocalizedString("Pairing QR expired. Generate a new QR.", comment: "")
     }

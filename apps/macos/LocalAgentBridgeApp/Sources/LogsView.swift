@@ -106,10 +106,24 @@ private func logTone(_ line: String) -> StatusTone {
     if line.contains("stopped") || line == "Companion stopped" {
         return .inactive
     }
-    if line.contains("passed") || line.contains("Trusted ") || line.contains("Loaded ") {
+    if line.contains("passed") ||
+        line.contains("Trusted ") ||
+        line.contains("Loaded ") ||
+        line == "Route secret regenerated" ||
+        line.hasPrefix("Remote route enabled:") ||
+        line.hasPrefix("Remote route configured:") ||
+        line.hasPrefix("Remote route allocated:") ||
+        line.hasPrefix("Remote route bootstrap allocated route ") ||
+        line.hasPrefix("Remote route ready:") ||
+        line.hasPrefix("Remote route lease refreshed:")
+    {
         return .ready
     }
     return .neutral
+}
+
+func activityLogTone(for line: String) -> StatusTone {
+    logTone(line)
 }
 
 func logToneAccessibilityStatus(_ tone: StatusTone) -> String {
@@ -126,15 +140,7 @@ func logToneAccessibilityStatus(_ tone: StatusTone) -> String {
 }
 
 func logRowAccessibilityLabel(summary: String, tone: StatusTone) -> String {
-    let normalizedSummary = summary
-        .trimmingCharacters(in: .whitespacesAndNewlines)
-        .trimmingCharacters(in: CharacterSet(charactersIn: ".。"))
-    let rawEventSummary = normalizedSummary.isEmpty
-        ? NSLocalizedString("Runtime event recorded.", comment: "")
-        : normalizedSummary
-    let eventSummary = rawEventSummary
-        .trimmingCharacters(in: .whitespacesAndNewlines)
-        .trimmingCharacters(in: CharacterSet(charactersIn: ".。"))
+    let eventSummary = normalizedLogAccessibilitySummary(summary)
     return String(
         format: NSLocalizedString("Activity item %@. Status %@.", comment: ""),
         eventSummary,
@@ -153,7 +159,7 @@ func localizedLogDisplay(_ line: String) -> LogDisplay {
     case "Pairing code generated":
         return LogDisplay(summary: NSLocalizedString("Pairing QR generated", comment: ""))
     case "Remote route disabled":
-        return LogDisplay(summary: NSLocalizedString("Advanced connection disabled.", comment: ""))
+        return LogDisplay(summary: NSLocalizedString("Saved connection details removed.", comment: ""))
     case "Route secret regenerated":
         return LogDisplay(summary: NSLocalizedString("Connection setup secret regenerated.", comment: ""))
     case "Remote pairing QR not generated: configure a reachable relay route first",
@@ -369,12 +375,17 @@ private func trustedDeviceAuditLogName(_ rawName: String) -> String {
 }
 
 func logTechnicalDetailsAccessibilityLabel(summary: String) -> String {
-    let normalizedSummary = summary.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
-        ?? NSLocalizedString("Runtime event recorded.", comment: "")
+    let normalizedSummary = normalizedLogAccessibilitySummary(summary)
     return String(
         format: NSLocalizedString("Technical details for %@", comment: ""),
         normalizedSummary
     )
+}
+
+private func normalizedLogAccessibilitySummary(_ summary: String) -> String {
+    let normalizedSummary = summary.normalizedLogAccessibilitySummaryFragment
+    return normalizedSummary.nilIfEmpty
+        ?? NSLocalizedString("Runtime event recorded.", comment: "").normalizedLogAccessibilitySummaryFragment
 }
 
 func logTechnicalDetailsAccessibilityValue(isExpanded: Bool) -> String {
@@ -450,7 +461,15 @@ private func remotePairingEndpoint(
 }
 
 private extension String {
+    var normalizedLogAccessibilitySummaryFragment: String {
+        trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: logAccessibilityTerminalPunctuation)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     var nilIfEmpty: String? {
         isEmpty ? nil : self
     }
 }
+
+private let logAccessibilityTerminalPunctuation = CharacterSet(charactersIn: ".。．")

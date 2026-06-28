@@ -11,7 +11,9 @@
 "System" = "System";
 "Light" = "Light";
 "Dark" = "Dark";
+"Choose how AetherLink Runtime appears. This setting is saved for future launches." = "Choose how AetherLink Runtime appears. This setting is saved for future launches.";
 "Language" = "Language";
+"Choose the app language. This setting is saved for future launches." = "Choose the app language. This setting is saved for future launches.";
 "English" = "English";
 "Korean" = "Korean";
 "Japanese" = "Japanese";
@@ -45,8 +47,10 @@
 "Pending" = "Pending";
 "Activity item %@. Status %@." = "Activity item %@. Status %@.";
 "Readiness %@. Status %@. %@" = "Readiness %@. Status %@. %@";
+"Readiness item" = "Readiness item";
 "Status item" = "Status item";
 "Unknown status" = "Unknown status";
+"No readiness details" = "No readiness details";
 "No status details" = "No status details";
 "Status %@. Current state %@. %@" = "Status %@. Current state %@. %@";
 "Runtime overview" = "Runtime overview";
@@ -79,6 +83,8 @@
 "Waiting for device" = "Waiting for device";
 "Connected to %@ and waiting for relay acknowledgement." = "Connected to %@ and waiting for route acknowledgement.";
 "Model provider status has not been checked yet." = "Model provider status has not been checked yet.";
+"No model providers available" = "No model providers available";
+"AetherLink Runtime has not reported any model providers yet." = "AetherLink Runtime has not reported any model providers yet.";
 "%d of %d available" = "%d of %d available";
 "1 model provider available" = "1 model provider available";
 "%d model providers available" = "%d model providers available";
@@ -160,12 +166,15 @@
 "Pair a device before allowing runtime commands." = "Pair a device before allowing runtime commands.";
 "Paired %@ · ID ending %@" = "Paired %@ · ID ending %@";
 "Paired %@. Device ID ending %@" = "Paired %@. Device ID ending %@";
+"Device ID ending %@" = "Device ID ending %@";
 "Key fingerprint %@" = "Key fingerprint %@";
 "Pairing details unavailable." = "Pairing details unavailable.";
 "Trusted device %@. %@. Key fingerprint %@" = "Trusted device %@. %@. Key fingerprint %@";
 "Remove Trust" = "Remove Trust";
 "Remove trust for %@. Key fingerprint %@" = "Remove trust for %@. Key fingerprint %@";
+"After removal, %@ must pair again before it can use AetherLink Runtime." = "After removal, %@ must pair again before it can use AetherLink Runtime.";
 "Confirm removing trust for %@. Key fingerprint %@" = "Confirm removing trust for %@. Key fingerprint %@";
+"Cancel removing trust for %@. Key fingerprint %@" = "Cancel removing trust for %@. Key fingerprint %@";
 "Remove trusted device?" = "Remove trusted device?";
 "%@ will need to pair again before it can use AetherLink Runtime." = "%@ will need to pair again before it can use AetherLink Runtime.";
 "%@ will need to pair again before it can use AetherLink Runtime. Key fingerprint %@" = "%@ will need to pair again before it can use AetherLink Runtime. Key fingerprint %@";
@@ -184,6 +193,7 @@
 "Collapse to hide activity technical details." = "Collapse to hide activity details.";
 "Expand to show activity technical details." = "Expand to show activity details.";
 "Connection Recovery result" = "Connection Recovery result";
+"%@. Status %@. %@" = "%@. Status %@. %@";
 "Connection health" = "Connection health";
 "Connection preparation" = "Connection preparation";
 "Connection diagnostics" = "Connection diagnostics";
@@ -207,6 +217,8 @@
 "Model provider needs attention." = "Model provider needs attention.";
 "Model provider is available." = "Model provider is available.";
 "Provider %@ status %@" = "Provider %@ status %@";
+"Provider %@. Status %@. %@" = "Provider %@. Status %@. %@";
+"No provider details" = "No provider details";
 "Model residency updated." = "Model residency updated.";
 "Runtime event recorded." = "Runtime event recorded.";
 
@@ -222,7 +234,7 @@
 "Ready for devices" = "Ready for devices";
 "AetherLink Runtime needs attention" = "AetherLink Runtime needs attention";
 "No activity yet" = "No activity yet";
-"Advanced connection disabled." = "Advanced connection disabled.";
+"Saved connection details removed." = "Saved connection details removed.";
 "AetherLink Runtime needs attention." = "AetherLink Runtime needs attention.";
 "Connection details saved." = "Connection details saved.";
 "Connection details are ready." = "Connection details are ready.";
@@ -262,6 +274,7 @@
 "Enable only when this bootstrap relay is reachable through a VPN, tunnel, or private overlay shared by both devices." = "Enable only when this bootstrap relay is reachable through a VPN, tunnel, or private overlay shared by both devices.";
 "Save Bootstrap Relay" = "Save Bootstrap Relay";
 "Save bootstrap relay settings for future pairing QR connection details." = "Save bootstrap relay settings for future pairing QR connection details.";
+"Will remove saved bootstrap relay" = "Will remove saved bootstrap relay";
 "Bootstrap relay saved. Generate the latest QR and scan it in AetherLink to pair or refresh connectivity." = "Bootstrap relay saved. Generate the latest QR and scan it in AetherLink to pair or refresh connectivity.";
 "Connection address" = "Connection address";
 "Connection setup secret" = "Protected connection key";
@@ -269,9 +282,10 @@
 "Save fallback connection details for future pairing QR routes." = "Save fallback connection details for future pairing QR routes.";
 "Create a new connection setup secret for future pairing QR connection details." = "Create a new connection setup secret for future pairing QR connection details.";
 "Connection setup secret regenerated." = "Protected connection key refreshed.";
-"Disable Connection" = "Disable Connection";
-"Disable saved connection details for %@" = "Disable saved connection details for %@";
-"Disable saved connection details?" = "Disable saved connection details?";
+"Remove Saved Connection Details" = "Remove Saved Connection Details";
+"Remove saved connection details for %@" = "Remove saved connection details for %@";
+"Cancel removing saved connection details for %@" = "Cancel removing saved connection details for %@";
+"Remove saved connection details?" = "Remove saved connection details?";
 "Saved connection details will be removed. Devices on another network may need a fresh pairing QR before they can reconnect." = "Saved connection details will be removed. Devices on another network may need a fresh pairing QR before they can reconnect.";
 "Connection details saved" = "Connection details saved";
 "No connection details" = "No connection details";
