@@ -16,6 +16,7 @@
     <string name="new_chat_state_wait_for_stream">新しいチャットを開始する前に、現在の応答を待つかキャンセルしてください。</string>
     <string name="new_chat_state_pairing_required">新しいチャットを開始する前に AetherLink Runtime とペアリングしてください。</string>
     <string name="chat_destination_state_ready">チャットを開けます。</string>
+    <string name="settings_destination_state_ready">設定を開けます。</string>
     <string name="previous_chats">以前のチャット</string>
     <string name="no_previous_chats">以前のチャットはまだありません。</string>
     <string name="chat_search_label">チャットを検索</string>
@@ -326,6 +327,7 @@
     <string name="empty_chat_no_model">送信する前にモデルを選択してください。</string>
     <string name="empty_chat_streaming_title">応答中</string>
     <string name="empty_chat_streaming">AetherLink Runtime からストリーミング応答を受信しています。</string>
+    <string name="loading_chat_messages">チャットを読み込み中...</string>
     <string name="streaming">ストリーミング中</string>
     <string name="streaming_detail">AetherLink Runtime からストリーミング応答を受信しています。</string>
     <string name="chat_status_connected">接続済み</string>
@@ -347,6 +349,7 @@
     <string name="chat_hint_install_model">送信する前にモデルをインストールするか、インストール済みモデルを選択してください。</string>
     <string name="chat_hint_select_vision_model">画像を送信する前に、ビジョン対応モデルを選択してください。</string>
     <string name="chat_hint_wait_for_stream">現在の応答を待つか、キャンセルしてください。</string>
+    <string name="chat_hint_loading_chat">このチャットの読み込みが完了するまでお待ちください。</string>
     <string name="chat_hint_enter_message">送信するメッセージを入力してください。</string>
     <string name="chat_hint_ready">送信できます。</string>
     <string name="chat_hint_ready_with_attachments">送信できます。%1$s</string>
@@ -369,10 +372,18 @@
     <string name="action_use_suggested_question">おすすめの質問を入力</string>
     <string name="suggested_question_state_wait_for_stream">おすすめの質問を使う前に、現在の応答が完了するまで待ってください。</string>
     <string name="copy_message">メッセージをコピー</string>
+    <string name="regenerate_response">応答を再生成</string>
+    <string name="regenerate_response_state_ready">最新の応答を再生成できます。</string>
+    <string name="reuse_message">下書きとして使用</string>
+    <string name="reuse_message_state_ready">このメッセージを下書きとして使用できます。</string>
     <string name="copy_code_block">コードブロックをコピー</string>
     <string name="copy_code_block_named">%1$s コードブロック %2$d をコピー</string>
     <string name="copy_code_block_numbered">コードブロック %1$d をコピー</string>
     <string name="message_copied">コピーしました</string>
+    <string name="runtime_error_technical_details">技術的な詳細</string>
+    <string name="runtime_error_show_technical_details">技術的な詳細を表示</string>
+    <string name="runtime_error_hide_technical_details">技術的な詳細を非表示</string>
+    <string name="runtime_error_copy_diagnostics">診断情報をコピー</string>
 
     <string name="settings_title">設定</string>
     <string name="settings_subtitle">このアプリは AetherLink 経由で接続します。モデルプロバイダーは非公開に保たれます。</string>
@@ -481,6 +492,8 @@
     <string name="error_remote_route_auth_failed">接続を検証できませんでした。最新の AetherLink QR をスキャンして再試行してください。</string>
     <string name="error_generation_cancelled">生成はキャンセルされました。</string>
     <string name="error_generation_in_progress">変更する前に、現在の応答を待つかキャンセルしてください。</string>
+    <string name="error_chat_history_loading">このチャットの読み込みが完了するまでお待ちください。</string>
+    <string name="error_chat_history_load_failed">AetherLink Runtime からチャット履歴を読み込めませんでした。</string>
     <string name="error_chat_session_not_found">このチャットが見つかりませんでした。</string>
     <string name="error_chat_session_must_be_archived_before_delete">完全に削除する前に、このチャットをアーカイブしてください。</string>
     <string name="error_chat_session_sync_failed">このチャットの変更を AetherLink Runtime と同期できませんでした。</string>
@@ -488,6 +501,9 @@
     <string name="error_memory_runtime_required">メモリを変更する前に、信頼済みランタイムに接続してください。</string>
     <string name="error_runtime_error">ランタイムエラーです。</string>
     <string name="error_send_failed">AetherLink Runtime にメッセージを送信できませんでした。</string>
+    <string name="error_regenerate_unavailable">再生成できる完了済みの assistant 応答がありません。</string>
+    <string name="error_regenerate_attachment_context_unavailable">この応答に使われた添付ファイル データは再生成に利用できません。</string>
+    <string name="error_reuse_message_unavailable">このメッセージは下書きとして再利用できません。</string>
     <string name="error_invalid_payload">AetherLink Runtime が無効なデータを送信しました。</string>
     <string name="error_install_model_first">チャットする前にこのモデルをインストールしてください。</string>
     <string name="error_model_install_failed">AetherLink Runtime はモデルをインストールできませんでした。</string>
@@ -526,6 +542,8 @@
     <string name="content_desc_scan_qr">QR をスキャン</string>
     <string name="content_desc_attach_files">ファイルを添付</string>
     <string name="content_desc_remove_attachment">%1$s の添付を削除</string>
+    <string name="clear_draft">下書きをクリア</string>
+    <string name="clear_draft_state_ready">下書きをクリアできます。</string>
     <string name="content_desc_send">メッセージを送信</string>
     <string name="content_desc_cancel_generation">生成をキャンセル</string>
     <string name="cancel_generation_state_ready">現在の応答を停止できます。</string>

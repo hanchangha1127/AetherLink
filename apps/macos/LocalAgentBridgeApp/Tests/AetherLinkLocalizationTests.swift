@@ -1079,6 +1079,51 @@ final class AetherLinkLocalizationTests: XCTestCase {
         }
     }
 
+    func testActivityLogListAccessibilitySummaryUsesSelectedLanguage() {
+        let expectations: [(languageTag: String, label: String, oneItemValue: String, multipleItemsValue: String)] = [
+            (
+                "en",
+                "Activity log",
+                "1 activity item",
+                "3 activity items"
+            ),
+            (
+                "ko",
+                "활동 로그",
+                "활동 항목 1개",
+                "활동 항목 3개"
+            ),
+            (
+                "ja",
+                "アクティビティログ",
+                "アクティビティ項目 1 件",
+                "アクティビティ項目 3 件"
+            ),
+            (
+                "zh-Hans",
+                "活动日志",
+                "1 个活动项",
+                "3 个活动项"
+            ),
+            (
+                "fr",
+                "Journal d’activité",
+                "1 élément d’activité",
+                "3 éléments d’activité"
+            ),
+        ]
+
+        XCTAssertEqual(expectations.map(\.languageTag), AetherLinkAppLanguage.allCases.map(\.rawValue))
+
+        for expectation in expectations {
+            withStoredAppLanguage(expectation.languageTag) {
+                XCTAssertEqual(activityLogListAccessibilityLabel(), expectation.label, expectation.languageTag)
+                XCTAssertEqual(activityLogListAccessibilityValue(count: 1), expectation.oneItemValue, expectation.languageTag)
+                XCTAssertEqual(activityLogListAccessibilityValue(count: 3), expectation.multipleItemsValue, expectation.languageTag)
+            }
+        }
+    }
+
     func testActivityRouteSuccessLogRowsUseReadyTone() {
         let expectations: [(languageTag: String, readyLabel: String)] = [
             (
@@ -1175,7 +1220,7 @@ final class AetherLinkLocalizationTests: XCTestCase {
     }
 
     @MainActor
-    func testRouteDiagnosticsPanelStaysHiddenOnCleanFirstRunUntilRouteStateExists() throws {
+    func testRouteDiagnosticsPanelStaysHiddenOnCleanFirstRunButPairingExposesSetup() throws {
         let cleanFirstRunModel = CompanionAppModel(
             environment: isolatedRuntimeIdentityEnvironment(),
             userDefaults: try isolatedDefaults()
@@ -1184,6 +1229,7 @@ final class AetherLinkLocalizationTests: XCTestCase {
         XCTAssertFalse(cleanFirstRunModel.bootstrapRelaySettings.isEnabled)
         XCTAssertNil(cleanFirstRunModel.remoteRoutePreparationIssue)
         XCTAssertFalse(shouldShowRouteDiagnosticsPanel(model: cleanFirstRunModel))
+        XCTAssertTrue(shouldShowPairingRouteSetupPanel(model: cleanFirstRunModel))
 
         let savedRouteModel = CompanionAppModel(
             environment: isolatedRuntimeIdentityEnvironment(),
@@ -1196,6 +1242,7 @@ final class AetherLinkLocalizationTests: XCTestCase {
         )
         XCTAssertTrue(savedRouteModel.hasDevelopmentRelayRoute)
         XCTAssertTrue(shouldShowRouteDiagnosticsPanel(model: savedRouteModel))
+        XCTAssertTrue(shouldShowPairingRouteSetupPanel(model: savedRouteModel))
 
         let routeIssueModel = CompanionAppModel(
             environment: isolatedRuntimeIdentityEnvironment(),
@@ -1208,6 +1255,7 @@ final class AetherLinkLocalizationTests: XCTestCase {
         )
         XCTAssertNotNil(routeIssueModel.remoteRoutePreparationIssue)
         XCTAssertTrue(shouldShowRouteDiagnosticsPanel(model: routeIssueModel))
+        XCTAssertTrue(shouldShowPairingRouteSetupPanel(model: routeIssueModel))
     }
 
     func testAppAppearancePickerOptionsStaySystemLightDark() {
@@ -1820,15 +1868,30 @@ final class AetherLinkLocalizationTests: XCTestCase {
     }
 
     func testActivityTechnicalDetailsRedactRouteSecrets() {
-        let diagnostic = "relay_secret=secret route_token=token rs=compact rt=route-token"
+        let diagnostics = [
+            "relay_secret=secret route_token=token rs=compact rt=route-token",
+            #"{"relay_secret":"secret","relay_id":"room","relay_nonce":"nonce"}"#,
+            "relaySecret: secret routeToken: token relayId: room relayNonce: nonce",
+            "allocationToken bearer-token rrn=nonce ri=room",
+        ]
 
-        XCTAssertEqual(sanitizedTechnicalDiagnostic(diagnostic), "Sensitive technical detail redacted.")
+        for diagnostic in diagnostics {
+            XCTAssertEqual(sanitizedTechnicalDiagnostic(diagnostic), "Sensitive technical detail redacted.")
+        }
     }
 
     func testRouteDiagnosticDisclosureRedactsSensitiveDetails() {
         withStoredAppLanguage("en") {
             XCTAssertEqual(
                 sanitizedRouteDiagnosticDisclosureText("relay_secret=secret route_token=token rs=compact rt=route-token"),
+                "Sensitive technical detail redacted."
+            )
+            XCTAssertEqual(
+                sanitizedRouteDiagnosticDisclosureText(#"{"relaySecret":"secret","routeToken":"token","relayNonce":"nonce"}"#),
+                "Sensitive technical detail redacted."
+            )
+            XCTAssertEqual(
+                sanitizedRouteDiagnosticDisclosureText("allocation_token: bearer-token relayId: room"),
                 "Sensitive technical detail redacted."
             )
             XCTAssertEqual(
@@ -2263,7 +2326,10 @@ final class AetherLinkLocalizationTests: XCTestCase {
         for expectation in expectations {
             withStoredAppLanguage(expectation.languageTag) {
                 XCTAssertEqual(
-                    connectionRecoverySaveBootstrapRelayActionAccessibilityValue(endpoints: "relay.example.test:43171"),
+                    connectionRecoverySaveBootstrapRelayActionAccessibilityValue(
+                        endpoints: "relay.example.test:43171",
+                        allocationToken: "token"
+                    ),
                     expectation.ready,
                     expectation.languageTag
                 )
@@ -2271,6 +2337,228 @@ final class AetherLinkLocalizationTests: XCTestCase {
                     connectionRecoverySaveBootstrapRelayActionAccessibilityValue(endpoints: "   "),
                     expectation.clearsSavedRelay,
                     expectation.languageTag
+                )
+            }
+        }
+    }
+
+    func testConnectionRecoveryBootstrapAllocationTokenWarningUsesSelectedLanguage() {
+        let expectations: [(languageTag: String, warning: String, missingToken: String, ready: String)] = [
+            (
+                "en",
+                "Add an allocation token before using a non-local bootstrap relay.",
+                "Missing token for non-local bootstrap relay",
+                "Ready"
+            ),
+            (
+                "ko",
+                "로컬이 아닌 부트스트랩 릴레이를 사용하기 전에 할당 토큰을 추가하세요.",
+                "로컬이 아닌 부트스트랩 릴레이에 토큰이 없습니다",
+                "준비됨"
+            ),
+            (
+                "ja",
+                "非ローカルのブートストラップリレーを使用する前に割り当てトークンを追加してください。",
+                "非ローカルのブートストラップリレーのトークンがありません",
+                "準備完了"
+            ),
+            (
+                "zh-Hans",
+                "使用非本地引导中继前，请添加分配令牌。",
+                "非本地引导中继缺少令牌",
+                "就绪"
+            ),
+            (
+                "fr",
+                "Ajoutez un jeton d’allocation avant d’utiliser un relais d’amorçage non local.",
+                "Jeton manquant pour le relais d’amorçage non local",
+                "Prêt"
+            ),
+        ]
+
+        XCTAssertEqual(expectations.map(\.languageTag), AetherLinkAppLanguage.allCases.map(\.rawValue))
+
+        for expectation in expectations {
+            withStoredAppLanguage(expectation.languageTag) {
+                XCTAssertEqual(
+                    connectionRecoveryBootstrapAllocationTokenWarning(
+                        endpoints: "relay.example.test:43171",
+                        allocationToken: " "
+                    ),
+                    expectation.warning,
+                    expectation.languageTag
+                )
+                XCTAssertEqual(
+                    connectionRecoveryBootstrapAllocationTokenAccessibilityValue(
+                        endpoints: "relay.example.test:43171",
+                        allocationToken: " "
+                    ),
+                    expectation.missingToken,
+                    expectation.languageTag
+                )
+                XCTAssertEqual(
+                    connectionRecoverySaveBootstrapRelayActionAccessibilityValue(
+                        endpoints: "relay.example.test:43171",
+                        allocationToken: " "
+                    ),
+                    expectation.missingToken,
+                    expectation.languageTag
+                )
+                XCTAssertNil(
+                    connectionRecoveryBootstrapAllocationTokenWarning(
+                        endpoints: "127.0.0.1:43171",
+                        allocationToken: " "
+                    ),
+                    expectation.languageTag
+                )
+                XCTAssertNil(
+                    connectionRecoveryBootstrapAllocationTokenWarning(
+                        endpoints: "relay.example.test:43171",
+                        allocationToken: "token"
+                    ),
+                    expectation.languageTag
+                )
+                XCTAssertEqual(
+                    connectionRecoverySaveBootstrapRelayActionAccessibilityValue(
+                        endpoints: "relay.example.test:43171",
+                        allocationToken: "token"
+                    ),
+                    expectation.ready,
+                    expectation.languageTag
+                )
+            }
+        }
+    }
+
+    func testBootstrapRelayAllocationTokenWarningClassifiesNonLocalEndpoints() {
+        let nonLocalEndpoints = [
+            "relay.example.test:443",
+            "https://relay.example.test:443/bootstrap",
+            "10.8.0.5:443",
+            "[2001:db8::42]:443",
+        ]
+        let localEndpoints = [
+            "localhost:43171",
+            "127.0.0.1:43171",
+            "runtime.local:43171",
+            "[::1]:43171",
+            "169.254.1.10:43171",
+            "[fe80::1]:43171",
+        ]
+
+        for endpoint in nonLocalEndpoints {
+            XCTAssertTrue(bootstrapRelayEndpointsNeedAllocationToken(endpoint), endpoint)
+        }
+        for endpoint in localEndpoints {
+            XCTAssertFalse(bootstrapRelayEndpointsNeedAllocationToken(endpoint), endpoint)
+        }
+    }
+
+    func testConnectionRecoveryBootstrapRelayRemovalAccessibilityUsesSelectedLanguage() {
+        let expectations: [(
+            languageTag: String,
+            actionTitle: String,
+            dialogTitle: String,
+            dialogMessage: String,
+            removedMessage: String,
+            actionHint: String,
+            label: String,
+            fallbackLabel: String,
+            cancelLabel: String,
+            fallbackCancelLabel: String
+        )] = [
+            (
+                "en",
+                "Remove Bootstrap Relay",
+                "Remove saved bootstrap relay?",
+                "Saved bootstrap relay settings will be removed. Devices on another network may need a fresh pairing QR before route preparation can run again.",
+                "Saved bootstrap relay removed.",
+                "Remove saved bootstrap relay settings used to prepare pairing QR connection details.",
+                "Remove bootstrap relay settings for relay.example.test:43171",
+                "Remove bootstrap relay settings for saved bootstrap relay",
+                "Cancel removing bootstrap relay settings for relay.example.test:43171",
+                "Cancel removing bootstrap relay settings for saved bootstrap relay"
+            ),
+            (
+                "ko",
+                "부트스트랩 릴레이 제거",
+                "저장된 부트스트랩 릴레이를 제거할까요?",
+                "저장된 부트스트랩 릴레이 설정이 제거됩니다. 다른 네트워크의 기기는 경로 준비를 다시 실행하기 전에 새 페어링 QR이 필요할 수 있습니다.",
+                "저장된 부트스트랩 릴레이를 제거했습니다.",
+                "페어링 QR 연결 정보를 준비하는 데 쓰는 저장된 부트스트랩 릴레이 설정을 제거합니다.",
+                "relay.example.test:43171의 부트스트랩 릴레이 설정 제거",
+                "저장된 부트스트랩 릴레이의 부트스트랩 릴레이 설정 제거",
+                "relay.example.test:43171의 부트스트랩 릴레이 설정 제거 취소",
+                "저장된 부트스트랩 릴레이의 부트스트랩 릴레이 설정 제거 취소"
+            ),
+            (
+                "ja",
+                "ブートストラップリレーを削除",
+                "保存済みブートストラップリレーを削除しますか？",
+                "保存済みブートストラップリレー設定は削除されます。別のネットワーク上のデバイスは、ルート準備を再実行する前に新しいペアリング QR が必要になる場合があります。",
+                "保存済みブートストラップリレーを削除しました。",
+                "ペアリング QR 接続情報の準備に使う保存済みブートストラップリレー設定を削除します。",
+                "relay.example.test:43171 のブートストラップリレー設定を削除",
+                "保存済みブートストラップリレー のブートストラップリレー設定を削除",
+                "relay.example.test:43171 のブートストラップリレー設定の削除をキャンセル",
+                "保存済みブートストラップリレー のブートストラップリレー設定の削除をキャンセル"
+            ),
+            (
+                "zh-Hans",
+                "移除引导中继",
+                "要移除已保存的引导中继吗？",
+                "已保存的引导中继设置将被移除。其他网络上的设备可能需要新的配对二维码，才能再次运行路由准备。",
+                "已移除保存的引导中继。",
+                "移除用于准备配对二维码连接信息的已保存引导中继设置。",
+                "移除 relay.example.test:43171 的引导中继设置",
+                "移除 已保存的引导中继 的引导中继设置",
+                "取消移除 relay.example.test:43171 的引导中继设置",
+                "取消移除 已保存的引导中继 的引导中继设置"
+            ),
+            (
+                "fr",
+                "Supprimer le relais d’amorçage",
+                "Supprimer le relais d’amorçage enregistré ?",
+                "Les réglages du relais d’amorçage enregistré seront supprimés. Les appareils sur un autre réseau peuvent avoir besoin d’un nouveau QR de jumelage avant de relancer la préparation de route.",
+                "Relais d’amorçage enregistré supprimé.",
+                "Supprime les réglages du relais d’amorçage enregistré utilisés pour préparer les informations de connexion du QR de jumelage.",
+                "Supprimer les réglages du relais d’amorçage pour relay.example.test:43171",
+                "Supprimer les réglages du relais d’amorçage pour relais d’amorçage enregistré",
+                "Annuler la suppression des réglages du relais d’amorçage pour relay.example.test:43171",
+                "Annuler la suppression des réglages du relais d’amorçage pour relais d’amorçage enregistré"
+            ),
+        ]
+
+        XCTAssertEqual(expectations.map(\.languageTag), AetherLinkAppLanguage.allCases.map(\.rawValue))
+
+        for expectation in expectations {
+            withStoredAppLanguage(expectation.languageTag) {
+                XCTAssertEqual(NSLocalizedString("Remove Bootstrap Relay", comment: ""), expectation.actionTitle)
+                XCTAssertEqual(NSLocalizedString("Remove saved bootstrap relay?", comment: ""), expectation.dialogTitle)
+                XCTAssertEqual(
+                    NSLocalizedString("Saved bootstrap relay settings will be removed. Devices on another network may need a fresh pairing QR before route preparation can run again.", comment: ""),
+                    expectation.dialogMessage
+                )
+                XCTAssertEqual(NSLocalizedString("Saved bootstrap relay removed.", comment: ""), expectation.removedMessage)
+                XCTAssertEqual(
+                    removeSavedBootstrapRelayAccessibilityHint(),
+                    expectation.actionHint
+                )
+                XCTAssertEqual(
+                    removeSavedBootstrapRelayAccessibilityLabel(endpoints: " relay.example.test:43171 "),
+                    expectation.label
+                )
+                XCTAssertEqual(
+                    removeSavedBootstrapRelayAccessibilityLabel(endpoints: " "),
+                    expectation.fallbackLabel
+                )
+                XCTAssertEqual(
+                    cancelRemoveSavedBootstrapRelayAccessibilityLabel(endpoints: " relay.example.test:43171 "),
+                    expectation.cancelLabel
+                )
+                XCTAssertEqual(
+                    cancelRemoveSavedBootstrapRelayAccessibilityLabel(endpoints: " "),
+                    expectation.fallbackCancelLabel
                 )
             }
         }
@@ -2398,35 +2686,40 @@ final class AetherLinkLocalizationTests: XCTestCase {
         }
     }
 
-    func testRemoveSavedConnectionDetailsAccessibilityLabelUsesRouteContext() {
-        let expectations: [(languageTag: String, actionTitle: String, label: String, fallbackLabel: String)] = [
+    func testRemoveSavedConnectionDetailsAccessibilityUsesSelectedLanguage() {
+        let expectations: [(languageTag: String, actionTitle: String, actionHint: String, label: String, fallbackLabel: String)] = [
             (
                 "en",
                 "Remove Saved Connection Details",
+                "Remove saved fallback connection details used for future pairing QR routes.",
                 "Remove saved connection details for relay.example.test:43171",
                 "Remove saved connection details for saved connection"
             ),
             (
                 "ko",
                 "저장된 연결 정보 제거",
+                "향후 페어링 QR 경로에 사용할 저장된 예비 연결 정보를 제거합니다.",
                 "relay.example.test:43171의 저장된 연결 정보 제거",
                 "저장된 연결의 저장된 연결 정보 제거"
             ),
             (
                 "ja",
                 "保存済み接続情報を削除",
+                "今後のペアリング QR ルートに使う保存済みフォールバック接続情報を削除します。",
                 "relay.example.test:43171 の保存済み接続情報を削除",
                 "保存済みの接続 の保存済み接続情報を削除"
             ),
             (
                 "zh-Hans",
                 "移除已保存的连接信息",
+                "移除用于后续配对二维码路径的已保存备用连接信息。",
                 "移除 relay.example.test:43171 的已保存连接信息",
                 "移除 已保存的连接 的已保存连接信息"
             ),
             (
                 "fr",
                 "Supprimer les informations de connexion enregistrées",
+                "Supprime les informations de connexion de secours enregistrées utilisées pour les futurs itinéraires QR de jumelage.",
                 "Supprimer les informations de connexion enregistrées pour relay.example.test:43171",
                 "Supprimer les informations de connexion enregistrées pour connexion enregistrée"
             ),
@@ -2439,6 +2732,10 @@ final class AetherLinkLocalizationTests: XCTestCase {
                 XCTAssertEqual(
                     NSLocalizedString("Remove Saved Connection Details", comment: ""),
                     expectation.actionTitle
+                )
+                XCTAssertEqual(
+                    removeSavedConnectionDetailsAccessibilityHint(),
+                    expectation.actionHint
                 )
                 XCTAssertEqual(
                     removeSavedConnectionDetailsAccessibilityLabel(endpoint: " relay.example.test:43171 "),

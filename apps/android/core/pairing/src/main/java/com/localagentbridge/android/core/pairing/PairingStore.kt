@@ -3,7 +3,6 @@ package com.localagentbridge.android.core.pairing
 import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
-import android.util.Base64
 import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
@@ -16,6 +15,7 @@ import kotlinx.coroutines.flow.flow
 import java.nio.ByteBuffer
 import java.security.KeyStore
 import java.security.MessageDigest
+import java.util.Base64
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
@@ -286,11 +286,11 @@ class AndroidKeystoreRelaySecretStore(context: Context) : RelaySecretStore {
             .put(iv)
             .put(encrypted)
             .array()
-        return Base64.encodeToString(packed, Base64.NO_WRAP)
+        return Base64.getEncoder().encodeToString(packed)
     }
 
     private fun decrypt(encoded: String): String {
-        val packed = ByteBuffer.wrap(Base64.decode(encoded, Base64.NO_WRAP))
+        val packed = ByteBuffer.wrap(Base64.getDecoder().decode(encoded))
         val ivLength = packed.get().toInt() and 0xff
         require(ivLength > 0 && ivLength <= packed.remaining()) { "Invalid relay secret IV" }
         val iv = ByteArray(ivLength)

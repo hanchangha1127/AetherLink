@@ -52,6 +52,12 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         }
     }
 
+    public func connectionDidClose(_ connectionID: UUID) {
+        authLock.withLock {
+            authSessions[connectionID] = nil
+        }
+    }
+
     private func dispatch(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) async {
         switch envelope.type {
         case MessageType.pairingRequest:
@@ -61,55 +67,55 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         case MessageType.authResponse:
             await handleAuthResponse(envelope, sink: sink)
         case MessageType.runtimeHealth:
-            guard allowRuntimeCommand(envelope, sink: sink) else { return }
+            guard await allowRuntimeCommand(envelope, sink: sink) else { return }
             await handleRuntimeHealth(envelope, sink: sink)
         case MessageType.modelsList:
-            guard allowRuntimeCommand(envelope, sink: sink) else { return }
+            guard await allowRuntimeCommand(envelope, sink: sink) else { return }
             await handleModelsList(envelope, sink: sink)
         case MessageType.modelsPull:
-            guard allowRuntimeCommand(envelope, sink: sink) else { return }
+            guard await allowRuntimeCommand(envelope, sink: sink) else { return }
             await handleModelsPull(envelope, sink: sink)
         case MessageType.routeRefresh:
-            guard allowRuntimeCommand(envelope, sink: sink) else { return }
+            guard await allowRuntimeCommand(envelope, sink: sink) else { return }
             await handleRouteRefresh(envelope, sink: sink)
         case MessageType.chatSend:
-            guard allowRuntimeCommand(envelope, sink: sink) else { return }
+            guard await allowRuntimeCommand(envelope, sink: sink) else { return }
             await handleChatSend(envelope, sink: sink)
         case MessageType.chatCancel:
-            guard allowRuntimeCommand(envelope, sink: sink) else { return }
+            guard await allowRuntimeCommand(envelope, sink: sink) else { return }
             handleChatCancel(envelope, sink: sink)
         case MessageType.chatSessionsList:
-            guard allowRuntimeCommand(envelope, sink: sink) else { return }
+            guard await allowRuntimeCommand(envelope, sink: sink) else { return }
             handleChatSessionsList(envelope, sink: sink)
         case MessageType.chatMessagesList:
-            guard allowRuntimeCommand(envelope, sink: sink) else { return }
+            guard await allowRuntimeCommand(envelope, sink: sink) else { return }
             handleChatMessagesList(envelope, sink: sink)
         case MessageType.chatSuggestionsRequest:
-            guard allowRuntimeCommand(envelope, sink: sink) else { return }
+            guard await allowRuntimeCommand(envelope, sink: sink) else { return }
             await handleChatSuggestionsRequest(envelope, sink: sink)
         case MessageType.chatTitleRequest:
-            guard allowRuntimeCommand(envelope, sink: sink) else { return }
+            guard await allowRuntimeCommand(envelope, sink: sink) else { return }
             await handleChatTitleRequest(envelope, sink: sink)
         case MessageType.chatSessionRename:
-            guard allowRuntimeCommand(envelope, sink: sink) else { return }
+            guard await allowRuntimeCommand(envelope, sink: sink) else { return }
             handleChatSessionRename(envelope, sink: sink)
         case MessageType.chatSessionArchive:
-            guard allowRuntimeCommand(envelope, sink: sink) else { return }
+            guard await allowRuntimeCommand(envelope, sink: sink) else { return }
             handleChatSessionMutation(envelope, sink: sink, mutation: .archive)
         case MessageType.chatSessionRestore:
-            guard allowRuntimeCommand(envelope, sink: sink) else { return }
+            guard await allowRuntimeCommand(envelope, sink: sink) else { return }
             handleChatSessionMutation(envelope, sink: sink, mutation: .restore)
         case MessageType.chatSessionDelete:
-            guard allowRuntimeCommand(envelope, sink: sink) else { return }
+            guard await allowRuntimeCommand(envelope, sink: sink) else { return }
             handleChatSessionMutation(envelope, sink: sink, mutation: .delete)
         case MessageType.memoryList:
-            guard allowRuntimeCommand(envelope, sink: sink) else { return }
+            guard await allowRuntimeCommand(envelope, sink: sink) else { return }
             handleMemoryList(envelope, sink: sink)
         case MessageType.memoryUpsert:
-            guard allowRuntimeCommand(envelope, sink: sink) else { return }
+            guard await allowRuntimeCommand(envelope, sink: sink) else { return }
             handleMemoryUpsert(envelope, sink: sink)
         case MessageType.memoryDelete:
-            guard allowRuntimeCommand(envelope, sink: sink) else { return }
+            guard await allowRuntimeCommand(envelope, sink: sink) else { return }
             handleMemoryDelete(envelope, sink: sink)
         default:
             sink.send(errorEnvelope(
@@ -121,15 +127,31 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         }
     }
 
-    private func allowRuntimeCommand(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) -> Bool {
+    private func allowRuntimeCommand(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) async -> Bool {
         guard requiresAuthentication else { return true }
-        guard isAuthenticated(connectionID: sink.connectionID) else {
+        guard let authenticatedDeviceID = authenticatedDeviceID(connectionID: sink.connectionID) else {
             sink.send(errorEnvelope(
                 requestID: envelope.requestID,
                 code: "authentication_required",
                 message: "Pair and authenticate this device before sending runtime commands.",
                 retryable: false
             ))
+            return false
+        }
+        do {
+            guard try await trustedDevice(deviceID: authenticatedDeviceID) != nil else {
+                clearAuthentication(connectionID: sink.connectionID)
+                sink.send(errorEnvelope(
+                    requestID: envelope.requestID,
+                    code: "pairing_required",
+                    message: "This device is no longer trusted by AetherLink Runtime.",
+                    retryable: false
+                ))
+                return false
+            }
+        } catch {
+            clearAuthentication(connectionID: sink.connectionID)
+            sink.send(errorEnvelope(requestID: envelope.requestID, error: error))
             return false
         }
         return true
@@ -225,6 +247,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
 
     private func handleChatTitleRequest(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) async {
         do {
+            let ownerDeviceID = commandOwnerDeviceID(connectionID: sink.connectionID)
             let parsedRequest = try chatTitleRequest(from: envelope)
             _ = try await resolvedInstalledChatModel(parsedRequest.request.model)
 
@@ -249,7 +272,8 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                     requestID: envelope.requestID,
                     sessionID: parsedRequest.request.sessionID,
                     model: parsedRequest.request.model,
-                    title: title
+                    title: title,
+                    ownerDeviceID: ownerDeviceID
                 ))
             }
 
@@ -309,6 +333,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                   let device = try await trustedDevice(deviceID: deviceID),
                   Self.verifySignature(
                     publicKeyBase64: device.publicKeyBase64,
+                    deviceID: deviceID,
                     nonce: nonce,
                     signatureBase64: signature
                   )
@@ -480,8 +505,17 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                 "relay_expires_at": .number(Double(route.relayExpiresAtEpochMillis)),
                 "relay_nonce": .string(route.relayNonce)
             ]
-            if let relayScope = route.relayScope?.trimmingCharacters(in: .whitespacesAndNewlines),
-               !relayScope.isEmpty {
+            let relayScope = route.normalizedRelayScope()
+            if route.relayScope != nil && relayScope == nil {
+                sink.send(errorEnvelope(
+                    requestID: envelope.requestID,
+                    code: "route_refresh_unavailable",
+                    message: "AetherLink Runtime could not refresh remote route material.",
+                    retryable: true
+                ))
+                return
+            }
+            if let relayScope {
                 payload["relay_scope"] = .string(relayScope)
             }
             sink.send(ProtocolEnvelope(
@@ -502,19 +536,21 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
     private func handleChatSend(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) async {
         var storageContext: RuntimeChatStorageContext?
         do {
+            let ownerDeviceID = commandOwnerDeviceID(connectionID: sink.connectionID)
             let parsedClientRequest = try parsedChatRequest(from: envelope)
             let clientRequest = parsedClientRequest.request
             let locale = optionalString("locale", in: envelope.payload)
             storageContext = RuntimeChatStorageContext(
                 requestID: envelope.requestID,
                 sessionID: clientRequest.sessionID,
-                model: clientRequest.model
+                model: clientRequest.model,
+                ownerDeviceID: ownerDeviceID
             )
             let storedMessages = Self.chatStorageMessages(from: parsedClientRequest.storageMessages)
             let guardedRequest = Self.chatRequestWithRuntimeCapabilityGuard(clientRequest)
             let memoryEntries: [RuntimeMemoryEntry]
             do {
-                memoryEntries = try memoryStore.list()
+                memoryEntries = try memoryStore.list(ownerDeviceID: ownerDeviceID)
             } catch {
                 throw LocalRuntimeRouterError.memoryStoreUnavailable(error.localizedDescription)
             }
@@ -528,7 +564,8 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                 requestID: envelope.requestID,
                 sessionID: backendRequest.sessionID,
                 model: backendRequest.model,
-                messages: storedMessages
+                messages: storedMessages,
+                ownerDeviceID: ownerDeviceID
             ))
             let model = try await resolvedInstalledChatModel(backendRequest.model)
             try validateAttachments(in: backendRequest, for: model)
@@ -541,6 +578,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                         requestID: envelope.requestID,
                         sessionID: backendRequest.sessionID,
                         model: backendRequest.model,
+                        ownerDeviceID: ownerDeviceID,
                         sink: sink
                     )
                 case .reasoningDelta(let text):
@@ -549,7 +587,8 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                         requestID: envelope.requestID,
                         sessionID: backendRequest.sessionID,
                         model: backendRequest.model,
-                        reasoningDelta: text
+                        reasoningDelta: text,
+                        ownerDeviceID: ownerDeviceID
                     ))
                     sink.send(ProtocolEnvelope(
                         type: MessageType.chatDelta,
@@ -562,6 +601,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                         requestID: envelope.requestID,
                         sessionID: backendRequest.sessionID,
                         model: backendRequest.model,
+                        ownerDeviceID: ownerDeviceID,
                         sink: sink
                     )
                     try recordChatEvent(.init(
@@ -570,7 +610,8 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                         sessionID: backendRequest.sessionID,
                         model: backendRequest.model,
                         finishReason: "stop",
-                        usage: RuntimeChatStoredUsage(inputTokens: inputTokens, outputTokens: outputTokens)
+                        usage: RuntimeChatStoredUsage(inputTokens: inputTokens, outputTokens: outputTokens),
+                        ownerDeviceID: ownerDeviceID
                     ))
                     sink.send(ProtocolEnvelope(
                         type: MessageType.chatDone,
@@ -587,6 +628,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                         sessionID: backendRequest.sessionID,
                         model: backendRequest.model,
                         sourceRequestID: envelope.requestID,
+                        ownerDeviceID: ownerDeviceID,
                         locale: locale
                     )
                 }
@@ -631,6 +673,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         requestID: String,
         sessionID: String,
         model: String,
+        ownerDeviceID: String?,
         sink: any RuntimeMessageSink
     ) throws {
         for segment in segments {
@@ -642,7 +685,8 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                     requestID: requestID,
                     sessionID: sessionID,
                     model: model,
-                    delta: text
+                    delta: text,
+                    ownerDeviceID: ownerDeviceID
                 ))
                 sink.send(ProtocolEnvelope(
                     type: MessageType.chatDelta,
@@ -656,7 +700,8 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                     requestID: requestID,
                     sessionID: sessionID,
                     model: model,
-                    reasoningDelta: text
+                    reasoningDelta: text,
+                    ownerDeviceID: ownerDeviceID
                 ))
                 sink.send(ProtocolEnvelope(
                     type: MessageType.chatDelta,
@@ -668,12 +713,14 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
     }
 
     private func mutateChatSession(
+        ownerDeviceID: String?,
         sessionID: String,
         requestID: String,
         mutation: RuntimeChatSessionMutation
     ) throws -> RuntimeChatSessionMutationResult {
         do {
             return try chatEventStore.mutateSession(
+                ownerDeviceID: ownerDeviceID,
                 sessionID: sessionID,
                 requestID: requestID,
                 mutation: mutation,
@@ -695,7 +742,8 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
             requestID: context.requestID,
             sessionID: context.sessionID,
             model: context.model,
-            finishReason: "cancelled"
+            finishReason: "cancelled",
+            ownerDeviceID: context.ownerDeviceID
         ))
     }
 
@@ -709,7 +757,8 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
             error: RuntimeChatStoredError(
                 code: errorCode(for: error),
                 message: error.localizedDescription
-            )
+            ),
+            ownerDeviceID: context.ownerDeviceID
         ))
     }
 
@@ -821,7 +870,12 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                 maxLimit: 200
             )
             let includeArchived = optionalBool("include_archived", in: envelope.payload) ?? false
-            let sessions = try chatEventStore.listSessions(limit: limit, includeArchived: includeArchived)
+            let ownerDeviceID = commandOwnerDeviceID(connectionID: sink.connectionID)
+            let sessions = try chatEventStore.listSessions(
+                ownerDeviceID: ownerDeviceID,
+                limit: limit,
+                includeArchived: includeArchived
+            )
             sink.send(ProtocolEnvelope(
                 type: MessageType.chatSessionsList,
                 requestID: envelope.requestID,
@@ -864,13 +918,18 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                 defaultLimit: 200,
                 maxLimit: 500
             )
-            let messages = try chatEventStore.listMessages(sessionID: sessionID, limit: limit)
+            let ownerDeviceID = commandOwnerDeviceID(connectionID: sink.connectionID)
+            let scopedMessages = try chatEventStore.listMessages(
+                ownerDeviceID: ownerDeviceID,
+                sessionID: sessionID,
+                limit: limit
+            )
             sink.send(ProtocolEnvelope(
                 type: MessageType.chatMessagesList,
                 requestID: envelope.requestID,
                 payload: [
                     "session_id": .string(sessionID),
-                    "messages": .array(messages.map { message in
+                    "messages": .array(scopedMessages.map { message in
                         var payload: [String: JSONValue] = [
                             "role": .string(message.role),
                             "content": .string(message.content)
@@ -912,7 +971,9 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
     ) {
         do {
             let sessionID = try requiredString("session_id", in: envelope.payload)
+            let ownerDeviceID = commandOwnerDeviceID(connectionID: sink.connectionID)
             let result = try mutateChatSession(
+                ownerDeviceID: ownerDeviceID,
                 sessionID: sessionID,
                 requestID: envelope.requestID,
                 mutation: mutation
@@ -939,8 +1000,9 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
             guard !title.isEmpty else {
                 throw LocalRuntimeRouterError.invalidPayload("Payload field title must be a non-empty string")
             }
+            let ownerDeviceID = commandOwnerDeviceID(connectionID: sink.connectionID)
             guard let session = try chatEventStore
-                .listSessions(limit: Int.max, includeArchived: true)
+                .listSessions(ownerDeviceID: ownerDeviceID, limit: Int.max, includeArchived: true)
                 .first(where: { $0.sessionID == sessionID }) else {
                 throw RuntimeChatEventStoreError.sessionNotFound(sessionID)
             }
@@ -951,7 +1013,8 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                 requestID: envelope.requestID,
                 sessionID: sessionID,
                 model: session.model,
-                title: title
+                title: title,
+                ownerDeviceID: ownerDeviceID
             ))
             sink.send(ProtocolEnvelope(
                 type: MessageType.chatSessionRename,
@@ -969,7 +1032,8 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
 
     private func handleMemoryList(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) {
         do {
-            let entries = try memoryStore.list()
+            let ownerDeviceID = commandOwnerDeviceID(connectionID: sink.connectionID)
+            let entries = try memoryStore.list(ownerDeviceID: ownerDeviceID)
             sink.send(ProtocolEnvelope(
                 type: MessageType.memoryList,
                 requestID: envelope.requestID,
@@ -985,6 +1049,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
     private func handleMemoryUpsert(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) {
         do {
             let entry = try memoryStore.upsert(
+                ownerDeviceID: commandOwnerDeviceID(connectionID: sink.connectionID),
                 id: optionalString("id", in: envelope.payload),
                 content: try requiredString("content", in: envelope.payload),
                 enabled: optionalBool("enabled", in: envelope.payload),
@@ -1005,6 +1070,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
     private func handleMemoryDelete(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) {
         do {
             let result = try memoryStore.delete(
+                ownerDeviceID: commandOwnerDeviceID(connectionID: sink.connectionID),
                 id: try requiredString("id", in: envelope.payload),
                 timestamp: Date()
             )
@@ -1235,13 +1301,17 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         try await trustedDeviceStore.load().first { $0.id == deviceID }
     }
 
-    private func isAuthenticated(connectionID: UUID) -> Bool {
+    private func authenticatedDeviceID(connectionID: UUID) -> String? {
         authLock.withLock {
-            if case .authenticated = authSessions[connectionID] {
-                return true
+            guard case .authenticated(let deviceID) = authSessions[connectionID] else {
+                return nil
             }
-            return false
+            return deviceID
         }
+    }
+
+    private func commandOwnerDeviceID(connectionID: UUID) -> String? {
+        requiresAuthentication ? authenticatedDeviceID(connectionID: connectionID) : nil
     }
 
     private func setChallenge(connectionID: UUID, deviceID: String, nonce: String) {
@@ -1262,10 +1332,17 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         }
     }
 
+    private func clearAuthentication(connectionID: UUID) {
+        authLock.withLock {
+            authSessions[connectionID] = nil
+        }
+    }
+
     private func scheduleChatTitleGenerationIfNeeded(
         sessionID: String,
         model: String,
         sourceRequestID: String,
+        ownerDeviceID: String?,
         locale: String?
     ) {
         Task {
@@ -1273,6 +1350,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                 sessionID: sessionID,
                 model: model,
                 sourceRequestID: sourceRequestID,
+                ownerDeviceID: ownerDeviceID,
                 locale: locale
             )
         }
@@ -1282,17 +1360,26 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         sessionID: String,
         model: String,
         sourceRequestID: String,
+        ownerDeviceID: String?,
         locale: String?
     ) async {
         do {
-            let sessions = try chatEventStore.listSessions(limit: 200, includeArchived: true)
+            let sessions = try chatEventStore.listSessions(
+                ownerDeviceID: ownerDeviceID,
+                limit: 200,
+                includeArchived: true
+            )
             guard let session = sessions.first(where: { $0.sessionID == sessionID }),
                   session.status == "active",
                   session.title.isPlaceholderChatTitle else {
                 return
             }
 
-            let storedMessages = try chatEventStore.listMessages(sessionID: sessionID, limit: 8)
+            let storedMessages = try chatEventStore.listMessages(
+                ownerDeviceID: ownerDeviceID,
+                sessionID: sessionID,
+                limit: 8
+            )
             guard Self.isFirstAnsweredTurn(storedMessages) else { return }
 
             let promptMessages = storedMessages.map {
@@ -1314,7 +1401,8 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                 requestID: "\(sourceRequestID)-title",
                 sessionID: sessionID,
                 model: model,
-                title: title
+                title: title,
+                ownerDeviceID: ownerDeviceID
             ))
         } catch {
             return
@@ -1765,19 +1853,26 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
 
     private static func verifySignature(
         publicKeyBase64: String,
+        deviceID: String,
         nonce: String,
         signatureBase64: String
     ) -> Bool {
         guard let publicKeyData = Data(base64Encoded: publicKeyBase64),
               let signatureData = Data(base64Encoded: signatureBase64),
-              let nonceData = nonce.data(using: .utf8),
+              let messageData = clientAuthenticationResponseMessage(deviceID: deviceID, nonce: nonce).data(using: .utf8),
               let publicKey = try? P256.Signing.PublicKey(derRepresentation: publicKeyData),
               let signature = try? P256.Signing.ECDSASignature(derRepresentation: signatureData)
         else {
             return false
         }
-        return publicKey.isValidSignature(signature, for: SHA256.hash(data: nonceData))
+        return publicKey.isValidSignature(signature, for: SHA256.hash(data: messageData))
     }
+
+    static func clientAuthenticationResponseMessage(deviceID: String, nonce: String) -> String {
+        "\(clientAuthenticationResponseContext)\n\(deviceID)\n\(nonce)"
+    }
+
+    private static let clientAuthenticationResponseContext = "AetherLink client auth response v1"
 }
 
 private enum AuthSessionState: Equatable {
@@ -1798,6 +1893,7 @@ private struct RuntimeChatStorageContext {
     var requestID: String
     var sessionID: String
     var model: String
+    var ownerDeviceID: String?
 }
 
 private struct RuntimeParsedChatRequest {
@@ -1831,6 +1927,21 @@ private extension RuntimeChatSessionMutation {
         case .delete:
             return "deleted_at"
         }
+    }
+}
+
+private let allowedRouteRefreshRelayScopes: Set<String> = [
+    "remote",
+    "private_overlay",
+    "usb_reverse"
+]
+
+private extension RuntimeRouteRefreshResult {
+    func normalizedRelayScope() -> String? {
+        guard let relayScope, !relayScope.isEmpty else {
+            return nil
+        }
+        return allowedRouteRefreshRelayScopes.contains(relayScope) ? relayScope : nil
     }
 }
 

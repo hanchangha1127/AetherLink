@@ -1,6 +1,5 @@
 package com.localagentbridge.android.core.pairing
 
-import android.util.Base64
 import java.security.KeyPair
 import java.security.KeyPairGenerator
 import java.security.KeyFactory
@@ -9,6 +8,7 @@ import java.security.SecureRandom
 import java.security.Signature
 import java.security.spec.ECGenParameterSpec
 import java.security.spec.X509EncodedKeySpec
+import java.util.Base64
 import java.util.UUID
 
 data class DeviceIdentity(
@@ -17,11 +17,23 @@ data class DeviceIdentity(
     val publicKeyBase64: String,
     private val keyPair: KeyPair,
 ) {
-    fun sign(nonce: ByteArray): String {
+    fun signAuthenticationResponse(nonce: String): String {
+        return sign(authenticationResponseMessage(deviceId, nonce))
+    }
+
+    private fun sign(message: ByteArray): String {
         val signature = Signature.getInstance("SHA256withECDSA")
         signature.initSign(keyPair.private)
-        signature.update(nonce)
-        return Base64.encodeToString(signature.sign(), Base64.NO_WRAP)
+        signature.update(message)
+        return Base64.getEncoder().encodeToString(signature.sign())
+    }
+
+    companion object {
+        fun authenticationResponseMessage(deviceId: String, nonce: String): ByteArray {
+            return "$AUTHENTICATION_RESPONSE_CONTEXT\n$deviceId\n$nonce".toByteArray(Charsets.UTF_8)
+        }
+
+        private const val AUTHENTICATION_RESPONSE_CONTEXT = "AetherLink client auth response v1"
     }
 }
 
@@ -30,7 +42,7 @@ object DeviceIdentityFactory {
         val keyPairGenerator = KeyPairGenerator.getInstance("EC")
         keyPairGenerator.initialize(ECGenParameterSpec("secp256r1"), SecureRandom())
         val keyPair = keyPairGenerator.generateKeyPair()
-        val publicKey = Base64.encodeToString(keyPair.public.encoded, Base64.NO_WRAP)
+        val publicKey = Base64.getEncoder().encodeToString(keyPair.public.encoded)
         return DeviceIdentity(
             deviceId = UUID.randomUUID().toString(),
             deviceName = deviceName,

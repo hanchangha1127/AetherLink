@@ -16,6 +16,7 @@
     <string name="new_chat_state_wait_for_stream">Wait for the current response or cancel it before starting a new chat.</string>
     <string name="new_chat_state_pairing_required">Pair with AetherLink Runtime before starting a new chat.</string>
     <string name="chat_destination_state_ready">Ready to open chat.</string>
+    <string name="settings_destination_state_ready">Ready to open settings.</string>
     <string name="previous_chats">Previous chats</string>
     <string name="no_previous_chats">No previous chats yet.</string>
     <string name="chat_search_label">Search chats</string>
@@ -326,6 +327,7 @@
     <string name="empty_chat_no_model">Pick a model before sending.</string>
     <string name="empty_chat_streaming_title">Response in progress</string>
     <string name="empty_chat_streaming">Receiving a streamed answer from AetherLink Runtime.</string>
+    <string name="loading_chat_messages">Loading chat...</string>
     <string name="streaming">Streaming</string>
     <string name="streaming_detail">Receiving a streamed answer from AetherLink Runtime.</string>
     <string name="chat_status_connected">Connected</string>
@@ -347,6 +349,7 @@
     <string name="chat_hint_install_model">Install or choose an installed model before sending.</string>
     <string name="chat_hint_select_vision_model">Choose a vision-capable model before sending an image.</string>
     <string name="chat_hint_wait_for_stream">Wait for the current response or cancel it.</string>
+    <string name="chat_hint_loading_chat">Wait for this chat to finish loading.</string>
     <string name="chat_hint_enter_message">Enter a message to send.</string>
     <string name="chat_hint_ready">Ready to send.</string>
     <string name="chat_hint_ready_with_attachments">Ready to send. %1$s</string>
@@ -369,10 +372,18 @@
     <string name="action_use_suggested_question">Insert suggested question</string>
     <string name="suggested_question_state_wait_for_stream">Wait for the current response before using a suggested question.</string>
     <string name="copy_message">Copy message</string>
+    <string name="regenerate_response">Regenerate response</string>
+    <string name="regenerate_response_state_ready">Ready to regenerate the latest response.</string>
+    <string name="reuse_message">Use as draft</string>
+    <string name="reuse_message_state_ready">Ready to use this message as a draft.</string>
     <string name="copy_code_block">Copy code block</string>
     <string name="copy_code_block_named">Copy %1$s code block %2$d</string>
     <string name="copy_code_block_numbered">Copy code block %1$d</string>
     <string name="message_copied">Copied</string>
+    <string name="runtime_error_technical_details">Technical details</string>
+    <string name="runtime_error_show_technical_details">Show technical details</string>
+    <string name="runtime_error_hide_technical_details">Hide technical details</string>
+    <string name="runtime_error_copy_diagnostics">Copy diagnostics</string>
 
     <string name="settings_title">Settings</string>
     <string name="settings_subtitle">This app connects through AetherLink. Model providers stay private.</string>
@@ -481,6 +492,8 @@
     <string name="error_remote_route_auth_failed">Connection could not be verified. Scan the latest AetherLink QR and try again.</string>
     <string name="error_generation_cancelled">Generation cancelled.</string>
     <string name="error_generation_in_progress">Wait for the current response or cancel it before making changes.</string>
+    <string name="error_chat_history_loading">Wait for this chat to finish loading.</string>
+    <string name="error_chat_history_load_failed">Could not load chat history from AetherLink Runtime.</string>
     <string name="error_chat_session_not_found">This chat could not be found.</string>
     <string name="error_chat_session_must_be_archived_before_delete">Archive this chat before permanently deleting it.</string>
     <string name="error_chat_session_sync_failed">Could not sync this chat change with AetherLink Runtime.</string>
@@ -488,6 +501,9 @@
     <string name="error_memory_runtime_required">Connect to the trusted runtime before changing memory.</string>
     <string name="error_runtime_error">AetherLink Runtime could not complete the request.</string>
     <string name="error_send_failed">Could not send the message to AetherLink Runtime.</string>
+    <string name="error_regenerate_unavailable">There is no completed assistant response to regenerate.</string>
+    <string name="error_regenerate_attachment_context_unavailable">This response used an attachment that is no longer available for regeneration.</string>
+    <string name="error_reuse_message_unavailable">This message cannot be reused as a draft.</string>
     <string name="error_invalid_payload">AetherLink Runtime sent invalid data.</string>
     <string name="error_install_model_first">Install this model before chatting.</string>
     <string name="error_model_install_failed">AetherLink Runtime could not install the model.</string>
@@ -526,6 +542,8 @@
     <string name="content_desc_scan_qr">Scan QR</string>
     <string name="content_desc_attach_files">Attach files</string>
     <string name="content_desc_remove_attachment">Remove attachment %1$s</string>
+    <string name="clear_draft">Clear draft</string>
+    <string name="clear_draft_state_ready">Ready to clear draft.</string>
     <string name="content_desc_send">Send message</string>
     <string name="content_desc_cancel_generation">Cancel generation</string>
     <string name="cancel_generation_state_ready">Ready to stop the current response.</string>

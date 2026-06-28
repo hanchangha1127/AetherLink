@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import TrustedDevices
 
@@ -118,6 +119,7 @@ public enum PairingRejectionReason: String, Equatable, Sendable {
     case noActiveSession = "pairing_not_active"
     case expired = "pairing_expired"
     case invalidCredentials = "pairing_invalid"
+    case invalidDeviceIdentity = "pairing_invalid_device_identity"
     case attemptsExceeded = "pairing_attempts_exceeded"
 }
 
@@ -242,14 +244,33 @@ public final class PairingCoordinator: @unchecked Sendable {
                     remainingAttempts: remainingAttempts
                 ))
             }
+            guard let trustedDevice = Self.trustedDevice(from: request) else {
+                failedAttempts += 1
+                let remainingAttempts = max(0, maxFailedAttempts - failedAttempts)
+                guard failedAttempts < maxFailedAttempts else {
+                    let rejection = rejection(
+                        reason: .attemptsExceeded,
+                        message: "Too many invalid pairing attempts. Start pairing again in AetherLink Runtime.",
+                        retryable: false,
+                        failedAttempts: failedAttempts,
+                        remainingAttempts: remainingAttempts
+                    )
+                    activeSession = nil
+                    failedAttempts = 0
+                    return .rejected(rejection)
+                }
+                return .rejected(rejection(
+                    reason: .invalidDeviceIdentity,
+                    message: "Pairing device identity was rejected.",
+                    retryable: true,
+                    failedAttempts: failedAttempts,
+                    remainingAttempts: remainingAttempts
+                ))
+            }
             activeSession = nil
             failedAttempts = 0
             return .accepted(PairingValidationResult(
-                trustedDevice: TrustedDevice(
-                    id: request.deviceID,
-                    name: request.deviceName,
-                    publicKeyBase64: request.publicKeyBase64
-                ),
+                trustedDevice: trustedDevice,
                 macDeviceID: session.macDeviceID,
                 macName: session.macName,
                 runtimePublicKeyBase64: session.runtimePublicKeyBase64,
@@ -274,6 +295,23 @@ public final class PairingCoordinator: @unchecked Sendable {
             remainingAttempts: remainingAttempts
         )
     }
+
+    private static func trustedDevice(from request: PairingRequest) -> TrustedDevice? {
+        guard let deviceID = request.deviceID.opaquePairingValue(),
+              deviceID.count <= 128,
+              let publicKeyBase64 = request.publicKeyBase64.opaquePairingValue(),
+              publicKeyBase64.count <= 4_096,
+              let publicKeyData = Data(base64Encoded: publicKeyBase64),
+              (try? P256.Signing.PublicKey(derRepresentation: publicKeyData)) != nil
+        else {
+            return nil
+        }
+        return TrustedDevice(
+            id: deviceID,
+            name: request.deviceName.normalizedDeviceName(),
+            publicKeyBase64: publicKeyBase64
+        )
+    }
 }
 
 private extension NSLock {
@@ -281,5 +319,37 @@ private extension NSLock {
         lock()
         defer { unlock() }
         return try body()
+    }
+}
+
+private extension String {
+    func opaquePairingValue() -> String? {
+        guard !isEmpty,
+              self == trimmingCharacters(in: .whitespacesAndNewlines),
+              rangeOfCharacter(from: .pairingOpaqueInvalidCharacters) == nil
+        else {
+            return nil
+        }
+        return self
+    }
+
+    func normalizedDeviceName() -> String {
+        let collapsed = trimmingCharacters(in: .pairingDisplaySeparators)
+            .components(separatedBy: .pairingDisplaySeparators)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        return String((collapsed.isEmpty ? "AetherLink Client" : collapsed).prefix(80))
+    }
+}
+
+private extension CharacterSet {
+    static var pairingOpaqueInvalidCharacters: CharacterSet {
+        var set = CharacterSet.whitespacesAndNewlines
+        set.formUnion(.controlCharacters)
+        return set
+    }
+
+    static var pairingDisplaySeparators: CharacterSet {
+        pairingOpaqueInvalidCharacters
     }
 }

@@ -43,7 +43,7 @@ Rules:
 11. After a transport path is established, the client app sends `hello` with its persisted device id.
 12. AetherLink Runtime verifies that the device is trusted and replies with `auth.challenge`.
 13. If the client pinned a runtime public key during QR pairing, the client verifies the runtime proof in `auth.challenge` before signing anything.
-14. The client app signs the challenge and sends `auth.response`.
+14. The client app signs a domain-separated client-auth message for the challenge and sends `auth.response`.
 15. AetherLink Runtime accepts the authenticated runtime session. Production end-to-end transport encryption remains a hardening milestone beyond the current development transport.
 16. The client app sends `runtime.health`.
 17. AetherLink Runtime replies with runtime/Ollama/LM Studio status.
@@ -61,7 +61,7 @@ Rules:
 29. An already-authenticated client may request fresh relay lease material with `route.refresh` before an existing QR-provisioned route expires.
 29. The client app may send `chat.cancel` for an active request.
 
-Runtime commands are gated after pairing. `runtime.health`, `models.list`, `models.pull`, `route.refresh`, `chat.send`, `chat.sessions.list`, `chat.messages.list`, `chat.suggestions.request`, `chat.title.request`, `chat.session.rename`, `chat.session.archive`, `chat.session.restore`, `chat.session.delete`, and `chat.cancel` require an authenticated session; unauthenticated requests return `authentication_required`.
+Runtime commands are gated after pairing. `runtime.health`, `models.list`, `models.pull`, `route.refresh`, `chat.send`, `chat.sessions.list`, `chat.messages.list`, `chat.suggestions.request`, `chat.title.request`, `chat.session.rename`, `chat.session.archive`, `chat.session.restore`, `chat.session.delete`, and `chat.cancel` require an authenticated session; unauthenticated requests return `authentication_required`. The runtime must continue checking that the authenticated device id is still present in the trusted-device store before accepting later commands. If trust is removed while a connection is still open, the next command fails with `pairing_required` and the cached authenticated session is cleared.
 
 The authentication flow is part of the v0.1 product contract even if a development build uses minimal local transport plumbing while the channel is being hardened.
 
@@ -169,13 +169,17 @@ Successful response payload:
 }
 ```
 
-The runtime must bind successful refresh material to the paired runtime identity with `runtime_device_id` and `runtime_key_fingerprint`. The client must reject a refresh response whose identity fields are missing or do not match the pinned trusted runtime. The runtime may return `route_refresh_unavailable` when no refreshable route is configured, allocation fails, or the route is not QR-eligible. The client should keep the existing trusted runtime identity and fall back to scanning a fresh QR when refresh fails. `relay_scope = private_overlay` is allowed only for explicit VPN, tunnel, or private-overlay routes that both devices can reach; scope-less private relay literals stay invalid.
+The runtime must bind successful refresh material to the paired runtime identity with `runtime_device_id` and `runtime_key_fingerprint`. The client must reject a refresh response whose identity fields are missing or do not match the pinned trusted runtime. The runtime may return `route_refresh_unavailable` when no refreshable route is configured, allocation fails, the route is not QR-eligible, or the route scope cannot be represented by the protocol enum. The client should keep the existing trusted runtime identity and fall back to scanning a fresh QR when refresh fails. `relay_scope` is optional, but when present it must be exactly one of `remote`, `private_overlay`, or `usb_reverse`; unknown or whitespace-mutated values are invalid and must not be saved as trusted route material. `relay_scope = private_overlay` is allowed only for explicit VPN, tunnel, or private-overlay routes that both devices can reach; scope-less private relay literals stay invalid.
 
 ## `pairing.request`
 
 Direction: Client -> Runtime.
 
 After scanning the QR code, the client app connects to the AetherLink Runtime and submits the QR nonce/code plus its own persistent device identity. The AetherLink Runtime accepts this only while the pairing session is active.
+
+QR trust and routing identifiers are opaque canonical values. Clients must reject `pairing_nonce`, `runtime_device_id`, `runtime_key_fingerprint`, `runtime_public_key`, `route_token`, `relay_id`, `relay_nonce`, and `relay_scope` values that are blank, leading/trailing-space mutated, or contain whitespace before they are used for trust storage, discovery matching, or relay routing. Human-facing runtime names may be normalized for display; relay frame secrets remain opaque secret material.
+
+The runtime applies the same fail-closed policy to the client identity submitted in `pairing.request`. `device_id` is an opaque canonical identifier, `device_name` is normalized only for display, and `public_key` must be a Base64-encoded P-256 DER public key that can later verify `auth.response` signatures. A malformed device id or public key returns `pairing.result` with `accepted: false` and `code: "pairing_invalid_device_identity"`; it must not create or update a trusted-device record.
 
 ```json
 {
@@ -215,7 +219,7 @@ Direction: Runtime -> Client.
 }
 ```
 
-If rejected, `accepted` is `false` and `message` explains whether the code expired or was invalid. The client app must persist the trusted runtime only after an accepted result. When `runtime_public_key` or `runtime_key_fingerprint` are present, the client must verify they match the scanned QR identity before writing the trusted runtime record.
+If rejected, `accepted` is `false` and `message` explains whether the code expired, credentials were invalid, identity material was malformed, or the active attempt limit was exceeded. The client app must persist the trusted runtime only after an accepted result. When `runtime_public_key` or `runtime_key_fingerprint` are present, the client must verify they match the scanned QR identity before writing the trusted runtime record.
 
 ## `hello`
 
@@ -264,7 +268,7 @@ For a trusted device id, the AetherLink Runtime replies with a one-time nonce sc
 
 Direction: Client -> Runtime, Runtime -> Client.
 
-The client app signs the nonce with its paired private key. The AetherLink Runtime verifies the signature against the trusted public key before allowing runtime commands on that connection.
+The client app signs the domain-separated message `AetherLink client auth response v1\n<device_id>\n<nonce>` with its paired private key. The AetherLink Runtime verifies that exact message against the trusted public key before allowing runtime commands on that connection. A raw nonce signature is not accepted.
 
 ```json
 {

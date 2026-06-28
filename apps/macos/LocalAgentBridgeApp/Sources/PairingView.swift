@@ -62,7 +62,7 @@ struct PairingView: View {
                     }
                 }
 
-                if shouldShowRouteDiagnosticsPanel(model: model) {
+                if shouldShowPairingRouteSetupPanel(model: model) {
                     RemoteRelayRoutePanel(model: model) {
                         generatePairingQR()
                     }

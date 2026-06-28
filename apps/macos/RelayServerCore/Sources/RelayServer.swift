@@ -248,12 +248,22 @@ private func readLine(socket: Int32, maxBytes: Int = 4096) throws -> String {
         }
     }
 
-    guard bytes.last == UInt8(ascii: "\n") || bytes.count < maxBytes,
-          let line = String(bytes: bytes, encoding: .utf8)
-    else {
-        throw RelayServerError.handshakeReadFailed
+    return try RelayServerLineFraming.decode(bytes)
+}
+
+enum RelayServerLineFraming {
+    static func decode(_ data: Data) throws -> String {
+        try decode(Array(data))
     }
-    return line
+
+    static func decode(_ bytes: [UInt8]) throws -> String {
+        guard bytes.last == UInt8(ascii: "\n"),
+              let line = String(bytes: bytes, encoding: .utf8)
+        else {
+            throw RelayServerError.handshakeReadFailed
+        }
+        return line
+    }
 }
 
 private func writeAll(socket: Int32, data: Data) -> Bool {

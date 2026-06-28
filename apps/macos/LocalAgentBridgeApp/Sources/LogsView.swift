@@ -39,6 +39,8 @@ struct LogsView: View {
                     }
                     .listStyle(.inset)
                     .frame(minHeight: 300)
+                    .accessibilityLabel(Text(activityLogListAccessibilityLabel()))
+                    .accessibilityValue(Text(activityLogListAccessibilityValue(count: model.logs.count)))
                 }
             }
 
@@ -65,6 +67,7 @@ private struct LogRow: View {
                     .font(.body)
                     .lineLimit(3)
                     .textSelection(.enabled)
+                    .accessibilityLabel(Text(logRowAccessibilityLabel(summary: display.summary, tone: tone)))
                 if let diagnostic = display.diagnostic {
                     DisclosureGroup(isExpanded: $diagnosticsExpanded) {
                         Text(diagnostic)
@@ -84,8 +87,6 @@ private struct LogRow: View {
                 }
             }
         }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(Text(logRowAccessibilityLabel(summary: display.summary, tone: tone)))
     }
 }
 
@@ -137,6 +138,20 @@ func logToneAccessibilityStatus(_ tone: StatusTone) -> String {
     case .neutral:
         return NSLocalizedString("Pending", comment: "")
     }
+}
+
+func activityLogListAccessibilityLabel() -> String {
+    NSLocalizedString("Activity log", comment: "")
+}
+
+func activityLogListAccessibilityValue(count: Int) -> String {
+    if count == 1 {
+        return NSLocalizedString("1 activity item", comment: "")
+    }
+    return String(
+        format: NSLocalizedString("%d activity items", comment: ""),
+        count
+    )
 }
 
 func logRowAccessibilityLabel(summary: String, tone: StatusTone) -> String {
@@ -440,8 +455,8 @@ private let providerEndpointDiagnosticPatterns = [
 ]
 
 private let sensitiveRouteDiagnosticPatterns = [
-    #"\b(?:relay_secret|route_secret|route_token|pairing_secret|rs|rt)=([^&\s,;)]*)"#,
-    #"\b(?:relay_secret|route_secret|route_token|pairing_secret)\s+[^,\s;)]+"#,
+    #"(?:^|[\s?&{,;])["']?(?:relay_secret|relaySecret|route_secret|routeSecret|route_token|routeToken|pairing_secret|pairingSecret|relay_id|relayId|relay_nonce|relayNonce|allocation_token|allocationToken|rs|rt|ri|rrn)["']?\s*(?:=|:|\s)\s*["']?[^"',\s;})]+"#,
+    #"\b(?:relay_secret|relaySecret|route_secret|routeSecret|route_token|routeToken|pairing_secret|pairingSecret|relay_id|relayId|relay_nonce|relayNonce|allocation_token|allocationToken)\b"#,
 ]
 
 private func remotePairingEndpoint(

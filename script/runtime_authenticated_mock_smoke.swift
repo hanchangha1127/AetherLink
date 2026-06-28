@@ -761,7 +761,8 @@ func authenticateFreshClient(
         let challengePayload = try payload(challenge, context: "\(requestPrefix) hello")
         let nonce = try requireString(challengePayload, "nonce", context: "\(requestPrefix) hello")
 
-        let digest = SHA256.hash(data: Data(nonce.utf8))
+        let authMessage = "AetherLink client auth response v1\n\(deviceID)\n\(nonce)"
+        let digest = SHA256.hash(data: Data(authMessage.utf8))
         let signature = try privateKey.signature(for: digest).derRepresentation.base64EncodedString()
         let authResponse = try sendAndRead(
             client,

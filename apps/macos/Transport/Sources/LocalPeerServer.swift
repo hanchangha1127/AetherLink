@@ -24,6 +24,7 @@ public final class LocalPeerServer: RuntimeTransport, @unchecked Sendable {
     private var connections: [UUID: LocalPeerConnection] = [:]
 
     public private(set) var status: PeerServerStatus = .stopped
+    public var onDisconnect: (@Sendable (UUID) -> Void)?
 
     public init() {}
 
@@ -89,7 +90,10 @@ public final class LocalPeerServer: RuntimeTransport, @unchecked Sendable {
             connections.removeAll()
             return values
         }
-        activeConnections.forEach { $0.close() }
+        activeConnections.forEach { peer in
+            onDisconnect?(peer.id)
+            peer.close()
+        }
         status = .stopped
     }
 
@@ -100,8 +104,11 @@ public final class LocalPeerServer: RuntimeTransport, @unchecked Sendable {
     }
 
     private func remove(_ peer: LocalPeerConnection) {
-        lock.withLock {
-            connections[peer.id] = nil
+        let removed = lock.withLock {
+            connections.removeValue(forKey: peer.id)
+        }
+        if removed != nil {
+            onDisconnect?(peer.id)
         }
     }
 

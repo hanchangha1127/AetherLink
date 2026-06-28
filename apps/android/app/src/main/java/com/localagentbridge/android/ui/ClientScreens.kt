@@ -50,6 +50,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -112,12 +113,17 @@ import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.localagentbridge.android.R
 import com.localagentbridge.android.core.pairing.isEligibleRemoteRelayHost
@@ -872,6 +878,7 @@ private fun RuntimeRouteNotice(
             .semantics(mergeDescendants = true) {
                 contentDescription = accessibilitySummary
                 stateDescription = statusDescription
+                liveRegion = LiveRegionMode.Polite
             }
             .let { base ->
                 if (actionHandler == null) {
@@ -1178,9 +1185,19 @@ private fun ConnectionStatusActions(
 
     val hapticFeedback = LocalHapticFeedback.current
     val refreshHealthActionLabel = stringResource(R.string.refresh_health)
-    val refreshHealthStateDescription = stringResource(R.string.refresh_health_state_ready)
     val disconnectActionLabel = stringResource(R.string.disconnect)
-    val disconnectStateDescription = stringResource(R.string.disconnect_runtime_state_ready)
+    val actionsEnabled = !state.isConnecting
+    val connectedActionDisabledState = stringResource(R.string.connect_runtime_state_connecting)
+    val refreshHealthStateDescription = if (actionsEnabled) {
+        stringResource(R.string.refresh_health_state_ready)
+    } else {
+        connectedActionDisabledState
+    }
+    val disconnectStateDescription = if (actionsEnabled) {
+        stringResource(R.string.disconnect_runtime_state_ready)
+    } else {
+        connectedActionDisabledState
+    }
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Button(
@@ -1188,6 +1205,7 @@ private fun ConnectionStatusActions(
                 hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
                 onRefreshHealth()
             },
+            enabled = actionsEnabled,
             modifier = Modifier
                 .fillMaxWidth()
                 .semantics {
@@ -1207,6 +1225,7 @@ private fun ConnectionStatusActions(
                 hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Destructive)
                 onDisconnect()
             },
+            enabled = actionsEnabled,
             modifier = Modifier
                 .fillMaxWidth()
                 .semantics {
@@ -1429,6 +1448,8 @@ fun ChatScreen(
     onRemoveAttachment: (String) -> Unit,
     onSuggestionClick: (String) -> Unit,
     onScanLatestQr: () -> Unit,
+    onRegenerateLatestResponse: () -> Unit = {},
+    onReuseLatestUserMessage: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val listState = rememberLazyListState()
@@ -1514,11 +1535,14 @@ fun ChatScreen(
                     .padding(bottom = composerDockSpace),
                 contentAlignment = Alignment.Center,
             ) {
-                if (shouldShowChatEmptyState(state)) {
+                if (state.isLoadingActiveChatMessages) {
+                    ChatMessagesLoadingState()
+                } else if (shouldShowChatEmptyState(state)) {
                     ChatEmptyState(
                         state = state,
                         onConnect = onConnect,
                         onScanPairingQr = onScanPairingQr,
+                        onScanLatestQr = onScanLatestQr,
                     )
                 }
             }
@@ -1545,6 +1569,8 @@ fun ChatScreen(
                 ) { message ->
                     val isLatestAssistant = message.role == "assistant" &&
                         message.id == state.messages.lastAssistantMessageId()
+                    val isLatestUser = message.role == "user" &&
+                        message.id == state.messages.lastUserMessageId()
                     ChatMessageRow(
                         message = message,
                         isStreaming = state.isStreaming &&
@@ -1552,7 +1578,18 @@ fun ChatScreen(
                             message.id == state.messages.lastOrNull()?.id,
                         showSuggestions = shouldShowAssistantSuggestionsForMessage(state, message),
                         isLoadingSuggestions = isLatestAssistant && state.isLoadingSuggestions,
+                        showRegenerateAction = isLatestAssistant &&
+                            message.content.isNotBlank() &&
+                            !state.isStreaming &&
+                            !state.isLoadingActiveChatMessages,
+                        showReuseAction = isLatestUser &&
+                            message.content.isNotBlank() &&
+                            message.attachments.isEmpty() &&
+                            !state.isStreaming &&
+                            !state.isLoadingActiveChatMessages,
                         onSuggestionClick = onSuggestionClick,
+                        onRegenerateLatestResponse = onRegenerateLatestResponse,
+                        onReuseLatestUserMessage = onReuseLatestUserMessage,
                     )
                 }
             }
@@ -1624,6 +1661,29 @@ fun ChatScreen(
     }
 }
 
+}
+
+@Composable
+private fun ChatMessagesLoadingState() {
+    val loadingText = stringResource(R.string.loading_chat_messages)
+    Column(
+        modifier = Modifier
+            .widthIn(max = 280.dp)
+            .semantics {
+                contentDescription = loadingText
+                liveRegion = LiveRegionMode.Polite
+            },
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        Text(
+            text = loadingText,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
+    }
 }
 
 @Composable
@@ -2275,7 +2335,10 @@ private fun TrustedRuntimePanel(
                     modifier = Modifier
                         .fillMaxWidth()
                         .semantics {
-                            forgetTrustedRuntimeContentDescription?.let { contentDescription = it }
+                            forgetTrustedRuntimeContentDescription?.let {
+                                contentDescription = it
+                                onClick(label = it, action = null)
+                            }
                         },
                 ) {
                     Icon(Icons.Filled.Close, contentDescription = null)
@@ -2838,6 +2901,7 @@ private fun ChatEmptyState(
     state: RuntimeUiState,
     onConnect: () -> Unit,
     onScanPairingQr: () -> Unit,
+    onScanLatestQr: () -> Unit,
 ) {
     val hapticFeedback = LocalHapticFeedback.current
     val preferQrRouteRefresh = shouldScanLatestQrFromEmptyChat(state)
@@ -2907,7 +2971,13 @@ private fun ChatEmptyState(
                     hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
                     when (primaryAction) {
                         ChatEmptyPrimaryAction.Connect -> onConnect()
-                        ChatEmptyPrimaryAction.ScanQr -> onScanPairingQr()
+                        ChatEmptyPrimaryAction.ScanQr -> {
+                            if (preferQrRouteRefresh) {
+                                onScanLatestQr()
+                            } else {
+                                onScanPairingQr()
+                            }
+                        }
                     }
                 },
                 enabled = !state.isConnecting,
@@ -2944,9 +3014,14 @@ private fun ChatMessageRow(
     isStreaming: Boolean,
     showSuggestions: Boolean,
     isLoadingSuggestions: Boolean,
+    showRegenerateAction: Boolean,
+    showReuseAction: Boolean,
     onSuggestionClick: (String) -> Unit,
+    onRegenerateLatestResponse: () -> Unit,
+    onReuseLatestUserMessage: () -> Unit,
 ) {
     val isUser = message.role == "user"
+    val hapticFeedback = LocalHapticFeedback.current
     val roleLabel = stringResource(
         if (isUser) {
             R.string.role_user
@@ -2957,6 +3032,8 @@ private fun ChatMessageRow(
     val messageAccessibilitySummary = message.content
         .takeIf { it.isNotBlank() }
         ?.let { stringResource(R.string.chat_message_accessibility_summary, roleLabel, it) }
+    val showVisibleCopyAction = shouldShowVisibleMessageCopyAction(message.content)
+    val copyMessageActionLabel = stringResource(R.string.copy_message)
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start,
@@ -2997,15 +3074,56 @@ private fun ChatMessageRow(
                 ReadOnlyAttachmentChips(
                     attachments = message.attachments,
                 )
+                if (showVisibleCopyAction || showReuseAction) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        if (showVisibleCopyAction) {
+                            MessageCopyButton(
+                                textToCopy = message.content,
+                                copyActionLabel = copyMessageActionLabel,
+                            )
+                        }
+                        if (showReuseAction) {
+                            val reuseActionLabel = stringResource(R.string.reuse_message)
+                            val reuseActionStateDescription =
+                                stringResource(R.string.reuse_message_state_ready)
+                            IconButton(
+                                onClick = {
+                                    hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
+                                    onReuseLatestUserMessage()
+                                },
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .semantics {
+                                        contentDescription = reuseActionLabel
+                                        stateDescription = reuseActionStateDescription
+                                        onClick(label = reuseActionLabel, action = null)
+                                    },
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Edit,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp),
+                                )
+                            }
+                        }
+                    }
+                }
             }
         } else {
             AssistantMessage(
                 message = message,
                 isStreaming = isStreaming,
                 messageAccessibilitySummary = messageAccessibilitySummary,
+                showVisibleCopyAction = showVisibleCopyAction,
+                copyMessageActionLabel = copyMessageActionLabel,
                 showSuggestions = showSuggestions,
                 isLoadingSuggestions = isLoadingSuggestions,
+                showRegenerateAction = showRegenerateAction,
                 onSuggestionClick = onSuggestionClick,
+                onRegenerateLatestResponse = onRegenerateLatestResponse,
             )
         }
     }
@@ -3016,11 +3134,16 @@ private fun AssistantMessage(
     message: RuntimeChatMessage,
     isStreaming: Boolean,
     messageAccessibilitySummary: String?,
+    showVisibleCopyAction: Boolean,
+    copyMessageActionLabel: String,
     showSuggestions: Boolean,
     isLoadingSuggestions: Boolean,
+    showRegenerateAction: Boolean,
     onSuggestionClick: (String) -> Unit,
+    onRegenerateLatestResponse: () -> Unit,
 ) {
     val hasReasoning = message.reasoning.isNotBlank()
+    val hapticFeedback = LocalHapticFeedback.current
     var isReasoningExpanded by rememberSaveable(message.id) {
         mutableStateOf(message.isReasoningOpen)
     }
@@ -3085,6 +3208,43 @@ private fun AssistantMessage(
                 textColor = MaterialTheme.colorScheme.onSurface,
                 modifier = contentModifier,
             )
+            if ((showVisibleCopyAction && !showTyping) || showRegenerateAction) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (showVisibleCopyAction && !showTyping) {
+                        MessageCopyButton(
+                            textToCopy = message.content,
+                            copyActionLabel = copyMessageActionLabel,
+                        )
+                    }
+                    if (showRegenerateAction) {
+                        val regenerateActionLabel = stringResource(R.string.regenerate_response)
+                        val regenerateActionStateDescription =
+                            stringResource(R.string.regenerate_response_state_ready)
+                        IconButton(
+                            onClick = {
+                                hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
+                                onRegenerateLatestResponse()
+                            },
+                            modifier = Modifier
+                                .size(36.dp)
+                                .semantics {
+                                    contentDescription = regenerateActionLabel
+                                    stateDescription = regenerateActionStateDescription
+                                    onClick(label = regenerateActionLabel, action = null)
+                                },
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Refresh,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                            )
+                        }
+                    }
+                }
+            }
         }
         ReadOnlyAttachmentChips(
             attachments = message.attachments,
@@ -3256,10 +3416,9 @@ private fun MessageContent(
         parts.forEach { part ->
             when (part) {
                 is MessageContentPart.Text -> {
-                    Text(
+                    MessageText(
                         text = part.text,
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = textColor,
+                        textColor = textColor,
                     )
                 }
                 is MessageContentPart.Code -> {
@@ -3272,6 +3431,214 @@ private fun MessageContent(
                     )
                 }
             }
+        }
+    }
+}
+
+private fun shouldShowVisibleMessageCopyAction(content: String): Boolean {
+    return content.isNotBlank() && parseMessageContent(content).none { it is MessageContentPart.Code }
+}
+
+@Composable
+private fun MessageText(
+    text: String,
+    textColor: androidx.compose.ui.graphics.Color,
+) {
+    val blocks = remember(text) { parseMessageTextBlocks(text) }
+    Column(
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        blocks.forEach { block ->
+            when (block) {
+                is MessageTextBlock.Heading -> {
+                    Text(
+                        text = markdownInlineText(block.text, textColor),
+                        style = when (block.level) {
+                            1 -> MaterialTheme.typography.titleMedium
+                            2 -> MaterialTheme.typography.titleSmall
+                            else -> MaterialTheme.typography.bodyLarge
+                        },
+                        fontWeight = FontWeight.SemiBold,
+                        color = textColor,
+                    )
+                }
+                is MessageTextBlock.Paragraph -> {
+                    Text(
+                        text = markdownInlineText(block.text, textColor),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = textColor,
+                    )
+                }
+                is MessageTextBlock.ListItem -> {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text(
+                            text = block.marker,
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = textColor.copy(alpha = 0.68f),
+                            modifier = Modifier.widthIn(min = 20.dp),
+                        )
+                        Text(
+                            text = markdownInlineText(block.text, textColor),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = textColor,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+                is MessageTextBlock.Quote -> {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(IntrinsicSize.Min)
+                            .semantics(mergeDescendants = true) {},
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .width(3.dp)
+                                .fillMaxHeight()
+                                .heightIn(min = 24.dp)
+                                .background(
+                                    color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.28f),
+                                    shape = RoundedCornerShape(2.dp),
+                                ),
+                        )
+                        Text(
+                            text = markdownInlineText(block.text, textColor),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = textColor.copy(alpha = 0.78f),
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+                is MessageTextBlock.Table -> {
+                    MarkdownTable(
+                        table = block,
+                        textColor = textColor,
+                    )
+                }
+                MessageTextBlock.Separator -> {
+                    HorizontalDivider(
+                        modifier = Modifier.padding(vertical = 2.dp),
+                        color = textColor.copy(alpha = 0.16f),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MarkdownTable(
+    table: MessageTextBlock.Table,
+    textColor: androidx.compose.ui.graphics.Color,
+) {
+    val scrollState = rememberScrollState()
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(scrollState),
+    ) {
+        Surface(
+            shape = RoundedCornerShape(10.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.36f),
+            contentColor = textColor,
+        ) {
+            Column {
+                MarkdownTableRow(
+                    cells = table.headers,
+                    textColor = textColor,
+                    isHeader = true,
+                )
+                table.rows.forEachIndexed { index, row ->
+                    HorizontalDivider(color = textColor.copy(alpha = 0.12f))
+                    MarkdownTableRow(
+                        cells = row,
+                        textColor = textColor,
+                        isHeader = false,
+                        isAlternate = index % 2 == 1,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MarkdownTableRow(
+    cells: List<String>,
+    textColor: androidx.compose.ui.graphics.Color,
+    isHeader: Boolean,
+    isAlternate: Boolean = false,
+) {
+    Row(
+        modifier = Modifier.background(
+            color = when {
+                isHeader -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.58f)
+                isAlternate -> MaterialTheme.colorScheme.surface.copy(alpha = 0.30f)
+                else -> androidx.compose.ui.graphics.Color.Transparent
+            },
+        ),
+    ) {
+        cells.forEachIndexed { index, cell ->
+            MarkdownTableCell(
+                text = cell,
+                textColor = textColor,
+                isHeader = isHeader,
+            )
+            if (index != cells.lastIndex) {
+                Box(
+                    modifier = Modifier
+                        .width(1.dp)
+                        .heightIn(min = 42.dp)
+                        .background(textColor.copy(alpha = 0.10f)),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun MarkdownTableCell(
+    text: String,
+    textColor: androidx.compose.ui.graphics.Color,
+    isHeader: Boolean,
+) {
+    Text(
+        text = markdownInlineText(text, textColor),
+        style = if (isHeader) {
+            MaterialTheme.typography.labelMedium
+        } else {
+            MaterialTheme.typography.bodySmall
+        },
+        fontWeight = if (isHeader) FontWeight.SemiBold else FontWeight.Normal,
+        color = if (isHeader) textColor else textColor.copy(alpha = 0.88f),
+        maxLines = 4,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier
+            .width(MARKDOWN_TABLE_CELL_WIDTH_DP.dp)
+            .padding(horizontal = 10.dp, vertical = 9.dp),
+    )
+}
+
+@Composable
+private fun markdownInlineText(
+    text: String,
+    textColor: androidx.compose.ui.graphics.Color,
+): AnnotatedString {
+    val codeBackground = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f)
+    val linkColor = MaterialTheme.colorScheme.primary
+    return remember(text, textColor, codeBackground, linkColor) {
+        buildAnnotatedString {
+            appendMarkdownInline(
+                source = text,
+                textColor = textColor,
+                codeBackground = codeBackground,
+                linkColor = linkColor,
+            )
         }
     }
 }
@@ -3353,7 +3720,7 @@ private fun MessageCopyButton(
         onClick = {
             hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Clipboard)
             scope.launch {
-                clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("AetherLink", textToCopy)))
+                clipboard.setClipEntry(ClipEntry(ClipData.newPlainText(copyActionLabel, textToCopy)))
                 announceCopySuccess(copiedMessage)
                 Toast.makeText(context, copiedMessage, Toast.LENGTH_SHORT).show()
             }
@@ -3387,7 +3754,7 @@ private fun Modifier.copyOnLongPress(textToCopy: String): Modifier {
     val copyAction = {
         hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Clipboard)
         scope.launch {
-            clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("AetherLink", textToCopy)))
+            clipboard.setClipEntry(ClipEntry(ClipData.newPlainText(copyActionLabel, textToCopy)))
             announceCopySuccess(copiedMessage)
             Toast.makeText(context, copiedMessage, Toast.LENGTH_SHORT).show()
         }
@@ -3409,6 +3776,15 @@ private fun Modifier.copyOnLongPress(textToCopy: String): Modifier {
 internal sealed interface MessageContentPart {
     data class Text(val text: String) : MessageContentPart
     data class Code(val language: String?, val code: String) : MessageContentPart
+}
+
+internal sealed interface MessageTextBlock {
+    data class Heading(val level: Int, val text: String) : MessageTextBlock
+    data class Paragraph(val text: String) : MessageTextBlock
+    data class ListItem(val marker: String, val text: String) : MessageTextBlock
+    data class Quote(val text: String) : MessageTextBlock
+    data class Table(val headers: List<String>, val rows: List<List<String>>) : MessageTextBlock
+    data object Separator : MessageTextBlock
 }
 
 internal fun parseMessageContent(content: String): List<MessageContentPart> {
@@ -3459,6 +3835,136 @@ internal fun parseMessageContent(content: String): List<MessageContentPart> {
     return parts.ifEmpty { listOf(MessageContentPart.Text(content)) }
 }
 
+internal fun parseMessageTextBlocks(text: String): List<MessageTextBlock> {
+    val blocks = mutableListOf<MessageTextBlock>()
+    val paragraphLines = mutableListOf<String>()
+    val headingPattern = Regex("^\\s*(#{1,3})\\s+(.+)$")
+    val listPattern = Regex("^\\s*(?:([-*])|(\\d{1,3})[.)])\\s+(.+)$")
+    val quotePattern = Regex("^\\s*>\\s?(.+)$")
+    val lines = text.lineSequence().toList()
+
+    fun flushParagraph() {
+        val paragraph = paragraphLines
+            .joinToString(separator = "\n")
+            .trim()
+        if (paragraph.isNotBlank()) {
+            blocks += MessageTextBlock.Paragraph(paragraph)
+        }
+        paragraphLines.clear()
+    }
+
+    var index = 0
+    while (index < lines.size) {
+        val table = parseMarkdownTableAt(lines, index)
+        if (table != null) {
+            flushParagraph()
+            blocks += table.block
+            index = table.nextIndex
+            continue
+        }
+
+        val line = lines[index]
+        val headingMatch = headingPattern.matchEntire(line)
+        val match = listPattern.matchEntire(line)
+        val quoteMatch = quotePattern.matchEntire(line)
+        when {
+            line.isMarkdownSeparator() -> {
+                flushParagraph()
+                blocks += MessageTextBlock.Separator
+            }
+            headingMatch != null -> {
+                flushParagraph()
+                blocks += MessageTextBlock.Heading(
+                    level = headingMatch.groupValues[1].length,
+                    text = headingMatch.groupValues[2].trim(),
+                )
+            }
+            match != null -> {
+                flushParagraph()
+                val orderedNumber = match.groupValues[2]
+                val marker = if (orderedNumber.isNotBlank()) "$orderedNumber." else "\u2022"
+                blocks += MessageTextBlock.ListItem(
+                    marker = marker,
+                    text = match.groupValues[3].trim(),
+                )
+            }
+            quoteMatch != null -> {
+                flushParagraph()
+                blocks += MessageTextBlock.Quote(quoteMatch.groupValues[1].trim())
+            }
+            line.isBlank() -> flushParagraph()
+            else -> paragraphLines += line.trimEnd()
+        }
+        index += 1
+    }
+    flushParagraph()
+
+    return blocks.ifEmpty { listOf(MessageTextBlock.Paragraph(text.trim())) }
+}
+
+private data class ParsedMarkdownTable(
+    val block: MessageTextBlock.Table,
+    val nextIndex: Int,
+)
+
+private fun parseMarkdownTableAt(
+    lines: List<String>,
+    startIndex: Int,
+): ParsedMarkdownTable? {
+    if (startIndex + 1 >= lines.size) return null
+
+    val headerCells = parseMarkdownTableCells(lines[startIndex]) ?: return null
+    val separatorCells = parseMarkdownTableCells(lines[startIndex + 1]) ?: return null
+    if (!separatorCells.all { it.isMarkdownTableSeparatorCell() }) return null
+    if (headerCells.size < 2 || headerCells.all { it.isBlank() }) return null
+
+    val rows = mutableListOf<List<String>>()
+    var cursor = startIndex + 2
+    while (cursor < lines.size) {
+        val rowCells = parseMarkdownTableCells(lines[cursor]) ?: break
+        if (rowCells.all { it.isMarkdownTableSeparatorCell() }) break
+        rows += rowCells
+        cursor += 1
+    }
+
+    val columnCount = maxOf(
+        headerCells.size,
+        rows.maxOfOrNull { it.size } ?: 0,
+    )
+    if (columnCount < 2) return null
+
+    return ParsedMarkdownTable(
+        block = MessageTextBlock.Table(
+            headers = headerCells.normalizedMarkdownTableRow(columnCount),
+            rows = rows.map { it.normalizedMarkdownTableRow(columnCount) },
+        ),
+        nextIndex = cursor,
+    )
+}
+
+private fun parseMarkdownTableCells(line: String): List<String>? {
+    val trimmed = line.trim()
+    if (!trimmed.contains("|")) return null
+    val body = trimmed
+        .removePrefix("|")
+        .removeSuffix("|")
+    val cells = body.split("|").map { it.trim() }
+    return cells.takeIf { it.size >= 2 }
+}
+
+private fun String.isMarkdownTableSeparatorCell(): Boolean {
+    return matches(Regex(":?-{3,}:?"))
+}
+
+private fun List<String>.normalizedMarkdownTableRow(columnCount: Int): List<String> {
+    return take(columnCount) + List((columnCount - size).coerceAtLeast(0)) { "" }
+}
+
+private fun String.isMarkdownSeparator(): Boolean {
+    val compact = trim().filterNot { it.isWhitespace() }
+    return compact.length >= 3 && compact.all { it == compact.first() } && compact.first() in "-*_"
+}
+
 private fun addTextPart(
     parts: MutableList<MessageContentPart>,
     text: String,
@@ -3469,8 +3975,81 @@ private fun addTextPart(
     }
 }
 
+private fun AnnotatedString.Builder.appendMarkdownInline(
+    source: String,
+    textColor: androidx.compose.ui.graphics.Color,
+    codeBackground: androidx.compose.ui.graphics.Color,
+    linkColor: androidx.compose.ui.graphics.Color,
+) {
+    var index = 0
+    while (index < source.length) {
+        when {
+            source[index] == '`' -> {
+                val end = source.indexOf('`', startIndex = index + 1)
+                if (end > index + 1) {
+                    withStyle(
+                        SpanStyle(
+                            color = textColor,
+                            background = codeBackground,
+                            fontFamily = FontFamily.Monospace,
+                        ),
+                    ) {
+                        append(source.substring(index + 1, end))
+                    }
+                    index = end + 1
+                } else {
+                    append(source[index])
+                    index += 1
+                }
+            }
+            source.startsWith("**", startIndex = index) -> {
+                val end = source.indexOf("**", startIndex = index + 2)
+                if (end > index + 2) {
+                    withStyle(SpanStyle(fontWeight = FontWeight.SemiBold)) {
+                        append(source.substring(index + 2, end))
+                    }
+                    index = end + 2
+                } else {
+                    append(source[index])
+                    index += 1
+                }
+            }
+            source[index] == '[' -> {
+                val labelEnd = source.indexOf("](", startIndex = index + 1)
+                val urlEnd = if (labelEnd > index + 1) {
+                    source.indexOf(')', startIndex = labelEnd + 2)
+                } else {
+                    -1
+                }
+                if (labelEnd > index + 1 && urlEnd > labelEnd + 2) {
+                    withStyle(
+                        SpanStyle(
+                            color = linkColor,
+                            textDecoration = TextDecoration.Underline,
+                        ),
+                    ) {
+                        append(source.substring(index + 1, labelEnd))
+                    }
+                    index = urlEnd + 1
+                } else {
+                    append(source[index])
+                    index += 1
+                }
+            }
+            else -> {
+                append(source[index])
+                index += 1
+            }
+        }
+    }
+}
+
 private fun List<RuntimeChatMessage>.lastAssistantMessageId(): String? {
     return lastOrNull { it.role == "assistant" }?.id
+}
+
+private fun List<RuntimeChatMessage>.lastUserMessageId(): String? {
+    return lastOrNull { it.role == "user" }?.id
 }
 
 @Composable
@@ -3678,6 +4257,7 @@ internal const val SUGGESTED_QUESTION_MAX_ITEMS = 4
 private const val SUGGESTED_QUESTION_MAX_LINES = 2
 internal const val CHAT_COMPOSER_CONTAINER_CORNER_RADIUS_DP = 28
 internal const val CHAT_COMPOSER_CONTAINER_ALPHA = 0.98f
+internal const val MARKDOWN_TABLE_CELL_WIDTH_DP = 152
 internal const val DEVELOPER_DIAGNOSTICS_TOGGLE_ROW_TAG = "developer-diagnostics-toggle-row"
 internal const val DEVELOPER_DIAGNOSTICS_SWITCH_DISABLED_TAG = "developer-diagnostics-switch-disabled"
 internal const val DEVELOPER_DIAGNOSTICS_SWITCH_ENABLED_TAG = "developer-diagnostics-switch-enabled"
@@ -3745,7 +4325,10 @@ private fun ChatComposer(
     val cancelGenerationStateDescription = stringResource(R.string.cancel_generation_state_ready)
     val cancelGenerationActionLabel = stringResource(R.string.content_desc_cancel_generation)
     val attachFilesActionLabel = stringResource(R.string.content_desc_attach_files)
+    val clearDraftActionLabel = stringResource(R.string.clear_draft)
+    val clearDraftStateDescription = stringResource(R.string.clear_draft_state_ready)
     val canAttachFiles = enabled && !attachmentLimitReached
+    val canClearDraft = enabled && value.isNotBlank() && !isStreaming
     val attachFilesStateDescription = when {
         !enabled && hint.isNotBlank() -> hint
         !enabled -> stringResource(R.string.attach_files_state_unavailable)
@@ -3855,6 +4438,30 @@ private fun ChatComposer(
                         }
                     },
                 )
+                if (canClearDraft) {
+                    IconButton(
+                        onClick = {
+                            hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
+                            onInputChange("")
+                        },
+                        modifier = Modifier
+                            .size(40.dp)
+                            .semantics {
+                                contentDescription = clearDraftActionLabel
+                                stateDescription = clearDraftStateDescription
+                                onClick(label = clearDraftActionLabel) {
+                                    hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
+                                    onInputChange("")
+                                    true
+                                }
+                            },
+                    ) {
+                        Icon(
+                            Icons.Filled.Close,
+                            contentDescription = null,
+                        )
+                    }
+                }
                 if (isStreaming) {
                     FilledIconButton(
                         onClick = {
@@ -4386,6 +4993,9 @@ private fun EmbeddingModelPanel(
                         text = stringResource(R.string.embedding_model_title),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.semantics {
+                            heading()
+                        },
                     )
                     Text(
                         text = stringResource(R.string.embedding_model_subtitle),
@@ -5489,6 +6099,9 @@ private fun MemoryPanel(
                         text = stringResource(R.string.memory_title),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.semantics {
+                            heading()
+                        },
                     )
                     Text(
                         text = stringResource(R.string.memory_subtitle),
@@ -5818,44 +6431,136 @@ private fun ErrorText(
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .clearAndSetSemantics {
+            .semantics {
                 contentDescription = accessibilitySummary
                 liveRegion = LiveRegionMode.Polite
             },
         shape = RoundedCornerShape(8.dp),
         color = MaterialTheme.colorScheme.errorContainer,
     ) {
-        Row(
+        Column(
             modifier = Modifier.padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Icon(
-                Icons.Filled.Error,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onErrorContainer,
-            )
-            Spacer(Modifier.width(8.dp))
-            Column {
-                Text(
-                    text = errorTitle,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onErrorContainer,
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    Icons.Filled.Error,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onErrorContainer,
                 )
-                Text(
-                    text = errorLabel,
-                    color = MaterialTheme.colorScheme.onErrorContainer,
-                )
-                detailLabel?.let { detail ->
+                Spacer(Modifier.width(8.dp))
+                Column {
                     Text(
-                        text = detail,
-                        style = MaterialTheme.typography.bodySmall,
+                        text = errorTitle,
+                        style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onErrorContainer,
                     )
-                }
-                diagnosticLabel?.let { diagnostic ->
                     Text(
-                        text = diagnostic,
+                        text = errorLabel,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                    )
+                    detailLabel?.let { detail ->
+                        Text(
+                            text = detail,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                        )
+                    }
+                    diagnosticLabel?.let { diagnostic ->
+                        Text(
+                            text = diagnostic,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                        )
+                    }
+                }
+            }
+            runtimeTechnicalDiagnosticsReport(error)?.let { report ->
+                ErrorTechnicalDiagnostics(report = report)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ErrorTechnicalDiagnostics(report: String) {
+    var expanded by rememberSaveable(report) { mutableStateOf(false) }
+    val hapticFeedback = LocalHapticFeedback.current
+    val title = stringResource(R.string.runtime_error_technical_details)
+    val stateDescriptionText = stringResource(
+        if (expanded) {
+            R.string.section_state_expanded
+        } else {
+            R.string.section_state_collapsed
+        }
+    )
+    val toggleLabel = stringResource(
+        if (expanded) {
+            R.string.runtime_error_hide_technical_details
+        } else {
+            R.string.runtime_error_show_technical_details
+        }
+    )
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        TextButton(
+            onClick = {
+                hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Toggle)
+                expanded = !expanded
+            },
+            contentPadding = PaddingValues(horizontal = 0.dp, vertical = 0.dp),
+            modifier = Modifier.semantics {
+                contentDescription = title
+                stateDescription = stateDescriptionText
+                onClick(label = toggleLabel, action = null)
+            },
+        ) {
+            Text(
+                text = title,
+                color = MaterialTheme.colorScheme.onErrorContainer,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Icon(
+                imageVector = if (expanded) {
+                    Icons.Filled.KeyboardArrowUp
+                } else {
+                    Icons.Filled.KeyboardArrowDown
+                },
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onErrorContainer,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+        if (expanded) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(8.dp),
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.38f),
+                contentColor = MaterialTheme.colorScheme.onErrorContainer,
+            ) {
+                Column(
+                    modifier = Modifier.padding(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                    ) {
+                        MessageCopyButton(
+                            textToCopy = report,
+                            copyActionLabel = stringResource(R.string.runtime_error_copy_diagnostics),
+                        )
+                    }
+                    Text(
+                        text = report,
                         style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
                         color = MaterialTheme.colorScheme.onErrorContainer,
                     )
                 }
@@ -6061,6 +6766,7 @@ internal fun chatComposerCanEdit(state: RuntimeUiState): Boolean {
     return state.isConnected &&
         state.trustedRuntime != null &&
         !state.isStreaming &&
+        !state.isLoadingActiveChatMessages &&
         selectedModelIsUsable(state)
 }
 
@@ -6134,6 +6840,7 @@ internal fun chatInputHintRes(state: RuntimeUiState): Int? {
         !state.isConnected && shouldScanLatestQrFromEmptyChat(state) -> R.string.chat_hint_scan_latest_qr
         !state.isConnected && !hasConnectableTrustedRuntimeRoute(state) -> R.string.chat_hint_scan_latest_qr
         !state.isConnected -> R.string.chat_hint_connect
+        state.isLoadingActiveChatMessages -> R.string.chat_hint_loading_chat
         state.selectedModelId == null -> R.string.chat_hint_select_model
         selectedModelIsMissingFromRuntime(state) -> R.string.chat_hint_model_unavailable
         !selectedModelIsUsable(state) -> R.string.chat_hint_install_model
@@ -6349,6 +7056,8 @@ private fun runtimeErrorLabel(error: RuntimeUiError): String {
         "remote_route_auth_failed" -> stringResource(R.string.error_remote_route_auth_failed)
         "generation_cancelled" -> stringResource(R.string.error_generation_cancelled)
         "generation_in_progress" -> stringResource(R.string.error_generation_in_progress)
+        "chat_history_loading" -> stringResource(R.string.error_chat_history_loading)
+        "chat_history_load_failed" -> stringResource(R.string.error_chat_history_load_failed)
         "chat_session_not_found" -> stringResource(R.string.error_chat_session_not_found)
         "chat_session_must_be_archived_before_delete" -> stringResource(R.string.error_chat_session_must_be_archived_before_delete)
         "chat_session_sync_failed" -> stringResource(R.string.error_chat_session_sync_failed)
@@ -6356,6 +7065,9 @@ private fun runtimeErrorLabel(error: RuntimeUiError): String {
         "memory_runtime_required" -> stringResource(R.string.error_memory_runtime_required)
         "runtime_error" -> stringResource(R.string.error_runtime_error)
         "send_failed" -> stringResource(R.string.error_send_failed)
+        "regenerate_unavailable" -> stringResource(R.string.error_regenerate_unavailable)
+        "regenerate_attachment_context_unavailable" -> stringResource(R.string.error_regenerate_attachment_context_unavailable)
+        "reuse_message_unavailable" -> stringResource(R.string.error_reuse_message_unavailable)
         "invalid_payload" -> stringResource(R.string.error_invalid_payload)
         "install_model_first" -> stringResource(R.string.error_install_model_first)
         "model_install_failed" -> stringResource(R.string.error_model_install_failed)
@@ -6375,11 +7087,36 @@ private fun runtimeErrorLabel(error: RuntimeUiError): String {
 }
 
 internal fun runtimeVisibleErrorDetail(error: RuntimeUiError): String? {
+    if (error.code !in USER_VISIBLE_ERROR_DETAIL_CODES) return null
     return error.detail
         ?.trim()
         ?.takeUnless { it.containsBackendEndpointMaterial() }
         ?.takeIf { it.isNotEmpty() }
 }
+
+internal fun runtimeTechnicalDiagnosticsReport(error: RuntimeUiError): String? {
+    val code = error.code
+        .trim()
+        .takeIf { it.matches(PROVIDER_DIAGNOSTIC_CODE_PATTERN) }
+    val diagnosticCode = error.diagnosticCode
+        ?.trim()
+        ?.takeIf { it.matches(PROVIDER_DIAGNOSTIC_CODE_PATTERN) }
+    val technicalDetail = error.technicalDetail
+        ?.redactBackendEndpointMaterial()
+        ?.takeIf { it.isNotBlank() }
+
+    val lines = buildList {
+        code?.let { add("code: $it") }
+        diagnosticCode?.let { add("diagnostic_code: $it") }
+        technicalDetail?.let { add("technical_detail: $it") }
+    }
+    return lines.takeIf { it.isNotEmpty() }?.joinToString(separator = "\n")
+}
+
+private val USER_VISIBLE_ERROR_DETAIL_CODES = setOf(
+    "attachment_too_large",
+    "attachment_read_failed",
+)
 
 internal fun providerDiagnosticMessage(provider: RuntimeProviderStatus): String? {
     return provider.message
@@ -6401,6 +7138,18 @@ internal fun providerDiagnosticsVisible(provider: RuntimeProviderStatus): Boolea
 
 private fun String.containsBackendEndpointMaterial(): Boolean {
     return BACKEND_ENDPOINT_DETAIL_PATTERNS.any { pattern -> pattern.containsMatchIn(this) }
+}
+
+private fun String.redactBackendEndpointMaterial(): String {
+    return BACKEND_ENDPOINT_DETAIL_PATTERNS
+        .fold(trim()) { redacted, pattern ->
+            pattern.replace(redacted) { match ->
+                val leading = match.value.takeWhile { it.isWhitespace() || it in "{,;?&" }
+                "$leading[redacted]"
+            }
+        }
+        .replace(Regex("\\s+"), " ")
+        .trim()
 }
 
 private val BACKEND_ENDPOINT_DETAIL_PATTERNS = listOf(

@@ -1,5 +1,6 @@
 package com.localagentbridge.android
 
+import android.content.Intent
 import android.net.Uri
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import com.localagentbridge.android.core.transport.RuntimeEndpointSource
@@ -453,16 +454,18 @@ class AppNavigationTest {
     }
 
     @Test
-    fun runtimeVisibleErrorDetailKeepsStructuredErrorDetails() {
+    fun runtimeVisibleErrorDetailKeepsOnlyUserInputAttachmentDetails() {
         assertEquals(
-            "Relay host is not reachable for remote pairing",
+            "report.pdf",
             runtimeVisibleErrorDetail(
                 RuntimeUiError(
-                    code = "pairing_relay_route_rejected",
-                    detail = "  Relay host is not reachable for remote pairing  ",
+                    code = "attachment_too_large",
+                    detail = "  report.pdf  ",
                 ),
             ),
         )
+        assertNull(runtimeVisibleErrorDetail(RuntimeUiError(code = "send_failed", detail = "relay timed out")))
+        assertNull(runtimeVisibleErrorDetail(RuntimeUiError(code = "pairing_relay_route_rejected", detail = "Relay host is not reachable for remote pairing")))
         assertNull(runtimeVisibleErrorDetail(RuntimeUiError(code = "invalid_pairing_qr")))
         assertNull(runtimeVisibleErrorDetail(RuntimeUiError(code = "invalid_pairing_qr", detail = "   ")))
     }
@@ -659,6 +662,7 @@ class AppNavigationTest {
         val mimeTypes = attachmentPickerMimeTypes(state).toList()
 
         assertEquals(false, "image/*" in mimeTypes)
+        assertEquals(false, "application/*" in mimeTypes)
         assertEquals(true, "application/pdf" in mimeTypes)
         assertEquals(
             true,
@@ -727,6 +731,64 @@ class AppNavigationTest {
     }
 
     @Test
+    fun shareIntentTextBecomesChatDraftWithoutBackendAccess() {
+        val draft = sharedChatDraftOrNull(
+            action = Intent.ACTION_SEND,
+            sharedText = "  Summarize this article  ",
+            attachmentUris = emptyList(),
+        )
+
+        assertEquals("Summarize this article", draft?.text)
+        assertEquals(emptyList<Uri>(), draft?.attachmentUris)
+    }
+
+    @Test
+    fun shareIntentStreamsBecomeDistinctChatAttachments() {
+        val sharedUri = Uri.parse("content://aetherlink/shared/one.pdf")
+        val draft = sharedChatDraftOrNull(
+            action = Intent.ACTION_SEND_MULTIPLE,
+            sharedText = "",
+            attachmentUris = listOf(sharedUri, sharedUri),
+        )
+
+        assertEquals("", draft?.text)
+        assertEquals(listOf(sharedUri), draft?.attachmentUris)
+    }
+
+    @Test
+    fun shareIntentParserRejectsNonShareAndEmptyShareIntents() {
+        assertNull(
+            sharedChatDraftOrNull(
+                action = Intent.ACTION_VIEW,
+                sharedText = "Summarize this",
+                attachmentUris = emptyList(),
+            ),
+        )
+        assertNull(
+            sharedChatDraftOrNull(
+                action = Intent.ACTION_SEND,
+                sharedText = "   ",
+                attachmentUris = emptyList(),
+            ),
+        )
+    }
+
+    @Test
+    fun sharedChatDraftComposerTextAppendsWithoutDroppingExistingDraft() {
+        assertEquals(
+            "Summarize this",
+            sharedChatDraftComposerText(currentText = "", sharedText = "  Summarize this  "),
+        )
+        assertEquals(
+            "Existing draft\n\nNew shared text",
+            sharedChatDraftComposerText(
+                currentText = "Existing draft   ",
+                sharedText = " New shared text ",
+            ),
+        )
+    }
+
+    @Test
     fun chatComposerAllowsAttachmentOnlySendWhenConnectedModelIsUsable() {
         val state = RuntimeUiState(
             isConnected = true,
@@ -773,6 +835,15 @@ class AppNavigationTest {
         assertEquals(false, chatComposerCanEdit(readyState.copy(isConnected = false)))
         assertEquals(false, chatComposerCanEdit(readyState.copy(selectedModelId = null)))
         assertEquals(false, chatComposerCanEdit(readyState.copy(isStreaming = true)))
+        assertEquals(
+            false,
+            chatComposerCanEdit(
+                readyState.copy(
+                    activeChatSessionId = "runtime-session",
+                    loadingChatSessionId = "runtime-session",
+                )
+            )
+        )
         assertEquals(true, chatComposerCanEdit(readyState))
     }
 
@@ -1815,6 +1886,33 @@ class AppNavigationTest {
         )
 
         assertEquals(R.string.chat_hint_connect, chatInputHintRes(state))
+    }
+
+    @Test
+    fun chatComposerHintExplainsActiveTranscriptLoadingLockout() {
+        val state = RuntimeUiState(
+            isConnected = true,
+            trustedRuntime = trustedRuntime(
+                relayExpiresAtEpochMillis = Long.MAX_VALUE,
+                relayNonce = "nonce-1",
+            ),
+            activeChatSessionId = "runtime-session",
+            loadingChatSessionId = "runtime-session",
+            selectedModelId = "chat-1",
+            models = listOf(
+                RuntimeModel(
+                    id = "chat-1",
+                    name = "Local Chat",
+                    modelKind = "chat",
+                    capabilities = listOf("chat"),
+                    installed = true,
+                )
+            ),
+        )
+
+        assertEquals(R.string.chat_hint_loading_chat, chatInputHintRes(state))
+        assertEquals(false, chatComposerCanEdit(state))
+        assertEquals(false, chatComposerCanSend(state.copy(chatInput = "Hello")))
     }
 
     @Test

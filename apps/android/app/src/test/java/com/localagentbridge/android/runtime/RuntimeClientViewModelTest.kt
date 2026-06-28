@@ -26,6 +26,7 @@ import com.localagentbridge.android.core.protocol.RouteRefreshPayload
 import com.localagentbridge.android.core.protocol.RuntimeBackendStatusPayload
 import com.localagentbridge.android.core.protocol.RuntimeHealthPayload
 import com.localagentbridge.android.core.pairing.DeviceIdentity
+import com.localagentbridge.android.core.pairing.RelaySecretStore
 import com.localagentbridge.android.core.pairing.RuntimePairingPayload
 import com.localagentbridge.android.core.pairing.RuntimePairingPayloadParser
 import com.localagentbridge.android.core.pairing.TrustedRuntime
@@ -1897,7 +1898,8 @@ class RuntimeClientViewModelTest {
             assertEquals("relay.example.test", pending.relayHost)
             assertEquals(443, pending.relayPort)
             assertEquals("relay-1", pending.relayId)
-            assertEquals("secret-1", pending.relaySecret)
+            assertNull(pending.relaySecret)
+            assertNotNull(pending.relaySecretRef)
             assertEquals(4102444800000L, pending.relayExpiresAtEpochMillis)
             assertEquals("nonce-route-1", pending.relayNonce)
             assertEquals("remote", pending.relayScope)
@@ -2570,6 +2572,101 @@ class RuntimeClientViewModelTest {
 
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
+    fun routeRefreshAuthenticationRequiredDoesNotRetainRouteMaterialTechnicalDetail() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            var currentTimeMillis = 1_000L
+            val channel = ScriptedRuntimeProtocolChannel()
+            val trustedStore = FakeEmittingTrustedRuntimeStore(
+                TrustedRuntime(
+                    deviceId = "runtime-1",
+                    name = "AetherLink Runtime",
+                    fingerprint = "runtime-fingerprint",
+                    publicKeyBase64 = "runtime-public-key",
+                    routeToken = "route-token-1",
+                    relayHost = "relay.example.test",
+                    relayPort = 443,
+                    relayId = "relay-1",
+                    relaySecret = "secret-1",
+                    relayExpiresAtEpochMillis = currentTimeMillis + 180_000L,
+                    relayNonce = "nonce-route-1",
+                    relayScope = "remote",
+                ),
+            )
+            val viewModel = RuntimeClientViewModel(
+                application = Application(),
+                dependencies = RuntimeClientViewModelDependencies(
+                    json = json,
+                    transportClient = RuntimeTransportClient(),
+                    transportConnector = RuntimeTransportConnector { _, _, _ ->
+                        error("Direct TCP should not be used for route-refresh auth failure")
+                    },
+                    relayConnector = RuntimeRelayConnector { _, _ -> channel },
+                    discovery = EmptyRuntimeDiscoverySource,
+                    trustedRuntimeStore = trustedStore,
+                    deviceIdentityProvider = FakeDeviceIdentityProvider(testDeviceIdentity()),
+                    localDataStore = FakeRuntimeLocalDataStore(
+                        initialData = PersistedRuntimeData(trustedRuntimeAutoReconnectEnabled = false),
+                    ),
+                    lifecycleCallbacksRegistrar = NoopRuntimeLifecycleCallbacksRegistrar,
+                    currentTimeMillis = { currentTimeMillis },
+                ),
+            )
+            advanceUntilIdle()
+
+            viewModel.connectToTrustedRuntime()
+            advanceUntilIdle()
+            channel.enqueue(
+                envelope(
+                    type = MessageType.AuthResponse,
+                    serializer = AuthResponsePayload.serializer(),
+                    payload = AuthResponsePayload(accepted = true),
+                    requestId = "auth-accepted",
+                ),
+            )
+            runCurrent()
+
+            val firstRouteRefresh = channel.sentEnvelopes.single { it.type == MessageType.RouteRefresh }
+            channel.enqueue(
+                envelope(
+                    type = MessageType.Error,
+                    serializer = ErrorPayload.serializer(),
+                    payload = ErrorPayload(
+                        code = "authentication_required",
+                        message = "Pair again relaySecret=secret-1 routeToken=route-token-1 relayId=relay-1 nonce=nonce-route-1",
+                        retryable = false,
+                    ),
+                    requestId = firstRouteRefresh.requestId,
+                ),
+            )
+            runCurrent()
+
+            val error = viewModel.state.value.error ?: error("Expected route-refresh auth error")
+            assertEquals("pairing_required", viewModel.state.value.runtimeStatus)
+            assertEquals("pairing_required", error.code)
+            assertNull(error.detail)
+            assertEquals("Route refresh requires pairing again.", error.technicalDetail)
+            assertFalse(error.technicalDetail.orEmpty().contains("secret-1"))
+            assertFalse(error.technicalDetail.orEmpty().contains("route-token-1"))
+            assertFalse(error.technicalDetail.orEmpty().contains("relay-1"))
+            assertFalse(viewModel.state.value.isConnected)
+            assertFalse(viewModel.state.value.isConnecting)
+            assertNull(viewModel.privateField<Any>("routeRefreshLeaseJob"))
+            assertNull(viewModel.privateField<String>("pendingRouteRefreshRequestId"))
+
+            advanceTimeBy(ROUTE_REFRESH_RETRY_DELAY_MS + 1)
+            currentTimeMillis += ROUTE_REFRESH_RETRY_DELAY_MS + 1
+            runCurrent()
+
+            assertEquals(1, channel.sentEnvelopes.count { it.type == MessageType.RouteRefresh })
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
     fun authenticatedTrustedRuntimeMarksRouteExpiredWhenRefreshErrorCannotRetryBeforeLeaseExpiry() = runTest {
         val mainDispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(mainDispatcher)
@@ -3120,7 +3217,8 @@ class RuntimeClientViewModelTest {
         )
 
         assertEquals("pairing_direct_route_rejected", error.code)
-        assertEquals("Local direct endpoint QR routes are diagnostic-only", error.detail)
+        assertNull(error.detail)
+        assertEquals("Local direct endpoint QR routes are diagnostic-only", error.technicalDetail)
         assertEquals("route_diagnostic_direct_qr_rejected", error.diagnosticCode)
     }
 
@@ -3131,7 +3229,8 @@ class RuntimeClientViewModelTest {
         )
 
         assertEquals("pairing_relay_route_rejected", error.code)
-        assertEquals("Relay host is not reachable for remote pairing", error.detail)
+        assertNull(error.detail)
+        assertEquals("Relay host is not reachable for remote pairing", error.technicalDetail)
         assertEquals("route_diagnostic_relay_qr_unreachable", error.diagnosticCode)
     }
 
@@ -3142,7 +3241,8 @@ class RuntimeClientViewModelTest {
         )
 
         assertEquals("invalid_pairing_qr", error.code)
-        assertEquals("Missing pairing nonce", error.detail)
+        assertNull(error.detail)
+        assertEquals("Missing pairing nonce", error.technicalDetail)
         assertNull(error.diagnosticCode)
     }
 
@@ -3332,6 +3432,52 @@ class RuntimeClientViewModelTest {
         assertEquals(4_102_444_800_000L, refreshed.relayExpiresAtEpochMillis)
         assertEquals("fresh-nonce", refreshed.relayNonce)
         assertEquals("remote", refreshed.relayScope)
+    }
+
+    @Test
+    fun routeRefreshPayloadRejectsUnknownRelayScope() {
+        val current = RuntimeTrustedRuntime(
+            deviceId = "runtime-1",
+            name = "AetherLink Runtime",
+            fingerprint = "runtime-fingerprint",
+            publicKeyBase64 = "runtime-public-key",
+            routeToken = "route-token-1",
+        )
+
+        assertNull(
+            trustedRuntimeFromRouteRefreshPayload(
+                current = current,
+                payload = RouteRefreshPayload(
+                    runtimeDeviceId = "runtime-1",
+                    runtimeKeyFingerprint = "runtime-fingerprint",
+                    relayHost = "fresh-relay.example.test",
+                    relayPort = 43171,
+                    relayId = "fresh-relay",
+                    relaySecret = "fresh-secret",
+                    relayExpiresAtEpochMillis = 4_102_444_800_000L,
+                    relayNonce = "fresh-nonce",
+                    relayScope = "public",
+                ),
+                nowEpochMillis = 1_000L,
+            ),
+        )
+        assertNull(
+            trustedRuntimeFromRouteRefreshPayload(
+                current = current,
+                payload = RouteRefreshPayload(
+                    runtimeDeviceId = "runtime-1",
+                    runtimeKeyFingerprint = "runtime-fingerprint",
+                    relayHost = "fresh-relay.example.test",
+                    relayPort = 43171,
+                    relayId = "fresh-relay",
+                    relaySecret = "fresh-secret",
+                    relayExpiresAtEpochMillis = 4_102_444_800_000L,
+                    relayNonce = "fresh-nonce",
+                    relayScope = " remote ",
+                ),
+                nowEpochMillis = 1_000L,
+            ),
+        )
     }
 
     @Test
@@ -4622,22 +4768,26 @@ class RuntimeClientViewModelTest {
         assertEquals("no_route", noRoute.code)
         assertEquals("no_connectable_route", noConnectableRoute.code)
         assertNull(noConnectableRoute.diagnosticCode)
-        assertEquals("No connectable runtime route resolved for target", remoteRoutesUnavailable.detail)
+        assertNull(remoteRoutesUnavailable.detail)
+        assertEquals("No connectable runtime route resolved for target", remoteRoutesUnavailable.technicalDetail)
         assertEquals("remote_routes_unavailable", remoteRoutesUnavailable.code)
         assertEquals(
             "route_diagnostic_local_missing_remote_pending",
             remoteRoutesUnavailable.diagnosticCode,
         )
-        assertEquals("All connectable runtime routes failed", relayRouteFailed.detail)
+        assertNull(relayRouteFailed.detail)
+        assertEquals("All connectable runtime routes failed", relayRouteFailed.technicalDetail)
         assertEquals("remote_route_unreachable", relayRouteFailed.code)
         assertEquals("route_diagnostic_relay_failed", relayRouteFailed.diagnosticCode)
-        assertEquals("No connectable runtime route resolved for target", expiredRemoteRoute.detail)
+        assertNull(expiredRemoteRoute.detail)
+        assertEquals("No connectable runtime route resolved for target", expiredRemoteRoute.technicalDetail)
         assertEquals("remote_route_expired", expiredRemoteRoute.code)
         assertEquals(
             "route_diagnostic_remote_route_expired",
             expiredRemoteRoute.diagnosticCode,
         )
-        assertEquals("No connectable runtime route resolved for target", remoteOnlyUnavailable.detail)
+        assertNull(remoteOnlyUnavailable.detail)
+        assertEquals("No connectable runtime route resolved for target", remoteOnlyUnavailable.technicalDetail)
         assertEquals("remote_routes_unavailable", remoteOnlyUnavailable.code)
         assertEquals("route_diagnostic_remote_pending", remoteOnlyUnavailable.diagnosticCode)
     }
@@ -4971,6 +5121,282 @@ class RuntimeClientViewModelTest {
             assertEquals("Second prompt", state.chatInput)
             assertEquals(existingMessages, state.messages)
             assertFalse(fixture.channel.sentEnvelopes.any { it.type == MessageType.ChatSend })
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun regenerateLatestResponseExcludesOldAssistantFromPayloadAndHistory() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+            )
+            fixture.viewModel.replaceStateForTest {
+                it.copy(
+                    activeChatSessionId = "session-regenerate",
+                    messages = listOf(
+                        RuntimeChatMessage(id = "u1", role = "user", content = "First prompt"),
+                        RuntimeChatMessage(
+                            id = "a1",
+                            role = "assistant",
+                            content = "First answer",
+                            suggestions = listOf("Old suggestion"),
+                        ),
+                        RuntimeChatMessage(id = "u2", role = "user", content = "Try again"),
+                        RuntimeChatMessage(
+                            id = "a2",
+                            role = "assistant",
+                            content = "Old latest answer",
+                            suggestions = listOf("Stale follow-up"),
+                        ),
+                    ),
+                )
+            }
+
+            fixture.viewModel.regenerateLatestResponse()
+            advanceUntilIdle()
+
+            val payload = fixture.channel.lastChatSendPayload()
+            assertEquals(listOf("system", "user", "assistant", "user"), payload.messages.map { it.role })
+            assertEquals(listOf("First prompt", "First answer", "Try again"), payload.messages.drop(1).map { it.content })
+            assertFalse(payload.messages.any { it.content == "Old latest answer" })
+
+            val state = fixture.viewModel.state.value
+            assertTrue(state.isStreaming)
+            assertNotNull(state.activeRequestId)
+            assertEquals(listOf("First prompt", "First answer", "Try again", ""), state.messages.map { it.content })
+            assertTrue(state.messages.all { it.suggestions.isEmpty() })
+            assertFalse(state.messages.any { it.id == "a2" })
+
+            val savedSession = fixture.localStore.data.sessions.single { it.id == "session-regenerate" }
+            assertTrue(savedSession.runtimeOwned)
+            assertEquals(listOf("First prompt", "First answer", "Try again", ""), savedSession.messages.map { it.content })
+            assertFalse(savedSession.messages.any { it.id == "a2" })
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun regenerateLatestResponsePreservesComposerDraftAndPendingAttachments() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+            )
+            val pendingAttachment = textAttachment()
+            fixture.viewModel.replaceStateForTest {
+                it.copy(
+                    activeChatSessionId = "session-draft",
+                    chatInput = "Do not clear this draft",
+                    pendingAttachments = listOf(pendingAttachment),
+                    messages = listOf(
+                        RuntimeChatMessage(id = "u1", role = "user", content = "Original prompt"),
+                        RuntimeChatMessage(id = "a1", role = "assistant", content = "Original answer"),
+                    ),
+                )
+            }
+
+            fixture.viewModel.retryLatestAssistantResponse()
+            advanceUntilIdle()
+
+            val state = fixture.viewModel.state.value
+            assertEquals("Do not clear this draft", state.chatInput)
+            assertEquals(listOf(pendingAttachment), state.pendingAttachments)
+            val payload = fixture.channel.lastChatSendPayload()
+            assertEquals(listOf("system", "user"), payload.messages.map { it.role })
+            assertTrue(payload.messages.all { it.attachments.isEmpty() })
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun regenerateLatestResponseBlocksAttachmentBackedPriorPrompt() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+            )
+            val messages = listOf(
+                RuntimeChatMessage(
+                    id = "u1",
+                    role = "user",
+                    content = "Summarize this file",
+                    attachments = listOf(
+                        RuntimeMessageAttachment(
+                            id = "m-attachment",
+                            type = "document",
+                            name = "pairing-notes.txt",
+                            mimeType = "text/plain",
+                        ),
+                    ),
+                ),
+                RuntimeChatMessage(id = "a1", role = "assistant", content = "File summary"),
+            )
+            fixture.viewModel.replaceStateForTest {
+                it.copy(
+                    activeChatSessionId = "session-attachment",
+                    messages = messages,
+                    chatInput = "Draft survives",
+                    pendingAttachments = listOf(textAttachment()),
+                    error = null,
+                )
+            }
+            val envelopeCountBeforeRetry = fixture.channel.sentEnvelopes.size
+
+            fixture.viewModel.regenerateLatestResponse()
+            advanceUntilIdle()
+
+            val state = fixture.viewModel.state.value
+            assertEquals("regenerate_attachment_context_unavailable", state.error?.code)
+            assertFalse(state.isStreaming)
+            assertEquals(messages, state.messages)
+            assertEquals("Draft survives", state.chatInput)
+            assertEquals(1, state.pendingAttachments.size)
+            assertEquals(envelopeCountBeforeRetry, fixture.channel.sentEnvelopes.size)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun reuseLatestUserMessageAsDraftCopiesLatestTextWithoutSendingOrMutatingHistory() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+            )
+            val pendingAttachment = textAttachment()
+            val messages = listOf(
+                RuntimeChatMessage(id = "u1", role = "user", content = "Older prompt"),
+                RuntimeChatMessage(id = "a1", role = "assistant", content = "Older answer"),
+                RuntimeChatMessage(id = "u2", role = "user", content = "Revise this prompt"),
+                RuntimeChatMessage(id = "a2", role = "assistant", content = "Latest answer"),
+            )
+            fixture.viewModel.replaceStateForTest {
+                it.copy(
+                    activeChatSessionId = "session-reuse",
+                    chatInput = "Existing draft",
+                    pendingAttachments = listOf(pendingAttachment),
+                    isLoadingSuggestions = true,
+                    messages = messages,
+                    error = RuntimeUiError("send_failed"),
+                )
+            }
+            val chatSendCountBefore = fixture.channel.sentEnvelopes.count { it.type == MessageType.ChatSend }
+
+            fixture.viewModel.reuseLatestUserMessageAsDraft()
+            advanceUntilIdle()
+
+            val state = fixture.viewModel.state.value
+            assertEquals("Revise this prompt", state.chatInput)
+            assertTrue(state.pendingAttachments.isEmpty())
+            assertFalse(state.isLoadingSuggestions)
+            assertNull(state.error)
+            assertEquals(messages, state.messages)
+            assertEquals("Revise this prompt", fixture.localStore.data.composerDraft)
+            assertEquals(chatSendCountBefore, fixture.channel.sentEnvelopes.count { it.type == MessageType.ChatSend })
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun reuseLatestUserMessageAsDraftRejectsAttachmentBackedPromptAndPreservesDraft() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+            )
+            val pendingAttachment = textAttachment()
+            val messages = listOf(
+                RuntimeChatMessage(
+                    id = "u1",
+                    role = "user",
+                    content = "Summarize the attachment",
+                    attachments = listOf(
+                        RuntimeMessageAttachment(
+                            id = "attachment-1",
+                            type = "document",
+                            name = "report.pdf",
+                            mimeType = "application/pdf",
+                        ),
+                    ),
+                ),
+                RuntimeChatMessage(id = "a1", role = "assistant", content = "Summary"),
+            )
+            fixture.viewModel.replaceStateForTest {
+                it.copy(
+                    activeChatSessionId = "session-reuse-attachment",
+                    chatInput = "Keep this draft",
+                    pendingAttachments = listOf(pendingAttachment),
+                    messages = messages,
+                    error = null,
+                )
+            }
+            val envelopeCountBefore = fixture.channel.sentEnvelopes.size
+
+            fixture.viewModel.reuseLatestUserMessageAsDraft()
+            advanceUntilIdle()
+
+            val state = fixture.viewModel.state.value
+            assertEquals("reuse_message_unavailable", state.error?.code)
+            assertEquals("Keep this draft", state.chatInput)
+            assertEquals(listOf(pendingAttachment), state.pendingAttachments)
+            assertEquals(messages, state.messages)
+            assertEquals(envelopeCountBefore, fixture.channel.sentEnvelopes.size)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun reuseLatestUserMessageAsDraftRejectsWhileStreamingAndPreservesDraft() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+            )
+            val messages = listOf(
+                RuntimeChatMessage(id = "u1", role = "user", content = "Original prompt"),
+                RuntimeChatMessage(id = "a1", role = "assistant", content = ""),
+            )
+            fixture.viewModel.replaceStateForTest {
+                it.copy(
+                    activeChatSessionId = "session-reuse-streaming",
+                    chatInput = "Do not replace while streaming",
+                    messages = messages,
+                    activeRequestId = "request-streaming",
+                    isStreaming = true,
+                    error = null,
+                )
+            }
+            val envelopeCountBefore = fixture.channel.sentEnvelopes.size
+
+            fixture.viewModel.reuseLatestUserMessageAsDraft()
+            advanceUntilIdle()
+
+            val state = fixture.viewModel.state.value
+            assertEquals("generation_in_progress", state.error?.code)
+            assertEquals("Do not replace while streaming", state.chatInput)
+            assertEquals(messages, state.messages)
+            assertTrue(state.isStreaming)
+            assertEquals(envelopeCountBefore, fixture.channel.sentEnvelopes.size)
         } finally {
             Dispatchers.resetMain()
         }
@@ -6415,10 +6841,430 @@ class RuntimeClientViewModelTest {
 
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
+    fun persistedComposerDraftRestoresOnViewModelCreationAndUpdatesWithTyping() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val channel = ScriptedRuntimeProtocolChannel()
+            val localStore = FakeRuntimeLocalDataStore(
+                initialData = PersistedRuntimeData(
+                    composerDraft = "Restore this draft",
+                    trustedRuntimeAutoReconnectEnabled = false,
+                ),
+            )
+            val viewModel = RuntimeClientViewModel(
+                application = Application(),
+                dependencies = RuntimeClientViewModelDependencies(
+                    json = json,
+                    transportClient = RuntimeTransportClient(),
+                    transportConnector = RuntimeTransportConnector { _, _, _ ->
+                        error("Composer draft restore should not open direct transport")
+                    },
+                    relayConnector = RuntimeRelayConnector { _, _ -> channel },
+                    discovery = EmptyRuntimeDiscoverySource,
+                    trustedRuntimeStore = FakeTrustedRuntimeStore(),
+                    deviceIdentityProvider = FakeDeviceIdentityProvider(testDeviceIdentity()),
+                    localDataStore = localStore,
+                    lifecycleCallbacksRegistrar = NoopRuntimeLifecycleCallbacksRegistrar,
+                ),
+            )
+            advanceUntilIdle()
+
+            assertEquals("Restore this draft", viewModel.state.value.chatInput)
+
+            viewModel.updateChatInput("Edited persisted draft")
+            advanceUntilIdle()
+
+            assertEquals("Edited persisted draft", viewModel.state.value.chatInput)
+            assertEquals("Edited persisted draft", localStore.data.composerDraft)
+            assertTrue(channel.sentEnvelopes.isEmpty())
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun openPreviousChatRestoresSessionScopedComposerDrafts() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val initialData = PersistedRuntimeData(
+                selectedModelId = "ollama:llama3.1:8b",
+                trustedRuntimeAutoReconnectEnabled = false,
+            )
+                .withPersistedMessages(
+                    sessionId = "session-a",
+                    messages = listOf(RuntimeChatMessage(role = "user", content = "Question A")),
+                    nowMillis = 100L,
+                )
+                .withPersistedMessages(
+                    sessionId = "session-b",
+                    messages = listOf(RuntimeChatMessage(role = "user", content = "Question B")),
+                    nowMillis = 200L,
+                )
+                .withComposerDraft("Draft A", sessionId = "session-a")
+                .withComposerDraft("Draft B", sessionId = "session-b")
+                .withActiveSession("session-a")
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                initialData = initialData,
+            )
+
+            assertEquals("Draft A", fixture.viewModel.state.value.chatInput)
+
+            fixture.viewModel.replaceStateForTest {
+                it.copy(pendingAttachments = listOf(textAttachment()))
+            }
+
+            fixture.viewModel.openPreviousChat("session-b")
+            advanceUntilIdle()
+
+            assertEquals("Draft B", fixture.viewModel.state.value.chatInput)
+            assertTrue(fixture.viewModel.state.value.pendingAttachments.isEmpty())
+
+            fixture.viewModel.updateChatInput("Edited B")
+            advanceUntilIdle()
+
+            assertEquals(
+                "Edited B",
+                fixture.localStore.data.sessions.single { it.id == "session-b" }.composerDraft,
+            )
+            assertEquals(
+                "Draft A",
+                fixture.localStore.data.sessions.single { it.id == "session-a" }.composerDraft,
+            )
+
+            fixture.viewModel.openPreviousChat("session-a")
+            advanceUntilIdle()
+
+            assertEquals("Draft A", fixture.viewModel.state.value.chatInput)
+
+            fixture.viewModel.openPreviousChat("session-b")
+            advanceUntilIdle()
+
+            assertEquals("Edited B", fixture.viewModel.state.value.chatInput)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun startNewChatClearsNoActiveDraftButKeepsSessionDrafts() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val initialData = PersistedRuntimeData(
+                selectedModelId = "ollama:llama3.1:8b",
+                composerDraft = "No-active stale draft",
+                trustedRuntimeAutoReconnectEnabled = false,
+            )
+                .withPersistedMessages(
+                    sessionId = "session-a",
+                    messages = listOf(RuntimeChatMessage(role = "user", content = "Question A")),
+                    nowMillis = 100L,
+                )
+                .withComposerDraft("Draft A", sessionId = "session-a")
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                initialData = initialData,
+            )
+            assertEquals("Draft A", fixture.viewModel.state.value.chatInput)
+
+            fixture.viewModel.replaceStateForTest {
+                it.copy(pendingAttachments = listOf(textAttachment()))
+            }
+
+            fixture.viewModel.startNewChat()
+            advanceUntilIdle()
+
+            assertNull(fixture.viewModel.state.value.activeChatSessionId)
+            assertEquals("", fixture.viewModel.state.value.chatInput)
+            assertTrue(fixture.viewModel.state.value.pendingAttachments.isEmpty())
+            assertEquals("", fixture.localStore.data.composerDraft)
+            assertEquals(
+                "Draft A",
+                fixture.localStore.data.sessions.single { it.id == "session-a" }.composerDraft,
+            )
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun archiveActiveChatClearsNoActiveDraftAndPendingAttachments() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val initialData = PersistedRuntimeData(
+                selectedModelId = "ollama:llama3.1:8b",
+                composerDraft = "No-active stale draft",
+                trustedRuntimeAutoReconnectEnabled = false,
+            )
+                .withPersistedMessages(
+                    sessionId = "session-a",
+                    messages = listOf(RuntimeChatMessage(role = "user", content = "Question A")),
+                    nowMillis = 100L,
+                )
+                .withComposerDraft("Draft A", sessionId = "session-a")
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                initialData = initialData,
+            )
+
+            fixture.viewModel.replaceStateForTest {
+                it.copy(pendingAttachments = listOf(textAttachment()))
+            }
+
+            fixture.viewModel.archiveChatSession("session-a")
+            advanceUntilIdle()
+
+            assertNull(fixture.viewModel.state.value.activeChatSessionId)
+            assertEquals("", fixture.viewModel.state.value.chatInput)
+            assertTrue(fixture.viewModel.state.value.pendingAttachments.isEmpty())
+            assertEquals("", fixture.localStore.data.composerDraft)
+            assertEquals(
+                "",
+                fixture.localStore.data.sessions.single { it.id == "session-a" }.composerDraft,
+            )
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun archiveAllChatsClearsNoActiveDraftAndPendingAttachments() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val initialData = PersistedRuntimeData(
+                selectedModelId = "ollama:llama3.1:8b",
+                composerDraft = "No-active stale draft",
+                trustedRuntimeAutoReconnectEnabled = false,
+            )
+                .withPersistedMessages(
+                    sessionId = "session-a",
+                    messages = listOf(RuntimeChatMessage(role = "user", content = "Question A")),
+                    nowMillis = 100L,
+                )
+                .withPersistedMessages(
+                    sessionId = "session-b",
+                    messages = listOf(RuntimeChatMessage(role = "user", content = "Question B")),
+                    nowMillis = 200L,
+                )
+                .withComposerDraft("Draft A", sessionId = "session-a")
+                .withComposerDraft("Draft B", sessionId = "session-b")
+                .withActiveSession("session-a")
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                initialData = initialData,
+            )
+
+            fixture.viewModel.replaceStateForTest {
+                it.copy(pendingAttachments = listOf(textAttachment()))
+            }
+
+            fixture.viewModel.archiveChatSessions()
+            advanceUntilIdle()
+
+            assertNull(fixture.viewModel.state.value.activeChatSessionId)
+            assertEquals("", fixture.viewModel.state.value.chatInput)
+            assertTrue(fixture.viewModel.state.value.pendingAttachments.isEmpty())
+            assertEquals("", fixture.localStore.data.composerDraft)
+            assertTrue(fixture.localStore.data.sessions.all { it.archivedAtMillis != null })
+            assertEquals(
+                "",
+                fixture.localStore.data.sessions.single { it.id == "session-a" }.composerDraft,
+            )
+            assertEquals(
+                "",
+                fixture.localStore.data.sessions.single { it.id == "session-b" }.composerDraft,
+            )
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun openingRuntimeOwnedChatShowsLoadingAndBlocksComposerUntilMessagesArrive() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val initialData = PersistedRuntimeData(
+                selectedModelId = "ollama:llama3.1:8b",
+                trustedRuntimeAutoReconnectEnabled = false,
+                sessions = listOf(
+                    PersistedChatSession(
+                        id = "runtime-session",
+                        title = "Runtime session",
+                        modelId = "ollama:llama3.1:8b",
+                        createdAtMillis = 100L,
+                        updatedAtMillis = 200L,
+                        runtimeOwned = true,
+                        runtimeMessageCount = 2,
+                    )
+                ),
+            )
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                initialData = initialData,
+            )
+
+            fixture.viewModel.openPreviousChat("runtime-session")
+            advanceUntilIdle()
+
+            assertEquals("runtime-session", fixture.viewModel.state.value.activeChatSessionId)
+            assertEquals("runtime-session", fixture.viewModel.state.value.loadingChatSessionId)
+            assertTrue(fixture.viewModel.state.value.isLoadingActiveChatMessages)
+
+            fixture.viewModel.updateChatInput("Do not send yet")
+            fixture.viewModel.sendChatMessage()
+            advanceUntilIdle()
+
+            assertEquals("", fixture.viewModel.state.value.chatInput)
+            assertEquals("chat_history_loading", fixture.viewModel.state.value.error?.code)
+            assertTrue(fixture.channel.sentEnvelopes.none { it.type == MessageType.ChatSend })
+
+            fixture.viewModel.renameChatSession("runtime-session", "Should not rename while loading")
+            fixture.viewModel.archiveChatSession("runtime-session")
+            fixture.viewModel.archiveChatSessions()
+            advanceUntilIdle()
+
+            assertEquals("chat_history_loading", fixture.viewModel.state.value.error?.code)
+            assertTrue(
+                fixture.channel.sentEnvelopes.none {
+                    it.type == MessageType.ChatSessionRename || it.type == MessageType.ChatSessionArchive
+                }
+            )
+            val blockedMutationSession = fixture.localStore.data.sessions.single { it.id == "runtime-session" }
+            assertEquals("Runtime session", blockedMutationSession.title)
+            assertNull(blockedMutationSession.archivedAtMillis)
+
+            val messagesRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.ChatMessagesList }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatMessagesList,
+                    serializer = ChatMessagesListResultPayload.serializer(),
+                    payload = ChatMessagesListResultPayload(
+                        sessionId = "runtime-session",
+                        messages = listOf(
+                            ChatStoredMessagePayload(role = "user", content = "Runtime prompt"),
+                            ChatStoredMessagePayload(role = "assistant", content = "Runtime answer"),
+                        ),
+                    ),
+                    requestId = messagesRequest.requestId,
+                )
+            )
+            advanceUntilIdle()
+
+            assertNull(fixture.viewModel.state.value.loadingChatSessionId)
+            assertFalse(fixture.viewModel.state.value.isLoadingActiveChatMessages)
+            assertEquals(
+                listOf("Runtime prompt", "Runtime answer"),
+                fixture.viewModel.state.value.messages.map { it.content },
+            )
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun sendChatMessageClearsOnlyActiveSessionComposerDraft() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val initialData = PersistedRuntimeData(
+                selectedModelId = "ollama:llama3.1:8b",
+                composerDraft = "No-active draft",
+                trustedRuntimeAutoReconnectEnabled = false,
+            )
+                .withPersistedMessages(
+                    sessionId = "session-a",
+                    messages = listOf(RuntimeChatMessage(role = "user", content = "Question A")),
+                    nowMillis = 100L,
+                )
+                .withPersistedMessages(
+                    sessionId = "session-b",
+                    messages = listOf(RuntimeChatMessage(role = "user", content = "Question B")),
+                    nowMillis = 200L,
+                )
+                .withComposerDraft("Draft A", sessionId = "session-a")
+                .withComposerDraft("Draft B", sessionId = "session-b")
+                .withActiveSession("session-a")
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                initialData = initialData,
+            )
+
+            fixture.viewModel.sendChatMessage()
+            advanceUntilIdle()
+
+            assertEquals("", fixture.viewModel.state.value.chatInput)
+            assertEquals(
+                "",
+                fixture.localStore.data.sessions.single { it.id == "session-a" }.composerDraft,
+            )
+            assertEquals(
+                "Draft B",
+                fixture.localStore.data.sessions.single { it.id == "session-b" }.composerDraft,
+            )
+            assertEquals("No-active draft", fixture.localStore.data.composerDraft)
+            assertEquals(1, fixture.channel.sentEnvelopes.count { it.type == MessageType.ChatSend })
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun useSuggestedQuestionUpdatesActiveSessionComposerDraft() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val initialData = PersistedRuntimeData(
+                selectedModelId = "ollama:llama3.1:8b",
+                composerDraft = "No-active draft",
+                trustedRuntimeAutoReconnectEnabled = false,
+            )
+                .withPersistedMessages(
+                    sessionId = "session-a",
+                    messages = listOf(RuntimeChatMessage(role = "user", content = "Question A")),
+                    nowMillis = 100L,
+                )
+                .withComposerDraft("Draft A", sessionId = "session-a")
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                initialData = initialData,
+            )
+
+            fixture.viewModel.useSuggestedQuestion("  Follow up on A?  ")
+            advanceUntilIdle()
+
+            assertEquals("Follow up on A?", fixture.viewModel.state.value.chatInput)
+            assertEquals(
+                "Follow up on A?",
+                fixture.localStore.data.sessions.single { it.id == "session-a" }.composerDraft,
+            )
+            assertEquals("No-active draft", fixture.localStore.data.composerDraft)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
     fun updateChatInputRejectsWhileStreamingAndPreservesDraft() = runTest {
         val mainDispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(mainDispatcher)
         try {
+            val localStore = FakeRuntimeLocalDataStore(
+                initialData = PersistedRuntimeData(composerDraft = "stored draft"),
+            )
             val viewModel = RuntimeClientViewModel(
                 application = Application(),
                 dependencies = RuntimeClientViewModelDependencies(
@@ -6433,7 +7279,7 @@ class RuntimeClientViewModelTest {
                     discovery = EmptyRuntimeDiscoverySource,
                     trustedRuntimeStore = FakeTrustedRuntimeStore(),
                     deviceIdentityProvider = FakeDeviceIdentityProvider(testDeviceIdentity()),
-                    localDataStore = FakeRuntimeLocalDataStore(),
+                    localDataStore = localStore,
                     lifecycleCallbacksRegistrar = NoopRuntimeLifecycleCallbacksRegistrar,
                 ),
             )
@@ -6450,6 +7296,7 @@ class RuntimeClientViewModelTest {
 
             assertEquals("keep this draft", viewModel.state.value.chatInput)
             assertEquals("generation_in_progress", viewModel.state.value.error?.code)
+            assertEquals("stored draft", localStore.data.composerDraft)
         } finally {
             Dispatchers.resetMain()
         }
@@ -6566,7 +7413,8 @@ class RuntimeClientViewModelTest {
         assertEquals("lm_studio:model", afterError.installingModelId)
         assertFalse(afterError.isLoadingModels)
         assertEquals("backend_failed", afterError.error?.code)
-        assertEquals("Different request failed", afterError.error?.detail)
+        assertNull(afterError.error?.detail)
+        assertEquals("Different request failed", afterError.error?.technicalDetail)
     }
 
     @Test
@@ -6658,7 +7506,8 @@ class RuntimeClientViewModelTest {
         assertFalse(afterCancel.isStreaming)
         assertFalse(afterError.isStreaming)
         assertEquals("backend_failed", afterError.error?.code)
-        assertEquals("Backend failed", afterError.error?.detail)
+        assertNull(afterError.error?.detail)
+        assertEquals("Backend failed", afterError.error?.technicalDetail)
 
         val partialAssistant = blankAssistant.copy(content = "Partial")
         val reasoningAssistant = blankAssistant.copy(reasoning = "Thinking")
@@ -6801,7 +7650,8 @@ class RuntimeClientViewModelTest {
         assertEquals("disconnected", afterBlankFailure.runtimeStatus)
         assertEquals(listOf(userMessage), afterBlankFailure.messages)
         assertEquals("receive_failed", afterBlankFailure.error?.code)
-        assertEquals("socket closed", afterBlankFailure.error?.detail)
+        assertNull(afterBlankFailure.error?.detail)
+        assertEquals("socket closed", afterBlankFailure.error?.technicalDetail)
 
         val partialAssistant = blankAssistant.copy(content = "Partial")
         val reasoningAssistant = blankAssistant.copy(reasoning = "Thinking")
@@ -6890,7 +7740,8 @@ class RuntimeClientViewModelTest {
         assertNull(afterError.backendCode)
         assertTrue(afterError.providerStatuses.isEmpty())
         assertEquals("pairing_required", afterError.error?.code)
-        assertEquals("Pair this device first", afterError.error?.detail)
+        assertNull(afterError.error?.detail)
+        assertEquals("Pair this device first", afterError.error?.technicalDetail)
     }
 
     @Test
@@ -7014,6 +7865,47 @@ class RuntimeClientViewModelTest {
         assertTrue(data.sessions.first { it.id == "manual" }.titleManuallyEdited)
         assertEquals("Original prompt", data.sessions.first { it.id == "generated" }.title)
         assertTrue(data.sessions.first { it.id == "generated" }.titleGenerated)
+    }
+
+    @Test
+    fun sanitizedCapsSessionScopedComposerDrafts() {
+        val oversizedDraft = "x".repeat(25_000)
+        val data = PersistedRuntimeData(
+            activeSessionId = "draft-session",
+            sessions = listOf(
+                PersistedChatSession(
+                    id = "draft-session",
+                    title = "Draft session",
+                    composerDraft = oversizedDraft,
+                    createdAtMillis = 10L,
+                    updatedAtMillis = 20L,
+                ),
+            ),
+        ).sanitized()
+
+        assertEquals(20_000, data.sessions.single().composerDraft.length)
+        assertEquals("x".repeat(20_000), data.composerDraftForSession("draft-session"))
+    }
+
+    @Test
+    fun sanitizedDropsArchivedSessionComposerDrafts() {
+        val data = PersistedRuntimeData(
+            activeSessionId = "archived-draft",
+            sessions = listOf(
+                PersistedChatSession(
+                    id = "archived-draft",
+                    title = "Archived draft",
+                    composerDraft = "Do not keep archived draft",
+                    createdAtMillis = 10L,
+                    updatedAtMillis = 20L,
+                    archivedAtMillis = 30L,
+                ),
+            ),
+        ).sanitized()
+
+        assertNull(data.activeSessionId)
+        assertEquals("", data.sessions.single().composerDraft)
+        assertEquals("", data.composerDraftForSession("archived-draft"))
     }
 
     @Test
@@ -8807,6 +9699,30 @@ class RuntimeClientViewModelTest {
 
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
+    fun sendChatMessageClearsPersistedComposerDraft() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+            )
+            fixture.viewModel.updateChatInput("Explain persisted composer draft cleanup")
+            advanceUntilIdle()
+            assertEquals("Explain persisted composer draft cleanup", fixture.localStore.data.composerDraft)
+
+            fixture.viewModel.sendChatMessage()
+            advanceUntilIdle()
+
+            assertEquals("", fixture.viewModel.state.value.chatInput)
+            assertEquals("", fixture.localStore.data.composerDraft)
+            assertEquals(1, fixture.channel.sentEnvelopes.count { it.type == MessageType.ChatSend })
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
     fun streamingRuntimeOwnedChatRendersInMemoryButRedactsDeviceStorage() = runTest {
         val mainDispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(mainDispatcher)
@@ -9199,6 +10115,43 @@ class RuntimeClientViewModelTest {
 
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
+    fun addAttachmentsBoundsReadWhenReportedSizeIsUnknown() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val largeReference = "content://attachments/unknown-large"
+            val attachmentLimitBytes = 15 * 1024 * 1024
+            val attachmentReader = FakeRuntimeAttachmentReader(
+                mapOf(
+                    largeReference to RuntimeAttachmentFile(
+                        name = "unknown-large.txt",
+                        mimeType = "text/plain",
+                        reportedSizeBytes = -1L,
+                        bytes = ByteArray(attachmentLimitBytes + 2) { 1 },
+                    ),
+                )
+            )
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                attachmentReader = attachmentReader,
+            )
+
+            fixture.viewModel.addAttachmentReferences(listOf(largeReference))
+            advanceUntilIdle()
+
+            assertEquals(listOf(largeReference), attachmentReader.metadataRequests)
+            assertEquals(listOf(largeReference), attachmentReader.readRequests)
+            assertEquals(listOf(attachmentLimitBytes), attachmentReader.readLimits)
+            assertTrue(fixture.viewModel.state.value.pendingAttachments.isEmpty())
+            assertEquals("attachment_too_large", fixture.viewModel.state.value.error?.code)
+            assertEquals("unknown-large.txt", fixture.viewModel.state.value.error?.detail)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
     fun addAttachmentsKeepsAtMostFourPendingAttachments() = runTest {
         val mainDispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(mainDispatcher)
@@ -9337,6 +10290,7 @@ class RuntimeClientViewModelTest {
     fun persistedRuntimeDataStoresPendingPairingRouteUntilShorterRelayExpiry() {
         val now = 1_000L
         val relayExpiresAt = now + 120_000L
+        val secretStore = FakeRelaySecretStore()
         val payload = runtimePairingPayload(
             host = "192.168.1.10",
             port = 43170,
@@ -9348,15 +10302,23 @@ class RuntimeClientViewModelTest {
             relayNonce = "nonce-route-1",
         )
 
-        val data = PersistedRuntimeData().withPendingPairingRoute(payload, now)
+        val data = PersistedRuntimeData()
+            .withPendingPairingRoute(payload, now)
+            .withStoredPendingPairingRelaySecret(secretStore)
         val pending = data.pendingPairingRoute
-        val restored = pending?.toRuntimePairingPayloadOrNull()
+        val restoredWithoutSecretStore = pending?.toRuntimePairingPayloadOrNull()
+        val restored = data.withLoadedPendingPairingRelaySecret(secretStore)
+            .pendingPairingRoute
+            ?.toRuntimePairingPayloadOrNull()
 
         assertNotNull(pending)
         assertEquals(now, pending?.capturedAtEpochMillis)
         assertEquals(relayExpiresAt, pending?.expiresAtEpochMillis)
         assertFalse(pending?.isExpired(relayExpiresAt - 1L) ?: true)
         assertTrue(pending?.isExpired(relayExpiresAt) ?: false)
+        assertNull(pending?.relaySecret)
+        assertNotNull(pending?.relaySecretRef)
+        assertNull(restoredWithoutSecretStore)
         assertEquals("relay.example.test", restored?.relayHost)
         assertEquals(443, restored?.relayPort)
         assertEquals("relay-1", restored?.relayId)
@@ -9414,6 +10376,52 @@ class RuntimeClientViewModelTest {
 
         assertNull(data.pendingPairingRoute)
         assertTrue(data.trustedRuntimeAutoReconnectEnabled)
+    }
+
+    @Test
+    fun persistedRuntimeDataRemovesPendingPairingRelaySecretWhenRouteClearsOrReplaces() {
+        val firstPayload = runtimePairingPayload(
+            pairingNonce = "nonce-first",
+            runtimeDeviceId = "runtime-first",
+            relayHost = "relay-first.example.test",
+            relayPort = 443,
+            relayId = "relay-first",
+            relaySecret = "secret-first",
+            relayExpiresAtEpochMillis = 4102444800000L,
+            relayNonce = "nonce-route-first",
+        )
+        val secondPayload = runtimePairingPayload(
+            pairingNonce = "nonce-second",
+            runtimeDeviceId = "runtime-second",
+            relayHost = "relay-second.example.test",
+            relayPort = 443,
+            relayId = "relay-second",
+            relaySecret = "secret-second",
+            relayExpiresAtEpochMillis = 4102444800000L,
+            relayNonce = "nonce-route-second",
+        )
+
+        val clearedStore = FakeRuntimeLocalDataStore()
+        clearedStore.save(PersistedRuntimeData().withPendingPairingRoute(firstPayload, nowMillis = 1_000L))
+        val clearedRef = requireNotNull(clearedStore.data.pendingPairingRoute?.relaySecretRef)
+
+        assertEquals("secret-first", clearedStore.relaySecret(clearedRef))
+
+        clearedStore.save(clearedStore.load().withoutPendingPairingRoute())
+
+        assertNull(clearedStore.data.pendingPairingRoute)
+        assertNull(clearedStore.relaySecret(clearedRef))
+
+        val replacedStore = FakeRuntimeLocalDataStore()
+        replacedStore.save(PersistedRuntimeData().withPendingPairingRoute(firstPayload, nowMillis = 1_000L))
+        val firstRef = requireNotNull(replacedStore.data.pendingPairingRoute?.relaySecretRef)
+
+        replacedStore.save(PersistedRuntimeData().withPendingPairingRoute(secondPayload, nowMillis = 2_000L))
+        val secondRef = requireNotNull(replacedStore.data.pendingPairingRoute?.relaySecretRef)
+
+        assertFalse(firstRef == secondRef)
+        assertNull(replacedStore.relaySecret(firstRef))
+        assertEquals("secret-second", replacedStore.relaySecret(secondRef))
     }
 
     @Test
@@ -9698,17 +10706,43 @@ class RuntimeClientViewModelTest {
         initialData: PersistedRuntimeData = PersistedRuntimeData(),
         private val redactRuntimeOwnedLocalDataOnSave: Boolean = false,
     ) : RuntimeLocalDataStore {
-        var data: PersistedRuntimeData = initialData
+        private val relaySecretStore = FakeRelaySecretStore()
+        var data: PersistedRuntimeData = initialData.withStoredPendingPairingRelaySecret(relaySecretStore)
             private set
 
-        override fun load(): PersistedRuntimeData = data
+        override fun load(): PersistedRuntimeData = data.withLoadedPendingPairingRelaySecret(relaySecretStore)
 
         override fun save(data: PersistedRuntimeData) {
-            this.data = if (redactRuntimeOwnedLocalDataOnSave) {
+            val previousPendingSecretRef = this.data.pendingPairingRoute?.relaySecretRef
+            val cleanData = if (redactRuntimeOwnedLocalDataOnSave) {
                 data.withoutRuntimeOwnedLocalData()
             } else {
                 data
             }
+            val dataForDisk = cleanData.withStoredPendingPairingRelaySecret(relaySecretStore)
+            val currentPendingSecretRef = dataForDisk.pendingPairingRoute?.relaySecretRef
+            if (previousPendingSecretRef != null && previousPendingSecretRef != currentPendingSecretRef) {
+                relaySecretStore.removeSecret(previousPendingSecretRef)
+            }
+            this.data = dataForDisk
+        }
+
+        fun relaySecret(handle: String): String? {
+            return relaySecretStore.readSecret(handle)
+        }
+    }
+
+    private class FakeRelaySecretStore : RelaySecretStore {
+        val secrets = mutableMapOf<String, String>()
+
+        override fun saveSecret(handle: String, secret: String) {
+            secrets[handle] = secret
+        }
+
+        override fun readSecret(handle: String): String? = secrets[handle]
+
+        override fun removeSecret(handle: String) {
+            secrets.remove(handle)
         }
     }
 
@@ -9756,6 +10790,7 @@ class RuntimeClientViewModelTest {
     ) : RuntimeAttachmentReader {
         val metadataRequests = mutableListOf<String>()
         val readRequests = mutableListOf<String>()
+        val readLimits = mutableListOf<Int>()
 
         override fun metadata(reference: String): RuntimeAttachmentMetadata {
             metadataRequests += reference
@@ -9767,9 +10802,12 @@ class RuntimeClientViewModelTest {
             )
         }
 
-        override fun readBytes(reference: String): ByteArray? {
+        override fun readBytes(reference: String, maxBytes: Int): ByteArray? {
             readRequests += reference
-            return files[reference]?.bytes
+            readLimits += maxBytes
+            val bytes = files[reference]?.bytes ?: return null
+            val boundedSize = maxBytes + 1
+            return if (bytes.size > boundedSize) bytes.copyOf(boundedSize) else bytes
         }
     }
 
@@ -9804,10 +10842,11 @@ class RuntimeClientViewModelTest {
         selectedEmbeddingModelId: String? = null,
         attachmentReader: RuntimeAttachmentReader? = null,
         redactRuntimeOwnedLocalDataOnSave: Boolean = false,
+        initialData: PersistedRuntimeData? = null,
     ): RuntimeClientFixture {
         val channel = ScriptedRuntimeProtocolChannel()
         val localStore = FakeRuntimeLocalDataStore(
-            initialData = PersistedRuntimeData(
+            initialData = initialData ?: PersistedRuntimeData(
                 selectedModelId = selectedModelId,
                 selectedEmbeddingModelId = selectedEmbeddingModelId,
                 trustedRuntimeAutoReconnectEnabled = false,

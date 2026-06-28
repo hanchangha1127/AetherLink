@@ -108,6 +108,35 @@ class RuntimePairingPayloadParserTest {
     }
 
     @Test
+    fun rejectsWhitespaceMutatedTrustAndRouteIdentityQrValues() {
+        val base = "aetherlink://pair?version=1&pairing_nonce=nonce-1&pairing_code=123456" +
+            "&runtime_device_id=runtime-1&runtime_name=AetherLink+Runtime" +
+            "&runtime_public_key=public-key-1&runtime_key_fingerprint=fp-1&route_token=route-1" +
+            "&relay_host=relay.example.test&relay_port=443&relay_id=relay-1" +
+            "&relay_secret=secret-1&relay_expires_at=4102444800000&relay_nonce=nonce-route-1" +
+            "&relay_scope=remote"
+        val mutatedFields = listOf(
+            "pairing_nonce" to "nonce%201",
+            "runtime_device_id" to "%20runtime-1",
+            "runtime_key_fingerprint" to "fp-1%0A",
+            "runtime_public_key" to "public%20key-1",
+            "route_token" to "route%091",
+            "relay_id" to "relay%201",
+            "relay_nonce" to "%20nonce-route-1",
+            "relay_scope" to "remote%20",
+        )
+
+        mutatedFields.forEach { (field, value) ->
+            try {
+                RuntimePairingPayloadParser.parse(base.replace("$field=${fieldValue(field)}", "$field=$value"))
+                fail("Expected QR with whitespace-mutated $field to throw")
+            } catch (_: IllegalArgumentException) {
+                // Expected.
+            }
+        }
+    }
+
+    @Test
     fun normalizesBlankRuntimeNameToDefaultRuntimeName() {
         val payload = RuntimePairingPayloadParser.parse(
             "aetherlink://pair?version=1&pairing_nonce=nonce-1&pairing_code=123456" +
@@ -687,5 +716,19 @@ class RuntimePairingPayloadParserTest {
             .firstOrNull { it.isFile }
             ?: error("Missing shared protocol fixture: $name")
         return fixture.readText().trim()
+    }
+
+    private fun fieldValue(field: String): String {
+        return when (field) {
+            "pairing_nonce" -> "nonce-1"
+            "runtime_device_id" -> "runtime-1"
+            "runtime_key_fingerprint" -> "fp-1"
+            "runtime_public_key" -> "public-key-1"
+            "route_token" -> "route-1"
+            "relay_id" -> "relay-1"
+            "relay_nonce" -> "nonce-route-1"
+            "relay_scope" -> "remote"
+            else -> error("Unexpected test field: $field")
+        }
     }
 }

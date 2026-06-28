@@ -64,10 +64,12 @@ public final class RelayPeerClient: RelayPeerTransport, @unchecked Sendable {
     private let codec = ProtocolCodec()
     private let lock = NSLock()
     private var connection: NWConnection?
+    private var connectionID: UUID?
     private var isRunning = false
     private var reconnectWorkItem: DispatchWorkItem?
     private var status: RelayPeerStatus = .stopped
     private var statusHandler: (@Sendable (RelayPeerStatus) -> Void)?
+    public var onDisconnect: (@Sendable (UUID) -> Void)?
 
     public init() {}
 
@@ -91,8 +93,13 @@ public final class RelayPeerClient: RelayPeerTransport, @unchecked Sendable {
             reconnectWorkItem?.cancel()
             reconnectWorkItem = nil
             let current = connection
+            let consumedConnectionID = connectionID
             connection = nil
-            return (connection: current, handler: statusHandler)
+            connectionID = nil
+            return (connection: current, connectionID: consumedConnectionID, handler: statusHandler)
+        }
+        if let connectionID = result.connectionID {
+            onDisconnect?(connectionID)
         }
         result.connection?.cancel()
         updateStatus(.stopped, handler: result.handler)
@@ -114,6 +121,7 @@ public final class RelayPeerClient: RelayPeerTransport, @unchecked Sendable {
 
         lock.withLock {
             self.connection = connection
+            self.connectionID = sink.id
         }
 
         connection.stateUpdateHandler = { [weak self, sink] state in
@@ -154,12 +162,14 @@ public final class RelayPeerClient: RelayPeerTransport, @unchecked Sendable {
                 self?.updateStatus(.failed(error.localizedDescription))
             case .failed(let error):
                 self?.updateStatus(.failed(error.localizedDescription))
+                self?.notifyDisconnectIfCurrentConnection(sink.id)
                 self?.scheduleReconnect(
                     configuration: configuration,
                     onMessage: onMessage,
                     message: error.localizedDescription
                 )
             case .cancelled:
+                self?.notifyDisconnectIfCurrentConnection(sink.id)
                 self?.scheduleReconnect(
                     configuration: configuration,
                     onMessage: onMessage,
@@ -181,6 +191,7 @@ public final class RelayPeerClient: RelayPeerTransport, @unchecked Sendable {
         let shouldReconnect = lock.withLock {
             guard isRunning else { return false }
             connection = nil
+            connectionID = nil
             return true
         }
         guard shouldReconnect else { return }
@@ -198,6 +209,17 @@ public final class RelayPeerClient: RelayPeerTransport, @unchecked Sendable {
             reconnectWorkItem = item
         }
         DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + configuration.reconnectDelay, execute: item)
+    }
+
+    private func notifyDisconnectIfCurrentConnection(_ id: UUID) {
+        let shouldNotify = lock.withLock {
+            guard connectionID == id else { return false }
+            connectionID = nil
+            return true
+        }
+        if shouldNotify {
+            onDisconnect?(id)
+        }
     }
 
     private func updateStatus(_ newStatus: RelayPeerStatus) {

@@ -159,6 +159,16 @@ CONTRACTS = (
         ),
         "Docs must distinguish current runtime-mediated attachment support from remaining physical QA and future ingestion hardening.",
     ),
+    DocsContract(
+        "future-tools-runtime-only",
+        (
+            re.compile(r"\bMCP\b.*\b(?:roadmap|future|not v0\.1)\b|\b(?:roadmap|future|not v0\.1)\b.*\bMCP\b", re.IGNORECASE | re.DOTALL),
+            re.compile(r"\bweb search\b.*\b(?:roadmap|future|not v0\.1)\b|\b(?:roadmap|future|not v0\.1)\b.*\bweb search\b", re.IGNORECASE | re.DOTALL),
+            re.compile(r"\b(?:MCP|web search)\b.*\b(?:AetherLink Runtime|runtime host)\b|\b(?:AetherLink Runtime|runtime host)\b.*\b(?:MCP|web search)\b", re.IGNORECASE | re.DOTALL),
+            re.compile(r"\bclient\b.*\b(?:does not|must not|never)\b.*\b(?:MCP|web search)\b|\b(?:MCP|web search)\b.*\bclient\b.*\b(?:does not|must not|never)\b", re.IGNORECASE | re.DOTALL),
+        ),
+        "Docs must keep MCP and web search as future runtime-side features, never v0.1 client capabilities.",
+    ),
 )
 
 FILE_CONTRACTS = (
@@ -189,6 +199,54 @@ FILE_CONTRACTS = (
             re.compile(r"\bchat\.send\.locale\b", re.IGNORECASE),
         ),
         "README.md must keep cross-platform language verification and chat.send.locale handoff visible outside historical progress logs.",
+    ),
+    DocsFileContract(
+        "qa-owner-device-scoping-evidence",
+        "docs/qa-evidence.md",
+        (
+            re.compile(r"\bmacOS Runtime Owner-Device History And Memory Scoping\b", re.IGNORECASE),
+            re.compile(r"\bowner_device_id\b", re.IGNORECASE),
+            re.compile(r"\btestAuthenticatedDevicesCannotCrossReadInjectOrMutateChatAndMemory\b", re.IGNORECASE),
+            re.compile(r"\btestRuntimeChatStoreScopesSessionsMessagesAndMutationsByOwnerDevice\b", re.IGNORECASE),
+            re.compile(r"\btestRuntimeMemoryStoreScopesEntriesByOwnerDevice\b", re.IGNORECASE),
+        ),
+        "docs/qa-evidence.md must keep the latest runtime history/memory owner-device scoping proof visible.",
+    ),
+    DocsFileContract(
+        "qa-android-archived-chat-composer-cleanup",
+        "docs/qa-evidence.md",
+        (
+            re.compile(r"\bAndroid Archived Chat Composer Cleanup\b", re.IGNORECASE),
+            re.compile(r"\barchiveActiveChatClearsNoActiveDraftAndPendingAttachments\b", re.IGNORECASE),
+            re.compile(r"\barchiveAllChatsClearsNoActiveDraftAndPendingAttachments\b", re.IGNORECASE),
+            re.compile(r"\bsanitizedDropsArchivedSessionComposerDrafts\b", re.IGNORECASE),
+            re.compile(r"\bAndroid transient attachment cleanup on chat lifecycle exits\b", re.IGNORECASE),
+        ),
+        "docs/qa-evidence.md must keep archived chat composer cleanup proof visible.",
+    ),
+    DocsFileContract(
+        "qa-android-runtime-transcript-loading-state",
+        "docs/qa-evidence.md",
+        (
+            re.compile(r"\bAndroid Runtime Transcript Loading State\b", re.IGNORECASE),
+            re.compile(r"\bchatComposerHintExplainsActiveTranscriptLoadingLockout\b", re.IGNORECASE),
+            re.compile(r"\bopeningRuntimeOwnedChatShowsLoadingAndBlocksComposerUntilMessagesArrive\b", re.IGNORECASE),
+            re.compile(r"\bchatScreenShowsLocalizedLoadingStateWhileRuntimeTranscriptLoads\b", re.IGNORECASE),
+            re.compile(r"\bAndroid runtime transcript loading state\b", re.IGNORECASE),
+            re.compile(r"\bAndroid runtime transcript lifecycle mutation lockout\b", re.IGNORECASE),
+        ),
+        "docs/qa-evidence.md must keep Android runtime transcript loading proof visible.",
+    ),
+    DocsFileContract(
+        "qa-macos-route-material-redaction",
+        "docs/qa-evidence.md",
+        (
+            re.compile(r"\bmacOS Route Material Diagnostic Redaction\b", re.IGNORECASE),
+            re.compile(r"\btestActivityTechnicalDetailsRedactRouteSecrets\b", re.IGNORECASE),
+            re.compile(r"\btestRouteDiagnosticDisclosureRedactsSensitiveDetails\b", re.IGNORECASE),
+            re.compile(r"\bmacOS route material diagnostic redaction\b", re.IGNORECASE),
+        ),
+        "docs/qa-evidence.md must keep macOS route material diagnostic redaction proof visible.",
     ),
 )
 

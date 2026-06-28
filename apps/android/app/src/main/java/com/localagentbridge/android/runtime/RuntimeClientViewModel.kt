@@ -92,6 +92,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonObject
+import java.io.ByteArrayOutputStream
 import java.util.Base64
 import java.util.Locale
 import java.util.UUID
@@ -128,7 +129,7 @@ internal data class RuntimeAttachmentMetadata(
 
 internal interface RuntimeAttachmentReader {
     fun metadata(reference: String): RuntimeAttachmentMetadata
-    fun readBytes(reference: String): ByteArray?
+    fun readBytes(reference: String, maxBytes: Int): ByteArray?
 }
 
 internal data class RuntimeClientViewModelDependencies(
@@ -242,11 +243,24 @@ private class AndroidRuntimeAttachmentReader(
         return RuntimeAttachmentMetadata(name = name, mimeType = mimeType, sizeBytes = sizeBytes)
     }
 
-    override fun readBytes(reference: String): ByteArray? {
+    override fun readBytes(reference: String, maxBytes: Int): ByteArray? {
         val uri = Uri.parse(reference)
         val resolver = application.contentResolver
         return runCatching {
-            resolver.openInputStream(uri)?.use { input -> input.readBytes() }
+            resolver.openInputStream(uri)?.use { input ->
+                val boundedSize = maxBytes + 1
+                val output = ByteArrayOutputStream(boundedSize.coerceAtMost(DEFAULT_BUFFER_SIZE))
+                val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                var totalBytes = 0
+                while (totalBytes < boundedSize) {
+                    val bytesToRead = minOf(buffer.size, boundedSize - totalBytes)
+                    val bytesRead = input.read(buffer, 0, bytesToRead)
+                    if (bytesRead == -1) break
+                    output.write(buffer, 0, bytesRead)
+                    totalBytes += bytesRead
+                }
+                output.toByteArray()
+            }
         }.getOrNull()
     }
 }
@@ -390,7 +404,7 @@ class RuntimeClientViewModel internal constructor(
         dependencies.lifecycleCallbacksRegistrar.register(application, lifecycleCallbacks)
         val loadedRuntimeData = localStore.load()
         shouldRestoreTrustedRuntimeConnection = loadedRuntimeData.trustedRuntimeAutoReconnectEnabled
-        publishPersistedRuntimeData(loadedRuntimeData, save = false)
+        publishPersistedRuntimeData(loadedRuntimeData, save = false, syncComposerDraft = true)
         restorePersistedPendingPairingRouteIfNeeded(loadedRuntimeData)
         viewModelScope.launch {
             pairingStore.trustedRuntime.collect { trusted ->
@@ -483,7 +497,9 @@ class RuntimeClientViewModel internal constructor(
             showError("generation_in_progress")
             return
         }
-        mutableState.update { it.copy(chatInput = value) }
+        if (rejectUserMutationWhileActiveChatMessagesLoading()) return
+        val cleanDraft = persistComposerDraft(value)
+        mutableState.update { it.copy(chatInput = cleanDraft) }
     }
 
     fun useSuggestedQuestion(question: String) {
@@ -493,7 +509,9 @@ class RuntimeClientViewModel internal constructor(
             showError("generation_in_progress")
             return
         }
-        mutableState.update { it.copy(chatInput = trimmed, error = null) }
+        if (rejectUserMutationWhileActiveChatMessagesLoading()) return
+        val cleanDraft = persistComposerDraft(trimmed)
+        mutableState.update { it.copy(chatInput = cleanDraft, error = null) }
     }
 
     fun addAttachments(uris: List<Uri>) {
@@ -507,6 +525,7 @@ class RuntimeClientViewModel internal constructor(
                 showError("generation_in_progress")
                 return@launch
             }
+            if (rejectUserMutationWhileActiveChatMessagesLoading()) return@launch
             val availableSlots = (MAX_PENDING_ATTACHMENTS - state.value.pendingAttachments.size)
                 .coerceAtLeast(0)
             if (availableSlots == 0) {
@@ -522,7 +541,7 @@ class RuntimeClientViewModel internal constructor(
                     showError("attachment_too_large", metadata.name)
                     return@launch
                 }
-                val bytes = attachmentReader.readBytes(reference)
+                val bytes = attachmentReader.readBytes(reference, MAX_ATTACHMENT_BYTES)
                 if (bytes == null) {
                     showError("attachment_read_failed", metadata.name)
                     return@launch
@@ -559,6 +578,7 @@ class RuntimeClientViewModel internal constructor(
             showError("generation_in_progress")
             return
         }
+        if (rejectUserMutationWhileActiveChatMessagesLoading()) return
         mutableState.update { current ->
             current.copy(
                 pendingAttachments = current.pendingAttachments.filterNot { it.id == attachmentId },
@@ -595,10 +615,19 @@ class RuntimeClientViewModel internal constructor(
         }
         clearPendingSuggestions()
         publishPersistedRuntimeData(
-            persistedRuntimeData.withNoActiveSession(),
+            persistedRuntimeData
+                .withNoActiveSession()
+                .withComposerDraft("", sessionId = null),
             save = true,
+            syncComposerDraft = true,
         )
-        mutableState.update { it.copy(chatInput = "", isLoadingSuggestions = false) }
+        mutableState.update {
+            it.copy(
+                pendingAttachments = emptyList(),
+                loadingChatSessionId = null,
+                isLoadingSuggestions = false,
+            )
+        }
     }
 
     fun openPreviousChat(sessionId: String) {
@@ -614,8 +643,15 @@ class RuntimeClientViewModel internal constructor(
         publishPersistedRuntimeData(
             persistedRuntimeData.withActiveSession(sessionId),
             save = true,
+            syncComposerDraft = true,
         )
-        mutableState.update { it.copy(isLoadingSuggestions = false) }
+        mutableState.update {
+            it.copy(
+                pendingAttachments = emptyList(),
+                loadingChatSessionId = null,
+                isLoadingSuggestions = false,
+            )
+        }
         requestRuntimeChatMessages(sessionId)
     }
 
@@ -671,7 +707,13 @@ class RuntimeClientViewModel internal constructor(
             type = MessageType.ChatSessionDelete,
         )
         if (state.value.activeChatSessionId == null) {
-            mutableState.update { it.copy(chatInput = "") }
+            val cleanDraft = clearComposerDraft(sessionId = null)
+            mutableState.update {
+                it.copy(
+                    chatInput = cleanDraft,
+                    pendingAttachments = emptyList(),
+                )
+            }
         }
     }
 
@@ -695,7 +737,13 @@ class RuntimeClientViewModel internal constructor(
             type = MessageType.ChatSessionArchive,
         )
         if (state.value.activeChatSessionId == null) {
-            mutableState.update { it.copy(chatInput = "") }
+            val cleanDraft = clearComposerDraft(sessionId = null)
+            mutableState.update {
+                it.copy(
+                    chatInput = cleanDraft,
+                    pendingAttachments = emptyList(),
+                )
+            }
         }
     }
 
@@ -716,7 +764,13 @@ class RuntimeClientViewModel internal constructor(
                 type = MessageType.ChatSessionArchive,
             )
         }
-        mutableState.update { it.copy(chatInput = "") }
+        val cleanDraft = clearComposerDraft(sessionId = null)
+        mutableState.update {
+            it.copy(
+                chatInput = cleanDraft,
+                pendingAttachments = emptyList(),
+            )
+        }
     }
 
     fun unarchiveChatSession(sessionId: String) {
@@ -1113,7 +1167,7 @@ class RuntimeClientViewModel internal constructor(
                 throw error
             } catch (error: Exception) {
                 mutableState.update {
-                    it.copy(error = RuntimeUiError("discovery_failed", error.message))
+                    it.copy(error = runtimeUiError("discovery_failed", error.message))
                 }
             } finally {
                 mutableState.update { it.copy(isDiscovering = false) }
@@ -1401,9 +1455,21 @@ class RuntimeClientViewModel internal constructor(
     private fun requestRuntimeChatMessages(sessionId: String) {
         if (!isSessionAuthenticated || activeChannel?.isConnected != true) return
         if (sessionId.isBlank()) return
+        val session = persistedRuntimeData.sessions.firstOrNull { it.id == sessionId }
+        if (session?.runtimeOwned != true || session.archivedAtMillis != null) return
         val requestId = UUID.randomUUID().toString()
         pendingChatMessagesRequestId = requestId
         pendingChatMessagesSessionId = sessionId
+        mutableState.update { current ->
+            if (current.activeChatSessionId == sessionId) {
+                current.copy(
+                    loadingChatSessionId = sessionId,
+                    error = null,
+                )
+            } else {
+                current
+            }
+        }
         sendEnvelope(
             envelope(
                 type = MessageType.ChatMessagesList,
@@ -1465,6 +1531,14 @@ class RuntimeClientViewModel internal constructor(
     }
 
     private fun isRuntimeOwnedChatMutationBlocked(sessions: List<PersistedChatSession>): Boolean {
+        val loadingSessionId = state.value.loadingChatSessionId
+        if (
+            loadingSessionId != null &&
+            sessions.any { session -> session.runtimeOwned && session.id == loadingSessionId }
+        ) {
+            showError("chat_history_loading")
+            return true
+        }
         if (
             !runtimeOwnedChatMutationRequiresConnectedRuntime(
                 sessions = sessions,
@@ -1567,10 +1641,12 @@ class RuntimeClientViewModel internal constructor(
 
     fun sendChatMessage() {
         val current = state.value
+        val startedWithoutActiveSession = current.activeChatSessionId == null
         if (current.isStreaming) {
             showError("generation_in_progress")
             return
         }
+        if (rejectUserMutationWhileActiveChatMessagesLoading()) return
         val text = current.chatInput.trim()
         if (text.isEmpty() && current.pendingAttachments.isEmpty()) return
         when (current.selectedModelSendState()) {
@@ -1626,6 +1702,10 @@ class RuntimeClientViewModel internal constructor(
         val assistantMessage = RuntimeChatMessage(role = "assistant", content = "")
         val updatedMessages = current.messages + userMessage + assistantMessage
         clearPendingSuggestions()
+        persistComposerDraft("", sessionId = sessionId)
+        if (startedWithoutActiveSession) {
+            persistComposerDraft("", sessionId = null)
+        }
         mutableState.update {
             it.copy(
                 activeChatSessionId = sessionId,
@@ -1657,6 +1737,114 @@ class RuntimeClientViewModel internal constructor(
                 )
             )
         )
+    }
+
+    fun regenerateLatestResponse() {
+        val current = state.value
+        if (current.isStreaming) {
+            showError("generation_in_progress")
+            return
+        }
+        if (rejectUserMutationWhileActiveChatMessagesLoading()) return
+        when (current.selectedModelSendState()) {
+            SelectedModelSendState.Ready -> Unit
+            SelectedModelSendState.Missing -> {
+                showError("select_model")
+                return
+            }
+            SelectedModelSendState.NotInstalled -> {
+                showError("install_model_first")
+                return
+            }
+        }
+        if (!current.isConnected) {
+            showError("connect_first")
+            return
+        }
+        if (!isSessionAuthenticated) {
+            showError("authentication_required")
+            return
+        }
+
+        val sessionId = current.activeChatSessionId ?: run {
+            showError("regenerate_unavailable")
+            return
+        }
+        val retry = retryLatestAssistantResponseCandidate(current) ?: run {
+            showError("regenerate_unavailable")
+            return
+        }
+        if (retry.precedingUserMessage.attachments.isNotEmpty()) {
+            showError("regenerate_attachment_context_unavailable")
+            return
+        }
+
+        val model = current.selectedModelId ?: return
+        val requestId = UUID.randomUUID().toString()
+        val assistantMessage = RuntimeChatMessage(role = "assistant", content = "")
+        val updatedMessages = retry.contextMessages
+            .map { it.copy(suggestions = emptyList()) } + assistantMessage
+        clearPendingSuggestions()
+        mutableState.update {
+            it.copy(
+                messages = updatedMessages,
+                activeRequestId = requestId,
+                isStreaming = true,
+                isLoadingSuggestions = false,
+                error = null,
+            )
+        }
+        persistMessages(sessionId, updatedMessages, runtimeBacked = true)
+
+        sendEnvelope(
+            envelope(
+                type = MessageType.ChatSend,
+                requestId = requestId,
+                serializer = ChatSendPayload.serializer(),
+                payload = ChatSendPayload(
+                    sessionId = sessionId,
+                    model = model,
+                    messages = chatSendMessages(
+                        messages = retry.contextMessages,
+                        memoryEntries = current.memoryEntries,
+                    ),
+                    locale = current.runtimeRequestLocale(),
+                )
+            )
+        )
+    }
+
+    fun retryLatestAssistantResponse() {
+        regenerateLatestResponse()
+    }
+
+    fun reuseLatestUserMessageAsDraft() {
+        val current = state.value
+        if (current.isStreaming) {
+            showError("generation_in_progress")
+            return
+        }
+        if (rejectUserMutationWhileActiveChatMessagesLoading()) return
+        val latestUserMessage = current.messages.lastOrNull {
+            it.role == "user" && it.content.isNotBlank()
+        } ?: run {
+            showError("reuse_message_unavailable")
+            return
+        }
+        if (latestUserMessage.attachments.isNotEmpty()) {
+            showError("reuse_message_unavailable")
+            return
+        }
+        clearPendingSuggestions()
+        val cleanDraft = persistComposerDraft(latestUserMessage.content)
+        mutableState.update {
+            it.copy(
+                chatInput = cleanDraft,
+                pendingAttachments = emptyList(),
+                isLoadingSuggestions = false,
+                error = null,
+            )
+        }
     }
 
     fun cancelGeneration() {
@@ -1905,7 +2093,7 @@ class RuntimeClientViewModel internal constructor(
                     payload = AuthResponsePayload(
                         deviceId = identity.deviceId,
                         nonce = payload.nonce,
-                        signature = identity.sign(payload.nonce.encodeToByteArray()),
+                        signature = identity.signAuthenticationResponse(payload.nonce),
                     ),
                     requestId = envelope.requestId,
                 )
@@ -1970,7 +2158,7 @@ class RuntimeClientViewModel internal constructor(
             clearPersistedPendingPairingRoute()
             mutableState.update {
                 it.withClearedPendingPairing().copy(
-                    error = RuntimeUiError("pairing_rejected", payload.message),
+                    error = runtimeUiError("pairing_rejected", payload.message),
                 )
             }
             return
@@ -2250,7 +2438,7 @@ class RuntimeClientViewModel internal constructor(
                 mutableState.update {
                     it.copy(
                         installingModelId = if (it.installingModelId == modelId) null else it.installingModelId,
-                        error = RuntimeUiError("model_install_failed", payload.message),
+                        error = runtimeUiError("model_install_failed", payload.message),
                     )
                 }
             }
@@ -2293,6 +2481,7 @@ class RuntimeClientViewModel internal constructor(
         val expectedSessionId = pendingChatMessagesSessionId
         pendingChatMessagesRequestId = null
         pendingChatMessagesSessionId = null
+        clearChatMessagesLoading(expectedSessionId)
         val payload = decodePayload(ChatMessagesListResultPayload.serializer(), envelope.payload) ?: return
         if (expectedSessionId != null && expectedSessionId != payload.sessionId) return
         publishPersistedRuntimeData(
@@ -2530,7 +2719,11 @@ class RuntimeClientViewModel internal constructor(
             if (payload?.code.isPairingRequiredRuntimeCode()) {
                 isSessionAuthenticated = false
                 cancelRuntimeRouteRefreshLease()
-                mutableState.value = state.value.withRuntimeError(envelope, payload, pendingModelPullRequestId)
+                mutableState.value = state.value.withRuntimeError(
+                    envelope,
+                    payload?.withoutRouteRefreshSensitiveDetail(),
+                    pendingModelPullRequestId,
+                )
             } else {
                 scheduleRuntimeRouteRefreshRetry()
             }
@@ -2596,6 +2789,7 @@ class RuntimeClientViewModel internal constructor(
                 }
                 if (isRuntimeHistoryRequest) {
                     clearPendingRuntimeHistoryRequests()
+                    showError("chat_history_load_failed", error.message)
                     return@onFailure
                 }
                 if (isMemoryListRequest) {
@@ -2631,7 +2825,7 @@ class RuntimeClientViewModel internal constructor(
                     installingModelId = null,
                     activeRequestId = null,
                     messages = cleanedMessages,
-                    error = RuntimeUiError("send_failed", error.message)
+                    error = runtimeUiError("send_failed", error.message)
                 )
                 if (isActiveChatSend) {
                     persistActiveMessages(cleanedMessages, clearError = false)
@@ -2665,12 +2859,18 @@ class RuntimeClientViewModel internal constructor(
     }
 
     private fun showError(code: String, detail: String? = null) {
-        mutableState.update { it.copy(error = RuntimeUiError(code, detail)) }
+        mutableState.update { it.copy(error = runtimeUiError(code, detail)) }
     }
 
     private fun rejectUserMutationWhileStreaming(): Boolean {
         if (!state.value.isStreaming) return false
         showError("generation_in_progress")
+        return true
+    }
+
+    private fun rejectUserMutationWhileActiveChatMessagesLoading(): Boolean {
+        if (!state.value.isLoadingActiveChatMessages) return false
+        showError("chat_history_loading")
         return true
     }
 
@@ -2713,9 +2913,22 @@ class RuntimeClientViewModel internal constructor(
     }
 
     private fun clearPendingRuntimeHistoryRequests() {
+        val loadingSessionId = pendingChatMessagesSessionId
         pendingChatSessionsRequestId = null
         pendingChatMessagesRequestId = null
         pendingChatMessagesSessionId = null
+        clearChatMessagesLoading(loadingSessionId)
+    }
+
+    private fun clearChatMessagesLoading(sessionId: String?) {
+        if (sessionId == null) return
+        mutableState.update { current ->
+            if (current.loadingChatSessionId == sessionId) {
+                current.copy(loadingChatSessionId = null)
+            } else {
+                current
+            }
+        }
     }
 
     private fun canSendRuntimeMemoryCommand(): Boolean {
@@ -2768,6 +2981,7 @@ class RuntimeClientViewModel internal constructor(
         data: PersistedRuntimeData,
         save: Boolean,
         clearError: Boolean = true,
+        syncComposerDraft: Boolean = false,
     ) {
         val cleanData = data.sanitized()
         persistedRuntimeData = cleanData
@@ -2779,8 +2993,16 @@ class RuntimeClientViewModel internal constructor(
                 chatSessions = runtimeChatSessions(cleanData),
                 archivedChatSessions = archivedRuntimeChatSessions(cleanData),
                 activeChatSessionId = cleanData.activeSessionId,
+                loadingChatSessionId = it.loadingChatSessionId?.takeIf { loadingId ->
+                    loadingId == cleanData.activeSessionId
+                },
                 selectedModelId = cleanData.selectedModelId,
                 selectedEmbeddingModelId = cleanData.selectedEmbeddingModelId,
+                chatInput = if (syncComposerDraft) {
+                    cleanData.composerDraftForSession(cleanData.activeSessionId)
+                } else {
+                    it.chatInput
+                },
                 messages = activeSessionMessages(cleanData),
                 memoryEntries = runtimeMemoryEntries(cleanData),
                 selectedLanguageTag = cleanData.appLanguageTag,
@@ -2790,6 +3012,20 @@ class RuntimeClientViewModel internal constructor(
                 error = if (clearError) null else it.error,
             )
         }
+    }
+
+    private fun persistComposerDraft(
+        value: String,
+        sessionId: String? = state.value.activeChatSessionId,
+    ): String {
+        val cleanData = persistedRuntimeData.withComposerDraft(value, sessionId = sessionId)
+        persistedRuntimeData = cleanData
+        localStore.save(cleanData)
+        return cleanData.composerDraftForSession(sessionId)
+    }
+
+    private fun clearComposerDraft(sessionId: String? = state.value.activeChatSessionId): String {
+        return persistComposerDraft("", sessionId = sessionId)
     }
 
     private fun persistSelectedModel(modelId: String?, publish: Boolean = true) {
@@ -2971,6 +3207,38 @@ internal enum class SelectedModelSendState {
     Ready,
     Missing,
     NotInstalled,
+}
+
+internal data class RetryLatestAssistantResponseCandidate(
+    val contextMessages: List<RuntimeChatMessage>,
+    val precedingUserMessage: RuntimeChatMessage,
+)
+
+internal fun retryLatestAssistantResponseCandidate(
+    sourceState: RuntimeUiState,
+): RetryLatestAssistantResponseCandidate? {
+    if (sourceState.isStreaming) return null
+
+    val latestAssistantIndex = sourceState.messages.indexOfLast {
+        it.role == "assistant" && it.content.isNotBlank()
+    }
+    if (latestAssistantIndex < 0) return null
+    val laterChatMessage = sourceState.messages
+        .drop(latestAssistantIndex + 1)
+        .any { (it.role == "user" || it.role == "assistant") && it.content.isNotBlank() }
+    if (laterChatMessage) return null
+
+    val precedingMessages = sourceState.messages.take(latestAssistantIndex)
+    val precedingUserIndex = precedingMessages.indexOfLast {
+        it.role == "user" && it.content.isNotBlank()
+    }
+    if (precedingUserIndex < 0) return null
+
+    val contextMessages = precedingMessages.take(precedingUserIndex + 1)
+    return RetryLatestAssistantResponseCandidate(
+        contextMessages = contextMessages,
+        precedingUserMessage = contextMessages[precedingUserIndex],
+    )
 }
 
 internal fun runtimeProviderStatuses(payload: RuntimeHealthPayload): List<RuntimeProviderStatus> {
@@ -3245,22 +3513,22 @@ internal fun runtimePublicKeyMatches(expected: String?, actual: String?): Boolea
 internal fun RuntimeConnectionFailure.toRuntimeUiError(): RuntimeUiError {
     return when (reason) {
         RuntimeConnectionFailureReason.NoRoutesResolved ->
-            RuntimeUiError("no_route", message)
+            runtimeUiError("no_route", message)
         RuntimeConnectionFailureReason.NoConnectableRoute -> {
             if (hasExpiredRemoteRoute()) {
-                RuntimeUiError(
+                runtimeUiError(
                     code = "remote_route_expired",
                     detail = message,
                     diagnosticCode = routeDiagnosticCode(),
                 )
             } else if (hasUnavailableRemoteRoutePlaceholders()) {
-                RuntimeUiError(
+                runtimeUiError(
                     code = "remote_routes_unavailable",
                     detail = message,
                     diagnosticCode = routeDiagnosticCode(),
                 )
             } else {
-                RuntimeUiError(
+                runtimeUiError(
                     code = "no_connectable_route",
                     detail = message,
                     diagnosticCode = routeDiagnosticCode(),
@@ -3269,7 +3537,7 @@ internal fun RuntimeConnectionFailure.toRuntimeUiError(): RuntimeUiError {
         }
         RuntimeConnectionFailureReason.RouteAttemptsFailed -> {
             val diagnosticCode = routeDiagnosticCode()
-            RuntimeUiError(
+            runtimeUiError(
                 code = if (diagnosticCode == "route_diagnostic_relay_failed") {
                     "remote_route_unreachable"
                 } else {
@@ -3340,7 +3608,7 @@ private fun RuntimeConnectionFailure.routeDiagnosticCode(): String? {
 private fun Throwable.connectionUiError(): RuntimeUiError {
     return when (this) {
         is RuntimeConnectionFailure -> toRuntimeUiError()
-        else -> RuntimeUiError("connection_failed", message)
+        else -> runtimeUiError("connection_failed", message)
     }
 }
 
@@ -3629,6 +3897,10 @@ internal fun trustedRuntimeFromRouteRefreshPayload(
     val fingerprint = current.fingerprint ?: return null
     if (payload.runtimeDeviceId != current.deviceId) return null
     if (payload.runtimeKeyFingerprint != fingerprint) return null
+    val relayScope = payload.validatedRouteRefreshRelayScopeOrNull()
+        ?: run {
+            if (payload.relayScope == null) null else return null
+        }
     val candidateRuntime = current.copy(
         endpointHint = null,
         relayHost = payload.relayHost,
@@ -3637,7 +3909,7 @@ internal fun trustedRuntimeFromRouteRefreshPayload(
         relaySecret = payload.relaySecret,
         relayExpiresAtEpochMillis = payload.relayExpiresAtEpochMillis,
         relayNonce = payload.relayNonce,
-        relayScope = payload.relayScope,
+        relayScope = relayScope,
     )
     if (!candidateRuntime.hasRelayRoute(nowEpochMillis)) return null
     return TrustedRuntime(
@@ -3654,8 +3926,15 @@ internal fun trustedRuntimeFromRouteRefreshPayload(
         relaySecret = payload.relaySecret,
         relayExpiresAtEpochMillis = payload.relayExpiresAtEpochMillis,
         relayNonce = payload.relayNonce,
-        relayScope = payload.relayScope,
+        relayScope = relayScope,
     )
+}
+
+private val ROUTE_REFRESH_RELAY_SCOPES = setOf("remote", "private_overlay", "usb_reverse")
+
+private fun RouteRefreshPayload.validatedRouteRefreshRelayScopeOrNull(): String? {
+    val rawScope = relayScope ?: return null
+    return rawScope.takeIf { it in ROUTE_REFRESH_RELAY_SCOPES }
 }
 
 internal sealed class RuntimePairingQrParseResult {
@@ -3731,15 +4010,15 @@ internal fun pairingQrParseUiError(error: Throwable): RuntimeUiError {
     return when (error.message) {
         LOCAL_DIRECT_ENDPOINT_QR_ERROR -> RuntimeUiError(
             code = "pairing_direct_route_rejected",
-            detail = error.message,
             diagnosticCode = "route_diagnostic_direct_qr_rejected",
+            technicalDetail = error.message,
         )
         RELAY_HOST_UNREACHABLE_QR_ERROR -> RuntimeUiError(
             code = "pairing_relay_route_rejected",
-            detail = error.message,
             diagnosticCode = "route_diagnostic_relay_qr_unreachable",
+            technicalDetail = error.message,
         )
-        else -> RuntimeUiError("invalid_pairing_qr", error.message)
+        else -> runtimeUiError("invalid_pairing_qr", error.message)
     }
 }
 
@@ -4080,7 +4359,7 @@ internal fun RuntimeUiState.withRuntimeError(
 ): RuntimeUiState {
     val isActiveChatError = activeRequestId == envelope.requestId
     val isModelPullError = pendingModelPullRequestId == envelope.requestId
-    val runtimeError = payload?.let { error -> RuntimeUiError(error.code, error.message) }
+    val runtimeError = payload?.let { error -> runtimeUiError(error.code, error.message) }
         ?: RuntimeUiError("runtime_error")
     val updated = copy(
         messages = if (isActiveChatError) {
@@ -4098,7 +4377,7 @@ internal fun RuntimeUiState.withRuntimeError(
         error = runtimeError,
     )
     return if (runtimeError.code.isPairingRequiredRuntimeCode()) {
-        updated.withPairingRequiredRuntimeState(detail = runtimeError.detail)
+        updated.withPairingRequiredRuntimeState(detail = runtimeError.technicalDetail ?: runtimeError.detail)
     } else {
         updated
     }
@@ -4108,15 +4387,15 @@ internal fun RuntimeUiState.runtimeReceiveFailureUiError(error: Throwable): Runt
     if (activeRouteKind == RuntimeActiveRouteKind.Relay && error.isRelayFrameAuthenticationFailure()) {
         return RuntimeUiError(
             code = "remote_route_auth_failed",
-            detail = error.message,
             diagnosticCode = "route_diagnostic_relay_auth_failed",
+            technicalDetail = error.message,
         )
     }
-    return RuntimeUiError("receive_failed", error.message)
+    return runtimeUiError("receive_failed", error.message)
 }
 
 internal fun RuntimeUiState.withRuntimeReceiveFailure(detail: String?): RuntimeUiState =
-    withRuntimeReceiveFailure(RuntimeUiError("receive_failed", detail))
+    withRuntimeReceiveFailure(runtimeUiError("receive_failed", detail))
 
 internal fun RuntimeUiState.withRuntimeReceiveFailure(error: RuntimeUiError): RuntimeUiState {
     return copy(
@@ -4177,9 +4456,33 @@ internal fun RuntimeUiState.withPairingRequiredRuntimeState(detail: String?): Ru
         backendAvailable = null,
         backendCode = null,
         providerStatuses = emptyList(),
-        error = RuntimeUiError("pairing_required", detail),
+        error = runtimeUiError("pairing_required", detail),
     )
 }
+
+internal fun runtimeUiError(
+    code: String,
+    detail: String? = null,
+    diagnosticCode: String? = null,
+): RuntimeUiError {
+    return RuntimeUiError(
+        code = code,
+        detail = detail.takeIf { code in USER_VISIBLE_RUNTIME_ERROR_DETAIL_CODES },
+        diagnosticCode = diagnosticCode,
+        technicalDetail = detail.takeUnless { code in USER_VISIBLE_RUNTIME_ERROR_DETAIL_CODES },
+    )
+}
+
+private val USER_VISIBLE_RUNTIME_ERROR_DETAIL_CODES = setOf(
+    "attachment_too_large",
+    "attachment_read_failed",
+)
+
+private fun ErrorPayload.withoutRouteRefreshSensitiveDetail(): ErrorPayload {
+    return copy(message = ROUTE_REFRESH_PAIRING_REQUIRED_DETAIL)
+}
+
+private const val ROUTE_REFRESH_PAIRING_REQUIRED_DETAIL = "Route refresh requires pairing again."
 
 internal fun String?.isPairingRequiredRuntimeCode(): Boolean {
     return equals("pairing_required", ignoreCase = true) ||

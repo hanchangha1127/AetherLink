@@ -31,4 +31,26 @@ final class RelayHandshakeTests: XCTestCase {
         XCTAssertThrowsError(try RelayHandshake.parse("AETHERLINK_RELAY runtime \n"))
         XCTAssertThrowsError(try RelayHandshake(role: .runtime, relayID: ""))
     }
+
+    func testServerLineFramingRequiresNewlineForRelayHandshake() throws {
+        XCTAssertThrowsError(
+            try RelayServerLineFraming.decode(Data("AETHERLINK_RELAY runtime relay-1".utf8))
+        ) { error in
+            XCTAssertEqual(error as? RelayServerError, .handshakeReadFailed)
+        }
+        XCTAssertNoThrow(
+            try RelayServerLineFraming.decode(Data("AETHERLINK_RELAY runtime relay-1\n".utf8))
+        )
+    }
+
+    func testServerLineFramingRequiresNewlineForAllocationRequest() throws {
+        XCTAssertThrowsError(
+            try RelayServerLineFraming.decode(Data("AETHERLINK_RELAY allocate route-token-1".utf8))
+        ) { error in
+            XCTAssertEqual(error as? RelayServerError, .handshakeReadFailed)
+        }
+        XCTAssertNoThrow(
+            try RelayServerLineFraming.decode(Data("AETHERLINK_RELAY allocate route-token-1\n".utf8))
+        )
+    }
 }

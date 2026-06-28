@@ -43,14 +43,19 @@ object RuntimePairingPayloadParser {
 
         val query = parseQuery(uri.rawQuery)
         val version = query["version"] ?: query["v"]
-        val pairingNonce = query["pairing_nonce"] ?: query["nonce"] ?: query["n"]
+        val pairingNonce = (query["pairing_nonce"] ?: query["nonce"] ?: query["n"])
+            .requiredOpaqueQrValue("Missing pairing nonce", "Invalid pairing nonce")
         val pairingCode = query["pairing_code"] ?: query["code"] ?: query["c"]
-        val runtimeDeviceId = query["runtime_device_id"] ?: query["mac_device_id"] ?: query["device_id"] ?: query["rid"]
+        val runtimeDeviceId = (query["runtime_device_id"] ?: query["mac_device_id"] ?: query["device_id"] ?: query["rid"])
+            .requiredOpaqueQrValue("Missing runtime device id", "Invalid runtime device id")
         val runtimeName = (query["runtime_name"] ?: query["mac_name"] ?: query["name"] ?: query["rn"])
             .normalizedRuntimeName()
-        val fingerprint = query["runtime_key_fingerprint"] ?: query["fingerprint"] ?: query["cert_fingerprint"] ?: query["rf"]
-        val runtimePublicKeyBase64 = query["runtime_public_key"] ?: query["mac_public_key"] ?: query["public_key"] ?: query["rk"]
-        val routeToken = query["route_token"] ?: query["discovery_token"] ?: query["rt"]
+        val fingerprint = (query["runtime_key_fingerprint"] ?: query["fingerprint"] ?: query["cert_fingerprint"] ?: query["rf"])
+            .requiredOpaqueQrValue("Missing runtime fingerprint", "Invalid runtime fingerprint")
+        val runtimePublicKeyBase64 = (query["runtime_public_key"] ?: query["mac_public_key"] ?: query["public_key"] ?: query["rk"])
+            .optionalOpaqueQrValue("Invalid runtime public key")
+        val routeToken = (query["route_token"] ?: query["discovery_token"] ?: query["rt"])
+            .optionalOpaqueQrValue("Invalid route token")
         val host = (query["host"] ?: query["runtime_host"] ?: query["h"])?.takeIf { it.isNotBlank() }
         val rawPort = (query["port"] ?: query["runtime_port"] ?: query["p"])?.takeIf { it.isNotBlank() }
         val port = rawPort?.toIntOrNull()
@@ -76,7 +81,7 @@ object RuntimePairingPayloadParser {
                 ?: query["rendezvous_id"]
                 ?: query["network_id"]
                 ?: query["ri"]
-            )?.takeIf { it.isNotBlank() }
+            ).optionalOpaqueQrValue("Invalid relay id")
         val relayId = (explicitRelayId ?: routeToken)?.takeIf { it.isNotBlank() }
         val relaySecret = (
             query["relay_secret"]
@@ -99,13 +104,13 @@ object RuntimePairingPayloadParser {
             ?: query["route_nonce"]
             ?: query["rendezvous_nonce"]
             ?: query["rrn"]
-        val relayNonce = rawRelayNonce?.takeIf { it.isNotBlank() }
+        val relayNonce = rawRelayNonce.optionalOpaqueQrValue("Invalid relay nonce")
         val relayScope = (
             query["relay_scope"]
                 ?: query["remote_scope"]
                 ?: query["route_scope"]
                 ?: query["rsc"]
-            )?.takeIf { it.isNotBlank() }
+            ).optionalOpaqueQrValue("Invalid relay scope")
         val hasExplicitRelayField =
             relayHost != null ||
                 rawRelayPort != null ||
@@ -115,14 +120,8 @@ object RuntimePairingPayloadParser {
                 rawRelayNonce != null
 
         require(version == "1") { "Unsupported pairing QR version" }
-        require(!pairingNonce.isNullOrBlank()) { "Missing pairing nonce" }
         require(!pairingCode.isNullOrBlank()) { "Missing pairing code" }
         require(pairingCode.matches(Regex("\\d{6}"))) { "Invalid pairing code" }
-        require(!runtimeDeviceId.isNullOrBlank()) { "Missing runtime device id" }
-        require(!fingerprint.isNullOrBlank()) { "Missing runtime fingerprint" }
-        routeToken?.let {
-            require(it.none(Char::isWhitespace)) { "Invalid route token" }
-        }
         val hasDirectEndpointField = host != null || rawPort != null
         if (hasDirectEndpointField && !hasExplicitRelayField) {
             require(host != null) { "Missing local diagnostic route host" }
@@ -160,8 +159,8 @@ object RuntimePairingPayloadParser {
             runtimeDeviceId = runtimeDeviceId,
             runtimeName = runtimeName,
             fingerprint = fingerprint,
-            runtimePublicKeyBase64 = runtimePublicKeyBase64?.takeIf { it.isNotBlank() },
-            routeToken = routeToken?.takeIf { it.isNotBlank() },
+            runtimePublicKeyBase64 = runtimePublicKeyBase64,
+            routeToken = routeToken,
             host = host.takeIf { keepDiagnosticDirectEndpoint },
             port = port.takeIf { keepDiagnosticDirectEndpoint },
             relayHost = relayHost,
@@ -196,6 +195,21 @@ object RuntimePairingPayloadParser {
 
     private fun String.decodeLegacyNamePlus(): String =
         replace('+', ' ')
+
+    private fun String?.requiredOpaqueQrValue(
+        missingMessage: String,
+        invalidMessage: String,
+    ): String {
+        val value = optionalOpaqueQrValue(invalidMessage)
+        require(value != null) { missingMessage }
+        return value
+    }
+
+    private fun String?.optionalOpaqueQrValue(invalidMessage: String): String? {
+        val value = this?.takeIf { it.isNotBlank() } ?: return null
+        require(value == value.trim() && value.none(Char::isWhitespace)) { invalidMessage }
+        return value
+    }
 
     private fun String?.normalizedRuntimeName(): String =
         this

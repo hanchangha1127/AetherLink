@@ -1221,33 +1221,17 @@ func providerStatusTechnicalDetailsAccessibilityLabel(providerName: String) -> S
 }
 
 func providerStatusTechnicalDetailsAccessibilityValue(isExpanded: Bool) -> String {
-    switch AetherLinkAppLanguage.selected {
-    case .english:
-        return isExpanded ? "Provider details expanded" : "Provider details collapsed"
-    case .korean:
-        return isExpanded ? "제공자 세부 정보 펼쳐짐" : "제공자 세부 정보 접힘"
-    case .japanese:
-        return isExpanded ? "プロバイダー詳細は展開済み" : "プロバイダー詳細は折りたたみ済み"
-    case .simplifiedChinese:
-        return isExpanded ? "提供方详情已展开" : "提供方详情已折叠"
-    case .french:
-        return isExpanded ? "Détails du fournisseur développés" : "Détails du fournisseur réduits"
-    }
+    NSLocalizedString(
+        isExpanded ? "Provider details expanded" : "Provider details collapsed",
+        comment: ""
+    )
 }
 
 func providerStatusTechnicalDetailsAccessibilityHint(isExpanded: Bool) -> String {
-    switch AetherLinkAppLanguage.selected {
-    case .english:
-        return isExpanded ? "Collapse to hide provider details." : "Expand to show provider details."
-    case .korean:
-        return isExpanded ? "제공자 세부 정보를 숨기려면 접으세요." : "제공자 세부 정보를 보려면 펼치세요."
-    case .japanese:
-        return isExpanded ? "プロバイダー詳細を非表示にするには折りたたみます。" : "プロバイダー詳細を表示するには展開します。"
-    case .simplifiedChinese:
-        return isExpanded ? "折叠以隐藏提供方详情。" : "展开以显示提供方详情。"
-    case .french:
-        return isExpanded ? "Réduire pour masquer les détails du fournisseur." : "Développer pour afficher les détails du fournisseur."
-    }
+    NSLocalizedString(
+        isExpanded ? "Collapse to hide provider details." : "Expand to show provider details.",
+        comment: ""
+    )
 }
 
 func providerStatusPillAccessibilityLabel(providerName: String, status: String) -> String {

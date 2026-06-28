@@ -43,6 +43,23 @@ final class RuntimeIdentityKeyStoreTests: XCTestCase {
         XCTAssertFalse(first.publicKeyBase64.isEmpty)
         XCTAssertEqual(first.fingerprint, try fingerprint(forPublicKeyBase64: first.publicKeyBase64))
         XCTAssertEqual(try filePermissions(at: fileURL), 0o600)
+        XCTAssertEqual(try directoryPermissions(at: fileURL.deletingLastPathComponent()), 0o700)
+    }
+
+    func testFileStoreCorrectsBroadPermissionsWithoutRotatingIdentity() throws {
+        let fileURL = temporaryIdentityFileURL()
+        let store = FileRuntimeIdentityKeyStore(fileURL: fileURL)
+        let first = try store.loadOrCreate()
+        let directoryURL = fileURL.deletingLastPathComponent()
+
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: directoryURL.path)
+        try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: fileURL.path)
+
+        let second = try FileRuntimeIdentityKeyStore(fileURL: fileURL).loadOrCreate()
+
+        XCTAssertEqual(first, second)
+        XCTAssertEqual(try filePermissions(at: fileURL), 0o600)
+        XCTAssertEqual(try directoryPermissions(at: directoryURL), 0o700)
     }
 
     func testFileStoreSignsVerifiableAuthChallenge() throws {
@@ -109,6 +126,11 @@ final class RuntimeIdentityKeyStoreTests: XCTestCase {
 
     private func filePermissions(at fileURL: URL) throws -> Int {
         let attributes = try FileManager.default.attributesOfItem(atPath: fileURL.path)
+        return try XCTUnwrap(attributes[.posixPermissions] as? Int) & 0o777
+    }
+
+    private func directoryPermissions(at directoryURL: URL) throws -> Int {
+        let attributes = try FileManager.default.attributesOfItem(atPath: directoryURL.path)
         return try XCTUnwrap(attributes[.posixPermissions] as? Int) & 0o777
     }
 }

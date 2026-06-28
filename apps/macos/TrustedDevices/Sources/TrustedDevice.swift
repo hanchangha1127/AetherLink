@@ -15,20 +15,27 @@ public struct TrustedDevice: Codable, Identifiable, Equatable, Sendable {
 }
 
 public actor TrustedDeviceStore {
+    private static let directoryPermissions = 0o700
+    private static let filePermissions = 0o600
+
     private let fileURL: URL
+    private let fileManager: FileManager
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
 
-    public init(fileURL: URL? = nil) {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+    public init(fileURL: URL? = nil, fileManager: FileManager = .default) {
+        let base = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         let directory = base.appendingPathComponent("AetherLink", isDirectory: true)
         self.fileURL = fileURL ?? directory.appendingPathComponent("trusted-devices.json")
+        self.fileManager = fileManager
         encoder.dateEncodingStrategy = .iso8601
         decoder.dateDecodingStrategy = .iso8601
     }
 
     public func load() throws -> [TrustedDevice] {
-        guard FileManager.default.fileExists(atPath: fileURL.path) else { return [] }
+        guard fileManager.fileExists(atPath: fileURL.path) else { return [] }
+        try secureDirectory()
+        try secureFile()
         let data = try Data(contentsOf: fileURL)
         return try decoder.decode([TrustedDevice].self, from: data)
     }
@@ -45,10 +52,28 @@ public actor TrustedDeviceStore {
     }
 
     private func save(_ devices: [TrustedDevice]) throws {
-        try FileManager.default.createDirectory(
-            at: fileURL.deletingLastPathComponent(),
-            withIntermediateDirectories: true
-        )
+        try secureDirectory()
         try encoder.encode(devices).write(to: fileURL, options: [.atomic])
+        try secureFile()
+    }
+
+    private func secureDirectory() throws {
+        let directoryURL = fileURL.deletingLastPathComponent()
+        try fileManager.createDirectory(
+            at: directoryURL,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: Self.directoryPermissions]
+        )
+        try fileManager.setAttributes(
+            [.posixPermissions: Self.directoryPermissions],
+            ofItemAtPath: directoryURL.standardizedFileURL.path
+        )
+    }
+
+    private func secureFile() throws {
+        try fileManager.setAttributes(
+            [.posixPermissions: Self.filePermissions],
+            ofItemAtPath: fileURL.standardizedFileURL.path
+        )
     }
 }

@@ -1,4 +1,5 @@
 import CompanionCore
+import Foundation
 import SwiftUI
 
 @MainActor
@@ -6,6 +7,16 @@ func shouldShowRouteDiagnosticsPanel(model: CompanionAppModel) -> Bool {
     model.hasDevelopmentRelayRoute
         || model.bootstrapRelaySettings.isEnabled
         || model.remoteRoutePreparationIssue != nil
+}
+
+@MainActor
+func shouldShowPairingRouteSetupPanel(model: CompanionAppModel) -> Bool {
+    shouldShowRouteDiagnosticsPanel(model: model)
+        || (
+            model.pairingSession == nil
+                && !model.canPrepareRemoteRelayRouteAutomatically
+                && !model.hasDevelopmentRelayRoute
+        )
 }
 
 struct RemoteRelayRoutePanel: View {
@@ -22,6 +33,7 @@ struct RemoteRelayRoutePanel: View {
     @State private var messageTone = StatusTone.neutral
     @State private var diagnosticMessage: String?
     @State private var isAdvancedRouteSettingsExpanded = false
+    @State private var isRemoveBootstrapRelayConfirmationPresented = false
     @State private var isRemoveSavedConnectionDetailsConfirmationPresented = false
 
     var body: some View {
@@ -62,6 +74,37 @@ struct RemoteRelayRoutePanel: View {
             syncFromModel()
         }
         .confirmationDialog(
+            NSLocalizedString("Remove saved bootstrap relay?", comment: ""),
+            isPresented: $isRemoveBootstrapRelayConfirmationPresented,
+            titleVisibility: .visible
+        ) {
+            Button(NSLocalizedString("Remove Bootstrap Relay", comment: ""), role: .destructive) {
+                model.clearBootstrapRelay()
+                syncFromModel()
+                diagnosticMessage = nil
+                message = NSLocalizedString("Saved bootstrap relay removed.", comment: "")
+                messageTone = .neutral
+            }
+            .accessibilityLabel(
+                Text(
+                    removeSavedBootstrapRelayAccessibilityLabel(
+                        endpoints: model.bootstrapRelaySettings.endpointLabel
+                    )
+                )
+            )
+            .accessibilityHint(Text(removeSavedBootstrapRelayAccessibilityHint()))
+            Button(NSLocalizedString("Cancel", comment: ""), role: .cancel) {}
+                .accessibilityLabel(
+                    Text(
+                        cancelRemoveSavedBootstrapRelayAccessibilityLabel(
+                            endpoints: model.bootstrapRelaySettings.endpointLabel
+                        )
+                    )
+                )
+        } message: {
+            Text(NSLocalizedString("Saved bootstrap relay settings will be removed. Devices on another network may need a fresh pairing QR before route preparation can run again.", comment: ""))
+        }
+        .confirmationDialog(
             NSLocalizedString("Remove saved connection details?", comment: ""),
             isPresented: $isRemoveSavedConnectionDetailsConfirmationPresented,
             titleVisibility: .visible
@@ -69,6 +112,7 @@ struct RemoteRelayRoutePanel: View {
             Button(NSLocalizedString("Remove Saved Connection Details", comment: ""), role: .destructive) {
                 model.clearDevelopmentRelay()
                 syncFromModel()
+                diagnosticMessage = nil
                 message = NSLocalizedString("Saved connection details removed.", comment: "")
                 messageTone = .neutral
             }
@@ -79,6 +123,7 @@ struct RemoteRelayRoutePanel: View {
                     )
                 )
             )
+            .accessibilityHint(Text(removeSavedConnectionDetailsAccessibilityHint()))
             Button(NSLocalizedString("Cancel", comment: ""), role: .cancel) {}
                 .accessibilityLabel(
                     Text(
@@ -155,7 +200,24 @@ struct RemoteRelayRoutePanel: View {
                         SecureField(NSLocalizedString("Bootstrap allocation token", comment: ""), text: $bootstrapAllocationToken, prompt: Text(NSLocalizedString("Optional", comment: "")))
                             .textFieldStyle(.roundedBorder)
                             .accessibilityLabel(Text(NSLocalizedString("Bootstrap allocation token", comment: "")))
-                            .accessibilityValue(Text(connectionRecoveryOptionalSecureFieldAccessibilityValue(bootstrapAllocationToken)))
+                            .accessibilityValue(
+                                Text(
+                                    connectionRecoveryBootstrapAllocationTokenAccessibilityValue(
+                                        endpoints: bootstrapEndpoints,
+                                        allocationToken: bootstrapAllocationToken
+                                    )
+                                )
+                            )
+                        if let allocationTokenWarning = connectionRecoveryBootstrapAllocationTokenWarning(
+                            endpoints: bootstrapEndpoints,
+                            allocationToken: bootstrapAllocationToken
+                        ) {
+                            Label(allocationTokenWarning, systemImage: "exclamationmark.triangle")
+                                .font(.caption)
+                                .foregroundStyle(.orange)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .accessibilityLabel(Text(allocationTokenWarning))
+                        }
                         Toggle(isOn: $bootstrapAllowsPrivateOverlay) {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(NSLocalizedString("Use Private Overlay Route", comment: ""))
@@ -177,8 +239,32 @@ struct RemoteRelayRoutePanel: View {
                         }
                         .buttonStyle(.bordered)
                         .help(connectionRecoverySaveBootstrapRelayActionAccessibilityHint())
-                        .accessibilityValue(Text(connectionRecoverySaveBootstrapRelayActionAccessibilityValue(endpoints: bootstrapEndpoints)))
+                        .accessibilityValue(
+                            Text(
+                                connectionRecoverySaveBootstrapRelayActionAccessibilityValue(
+                                    endpoints: bootstrapEndpoints,
+                                    allocationToken: bootstrapAllocationToken
+                                )
+                            )
+                        )
                         .accessibilityHint(Text(connectionRecoverySaveBootstrapRelayActionAccessibilityHint()))
+                        if model.bootstrapRelaySettings.isEnabled {
+                            Button(role: .destructive) {
+                                isRemoveBootstrapRelayConfirmationPresented = true
+                            } label: {
+                                Label(NSLocalizedString("Remove Bootstrap Relay", comment: ""), systemImage: "xmark.circle")
+                            }
+                            .buttonStyle(.bordered)
+                            .accessibilityLabel(
+                                Text(
+                                    removeSavedBootstrapRelayAccessibilityLabel(
+                                        endpoints: model.bootstrapRelaySettings.endpointLabel
+                                    )
+                                )
+                            )
+                            .help(removeSavedBootstrapRelayAccessibilityHint())
+                            .accessibilityHint(Text(removeSavedBootstrapRelayAccessibilityHint()))
+                        }
                     }
 
                     Divider()
@@ -253,6 +339,8 @@ struct RemoteRelayRoutePanel: View {
                             }
                             .buttonStyle(.bordered)
                             .accessibilityLabel(Text(removeSavedConnectionDetailsAccessibilityLabel(endpoint: settings.endpointLabel)))
+                            .help(removeSavedConnectionDetailsAccessibilityHint())
+                            .accessibilityHint(Text(removeSavedConnectionDetailsAccessibilityHint()))
                         }
                     }
                 }
@@ -752,6 +840,36 @@ func cancelRemoveSavedConnectionDetailsAccessibilityLabel(endpoint: String?) -> 
     )
 }
 
+func removeSavedConnectionDetailsAccessibilityHint() -> String {
+    NSLocalizedString("Remove saved fallback connection details used for future pairing QR routes.", comment: "")
+}
+
+func removeSavedBootstrapRelayAccessibilityLabel(endpoints: String?) -> String {
+    let trimmedEndpoints = endpoints?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    let resolvedEndpoints = trimmedEndpoints.isEmpty
+        ? NSLocalizedString("saved bootstrap relay", comment: "")
+        : trimmedEndpoints
+    return String(
+        format: NSLocalizedString("Remove bootstrap relay settings for %@", comment: ""),
+        resolvedEndpoints
+    )
+}
+
+func removeSavedBootstrapRelayAccessibilityHint() -> String {
+    NSLocalizedString("Remove saved bootstrap relay settings used to prepare pairing QR connection details.", comment: "")
+}
+
+func cancelRemoveSavedBootstrapRelayAccessibilityLabel(endpoints: String?) -> String {
+    let trimmedEndpoints = endpoints?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    let resolvedEndpoints = trimmedEndpoints.isEmpty
+        ? NSLocalizedString("saved bootstrap relay", comment: "")
+        : trimmedEndpoints
+    return String(
+        format: NSLocalizedString("Cancel removing bootstrap relay settings for %@", comment: ""),
+        resolvedEndpoints
+    )
+}
+
 func connectionRecoveryTextFieldAccessibilityValue(_ value: String) -> String {
     value.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
         ?? NSLocalizedString("Empty", comment: "")
@@ -797,10 +915,34 @@ func connectionRecoverySaveBootstrapRelayActionAccessibilityHint() -> String {
     NSLocalizedString("Save bootstrap relay settings for future pairing QR connection details.", comment: "")
 }
 
-func connectionRecoverySaveBootstrapRelayActionAccessibilityValue(endpoints: String) -> String {
-    endpoints.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        ? NSLocalizedString("Will remove saved bootstrap relay", comment: "")
-        : NSLocalizedString("Ready", comment: "")
+func connectionRecoveryBootstrapAllocationTokenWarning(endpoints: String, allocationToken: String) -> String? {
+    guard allocationToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        return nil
+    }
+    guard bootstrapRelayEndpointsNeedAllocationToken(endpoints) else {
+        return nil
+    }
+    return NSLocalizedString("Add an allocation token before using a non-local bootstrap relay.", comment: "")
+}
+
+func connectionRecoveryBootstrapAllocationTokenAccessibilityValue(endpoints: String, allocationToken: String) -> String {
+    if connectionRecoveryBootstrapAllocationTokenWarning(endpoints: endpoints, allocationToken: allocationToken) != nil {
+        return NSLocalizedString("Missing token for non-local bootstrap relay", comment: "")
+    }
+    return connectionRecoveryOptionalSecureFieldAccessibilityValue(allocationToken)
+}
+
+func connectionRecoverySaveBootstrapRelayActionAccessibilityValue(
+    endpoints: String,
+    allocationToken: String = ""
+) -> String {
+    if endpoints.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        return NSLocalizedString("Will remove saved bootstrap relay", comment: "")
+    }
+    if connectionRecoveryBootstrapAllocationTokenWarning(endpoints: endpoints, allocationToken: allocationToken) != nil {
+        return NSLocalizedString("Missing token for non-local bootstrap relay", comment: "")
+    }
+    return NSLocalizedString("Ready", comment: "")
 }
 
 func connectionRecoverySaveConnectionActionAccessibilityHint() -> String {
@@ -880,4 +1022,102 @@ private func normalizedRelayHost(_ value: String) -> String? {
         return unbracketed.isEmpty ? nil : unbracketed
     }
     return trimmed
+}
+
+func bootstrapRelayEndpointsNeedAllocationToken(_ endpoints: String) -> Bool {
+    bootstrapRelayEndpointCandidates(endpoints).contains { endpoint in
+        guard let host = bootstrapRelayHost(from: endpoint) else {
+            return true
+        }
+        return bootstrapRelayHostRequiresAllocationToken(host)
+    }
+}
+
+private func bootstrapRelayEndpointCandidates(_ endpoints: String) -> [String] {
+    endpoints
+        .split { character in
+            character == "," || character == ";" || character.isNewline
+        }
+        .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        .filter { !$0.isEmpty }
+}
+
+private func bootstrapRelayHost(from endpoint: String) -> String? {
+    let trimmed = endpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return nil }
+
+    if trimmed.contains("://") {
+        return URLComponents(string: trimmed)?.host?.nilIfEmpty
+    }
+
+    let endpointWithoutPath = trimmed.split { character in
+        character == "/" || character == "?" || character == "#"
+    }.first.map(String.init) ?? trimmed
+    let endpointWithoutUserInfo = endpointWithoutPath.split(separator: "@").last.map(String.init) ?? endpointWithoutPath
+
+    if endpointWithoutUserInfo.hasPrefix("["),
+       let closingBracket = endpointWithoutUserInfo.firstIndex(of: "]") {
+        let hostStart = endpointWithoutUserInfo.index(after: endpointWithoutUserInfo.startIndex)
+        return String(endpointWithoutUserInfo[hostStart..<closingBracket]).nilIfEmpty
+    }
+
+    let colonCount = endpointWithoutUserInfo.reduce(0) { count, character in
+        character == ":" ? count + 1 : count
+    }
+    if colonCount == 1,
+       let separator = endpointWithoutUserInfo.firstIndex(of: ":") {
+        return String(endpointWithoutUserInfo[..<separator]).nilIfEmpty
+    }
+    return endpointWithoutUserInfo.nilIfEmpty
+}
+
+private func bootstrapRelayHostRequiresAllocationToken(_ host: String) -> Bool {
+    let normalizedHost = host
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+        .trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
+        .lowercased()
+        .split(separator: "%", maxSplits: 1)
+        .first
+        .map(String.init) ?? ""
+    guard !normalizedHost.isEmpty else {
+        return false
+    }
+    if normalizedHost == "localhost"
+        || normalizedHost.hasSuffix(".localhost")
+        || normalizedHost.hasSuffix(".local") {
+        return false
+    }
+    if let octets = bootstrapRelayIPv4Octets(normalizedHost) {
+        if octets == [0, 0, 0, 0] || octets[0] == 127 {
+            return false
+        }
+        if octets[0] == 169 && octets[1] == 254 {
+            return false
+        }
+        return true
+    }
+    if normalizedHost == "::"
+        || normalizedHost == "::1"
+        || normalizedHost == "0:0:0:0:0:0:0:1"
+        || normalizedHost.hasPrefix("fe80:") {
+        return false
+    }
+    return true
+}
+
+private func bootstrapRelayIPv4Octets(_ host: String) -> [Int]? {
+    let parts = host.split(separator: ".", omittingEmptySubsequences: false)
+    guard parts.count == 4 else {
+        return nil
+    }
+    let octets = parts.compactMap { part -> Int? in
+        guard !part.isEmpty, part.allSatisfy(\.isNumber) else {
+            return nil
+        }
+        guard let value = Int(part), (0...255).contains(value) else {
+            return nil
+        }
+        return value
+    }
+    return octets.count == 4 ? octets : nil
 }

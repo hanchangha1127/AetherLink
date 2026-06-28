@@ -16,6 +16,7 @@
     <string name="new_chat_state_wait_for_stream">开始新聊天前，请等待当前回复完成或取消它。</string>
     <string name="new_chat_state_pairing_required">开始新聊天前，请先与 AetherLink Runtime 配对。</string>
     <string name="chat_destination_state_ready">可以打开聊天。</string>
+    <string name="settings_destination_state_ready">可以打开设置。</string>
     <string name="previous_chats">历史聊天</string>
     <string name="no_previous_chats">还没有历史聊天。</string>
     <string name="chat_search_label">搜索聊天</string>
@@ -326,6 +327,7 @@
     <string name="empty_chat_no_model">发送前请选择模型。</string>
     <string name="empty_chat_streaming_title">正在响应</string>
     <string name="empty_chat_streaming">正在从 AetherLink Runtime 接收流式回答。</string>
+    <string name="loading_chat_messages">正在加载聊天...</string>
     <string name="streaming">流式传输中</string>
     <string name="streaming_detail">正在从 AetherLink Runtime 接收流式回答。</string>
     <string name="chat_status_connected">已连接</string>
@@ -347,6 +349,7 @@
     <string name="chat_hint_install_model">发送前请先安装模型，或选择已安装的模型。</string>
     <string name="chat_hint_select_vision_model">发送图片前请选择支持视觉的模型。</string>
     <string name="chat_hint_wait_for_stream">请等待当前响应完成或取消它。</string>
+    <string name="chat_hint_loading_chat">请等待此聊天加载完成。</string>
     <string name="chat_hint_enter_message">输入要发送的消息。</string>
     <string name="chat_hint_ready">已准备好发送。</string>
     <string name="chat_hint_ready_with_attachments">已准备好发送。%1$s</string>
@@ -369,10 +372,18 @@
     <string name="action_use_suggested_question">插入建议问题</string>
     <string name="suggested_question_state_wait_for_stream">使用建议问题前，请等待当前响应完成。</string>
     <string name="copy_message">复制消息</string>
+    <string name="regenerate_response">重新生成回复</string>
+    <string name="regenerate_response_state_ready">可以重新生成最新回复。</string>
+    <string name="reuse_message">用作草稿</string>
+    <string name="reuse_message_state_ready">可以将此消息用作草稿。</string>
     <string name="copy_code_block">复制代码块</string>
     <string name="copy_code_block_named">复制 %1$s 代码块 %2$d</string>
     <string name="copy_code_block_numbered">复制代码块 %1$d</string>
     <string name="message_copied">已复制</string>
+    <string name="runtime_error_technical_details">技术详情</string>
+    <string name="runtime_error_show_technical_details">显示技术详情</string>
+    <string name="runtime_error_hide_technical_details">隐藏技术详情</string>
+    <string name="runtime_error_copy_diagnostics">复制诊断信息</string>
 
     <string name="settings_title">设置</string>
     <string name="settings_subtitle">此应用通过 AetherLink 连接。模型提供方保持私有。</string>
@@ -481,6 +492,8 @@
     <string name="error_remote_route_auth_failed">无法验证连接。请扫描最新的 AetherLink QR 后重试。</string>
     <string name="error_generation_cancelled">生成已取消。</string>
     <string name="error_generation_in_progress">进行更改前，请等待当前响应完成或取消它。</string>
+    <string name="error_chat_history_loading">请等待此聊天加载完成。</string>
+    <string name="error_chat_history_load_failed">无法从 AetherLink Runtime 加载聊天记录。</string>
     <string name="error_chat_session_not_found">找不到此聊天。</string>
     <string name="error_chat_session_must_be_archived_before_delete">永久删除前，请先将此聊天归档。</string>
     <string name="error_chat_session_sync_failed">无法将此聊天更改同步到 AetherLink Runtime。</string>
@@ -488,6 +501,9 @@
     <string name="error_memory_runtime_required">更改记忆前，请先连接受信任的运行时。</string>
     <string name="error_runtime_error">运行时错误。</string>
     <string name="error_send_failed">无法向 AetherLink Runtime 发送消息。</string>
+    <string name="error_regenerate_unavailable">没有可重新生成的已完成 assistant 回复。</string>
+    <string name="error_regenerate_attachment_context_unavailable">此回复使用的附件数据已无法用于重新生成。</string>
+    <string name="error_reuse_message_unavailable">此消息无法重新用作草稿。</string>
     <string name="error_invalid_payload">AetherLink Runtime 发送了无效数据。</string>
     <string name="error_install_model_first">聊天前请先安装此模型。</string>
     <string name="error_model_install_failed">AetherLink Runtime 无法安装该模型。</string>
@@ -526,6 +542,8 @@
     <string name="content_desc_scan_qr">扫描 QR</string>
     <string name="content_desc_attach_files">附加文件</string>
     <string name="content_desc_remove_attachment">移除附件 %1$s</string>
+    <string name="clear_draft">清除草稿</string>
+    <string name="clear_draft_state_ready">可以清除草稿。</string>
     <string name="content_desc_send">发送消息</string>
     <string name="content_desc_cancel_generation">取消生成</string>
     <string name="cancel_generation_state_ready">可以停止当前回复。</string>

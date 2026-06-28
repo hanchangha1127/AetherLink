@@ -50,19 +50,45 @@ public enum RuntimeMemoryStoreError: Error, LocalizedError, Equatable {
 }
 
 public protocol RuntimeMemoryStore: Sendable {
-    func list() throws -> [RuntimeMemoryEntry]
-    func upsert(id: String?, content: String, enabled: Bool?, timestamp: Date) throws -> RuntimeMemoryEntry
-    func delete(id: String, timestamp: Date) throws -> RuntimeMemoryDeleteResult
+    func list(ownerDeviceID: String?) throws -> [RuntimeMemoryEntry]
+    func upsert(
+        ownerDeviceID: String?,
+        id: String?,
+        content: String,
+        enabled: Bool?,
+        timestamp: Date
+    ) throws -> RuntimeMemoryEntry
+    func delete(ownerDeviceID: String?, id: String, timestamp: Date) throws -> RuntimeMemoryDeleteResult
+}
+
+public extension RuntimeMemoryStore {
+    func list() throws -> [RuntimeMemoryEntry] {
+        try list(ownerDeviceID: nil)
+    }
+
+    func upsert(id: String?, content: String, enabled: Bool?, timestamp: Date) throws -> RuntimeMemoryEntry {
+        try upsert(ownerDeviceID: nil, id: id, content: content, enabled: enabled, timestamp: timestamp)
+    }
+
+    func delete(id: String, timestamp: Date) throws -> RuntimeMemoryDeleteResult {
+        try delete(ownerDeviceID: nil, id: id, timestamp: timestamp)
+    }
 }
 
 public struct NullRuntimeMemoryStore: RuntimeMemoryStore {
     public init() {}
 
-    public func list() throws -> [RuntimeMemoryEntry] {
+    public func list(ownerDeviceID: String?) throws -> [RuntimeMemoryEntry] {
         []
     }
 
-    public func upsert(id: String?, content: String, enabled: Bool?, timestamp: Date) throws -> RuntimeMemoryEntry {
+    public func upsert(
+        ownerDeviceID: String?,
+        id: String?,
+        content: String,
+        enabled: Bool?,
+        timestamp: Date
+    ) throws -> RuntimeMemoryEntry {
         let cleanID = id
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .flatMap { $0.takeIfNotEmpty() } ?? UUID().uuidString
@@ -75,7 +101,7 @@ public struct NullRuntimeMemoryStore: RuntimeMemoryStore {
         )
     }
 
-    public func delete(id: String, timestamp: Date) throws -> RuntimeMemoryDeleteResult {
+    public func delete(ownerDeviceID: String?, id: String, timestamp: Date) throws -> RuntimeMemoryDeleteResult {
         RuntimeMemoryDeleteResult(id: id, deletedAt: timestamp)
     }
 }
@@ -92,13 +118,14 @@ public final class JSONLRuntimeMemoryStore: RuntimeMemoryStore, @unchecked Senda
         self.encoder.outputFormatting = [.sortedKeys]
     }
 
-    public func list() throws -> [RuntimeMemoryEntry] {
+    public func list(ownerDeviceID: String?) throws -> [RuntimeMemoryEntry] {
         try lock.withLock {
-            Self.entries(from: try readEvents())
+            Self.entries(from: try readEvents(ownerDeviceID: ownerDeviceID))
         }
     }
 
     public func upsert(
+        ownerDeviceID: String?,
         id: String?,
         content: String,
         enabled: Bool?,
@@ -112,7 +139,9 @@ public final class JSONLRuntimeMemoryStore: RuntimeMemoryStore, @unchecked Senda
             let cleanID = id
                 .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
                 .flatMap { $0.takeIfNotEmpty() } ?? UUID().uuidString
-            let existing = Self.entries(from: try readEvents()).first { $0.id == cleanID }
+            let scopedOwnerDeviceID = ownerDeviceID.normalizedOwnerDeviceID
+            let existing = Self.entries(from: try readEvents(ownerDeviceID: scopedOwnerDeviceID))
+                .first { $0.id == cleanID }
             let entry = RuntimeMemoryEntry(
                 id: cleanID,
                 content: cleanContent,
@@ -126,22 +155,25 @@ public final class JSONLRuntimeMemoryStore: RuntimeMemoryStore, @unchecked Senda
                 timestamp: timestamp,
                 content: entry.content,
                 enabled: entry.enabled,
-                createdAt: entry.createdAt
+                createdAt: entry.createdAt,
+                ownerDeviceID: scopedOwnerDeviceID
             ))
             return entry
         }
     }
 
-    public func delete(id: String, timestamp: Date = Date()) throws -> RuntimeMemoryDeleteResult {
+    public func delete(ownerDeviceID: String?, id: String, timestamp: Date = Date()) throws -> RuntimeMemoryDeleteResult {
         try lock.withLock {
             let cleanID = id.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !cleanID.isEmpty else {
                 throw RuntimeMemoryStoreError.missingID
             }
+            let scopedOwnerDeviceID = ownerDeviceID.normalizedOwnerDeviceID
             try appendUnlocked(RuntimeMemoryStoredEvent(
                 kind: .delete,
                 id: cleanID,
-                timestamp: timestamp
+                timestamp: timestamp,
+                ownerDeviceID: scopedOwnerDeviceID
             ))
             return RuntimeMemoryDeleteResult(id: cleanID, deletedAt: timestamp)
         }
@@ -153,6 +185,11 @@ public final class JSONLRuntimeMemoryStore: RuntimeMemoryStore, @unchecked Senda
         return baseDirectory
             .appendingPathComponent("AetherLink", isDirectory: true)
             .appendingPathComponent("runtime-memory-events.jsonl", isDirectory: false)
+    }
+
+    private func readEvents(ownerDeviceID: String?) throws -> [RuntimeMemoryStoredEvent] {
+        let scopedOwnerDeviceID = ownerDeviceID.normalizedOwnerDeviceID
+        return try readEvents().filter { $0.ownerDeviceID == scopedOwnerDeviceID }
     }
 
     private func readEvents() throws -> [RuntimeMemoryStoredEvent] {
@@ -225,18 +262,9 @@ public final class JSONLRuntimeMemoryStore: RuntimeMemoryStore, @unchecked Senda
     }
 
     private func appendUnlocked(_ event: RuntimeMemoryStoredEvent) throws {
-        let directory = fileURL.deletingLastPathComponent()
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let data = try encoder.encode(event)
         let line = data + Data([0x0A])
-        if FileManager.default.fileExists(atPath: fileURL.path) {
-            let handle = try FileHandle(forWritingTo: fileURL)
-            defer { try? handle.close() }
-            try handle.seekToEnd()
-            try handle.write(contentsOf: line)
-        } else {
-            try line.write(to: fileURL, options: .atomic)
-        }
+        try RuntimeEventLogFileProtection.appendLine(line, to: fileURL)
     }
 
     private static func entries(from events: [RuntimeMemoryStoredEvent]) -> [RuntimeMemoryEntry] {
@@ -281,6 +309,7 @@ private struct RuntimeMemoryStoredEvent: Codable {
     var content: String?
     var enabled: Bool?
     var createdAt: Date?
+    var ownerDeviceID: String?
 
     enum CodingKeys: String, CodingKey {
         case kind
@@ -289,12 +318,23 @@ private struct RuntimeMemoryStoredEvent: Codable {
         case content
         case enabled
         case createdAt = "created_at"
+        case ownerDeviceID = "owner_device_id"
     }
 }
 
 private extension String {
     func takeIfNotEmpty() -> String? {
         isEmpty ? nil : self
+    }
+}
+
+private extension Optional where Wrapped == String {
+    var normalizedOwnerDeviceID: String? {
+        guard let value = self?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !value.isEmpty else {
+            return nil
+        }
+        return value
     }
 }
 

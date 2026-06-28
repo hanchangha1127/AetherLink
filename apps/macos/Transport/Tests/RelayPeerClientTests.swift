@@ -45,6 +45,35 @@ final class RelayPeerClientTests: XCTestCase {
         XCTAssertEqual(readyStatus.wait(timeout: .now() + 2), .success)
         XCTAssertTrue(statusRecorder.contains(.ready))
     }
+
+    func testRelayPeerClientReportsDisconnectOnceWhenStoppedConnectionCancels() throws {
+        let server = try ControlledRelayServer()
+        defer { server.stop() }
+
+        let disconnectRecorder = RelayDisconnectRecorder()
+        let client = RelayPeerClient()
+        defer { client.stop() }
+        client.onDisconnect = { id in
+            disconnectRecorder.append(id)
+        }
+
+        client.start(
+            configuration: RelayPeerConfiguration(
+                host: "127.0.0.1",
+                port: server.port,
+                relayID: "relay-disconnect-test",
+                reconnectDelay: 60
+            ),
+            onMessage: { _, _ in }
+        )
+
+        XCTAssertEqual(server.waitForHandshake(), "AETHERLINK_RELAY runtime relay-disconnect-test\n")
+
+        client.stop()
+        XCTAssertEqual(disconnectRecorder.waitForCount(1), 1)
+        Thread.sleep(forTimeInterval: 0.2)
+        XCTAssertEqual(disconnectRecorder.count, 1)
+    }
 }
 
 private final class ControlledRelayServer {
@@ -180,6 +209,32 @@ private final class RelayStatusRecorder: @unchecked Sendable {
         lock.withLock {
             statuses.contains(status)
         }
+    }
+}
+
+private final class RelayDisconnectRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private let semaphore = DispatchSemaphore(value: 0)
+    private var ids: [UUID] = []
+
+    var count: Int {
+        lock.withLock { ids.count }
+    }
+
+    func append(_ id: UUID) {
+        lock.withLock {
+            ids.append(id)
+        }
+        semaphore.signal()
+    }
+
+    func waitForCount(_ expectedCount: Int, timeout: DispatchTime = .now() + 2) -> Int {
+        while count < expectedCount {
+            if semaphore.wait(timeout: timeout) != .success {
+                break
+            }
+        }
+        return count
     }
 }
 

@@ -88,6 +88,7 @@ public struct RuntimeChatStoredEvent: Codable, Equatable, Sendable {
     public var finishReason: String?
     public var usage: RuntimeChatStoredUsage?
     public var error: RuntimeChatStoredError?
+    public var ownerDeviceID: String?
 
     public init(
         id: String = UUID().uuidString,
@@ -102,7 +103,8 @@ public struct RuntimeChatStoredEvent: Codable, Equatable, Sendable {
         reasoningDelta: String? = nil,
         finishReason: String? = nil,
         usage: RuntimeChatStoredUsage? = nil,
-        error: RuntimeChatStoredError? = nil
+        error: RuntimeChatStoredError? = nil,
+        ownerDeviceID: String? = nil
     ) {
         self.id = id
         self.timestamp = timestamp
@@ -117,6 +119,7 @@ public struct RuntimeChatStoredEvent: Codable, Equatable, Sendable {
         self.finishReason = finishReason
         self.usage = usage
         self.error = error
+        self.ownerDeviceID = ownerDeviceID.normalizedOwnerDeviceID
     }
 
     enum CodingKeys: String, CodingKey {
@@ -133,6 +136,7 @@ public struct RuntimeChatStoredEvent: Codable, Equatable, Sendable {
         case finishReason = "finish_reason"
         case usage
         case error
+        case ownerDeviceID = "owner_device_id"
     }
 }
 
@@ -197,9 +201,10 @@ public struct RuntimeChatStoredMessage: Equatable, Sendable {
 
 public protocol RuntimeChatEventStore: Sendable {
     func append(_ event: RuntimeChatStoredEvent) throws
-    func listSessions(limit: Int, includeArchived: Bool) throws -> [RuntimeChatStoredSession]
-    func listMessages(sessionID: String, limit: Int) throws -> [RuntimeChatStoredMessage]
+    func listSessions(ownerDeviceID: String?, limit: Int, includeArchived: Bool) throws -> [RuntimeChatStoredSession]
+    func listMessages(ownerDeviceID: String?, sessionID: String, limit: Int) throws -> [RuntimeChatStoredMessage]
     func mutateSession(
+        ownerDeviceID: String?,
         sessionID: String,
         requestID: String,
         mutation: RuntimeChatSessionMutation,
@@ -208,8 +213,31 @@ public protocol RuntimeChatEventStore: Sendable {
 }
 
 public extension RuntimeChatEventStore {
+    func listSessions(limit: Int, includeArchived: Bool) throws -> [RuntimeChatStoredSession] {
+        try listSessions(ownerDeviceID: nil, limit: limit, includeArchived: includeArchived)
+    }
+
     func listSessions(limit: Int) throws -> [RuntimeChatStoredSession] {
         try listSessions(limit: limit, includeArchived: false)
+    }
+
+    func listMessages(sessionID: String, limit: Int) throws -> [RuntimeChatStoredMessage] {
+        try listMessages(ownerDeviceID: nil, sessionID: sessionID, limit: limit)
+    }
+
+    func mutateSession(
+        sessionID: String,
+        requestID: String,
+        mutation: RuntimeChatSessionMutation,
+        timestamp: Date
+    ) throws -> RuntimeChatSessionMutationResult {
+        try mutateSession(
+            ownerDeviceID: nil,
+            sessionID: sessionID,
+            requestID: requestID,
+            mutation: mutation,
+            timestamp: timestamp
+        )
     }
 }
 
@@ -218,15 +246,16 @@ public struct NullRuntimeChatEventStore: RuntimeChatEventStore {
 
     public func append(_ event: RuntimeChatStoredEvent) throws {}
 
-    public func listSessions(limit: Int, includeArchived: Bool) throws -> [RuntimeChatStoredSession] {
+    public func listSessions(ownerDeviceID: String?, limit: Int, includeArchived: Bool) throws -> [RuntimeChatStoredSession] {
         []
     }
 
-    public func listMessages(sessionID: String, limit: Int) throws -> [RuntimeChatStoredMessage] {
+    public func listMessages(ownerDeviceID: String?, sessionID: String, limit: Int) throws -> [RuntimeChatStoredMessage] {
         []
     }
 
     public func mutateSession(
+        ownerDeviceID: String?,
         sessionID: String,
         requestID: String,
         mutation: RuntimeChatSessionMutation,
@@ -254,21 +283,34 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
         }
     }
 
-    public func listSessions(limit: Int = 100, includeArchived: Bool = false) throws -> [RuntimeChatStoredSession] {
+    public func listSessions(
+        ownerDeviceID: String?,
+        limit: Int = 100,
+        includeArchived: Bool = false
+    ) throws -> [RuntimeChatStoredSession] {
         guard limit > 0 else { return [] }
         return try lock.withLock {
-            try Self.sessions(from: readEvents(), limit: limit, includeArchived: includeArchived)
+            try Self.sessions(
+                from: readEvents(ownerDeviceID: ownerDeviceID),
+                limit: limit,
+                includeArchived: includeArchived
+            )
         }
     }
 
-    public func listMessages(sessionID: String, limit: Int = 200) throws -> [RuntimeChatStoredMessage] {
+    public func listMessages(
+        ownerDeviceID: String?,
+        sessionID: String,
+        limit: Int = 200
+    ) throws -> [RuntimeChatStoredMessage] {
         guard limit > 0 else { return [] }
         return try lock.withLock {
-            try Self.messages(from: readEvents(), sessionID: sessionID, limit: limit)
+            try Self.messages(from: readEvents(ownerDeviceID: ownerDeviceID), sessionID: sessionID, limit: limit)
         }
     }
 
     public func mutateSession(
+        ownerDeviceID: String?,
         sessionID: String,
         requestID: String,
         mutation: RuntimeChatSessionMutation,
@@ -276,7 +318,8 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
     ) throws -> RuntimeChatSessionMutationResult {
         try lock.withLock {
             let cleanSessionID = sessionID.trimmingCharacters(in: .whitespacesAndNewlines)
-            let events = try readEvents()
+            let scopedOwnerDeviceID = ownerDeviceID.normalizedOwnerDeviceID
+            let events = try readEvents(ownerDeviceID: scopedOwnerDeviceID)
             let sessionEvents = events.filter { $0.sessionID == cleanSessionID }
             let lifecycleState = Self.lifecycleState(from: sessionEvents)
             guard !cleanSessionID.isEmpty,
@@ -292,7 +335,8 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
                 kind: mutation.eventKind,
                 requestID: requestID,
                 sessionID: cleanSessionID,
-                model: Self.latestModel(from: sessionEvents)
+                model: Self.latestModel(from: sessionEvents),
+                ownerDeviceID: scopedOwnerDeviceID
             ))
             return RuntimeChatSessionMutationResult(
                 sessionID: cleanSessionID,
@@ -308,6 +352,11 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
         return baseDirectory
             .appendingPathComponent("AetherLink", isDirectory: true)
             .appendingPathComponent("runtime-chat-events.jsonl", isDirectory: false)
+    }
+
+    private func readEvents(ownerDeviceID: String?) throws -> [RuntimeChatStoredEvent] {
+        let scopedOwnerDeviceID = ownerDeviceID.normalizedOwnerDeviceID
+        return try readEvents().filter { $0.ownerDeviceID == scopedOwnerDeviceID }
     }
 
     private func readEvents() throws -> [RuntimeChatStoredEvent] {
@@ -402,18 +451,9 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
     }
 
     private func appendUnlocked(_ event: RuntimeChatStoredEvent) throws {
-        let directory = fileURL.deletingLastPathComponent()
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let data = try encoder.encode(event.sanitizedForStorage())
         let line = data + Data([0x0A])
-        if FileManager.default.fileExists(atPath: fileURL.path) {
-            let handle = try FileHandle(forWritingTo: fileURL)
-            defer { try? handle.close() }
-            try handle.seekToEnd()
-            try handle.write(contentsOf: line)
-        } else {
-            try line.write(to: fileURL, options: .atomic)
-        }
+        try RuntimeEventLogFileProtection.appendLine(line, to: fileURL)
     }
 
     private static func sessions(
@@ -665,6 +705,16 @@ private extension Array {
 private extension String {
     var nilIfBlank: String? {
         isEmpty ? nil : self
+    }
+}
+
+private extension Optional where Wrapped == String {
+    var normalizedOwnerDeviceID: String? {
+        guard let value = self?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !value.isEmpty else {
+            return nil
+        }
+        return value
     }
 }
 

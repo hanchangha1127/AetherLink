@@ -1,5 +1,6 @@
 package com.localagentbridge.android.ui
 
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.res.Configuration
 import android.os.LocaleList
@@ -782,7 +783,11 @@ class ClientScreensNoDeviceComposeTest {
                 .performClick()
             compose.waitForIdle()
 
-            compose.onNodeWithContentDescription(expectedActionLabel)
+            compose.onNode(
+                hasContentDescription(expectedActionLabel) and
+                    hasClickActionLabel(expectedActionLabel),
+                useUnmergedTree = true,
+            )
                 .performScrollTo()
                 .assertIsDisplayed()
                 .assertIsEnabled()
@@ -911,6 +916,7 @@ class ClientScreensNoDeviceComposeTest {
                 .getApplicationContext<Context>()
                 .localizedContext(languageTag)
             val settingsLabel = localizedContext.getString(AppDestination.Settings.labelRes)
+            val settingsState = localizedContext.getString(R.string.settings_destination_state_ready)
             compose.runOnUiThread {
                 currentLanguage.value = languageTag
             }
@@ -919,7 +925,8 @@ class ClientScreensNoDeviceComposeTest {
             compose.onNodeWithText(settingsLabel, useUnmergedTree = true)
                 .assertIsDisplayed()
             compose.onNode(
-                hasClickActionLabel(settingsLabel),
+                hasClickActionLabel(settingsLabel) and
+                    hasStateDescription(settingsState),
                 useUnmergedTree = true,
             )
                 .assertIsDisplayed()
@@ -2075,6 +2082,63 @@ class ClientScreensNoDeviceComposeTest {
     }
 
     @Test
+    fun connectionStatusRouteNoticeForMissingRelaySecretIsLiveRegionAndScansLatestQr() {
+        val hapticFeedback = RecordingHapticFeedback()
+        var connectClicks = 0
+        var scanQrClicks = 0
+
+        compose.setContent {
+            CompositionLocalProvider(LocalHapticFeedback provides hapticFeedback) {
+                MaterialTheme {
+                    ConnectionStatusScreen(
+                        state = RuntimeUiState(
+                            trustedRuntime = RuntimeTrustedRuntime(
+                                deviceId = "runtime-1",
+                                name = "AetherLink Runtime",
+                                relayHost = "relay.example.test",
+                                relayPort = 443,
+                                relayId = "relay-1",
+                                relaySecret = null,
+                                relayExpiresAtEpochMillis = Long.MAX_VALUE,
+                                relayNonce = "nonce-1",
+                                relayScope = "remote",
+                            ),
+                            backendAvailable = true,
+                        ),
+                        onConnect = { connectClicks += 1 },
+                        onRefreshHealth = {},
+                        onDisconnect = {},
+                        onScanLatestQr = { scanQrClicks += 1 },
+                    )
+                }
+            }
+        }
+
+        val detail = "Connection details need refreshing. Scan the latest AetherLink Runtime QR with remote connection details before using AetherLink away from this network."
+        val recoverySteps = "Open AetherLink Runtime, generate the latest QR, then scan it here."
+        val noticeSummary = "Connection status. Refresh needed. $detail $recoverySteps"
+
+        compose.onNodeWithText(detail)
+            .performScrollTo()
+            .assertIsDisplayed()
+        compose.onNode(
+            hasContentDescription(noticeSummary) and
+                hasStateDescription("Refresh needed") and
+                hasPoliteLiveRegion() and
+                hasClickActionLabel("Scan latest QR") and
+                hasClickAction(),
+            useUnmergedTree = true,
+        )
+            .performScrollTo()
+            .assertIsDisplayed()
+            .performClick()
+
+        assertEquals(0, connectClicks)
+        assertEquals(1, scanQrClicks)
+        assertEquals(listOf(HapticFeedbackType.TextHandleMove), hapticFeedback.events)
+    }
+
+    @Test
     fun connectionStatusRefreshHealthActionUsesActionCopyAndCallback() {
         var refreshClicks = 0
 
@@ -2199,6 +2263,73 @@ class ClientScreensNoDeviceComposeTest {
                 .assertIsDisplayed()
                 .assertIsEnabled()
         }
+    }
+
+    @Test
+    fun connectionStatusConnectedActionsDisableWhileConnectingAcrossSupportedLanguages() {
+        val languageTags = listOf("en", "ko", "ja", "zh-CN", "fr")
+        val languageTag = mutableStateOf(languageTags.first())
+        var refreshClicks = 0
+        var disconnectClicks = 0
+
+        compose.setContent {
+            MaterialTheme {
+                LocalizedTestContent(languageTag = languageTag.value) {
+                    key(languageTag.value) {
+                        ConnectionStatusScreen(
+                            state = RuntimeUiState(
+                                isConnected = true,
+                                isConnecting = true,
+                                backendAvailable = true,
+                                selectedLanguageTag = languageTag.value,
+                            ),
+                            onConnect = {},
+                            onRefreshHealth = { refreshClicks += 1 },
+                            onDisconnect = { disconnectClicks += 1 },
+                            onScanLatestQr = {},
+                        )
+                    }
+                }
+            }
+        }
+
+        languageTags.forEach { nextLanguageTag ->
+            compose.runOnUiThread {
+                languageTag.value = nextLanguageTag
+            }
+            compose.waitForIdle()
+            repeat(3) {
+                compose.onRoot().performTouchInput { swipeUp() }
+                compose.waitForIdle()
+            }
+
+            val localizedContext = ApplicationProvider
+                .getApplicationContext<Context>()
+                .localizedContext(nextLanguageTag)
+            val refreshAction = localizedContext.getString(R.string.refresh_health)
+            val disconnectAction = localizedContext.getString(R.string.disconnect)
+            val connectingState = localizedContext.getString(R.string.connect_runtime_state_connecting)
+
+            compose.onNodeWithText(refreshAction)
+                .assertIsDisplayed()
+            compose.onNode(
+                hasStateDescription(connectingState) and
+                    hasClickActionLabel(refreshAction),
+            )
+                .assertIsDisplayed()
+                .assertIsNotEnabled()
+            compose.onNodeWithText(disconnectAction)
+                .assertIsDisplayed()
+            compose.onNode(
+                hasStateDescription(connectingState) and
+                    hasClickActionLabel(disconnectAction),
+            )
+                .assertIsDisplayed()
+                .assertIsNotEnabled()
+        }
+
+        assertEquals(0, refreshClicks)
+        assertEquals(0, disconnectClicks)
     }
 
     @Test
@@ -5199,6 +5330,155 @@ class ClientScreensNoDeviceComposeTest {
     }
 
     @Test
+    fun chatScreenClearDraftActionClearsComposerAndHidesWhileStreaming() {
+        val hapticFeedback = RecordingHapticFeedback()
+        val chatModel = RuntimeModel(
+            id = "ollama:llama3.1:8b",
+            name = "Llama 3.1 8B",
+            modelKind = MODEL_KIND_CHAT,
+            capabilities = listOf("chat"),
+            installed = true,
+            source = "local",
+        )
+        val state = mutableStateOf(
+            RuntimeUiState(
+                isConnected = true,
+                runtimeStatus = "authenticated",
+                trustedRuntime = RuntimeTrustedRuntime(
+                    deviceId = "runtime-1",
+                    name = "AetherLink Runtime",
+                ),
+                backendAvailable = true,
+                selectedModelId = chatModel.id,
+                models = listOf(chatModel),
+                chatInput = "Draft to clear",
+            )
+        )
+
+        compose.setContent {
+            CompositionLocalProvider(LocalHapticFeedback provides hapticFeedback) {
+                MaterialTheme {
+                    ChatScreen(
+                        state = state.value,
+                        onInputChange = { text -> state.value = state.value.copy(chatInput = text) },
+                        onSend = {},
+                        onCancel = {},
+                        onConnect = {},
+                        onScanPairingQr = {},
+                        onRefreshHealth = {},
+                        onAttachFiles = {},
+                        onRemoveAttachment = {},
+                        onSuggestionClick = {},
+                        onScanLatestQr = {},
+                    )
+                }
+            }
+        }
+
+        compose.onNode(
+            hasContentDescription("Clear draft") and
+                hasClickActionLabel("Clear draft") and
+                hasClickAction(),
+            useUnmergedTree = true,
+        )
+            .assertIsDisplayed()
+            .performClick()
+
+        assertEquals("", state.value.chatInput)
+        assertEquals(listOf(HapticFeedbackType.TextHandleMove), hapticFeedback.events)
+        compose.onAllNodesWithContentDescription("Clear draft", useUnmergedTree = true)
+            .assertCountEquals(0)
+
+        compose.runOnUiThread {
+            state.value = state.value.copy(
+                chatInput = "Streaming draft",
+                isStreaming = true,
+                activeRequestId = "request-streaming",
+            )
+        }
+        compose.waitForIdle()
+
+        compose.onAllNodesWithContentDescription("Clear draft", useUnmergedTree = true)
+            .assertCountEquals(0)
+    }
+
+    @Test
+    fun chatScreenClearDraftActionStateUsesSelectedLanguage() {
+        val languageTags = listOf("en", "ko", "ja", "zh-CN", "fr")
+        val languageTag = mutableStateOf(languageTags.first())
+        val chatModel = RuntimeModel(
+            id = "ollama:llama3.1:8b",
+            name = "Llama 3.1 8B",
+            modelKind = MODEL_KIND_CHAT,
+            capabilities = listOf("chat"),
+            installed = true,
+            source = "local",
+        )
+        val state = mutableStateOf(
+            RuntimeUiState(
+                isConnected = true,
+                runtimeStatus = "authenticated",
+                trustedRuntime = RuntimeTrustedRuntime(
+                    deviceId = "runtime-1",
+                    name = "AetherLink Runtime",
+                ),
+                backendAvailable = true,
+                selectedLanguageTag = languageTag.value,
+                selectedModelId = chatModel.id,
+                models = listOf(chatModel),
+                chatInput = "Draft to clear",
+            )
+        )
+
+        compose.setContent {
+            MaterialTheme {
+                LocalizedTestContent(languageTag = languageTag.value) {
+                    ChatScreen(
+                        state = state.value.copy(selectedLanguageTag = languageTag.value),
+                        onInputChange = { text -> state.value = state.value.copy(chatInput = text) },
+                        onSend = {},
+                        onCancel = {},
+                        onConnect = {},
+                        onScanPairingQr = {},
+                        onRefreshHealth = {},
+                        onAttachFiles = {},
+                        onRemoveAttachment = {},
+                        onSuggestionClick = {},
+                        onScanLatestQr = {},
+                    )
+                }
+            }
+        }
+
+        languageTags.forEach { nextLanguageTag ->
+            compose.runOnUiThread {
+                languageTag.value = nextLanguageTag
+                state.value = state.value.copy(
+                    selectedLanguageTag = nextLanguageTag,
+                    chatInput = "Draft to clear",
+                    isStreaming = false,
+                    activeRequestId = null,
+                )
+            }
+            compose.waitForIdle()
+
+            val localizedContext = ApplicationProvider
+                .getApplicationContext<Context>()
+                .localizedContext(nextLanguageTag)
+            val expectedLabel = localizedContext.getString(R.string.clear_draft)
+            val expectedState = localizedContext.getString(R.string.clear_draft_state_ready)
+
+            compose.onNode(
+                hasContentDescription(expectedLabel) and
+                    hasStateDescription(expectedState) and
+                    hasClickActionLabel(expectedLabel) and
+                    hasClickAction(),
+                useUnmergedTree = true,
+            ).assertIsDisplayed()
+        }
+    }
+
+    @Test
     fun chatScreenBackendUnavailableBannerExposesAccessibilitySummaryAndRefreshCallback() {
         var refreshClicks = 0
         val unsafeProviderDetail = "http://127.0.0.1:11434 refused route-token-secret"
@@ -5450,10 +5730,12 @@ class ClientScreensNoDeviceComposeTest {
         }
 
         compose.onNodeWithContentDescription(
-            "Error. Could not send the message to AetherLink Runtime. More information: relay timed out",
+            "Error. Could not send the message to AetherLink Runtime.",
         )
             .assertExists()
             .assert(hasPoliteLiveRegion())
+        compose.onAllNodesWithText("relay timed out", useUnmergedTree = true).assertCountEquals(0)
+        compose.onAllNodesWithContentDescription("relay timed out", useUnmergedTree = true).assertCountEquals(0)
 
         uiState.value = uiState.value.copy(
             error = RuntimeUiError(
@@ -5470,6 +5752,92 @@ class ClientScreensNoDeviceComposeTest {
             .assert(hasPoliteLiveRegion())
         compose.onAllNodesWithText(unsafeDetail, useUnmergedTree = true).assertCountEquals(0)
         compose.onAllNodesWithContentDescription(unsafeDetail, useUnmergedTree = true).assertCountEquals(0)
+    }
+
+    @Test
+    fun chatScreenTechnicalDiagnosticsAreCollapsedAndRedactUnsafeRuntimeDetails() {
+        val technicalDetail = "relay timed out near http://127.0.0.1:11434/api/tags route_token=secret relay_id=relay-1"
+        val error = RuntimeUiError(
+            code = "send_failed",
+            diagnosticCode = "provider_timeout",
+            detail = "relay timed out",
+            technicalDetail = technicalDetail,
+        )
+        val expectedReport = "code: send_failed\n" +
+            "diagnostic_code: provider_timeout\n" +
+            "technical_detail: relay timed out near [redacted] [redacted] [redacted]"
+        val chatModel = RuntimeModel(
+            id = "ollama:llama3.1:8b",
+            name = "Llama 3.1 8B",
+            modelKind = MODEL_KIND_CHAT,
+            capabilities = listOf("chat"),
+            installed = true,
+            source = "local",
+        )
+
+        assertEquals(expectedReport, runtimeTechnicalDiagnosticsReport(error))
+
+        compose.setContent {
+            MaterialTheme {
+                Surface(modifier = Modifier.width(360.dp).height(720.dp)) {
+                    ChatScreen(
+                        state = RuntimeUiState(
+                            isConnected = true,
+                            runtimeStatus = "authenticated",
+                            trustedRuntime = RuntimeTrustedRuntime(
+                                deviceId = "runtime-1",
+                                name = "AetherLink Runtime",
+                            ),
+                            backendAvailable = true,
+                            selectedModelId = chatModel.id,
+                            models = listOf(chatModel),
+                            error = error,
+                        ),
+                        onInputChange = {},
+                        onSend = {},
+                        onCancel = {},
+                        onConnect = {},
+                        onScanPairingQr = {},
+                        onRefreshHealth = {},
+                        onAttachFiles = {},
+                        onRemoveAttachment = {},
+                        onSuggestionClick = {},
+                        onScanLatestQr = {},
+                    )
+                }
+            }
+        }
+
+        compose.onNodeWithContentDescription(
+            "Error. Could not send the message to AetherLink Runtime.",
+        )
+            .assertExists()
+            .assert(hasPoliteLiveRegion())
+        compose.onNode(
+            hasContentDescription("Technical details") and
+                hasStateDescription("Collapsed") and
+                hasClickActionLabel("Show technical details") and
+                hasClickAction(),
+            useUnmergedTree = true,
+        )
+            .assertIsDisplayed()
+            .performClick()
+
+        compose.onNode(
+            hasContentDescription("Technical details") and
+                hasStateDescription("Expanded") and
+                hasClickActionLabel("Hide technical details") and
+                hasClickAction(),
+            useUnmergedTree = true,
+        ).assertIsDisplayed()
+        compose.onNodeWithText(expectedReport, useUnmergedTree = true).assertIsDisplayed()
+        compose.onNodeWithContentDescription("Copy diagnostics", useUnmergedTree = true)
+            .assert(hasClickActionLabel("Copy diagnostics"))
+            .assertIsDisplayed()
+        compose.onAllNodesWithText(technicalDetail, useUnmergedTree = true).assertCountEquals(0)
+        compose.onAllNodesWithText("http://127.0.0.1:11434/api/tags", useUnmergedTree = true).assertCountEquals(0)
+        compose.onAllNodesWithText("route_token=secret", useUnmergedTree = true).assertCountEquals(0)
+        compose.onAllNodesWithText("relay_id=relay-1", useUnmergedTree = true).assertCountEquals(0)
     }
 
     @Test
@@ -5561,6 +5929,90 @@ class ClientScreensNoDeviceComposeTest {
     }
 
     @Test
+    fun chatScreenShowsLocalizedLoadingStateWhileRuntimeTranscriptLoads() {
+        data class ExpectedLoading(
+            val languageTag: String,
+            val loading: String,
+            val hint: String,
+        )
+
+        val expectedLoadings = listOf(
+            ExpectedLoading("en", "Loading chat...", "Wait for this chat to finish loading."),
+            ExpectedLoading("ko", "채팅 불러오는 중...", "이 채팅을 모두 불러올 때까지 기다리세요."),
+            ExpectedLoading("ja", "チャットを読み込み中...", "このチャットの読み込みが完了するまでお待ちください。"),
+            ExpectedLoading("zh-CN", "正在加载聊天...", "请等待此聊天加载完成。"),
+            ExpectedLoading("fr", "Chargement du chat...", "Attendez la fin du chargement de ce chat."),
+        )
+        val chatModel = RuntimeModel(
+            id = "ollama:llama3.1:8b",
+            name = "Llama 3.1 8B",
+            modelKind = MODEL_KIND_CHAT,
+            capabilities = listOf("chat"),
+            installed = true,
+            source = "local",
+        )
+        val trustedRuntime = RuntimeTrustedRuntime(
+            deviceId = "runtime-1",
+            name = "AetherLink Runtime",
+        )
+
+        val loadingCase = mutableStateOf(expectedLoadings.first())
+        compose.setContent {
+            val expected = loadingCase.value
+            LocalizedTestContent(languageTag = expected.languageTag) {
+                MaterialTheme {
+                    ChatScreen(
+                        state = RuntimeUiState(
+                            isConnected = true,
+                            runtimeStatus = "authenticated",
+                            trustedRuntime = trustedRuntime,
+                            backendAvailable = true,
+                            selectedLanguageTag = expected.languageTag,
+                            selectedModelId = chatModel.id,
+                            models = listOf(chatModel),
+                            activeChatSessionId = "runtime-session",
+                            loadingChatSessionId = "runtime-session",
+                            chatInput = "Blocked draft",
+                        ),
+                        onInputChange = {},
+                        onSend = {},
+                        onCancel = {},
+                        onConnect = {},
+                        onScanPairingQr = {},
+                        onRefreshHealth = {},
+                        onAttachFiles = {},
+                        onRemoveAttachment = {},
+                        onSuggestionClick = {},
+                        onScanLatestQr = {},
+                    )
+                }
+            }
+        }
+
+        expectedLoadings.forEach { expected ->
+            loadingCase.value = expected
+            compose.waitForIdle()
+            val localizedContext = ApplicationProvider
+                .getApplicationContext<Context>()
+                .localizedContext(expected.languageTag)
+
+            compose.onNode(
+                hasContentDescription(expected.loading) and
+                    SemanticsMatcher.expectValue(SemanticsProperties.LiveRegion, LiveRegionMode.Polite),
+                useUnmergedTree = true,
+            ).assertIsDisplayed()
+            compose.onNodeWithText(expected.loading).assertIsDisplayed()
+            compose.onNodeWithText(expected.hint).assertIsDisplayed()
+            compose.onNodeWithContentDescription(localizedContext.getString(R.string.message))
+                .assertIsNotEnabled()
+            compose.onNodeWithContentDescription(localizedContext.getString(R.string.content_desc_attach_files))
+                .assertIsNotEnabled()
+            compose.onNodeWithContentDescription(localizedContext.getString(R.string.content_desc_send))
+                .assertIsNotEnabled()
+        }
+    }
+
+    @Test
     fun chatScreenConnectActionExplainsDisabledConnectingState() {
         var scanQrClicks = 0
         var connectClicks = 0
@@ -5601,7 +6053,8 @@ class ClientScreensNoDeviceComposeTest {
 
     @Test
     fun chatScreenRouteRecoveryEmptyStateShowsFullGuidanceOnNarrowWidth() {
-        var scanQrClicks = 0
+        var scanPairingQrClicks = 0
+        var scanLatestQrClicks = 0
         var connectClicks = 0
         val routeGuidance = "This network cannot reach the saved route. Prepare a reachable connection route in AetherLink Runtime, then scan the latest QR."
 
@@ -5624,12 +6077,12 @@ class ClientScreensNoDeviceComposeTest {
                         onSend = {},
                         onCancel = {},
                         onConnect = { connectClicks += 1 },
-                        onScanPairingQr = { scanQrClicks += 1 },
+                        onScanPairingQr = { scanPairingQrClicks += 1 },
                         onRefreshHealth = {},
                         onAttachFiles = {},
                         onRemoveAttachment = {},
                         onSuggestionClick = {},
-                        onScanLatestQr = {},
+                        onScanLatestQr = { scanLatestQrClicks += 1 },
                     )
                 }
             }
@@ -5639,7 +6092,8 @@ class ClientScreensNoDeviceComposeTest {
         compose.onNodeWithText(routeGuidance).assertIsDisplayed()
         compose.onAllNodesWithText("Scan latest QR").onLast().assertIsDisplayed().performClick()
 
-        assertEquals(1, scanQrClicks)
+        assertEquals(0, scanPairingQrClicks)
+        assertEquals(1, scanLatestQrClicks)
         assertEquals(0, connectClicks)
     }
 
@@ -5853,8 +6307,8 @@ class ClientScreensNoDeviceComposeTest {
                 hasStateDescription("Ready to scan the latest QR."),
         ).performClick()
 
-        assertEquals(1, scanQrClicks)
-        assertEquals(0, scanLatestQrClicks)
+        assertEquals(0, scanQrClicks)
+        assertEquals(1, scanLatestQrClicks)
         assertEquals(0, connectClicks)
         assertEquals(listOf(HapticFeedbackType.TextHandleMove), hapticFeedback.events)
     }
@@ -5862,7 +6316,8 @@ class ClientScreensNoDeviceComposeTest {
     @Test
     fun chatScreenExpiredRemoteRouteShowsLatestQrRecoveryAction() {
         val hapticFeedback = RecordingHapticFeedback()
-        var scanQrClicks = 0
+        var scanPairingQrClicks = 0
+        var scanLatestQrClicks = 0
         var connectClicks = 0
 
         compose.setContent {
@@ -5891,12 +6346,12 @@ class ClientScreensNoDeviceComposeTest {
                         onSend = {},
                         onCancel = {},
                         onConnect = { connectClicks += 1 },
-                        onScanPairingQr = { scanQrClicks += 1 },
+                        onScanPairingQr = { scanPairingQrClicks += 1 },
                         onRefreshHealth = {},
                         onAttachFiles = {},
                         onRemoveAttachment = {},
                         onSuggestionClick = {},
-                        onScanLatestQr = {},
+                        onScanLatestQr = { scanLatestQrClicks += 1 },
                     )
                 }
             }
@@ -5912,7 +6367,8 @@ class ClientScreensNoDeviceComposeTest {
                 hasStateDescription("Ready to scan the latest QR."),
         ).performClick()
 
-        assertEquals(1, scanQrClicks)
+        assertEquals(0, scanPairingQrClicks)
+        assertEquals(1, scanLatestQrClicks)
         assertEquals(0, connectClicks)
         assertEquals(listOf(HapticFeedbackType.TextHandleMove), hapticFeedback.events)
     }
@@ -5960,7 +6416,8 @@ class ClientScreensNoDeviceComposeTest {
         )
         val hapticFeedback = RecordingHapticFeedback()
         val currentCase = mutableStateOf(expectedCopies.first())
-        var scanQrClicks = 0
+        var scanPairingQrClicks = 0
+        var scanLatestQrClicks = 0
         var connectClicks = 0
 
         compose.setContent {
@@ -5992,12 +6449,12 @@ class ClientScreensNoDeviceComposeTest {
                                 onSend = {},
                                 onCancel = {},
                                 onConnect = { connectClicks += 1 },
-                                onScanPairingQr = { scanQrClicks += 1 },
+                                onScanPairingQr = { scanPairingQrClicks += 1 },
                                 onRefreshHealth = {},
                                 onAttachFiles = {},
                                 onRemoveAttachment = {},
                                 onSuggestionClick = {},
-                                onScanLatestQr = {},
+                                onScanLatestQr = { scanLatestQrClicks += 1 },
                             )
                         }
                     }
@@ -6019,7 +6476,8 @@ class ClientScreensNoDeviceComposeTest {
             ).assertIsDisplayed()
                 .performClick()
 
-            assertEquals(index + 1, scanQrClicks)
+            assertEquals(0, scanPairingQrClicks)
+            assertEquals(index + 1, scanLatestQrClicks)
             assertEquals(0, connectClicks)
         }
         assertEquals(
@@ -6829,6 +7287,165 @@ class ClientScreensNoDeviceComposeTest {
     }
 
     @Test
+    fun chatSurfaceRendersRepresentativeNarrowPhoneWithoutComposerOverlap() {
+        val chatModel = RuntimeModel(
+            id = "ollama:qwen3:8b",
+            name = "Qwen3 8B",
+            modelKind = MODEL_KIND_CHAT,
+            capabilities = listOf("chat"),
+            installed = true,
+            source = "local",
+        )
+        val state = RuntimeUiState(
+            isConnected = true,
+            runtimeStatus = "authenticated",
+            trustedRuntime = RuntimeTrustedRuntime(
+                deviceId = "runtime-1",
+                name = "AetherLink Runtime",
+            ),
+            backendAvailable = true,
+            selectedModelId = chatModel.id,
+            models = listOf(chatModel),
+            activeChatSessionId = "chat-polish",
+            chatSessions = listOf(
+                RuntimeChatSession(
+                    id = "chat-polish",
+                    title = "Runtime handoff polish",
+                    modelId = chatModel.id,
+                    updatedAtMillis = 1_720_000_000_000L,
+                    messageCount = 2,
+                ),
+            ),
+            chatInput = "Ask for a tighter screenshot pass",
+            messages = listOf(
+                RuntimeChatMessage(
+                    id = "user-with-attachment",
+                    role = "user",
+                    content = "Review this route card.",
+                    attachments = listOf(
+                        RuntimeMessageAttachment(
+                            id = "handoff-notes",
+                            type = "document",
+                            name = "handoff-notes.pdf",
+                            mimeType = "application/pdf",
+                        ),
+                    ),
+                ),
+                RuntimeChatMessage(
+                    id = "assistant-with-polish",
+                    role = "assistant",
+                    reasoning = "check route\ncheck model\ncheck composer\ncheck overlap",
+                    content = "The trusted runtime is active, Qwen3 is selected, and the composer stays docked.",
+                    suggestions = listOf(
+                        "Check route status",
+                        "Draft QA note",
+                        "Review attachment",
+                    ),
+                ),
+            ),
+        )
+
+        compose.setContent {
+            MaterialTheme {
+                Surface(
+                    modifier = Modifier
+                        .width(320.dp)
+                        .height(470.dp)
+                        .testTag(chatSurfaceNarrowPhoneRootTestTag),
+                ) {
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        ChatTopAppBarTitle(
+                            state = state,
+                            onRequestModels = {},
+                            onSelectModel = {},
+                        )
+                        ChatScreen(
+                            state = state,
+                            onInputChange = {},
+                            onSend = {},
+                            onCancel = {},
+                            onConnect = {},
+                            onScanPairingQr = {},
+                            onRefreshHealth = {},
+                            onAttachFiles = {},
+                            onRemoveAttachment = {},
+                            onSuggestionClick = {},
+                            onScanLatestQr = {},
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+            }
+        }
+
+        compose.onNodeWithTag(chatSurfaceNarrowPhoneRootTestTag)
+            .assertWidthIsAtLeast(320.dp)
+            .assertHeightIsAtLeast(470.dp)
+        compose.onNodeWithContentDescription(
+            "Chat model picker. Selected chat model Qwen3 8B.",
+            useUnmergedTree = true,
+        ).assertIsDisplayed()
+        compose.onNodeWithContentDescription(
+            "Current chat Runtime handoff polish",
+            useUnmergedTree = true,
+        ).assertIsDisplayed()
+        compose.onNodeWithContentDescription("Attach files", useUnmergedTree = true)
+            .assertIsDisplayed()
+            .assertIsEnabled()
+        compose.onNodeWithContentDescription("Message", useUnmergedTree = true)
+            .assertIsDisplayed()
+            .assertIsEnabled()
+        compose.onNodeWithContentDescription("Send message", useUnmergedTree = true)
+            .assertIsDisplayed()
+            .assertIsEnabled()
+
+        compose.onNodeWithTag(CHAT_MESSAGE_LIST_TEST_TAG).performScrollToIndex(0)
+        compose.onNodeWithText("Review this route card.").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Attachment handoff-notes.pdf, Document", useUnmergedTree = true)
+            .assert(hasStateDescription("Document"))
+            .assertIsDisplayed()
+        val attachmentBounds = compose.onNodeWithContentDescription(
+            "Attachment handoff-notes.pdf, Document",
+            useUnmergedTree = true,
+        ).getUnclippedBoundsInRoot()
+        val attachBounds = compose.onNodeWithContentDescription("Attach files", useUnmergedTree = true)
+            .getUnclippedBoundsInRoot()
+        assertTrue(
+            "Message attachment chip should remain above the docked composer controls.",
+            attachmentBounds.bottom <= attachBounds.top,
+        )
+
+        compose.onNodeWithTag(CHAT_MESSAGE_LIST_TEST_TAG).performScrollToIndex(1)
+        compose.onNodeWithText("The trusted runtime is active, Qwen3 is selected, and the composer stays docked.")
+            .assertIsDisplayed()
+        compose.onNode(
+            hasContentDescription("Thinking. Collapsed. check route check model check composer") and
+                hasStateDescription("Collapsed") and
+                hasClickActionLabel("Show thinking"),
+            useUnmergedTree = true,
+        ).assertIsDisplayed()
+        assertNoVisibleText("check overlap")
+        compose.onNodeWithText("Check route status").assertIsDisplayed()
+        compose.onNodeWithText("Draft QA note").assertIsDisplayed()
+        compose.onNodeWithText("Review attachment").assertIsDisplayed()
+        val suggestionBounds = compose.onNodeWithText("Draft QA note")
+            .getUnclippedBoundsInRoot()
+        val inputBounds = compose.onNodeWithContentDescription("Message", useUnmergedTree = true)
+            .getUnclippedBoundsInRoot()
+        val sendBounds = compose.onNodeWithContentDescription("Send message", useUnmergedTree = true)
+            .getUnclippedBoundsInRoot()
+
+        assertTrue(
+            "Suggested next-question chips should remain above the docked composer.",
+            suggestionBounds.bottom <= inputBounds.top,
+        )
+        assertTrue(
+            "Composer attach, input, and send controls should share the bottom composer row.",
+            attachBounds.top < sendBounds.bottom && sendBounds.top < attachBounds.bottom,
+        )
+    }
+
+    @Test
     fun chatScreenMessageRowsExposeLocalizedRoleAccessibilitySummaries() {
         val languageTags = listOf("en", "ko", "ja", "zh-CN", "fr")
         val currentLanguage = mutableStateOf(languageTags.first())
@@ -7317,52 +7934,55 @@ class ClientScreensNoDeviceComposeTest {
             installed = true,
             source = "local",
         )
+        val hapticFeedback = RecordingHapticFeedback()
 
         compose.setContent {
-            MaterialTheme {
-                val expected = currentCopy.value
-                LocalizedTestContent(languageTag = expected.languageTag) {
-                    ChatScreen(
-                        state = RuntimeUiState(
-                            isConnected = true,
-                            runtimeStatus = "authenticated",
-                            trustedRuntime = RuntimeTrustedRuntime(
-                                deviceId = "runtime-1",
-                                name = "AetherLink Runtime",
-                            ),
-                            backendAvailable = true,
-                            selectedModelId = chatModel.id,
-                            models = listOf(chatModel),
-                            messages = listOf(
-                                RuntimeChatMessage(
-                                    id = "user-copy",
-                                    role = "user",
-                                    content = "Copyable user message",
+            CompositionLocalProvider(LocalHapticFeedback provides hapticFeedback) {
+                MaterialTheme {
+                    val expected = currentCopy.value
+                    LocalizedTestContent(languageTag = expected.languageTag) {
+                        ChatScreen(
+                            state = RuntimeUiState(
+                                isConnected = true,
+                                runtimeStatus = "authenticated",
+                                trustedRuntime = RuntimeTrustedRuntime(
+                                    deviceId = "runtime-1",
+                                    name = "AetherLink Runtime",
                                 ),
-                                RuntimeChatMessage(
-                                    id = "assistant-copy",
-                                    role = "assistant",
-                                    content = "Copyable assistant reply",
+                                backendAvailable = true,
+                                selectedModelId = chatModel.id,
+                                models = listOf(chatModel),
+                                messages = listOf(
+                                    RuntimeChatMessage(
+                                        id = "user-copy",
+                                        role = "user",
+                                        content = "Copyable user message",
+                                    ),
+                                    RuntimeChatMessage(
+                                        id = "assistant-copy",
+                                        role = "assistant",
+                                        content = "Copyable assistant reply",
+                                    ),
                                 ),
+                                selectedTheme = RuntimeAppTheme.System,
                             ),
-                            selectedTheme = RuntimeAppTheme.System,
-                        ),
-                        onInputChange = {},
-                        onSend = {},
-                        onCancel = {},
-                        onConnect = {},
-                        onScanPairingQr = {},
-                        onRefreshHealth = {},
-                        onAttachFiles = {},
-                        onRemoveAttachment = {},
-                        onSuggestionClick = {},
-                        onScanLatestQr = {},
-                    )
+                            onInputChange = {},
+                            onSend = {},
+                            onCancel = {},
+                            onConnect = {},
+                            onScanPairingQr = {},
+                            onRefreshHealth = {},
+                            onAttachFiles = {},
+                            onRemoveAttachment = {},
+                            onSuggestionClick = {},
+                            onScanLatestQr = {},
+                        )
+                    }
                 }
             }
         }
 
-        expectedCopies.forEach { expected ->
+        expectedCopies.forEachIndexed { index, expected ->
             compose.runOnUiThread {
                 currentCopy.value = expected
             }
@@ -7371,11 +7991,39 @@ class ClientScreensNoDeviceComposeTest {
             compose.onNodeWithText("Copyable assistant reply").assertExists()
             compose.onAllNodes(hasLongClickActionLabel(expected.copyAction), useUnmergedTree = true)
                 .assertCountEquals(2)
-                .onFirst()
-                .performSemanticsAction(SemanticsActions.OnLongClick)
+            val localizedContext = ApplicationProvider
+                .getApplicationContext<Context>()
+                .localizedContext(expected.languageTag)
+            val userSummary = localizedContext.getString(
+                R.string.chat_message_accessibility_summary,
+                localizedContext.getString(R.string.role_user),
+                "Copyable user message",
+            )
+            compose.onNode(
+                hasContentDescription(userSummary) and
+                    hasLongClickActionLabel(expected.copyAction),
+                useUnmergedTree = true,
+            ).performSemanticsAction(SemanticsActions.OnLongClick)
+            waitForClipboardPayload(
+                label = expected.copyAction,
+                text = "Copyable user message",
+            )
+            compose.onAllNodesWithContentDescription(expected.copyAction, useUnmergedTree = true)
+                .assertCountEquals(2)
+                .onLast()
+                .assert(hasClickActionLabel(expected.copyAction))
+                .performClick()
             waitForCopiedAnnouncement(expected.copiedResult)
+            waitForClipboardPayload(
+                label = expected.copyAction,
+                text = "Copyable assistant reply",
+            )
             compose.onNodeWithContentDescription(expected.copiedResult, useUnmergedTree = true)
                 .assert(hasPoliteLiveRegion())
+            assertEquals(
+                List((index + 1) * 2) { HapticFeedbackType.LongPress },
+                hapticFeedback.events,
+            )
         }
     }
 
@@ -7462,11 +8110,149 @@ class ClientScreensNoDeviceComposeTest {
                 .assert(hasClickActionLabel(expected.codeCopyAction))
                 .performClick()
             waitForCopiedAnnouncement(expected.copiedResult)
+            waitForClipboardPayload(
+                label = expected.codeCopyAction,
+                text = "val route = \"runtime\"",
+            )
             compose.onNodeWithContentDescription(expected.copiedResult, useUnmergedTree = true)
                 .assert(hasPoliteLiveRegion())
             compose.onAllNodesWithContentDescription(expected.messageCopyAction, useUnmergedTree = true)
                 .assertCountEquals(0)
         }
+    }
+
+    @Test
+    fun parseMessageContentPreservesCodeBlocksAndNormalizesMarkdownTextBlocks() {
+        val parts = parseMessageContent(
+            """
+                ## Plan
+                > Keep this local-first.
+                ---
+                - **Pair** the runtime
+                1. Send `chat.send`
+
+                | Route | Purpose |
+                | --- | --- |
+                | relay | Different-network QR |
+                | local | Fast path |
+
+                ```kotlin
+                val route = "runtime"
+                ```
+            """.trimIndent(),
+        )
+
+        assertEquals(2, parts.size)
+        val textPart = parts[0] as MessageContentPart.Text
+        val textBlocks = parseMessageTextBlocks(textPart.text)
+        assertEquals(
+            listOf(
+                MessageTextBlock.Heading(2, "Plan"),
+                MessageTextBlock.Quote("Keep this local-first."),
+                MessageTextBlock.Separator,
+                MessageTextBlock.ListItem("\u2022", "**Pair** the runtime"),
+                MessageTextBlock.ListItem("1.", "Send `chat.send`"),
+                MessageTextBlock.Table(
+                    headers = listOf("Route", "Purpose"),
+                    rows = listOf(
+                        listOf("relay", "Different-network QR"),
+                        listOf("local", "Fast path"),
+                    ),
+                ),
+            ),
+            textBlocks,
+        )
+        val codePart = parts[1] as MessageContentPart.Code
+        assertEquals("kotlin", codePart.language)
+        assertEquals("val route = \"runtime\"", codePart.code)
+    }
+
+    @Test
+    fun chatScreenRendersMarkdownListsAndInlineCode() {
+        val chatModel = RuntimeModel(
+            id = "ollama:qwen3:8b",
+            name = "Qwen3 8B",
+            modelKind = MODEL_KIND_CHAT,
+            capabilities = listOf("chat"),
+            installed = true,
+            source = "local",
+        )
+
+        compose.setContent {
+            MaterialTheme {
+                ChatScreen(
+                    state = RuntimeUiState(
+                        isConnected = true,
+                        runtimeStatus = "authenticated",
+                        trustedRuntime = RuntimeTrustedRuntime(
+                            deviceId = "runtime-1",
+                            name = "AetherLink Runtime",
+                        ),
+                        backendAvailable = true,
+                        selectedModelId = chatModel.id,
+                        models = listOf(chatModel),
+                        messages = listOf(
+                            RuntimeChatMessage(
+                                id = "assistant-markdown",
+                                role = "assistant",
+                                content = """
+                                    ## Plan
+                                    > Keep model access mediated by the trusted runtime.
+                                    ---
+                                    - **Pair** the runtime
+                                    - Send `chat.send`
+                                    1. Open [docs](https://example.test)
+
+                                    | Route | Purpose |
+                                    | --- | --- |
+                                    | relay | Different-network QR |
+                                    | local | Fast path |
+
+                                    ```kotlin
+                                    val route = "runtime"
+                                    ```
+                                """.trimIndent(),
+                            ),
+                        ),
+                        selectedTheme = RuntimeAppTheme.System,
+                    ),
+                    onInputChange = {},
+                    onSend = {},
+                    onCancel = {},
+                    onConnect = {},
+                    onScanPairingQr = {},
+                    onRefreshHealth = {},
+                    onAttachFiles = {},
+                    onRemoveAttachment = {},
+                    onSuggestionClick = {},
+                    onScanLatestQr = {},
+                )
+            }
+        }
+
+        compose.onNodeWithText("Plan").assertExists()
+        compose.onNodeWithText("Keep model access mediated by the trusted runtime.").assertExists()
+        compose.onAllNodesWithText("\u2022").assertCountEquals(2)
+        compose.onNodeWithText("Pair the runtime").assertExists()
+        compose.onNodeWithText("Send chat.send").assertExists()
+        compose.onNodeWithText("1.").assertExists()
+        compose.onNodeWithText("Open docs").assertExists()
+        compose.onNodeWithText("Route").assertExists()
+        compose.onNodeWithText("Purpose").assertExists()
+        compose.onNodeWithText("relay").assertExists()
+        compose.onNodeWithText("Different-network QR").assertExists()
+        compose.onNodeWithText("local").assertExists()
+        compose.onNodeWithText("Fast path").assertExists()
+        compose.onAllNodesWithText("## Plan").assertCountEquals(0)
+        compose.onAllNodesWithText("> Keep model access mediated by the trusted runtime.").assertCountEquals(0)
+        compose.onAllNodesWithText("---").assertCountEquals(0)
+        compose.onAllNodesWithText("- **Pair** the runtime").assertCountEquals(0)
+        compose.onAllNodesWithText("- Send `chat.send`").assertCountEquals(0)
+        compose.onAllNodesWithText("[docs](https://example.test)").assertCountEquals(0)
+        compose.onAllNodesWithText("| Route | Purpose |").assertCountEquals(0)
+        compose.onAllNodesWithText("| --- | --- |").assertCountEquals(0)
+        compose.onNodeWithText("kotlin").assertExists()
+        compose.onNodeWithText("val route = \"runtime\"").assertExists()
     }
 
     @Test
@@ -11453,6 +12239,288 @@ class ClientScreensNoDeviceComposeTest {
     }
 
     @Test
+    fun chatScreenShowsRegenerateActionOnlyForLatestAssistantAndHidesWhileStreaming() {
+        var regenerateClicks = 0
+        val hapticFeedback = RecordingHapticFeedback()
+        val chatModel = RuntimeModel(
+            id = "ollama:qwen3:8b",
+            name = "Qwen3 8B",
+            modelKind = MODEL_KIND_CHAT,
+            capabilities = listOf("chat"),
+            installed = true,
+            source = "local",
+        )
+        val state = mutableStateOf(
+            RuntimeUiState(
+                isConnected = true,
+                runtimeStatus = "authenticated",
+                trustedRuntime = RuntimeTrustedRuntime(
+                    deviceId = "runtime-1",
+                    name = "AetherLink Runtime",
+                ),
+                backendAvailable = true,
+                selectedModelId = chatModel.id,
+                models = listOf(chatModel),
+                messages = listOf(
+                    RuntimeChatMessage(id = "user-1", role = "user", content = "First prompt"),
+                    RuntimeChatMessage(id = "assistant-1", role = "assistant", content = "Older answer"),
+                    RuntimeChatMessage(id = "user-2", role = "user", content = "Latest prompt"),
+                    RuntimeChatMessage(id = "assistant-2", role = "assistant", content = "Latest answer"),
+                ),
+            ),
+        )
+
+        compose.setContent {
+            CompositionLocalProvider(LocalHapticFeedback provides hapticFeedback) {
+                MaterialTheme {
+                    ChatScreen(
+                        state = state.value,
+                        onInputChange = {},
+                        onSend = {},
+                        onCancel = {},
+                        onConnect = {},
+                        onScanPairingQr = {},
+                        onRefreshHealth = {},
+                        onAttachFiles = {},
+                        onRemoveAttachment = {},
+                        onSuggestionClick = {},
+                        onScanLatestQr = {},
+                        onRegenerateLatestResponse = { regenerateClicks += 1 },
+                    )
+                }
+            }
+        }
+
+        compose.onAllNodesWithContentDescription(
+            "Regenerate response",
+            useUnmergedTree = true,
+        ).assertCountEquals(1)
+        compose.onNode(
+            hasContentDescription("Regenerate response") and
+                hasClickActionLabel("Regenerate response") and
+                hasClickAction(),
+            useUnmergedTree = true,
+        )
+            .assertIsDisplayed()
+            .performClick()
+
+        assertEquals(1, regenerateClicks)
+        assertEquals(listOf(HapticFeedbackType.TextHandleMove), hapticFeedback.events)
+
+        compose.runOnUiThread {
+            state.value = state.value.copy(
+                isStreaming = true,
+                activeRequestId = "request-streaming",
+            )
+        }
+        compose.waitForIdle()
+
+        compose.onAllNodesWithContentDescription(
+            "Regenerate response",
+            useUnmergedTree = true,
+        ).assertCountEquals(0)
+    }
+
+    @Test
+    fun chatScreenShowsReuseDraftActionOnlyForLatestEligibleUserMessage() {
+        var reuseClicks = 0
+        val hapticFeedback = RecordingHapticFeedback()
+        val chatModel = RuntimeModel(
+            id = "ollama:qwen3:8b",
+            name = "Qwen3 8B",
+            modelKind = MODEL_KIND_CHAT,
+            capabilities = listOf("chat"),
+            installed = true,
+            source = "local",
+        )
+        val baseState = RuntimeUiState(
+            isConnected = true,
+            runtimeStatus = "authenticated",
+            trustedRuntime = RuntimeTrustedRuntime(
+                deviceId = "runtime-1",
+                name = "AetherLink Runtime",
+            ),
+            backendAvailable = true,
+            selectedModelId = chatModel.id,
+            models = listOf(chatModel),
+            messages = listOf(
+                RuntimeChatMessage(id = "user-1", role = "user", content = "First prompt"),
+                RuntimeChatMessage(id = "assistant-1", role = "assistant", content = "Older answer"),
+                RuntimeChatMessage(id = "user-2", role = "user", content = "Latest prompt"),
+                RuntimeChatMessage(id = "assistant-2", role = "assistant", content = "Latest answer"),
+            ),
+        )
+        val state = mutableStateOf(baseState)
+
+        compose.setContent {
+            CompositionLocalProvider(LocalHapticFeedback provides hapticFeedback) {
+                MaterialTheme {
+                    ChatScreen(
+                        state = state.value,
+                        onInputChange = {},
+                        onSend = {},
+                        onCancel = {},
+                        onConnect = {},
+                        onScanPairingQr = {},
+                        onRefreshHealth = {},
+                        onAttachFiles = {},
+                        onRemoveAttachment = {},
+                        onSuggestionClick = {},
+                        onScanLatestQr = {},
+                        onReuseLatestUserMessage = { reuseClicks += 1 },
+                    )
+                }
+            }
+        }
+
+        compose.onAllNodesWithContentDescription(
+            "Use as draft",
+            useUnmergedTree = true,
+        ).assertCountEquals(1)
+        compose.onNode(
+            hasContentDescription("Use as draft") and
+                hasClickActionLabel("Use as draft") and
+                hasClickAction(),
+            useUnmergedTree = true,
+        )
+            .assertIsDisplayed()
+            .performClick()
+
+        assertEquals(1, reuseClicks)
+        assertEquals(listOf(HapticFeedbackType.TextHandleMove), hapticFeedback.events)
+
+        compose.runOnUiThread {
+            state.value = baseState.copy(
+                isStreaming = true,
+                activeRequestId = "request-streaming",
+            )
+        }
+        compose.waitForIdle()
+
+        compose.onAllNodesWithContentDescription(
+            "Use as draft",
+            useUnmergedTree = true,
+        ).assertCountEquals(0)
+
+        compose.runOnUiThread {
+            state.value = baseState.copy(
+                messages = listOf(
+                    RuntimeChatMessage(id = "user-1", role = "user", content = "First prompt"),
+                    RuntimeChatMessage(id = "assistant-1", role = "assistant", content = "Older answer"),
+                    RuntimeChatMessage(
+                        id = "user-2",
+                        role = "user",
+                        content = "Latest prompt with file",
+                        attachments = listOf(
+                            RuntimeMessageAttachment(
+                                id = "file-1",
+                                type = "document",
+                                name = "report.pdf",
+                                mimeType = "application/pdf",
+                            ),
+                        ),
+                    ),
+                    RuntimeChatMessage(id = "assistant-2", role = "assistant", content = "Latest answer"),
+                ),
+            )
+        }
+        compose.waitForIdle()
+
+        compose.onAllNodesWithContentDescription(
+            "Use as draft",
+            useUnmergedTree = true,
+        ).assertCountEquals(0)
+    }
+
+    @Test
+    fun chatScreenFollowupMessageActionsExposeLocalizedStateAcrossSupportedLanguages() {
+        val languageTags = listOf("en", "ko", "ja", "zh-CN", "fr")
+        val languageTag = mutableStateOf(languageTags.first())
+        val chatModel = RuntimeModel(
+            id = "ollama:qwen3:8b",
+            name = "Qwen3 8B",
+            modelKind = MODEL_KIND_CHAT,
+            capabilities = listOf("chat"),
+            installed = true,
+            source = "local",
+        )
+        val state = mutableStateOf(
+            RuntimeUiState(
+                isConnected = true,
+                runtimeStatus = "authenticated",
+                trustedRuntime = RuntimeTrustedRuntime(
+                    deviceId = "runtime-1",
+                    name = "AetherLink Runtime",
+                ),
+                backendAvailable = true,
+                selectedLanguageTag = languageTag.value,
+                selectedModelId = chatModel.id,
+                models = listOf(chatModel),
+                messages = listOf(
+                    RuntimeChatMessage(id = "user-1", role = "user", content = "First prompt"),
+                    RuntimeChatMessage(id = "assistant-1", role = "assistant", content = "Older answer"),
+                    RuntimeChatMessage(id = "user-2", role = "user", content = "Latest prompt"),
+                    RuntimeChatMessage(id = "assistant-2", role = "assistant", content = "Latest answer"),
+                ),
+            )
+        )
+
+        compose.setContent {
+            MaterialTheme {
+                LocalizedTestContent(languageTag = languageTag.value) {
+                    ChatScreen(
+                        state = state.value.copy(selectedLanguageTag = languageTag.value),
+                        onInputChange = {},
+                        onSend = {},
+                        onCancel = {},
+                        onConnect = {},
+                        onScanPairingQr = {},
+                        onRefreshHealth = {},
+                        onAttachFiles = {},
+                        onRemoveAttachment = {},
+                        onSuggestionClick = {},
+                        onScanLatestQr = {},
+                        onRegenerateLatestResponse = {},
+                        onReuseLatestUserMessage = {},
+                    )
+                }
+            }
+        }
+
+        languageTags.forEach { nextLanguageTag ->
+            compose.runOnUiThread {
+                languageTag.value = nextLanguageTag
+                state.value = state.value.copy(selectedLanguageTag = nextLanguageTag)
+            }
+            compose.waitForIdle()
+
+            val localizedContext = ApplicationProvider
+                .getApplicationContext<Context>()
+                .localizedContext(nextLanguageTag)
+            val regenerateLabel = localizedContext.getString(R.string.regenerate_response)
+            val regenerateState = localizedContext.getString(R.string.regenerate_response_state_ready)
+            val reuseLabel = localizedContext.getString(R.string.reuse_message)
+            val reuseState = localizedContext.getString(R.string.reuse_message_state_ready)
+
+            compose.onNode(
+                hasContentDescription(regenerateLabel) and
+                    hasStateDescription(regenerateState) and
+                    hasClickActionLabel(regenerateLabel) and
+                    hasClickAction(),
+                useUnmergedTree = true,
+            ).assertIsDisplayed()
+
+            compose.onNode(
+                hasContentDescription(reuseLabel) and
+                    hasStateDescription(reuseState) and
+                    hasClickActionLabel(reuseLabel) and
+                    hasClickAction(),
+                useUnmergedTree = true,
+            ).assertIsDisplayed()
+        }
+    }
+
+    @Test
     fun chatScreenSuggestionClickFillsComposerWithoutSending() {
         var sendClicks = 0
         val chatModel = RuntimeModel(
@@ -11579,6 +12647,7 @@ class ClientScreensNoDeviceComposeTest {
     }
 
     private val settingsHeadersListTestTag = "settings_headers_list"
+    private val chatSurfaceNarrowPhoneRootTestTag = "chat_surface_narrow_phone_root"
 
     private fun hasPoliteLiveRegion(): SemanticsMatcher {
         return SemanticsMatcher.expectValue(
@@ -11593,6 +12662,28 @@ class ClientScreensNoDeviceComposeTest {
                 .fetchSemanticsNodes()
                 .isNotEmpty()
         }
+    }
+
+    private fun waitForClipboardPayload(label: String, text: String) {
+        compose.waitUntil(timeoutMillis = 2_000) {
+            clipboardLabel() == label && clipboardText() == text
+        }
+    }
+
+    private fun clipboardLabel(): CharSequence? {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val clipboardManager = context.getSystemService(ClipboardManager::class.java)
+        return clipboardManager.primaryClip?.description?.label
+    }
+
+    private fun clipboardText(): String? {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val clipboardManager = context.getSystemService(ClipboardManager::class.java)
+        return clipboardManager.primaryClip
+            ?.takeIf { it.itemCount > 0 }
+            ?.getItemAt(0)
+            ?.coerceToText(context)
+            ?.toString()
     }
 
     private fun scrollUntilTextIsVisible(text: String, maxSwipes: Int = 8) {

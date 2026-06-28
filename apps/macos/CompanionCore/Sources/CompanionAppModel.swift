@@ -738,6 +738,17 @@ public final class CompanionAppModel: ObservableObject {
                 }
             }
         )
+        let runtimeRouter = self.runtimeRouter!
+        if let localPeerServer = peerServer as? LocalPeerServer {
+            localPeerServer.onDisconnect = { connectionID in
+                runtimeRouter.connectionDidClose(connectionID)
+            }
+        }
+        if let relayPeerClient = relayClient as? RelayPeerClient {
+            relayPeerClient.onDisconnect = { connectionID in
+                runtimeRouter.connectionDidClose(connectionID)
+            }
+        }
         configureResidencyEventsIfAvailable()
         if let runtimeIdentityWarning {
             log(runtimeIdentityWarning)
@@ -2168,8 +2179,8 @@ private let companionLogRedactionPatterns = [
     #"https?://[^\s,;)]+"#,
     #"\b(?:[A-Za-z0-9.-]+|\[[0-9A-Fa-f:]+])(?::)(?:11434|1234)(?:/[^\s,;)]*)?"#,
     #"/(?:api/(?:tags|ps|pull|chat|show|v1)|v1/(?:models|chat|chat/completions))\b"#,
-    #"\b(?:relay_secret|route_secret|route_token|pairing_secret|rs|rt)=([^&\s,;)]*)"#,
-    #"\b(?:relay_secret|route_secret|route_token|pairing_secret)\s+[^,\s;)]+"#,
+    #"(?:^|[\s?&{,;])["']?(?:relay_secret|relaySecret|route_secret|routeSecret|route_token|routeToken|pairing_secret|pairingSecret|relay_id|relayId|relay_nonce|relayNonce|allocation_token|allocationToken|rs|rt|ri|rrn)["']?\s*(?:=|:|\s)\s*["']?[^"',\s;})]+"#,
+    #"\b(?:relay_secret|relaySecret|route_secret|routeSecret|route_token|routeToken|pairing_secret|pairingSecret|relay_id|relayId|relay_nonce|relayNonce|allocation_token|allocationToken)\b"#,
 ]
 
 private extension String {

@@ -336,10 +336,6 @@ class RuntimeClientViewModelRelayIntegrationTest {
                     HelloPayload.serializer(),
                     helloEnvelope.payload,
                 )
-                println(
-                    "DEBUG trusted relay auth state=" +
-                        "${viewModel.state.value.runtimeStatus} error=${viewModel.state.value.error}"
-                )
                 val authResponseEnvelope = awaitFuture(relay.authResponseRequest)
                 val authResponsePayload = json.decodeFromJsonElement(
                     AuthResponsePayload.serializer(),

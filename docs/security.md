@@ -45,6 +45,8 @@ The target design is persistent device identity on both sides:
 
 Pairing creates the persistent trust record used by later runtime sessions and by the connection manager. Removing a trusted device invalidates future authentication attempts from that client identity across local direct, remote P2P, and relay fallback paths.
 
+The client identity must not silently rotate across app restarts. The client may persist its public device id and display name in the local preferences store, but private signing key material must remain in the platform key store. If the key store cannot load or create the signing key, the app should surface a device-identity failure instead of overwriting the previously persisted client id/name.
+
 ## Pairing Design
 
 Target pairing flow:
@@ -57,6 +59,12 @@ Target pairing flow:
 6. Future sessions use challenge-response authentication before runtime commands.
 
 v0.1 persists the scanned trusted runtime record on the client only after the runtime accepts `pairing.request` and stores the client device as trusted. When the QR and accepted `pairing.result` include runtime public-key metadata, the client verifies that the accepted runtime key/fingerprint matches the scanned QR before storing trust. The client connects to the runtime host, not to Ollama or LM Studio directly.
+
+QR trust values must fail closed before pairing state is persisted. The client rejects whitespace-mutated pairing nonces, runtime ids, runtime fingerprints, runtime public keys, route tokens, relay ids, relay nonces, and relay scopes rather than trimming them into a different trusted identity or route. Runtime display names are normalized separately for UI, and relay frame secrets are treated as opaque secret material.
+
+The runtime also validates submitted client identity before writing a trusted-device record. `device_id` and `public_key` are treated as opaque canonical values, the public key must decode as a P-256 DER public key compatible with the later challenge-response verifier, and display names are normalized separately. Invalid client identity material returns `pairing_invalid_device_identity` and leaves the trusted-device store unchanged.
+
+Pending QR routes are stored with a stricter boundary than trusted route metadata. When a QR contains relay route material but pairing is not accepted yet, the client may keep the non-secret route metadata in its local runtime UI store so the app can retry after process recreation. The raw pending `relay_secret` must not be written into that JSON store. It is saved through the Android relay secret store and the pending route keeps only a deterministic secret reference. If that reference cannot be resolved on load, the pending pairing route is discarded and the user must scan a fresh QR. When a pending pairing route is cleared or replaced, the old secret-store reference must be removed as well so abandoned QR relay credentials do not linger locally.
 
 An active pairing session allows only a bounded number of invalid nonce/code submissions. After the limit is reached, the runtime host invalidates that pairing session and returns structured `pairing.result` rejection details while preserving the existing `accepted: false` response shape.
 
@@ -87,13 +95,21 @@ After pairing, each runtime connection authenticates before model or command mes
 1. The client sends `hello` with its trusted device id.
 2. The runtime host checks the trusted-device store and returns `auth.challenge` with a one-time nonce.
 3. When the client has a pinned runtime public key from QR pairing, it verifies the runtime's challenge signature before sending a client signature.
-4. The client signs the nonce with its paired private key and sends `auth.response`.
-5. The runtime host verifies the signature against the stored client public key.
-6. The runtime host allows runtime commands only after the connection is authenticated.
+4. The client signs the domain-separated message `AetherLink client auth response v1\n<device_id>\n<nonce>` with its paired private key and sends `auth.response`.
+5. The runtime host verifies that exact message against the stored client public key. Raw nonce signatures are rejected to avoid cross-protocol signature reuse.
+6. The runtime host allows runtime commands only after the connection is authenticated and the authenticated device id is still present in the trusted-device store.
 
-Runtime commands include `runtime.health`, `models.list`, `models.pull`, `chat.send`, and `chat.cancel`. Requests sent before authentication fail with `authentication_required`; unknown or removed device ids fail with `pairing_required`; invalid client signatures fail with `authentication_failed`; invalid runtime proofs fail client-side with `runtime_authentication_failed`.
+Runtime commands include `runtime.health`, `models.list`, `models.pull`, `chat.send`, and `chat.cancel`. Requests sent before authentication fail with `authentication_required`; unknown or removed device ids fail with `pairing_required`; invalid client signatures fail with `authentication_failed`; invalid runtime proofs fail client-side with `runtime_authentication_failed`. Removing a trusted device must also revoke already-authenticated live sessions at the next command boundary: the runtime clears the cached auth session and returns `pairing_required` instead of letting stale connections continue.
 
 The same authentication requirement applies on every transport. A relay or signaling server must not be trusted as an authenticator, must not terminate the end-to-end encrypted AetherLink session, and must not be able to forge either device identity.
+
+## Runtime-Owned Local Storage
+
+Runtime-owned chat processing logs, memory notes, trusted-device records, and fallback runtime identity files are sensitive local assets. The runtime stores these materials on the runtime host, not on a relay or model provider, and they must not be readable through group/world permissions. Current macOS JSONL chat and memory event logs are created with owner-only `0600` permissions, their AetherLink support directory is created or corrected to `0700`, and each append reasserts file permissions so older broader-permission files are repaired lazily. The `trusted-devices.json` authorization store also creates or corrects its containing directory to `0700` and the trusted-device JSON file to `0600` before loading or after writing, without dropping valid trusted devices. The file-backed runtime identity fallback applies the same directory/file permission policy before loading or after writing, without rotating a valid existing identity key.
+
+Runtime-owned chat history and memory are scoped to the authenticated trusted-device identity before they are listed, injected into `chat.send`, renamed, archived, restored, deleted, or title-generated. The client does not send an owner id in protocol payloads; the runtime derives `owner_device_id` from the authenticated connection and writes it to JSONL events. Legacy unscoped events remain readable only through unscoped/no-auth store calls and are intentionally not mixed into authenticated device views.
+
+This is local filesystem hardening, not a replacement for future encrypted-at-rest storage, keychain-backed secrets, or user-controlled retention policy. Archived and deleted chat state remains runtime-owned and must not be used as memory, retrieval, research, or compaction input unless restored or explicitly selected by a future permissioned workflow.
 
 ## Remote Connectivity Security
 
@@ -116,6 +132,8 @@ Target security properties:
 Current implementation status: AetherLink has route-candidate plumbing for the target connection order and a temporary outbound TCP development relay for different-Wi-Fi testing. Different-network production P2P, NAT traversal, decentralized/bootstrap signaling, encrypted blind relay fallback, and production end-to-end transport encryption remain future work.
 
 Development preflight should fail closed for remote QR testing. `script/run_different_network_dev_runtime.sh --preflight-only` rejects accidental loopback, `.local`, unspecified, link-local, carrier-grade NAT, and private relay hosts unless an explicit private-overlay flag is used, and it checks the allocation API before RuntimeDevServer starts. When the relay requires an allocation token, preflight and RuntimeDevServer must send the same token with `--allocation-token` or `AETHERLINK_BOOTSTRAP_RELAY_ALLOCATION_TOKEN`. The app-side QR path blocks scope-less private IP relay literals and accepts them only when the QR marks `relay_scope=private_overlay`; the macOS GUI now requires an explicit private-overlay/VPN/tunnel opt-in before it emits that scope. This prevents a QR from looking remote-ready when the real blocker is the absence of reachable relay/bootstrap/overlay material.
+
+Route-refresh scope handling must also fail closed. `route.refresh` responses may omit `relay_scope`, but any present value must match the protocol enum exactly: `remote`, `private_overlay`, or `usb_reverse`. The runtime must not emit unknown relay scopes, and the client must reject unknown or whitespace-mutated relay scopes before saving refreshed trusted route material.
 
 Public access is forbidden for the same reason same-network unauthenticated access is forbidden: network reachability is not trust. A runtime host must never accept model, file, memory, tool, or backend commands just because a peer found it through local discovery, a bootstrap peer, a DHT-like record, a relay allocation, or a public address.
 

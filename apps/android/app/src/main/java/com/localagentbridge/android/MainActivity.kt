@@ -168,11 +168,13 @@ private fun HapticFeedback.performAetherLinkFeedback(feedback: AetherLinkInterac
 
 class MainActivity : ComponentActivity() {
     private val pairingUriState = mutableStateOf<String?>(null)
+    private val sharedChatDraftState = mutableStateOf<SharedChatDraft?>(null)
     private val developerDiagnosticsState = mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         pairingUriState.value = intent.pairingUriOrNull()
+        sharedChatDraftState.value = intent.sharedChatDraftOrNull()
         developerDiagnosticsState.value = shouldEnableDeveloperDiagnostics(
             isDebugBuild = BuildConfig.DEBUG,
             requestedByLaunch = intent.developerDiagnosticsRequested(),
@@ -180,8 +182,10 @@ class MainActivity : ComponentActivity() {
         setContent {
             LocalAgentBridgeApp(
                 pairingUri = pairingUriState.value,
+                sharedChatDraft = sharedChatDraftState.value,
                 showDeveloperDiagnostics = developerDiagnosticsState.value,
                 onPairingUriConsumed = { pairingUriState.value = null },
+                onSharedChatDraftConsumed = { sharedChatDraftState.value = null },
             )
         }
     }
@@ -190,6 +194,7 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         pairingUriState.value = intent.pairingUriOrNull()
+        sharedChatDraftState.value = intent.sharedChatDraftOrNull()
         developerDiagnosticsState.value = shouldEnableDeveloperDiagnostics(
             isDebugBuild = BuildConfig.DEBUG,
             requestedByLaunch = intent.developerDiagnosticsRequested(),
@@ -198,6 +203,75 @@ class MainActivity : ComponentActivity() {
 }
 
 internal const val DEVELOPER_DIAGNOSTICS_EXTRA = "aetherlink.dev_diagnostics"
+
+internal data class SharedChatDraft(
+    val text: String = "",
+    val attachmentUris: List<Uri> = emptyList(),
+)
+
+internal fun Intent?.sharedChatDraftOrNull(): SharedChatDraft? {
+    val intent = this ?: return null
+    val streams = buildList {
+        intent.streamExtraUriOrNull()?.let(::add)
+        addAll(intent.streamExtraUris())
+        val clipData = intent.clipData
+        if (clipData != null) {
+            repeat(clipData.itemCount) { index ->
+                clipData.getItemAt(index).uri?.let(::add)
+            }
+        }
+    }
+    return sharedChatDraftOrNull(
+        action = intent.action,
+        sharedText = intent.getStringExtra(Intent.EXTRA_TEXT),
+        attachmentUris = streams,
+    )
+}
+
+internal fun sharedChatDraftOrNull(
+    action: String?,
+    sharedText: String?,
+    attachmentUris: List<Uri>,
+): SharedChatDraft? {
+    if (action != Intent.ACTION_SEND && action != Intent.ACTION_SEND_MULTIPLE) {
+        return null
+    }
+    return SharedChatDraft(
+        text = sharedText.orEmpty().trim(),
+        attachmentUris = attachmentUris.distinct(),
+    )
+        .takeIf { it.text.isNotBlank() || it.attachmentUris.isNotEmpty() }
+}
+
+internal fun sharedChatDraftComposerText(currentText: String, sharedText: String): String {
+    val trimmedSharedText = sharedText.trim()
+    if (trimmedSharedText.isBlank()) return currentText
+
+    val trimmedCurrentText = currentText.trimEnd()
+    return if (trimmedCurrentText.isBlank()) {
+        trimmedSharedText
+    } else {
+        "$trimmedCurrentText\n\n$trimmedSharedText"
+    }
+}
+
+@Suppress("DEPRECATION")
+private fun Intent.streamExtraUriOrNull(): Uri? {
+    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+    } else {
+        getParcelableExtra(Intent.EXTRA_STREAM) as? Uri
+    }
+}
+
+@Suppress("DEPRECATION")
+private fun Intent.streamExtraUris(): List<Uri> {
+    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java).orEmpty()
+    } else {
+        getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM).orEmpty()
+    }
+}
 
 internal fun shouldEnableDeveloperDiagnostics(
     isDebugBuild: Boolean,
@@ -249,8 +323,10 @@ internal fun synchronizeAndroidSystemAppLanguageTag(
 @OptIn(ExperimentalMaterial3Api::class)
 private fun LocalAgentBridgeApp(
     pairingUri: String? = null,
+    sharedChatDraft: SharedChatDraft? = null,
     showDeveloperDiagnostics: Boolean = false,
     onPairingUriConsumed: () -> Unit = {},
+    onSharedChatDraftConsumed: () -> Unit = {},
 ) {
     val viewModel: RuntimeClientViewModel = viewModel()
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -338,6 +414,20 @@ private fun LocalAgentBridgeApp(
                 destination = AppDestination.Settings
                 viewModel.trustRuntimeFromPairingQr(uri)
                 onPairingUriConsumed()
+            }
+
+            LaunchedEffect(sharedChatDraft) {
+                val draft = sharedChatDraft ?: return@LaunchedEffect
+                val updatedText = sharedChatDraftComposerText(
+                    currentText = state.chatInput,
+                    sharedText = draft.text,
+                )
+                if (updatedText != state.chatInput) {
+                    viewModel.updateChatInput(updatedText)
+                }
+                handlePickedAttachments(draft.attachmentUris, viewModel::addAttachments)
+                destination = AppDestination.Chat
+                onSharedChatDraftConsumed()
             }
 
             LaunchedEffect(
@@ -519,6 +609,8 @@ private fun LocalAgentBridgeApp(
                                 onRemoveAttachment = viewModel::removePendingAttachment,
                                 onSuggestionClick = viewModel::useSuggestedQuestion,
                                 onScanLatestQr = scanPairingQr,
+                                onRegenerateLatestResponse = viewModel::regenerateLatestResponse,
+                                onReuseLatestUserMessage = viewModel::reuseLatestUserMessageAsDraft,
                                 modifier = Modifier
                                     .fillMaxSize()
                                     .padding(padding),
@@ -724,6 +816,7 @@ internal fun AetherLinkPermanentNavigationRail(
     val newChatActionLabel = stringResource(R.string.new_chat)
     val chatActionLabel = stringResource(AppDestination.Chat.labelRes)
     val settingsActionLabel = stringResource(AppDestination.Settings.labelRes)
+    val settingsStateDescription = stringResource(R.string.settings_destination_state_ready)
 
     NavigationRail(
         modifier = Modifier
@@ -782,6 +875,7 @@ internal fun AetherLinkPermanentNavigationRail(
                 onSelectDestination(AppDestination.Settings)
             },
             modifier = Modifier.semantics {
+                stateDescription = settingsStateDescription
                 onClick(label = settingsActionLabel, action = null)
             },
             icon = {
@@ -1492,6 +1586,7 @@ internal fun AetherLinkNavigationDrawerContent(
     val newChatEnabled = newChatActionEnabled(state)
     val newChatStateDescription = newChatActionStateDescription(state)
     val newChatActionLabel = stringResource(R.string.new_chat)
+    val settingsStateDescription = stringResource(R.string.settings_destination_state_ready)
 
     ModalDrawerSheet {
         Column(
@@ -1593,6 +1688,7 @@ internal fun AetherLinkNavigationDrawerContent(
                 DrawerDestinationItem(
                     destination = AppDestination.Settings,
                     selected = effectiveDestination == AppDestination.Settings,
+                    stateDescription = settingsStateDescription,
                     onClick = {
                         hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.SelectionChange)
                         onSelectSettings()
@@ -2083,6 +2179,7 @@ internal fun RenameChatSessionDialog(
 private fun DrawerDestinationItem(
     destination: AppDestination,
     selected: Boolean,
+    stateDescription: String? = null,
     onClick: () -> Unit,
 ) {
     val label = stringResource(destination.labelRes)
@@ -2099,6 +2196,7 @@ private fun DrawerDestinationItem(
         modifier = Modifier
             .padding(horizontal = 12.dp)
             .semantics {
+                stateDescription?.let { this.stateDescription = it }
                 onClick(label = label, action = null)
             },
     )

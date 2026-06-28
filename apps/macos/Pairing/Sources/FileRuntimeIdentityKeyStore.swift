@@ -24,6 +24,9 @@ public final class FileRuntimeIdentityKeyStore: RuntimeChallengeSigning, @unchec
         var privateKeyBase64: String
     }
 
+    private static let directoryPermissions = 0o700
+    private static let filePermissions = 0o600
+
     private let fileURL: URL
     private let fileManager: FileManager
     private let lock = NSLock()
@@ -82,6 +85,12 @@ public final class FileRuntimeIdentityKeyStore: RuntimeChallengeSigning, @unchec
         guard fileManager.fileExists(atPath: path) else {
             return nil
         }
+        do {
+            try secureDirectory()
+            try secureFile()
+        } catch {
+            throw FileRuntimeIdentityKeyStoreError.writeFailed(path: path, reason: error.localizedDescription)
+        }
 
         let data: Data
         do {
@@ -115,20 +124,37 @@ public final class FileRuntimeIdentityKeyStore: RuntimeChallengeSigning, @unchec
     private func store(_ privateKey: P256.Signing.PrivateKey) throws {
         let path = normalizedPath
         do {
-            try fileManager.createDirectory(
-                at: fileURL.deletingLastPathComponent(),
-                withIntermediateDirectories: true
-            )
+            try secureDirectory()
             let storedKey = StoredIdentityKey(
                 version: 1,
                 privateKeyBase64: privateKey.rawRepresentation.base64EncodedString()
             )
             let data = try JSONEncoder().encode(storedKey)
             try data.write(to: fileURL, options: [.atomic])
-            try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: path)
+            try secureFile()
         } catch {
             throw FileRuntimeIdentityKeyStoreError.writeFailed(path: path, reason: error.localizedDescription)
         }
+    }
+
+    private func secureDirectory() throws {
+        let directoryURL = fileURL.deletingLastPathComponent()
+        try fileManager.createDirectory(
+            at: directoryURL,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: Self.directoryPermissions]
+        )
+        try fileManager.setAttributes(
+            [.posixPermissions: Self.directoryPermissions],
+            ofItemAtPath: directoryURL.standardizedFileURL.path
+        )
+    }
+
+    private func secureFile() throws {
+        try fileManager.setAttributes(
+            [.posixPermissions: Self.filePermissions],
+            ofItemAtPath: normalizedPath
+        )
     }
 
     private var normalizedPath: String {

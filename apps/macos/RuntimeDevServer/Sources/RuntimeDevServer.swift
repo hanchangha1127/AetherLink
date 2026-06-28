@@ -76,6 +76,12 @@ struct RuntimeDevServer {
             }
         )
         routerBox.set(router)
+        server.onDisconnect = { connectionID in
+            routerBox.connectionDidClose(connectionID)
+        }
+        relayClient?.onDisconnect = { connectionID in
+            routerBox.connectionDidClose(connectionID)
+        }
         RuntimeDevServerState.server = server
         RuntimeDevServerState.advertiser = advertiser
         RuntimeDevServerState.relayClient = relayClient
@@ -579,6 +585,11 @@ private final class RuntimeRouterBox: @unchecked Sendable {
     func handle(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) {
         let current = lock.withLock { router }
         current?.handle(envelope, sink: sink)
+    }
+
+    func connectionDidClose(_ connectionID: UUID) {
+        let current = lock.withLock { router }
+        current?.connectionDidClose(connectionID)
     }
 }
 

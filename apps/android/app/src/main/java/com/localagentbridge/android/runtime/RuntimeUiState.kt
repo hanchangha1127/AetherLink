@@ -31,6 +31,7 @@ data class RuntimeUiState(
     val chatSessions: List<RuntimeChatSession> = emptyList(),
     val archivedChatSessions: List<RuntimeChatSession> = emptyList(),
     val activeChatSessionId: String? = null,
+    val loadingChatSessionId: String? = null,
     val messages: List<RuntimeChatMessage> = emptyList(),
     val chatInput: String = "",
     val pendingAttachments: List<RuntimePendingAttachment> = emptyList(),
@@ -44,7 +45,10 @@ data class RuntimeUiState(
     val pairingOnboardingCompleted: Boolean = false,
     val activeRouteKind: RuntimeActiveRouteKind? = null,
     val error: RuntimeUiError? = null,
-)
+) {
+    val isLoadingActiveChatMessages: Boolean
+        get() = activeChatSessionId != null && loadingChatSessionId == activeChatSessionId
+}
 
 enum class RuntimeActiveRouteKind {
     DirectTcp,
@@ -216,4 +220,5 @@ data class RuntimeUiError(
     val code: String,
     val detail: String? = null,
     val diagnosticCode: String? = null,
+    val technicalDetail: String? = null,
 )

@@ -203,12 +203,26 @@ def route_diagnostics_guard_failures() -> list[str]:
         "model.bootstrapRelaySettings.isEnabled",
         "model.remoteRoutePreparationIssue != nil",
     )
+    pairing_helper_signature = "@MainActor\nfunc shouldShowPairingRouteSetupPanel(model: CompanionAppModel) -> Bool"
+    pairing_helper_snippets = (
+        "shouldShowRouteDiagnosticsPanel(model: model)",
+        "model.pairingSession == nil",
+        "!model.canPrepareRemoteRelayRouteAutomatically",
+        "!model.hasDevelopmentRelayRoute",
+    )
 
     if helper_signature not in helper_text or any(snippet not in helper_text for snippet in helper_rule_snippets):
         failures.append(
             "apps/macos/LocalAgentBridgeApp/Sources/RemoteRelayRoutePanel.swift: "
             "Route Diagnostics visibility must stay centralized behind "
             "shouldShowRouteDiagnosticsPanel(model:)."
+        )
+    if pairing_helper_signature not in helper_text or any(
+        snippet not in helper_text for snippet in pairing_helper_snippets
+    ):
+        failures.append(
+            "apps/macos/LocalAgentBridgeApp/Sources/RemoteRelayRoutePanel.swift: "
+            "Pairing must expose Connection Recovery when QR generation requires remote route setup."
         )
     latest_qr_ready_snippets = (
         "let canGenerateLatestQRCode = model.isDevelopmentRelayQRCodeReady &&",
@@ -224,12 +238,13 @@ def route_diagnostics_guard_failures() -> list[str]:
             )
             break
 
-    guarded_views = (
-        ROOT / "apps/macos/LocalAgentBridgeApp/Sources/PairingView.swift",
-        ROOT / "apps/macos/LocalAgentBridgeApp/Sources/StatusView.swift",
-    )
-    guard_line = "if shouldShowRouteDiagnosticsPanel(model: model) {"
-    for path in guarded_views:
+    guarded_views = {
+        ROOT / "apps/macos/LocalAgentBridgeApp/Sources/PairingView.swift":
+            "if shouldShowPairingRouteSetupPanel(model: model) {",
+        ROOT / "apps/macos/LocalAgentBridgeApp/Sources/StatusView.swift":
+            "if shouldShowRouteDiagnosticsPanel(model: model) {",
+    }
+    for path, guard_line in guarded_views.items():
         text = path.read_text(encoding="utf-8", errors="replace")
         for match in re.finditer(r"\bRemoteRelayRoutePanel\s*\(", text):
             preceding = text[max(0, match.start() - 160):match.start()]
@@ -243,10 +258,10 @@ def route_diagnostics_guard_failures() -> list[str]:
 
     localization_tests_path = ROOT / "apps/macos/LocalAgentBridgeApp/Tests/AetherLinkLocalizationTests.swift"
     localization_tests_text = localization_tests_path.read_text(encoding="utf-8", errors="replace")
-    if "testRouteDiagnosticsPanelStaysHiddenOnCleanFirstRunUntilRouteStateExists" not in localization_tests_text:
+    if "testRouteDiagnosticsPanelStaysHiddenOnCleanFirstRunButPairingExposesSetup" not in localization_tests_text:
         failures.append(
             f"{localization_tests_path.relative_to(ROOT)}: Missing regression test that keeps "
-            "Connection Recovery hidden on clean first-run until saved route state or a route issue exists."
+            "Connection Recovery hidden on clean first-run status while exposing setup from Pairing."
         )
 
     return failures
@@ -507,6 +522,7 @@ def android_runtime_boundary_guard_failures() -> list[str]:
     manifest_path = ROOT / "apps/android/app/src/main/AndroidManifest.xml"
     ui_path = ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/ui/ClientScreens.kt"
     runtime_path = ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt"
+    runtime_state_path = ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeUiState.kt"
     runtime_store_path = ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeLocalStore.kt"
     main_activity_path = ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/MainActivity.kt"
     test_path = ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/AppNavigationTest.kt"
@@ -523,6 +539,7 @@ def android_runtime_boundary_guard_failures() -> list[str]:
     ui_text = ui_path.read_text(encoding="utf-8", errors="replace")
     main_activity_text = main_activity_path.read_text(encoding="utf-8", errors="replace")
     runtime_text = runtime_path.read_text(encoding="utf-8", errors="replace")
+    runtime_state_text = runtime_state_path.read_text(encoding="utf-8", errors="replace")
     runtime_store_text = runtime_store_path.read_text(encoding="utf-8", errors="replace")
     test_text = test_path.read_text(encoding="utf-8", errors="replace")
     client_screens_test_text = client_screens_test_path.read_text(encoding="utf-8", errors="replace")
@@ -561,11 +578,42 @@ def android_runtime_boundary_guard_failures() -> list[str]:
             f"{manifest_path.relative_to(ROOT)}: Android manifest should expose only the two pair-host "
             "schemes: aetherlink and legacy lab."
         )
+    if 'android:mimeType="application/*"' in manifest_text:
+        failures.append(
+            f"{manifest_path.relative_to(ROOT)}: Android share-sheet intake must not accept broad "
+            "application/* shares; expose only supported document MIME types through AetherLink Runtime."
+        )
+    required_share_mime_snippets = (
+        "android.intent.action.SEND",
+        "android.intent.action.SEND_MULTIPLE",
+        'android:mimeType="image/*"',
+        'android:mimeType="text/*"',
+        'android:mimeType="application/pdf"',
+        'android:mimeType="application/vnd.openxmlformats-officedocument.wordprocessingml.document"',
+        'android:mimeType="application/vnd.hancom.hwpx"',
+        'android:mimeType="application/hwp+zip"',
+        'android:mimeType="application/vnd.oasis.opendocument.text"',
+        'android:mimeType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"',
+        'android:mimeType="application/vnd.openxmlformats-officedocument.presentationml.presentation"',
+        'android:mimeType="application/json"',
+        'android:mimeType="application/yaml"',
+        'android:mimeType="application/toml"',
+        'android:mimeType="application/xml"',
+    )
+    if any(snippet not in manifest_text for snippet in required_share_mime_snippets):
+        failures.append(
+            f"{manifest_path.relative_to(ROOT)}: Android share-sheet intake must accept text, image, "
+            "and explicit supported document shares without adding broad application/* or direct model-provider access."
+        )
 
     required_main_activity_snippets = (
         "RuntimePairingPayloadParser.parse(",
         "allowDebugLoopbackRelay = BuildConfig.DEBUG",
         "allowDiagnosticLocalDirectEndpoint = BuildConfig.DEBUG",
+        "internal data class SharedChatDraft(",
+        "internal fun Intent?.sharedChatDraftOrNull(): SharedChatDraft?",
+        "LaunchedEffect(sharedChatDraft)",
+        "handlePickedAttachments(draft.attachmentUris, viewModel::addAttachments)",
     )
     for snippet in required_main_activity_snippets:
         if snippet not in main_activity_text:
@@ -594,10 +642,27 @@ def android_runtime_boundary_guard_failures() -> list[str]:
     pairing_parser_test_text = pairing_parser_test_path.read_text(encoding="utf-8", errors="replace")
     pairing_store_text = pairing_store_path.read_text(encoding="utf-8", errors="replace")
     pairing_store_test_text = pairing_store_test_path.read_text(encoding="utf-8", errors="replace")
-    if "require(it.none(Char::isWhitespace)) { \"Invalid route token\" }" not in pairing_parser_text:
+    required_qr_trust_value_snippets = (
+        "requiredOpaqueQrValue(\"Missing pairing nonce\", \"Invalid pairing nonce\")",
+        "requiredOpaqueQrValue(\"Missing runtime device id\", \"Invalid runtime device id\")",
+        "requiredOpaqueQrValue(\"Missing runtime fingerprint\", \"Invalid runtime fingerprint\")",
+        "optionalOpaqueQrValue(\"Invalid runtime public key\")",
+        "optionalOpaqueQrValue(\"Invalid route token\")",
+        "optionalOpaqueQrValue(\"Invalid relay id\")",
+        "optionalOpaqueQrValue(\"Invalid relay nonce\")",
+        "optionalOpaqueQrValue(\"Invalid relay scope\")",
+        "value == value.trim() && value.none(Char::isWhitespace)",
+    )
+    for snippet in required_qr_trust_value_snippets:
+        if snippet not in pairing_parser_text:
+            failures.append(
+                f"{pairing_parser_path.relative_to(ROOT)}: Android pairing QR trust and route "
+                f"identity values must reject whitespace before trust/discovery matching; missing {snippet}."
+            )
+    if "rejectsWhitespaceMutatedTrustAndRouteIdentityQrValues" not in pairing_parser_test_text:
         failures.append(
-            f"{pairing_parser_path.relative_to(ROOT)}: Android pairing route tokens must reject "
-            "whitespace before trust/discovery matching."
+            f"{pairing_parser_test_path.relative_to(ROOT)}: Missing Android QR trust-value whitespace "
+            "rejection regression test."
         )
     if "RUNTIME_NAME_MAX_CHARS = 80" not in pairing_parser_text or "normalizedRuntimeName()" not in pairing_parser_text:
         failures.append(
@@ -631,10 +696,13 @@ def android_runtime_boundary_guard_failures() -> list[str]:
     required_relay_secret_store_snippets = (
         "interface RelaySecretStore",
         "class AndroidKeystoreRelaySecretStore",
+        "import java.util.Base64",
         "runtimeRelaySecretRef",
         "relaySecretStore.saveSecret",
         "prefs.remove(Keys.runtimeRelaySecret)",
         "relaySecretHandle(",
+        "Base64.getEncoder().encodeToString(packed)",
+        "Base64.getDecoder().decode(encoded)",
     )
     for snippet in required_relay_secret_store_snippets:
         if snippet not in pairing_store_text:
@@ -646,6 +714,11 @@ def android_runtime_boundary_guard_failures() -> list[str]:
         failures.append(
             f"{pairing_store_path.relative_to(ROOT)}: PairingStore must not write raw relay secrets "
             "back into DataStore."
+        )
+    if "android.util.Base64" in pairing_store_text:
+        failures.append(
+            f"{pairing_store_path.relative_to(ROOT)}: PairingStore relay-secret persistence must use "
+            "java.util.Base64 so no-device JVM tests cover the serialized boundary."
         )
     for snippet in (
         "pairingStoreDropsIncompleteRelayRouteOnRead",
@@ -679,6 +752,10 @@ def android_runtime_boundary_guard_failures() -> list[str]:
             )
 
     required_ui_snippets = (
+        "if (error.code !in USER_VISIBLE_ERROR_DETAIL_CODES) return null",
+        "USER_VISIBLE_ERROR_DETAIL_CODES",
+        "\"attachment_too_large\"",
+        "\"attachment_read_failed\"",
         "takeUnless { it.containsBackendEndpointMaterial() }",
         "private fun String.containsBackendEndpointMaterial(): Boolean",
         "BACKEND_ENDPOINT_DETAIL_PATTERNS",
@@ -710,6 +787,28 @@ def android_runtime_boundary_guard_failures() -> list[str]:
                 "a last-mile redaction guard for direct backend endpoint material."
             )
 
+    required_runtime_error_state_snippets = (
+        "val technicalDetail: String? = null",
+    )
+    for snippet in required_runtime_error_state_snippets:
+        if snippet not in runtime_state_text:
+            failures.append(
+                f"{runtime_state_path.relative_to(ROOT)}: Android runtime UI errors must keep raw "
+                "technical detail out of the user-visible detail field."
+            )
+
+    required_runtime_error_boundary_snippets = (
+        "internal fun runtimeUiError(",
+        "USER_VISIBLE_RUNTIME_ERROR_DETAIL_CODES",
+        "technicalDetail = detail.takeUnless { code in USER_VISIBLE_RUNTIME_ERROR_DETAIL_CODES }",
+    )
+    for snippet in required_runtime_error_boundary_snippets:
+        if snippet not in runtime_text:
+            failures.append(
+                f"{runtime_path.relative_to(ROOT)}: Android runtime errors must split user-visible "
+                "detail from raw technical detail."
+            )
+
     required_runtime_snippets = (
         "runtimeProviderSafeCode",
         "PROVIDER_DIAGNOSTIC_CODE_PATTERN",
@@ -735,6 +834,21 @@ def android_runtime_boundary_guard_failures() -> list[str]:
         failures.append(
             f"{test_path.relative_to(ROOT)}: Missing Android visible route-secret redaction regression test."
         )
+    if "runtimeVisibleErrorDetailKeepsOnlyUserInputAttachmentDetails" not in test_text:
+        failures.append(
+            f"{test_path.relative_to(ROOT)}: Missing Android user-visible error detail allowlist regression test."
+        )
+    for snippet in (
+        "assertEquals(\"Backend failed\", afterError.error?.technicalDetail)",
+        "assertEquals(\"socket closed\", afterBlankFailure.error?.technicalDetail)",
+        "assertEquals(\"Pair this device first\", afterError.error?.technicalDetail)",
+        "assertNull(afterError.error?.detail)",
+    ):
+        if snippet not in runtime_test_text:
+            failures.append(
+                f"{runtime_test_path.relative_to(ROOT)}: Missing Android runtime technical-detail "
+                f"storage regression {snippet}."
+            )
     if "providerDiagnosticMessageRedactsRouteSecretDetails" not in test_text:
         failures.append(
             f"{test_path.relative_to(ROOT)}: Missing Android provider route-secret message redaction test."
@@ -785,6 +899,42 @@ def android_runtime_boundary_guard_failures() -> list[str]:
             f"{runtime_test_path.relative_to(ROOT)}: Missing Android pending relay QR restore test "
             "after app/ViewModel recreation."
         )
+    required_pending_relay_secret_store_snippets = (
+        "AndroidKeystoreRelaySecretStore",
+        "RelaySecretStore",
+        "relaySecretRef: String? = null",
+        "withStoredPendingPairingRelaySecret",
+        "withLoadedPendingPairingRelaySecret",
+        "pendingPairingRelaySecretHandle",
+        "relaySecretStore.saveSecret",
+        "relaySecretStore.removeSecret",
+        "previousPendingSecretRef",
+        "currentPendingSecretRef",
+        "relaySecret = null",
+        "if (clean.hasPersistedRelayRoute() && clean.relaySecret.isNullOrBlank()) return null",
+    )
+    for snippet in required_pending_relay_secret_store_snippets:
+        if snippet not in runtime_store_text:
+            failures.append(
+                f"{runtime_store_path.relative_to(ROOT)}: Android pending relay QR routes must store "
+                f"raw relay secrets behind a secret-store handle boundary; missing {snippet}."
+            )
+    for snippet in (
+        "persistedRuntimeDataStoresPendingPairingRouteUntilShorterRelayExpiry",
+        "FakeRelaySecretStore",
+        "assertNull(pending?.relaySecret)",
+        "assertNotNull(pending?.relaySecretRef)",
+        "assertNull(restoredWithoutSecretStore)",
+        "withLoadedPendingPairingRelaySecret(secretStore)",
+        "persistedRuntimeDataRemovesPendingPairingRelaySecretWhenRouteClearsOrReplaces",
+        "assertNull(clearedStore.relaySecret(clearedRef))",
+        "assertNull(replacedStore.relaySecret(firstRef))",
+    ):
+        if snippet not in runtime_test_text:
+            failures.append(
+                f"{runtime_test_path.relative_to(ROOT)}: Missing Android pending relay QR "
+                f"secret-store boundary regression {snippet}."
+            )
     if "compactRelayQrPairingResultPersistsTrustedRelayAndClearsPendingRoute" not in runtime_test_text:
         failures.append(
             f"{runtime_test_path.relative_to(ROOT)}: Missing Android relay QR completion test that "
@@ -822,6 +972,7 @@ def android_runtime_boundary_guard_failures() -> list[str]:
             )
     required_route_refresh_terminal_snippets = (
         "authenticatedTrustedRuntimeMarksRouteExpiredWhenRefreshErrorCannotRetryBeforeLeaseExpiry",
+        "routeRefreshAuthenticationRequiredDoesNotRetainRouteMaterialTechnicalDetail",
         "assertFalse(viewModel.state.value.isConnected)",
         "assertFalse(viewModel.state.value.isConnecting)",
         'assertEquals("failed", viewModel.state.value.runtimeStatus)',
@@ -832,6 +983,17 @@ def android_runtime_boundary_guard_failures() -> list[str]:
             failures.append(
                 f"{runtime_test_path.relative_to(ROOT)}: Missing Android terminal route.refresh "
                 "expiry state regression coverage."
+            )
+    required_route_refresh_detail_minimization_snippets = (
+        "payload?.withoutRouteRefreshSensitiveDetail()",
+        "private fun ErrorPayload.withoutRouteRefreshSensitiveDetail(): ErrorPayload",
+        "ROUTE_REFRESH_PAIRING_REQUIRED_DETAIL",
+    )
+    for snippet in required_route_refresh_detail_minimization_snippets:
+        if snippet not in runtime_text:
+            failures.append(
+                f"{runtime_path.relative_to(ROOT)}: route.refresh auth/pairing-required errors must "
+                "avoid retaining runtime-supplied route material in technicalDetail."
             )
     if (
         'isConnected = false,\n'
@@ -1466,7 +1628,7 @@ def android_chat_model_menu_guard_failures() -> list[str]:
             "Embedding model selection and clearing must reject changes while generation is streaming.",
         ),
         (
-            "fun sendChatMessage() {\n        val current = state.value\n        if (current.isStreaming) {",
+            "fun sendChatMessage() {\n        val current = state.value\n        val startedWithoutActiveSession = current.activeChatSessionId == null\n        if (current.isStreaming) {",
             "Chat send requests must reject reentrant sends while generation is streaming.",
         ),
         (
@@ -1674,7 +1836,8 @@ def android_suggested_question_guard_failures() -> list[str]:
     required_runtime_snippets = (
         "fun useSuggestedQuestion(question: String)",
         "if (state.value.isStreaming) {\n            showError(\"generation_in_progress\")\n            return\n        }",
-        "mutableState.update { it.copy(chatInput = trimmed, error = null) }",
+        "val cleanDraft = persistComposerDraft(trimmed)",
+        "mutableState.update { it.copy(chatInput = cleanDraft, error = null) }",
     )
     for snippet in required_runtime_snippets:
         if snippet not in runtime_text:
@@ -1771,6 +1934,262 @@ def android_suggested_question_guard_failures() -> list[str]:
     for snippet in required_jump_to_latest_snippets:
         if snippet not in compose_test_text:
             failures.append(f"{compose_test_relative}: Missing chat jump-to-latest Compose regression {snippet}.")
+
+    return failures
+
+
+def android_regenerate_response_guard_failures() -> list[str]:
+    failures: list[str] = []
+    ui_path = ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/ui/ClientScreens.kt"
+    runtime_path = ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt"
+    runtime_test_path = ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt"
+    compose_test_path = ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt"
+    strings_path = ROOT / "apps/android/app/src/main/res/values/strings.xml"
+
+    for path in (ui_path, runtime_path, runtime_test_path, compose_test_path, strings_path):
+        if not path.exists():
+            failures.append(f"{path.relative_to(ROOT)}: missing Android regenerate-response guard file.")
+            return failures
+
+    ui_text = ui_path.read_text(encoding="utf-8", errors="replace")
+    runtime_text = runtime_path.read_text(encoding="utf-8", errors="replace")
+    runtime_test_text = runtime_test_path.read_text(encoding="utf-8", errors="replace")
+    compose_test_text = compose_test_path.read_text(encoding="utf-8", errors="replace")
+    strings_text = strings_path.read_text(encoding="utf-8", errors="replace")
+    ui_relative = ui_path.relative_to(ROOT)
+    runtime_relative = runtime_path.relative_to(ROOT)
+    runtime_test_relative = runtime_test_path.relative_to(ROOT)
+    compose_test_relative = compose_test_path.relative_to(ROOT)
+    strings_relative = strings_path.relative_to(ROOT)
+
+    required_runtime_snippets = (
+        "fun regenerateLatestResponse()",
+        "retryLatestAssistantResponseCandidate(",
+        "retry.precedingUserMessage.attachments.isNotEmpty()",
+        "showError(\"regenerate_attachment_context_unavailable\")",
+        "messages = retry.contextMessages",
+        "persistMessages(sessionId, updatedMessages, runtimeBacked = true)",
+    )
+    for snippet in required_runtime_snippets:
+        if snippet not in runtime_text:
+            failures.append(
+                f"{runtime_relative}: Missing Android assistant response regeneration runtime path {snippet}."
+            )
+
+    required_ui_snippets = (
+        "onRegenerateLatestResponse",
+        "showRegenerateAction = isLatestAssistant &&",
+        "!state.isStreaming",
+        "R.string.regenerate_response",
+        "R.string.regenerate_response_state_ready",
+        "stateDescription = regenerateActionStateDescription",
+        "onClick(label = regenerateActionLabel, action = null)",
+    )
+    for snippet in required_ui_snippets:
+        if snippet not in ui_text:
+            failures.append(
+                f"{ui_relative}: Missing Android visible latest-assistant regenerate action {snippet}."
+            )
+
+    required_runtime_test_snippets = (
+        "regenerateLatestResponseExcludesOldAssistantFromPayloadAndHistory",
+        "regenerateLatestResponsePreservesComposerDraftAndPendingAttachments",
+        "regenerateLatestResponseBlocksAttachmentBackedPriorPrompt",
+        'assertFalse(payload.messages.any { it.content == "Old latest answer" })',
+        'assertEquals("regenerate_attachment_context_unavailable", state.error?.code)',
+    )
+    for snippet in required_runtime_test_snippets:
+        if snippet not in runtime_test_text:
+            failures.append(
+                f"{runtime_test_relative}: Missing Android assistant response regeneration regression {snippet}."
+            )
+
+    required_compose_snippets = (
+        "chatScreenShowsRegenerateActionOnlyForLatestAssistantAndHidesWhileStreaming",
+        "chatScreenFollowupMessageActionsExposeLocalizedStateAcrossSupportedLanguages",
+        'hasContentDescription("Regenerate response")',
+        'hasClickActionLabel("Regenerate response")',
+        "R.string.regenerate_response_state_ready",
+        "hasStateDescription(regenerateState)",
+        "assertEquals(listOf(HapticFeedbackType.TextHandleMove), hapticFeedback.events)",
+        'compose.onAllNodesWithContentDescription(\n'
+        '            "Regenerate response",\n'
+        "            useUnmergedTree = true,\n"
+        "        ).assertCountEquals(0)",
+    )
+    for snippet in required_compose_snippets:
+        if snippet not in compose_test_text:
+            failures.append(
+                f"{compose_test_relative}: Missing Android regenerate response Compose regression {snippet}."
+            )
+
+    if 'name="regenerate_response"' not in strings_text:
+        failures.append(f"{strings_relative}: Missing regenerate response action string.")
+    if 'name="regenerate_response_state_ready"' not in strings_text:
+        failures.append(f"{strings_relative}: Missing regenerate response ready state string.")
+    if 'name="error_regenerate_attachment_context_unavailable"' not in strings_text:
+        failures.append(f"{strings_relative}: Missing attachment-backed regenerate error string.")
+
+    required_reuse_runtime_snippets = (
+        "fun reuseLatestUserMessageAsDraft()",
+        "latestUserMessage.attachments.isNotEmpty()",
+        "showError(\"reuse_message_unavailable\")",
+        "val cleanDraft = persistComposerDraft(latestUserMessage.content)",
+        "chatInput = cleanDraft",
+        "pendingAttachments = emptyList()",
+    )
+    for snippet in required_reuse_runtime_snippets:
+        if snippet not in runtime_text:
+            failures.append(
+                f"{runtime_relative}: Missing Android latest user-message draft reuse path {snippet}."
+            )
+
+    required_reuse_ui_snippets = (
+        "onReuseLatestUserMessage",
+        "showReuseAction = isLatestUser &&",
+        "message.attachments.isEmpty()",
+        "R.string.reuse_message",
+        "R.string.reuse_message_state_ready",
+        "stateDescription = reuseActionStateDescription",
+        "onClick(label = reuseActionLabel, action = null)",
+    )
+    for snippet in required_reuse_ui_snippets:
+        if snippet not in ui_text:
+            failures.append(
+                f"{ui_relative}: Latest user-message reuse must stay a real draft action, not transcript editing; missing {snippet}."
+            )
+
+    required_reuse_test_snippets = (
+        "reuseLatestUserMessageAsDraftCopiesLatestTextWithoutSendingOrMutatingHistory",
+        "reuseLatestUserMessageAsDraftRejectsAttachmentBackedPromptAndPreservesDraft",
+        "reuseLatestUserMessageAsDraftRejectsWhileStreamingAndPreservesDraft",
+        'assertEquals(chatSendCountBefore, fixture.channel.sentEnvelopes.count { it.type == MessageType.ChatSend })',
+        'assertEquals("reuse_message_unavailable", state.error?.code)',
+    )
+    for snippet in required_reuse_test_snippets:
+        if snippet not in runtime_test_text:
+            failures.append(
+                f"{runtime_test_relative}: Missing Android latest user-message draft reuse regression {snippet}."
+            )
+
+    required_reuse_compose_snippets = (
+        "chatScreenShowsReuseDraftActionOnlyForLatestEligibleUserMessage",
+        "chatScreenFollowupMessageActionsExposeLocalizedStateAcrossSupportedLanguages",
+        'hasContentDescription("Use as draft")',
+        'hasClickActionLabel("Use as draft")',
+        "R.string.reuse_message_state_ready",
+        "hasStateDescription(reuseState)",
+        "onReuseLatestUserMessage = { reuseClicks += 1 }",
+    )
+    for snippet in required_reuse_compose_snippets:
+        if snippet not in compose_test_text:
+            failures.append(
+                f"{compose_test_relative}: Missing Android latest user-message draft reuse Compose regression {snippet}."
+            )
+
+    if 'name="reuse_message"' not in strings_text:
+        failures.append(f"{strings_relative}: Missing latest user-message draft reuse action string.")
+    if 'name="reuse_message_state_ready"' not in strings_text:
+        failures.append(f"{strings_relative}: Missing latest user-message draft reuse ready state string.")
+    if 'name="error_reuse_message_unavailable"' not in strings_text:
+        failures.append(f"{strings_relative}: Missing latest user-message draft reuse unavailable error string.")
+
+    return failures
+
+
+def android_composer_draft_persistence_guard_failures() -> list[str]:
+    failures: list[str] = []
+    store_path = ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeLocalStore.kt"
+    runtime_path = ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt"
+    runtime_test_path = ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt"
+    no_device_path = ROOT / "script/check_no_device_quality.sh"
+
+    for path in (store_path, runtime_path, runtime_test_path, no_device_path):
+        if not path.exists():
+            failures.append(f"{path.relative_to(ROOT)}: missing Android composer-draft persistence guard file.")
+            return failures
+
+    store_text = store_path.read_text(encoding="utf-8", errors="replace")
+    runtime_text = runtime_path.read_text(encoding="utf-8", errors="replace")
+    runtime_test_text = runtime_test_path.read_text(encoding="utf-8", errors="replace")
+    no_device_text = no_device_path.read_text(encoding="utf-8", errors="replace")
+    store_relative = store_path.relative_to(ROOT)
+    runtime_relative = runtime_path.relative_to(ROOT)
+    runtime_test_relative = runtime_test_path.relative_to(ROOT)
+    no_device_relative = no_device_path.relative_to(ROOT)
+
+    required_store_snippets = (
+        "val composerDraft: String = \"\"",
+        "composerDraft = composerDraft.take(MAX_PERSISTED_COMPOSER_DRAFT_CHARS)",
+        "composerDraft = if (session.archivedAtMillis == null)",
+        "internal fun PersistedRuntimeData.composerDraftForSession(sessionId: String? = activeSessionId): String",
+        "internal fun PersistedRuntimeData.withComposerDraft(\n    value: String,\n    sessionId: String? = activeSessionId,",
+    )
+    for snippet in required_store_snippets:
+        if snippet not in store_text:
+            failures.append(f"{store_relative}: Missing persisted composer draft storage path {snippet}.")
+
+    required_runtime_snippets = (
+        "publishPersistedRuntimeData(loadedRuntimeData, save = false, syncComposerDraft = true)",
+        "val cleanDraft = persistComposerDraft(value)",
+        ".withNoActiveSession()\n                .withComposerDraft(\"\", sessionId = null)",
+        "persistComposerDraft(\"\", sessionId = sessionId)",
+        "private fun persistComposerDraft(\n        value: String,\n        sessionId: String? = state.value.activeChatSessionId,",
+        "cleanData.composerDraftForSession(cleanData.activeSessionId)",
+        "pendingAttachments = emptyList()",
+        "loadingChatSessionId = sessionId",
+        "rejectUserMutationWhileActiveChatMessagesLoading",
+        "loadingSessionId != null &&",
+    )
+    for snippet in required_runtime_snippets:
+        if snippet not in runtime_text:
+            failures.append(f"{runtime_relative}: Missing persisted composer draft ViewModel path {snippet}.")
+
+    required_test_snippets = (
+        "persistedComposerDraftRestoresOnViewModelCreationAndUpdatesWithTyping",
+        "openPreviousChatRestoresSessionScopedComposerDrafts",
+        "startNewChatClearsNoActiveDraftButKeepsSessionDrafts",
+        "archiveActiveChatClearsNoActiveDraftAndPendingAttachments",
+        "archiveAllChatsClearsNoActiveDraftAndPendingAttachments",
+        "openingRuntimeOwnedChatShowsLoadingAndBlocksComposerUntilMessagesArrive",
+        "Should not rename while loading",
+        "MessageType.ChatSessionArchive",
+        "sendChatMessageClearsOnlyActiveSessionComposerDraft",
+        "useSuggestedQuestionUpdatesActiveSessionComposerDraft",
+        "sanitizedCapsSessionScopedComposerDrafts",
+        "sanitizedDropsArchivedSessionComposerDrafts",
+        "sendChatMessageClearsPersistedComposerDraft",
+        'assertEquals("stored draft", localStore.data.composerDraft)',
+        'assertEquals("Revise this prompt", fixture.localStore.data.composerDraft)',
+        "assertTrue(fixture.viewModel.state.value.pendingAttachments.isEmpty())",
+        'fixture.localStore.data.sessions.single { it.id == "session-b" }.composerDraft',
+    )
+    for snippet in required_test_snippets:
+        if snippet not in runtime_test_text:
+            failures.append(f"{runtime_test_relative}: Missing persisted composer draft regression {snippet}.")
+
+    required_no_device_snippets = (
+        "RuntimeClientViewModelTest.persistedComposerDraftRestoresOnViewModelCreationAndUpdatesWithTyping",
+        "RuntimeClientViewModelTest.openPreviousChatRestoresSessionScopedComposerDrafts",
+        "RuntimeClientViewModelTest.startNewChatClearsNoActiveDraftButKeepsSessionDrafts",
+        "RuntimeClientViewModelTest.archiveActiveChatClearsNoActiveDraftAndPendingAttachments",
+        "RuntimeClientViewModelTest.archiveAllChatsClearsNoActiveDraftAndPendingAttachments",
+        "RuntimeClientViewModelTest.openingRuntimeOwnedChatShowsLoadingAndBlocksComposerUntilMessagesArrive",
+        "RuntimeClientViewModelTest.sendChatMessageClearsOnlyActiveSessionComposerDraft",
+        "RuntimeClientViewModelTest.useSuggestedQuestionUpdatesActiveSessionComposerDraft",
+        "RuntimeClientViewModelTest.sanitizedCapsSessionScopedComposerDrafts",
+        "RuntimeClientViewModelTest.sanitizedDropsArchivedSessionComposerDrafts",
+        "RuntimeClientViewModelTest.sendChatMessageClearsPersistedComposerDraft",
+        "ClientScreensNoDeviceComposeTest.chatScreenShowsLocalizedLoadingStateWhileRuntimeTranscriptLoads",
+        "Android composer draft persistence",
+        "Android session-scoped composer draft switching",
+        "Android transient attachment cleanup on chat lifecycle exits",
+        "Android runtime transcript loading state",
+        "Android runtime transcript lifecycle mutation lockout",
+    )
+    for snippet in required_no_device_snippets:
+        if snippet not in no_device_text:
+            failures.append(f"{no_device_relative}: Missing no-device composer draft coverage {snippet}.")
 
     return failures
 
@@ -1974,6 +2393,8 @@ def android_chat_pairing_empty_state_guard_failures() -> list[str]:
         "internal fun chatEmptyTextRes(state: RuntimeUiState, preferQrRouteRefresh: Boolean = false): Int",
         "state.trustedRuntime != null",
         "internal fun chatEmptyScanActionLabelRes(state: RuntimeUiState): Int",
+        "onScanLatestQr = onScanLatestQr",
+        "if (preferQrRouteRefresh) {\n                                onScanLatestQr()\n                            } else {\n                                onScanPairingQr()\n                            }",
     )
     for snippet in required_ui_snippets:
         if snippet not in ui_text:
@@ -1993,6 +2414,8 @@ def android_chat_pairing_empty_state_guard_failures() -> list[str]:
         "chatScreenUntrustedRuntimeShowsQrFirstPairingCallToAction",
         "chatScreenUntrustedRuntimeUsesLocalizedQrFirstCopy",
         "chatScreenShowsComposerReadinessHintWhenPreviousChatCannotSend",
+        "assertEquals(0, scanPairingQrClicks)",
+        "assertEquals(1, scanLatestQrClicks)",
         "assertIsNotEnabled",
     )
     for snippet in required_compose_test_snippets:
@@ -2097,10 +2520,18 @@ def android_trusted_runtime_forget_guard_failures() -> list[str]:
             "contentDescription = it",
             "Trusted runtime forget button must attach its named accessibility label to semantics.",
         ),
+        (
+            "onClick(label = it, action = null)",
+            "Trusted runtime forget button must expose a named click action label.",
+        ),
     )
     for snippet, guidance in required_ui_snippets:
         if snippet not in ui_text:
             failures.append(f"{ui_relative}: {guidance}")
+    if 'ClipData.newPlainText("AetherLink"' in ui_text:
+        failures.append(
+            f"{ui_relative}: Clipboard labels must not be hardcoded to AetherLink; reuse localized copy labels."
+        )
 
     required_test_snippets = (
         "settingsTrustedRuntimeForgetRequiresConfirmation",
@@ -2109,7 +2540,8 @@ def android_trusted_runtime_forget_guard_failures() -> list[str]:
         "R.string.forget_trusted_runtime_named",
         "R.string.forget_trusted_runtime_confirm_action_named",
         "R.string.forget_trusted_runtime_cancel_action_named",
-        "onNodeWithContentDescription(expectedActionLabel)",
+        "hasContentDescription(expectedActionLabel) and",
+        "hasClickActionLabel(expectedActionLabel)",
         "hasContentDescription(expectedConfirmActionLabel) and",
         "hasClickActionLabel(expectedConfirmActionLabel)",
         "hasContentDescription(expectedCancelActionLabel) and",
@@ -2197,6 +2629,14 @@ def android_haptic_guard_failures() -> list[str]:
         (
             "val settingsActionLabel = stringResource(AppDestination.Settings.labelRes)",
             "Permanent navigation rail Settings item must use the localized destination label for accessibility actions.",
+        ),
+        (
+            "val settingsStateDescription = stringResource(R.string.settings_destination_state_ready)",
+            "Permanent navigation rail Settings item must expose its ready state to accessibility.",
+        ),
+        (
+            "stateDescription = settingsStateDescription",
+            "Permanent navigation rail Settings item must attach its ready state to accessibility.",
         ),
         (
             "onClick(label = settingsActionLabel, action = null)",
@@ -2739,9 +3179,17 @@ def android_haptic_guard_failures() -> list[str]:
             "Backend readiness and generic error banners must announce new error states politely.",
         ),
         (
-            ".clearAndSetSemantics {\n"
-            "                contentDescription = accessibilitySummary",
-            "Generic error banner must expose one grouped accessibility target.",
+            "runtimeTechnicalDiagnosticsReport(error)?.let { report ->\n"
+            "                ErrorTechnicalDiagnostics(report = report)",
+            "Generic error banner must keep a separate safe technical-diagnostics affordance.",
+        ),
+        (
+            "copyActionLabel = stringResource(R.string.runtime_error_copy_diagnostics)",
+            "Generic error technical diagnostics must expose a localized copy action.",
+        ),
+        (
+            "private fun String.redactBackendEndpointMaterial(): String",
+            "Generic error technical diagnostics must redact backend endpoints and route secrets.",
         ),
         (
             "runtimeRouteNotice(state, state.trustedRuntime)?.action == RouteNoticePrimaryAction.ScanLatestQr",
@@ -2779,6 +3227,18 @@ def android_haptic_guard_failures() -> list[str]:
         (
             "onClick(label = cancelGenerationActionLabel)",
             "Composer cancel button must expose its localized click action label.",
+        ),
+        (
+            "val actionsEnabled = !state.isConnecting",
+            "Connected status actions must lock out refresh and disconnect while a reconnect is in progress.",
+        ),
+        (
+            "val connectedActionDisabledState = stringResource(R.string.connect_runtime_state_connecting)",
+            "Connected status action lockout must explain that a connection attempt is in progress.",
+        ),
+        (
+            "enabled = actionsEnabled",
+            "Connected status actions must be disabled while a reconnect is in progress.",
         ),
         (
             "onClick(label = removeAttachmentActionLabel)",
@@ -2819,6 +3279,10 @@ def android_haptic_guard_failures() -> list[str]:
         (
             "onClick(label = copyActionLabel, action = null)",
             "Copy buttons must expose localized click action labels.",
+        ),
+        (
+            "ClipData.newPlainText(copyActionLabel, textToCopy)",
+            "Message copy clipboard labels must reuse the localized copy action label.",
         ),
         (
             "hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Toggle)\n"
@@ -3097,12 +3561,40 @@ def android_haptic_guard_failures() -> list[str]:
             "Chat composer must expose a send IME action.",
         ),
         (
+            "val clearDraftActionLabel = stringResource(R.string.clear_draft)",
+            "Chat composer clear-draft action must use a localized resource label.",
+        ),
+        (
+            "val clearDraftStateDescription = stringResource(R.string.clear_draft_state_ready)",
+            "Chat composer clear-draft action must expose a localized ready state.",
+        ),
+        (
+            "val canClearDraft = enabled && value.isNotBlank() && !isStreaming",
+            "Chat composer clear-draft action must only appear for editable non-streaming text drafts.",
+        ),
+        (
+            "stateDescription = clearDraftStateDescription",
+            "Chat composer clear-draft action must expose its localized state to accessibility.",
+        ),
+        (
+            "onInputChange(\"\")",
+            "Chat composer clear-draft action must actually clear the draft text.",
+        ),
+        (
             "LocalCopySuccessAnnouncer",
             "Chat copy actions must route successful copies into an accessibility announcement channel.",
         ),
         (
             "CopySuccessLiveRegion(message = announcement.message)",
             "Chat copy success feedback must render a dedicated accessibility live-region node.",
+        ),
+        (
+            "shouldShowVisibleMessageCopyAction",
+            "Chat message copy must expose a visible copy action for copyable text messages.",
+        ),
+        (
+            "showVisibleCopyAction",
+            "Chat message copy must keep visible copy affordances wired into message rows.",
         ),
         (
             "liveRegion = LiveRegionMode.Polite",
@@ -3115,6 +3607,46 @@ def android_haptic_guard_failures() -> list[str]:
         (
             "R.string.pending_pairing_route_accessibility_summary",
             "Pending QR-route state must expose a single localized accessibility summary resource.",
+        ),
+        (
+            "parseMessageTextBlocks",
+            "Chat message rendering must parse plain Markdown text blocks before display.",
+        ),
+        (
+            "MessageTextBlock.ListItem",
+            "Chat message rendering must distinguish Markdown list rows from paragraph text.",
+        ),
+        (
+            "MessageTextBlock.Heading",
+            "Chat message rendering must distinguish Markdown heading rows from paragraph text.",
+        ),
+        (
+            "MessageTextBlock.Quote",
+            "Chat message rendering must distinguish Markdown quote rows from paragraph text.",
+        ),
+        (
+            "MessageTextBlock.Separator",
+            "Chat message rendering must distinguish Markdown separator rows from paragraph text.",
+        ),
+        (
+            "MessageTextBlock.Table",
+            "Chat message rendering must distinguish Markdown table rows from paragraph text.",
+        ),
+        (
+            "parseMarkdownTableAt",
+            "Chat message rendering must parse Markdown tables before display.",
+        ),
+        (
+            "isMarkdownSeparator",
+            "Chat message rendering must strip Markdown separator markers before display.",
+        ),
+        (
+            "appendMarkdownInline",
+            "Chat message rendering must strip simple inline Markdown markers before display.",
+        ),
+        (
+            "TextDecoration.Underline",
+            "Chat message rendering must visually distinguish simple Markdown links.",
         ),
     )
     for snippet, guidance in required_ui_snippets:
@@ -3135,6 +3667,7 @@ def android_haptic_guard_failures() -> list[str]:
     required_compose_test_snippets = (
         "connectionStatusSavedRouteNoticeClickConnectsWithHaptic",
         "connectionStatusRefreshNeededRouteNoticeClickScansLatestQrWithHaptic",
+        "connectionStatusRouteNoticeForMissingRelaySecretIsLiveRegionAndScansLatestQr",
         "routeNoticeShowsQrRefreshForRelayAuthenticationFailure",
         "Open AetherLink Runtime, generate the latest QR, then scan it here.",
         "chatScreenRelayAuthFailureAfterRouteClearKeepsLatestQrRecoveryAction",
@@ -3144,19 +3677,28 @@ def android_haptic_guard_failures() -> list[str]:
         "chatScreenBackendUnavailableRefreshActionExplainsStateAcrossSupportedLanguages",
         "chatScreenBackendUnavailableSummaryResourceFormatsAcrossSupportedLanguages",
         "chatScreenGenericErrorBannerExposesAccessibilitySummaryAndRedactsUnsafeDetail",
+        "chatScreenTechnicalDiagnosticsAreCollapsedAndRedactUnsafeRuntimeDetails",
+        "technical_detail: relay timed out near [redacted] [redacted] [redacted]",
+        'hasClickActionLabel("Copy diagnostics")',
+        'onAllNodesWithText("route_token=secret", useUnmergedTree = true).assertCountEquals(0)',
         "chatScreenGenericErrorAccessibilitySummaryLocalizesAcrossSupportedLanguages",
         ".assert(hasPoliteLiveRegion())",
-        "Error. Could not send the message to AetherLink Runtime. More information: relay timed out",
+        "Error. Could not send the message to AetherLink Runtime.",
+        "onAllNodesWithText(\"relay timed out\", useUnmergedTree = true).assertCountEquals(0)",
         "Model service needs attention. Check the model service in AetherLink Runtime, then refresh health.",
         "모델 서비스 확인 필요. AetherLink Runtime에서 모델 서비스 상태를 확인한 다음 상태를 새로고침하세요.",
         "settingsExpiredRelayRoutePrimaryActionScansLatestQrWithHaptic",
         "settingsConnectedTrustedRuntimeDoesNotExposePairingConnectButton",
         "connectionStatusRefreshHealthActionUsesActionCopyAndCallback",
         "connectionStatusConnectedActionsExplainStateAcrossSupportedLanguages",
+        "connectionStatusConnectedActionsDisableWhileConnectingAcrossSupportedLanguages",
         "Refresh health",
         "hasClickActionLabel(expected.refreshAction)",
         "onNodeWithText(expected.refreshAction)",
         "hasStateDescription(expected.refreshState) and",
+        "isConnecting = true",
+        "R.string.connect_runtime_state_connecting",
+        ".assertIsNotEnabled()",
         "onNodeWithText(expected.disconnectAction)",
         "hasClickActionLabel(expected.disconnectAction)",
         "hasStateDescription(expected.disconnectState) and",
@@ -3186,10 +3728,39 @@ def android_haptic_guard_failures() -> list[str]:
         "R.string.attach_files_state_limit_reached",
         "Formatter.formatFileSize(localizedContext, attachment.sizeBytes)",
         "chatScreenMessageAttachmentChipsExposeFileStateToAccessibility",
+        "chatSurfaceRendersRepresentativeNarrowPhoneWithoutComposerOverlap",
+        ".width(320.dp)",
+        ".height(470.dp)",
+        "Chat model picker. Selected chat model Qwen3 8B.",
+        "Current chat Runtime handoff polish",
+        "Suggested next-question chips should remain above the docked composer.",
+        "Message attachment chip should remain above the docked composer controls.",
+        "parseMessageContentPreservesCodeBlocksAndNormalizesMarkdownTextBlocks",
+        "chatScreenRendersMarkdownListsAndInlineCode",
+        "MessageTextBlock.Heading(2, \"Plan\")",
+        "MessageTextBlock.Quote(\"Keep this local-first.\")",
+        "MessageTextBlock.Separator",
+        "MessageTextBlock.Table(",
+        "headers = listOf(\"Route\", \"Purpose\")",
+        "listOf(\"relay\", \"Different-network QR\")",
+        "Keep model access mediated by the trusted runtime.",
+        "compose.onAllNodesWithText(\"---\").assertCountEquals(0)",
+        "compose.onAllNodesWithText(\"| Route | Purpose |\").assertCountEquals(0)",
+        "Send `chat.send`",
+        "Open [docs](https://example.test)",
         "chatScreenMessageRowsExposeLocalizedRoleAccessibilitySummaries",
         "R.string.chat_message_accessibility_summary",
         "chatScreenMessageCopyActionsExposeLocalizedActionLabels",
+        "onAllNodesWithContentDescription(expected.copyAction, useUnmergedTree = true)",
+        "performSemanticsAction(SemanticsActions.OnLongClick)",
+        "waitForClipboardPayload(\n                label = expected.copyAction,\n                text = \"Copyable user message\",",
+        "waitForClipboardPayload(\n                label = expected.copyAction,\n                text = \"Copyable assistant reply\",",
+        "List((index + 1) * 2) { HapticFeedbackType.LongPress }",
         "chatScreenCodeBlockCopyUsesLocalizedCodeActionLabels",
+        "waitForClipboardPayload(\n                label = expected.codeCopyAction,\n                text = \"val route = \\\"runtime\\\"\",",
+        "private fun waitForClipboardPayload(label: String, text: String)",
+        "private fun clipboardLabel(): CharSequence?",
+        "private fun clipboardText(): String?",
         "chatScreenMultipleCodeBlockCopyActionsLocalizeDistinctContextAcrossSupportedLanguages",
         "settingsScreenAnnouncesRouteRefreshSavedNotice",
         "hasContentDescription(\"QR scanned. $pendingDetail Waiting for AetherLink Runtime\")",
@@ -3304,7 +3875,9 @@ def android_haptic_guard_failures() -> list[str]:
         "permanentNavigationRailUsesNewChatPairingGateAndHaptics",
         "permanentNavigationRailSettingsItemLocalizesActionSemantics",
         "compose.onNodeWithText(settingsLabel, useUnmergedTree = true)",
+        "val settingsState = localizedContext.getString(R.string.settings_destination_state_ready)",
         "hasClickActionLabel(settingsLabel)",
+        "hasStateDescription(settingsState)",
         "Wait for the current response or cancel it before starting a new chat.",
         "Pair with AetherLink Runtime before starting a new chat.",
         "chatScreenStreamingShowsCancelActionInsteadOfSend",
@@ -3409,6 +3982,12 @@ def android_haptic_guard_failures() -> list[str]:
         "hasClickActionLabel(expected.archiveAction)",
         "hasClickActionLabel(expected.deleteAction)",
         "performImeAction()",
+        "chatScreenClearDraftActionClearsComposerAndHidesWhileStreaming",
+        "chatScreenClearDraftActionStateUsesSelectedLanguage",
+        'hasContentDescription("Clear draft")',
+        'hasClickActionLabel("Clear draft")',
+        "R.string.clear_draft_state_ready",
+        "hasStateDescription(expectedState)",
     )
     for snippet in required_compose_test_snippets:
         if snippet not in compose_test_text:
@@ -3632,6 +4211,8 @@ def android_heading_accessibility_guard_failures() -> list[str]:
         "text = stringResource(title),\n            style = MaterialTheme.typography.headlineSmall",
         ".semantics(mergeDescendants = true) {\n                    heading()\n                    stateDescription = toggleStateDescription",
         "text = stringResource(R.string.preferences_title)",
+        "text = stringResource(R.string.embedding_model_title),\n                        style = MaterialTheme.typography.titleMedium,\n                        fontWeight = FontWeight.SemiBold,\n                        modifier = Modifier.semantics {\n                            heading()\n                        }",
+        "text = stringResource(R.string.memory_title),\n                        style = MaterialTheme.typography.titleMedium,\n                        fontWeight = FontWeight.SemiBold,\n                        modifier = Modifier.semantics {\n                            heading()\n                        }",
     )
     for snippet in required_ui_snippets:
         if snippet not in ui_text:
@@ -3645,6 +4226,8 @@ def android_heading_accessibility_guard_failures() -> list[str]:
         "hasText(\"Pairing & Connection\") and\n                hasHeading()",
         "navigationDrawerPreviousChatsLabelIsAHeadingAcrossSupportedLanguages",
         "localizedContext.getString(R.string.previous_chats)) and hasHeading()",
+        "R.string.embedding_model_title",
+        "R.string.memory_title",
     )
     for snippet in required_compose_test_snippets:
         if snippet not in compose_test_text:
@@ -3836,6 +4419,18 @@ def attachment_ingestion_guard_failures() -> list[str]:
             "attachment picker callback must route selected URIs through the single-dispatch helper.",
         ),
         (
+            "sharedChatDraftOrNull(",
+            "Android share-sheet intake must keep a testable draft/attachment parser.",
+        ),
+        (
+            "sharedChatDraftComposerText(",
+            "Android share-sheet text intake must merge shared text through a testable helper.",
+        ),
+        (
+            "sharedChatDraft = sharedChatDraftState.value",
+            "Android Activity must pass share-sheet drafts into the Compose app.",
+        ),
+        (
             "internal fun handlePickedAttachments(",
             "attachment picker callback must keep a testable single-dispatch helper.",
         ),
@@ -3852,6 +4447,41 @@ def attachment_ingestion_guard_failures() -> list[str]:
         failures.append(
             f"{android_test_path.relative_to(ROOT)}: Missing attachment picker single-dispatch regression test."
         )
+    required_share_sheet_test_snippets = (
+        "shareIntentTextBecomesChatDraftWithoutBackendAccess",
+        "shareIntentStreamsBecomeDistinctChatAttachments",
+        "shareIntentParserRejectsNonShareAndEmptyShareIntents",
+        "sharedChatDraftComposerTextAppendsWithoutDroppingExistingDraft",
+    )
+    for snippet in required_share_sheet_test_snippets:
+        if snippet not in android_test_text:
+            failures.append(
+                f"{android_test_path.relative_to(ROOT)}: Missing Android share-sheet intake regression {snippet}."
+            )
+
+    required_bounded_attachment_read_snippets = (
+        (
+            "fun readBytes(reference: String, maxBytes: Int)",
+            "Android attachment reader must accept a max byte limit.",
+        ),
+        (
+            "val boundedSize = maxBytes + 1",
+            "Android attachment reader must stop after max bytes plus one sentinel byte.",
+        ),
+        (
+            "addAttachmentsBoundsReadWhenReportedSizeIsUnknown",
+            "Android runtime tests must cover unknown-size oversized attachment reads.",
+        ),
+        (
+            "assertEquals(listOf(attachmentLimitBytes), attachmentReader.readLimits)",
+            "Android unknown-size attachment regression must prove bounded read limits are passed.",
+        ),
+    )
+    for snippet, guidance in required_bounded_attachment_read_snippets:
+        haystack = android_runtime_test_text if snippet.startswith(("addAttachments", "assert")) else android_runtime_text
+        path = android_runtime_test_path if snippet.startswith(("addAttachments", "assert")) else android_runtime_path
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
 
     required_streaming_attachment_snippets = (
         (
@@ -3899,24 +4529,62 @@ def runtime_history_storage_guard_failures() -> list[str]:
     android_store_path = ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeLocalStore.kt"
     android_test_path = ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt"
     macos_store_path = ROOT / "apps/macos/CompanionCore/Sources/RuntimeChatEventStore.swift"
+    macos_memory_store_path = ROOT / "apps/macos/CompanionCore/Sources/RuntimeMemoryStore.swift"
+    macos_protection_path = ROOT / "apps/macos/CompanionCore/Sources/RuntimeEventLogFileProtection.swift"
+    macos_trusted_store_path = ROOT / "apps/macos/TrustedDevices/Sources/TrustedDevice.swift"
+    macos_trusted_test_path = ROOT / "apps/macos/TrustedDevices/Tests/TrustedDeviceStoreTests.swift"
+    macos_identity_store_path = ROOT / "apps/macos/Pairing/Sources/FileRuntimeIdentityKeyStore.swift"
     macos_router_path = ROOT / "apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift"
+    macos_identity_test_path = ROOT / "apps/macos/CompanionCore/Tests/RuntimeIdentityKeyStoreTests.swift"
     macos_test_path = ROOT / "apps/macos/CompanionCore/Tests/LocalRuntimeMessageRouterTests.swift"
+    no_device_path = ROOT / "script/check_no_device_quality.sh"
+    package_path = ROOT / "Package.swift"
 
-    required_paths = (android_store_path, android_test_path, macos_store_path, macos_router_path, macos_test_path)
+    required_paths = (
+        android_store_path,
+        android_test_path,
+        macos_store_path,
+        macos_memory_store_path,
+        macos_protection_path,
+        macos_trusted_store_path,
+        macos_trusted_test_path,
+        macos_identity_store_path,
+        macos_router_path,
+        macos_identity_test_path,
+        macos_test_path,
+        no_device_path,
+        package_path,
+    )
     if any(not path.exists() for path in required_paths):
         return ["Runtime history storage guard files are missing."]
 
     android_store_text = android_store_path.read_text(encoding="utf-8", errors="replace")
     android_test_text = android_test_path.read_text(encoding="utf-8", errors="replace")
     macos_store_text = macos_store_path.read_text(encoding="utf-8", errors="replace")
+    macos_memory_store_text = macos_memory_store_path.read_text(encoding="utf-8", errors="replace")
+    macos_protection_text = macos_protection_path.read_text(encoding="utf-8", errors="replace")
+    macos_trusted_store_text = macos_trusted_store_path.read_text(encoding="utf-8", errors="replace")
+    macos_trusted_test_text = macos_trusted_test_path.read_text(encoding="utf-8", errors="replace")
+    macos_identity_store_text = macos_identity_store_path.read_text(encoding="utf-8", errors="replace")
     macos_router_text = macos_router_path.read_text(encoding="utf-8", errors="replace")
+    macos_identity_test_text = macos_identity_test_path.read_text(encoding="utf-8", errors="replace")
     macos_test_text = macos_test_path.read_text(encoding="utf-8", errors="replace")
+    no_device_text = no_device_path.read_text(encoding="utf-8", errors="replace")
+    package_text = package_path.read_text(encoding="utf-8", errors="replace")
 
     android_store_relative = android_store_path.relative_to(ROOT)
     android_test_relative = android_test_path.relative_to(ROOT)
     macos_store_relative = macos_store_path.relative_to(ROOT)
+    macos_memory_store_relative = macos_memory_store_path.relative_to(ROOT)
+    macos_protection_relative = macos_protection_path.relative_to(ROOT)
+    macos_trusted_store_relative = macos_trusted_store_path.relative_to(ROOT)
+    macos_trusted_test_relative = macos_trusted_test_path.relative_to(ROOT)
+    macos_identity_store_relative = macos_identity_store_path.relative_to(ROOT)
     macos_router_relative = macos_router_path.relative_to(ROOT)
+    macos_identity_test_relative = macos_identity_test_path.relative_to(ROOT)
     macos_test_relative = macos_test_path.relative_to(ROOT)
+    no_device_relative = no_device_path.relative_to(ROOT)
+    package_relative = package_path.relative_to(ROOT)
 
     required_android_store_snippets = (
         (
@@ -3954,11 +4622,11 @@ def runtime_history_storage_guard_failures() -> list[str]:
 
     required_macos_store_snippets = (
         (
-            "public func listSessions(limit: Int = 100, includeArchived: Bool = false) throws -> [RuntimeChatStoredSession] {\n        guard limit > 0 else { return [] }",
+            "public func listSessions(\n        ownerDeviceID: String?,\n        limit: Int = 100,\n        includeArchived: Bool = false\n    ) throws -> [RuntimeChatStoredSession] {\n        guard limit > 0 else { return [] }",
             "Runtime chat session listing must return empty for nonpositive limits before reading the event log.",
         ),
         (
-            "public func listMessages(sessionID: String, limit: Int = 200) throws -> [RuntimeChatStoredMessage] {\n        guard limit > 0 else { return [] }",
+            "public func listMessages(\n        ownerDeviceID: String?,\n        sessionID: String,\n        limit: Int = 200\n    ) throws -> [RuntimeChatStoredMessage] {\n        guard limit > 0 else { return [] }",
             "Runtime chat message listing must return empty for nonpositive limits before reading the event log.",
         ),
         (
@@ -3969,10 +4637,135 @@ def runtime_history_storage_guard_failures() -> list[str]:
             "func limited(toLast limit: Int) -> [Element] {\n        guard limit > 0 else { return [] }",
             "Runtime chat message limits must treat nonpositive values as empty history windows.",
         ),
+        (
+            "try RuntimeEventLogFileProtection.appendLine(line, to: fileURL)",
+            "Runtime chat event log writes must go through owner-only file protection.",
+        ),
+        (
+            'case ownerDeviceID = "owner_device_id"',
+            "Runtime chat events must persist authenticated trusted-device owner scope.",
+        ),
+        (
+            "readEvents(ownerDeviceID: ownerDeviceID)",
+            "Runtime chat history reads must filter by trusted-device owner scope.",
+        ),
     )
     for snippet, guidance in required_macos_store_snippets:
         if snippet not in macos_store_text:
             failures.append(f"{macos_store_relative}: {guidance}")
+
+    required_macos_memory_store_snippets = (
+        (
+            "try RuntimeEventLogFileProtection.appendLine(line, to: fileURL)",
+            "Runtime memory event log writes must go through owner-only file protection.",
+        ),
+        (
+            'case ownerDeviceID = "owner_device_id"',
+            "Runtime memory events must persist authenticated trusted-device owner scope.",
+        ),
+        (
+            "readEvents(ownerDeviceID: ownerDeviceID)",
+            "Runtime memory reads must filter by trusted-device owner scope.",
+        ),
+    )
+    for snippet, guidance in required_macos_memory_store_snippets:
+        if snippet not in macos_memory_store_text:
+            failures.append(f"{macos_memory_store_relative}: {guidance}")
+
+    required_macos_protection_snippets = (
+        ("static let directoryPermissions = 0o700", "Runtime event-log directory permissions must stay owner-only."),
+        ("static let filePermissions = 0o600", "Runtime event-log file permissions must stay owner-only."),
+        ("FileManager.default.createFile(", "Runtime event logs must be created with explicit permissions."),
+        ("try secureFile(at: fileURL)", "Runtime event logs must reassert permissions after writes."),
+    )
+    for snippet, guidance in required_macos_protection_snippets:
+        if snippet not in macos_protection_text:
+            failures.append(f"{macos_protection_relative}: {guidance}")
+
+    required_macos_trusted_store_snippets = (
+        (
+            "private static let directoryPermissions = 0o700",
+            "Trusted-device store directory permissions must stay owner-only.",
+        ),
+        (
+            "private static let filePermissions = 0o600",
+            "Trusted-device store file permissions must stay owner-only.",
+        ),
+        (
+            "try secureDirectory()",
+            "Trusted-device loads and writes must secure the containing directory.",
+        ),
+        (
+            "try secureFile()",
+            "Trusted-device loads and writes must secure the persisted trust file.",
+        ),
+        (
+            "try fileManager.setAttributes(\n            [.posixPermissions: Self.directoryPermissions]",
+            "Trusted-device store must correct broad directory permissions.",
+        ),
+        (
+            "try fileManager.setAttributes(\n            [.posixPermissions: Self.filePermissions]",
+            "Trusted-device store must correct broad file permissions after atomic writes.",
+        ),
+    )
+    for snippet, guidance in required_macos_trusted_store_snippets:
+        if snippet not in macos_trusted_store_text:
+            failures.append(f"{macos_trusted_store_relative}: {guidance}")
+
+    required_macos_trusted_test_snippets = (
+        "testTrustCreatesStoreWithOwnerOnlyPermissions",
+        "testLoadCorrectsBroadPermissionsWithoutDroppingTrustedDevices",
+        "testRemoveMaintainsOwnerOnlyPermissions",
+        "XCTAssertEqual(try filePermissions(at: fileURL), 0o600)",
+        "XCTAssertEqual(try directoryPermissions(at: directoryURL), 0o700)",
+    )
+    for snippet in required_macos_trusted_test_snippets:
+        if snippet not in macos_trusted_test_text:
+            failures.append(
+                f"{macos_trusted_test_relative}: Missing trusted-device store permission regression {snippet}."
+            )
+    if 'name: "TrustedDevicesTests"' not in package_text:
+        failures.append(
+            f"{package_relative}: Trusted-device store permission regressions must have a SwiftPM test target."
+        )
+    for snippet in (
+        "swift test --filter TrustedDeviceStoreTests",
+        "macOS trusted-device store file permission hardening",
+    ):
+        if snippet not in no_device_text:
+            failures.append(
+                f"{no_device_relative}: Default no-device gate must cover trusted-device store file permission hardening; missing {snippet}."
+            )
+
+    required_macos_identity_store_snippets = (
+        (
+            "private static let directoryPermissions = 0o700",
+            "Runtime identity fallback directory permissions must stay owner-only.",
+        ),
+        (
+            "private static let filePermissions = 0o600",
+            "Runtime identity fallback file permissions must stay owner-only.",
+        ),
+        (
+            "try secureDirectory()",
+            "Runtime identity fallback loads and writes must secure the containing directory.",
+        ),
+        (
+            "try secureFile()",
+            "Runtime identity fallback loads and writes must secure the persisted key file.",
+        ),
+        (
+            "try fileManager.setAttributes(\n            [.posixPermissions: Self.directoryPermissions]",
+            "Runtime identity fallback must correct broad directory permissions.",
+        ),
+        (
+            "try fileManager.setAttributes(\n            [.posixPermissions: Self.filePermissions]",
+            "Runtime identity fallback must correct broad file permissions.",
+        ),
+    )
+    for snippet, guidance in required_macos_identity_store_snippets:
+        if snippet not in macos_identity_store_text:
+            failures.append(f"{macos_identity_store_relative}: {guidance}")
 
     required_macos_router_snippets = (
         (
@@ -4011,10 +4804,35 @@ def runtime_history_storage_guard_failures() -> list[str]:
             "private func boundedWindowLimit(_ value: Int?, defaultLimit: Int, maxLimit: Int) -> Int {\n    guard let value else { return defaultLimit }\n    return min(max(value, 0), maxLimit)\n}",
             "Runtime history protocol handlers must clamp below zero to an empty window rather than one item.",
         ),
+        (
+            "private func commandOwnerDeviceID(connectionID: UUID) -> String? {\n        requiresAuthentication ? authenticatedDeviceID(connectionID: connectionID) : nil\n    }",
+            "Runtime router must derive owner scope from authenticated connection state while preserving no-auth nil scope.",
+        ),
+        (
+            "memoryStore.list(ownerDeviceID: ownerDeviceID)",
+            "Runtime chat memory injection must use trusted-device owner scope.",
+        ),
+        (
+            "chatEventStore.listSessions(\n                ownerDeviceID: ownerDeviceID,",
+            "Runtime chat session reads must use trusted-device owner scope.",
+        ),
     )
     for snippet, guidance in required_macos_router_snippets:
         if snippet not in macos_router_text:
             failures.append(f"{macos_router_relative}: {guidance}")
+
+    required_macos_identity_test_snippets = (
+        "testFileStoreLoadOrCreatePersistsRuntimeIdentity",
+        "testFileStoreCorrectsBroadPermissionsWithoutRotatingIdentity",
+        "XCTAssertEqual(try filePermissions(at: fileURL), 0o600)",
+        "XCTAssertEqual(try directoryPermissions(at: directoryURL), 0o700)",
+        "XCTAssertEqual(first, second)",
+    )
+    for snippet in required_macos_identity_test_snippets:
+        if snippet not in macos_identity_test_text:
+            failures.append(
+                f"{macos_identity_test_relative}: Missing runtime identity fallback permission regression {snippet}."
+            )
 
     required_macos_test_snippets = (
         "let store = RecordingRuntimeChatEventStore()",
@@ -4033,6 +4851,15 @@ def runtime_history_storage_guard_failures() -> list[str]:
         'requestID: "sessions-empty-window"',
         '"limit": .number(-1)',
         'XCTAssertEqual(messagesResponse?.payload["messages"], .array([]))',
+        "testRuntimeChatEventLogIsCreatedWithOwnerOnlyPermissions",
+        "testRuntimeChatEventLogPermissionsAreCorrectedOnAppend",
+        "testRuntimeMemoryEventLogIsCreatedWithOwnerOnlyPermissions",
+        "testRuntimeMemoryEventLogPermissionsAreCorrectedOnAppend",
+        "testRuntimeChatStoreScopesSessionsMessagesAndMutationsByOwnerDevice",
+        "testRuntimeMemoryStoreScopesEntriesByOwnerDevice",
+        "testAuthenticatedDevicesCannotCrossReadInjectOrMutateChatAndMemory",
+        "XCTAssertEqual(try posixPermissions(at: fileURL), 0o600)",
+        "XCTAssertEqual(try posixPermissions(at: directoryURL), 0o700)",
     )
     for snippet in required_macos_test_snippets:
         if snippet not in macos_test_text:
@@ -4359,6 +5186,86 @@ def macos_relay_secret_store_guard_failures() -> list[str]:
         if snippet in test_text:
             failures.append(
                 f"{test_relative}: macOS relay secret-store tests must assert secret refs, not raw defaults."
+            )
+
+    return failures
+
+
+def macos_route_diagnostic_redaction_guard_failures() -> list[str]:
+    failures: list[str] = []
+    logs_path = ROOT / "apps/macos/LocalAgentBridgeApp/Sources/LogsView.swift"
+    model_path = ROOT / "apps/macos/CompanionCore/Sources/CompanionAppModel.swift"
+    test_path = ROOT / "apps/macos/LocalAgentBridgeApp/Tests/AetherLinkLocalizationTests.swift"
+    router_test_path = ROOT / "apps/macos/CompanionCore/Tests/LocalRuntimeMessageRouterTests.swift"
+
+    if not logs_path.exists() or not model_path.exists() or not test_path.exists() or not router_test_path.exists():
+        failures.append("macOS route-diagnostic redaction guard files are missing.")
+        return failures
+
+    logs_text = logs_path.read_text(encoding="utf-8", errors="replace")
+    model_text = model_path.read_text(encoding="utf-8", errors="replace")
+    test_text = test_path.read_text(encoding="utf-8", errors="replace")
+    router_test_text = router_test_path.read_text(encoding="utf-8", errors="replace")
+    logs_relative = logs_path.relative_to(ROOT)
+    model_relative = model_path.relative_to(ROOT)
+    test_relative = test_path.relative_to(ROOT)
+    router_test_relative = router_test_path.relative_to(ROOT)
+
+    required_logs_source_snippets = (
+        "containsSensitiveRouteMaterial",
+        "sensitiveRouteDiagnosticPatterns",
+        "relaySecret",
+        "routeToken",
+        "relayId",
+        "relayNonce",
+        "allocationToken",
+        "rrn",
+    )
+    for snippet in required_logs_source_snippets:
+        if snippet not in logs_text:
+            failures.append(
+                f"{logs_relative}: Missing macOS route material redaction source coverage {snippet}."
+            )
+
+    required_model_source_snippets = (
+        "companionLogRedactionPatterns",
+        "relaySecret",
+        "routeToken",
+        "relayId",
+        "relayNonce",
+        "allocationToken",
+        "rrn",
+    )
+    for snippet in required_model_source_snippets:
+        if snippet not in model_text:
+            failures.append(
+                f"{model_relative}: Missing macOS companion log route material redaction coverage {snippet}."
+            )
+
+    required_test_snippets = (
+        "testActivityTechnicalDetailsRedactRouteSecrets",
+        "testRouteDiagnosticDisclosureRedactsSensitiveDetails",
+        '{"relay_secret":"secret","relay_id":"room","relay_nonce":"nonce"}',
+        '{"relaySecret":"secret","routeToken":"token","relayNonce":"nonce"}',
+        "allocationToken bearer-token rrn=nonce ri=room",
+        "allocation_token: bearer-token relayId: room",
+    )
+    for snippet in required_test_snippets:
+        if snippet not in test_text:
+            failures.append(
+                f"{test_relative}: Missing macOS route material redaction regression {snippet}."
+            )
+
+    required_router_test_snippets = (
+        "testCompanionLogSanitizerRedactsProviderEndpointsAndSecrets",
+        "json-secret",
+        "bearer-token",
+        "compact-nonce",
+    )
+    for snippet in required_router_test_snippets:
+        if snippet not in router_test_text:
+            failures.append(
+                f"{router_test_relative}: Missing macOS companion log route material redaction regression {snippet}."
             )
 
     return failures
@@ -5212,12 +6119,160 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device quality gate must run the Android app private-overlay real relay TCP pairing regression.",
         ),
         (
+            "RuntimeClientViewModelRelayIntegrationTest.trustedPrivateOverlayRelayReconnectUsesRealRelayTcpClientAndAuthenticatedSession",
+            "Default no-device quality gate must run the Android app private-overlay real relay TCP reconnect regression.",
+        ),
+        (
+            "RuntimeIdentityProofVerifierTest",
+            "Default no-device quality gate must run the Android device identity signature/base64 regression.",
+        ),
+        (
+            "DeviceIdentityStoreTest",
+            "Default no-device quality gate must run the Android device identity persistence regression.",
+        ),
+        (
+            "LocalRuntimeMessageRouterTests/testTrustedAuthResponseRejectsRawNonceSignature",
+            "Default no-device quality gate must run the macOS client-auth raw nonce rejection regression.",
+        ),
+        (
+            "LocalRuntimeMessageRouterTests/testTrustedHelloAndAuthResponseAuthenticatesConnection",
+            "Default no-device quality gate must run the macOS client-auth domain-separated success regression.",
+        ),
+        (
+            "LocalRuntimeMessageRouterTests/testConnectionDidCloseClearsAuthenticatedSession",
+            "Default no-device quality gate must run the macOS auth-session disconnect cleanup regression.",
+        ),
+        (
+            "LocalRuntimeMessageRouterTests/testRemovedTrustedDeviceCannotContinueUsingAuthenticatedConnection",
+            "Default no-device quality gate must run the macOS trusted-device removal live-session revocation regression.",
+        ),
+        (
+            "macOS trusted-device removal live-session revocation",
+            "Default no-device gate coverage summary must mention trusted-device removal live-session revocation.",
+        ),
+        (
+            "swift test --filter TransportTests",
+            "Default no-device quality gate must run the macOS TransportTests regressions.",
+        ),
+        (
+            "swift test --filter RelayServerCoreTests",
+            "Default no-device quality gate must run the macOS relay line-framing regressions.",
+        ),
+        (
+            "LocalRuntimeMessageRouterTests/testCompanionLogSanitizerRedactsProviderEndpointsAndSecrets",
+            "Default no-device quality gate must run the macOS companion log route-material redaction regression.",
+        ),
+        (
+            "AetherLinkLocalizationTests/testActivityTechnicalDetailsRedactRouteSecrets",
+            "Default no-device quality gate must run the macOS route-material activity redaction regression.",
+        ),
+        (
+            "AetherLinkLocalizationTests/testRouteDiagnosticDisclosureRedactsSensitiveDetails",
+            "Default no-device quality gate must run the macOS route-diagnostic disclosure redaction regression.",
+        ),
+        (
+            "RuntimeClientViewModelTest.addAttachmentsBoundsReadWhenReportedSizeIsUnknown",
+            "Default no-device quality gate must run the Android bounded attachment read regression.",
+        ),
+        (
+            "RuntimeClientViewModelTest.routeRefreshAuthenticationRequiredDoesNotRetainRouteMaterialTechnicalDetail",
+            "Default no-device quality gate must run the Android route.refresh sensitive-detail regression.",
+        ),
+        (
+            "RuntimeClientViewModelTest.runtimeConnectionFailureMapsRouteMissingReasonsToFocusedUiErrors",
+            "Default no-device quality gate must run the Android runtime technical-detail connection mapping regression.",
+        ),
+        (
+            "RuntimeClientViewModelTest.persistedRuntimeDataStoresPendingPairingRouteUntilShorterRelayExpiry",
+            "Default no-device quality gate must run the Android pending relay QR secret-store boundary regression.",
+        ),
+        (
+            "RuntimeClientViewModelTest.persistedRuntimeDataRemovesPendingPairingRelaySecretWhenRouteClearsOrReplaces",
+            "Default no-device quality gate must run the Android pending relay QR secret cleanup regression.",
+        ),
+        (
+            "Android latest QR empty-state callback routing",
+            "Default no-device gate coverage summary must mention Android latest QR empty-state callback routing coverage.",
+        ),
+        (
             "real RuntimeRelayTcpClient app pairing path",
             "Default no-device gate coverage summary must mention the Android app real relay-client pairing path.",
         ),
         (
             "Android private-overlay real relay TCP pairing path",
             "Default no-device gate coverage summary must mention Android private-overlay real relay TCP coverage.",
+        ),
+        (
+            "Android private-overlay real relay TCP reconnect path",
+            "Default no-device gate coverage summary must mention Android private-overlay real relay TCP reconnect coverage.",
+        ),
+        (
+            "Android device identity Base64 signature guard",
+            "Default no-device gate coverage summary must mention Android device identity signature/base64 coverage.",
+        ),
+        (
+            "Android device identity persistence guard",
+            "Default no-device gate coverage summary must mention Android device identity persistence coverage.",
+        ),
+        (
+            "Android QR trust value whitespace guard",
+            "Default no-device gate coverage summary must mention Android QR trust-value whitespace coverage.",
+        ),
+        (
+            "Android/macOS client auth domain separation",
+            "Default no-device gate coverage summary must mention client auth domain separation coverage.",
+        ),
+        (
+            "macOS auth session disconnect cleanup",
+            "Default no-device gate coverage summary must mention macOS auth-session disconnect cleanup coverage.",
+        ),
+        (
+            "macOS relay disconnect callback idempotency",
+            "Default no-device gate coverage summary must mention macOS relay disconnect callback idempotency coverage.",
+        ),
+        (
+            "macOS local peer disconnect callback idempotency",
+            "Default no-device gate coverage summary must mention macOS local peer disconnect callback idempotency coverage.",
+        ),
+        (
+            "Android bounded attachment read guard",
+            "Default no-device gate coverage summary must mention Android bounded attachment-read coverage.",
+        ),
+        (
+            "Android runtime technical error detail storage boundary",
+            "Default no-device gate coverage summary must mention Android technical error detail storage coverage.",
+        ),
+        (
+            "Android safe runtime technical diagnostics surface",
+            "Default no-device gate coverage summary must mention Android safe technical diagnostics coverage.",
+        ),
+        (
+            "Android share-sheet intake",
+            "Default no-device gate coverage summary must mention Android share-sheet intake coverage.",
+        ),
+        (
+            "Android explicit share-sheet MIME scope",
+            "Default no-device gate coverage summary must mention Android explicit share-sheet MIME scope coverage.",
+        ),
+        (
+            "Android route.refresh sensitive detail minimization",
+            "Default no-device gate coverage summary must mention Android route.refresh sensitive-detail coverage.",
+        ),
+        (
+            "Android pending relay QR secret-store boundary",
+            "Default no-device gate coverage summary must mention Android pending relay QR secret-store boundary coverage.",
+        ),
+        (
+            "Android pending relay QR secret cleanup",
+            "Default no-device gate coverage summary must mention Android pending relay QR secret cleanup coverage.",
+        ),
+        (
+            "macOS relay line framing newline guard",
+            "Default no-device gate coverage summary must mention macOS relay line framing coverage.",
+        ),
+        (
+            "macOS route material diagnostic redaction",
+            "Default no-device gate coverage summary must mention macOS route material diagnostic redaction coverage.",
         ),
         (
             "Android raw Compose visible-string localization guard",
@@ -5364,6 +6419,26 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate coverage summary must mention Android drawer chat model metadata.",
         ),
         (
+            "ClientScreensNoDeviceComposeTest.chatSurfaceRendersRepresentativeNarrowPhoneWithoutComposerOverlap",
+            "Default no-device gate must run the Android narrow-phone chat surface layout regression.",
+        ),
+        (
+            "ClientScreensNoDeviceComposeTest.parseMessageContentPreservesCodeBlocksAndNormalizesMarkdownTextBlocks",
+            "Default no-device gate must run the Android markdown message parsing regression.",
+        ),
+        (
+            "ClientScreensNoDeviceComposeTest.chatScreenRendersMarkdownListsAndInlineCode",
+            "Default no-device gate must run the Android markdown message rendering regression.",
+        ),
+        (
+            "Android ChatGPT-like chat surface narrow-phone layout regression",
+            "Default no-device gate coverage summary must mention Android narrow-phone chat surface layout coverage.",
+        ),
+        (
+            "Android markdown message rendering",
+            "Default no-device gate coverage summary must mention Android markdown message rendering coverage.",
+        ),
+        (
             "Android chat history display-model search",
             "Default no-device gate coverage summary must mention Android chat history display-model search.",
         ),
@@ -5500,6 +6575,14 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate coverage summary must mention Android composer primary action click labels.",
         ),
         (
+            "Android message follow-up action localized states",
+            "Default no-device gate coverage summary must mention Android message follow-up action localized states.",
+        ),
+        (
+            "Android composer clear-draft localized state",
+            "Default no-device gate coverage summary must mention Android composer clear-draft localized state.",
+        ),
+        (
             "Android composer attach action accessibility state",
             "Default no-device gate coverage summary must mention Android composer attach action accessibility coverage.",
         ),
@@ -5524,6 +6607,10 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate coverage summary must mention Android connected action accessibility labels.",
         ),
         (
+            "Android connected action reconnect lockout",
+            "Default no-device gate coverage summary must mention Android connected action reconnect lockout.",
+        ),
+        (
             "Android streaming cancel Compose action",
             "Default no-device gate coverage summary must mention Android streaming cancel Compose action coverage.",
         ),
@@ -5546,6 +6633,10 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         (
             "Android message copy accessibility labels",
             "Default no-device gate coverage summary must mention Android message copy accessibility labels.",
+        ),
+        (
+            "Android localized clipboard payload labels",
+            "Default no-device gate coverage summary must mention Android localized clipboard payload labels.",
         ),
         (
             "Android copy success live-region accessibility",
@@ -5596,6 +6687,10 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate coverage summary must mention Android route notice QR recovery steps.",
         ),
         (
+            "Android connection status incomplete relay route live-region recovery",
+            "Default no-device gate coverage summary must mention Android connection status incomplete relay route live-region recovery.",
+        ),
+        (
             "Android primary pairing cross-network route copy",
             "Default no-device gate coverage summary must mention Android primary pairing cross-network route copy.",
         ),
@@ -5638,6 +6733,10 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         (
             "Android relay secret store boundary",
             "Default no-device gate coverage summary must mention Android relay secret store boundary coverage.",
+        ),
+        (
+            "Android relay secret Base64 boundary",
+            "Default no-device gate coverage summary must mention Android relay secret Base64 boundary coverage.",
         ),
         (
             "macOS relay secret store boundary",
@@ -5752,6 +6851,10 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate coverage summary must mention Android preference group heading semantics.",
         ),
         (
+            "Android Settings panel heading semantics",
+            "Default no-device gate coverage summary must mention Android Settings panel heading semantics.",
+        ),
+        (
             "Android drawer section heading semantics",
             "Default no-device gate coverage summary must mention Android drawer section heading semantics.",
         ),
@@ -5766,6 +6869,10 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         (
             "Android permanent rail Settings action semantics",
             "Default no-device gate coverage summary must mention Android permanent rail Settings action semantics.",
+        ),
+        (
+            "Android permanent rail Settings readiness state",
+            "Default no-device gate coverage summary must mention Android permanent rail Settings readiness-state semantics.",
         ),
         (
             "Settings diagnostic endpoint expander accessibility state",
@@ -5886,6 +6993,10 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         (
             "Android trusted-runtime forget named accessibility label",
             "Default no-device gate coverage summary must mention trusted-runtime forget named accessibility label coverage.",
+        ),
+        (
+            "Android trusted-runtime forget named click label",
+            "Default no-device gate coverage summary must mention trusted-runtime forget named click-label coverage.",
         ),
         (
             "chat history per-chat contextual action accessibility",
@@ -6044,12 +7155,20 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate coverage summary must mention macOS Activity row tone accessibility labels.",
         ),
         (
+            "macOS Activity log list accessibility summary",
+            "Default no-device gate coverage summary must mention macOS Activity log list accessibility summary.",
+        ),
+        (
             "macOS Activity route-success ready tone",
             "Default no-device gate coverage summary must mention macOS Activity route-success ready tone.",
         ),
         (
             "macOS Activity technical-details accessibility state",
             "Default no-device gate coverage summary must mention macOS Activity technical-details accessibility state.",
+        ),
+        (
+            "macOS Activity diagnostic disclosure separate focus",
+            "Default no-device gate coverage summary must mention macOS Activity diagnostic disclosure separate focus.",
         ),
         (
             "macOS saved connection details removal accessibility label",
@@ -6150,6 +7269,18 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         (
             "macOS Connection Recovery Save Bootstrap Relay input state",
             "Default no-device gate coverage summary must mention macOS Connection Recovery Save Bootstrap Relay input state.",
+        ),
+        (
+            "macOS Connection Recovery bootstrap allocation token warning",
+            "Default no-device gate coverage summary must mention macOS Connection Recovery bootstrap allocation token warning.",
+        ),
+        (
+            "macOS Connection Recovery bootstrap relay removal accessibility labels",
+            "Default no-device gate coverage summary must mention macOS Connection Recovery bootstrap relay removal accessibility labels.",
+        ),
+        (
+            "macOS Connection Recovery destructive removal action hints",
+            "Default no-device gate coverage summary must mention macOS Connection Recovery destructive removal action hints.",
         ),
         (
             "macOS menu-bar Pairing QR active-session title",
@@ -6316,12 +7447,24 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate must run the runtime chat-store nonpositive-limit regression.",
         ),
         (
+            "LocalRuntimeMessageRouterTests/testRuntimeChatStoreScopesSessionsMessagesAndMutationsByOwnerDevice",
+            "Default no-device gate must run the runtime chat owner-device scoping regression.",
+        ),
+        (
             "LocalRuntimeMessageRouterTests/testRuntimeChatHistoryHandlersReturnEmptyForNonPositiveLimitsWithoutReadingStore",
             "Default no-device gate must run the runtime history handler nonpositive-limit regression.",
         ),
         (
             "LocalRuntimeMessageRouterTests/testRuntimeChatStoreZeroLimitsReturnEmptyWithoutReadingLog",
             "Default no-device gate must run the runtime chat-store zero-limit corrupt-log bypass regression.",
+        ),
+        (
+            "LocalRuntimeMessageRouterTests/testRuntimeChatEventLogIsCreatedWithOwnerOnlyPermissions",
+            "Default no-device gate must run the runtime chat event-log owner-only creation regression.",
+        ),
+        (
+            "LocalRuntimeMessageRouterTests/testRuntimeChatEventLogPermissionsAreCorrectedOnAppend",
+            "Default no-device gate must run the runtime chat event-log permission correction regression.",
         ),
         (
             "LocalRuntimeMessageRouterTests/testRuntimeChatHistorySemanticallyInvalidEventReturnsStructuredError",
@@ -6336,12 +7479,36 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate must run the runtime memory-store semantic corruption regression.",
         ),
         (
+            "LocalRuntimeMessageRouterTests/testRuntimeMemoryStoreScopesEntriesByOwnerDevice",
+            "Default no-device gate must run the runtime memory owner-device scoping regression.",
+        ),
+        (
+            "LocalRuntimeMessageRouterTests/testRuntimeMemoryEventLogIsCreatedWithOwnerOnlyPermissions",
+            "Default no-device gate must run the runtime memory event-log owner-only creation regression.",
+        ),
+        (
+            "LocalRuntimeMessageRouterTests/testRuntimeMemoryEventLogPermissionsAreCorrectedOnAppend",
+            "Default no-device gate must run the runtime memory event-log permission correction regression.",
+        ),
+        (
             "LocalRuntimeMessageRouterTests/testRuntimeMemoryListCorruptStoreReturnsStructuredError",
             "Default no-device gate must run the runtime memory-list corrupt-store structured-error regression.",
         ),
         (
+            "LocalRuntimeMessageRouterTests/testAuthenticatedDevicesCannotCrossReadInjectOrMutateChatAndMemory",
+            "Default no-device gate must run authenticated runtime history and memory cross-device scoping regression.",
+        ),
+        (
             "macOS attachment prompt storage separation",
             "Default no-device gate coverage summary must mention macOS attachment prompt storage separation.",
+        ),
+        (
+            "macOS runtime event-log file permission hardening",
+            "Default no-device gate coverage summary must mention macOS runtime event-log file permission hardening.",
+        ),
+        (
+            "macOS runtime identity fallback file permission hardening",
+            "Default no-device gate coverage summary must mention macOS runtime identity fallback file permission hardening.",
         ),
         (
             "macOS runtime history nonpositive limit guard",
@@ -6368,6 +7535,10 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate coverage summary must mention macOS runtime memory semantic corruption coverage.",
         ),
         (
+            "macOS authenticated runtime history and memory owner-device scoping",
+            "Default no-device gate coverage summary must mention authenticated owner-device scoping coverage.",
+        ),
+        (
             "LocalRuntimeMessageRouterTests/testChatSendDoesNotCompactShortConversation",
             "Default no-device gate must run the short-chat runtime compaction regression.",
         ),
@@ -6387,6 +7558,247 @@ def no_device_quality_gate_guard_failures() -> list[str]:
     for snippet, guidance in required_snippets:
         if snippet not in gate_text:
             failures.append(f"{gate_path.relative_to(ROOT)}: {guidance}")
+
+    return failures
+
+
+def runtime_auth_domain_separation_guard_failures() -> list[str]:
+    failures: list[str] = []
+    android_identity_path = ROOT / (
+        "apps/android/core/pairing/src/main/java/com/localagentbridge/android/core/pairing/"
+        "DeviceIdentity.kt"
+    )
+    android_identity_store_path = ROOT / (
+        "apps/android/core/pairing/src/main/java/com/localagentbridge/android/core/pairing/"
+        "DeviceIdentityStore.kt"
+    )
+    android_runtime_path = ROOT / (
+        "apps/android/app/src/main/java/com/localagentbridge/android/runtime/"
+        "RuntimeClientViewModel.kt"
+    )
+    android_identity_test_path = ROOT / (
+        "apps/android/core/pairing/src/test/java/com/localagentbridge/android/core/pairing/"
+        "RuntimeIdentityProofVerifierTest.kt"
+    )
+    android_identity_store_test_path = ROOT / (
+        "apps/android/core/pairing/src/test/java/com/localagentbridge/android/core/pairing/"
+        "DeviceIdentityStoreTest.kt"
+    )
+    macos_router_path = ROOT / (
+        "apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift"
+    )
+    macos_pairing_path = ROOT / "apps/macos/Pairing/Sources/PairingCoordinator.swift"
+    macos_router_test_path = ROOT / (
+        "apps/macos/CompanionCore/Tests/LocalRuntimeMessageRouterTests.swift"
+    )
+    companion_model_path = ROOT / "apps/macos/CompanionCore/Sources/CompanionAppModel.swift"
+    local_peer_server_path = ROOT / "apps/macos/Transport/Sources/LocalPeerServer.swift"
+    local_peer_server_test_path = ROOT / "apps/macos/Transport/Tests/LocalPeerServerTests.swift"
+    relay_peer_client_path = ROOT / "apps/macos/Transport/Sources/RelayPeerClient.swift"
+    relay_peer_client_test_path = ROOT / "apps/macos/Transport/Tests/RelayPeerClientTests.swift"
+    runtime_dev_server_path = ROOT / "apps/macos/RuntimeDevServer/Sources/RuntimeDevServer.swift"
+    runtime_mock_smoke_path = ROOT / "script/runtime_authenticated_mock_smoke.swift"
+    no_device_path = ROOT / "script/check_no_device_quality.sh"
+    protocol_path = ROOT / "docs/protocol.md"
+    security_path = ROOT / "docs/security.md"
+
+    path_texts = {
+        android_identity_path: android_identity_path.read_text(encoding="utf-8", errors="replace"),
+        android_identity_store_path: android_identity_store_path.read_text(encoding="utf-8", errors="replace"),
+        android_runtime_path: android_runtime_path.read_text(encoding="utf-8", errors="replace"),
+        android_identity_test_path: android_identity_test_path.read_text(encoding="utf-8", errors="replace"),
+        android_identity_store_test_path: android_identity_store_test_path.read_text(encoding="utf-8", errors="replace"),
+        macos_router_path: macos_router_path.read_text(encoding="utf-8", errors="replace"),
+        macos_pairing_path: macos_pairing_path.read_text(encoding="utf-8", errors="replace"),
+        macos_router_test_path: macos_router_test_path.read_text(encoding="utf-8", errors="replace"),
+        companion_model_path: companion_model_path.read_text(encoding="utf-8", errors="replace"),
+        local_peer_server_path: local_peer_server_path.read_text(encoding="utf-8", errors="replace"),
+        local_peer_server_test_path: local_peer_server_test_path.read_text(encoding="utf-8", errors="replace"),
+        relay_peer_client_path: relay_peer_client_path.read_text(encoding="utf-8", errors="replace"),
+        relay_peer_client_test_path: relay_peer_client_test_path.read_text(encoding="utf-8", errors="replace"),
+        runtime_dev_server_path: runtime_dev_server_path.read_text(encoding="utf-8", errors="replace"),
+        runtime_mock_smoke_path: runtime_mock_smoke_path.read_text(encoding="utf-8", errors="replace"),
+        no_device_path: no_device_path.read_text(encoding="utf-8", errors="replace"),
+        protocol_path: protocol_path.read_text(encoding="utf-8", errors="replace"),
+        security_path: security_path.read_text(encoding="utf-8", errors="replace"),
+    }
+    domain_context = "AetherLink client auth response v1"
+
+    for path, text in path_texts.items():
+        if path in (
+            android_runtime_path,
+            android_identity_store_path,
+            android_identity_test_path,
+            android_identity_store_test_path,
+            macos_pairing_path,
+            macos_router_test_path,
+            companion_model_path,
+            local_peer_server_path,
+            local_peer_server_test_path,
+            relay_peer_client_path,
+            relay_peer_client_test_path,
+            runtime_dev_server_path,
+            runtime_mock_smoke_path,
+            no_device_path,
+        ):
+            continue
+        if domain_context not in text:
+            failures.append(
+                f"{path.relative_to(ROOT)}: client auth must document or enforce the domain-separated "
+                f"{domain_context!r} message."
+            )
+
+    if "fun signAuthenticationResponse(nonce: String)" not in path_texts[android_identity_path]:
+        failures.append(
+            f"{android_identity_path.relative_to(ROOT)}: Android device identity must expose a named "
+            "client-auth response signer instead of raw nonce signing."
+        )
+    if "sign(authenticationResponseMessage(deviceId, nonce))" not in path_texts[android_identity_path]:
+        failures.append(
+            f"{android_identity_path.relative_to(ROOT)}: Android client auth signatures must bind "
+            "device id and nonce to the AetherLink client-auth domain."
+        )
+    if "identity.signAuthenticationResponse(payload.nonce)" not in path_texts[android_runtime_path]:
+        failures.append(
+            f"{android_runtime_path.relative_to(ROOT)}: Android auth.challenge handling must send "
+            "the domain-separated client-auth response signature."
+        )
+    if "verifyRawSignature(" not in path_texts[android_identity_test_path] or "nonce.toByteArray(Charsets.UTF_8)" not in path_texts[android_identity_test_path]:
+        failures.append(
+            f"{android_identity_test_path.relative_to(ROOT)}: Android identity tests must prove the "
+            "domain-separated signature does not verify as a raw nonce signature."
+        )
+    for snippet in (
+        "DeviceIdentityKeyPairStore",
+        "AndroidKeystoreDeviceIdentityKeyPairStore",
+        "keyPairStore.loadOrCreate()",
+    ):
+        if snippet not in path_texts[android_identity_store_path]:
+            failures.append(
+                f"{android_identity_store_path.relative_to(ROOT)}: Android device identity storage "
+                f"must keep the production AndroidKeyStore path testable; missing {snippet}."
+            )
+    for snippet in (
+        "loadOrCreateReusesDeviceIdNameAndPublicKeyAcrossStoreInstances",
+        "loadOrCreateDoesNotPersistPrivateKeyMaterialInDataStore",
+        "keyPairFailureSurfacesWithoutRotatingStoredDeviceIdentity",
+        "assertEquals(first.deviceId, second.deviceId)",
+        "assertEquals(first.publicKeyBase64, second.publicKeyBase64)",
+        "setOf(\"android_device_id\", \"android_device_name\")",
+        "verifyClientAuthSignature(",
+        "FailingDeviceIdentityKeyPairStore",
+    ):
+        if snippet not in path_texts[android_identity_store_test_path]:
+            failures.append(
+                f"{android_identity_store_test_path.relative_to(ROOT)}: Android device identity "
+                f"persistence tests must cover stable id/key reuse, secret non-persistence, and "
+                f"keystore failure behavior; missing {snippet}."
+            )
+    if "clientAuthenticationResponseMessage(deviceID: deviceID, nonce: nonce)" not in path_texts[macos_router_path]:
+        failures.append(
+            f"{macos_router_path.relative_to(ROOT)}: macOS auth.response verifier must validate the "
+            "domain-separated client-auth response message."
+        )
+    for snippet in (
+        "guard let authenticatedDeviceID = authenticatedDeviceID(connectionID: sink.connectionID)",
+        "guard try await trustedDevice(deviceID: authenticatedDeviceID) != nil",
+        "clearAuthentication(connectionID: sink.connectionID)",
+        'code: "pairing_required"',
+    ):
+        if snippet not in path_texts[macos_router_path]:
+            failures.append(
+                f"{macos_router_path.relative_to(ROOT)}: macOS runtime command gate must re-check "
+                f"trusted-device storage and clear revoked live sessions; missing {snippet}."
+            )
+    if "testTrustedAuthResponseRejectsRawNonceSignature" not in path_texts[macos_router_test_path]:
+        failures.append(
+            f"{macos_router_test_path.relative_to(ROOT)}: macOS router tests must reject raw nonce "
+            "client-auth signatures."
+        )
+    if "testRemovedTrustedDeviceCannotContinueUsingAuthenticatedConnection" not in path_texts[macos_router_test_path]:
+        failures.append(
+            f"{macos_router_test_path.relative_to(ROOT)}: macOS router tests must prove trusted-device "
+            "removal revokes already-authenticated runtime command access."
+        )
+    for snippet in (
+        'case invalidDeviceIdentity = "pairing_invalid_device_identity"',
+        "P256.Signing.PublicKey(derRepresentation: publicKeyData)",
+        "deviceID.count <= 128",
+        "publicKeyBase64.count <= 4_096",
+        "request.deviceID.opaquePairingValue()",
+        "request.deviceName.normalizedDeviceName()",
+    ):
+        if snippet not in path_texts[macos_pairing_path]:
+            failures.append(
+                f"{macos_pairing_path.relative_to(ROOT)}: pairing requests must validate trusted-device "
+                f"identity before persistence; missing {snippet}."
+            )
+    for snippet in (
+        "testPairingRequestRejectsWhitespaceMutatedDeviceIdentityBeforeTrusting",
+        "PairingRejectionReason.invalidDeviceIdentity.rawValue",
+        "testClientPublicKeyBase64()",
+        "Android Phone Beta",
+    ):
+        if snippet not in path_texts[macos_router_test_path]:
+            failures.append(
+                f"{macos_router_test_path.relative_to(ROOT)}: macOS router tests must cover malformed "
+                f"pairing identity rejection and device-name normalization; missing {snippet}."
+            )
+    if "macOS pairing trusted-device identity validation" not in path_texts[no_device_path]:
+        failures.append(
+            f"{no_device_path.relative_to(ROOT)}: default no-device gate must report macOS pairing "
+            "trusted-device identity validation coverage."
+        )
+    required_disconnect_cleanup_snippets = (
+        (
+            macos_router_path,
+            "public func connectionDidClose(_ connectionID: UUID)",
+            "macOS runtime router must expose an auth-session cleanup hook for closed transports.",
+        ),
+        (
+            local_peer_server_path,
+            "public var onDisconnect: (@Sendable (UUID) -> Void)?",
+            "Local peer server must expose a disconnect hook for auth-session cleanup.",
+        ),
+        (
+            local_peer_server_test_path,
+            "testLocalPeerServerReportsDisconnectOnceWhenPeerClosesBeforeFrame",
+            "Transport tests must prove local peer EOF cleanup emits one disconnect callback.",
+        ),
+        (
+            relay_peer_client_path,
+            "public var onDisconnect: (@Sendable (UUID) -> Void)?",
+            "Relay peer client must expose a disconnect hook for auth-session cleanup.",
+        ),
+        (
+            relay_peer_client_path,
+            "notifyDisconnectIfCurrentConnection",
+            "Relay peer client must consume disconnect notifications idempotently for a closed connection.",
+        ),
+        (
+            relay_peer_client_test_path,
+            "testRelayPeerClientReportsDisconnectOnceWhenStoppedConnectionCancels",
+            "Transport tests must prove relay stop/cancel paths do not emit duplicate disconnect callbacks.",
+        ),
+        (
+            companion_model_path,
+            "runtimeRouter.connectionDidClose(connectionID)",
+            "Companion app runtime startup must wire transport disconnects into router cleanup.",
+        ),
+        (
+            runtime_dev_server_path,
+            "routerBox.connectionDidClose(connectionID)",
+            "RuntimeDevServer must wire local and relay transport disconnects into router cleanup.",
+        ),
+        (
+            macos_router_test_path,
+            "testConnectionDidCloseClearsAuthenticatedSession",
+            "macOS router tests must prove disconnect cleanup revokes authenticated command access.",
+        ),
+    )
+    for path, snippet, guidance in required_disconnect_cleanup_snippets:
+        if snippet not in path_texts[path]:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
 
     return failures
 
@@ -6684,6 +8096,34 @@ def macos_localization_script_guard_failures() -> list[str]:
             "macOS localization guard must require Activity row tone accessibility labels.",
         ),
         (
+            ".accessibilityLabel(Text(logRowAccessibilityLabel(summary: display.summary, tone: tone)))",
+            "macOS localization guard must keep Activity row summary labels on the summary text.",
+        ),
+        (
+            "Activity rows with technical details must not merge disclosure controls.",
+            "macOS localization guard must reject Activity rows that merge diagnostic disclosure controls into the row.",
+        ),
+        (
+            "activityLogListAccessibilityLabel()",
+            "macOS localization guard must require Activity log list accessibility labels.",
+        ),
+        (
+            "activityLogListAccessibilityValue(count: model.logs.count)",
+            "macOS localization guard must require Activity log list accessibility values.",
+        ),
+        (
+            "testActivityLogListAccessibilitySummaryUsesSelectedLanguage",
+            "macOS localization guard must require Activity log list accessibility XCTest coverage.",
+        ),
+        (
+            "Activity log",
+            "macOS localization guard must require the Activity log list accessibility key.",
+        ),
+        (
+            "%d activity items",
+            "macOS localization guard must require the Activity log list count accessibility key.",
+        ),
+        (
             "func activityLogTone(for line: String) -> StatusTone",
             "macOS localization guard must require a testable Activity tone helper.",
         ),
@@ -6844,12 +8284,76 @@ def macos_localization_script_guard_failures() -> list[str]:
             "macOS localization guard must require Save Bootstrap Relay accessibility values.",
         ),
         (
-            ".accessibilityValue(Text(connectionRecoverySaveBootstrapRelayActionAccessibilityValue(endpoints: bootstrapEndpoints)))",
-            "macOS localization guard must require Save Bootstrap Relay to expose its input-sensitive value.",
+            "connectionRecoveryBootstrapAllocationTokenWarning(",
+            "macOS localization guard must require bootstrap allocation token warning helper.",
+        ),
+        (
+            "connectionRecoveryBootstrapAllocationTokenAccessibilityValue(",
+            "macOS localization guard must require bootstrap allocation token accessibility value helper.",
+        ),
+        (
+            "bootstrapRelayEndpointsNeedAllocationToken(",
+            "macOS localization guard must require non-local bootstrap endpoint classification.",
+        ),
+        (
+            "allocationToken: bootstrapAllocationToken",
+            "macOS localization guard must require Save Bootstrap Relay to expose its token-aware value.",
+        ),
+        (
+            "Add an allocation token before using a non-local bootstrap relay.",
+            "macOS localization guard must require bootstrap allocation token warning copy.",
+        ),
+        (
+            "Missing token for non-local bootstrap relay",
+            "macOS localization guard must require bootstrap allocation token missing accessibility value.",
         ),
         (
             "Will remove saved bootstrap relay",
             "macOS localization guard must require Save Bootstrap Relay clear-state localization.",
+        ),
+        (
+            "removeSavedBootstrapRelayAccessibilityLabel(",
+            "macOS localization guard must require explicit bootstrap relay removal accessibility labels.",
+        ),
+        (
+            "removeSavedBootstrapRelayAccessibilityHint()",
+            "macOS localization guard must require explicit bootstrap relay removal accessibility hints.",
+        ),
+        (
+            "cancelRemoveSavedBootstrapRelayAccessibilityLabel(",
+            "macOS localization guard must require explicit bootstrap relay removal cancel accessibility labels.",
+        ),
+        (
+            ".accessibilityHint(Text(removeSavedBootstrapRelayAccessibilityHint()))",
+            "macOS localization guard must require bootstrap relay removal action accessibility hints.",
+        ),
+        (
+            "Remove Bootstrap Relay",
+            "macOS localization guard must require explicit bootstrap relay removal action localization.",
+        ),
+        (
+            "Remove saved bootstrap relay?",
+            "macOS localization guard must require bootstrap relay removal confirmation title localization.",
+        ),
+        (
+            "Saved bootstrap relay removed.",
+            "macOS localization guard must require bootstrap relay removal result localization.",
+        ),
+        (
+            "testConnectionRecoveryBootstrapRelayRemovalAccessibilityUsesSelectedLanguage",
+            "macOS localization guard must require bootstrap relay removal five-language XCTest coverage.",
+        ),
+        (
+            "removeSavedConnectionDetailsAccessibilityHint()",
+            "macOS localization guard must require saved connection removal action accessibility hints.",
+        ),
+        (
+            "Remove saved fallback connection details used for future pairing QR routes.",
+            "macOS localization guard must require saved connection removal hint localization.",
+        ),
+        (
+            "testRemoveSavedConnectionDetailsAccessibilityUsesSelectedLanguage",
+            "macOS localization guard must require saved connection removal hint XCTest coverage.",
         ),
         (
             "pairingQRCodeAccessibilityHint(remoteRouteExpiresAt:",
@@ -6920,8 +8424,12 @@ def macos_localization_script_guard_failures() -> list[str]:
             "macOS localization guard must require Save Connection accessibility value helper.",
         ),
         (
-            "connectionRecoverySaveBootstrapRelayActionAccessibilityValue(endpoints: String)",
+            "func connectionRecoverySaveBootstrapRelayActionAccessibilityValue(\\n    endpoints: String,\\n    allocationToken: String = \\\"\\\"",
             "macOS localization guard must require Save Bootstrap Relay accessibility value helper.",
+        ),
+        (
+            "allocationToken: String = \\\"\\\"",
+            "macOS localization guard must require Save Bootstrap Relay helper to keep token-aware default compatibility.",
         ),
         (
             "testConnectionRecoverySaveConnectionAccessibilityValueExplainsInvalidInputs",
@@ -6930,6 +8438,14 @@ def macos_localization_script_guard_failures() -> list[str]:
         (
             "testConnectionRecoverySaveBootstrapRelayAccessibilityValueUsesSelectedLanguage",
             "macOS localization guard must require Save Bootstrap Relay accessibility value coverage.",
+        ),
+        (
+            "testConnectionRecoveryBootstrapAllocationTokenWarningUsesSelectedLanguage",
+            "macOS localization guard must require bootstrap allocation token warning five-language XCTest coverage.",
+        ),
+        (
+            "testBootstrapRelayAllocationTokenWarningClassifiesNonLocalEndpoints",
+            "macOS localization guard must require bootstrap endpoint classification XCTest coverage.",
         ),
         (
             "relayStatusRowAccessibilityLabel(title: title, value: value, detail: detail)",
@@ -7025,6 +8541,83 @@ def is_allowed_match(path: Path, line: str, rule_name: str) -> bool:
     return False
 
 
+def route_refresh_relay_scope_guard_failures() -> list[str]:
+    failures: list[str] = []
+    android_runtime_path = ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt"
+    android_test_path = ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt"
+    macos_router_path = ROOT / "apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift"
+    macos_test_path = ROOT / "apps/macos/CompanionCore/Tests/LocalRuntimeMessageRouterTests.swift"
+    no_device_path = ROOT / "script/check_no_device_quality.sh"
+
+    for path in (android_runtime_path, android_test_path, macos_router_path, macos_test_path, no_device_path):
+        if not path.exists():
+            failures.append(f"{path.relative_to(ROOT)} is missing for route.refresh relay-scope guard.")
+            return failures
+
+    android_runtime_text = android_runtime_path.read_text(encoding="utf-8", errors="replace")
+    android_test_text = android_test_path.read_text(encoding="utf-8", errors="replace")
+    macos_router_text = macos_router_path.read_text(encoding="utf-8", errors="replace")
+    macos_test_text = macos_test_path.read_text(encoding="utf-8", errors="replace")
+    no_device_text = no_device_path.read_text(encoding="utf-8", errors="replace")
+
+    for snippet in (
+        'ROUTE_REFRESH_RELAY_SCOPES = setOf("remote", "private_overlay", "usb_reverse")',
+        "validatedRouteRefreshRelayScopeOrNull",
+        "if (payload.relayScope == null) null else return null",
+        "relayScope = relayScope",
+    ):
+        if snippet not in android_runtime_text:
+            failures.append(
+                f"{android_runtime_path.relative_to(ROOT)}: Android route.refresh payload handling must "
+                f"reject unknown relay_scope values before saving trusted route material; missing {snippet}."
+            )
+    for snippet in (
+        "routeRefreshPayloadRejectsUnknownRelayScope",
+        'relayScope = "public"',
+        'relayScope = " remote "',
+    ):
+        if snippet not in android_test_text:
+            failures.append(
+                f"{android_test_path.relative_to(ROOT)}: Missing Android route.refresh relay_scope "
+                f"enum regression {snippet}."
+            )
+    for snippet in (
+        "allowedRouteRefreshRelayScopes",
+        '"remote"',
+        '"private_overlay"',
+        '"usb_reverse"',
+        "route.normalizedRelayScope()",
+        'code: "route_refresh_unavailable"',
+    ):
+        if snippet not in macos_router_text:
+            failures.append(
+                f"{macos_router_path.relative_to(ROOT)}: macOS route.refresh must fail closed for "
+                f"unknown relay_scope values before emitting route material; missing {snippet}."
+            )
+    for snippet in (
+        "testRouteRefreshRejectsUnknownRelayScopeFromRuntimeProvider",
+        'relayScope: "public"',
+        'XCTAssertNil(message?.payload["relay_scope"])',
+    ):
+        if snippet not in macos_test_text:
+            failures.append(
+                f"{macos_test_path.relative_to(ROOT)}: Missing macOS route.refresh relay_scope "
+                f"enum regression {snippet}."
+            )
+    for snippet in (
+        "RuntimeClientViewModelTest.routeRefreshPayloadRejectsUnknownRelayScope",
+        "LocalRuntimeMessageRouterTests/testRouteRefreshRejectsUnknownRelayScopeFromRuntimeProvider",
+        "route.refresh relay-scope enum validation",
+    ):
+        if snippet not in no_device_text:
+            failures.append(
+                f"{no_device_path.relative_to(ROOT)}: Default no-device gate must cover route.refresh "
+                f"relay_scope enum validation; missing {snippet}."
+            )
+
+    return failures
+
+
 def main() -> int:
     failures: list[str] = []
 
@@ -7052,6 +8645,20 @@ def main() -> int:
     if no_device_gate_failures:
         print("No-device quality gate guard failed:", file=sys.stderr)
         for failure in no_device_gate_failures:
+            print(f" - {failure}", file=sys.stderr)
+        return 1
+
+    route_refresh_relay_scope_failures = route_refresh_relay_scope_guard_failures()
+    if route_refresh_relay_scope_failures:
+        print("route.refresh relay-scope guard failed:", file=sys.stderr)
+        for failure in route_refresh_relay_scope_failures:
+            print(f" - {failure}", file=sys.stderr)
+        return 1
+
+    runtime_auth_domain_separation_failures = runtime_auth_domain_separation_guard_failures()
+    if runtime_auth_domain_separation_failures:
+        print("Runtime auth domain-separation guard failed:", file=sys.stderr)
+        for failure in runtime_auth_domain_separation_failures:
             print(f" - {failure}", file=sys.stderr)
         return 1
 
@@ -7115,6 +8722,13 @@ def main() -> int:
     if macos_relay_secret_store_failures:
         print("macOS relay secret-store guard failed:", file=sys.stderr)
         for failure in macos_relay_secret_store_failures:
+            print(f" - {failure}", file=sys.stderr)
+        return 1
+
+    macos_route_diagnostic_redaction_failures = macos_route_diagnostic_redaction_guard_failures()
+    if macos_route_diagnostic_redaction_failures:
+        print("macOS route diagnostic redaction guard failed:", file=sys.stderr)
+        for failure in macos_route_diagnostic_redaction_failures:
             print(f" - {failure}", file=sys.stderr)
         return 1
 
@@ -7248,6 +8862,20 @@ def main() -> int:
     if android_suggested_question_failures:
         print("Android suggested-question guard failed:", file=sys.stderr)
         for failure in android_suggested_question_failures:
+            print(f" - {failure}", file=sys.stderr)
+        return 1
+
+    android_regenerate_response_failures = android_regenerate_response_guard_failures()
+    if android_regenerate_response_failures:
+        print("Android regenerate-response guard failed:", file=sys.stderr)
+        for failure in android_regenerate_response_failures:
+            print(f" - {failure}", file=sys.stderr)
+        return 1
+
+    android_composer_draft_persistence_failures = android_composer_draft_persistence_guard_failures()
+    if android_composer_draft_persistence_failures:
+        print("Android composer-draft persistence guard failed:", file=sys.stderr)
+        for failure in android_composer_draft_persistence_failures:
             print(f" - {failure}", file=sys.stderr)
         return 1
 

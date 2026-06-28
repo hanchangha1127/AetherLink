@@ -7,18 +7,22 @@ import com.localagentbridge.android.core.protocol.ChatSessionLifecyclePayload
 import com.localagentbridge.android.core.protocol.ChatSessionSummaryPayload
 import com.localagentbridge.android.core.protocol.ChatStoredMessagePayload
 import com.localagentbridge.android.core.protocol.MemoryEntryPayload
+import com.localagentbridge.android.core.pairing.AndroidKeystoreRelaySecretStore
+import com.localagentbridge.android.core.pairing.RelaySecretStore
 import com.localagentbridge.android.core.pairing.RuntimePairingPayload
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import java.security.MessageDigest
 import java.time.Instant
 import java.util.UUID
 
 private const val STORE_NAME = "runtime_local_store"
 private const val STORE_KEY = "runtime_data"
 private const val SUPPRESSED_REASON_DELETED = "deleted"
+private const val MAX_PERSISTED_COMPOSER_DRAFT_CHARS = 20_000
 internal const val APP_LANGUAGE_SOURCE_DEFAULT = "default"
 internal const val APP_LANGUAGE_SOURCE_SYSTEM = "system"
 internal const val APP_LANGUAGE_SOURCE_IN_APP = "in_app"
@@ -26,6 +30,7 @@ internal const val APP_LANGUAGE_SOURCE_IN_APP = "in_app"
 class RuntimeLocalStore(
     context: Context,
     private val json: Json,
+    private val relaySecretStore: RelaySecretStore = AndroidKeystoreRelaySecretStore(context),
 ) {
     private val preferences = context.getSharedPreferences(STORE_NAME, Context.MODE_PRIVATE)
 
@@ -35,6 +40,7 @@ class RuntimeLocalStore(
             json.decodeFromString<PersistedRuntimeData>(raw)
                 .sanitized()
                 .withoutRuntimeOwnedLocalData()
+                .withLoadedPendingPairingRelaySecret(relaySecretStore)
         } catch (_: SerializationException) {
             PersistedRuntimeData()
         } catch (_: IllegalArgumentException) {
@@ -43,10 +49,21 @@ class RuntimeLocalStore(
     }
 
     fun save(data: PersistedRuntimeData) {
+        val previousPendingSecretRef = preferences.getString(STORE_KEY, null)
+            ?.let { raw ->
+                runCatching { json.decodeFromString<PersistedRuntimeData>(raw) }.getOrNull()
+            }
+            ?.pendingPairingRoute
+            ?.relaySecretRef
+        val dataForDisk = data.withStoredPendingPairingRelaySecret(relaySecretStore)
+        val currentPendingSecretRef = dataForDisk.pendingPairingRoute?.relaySecretRef
+        if (previousPendingSecretRef != null && previousPendingSecretRef != currentPendingSecretRef) {
+            relaySecretStore.removeSecret(previousPendingSecretRef)
+        }
         preferences.edit()
             .putString(
                 STORE_KEY,
-                json.encodeToString(data.sanitized().withoutRuntimeOwnedLocalData()),
+                json.encodeToString(dataForDisk.sanitized().withoutRuntimeOwnedLocalData()),
             )
             .apply()
     }
@@ -58,6 +75,7 @@ data class PersistedRuntimeData(
     val activeSessionId: String? = null,
     val selectedModelId: String? = null,
     val selectedEmbeddingModelId: String? = null,
+    val composerDraft: String = "",
     val trustedRuntimeAutoReconnectEnabled: Boolean = true,
     val pairingOnboardingCompleted: Boolean = false,
     val sessions: List<PersistedChatSession> = emptyList(),
@@ -74,6 +92,7 @@ data class PersistedChatSession(
     val id: String,
     val title: String,
     val modelId: String? = null,
+    val composerDraft: String = "",
     val createdAtMillis: Long,
     val updatedAtMillis: Long,
     val archivedAtMillis: Long? = null,
@@ -138,6 +157,7 @@ data class PersistedPendingPairingRoute(
     val relayPort: Int? = null,
     val relayId: String? = null,
     val relaySecret: String? = null,
+    val relaySecretRef: String? = null,
     val relayExpiresAtEpochMillis: Long? = null,
     val relayNonce: String? = null,
     val relayScope: String? = null,
@@ -171,10 +191,15 @@ internal fun PersistedRuntimeData.sanitized(): PersistedRuntimeData {
                 session.hasLegacyPromptTitle(cleanTitle, fallbackTitle) -> DEFAULT_CHAT_TITLE
                 else -> cleanTitle
             }
-            session.copy(
-                title = migratedTitle,
-                modelId = session.modelId?.trim()?.takeIf(String::isNotBlank),
-                titleManuallyEdited = session.titleManuallyEdited ||
+                session.copy(
+                    title = migratedTitle,
+                    modelId = session.modelId?.trim()?.takeIf(String::isNotBlank),
+                    composerDraft = if (session.archivedAtMillis == null) {
+                        session.composerDraft.take(MAX_PERSISTED_COMPOSER_DRAFT_CHARS)
+                    } else {
+                        ""
+                    },
+                    titleManuallyEdited = session.titleManuallyEdited ||
                     (
                         !session.runtimeOwned &&
                             !session.titleGenerated &&
@@ -206,6 +231,7 @@ internal fun PersistedRuntimeData.sanitized(): PersistedRuntimeData {
         },
         selectedModelId = selectedModelId?.trim()?.takeIf(String::isNotBlank),
         selectedEmbeddingModelId = selectedEmbeddingModelId?.trim()?.takeIf(String::isNotBlank),
+        composerDraft = composerDraft.take(MAX_PERSISTED_COMPOSER_DRAFT_CHARS),
         trustedRuntimeAutoReconnectEnabled = trustedRuntimeAutoReconnectEnabled,
         pairingOnboardingCompleted = pairingOnboardingCompleted,
         sessions = cleanSessions.sortedByDescending { it.updatedAtMillis },
@@ -261,6 +287,7 @@ internal fun PersistedPendingPairingRoute.isExpired(nowMillis: Long): Boolean {
 
 internal fun PersistedPendingPairingRoute.toRuntimePairingPayloadOrNull(): RuntimePairingPayload? {
     val clean = sanitizedOrNull() ?: return null
+    if (clean.hasPersistedRelayRoute() && clean.relaySecret.isNullOrBlank()) return null
     return RuntimePairingPayload(
         pairingNonce = clean.pairingNonce,
         pairingCode = clean.pairingCode,
@@ -301,6 +328,15 @@ private fun RuntimePairingPayload.toPersistedPendingPairingRoute(nowMillis: Long
         relayPort = relayPort,
         relayId = relayId?.takeIf(String::isNotBlank),
         relaySecret = relaySecret?.takeIf(String::isNotBlank),
+        relaySecretRef = relaySecret
+            ?.takeIf(String::isNotBlank)
+            ?.let {
+                pendingPairingRelaySecretHandle(
+                    runtimeDeviceId = runtimeDeviceId,
+                    relayId = relayId,
+                    pairingNonce = pairingNonce,
+                )
+            },
         relayExpiresAtEpochMillis = routeExpiresAt,
         relayNonce = relayNonce?.takeIf(String::isNotBlank),
         relayScope = relayScope?.takeIf(String::isNotBlank),
@@ -333,6 +369,7 @@ private fun PersistedPendingPairingRoute.sanitizedOrNull(): PersistedPendingPair
     val cleanRelayHost = relayHost?.trim()?.takeIf(String::isNotBlank)
     val cleanRelayId = relayId?.trim()?.takeIf(String::isNotBlank)
     val cleanRelaySecret = relaySecret?.trim()?.takeIf(String::isNotBlank)
+    val cleanRelaySecretRef = relaySecretRef?.trim()?.takeIf(String::isNotBlank)
     val cleanRelayExpiresAt = relayExpiresAtEpochMillis?.takeIf { it > 0L }
     val cleanRelayNonce = relayNonce?.trim()?.takeIf(String::isNotBlank)
     val hasRelayField = listOf(
@@ -340,6 +377,7 @@ private fun PersistedPendingPairingRoute.sanitizedOrNull(): PersistedPendingPair
         cleanRelayPort,
         cleanRelayId,
         cleanRelaySecret,
+        cleanRelaySecretRef,
         cleanRelayExpiresAt,
         cleanRelayNonce,
     ).any { it != null }
@@ -349,7 +387,7 @@ private fun PersistedPendingPairingRoute.sanitizedOrNull(): PersistedPendingPair
             cleanRelayHost == null ||
                 cleanRelayPort == null ||
                 cleanRelayId == null ||
-                cleanRelaySecret == null ||
+                (cleanRelaySecret == null && cleanRelaySecretRef == null) ||
                 cleanRelayExpiresAt == null ||
                 cleanRelayNonce == null
         )
@@ -370,11 +408,73 @@ private fun PersistedPendingPairingRoute.sanitizedOrNull(): PersistedPendingPair
         relayPort = cleanRelayPort,
         relayId = cleanRelayId,
         relaySecret = cleanRelaySecret,
+        relaySecretRef = cleanRelaySecretRef,
         relayExpiresAtEpochMillis = cleanRelayExpiresAt,
         relayNonce = cleanRelayNonce,
         relayScope = relayScope?.trim()?.takeIf(String::isNotBlank),
         serviceType = serviceType?.trim()?.takeIf(String::isNotBlank),
     )
+}
+
+internal fun PersistedRuntimeData.withStoredPendingPairingRelaySecret(
+    relaySecretStore: RelaySecretStore,
+): PersistedRuntimeData {
+    val pending = pendingPairingRoute?.sanitizedOrNull() ?: return withoutPendingPairingRoute()
+    val relaySecret = pending.relaySecret?.trim()?.takeIf(String::isNotBlank)
+    val relaySecretRef = when {
+        relaySecret != null -> pending.relaySecretRef
+            ?: pendingPairingRelaySecretHandle(
+                runtimeDeviceId = pending.runtimeDeviceId,
+                relayId = pending.relayId,
+                pairingNonce = pending.pairingNonce,
+            )
+        else -> pending.relaySecretRef
+    }
+    if (relaySecret != null && relaySecretRef != null) {
+        relaySecretStore.saveSecret(relaySecretRef, relaySecret)
+    }
+    return copy(
+        pendingPairingRoute = pending.copy(
+            relaySecret = null,
+            relaySecretRef = relaySecretRef,
+        ),
+    ).sanitized()
+}
+
+internal fun PersistedRuntimeData.withLoadedPendingPairingRelaySecret(
+    relaySecretStore: RelaySecretStore,
+): PersistedRuntimeData {
+    val pending = pendingPairingRoute?.sanitizedOrNull() ?: return withoutPendingPairingRoute()
+    if (!pending.hasPersistedRelayRoute()) return copy(pendingPairingRoute = pending).sanitized()
+    if (!pending.relaySecret.isNullOrBlank()) return copy(pendingPairingRoute = pending).sanitized()
+    val relaySecret = pending.relaySecretRef
+        ?.let(relaySecretStore::readSecret)
+        ?.trim()
+        ?.takeIf(String::isNotBlank)
+        ?: return withoutPendingPairingRoute()
+    return copy(
+        pendingPairingRoute = pending.copy(relaySecret = relaySecret),
+    ).sanitized()
+}
+
+private fun PersistedPendingPairingRoute.hasPersistedRelayRoute(): Boolean {
+    return relayHost != null ||
+        relayPort != null ||
+        relayId != null ||
+        relaySecret != null ||
+        relaySecretRef != null ||
+        relayExpiresAtEpochMillis != null ||
+        relayNonce != null
+}
+
+private fun pendingPairingRelaySecretHandle(
+    runtimeDeviceId: String,
+    relayId: String?,
+    pairingNonce: String,
+): String {
+    val digest = MessageDigest.getInstance("SHA-256")
+        .digest("$runtimeDeviceId\n$relayId\n$pairingNonce".toByteArray(Charsets.UTF_8))
+    return "pending-relay-v1-" + digest.joinToString("") { "%02x".format(it) }
 }
 
 private const val PENDING_PAIRING_ROUTE_TTL_MILLIS = 5 * 60 * 1000L
@@ -385,6 +485,33 @@ internal fun PersistedRuntimeData.withSelectedModelId(modelId: String?): Persist
 
 internal fun PersistedRuntimeData.withSelectedEmbeddingModelId(modelId: String?): PersistedRuntimeData {
     return copy(selectedEmbeddingModelId = modelId?.trim()?.takeIf(String::isNotBlank)).sanitized()
+}
+
+internal fun PersistedRuntimeData.composerDraftForSession(sessionId: String? = activeSessionId): String {
+    val cleanSessionId = sessionId?.trim()?.takeIf(String::isNotBlank)
+    return if (cleanSessionId == null) {
+        composerDraft
+    } else {
+        sessions.firstOrNull { it.id == cleanSessionId }?.composerDraft ?: composerDraft
+    }
+}
+
+internal fun PersistedRuntimeData.withComposerDraft(
+    value: String,
+    sessionId: String? = activeSessionId,
+): PersistedRuntimeData {
+    val cleanDraft = value.take(MAX_PERSISTED_COMPOSER_DRAFT_CHARS)
+    val cleanSessionId = sessionId?.trim()?.takeIf { id -> sessions.any { it.id == id } }
+        ?: return copy(composerDraft = cleanDraft).sanitized()
+    return copy(
+        sessions = sessions.map { session ->
+            if (session.id == cleanSessionId) {
+                session.copy(composerDraft = cleanDraft)
+            } else {
+                session
+            }
+        },
+    ).sanitized()
 }
 
 internal fun PersistedRuntimeData.withTrustedRuntimeAutoReconnectEnabled(enabled: Boolean): PersistedRuntimeData {
@@ -620,6 +747,7 @@ internal fun PersistedRuntimeData.withPersistedMessages(
         lastEvent = existing?.lastEvent,
         lastFinishReason = existing?.lastFinishReason,
         lastErrorCode = existing?.lastErrorCode,
+        composerDraft = existing?.composerDraft.orEmpty(),
         messages = persistedMessages,
     )
     return copy(
@@ -727,6 +855,7 @@ internal fun PersistedRuntimeData.withRuntimeChatMessages(
         lastEvent = existing.lastEvent,
         lastFinishReason = existing.lastFinishReason,
         lastErrorCode = existing.lastErrorCode,
+        composerDraft = existing.composerDraft,
         messages = persistedMessages,
     )
     return copy(
