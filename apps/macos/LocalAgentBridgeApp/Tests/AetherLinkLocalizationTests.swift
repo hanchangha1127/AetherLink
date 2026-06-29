@@ -511,31 +511,31 @@ final class AetherLinkLocalizationTests: XCTestCase {
                 "en",
                 "Pairing QR status",
                 "Pairing QR is waiting for connection details.",
-                "This QR includes connection details for relay.example.test. Devices can scan it in AetherLink to pair or refresh their saved connection."
+                "This QR includes connection details for relay.example.test. Pairing or refresh still requires the scanning device to reach that route."
             ),
             (
                 "ko",
                 "페어링 QR 상태",
                 "페어링 QR이 연결 정보를 기다리는 중입니다.",
-                "이 QR에는 relay.example.test의 연결 정보가 포함되어 있습니다. 기기는 AetherLink에서 스캔해 페어링하거나 저장된 연결을 갱신할 수 있습니다."
+                "이 QR에는 relay.example.test의 연결 정보가 포함되어 있습니다. 페어링이나 갱신은 스캔하는 기기에서 해당 경로에 도달할 수 있어야 완료됩니다."
             ),
             (
                 "ja",
                 "ペアリング QR の状態",
                 "ペアリング QR は接続情報を待っています。",
-                "この QR には relay.example.test の接続情報が含まれています。デバイスは AetherLink でスキャンしてペアリングまたは保存済み接続の更新ができます。"
+                "この QR には relay.example.test の接続情報が含まれています。ペアリングまたは更新を完了するには、スキャンするデバイスがその経路に到達できる必要があります。"
             ),
             (
                 "zh-Hans",
                 "配对 QR 状态",
                 "配对二维码正在等待连接信息。",
-                "此二维码包含 relay.example.test 的连接信息。设备可在 AetherLink 中扫描以配对或刷新已保存的连接。"
+                "此二维码包含 relay.example.test 的连接信息。配对或刷新仍需要扫码设备能够访问该路由。"
             ),
             (
                 "fr",
                 "État du QR de jumelage",
                 "Le QR de jumelage attend les informations de connexion.",
-                "Ce QR inclut les informations de connexion de relay.example.test. Les appareils peuvent le scanner dans AetherLink pour se jumeler ou actualiser leur connexion enregistrée."
+                "Ce QR inclut les informations de connexion de relay.example.test. Le jumelage ou l’actualisation exige encore que l’appareil qui scanne puisse atteindre cette route."
             ),
         ]
 
@@ -551,7 +551,7 @@ final class AetherLinkLocalizationTests: XCTestCase {
                 XCTAssertEqual(
                     String(
                         format: NSLocalizedString(
-                            "This QR includes connection details for %@. Devices can scan it in AetherLink to pair or refresh their saved connection.",
+                            "This QR includes connection details for %@. Pairing or refresh still requires the scanning device to reach that route.",
                             comment: ""
                         ),
                         "relay.example.test"
@@ -684,19 +684,19 @@ final class AetherLinkLocalizationTests: XCTestCase {
             (
                 "ja",
                 "モデル Llama 3。ID llama3:8b。タイプ チャット。プロバイダー Ollama。ソース ローカル。状態 実行中。サイズ 4.7 GB",
-                "モデル Nomic Embed。ID nomic-embed-text。タイプ 埋め込み。プロバイダー LM Studio。ソース ローカル。状態 未実行。サイズ サイズ不明",
+                "モデル Nomic Embed。ID nomic-embed-text。タイプ メモリ インデックス。プロバイダー LM Studio。ソース ローカル。状態 未実行。サイズ サイズ不明",
                 "モデル 名前のないモデル。ID 不明なモデル ID。タイプ 不明なモデルタイプ。プロバイダー 不明なプロバイダー。ソース 不明なソース。状態 未実行。サイズ サイズ不明"
             ),
             (
                 "zh-Hans",
                 "模型 Llama 3。ID llama3:8b。类型 聊天。提供方 Ollama。来源 本地。状态 运行中。大小 4.7 GB",
-                "模型 Nomic Embed。ID nomic-embed-text。类型 嵌入。提供方 LM Studio。来源 本地。状态 未运行。大小 大小未知",
+                "模型 Nomic Embed。ID nomic-embed-text。类型 记忆索引。提供方 LM Studio。来源 本地。状态 未运行。大小 大小未知",
                 "模型 未命名模型。ID 未知模型 ID。类型 未知模型类型。提供方 未知提供方。来源 未知来源。状态 未运行。大小 大小未知"
             ),
             (
                 "fr",
-                "Modèle Llama 3. ID llama3:8b. Type Chat. Fournisseur Ollama. Source Local. État En cours. Taille 4.7 GB",
-                "Modèle Nomic Embed. ID nomic-embed-text. Type Embedding. Fournisseur LM Studio. Source Local. État À l’arrêt. Taille Taille inconnue",
+                "Modèle Llama 3. ID llama3:8b. Type Discussion. Fournisseur Ollama. Source Localement installé. État En cours. Taille 4.7 GB",
+                "Modèle Nomic Embed. ID nomic-embed-text. Type Indexation de la mémoire. Fournisseur LM Studio. Source Localement installé. État À l’arrêt. Taille Taille inconnue",
                 "Modèle Modèle sans nom. ID ID de modèle inconnu. Type Type de modèle inconnu. Fournisseur Fournisseur inconnu. Source Source inconnue. État À l’arrêt. Taille Taille inconnue"
             ),
         ]
@@ -762,19 +762,19 @@ final class AetherLinkLocalizationTests: XCTestCase {
                 (
                     "ja",
                     "モデルセクション チャットモデル。2 件のモデル",
-                    "モデルセクション 埋め込みモデル。1 件のモデル",
+                    "モデルセクション メモリ インデックスモデル。1 件のモデル",
                     "モデルセクション モデルセクション。モデル数なし"
                 ),
             (
                 "zh-Hans",
                 "模型分区 聊天模型。2 个模型",
-                "模型分区 嵌入模型。1 个模型",
+                "模型分区 记忆索引模型。1 个模型",
                 "模型分区 模型分区。没有模型数量"
             ),
             (
                 "fr",
                 "Section de modèles Modèles de chat. 2 modèles",
-                "Section de modèles Modèles d’embedding. 1 modèle",
+                "Section de modèles Modèles d’indexation de la mémoire. 1 modèle",
                 "Section de modèles Section de modèles. Aucun nombre de modèles"
             ),
         ]
@@ -835,6 +835,16 @@ final class AetherLinkLocalizationTests: XCTestCase {
                 localizedAvailableModelProviderCount(2),
                 localizedLoadedLocalModelLogCount("1"),
                 localizedLoadedLocalModelLogCount("2"),
+                localizedRuntimeActiveChatSessionCount(1),
+                localizedRuntimeActiveChatSessionCount(2),
+                localizedRuntimeArchivedChatSessionCount(1),
+                localizedRuntimeArchivedChatSessionCount(3),
+                localizedRuntimeChatMessageCount(1),
+                localizedRuntimeChatMessageCount(5),
+                localizedRuntimeEnabledMemoryCount(1),
+                localizedRuntimeEnabledMemoryCount(2),
+                localizedRuntimePausedMemoryCount(1),
+                localizedRuntimePausedMemoryCount(4),
                 localizedModelResidencyActiveDetail(providerName: "Ollama", modelID: "llama3.1", idleUnloadMinutes: 1),
                 localizedModelResidencyActiveDetail(providerName: "Ollama", modelID: "llama3.1", idleUnloadMinutes: 10),
             ]
@@ -849,8 +859,18 @@ final class AetherLinkLocalizationTests: XCTestCase {
             XCTAssertEqual(copy[7], "2 model providers available")
             XCTAssertEqual(copy[8], "Loaded 1 model")
             XCTAssertEqual(copy[9], "Loaded 2 models")
-            XCTAssertEqual(copy[10], "Ollama llama3.1 active. Idle unload after 1 minute.")
-            XCTAssertEqual(copy[11], "Ollama llama3.1 active. Idle unload after 10 minutes.")
+            XCTAssertEqual(copy[10], "1 active chat")
+            XCTAssertEqual(copy[11], "2 active chats")
+            XCTAssertEqual(copy[12], "1 archived chat")
+            XCTAssertEqual(copy[13], "3 archived chats")
+            XCTAssertEqual(copy[14], "1 message")
+            XCTAssertEqual(copy[15], "5 messages")
+            XCTAssertEqual(copy[16], "1 enabled memory note")
+            XCTAssertEqual(copy[17], "2 enabled memory notes")
+            XCTAssertEqual(copy[18], "1 paused memory note")
+            XCTAssertEqual(copy[19], "4 paused memory notes")
+            XCTAssertEqual(copy[20], "Ollama llama3.1 active. Idle unload after 1 minute.")
+            XCTAssertEqual(copy[21], "Ollama llama3.1 active. Idle unload after 10 minutes.")
             XCTAssertFalse(copy.contains { $0.contains("(s)") })
         }
 
@@ -858,6 +878,9 @@ final class AetherLinkLocalizationTests: XCTestCase {
             XCTAssertEqual(localizedTrustedDeviceCount(2), "신뢰 기기 2대")
             XCTAssertEqual(localizedLoadedModelCount(2), "모델 2개 불러옴")
             XCTAssertEqual(localizedLoadedLocalModelLogCount("2"), "모델 2개 불러옴")
+            XCTAssertEqual(localizedRuntimeActiveChatSessionCount(2), "활성 채팅 2개")
+            XCTAssertEqual(localizedRuntimeChatMessageCount(2), "메시지 2개")
+            XCTAssertEqual(localizedRuntimeEnabledMemoryCount(2), "사용 중인 메모리 노트 2개")
         }
 
         withStoredAppLanguage("fr") {
@@ -865,6 +888,155 @@ final class AetherLinkLocalizationTests: XCTestCase {
             XCTAssertEqual(localizedTrustedDeviceCount(2), "2 appareils approuvés")
             XCTAssertEqual(localizedAvailableModelProviderCount(1), "1 fournisseur de modèles disponible")
             XCTAssertEqual(localizedAvailableModelProviderCount(2), "2 fournisseurs de modèles disponibles")
+            XCTAssertEqual(localizedRuntimeArchivedChatSessionCount(2), "2 chats archivés")
+            XCTAssertEqual(localizedRuntimeChatMessageCount(2), "2 messages")
+            XCTAssertEqual(localizedRuntimePausedMemoryCount(2), "2 notes mémoire suspendues")
+        }
+    }
+
+    func testRuntimeHistoryInspectorCopyLocalizesAcrossSupportedLanguages() {
+        withStoredAppLanguage("en") {
+            XCTAssertEqual(NSLocalizedString("Inspect Runtime History", comment: ""), "Inspect Runtime History")
+            XCTAssertEqual(NSLocalizedString("Runtime History Inspector", comment: ""), "Runtime History Inspector")
+            XCTAssertEqual(NSLocalizedString("Close Runtime History Inspector", comment: ""), "Close Runtime History Inspector")
+            XCTAssertEqual(NSLocalizedString("Refresh Runtime History Inspector", comment: ""), "Refresh Runtime History Inspector")
+            XCTAssertEqual(NSLocalizedString("No runtime chat sessions", comment: ""), "No runtime chat sessions")
+            XCTAssertEqual(NSLocalizedString("Transcript Preview", comment: ""), "Transcript Preview")
+            XCTAssertEqual(NSLocalizedString("Load transcript preview", comment: ""), "Load transcript preview")
+            XCTAssertEqual(runtimeTranscriptPreviewLoadAccessibilityLabel(title: " Release planning "), "Load transcript preview for Release planning")
+            XCTAssertEqual(runtimeTranscriptPreviewLoadAccessibilityLabel(title: " "), "Load transcript preview for Untitled chat")
+            XCTAssertEqual(NSLocalizedString("No transcript messages", comment: ""), "No transcript messages")
+            XCTAssertEqual(NSLocalizedString("Reasoning", comment: ""), "Reasoning")
+            XCTAssertEqual(localizedRuntimeChatSessionStatus("active"), "Active")
+            XCTAssertEqual(localizedRuntimeChatSessionStatus("archived"), "Archived")
+            XCTAssertEqual(runtimeHistoryEventDisplayName("done"), "Completed")
+            XCTAssertEqual(runtimeTranscriptRoleDisplayName("user"), "User")
+            XCTAssertEqual(runtimeTranscriptRoleDisplayName("assistant"), "Assistant")
+            XCTAssertEqual(
+                runtimeChatSessionAccessibilityLabel(
+                    title: " Release planning ",
+                    status: "Active",
+                    model: "ollama:llama3.1:8b",
+                    messageCount: "4 messages",
+                    updatedAt: "Jun 29, 2026 at 2:00 AM"
+                ),
+                "Chat session Release planning. Status Active. Model ollama:llama3.1:8b. 4 messages. Updated Jun 29, 2026 at 2:00 AM."
+            )
+        }
+
+        withStoredAppLanguage("ko") {
+            XCTAssertEqual(NSLocalizedString("Inspect Runtime History", comment: ""), "런타임 기록 점검")
+            XCTAssertEqual(NSLocalizedString("Runtime History Inspector", comment: ""), "런타임 기록 점검")
+            XCTAssertEqual(NSLocalizedString("Close Runtime History Inspector", comment: ""), "런타임 기록 점검 닫기")
+            XCTAssertEqual(NSLocalizedString("Refresh Runtime History Inspector", comment: ""), "런타임 기록 점검 새로 고침")
+            XCTAssertEqual(NSLocalizedString("No runtime chat sessions", comment: ""), "런타임 채팅 세션 없음")
+            XCTAssertEqual(NSLocalizedString("Transcript Preview", comment: ""), "대화 미리보기")
+            XCTAssertEqual(runtimeTranscriptPreviewLoadAccessibilityLabel(title: " 출시 계획 "), "출시 계획 대화 미리보기 불러오기")
+            XCTAssertEqual(NSLocalizedString("No transcript messages", comment: ""), "대화 메시지 없음")
+            XCTAssertEqual(runtimeTranscriptRoleDisplayName("user"), "사용자")
+            XCTAssertEqual(localizedRuntimeChatSessionStatus("archived"), "보관됨")
+        }
+
+        withStoredAppLanguage("ja") {
+            XCTAssertEqual(NSLocalizedString("Inspect Runtime History", comment: ""), "ランタイム履歴を確認")
+            XCTAssertEqual(NSLocalizedString("Runtime History Inspector", comment: ""), "ランタイム履歴インスペクタ")
+            XCTAssertEqual(NSLocalizedString("Close Runtime History Inspector", comment: ""), "ランタイム履歴インスペクタを閉じる")
+            XCTAssertEqual(NSLocalizedString("Refresh Runtime History Inspector", comment: ""), "ランタイム履歴インスペクタを更新")
+            XCTAssertEqual(NSLocalizedString("No runtime chat sessions", comment: ""), "ランタイムチャットセッションはありません")
+            XCTAssertEqual(NSLocalizedString("Transcript Preview", comment: ""), "会話プレビュー")
+            XCTAssertEqual(runtimeTranscriptPreviewLoadAccessibilityLabel(title: " リリース計画 "), "「リリース計画」の会話プレビューを読み込む")
+            XCTAssertEqual(NSLocalizedString("No transcript messages", comment: ""), "会話メッセージはありません")
+            XCTAssertEqual(runtimeTranscriptRoleDisplayName("assistant"), "アシスタント")
+            XCTAssertEqual(localizedRuntimeChatSessionStatus("active"), "アクティブ")
+        }
+
+        withStoredAppLanguage("zh-Hans") {
+            XCTAssertEqual(NSLocalizedString("Inspect Runtime History", comment: ""), "检查运行时历史")
+            XCTAssertEqual(NSLocalizedString("Runtime History Inspector", comment: ""), "运行时历史检查器")
+            XCTAssertEqual(NSLocalizedString("Close Runtime History Inspector", comment: ""), "关闭运行时历史检查器")
+            XCTAssertEqual(NSLocalizedString("Refresh Runtime History Inspector", comment: ""), "刷新运行时历史检查器")
+            XCTAssertEqual(NSLocalizedString("No runtime chat sessions", comment: ""), "没有运行时聊天会话")
+            XCTAssertEqual(NSLocalizedString("Transcript Preview", comment: ""), "对话预览")
+            XCTAssertEqual(runtimeTranscriptPreviewLoadAccessibilityLabel(title: " 发布计划 "), "加载“发布计划”的对话预览")
+            XCTAssertEqual(NSLocalizedString("No transcript messages", comment: ""), "没有对话消息")
+            XCTAssertEqual(runtimeTranscriptRoleDisplayName("system"), "系统消息")
+            XCTAssertEqual(localizedRuntimeChatSessionStatus("archived"), "已归档")
+        }
+
+        withStoredAppLanguage("fr") {
+            XCTAssertEqual(NSLocalizedString("Inspect Runtime History", comment: ""), "Inspecter l’historique du runtime")
+            XCTAssertEqual(NSLocalizedString("Runtime History Inspector", comment: ""), "Inspecteur d’historique du runtime")
+            XCTAssertEqual(NSLocalizedString("Close Runtime History Inspector", comment: ""), "Fermer l’inspecteur d’historique du runtime")
+            XCTAssertEqual(NSLocalizedString("Refresh Runtime History Inspector", comment: ""), "Actualiser l’inspecteur d’historique du runtime")
+            XCTAssertEqual(NSLocalizedString("No runtime chat sessions", comment: ""), "Aucune session de chat du runtime")
+            XCTAssertEqual(NSLocalizedString("Transcript Preview", comment: ""), "Aperçu de la transcription")
+            XCTAssertEqual(
+                runtimeTranscriptPreviewLoadAccessibilityLabel(title: " Planification de version "),
+                "Charger l’aperçu de la transcription pour Planification de version"
+            )
+            XCTAssertEqual(
+                runtimeTranscriptPreviewLoadAccessibilityLabel(title: ""),
+                "Charger l’aperçu de la transcription pour Chat sans titre"
+            )
+            XCTAssertEqual(NSLocalizedString("No transcript messages", comment: ""), "Aucun message de transcription")
+            XCTAssertEqual(runtimeTranscriptRoleDisplayName("assistant"), "Assistant IA")
+            XCTAssertEqual(runtimeTranscriptRoleDisplayName("other"), "Message")
+            XCTAssertEqual(localizedRuntimeChatSessionStatus("active"), "Actif")
+        }
+    }
+
+    func testRuntimeMemoryInspectorCopyLocalizesAcrossSupportedLanguages() {
+        withStoredAppLanguage("en") {
+            XCTAssertEqual(NSLocalizedString("Inspect Runtime Memory", comment: ""), "Inspect Runtime Memory")
+            XCTAssertEqual(NSLocalizedString("Runtime Memory Inspector", comment: ""), "Runtime Memory Inspector")
+            XCTAssertEqual(NSLocalizedString("Close Runtime Memory Inspector", comment: ""), "Close Runtime Memory Inspector")
+            XCTAssertEqual(NSLocalizedString("Refresh Runtime Memory Inspector", comment: ""), "Refresh Runtime Memory Inspector")
+            XCTAssertEqual(NSLocalizedString("No runtime memory notes", comment: ""), "No runtime memory notes")
+            XCTAssertEqual(NSLocalizedString("Paused", comment: ""), "Paused")
+            XCTAssertEqual(
+                runtimeMemoryEntryAccessibilityLabel(
+                    content: " Prefer concise answers ",
+                    status: NSLocalizedString("Enabled", comment: ""),
+                    updatedAt: "Jun 29, 2026 at 1:00 AM"
+                ),
+                "Memory note Prefer concise answers. Status Enabled. Updated Jun 29, 2026 at 1:00 AM."
+            )
+        }
+
+        withStoredAppLanguage("ko") {
+            XCTAssertEqual(NSLocalizedString("Inspect Runtime Memory", comment: ""), "런타임 메모리 점검")
+            XCTAssertEqual(NSLocalizedString("Runtime Memory Inspector", comment: ""), "런타임 메모리 점검")
+            XCTAssertEqual(NSLocalizedString("Close Runtime Memory Inspector", comment: ""), "런타임 메모리 점검 닫기")
+            XCTAssertEqual(NSLocalizedString("Refresh Runtime Memory Inspector", comment: ""), "런타임 메모리 점검 새로 고침")
+            XCTAssertEqual(NSLocalizedString("No runtime memory notes", comment: ""), "런타임 메모리 노트 없음")
+            XCTAssertEqual(NSLocalizedString("Paused", comment: ""), "일시 중지됨")
+        }
+
+        withStoredAppLanguage("ja") {
+            XCTAssertEqual(NSLocalizedString("Inspect Runtime Memory", comment: ""), "ランタイムメモリを確認")
+            XCTAssertEqual(NSLocalizedString("Runtime Memory Inspector", comment: ""), "ランタイムメモリインスペクタ")
+            XCTAssertEqual(NSLocalizedString("Close Runtime Memory Inspector", comment: ""), "ランタイムメモリインスペクタを閉じる")
+            XCTAssertEqual(NSLocalizedString("Refresh Runtime Memory Inspector", comment: ""), "ランタイムメモリインスペクタを更新")
+            XCTAssertEqual(NSLocalizedString("No runtime memory notes", comment: ""), "ランタイムメモリノートはありません")
+            XCTAssertEqual(NSLocalizedString("Paused", comment: ""), "一時停止")
+        }
+
+        withStoredAppLanguage("zh-Hans") {
+            XCTAssertEqual(NSLocalizedString("Inspect Runtime Memory", comment: ""), "检查运行时记忆")
+            XCTAssertEqual(NSLocalizedString("Runtime Memory Inspector", comment: ""), "运行时记忆检查器")
+            XCTAssertEqual(NSLocalizedString("Close Runtime Memory Inspector", comment: ""), "关闭运行时记忆检查器")
+            XCTAssertEqual(NSLocalizedString("Refresh Runtime Memory Inspector", comment: ""), "刷新运行时记忆检查器")
+            XCTAssertEqual(NSLocalizedString("No runtime memory notes", comment: ""), "没有运行时记忆笔记")
+            XCTAssertEqual(NSLocalizedString("Paused", comment: ""), "已暂停")
+        }
+
+        withStoredAppLanguage("fr") {
+            XCTAssertEqual(NSLocalizedString("Inspect Runtime Memory", comment: ""), "Inspecter la mémoire du runtime")
+            XCTAssertEqual(NSLocalizedString("Runtime Memory Inspector", comment: ""), "Inspecteur de mémoire du runtime")
+            XCTAssertEqual(NSLocalizedString("Close Runtime Memory Inspector", comment: ""), "Fermer l’inspecteur de mémoire du runtime")
+            XCTAssertEqual(NSLocalizedString("Refresh Runtime Memory Inspector", comment: ""), "Actualiser l’inspecteur de mémoire du runtime")
+            XCTAssertEqual(NSLocalizedString("No runtime memory notes", comment: ""), "Aucune note de mémoire du runtime")
+            XCTAssertEqual(NSLocalizedString("Paused", comment: ""), "Suspendu")
         }
     }
 
@@ -872,7 +1044,7 @@ final class AetherLinkLocalizationTests: XCTestCase {
         withStoredAppLanguage("en") {
             XCTAssertEqual(NSLocalizedString("Technical Details", comment: ""), "Details")
             XCTAssertEqual(NSLocalizedString("Provider endpoint redacted.", comment: ""), "Provider address hidden.")
-            XCTAssertEqual(NSLocalizedString("Advanced Connection Setup", comment: ""), "Connection Recovery")
+            XCTAssertEqual(NSLocalizedString("Connection Recovery", comment: ""), "Connection Recovery")
             XCTAssertEqual(NSLocalizedString("Connection Setup", comment: ""), "Recovery Details")
             XCTAssertEqual(NSLocalizedString("Connection Recovery result", comment: ""), "Connection Recovery result")
             XCTAssertEqual(NSLocalizedString("Connection setup secret", comment: ""), "Protected connection key")
@@ -1403,13 +1575,17 @@ final class AetherLinkLocalizationTests: XCTestCase {
         let expectations: [(
             languageTag: String,
             runtimeStatus: String,
+            runtimeStatusAccessibilityLabel: String,
             modelServiceStatus: String,
+            modelServiceStatusAccessibilityLabel: String,
             commandTitles: MenuBarCommandTitles
         )] = [
             (
                 "en",
                 "Runtime: Ready for devices",
+                "Runtime status: Ready for devices",
                 "Model service: Not checked",
+                "Model service status: Not checked",
                 MenuBarCommandTitles(
                     openAetherLink: "Open AetherLink",
                     refresh: "Refresh",
@@ -1420,7 +1596,9 @@ final class AetherLinkLocalizationTests: XCTestCase {
             (
                 "ko",
                 "런타임: 기기 연결 준비됨",
+                "런타임 상태: 기기 연결 준비됨",
                 "모델 서비스: 확인 전",
+                "모델 서비스 상태: 확인 전",
                 MenuBarCommandTitles(
                     openAetherLink: "AetherLink 열기",
                     refresh: "새로고침",
@@ -1431,7 +1609,9 @@ final class AetherLinkLocalizationTests: XCTestCase {
             (
                 "ja",
                 "ランタイム: デバイスの準備完了",
+                "ランタイム状態: デバイスの準備完了",
                 "モデルサービス: 未確認",
+                "モデルサービス状態: 未確認",
                 MenuBarCommandTitles(
                     openAetherLink: "AetherLink を開く",
                     refresh: "更新",
@@ -1442,7 +1622,9 @@ final class AetherLinkLocalizationTests: XCTestCase {
             (
                 "zh-Hans",
                 "运行时：已准备连接设备",
+                "运行时状态：已准备连接设备",
                 "模型服务：未检查",
+                "模型服务状态：未检查",
                 MenuBarCommandTitles(
                     openAetherLink: "打开 AetherLink",
                     refresh: "刷新",
@@ -1453,7 +1635,9 @@ final class AetherLinkLocalizationTests: XCTestCase {
             (
                 "fr",
                 "Runtime : Prêt pour les appareils",
+                "État du runtime : Prêt pour les appareils",
                 "Service de modèles : Non vérifié",
+                "État du service de modèles : Non vérifié",
                 MenuBarCommandTitles(
                     openAetherLink: "Ouvrir AetherLink",
                     refresh: "Actualiser",
@@ -1473,8 +1657,18 @@ final class AetherLinkLocalizationTests: XCTestCase {
                     expectation.languageTag
                 )
                 XCTAssertEqual(
+                    menuBarRuntimeStatusAccessibilityLabel(.advertising(serviceName: "AetherLink", port: 43170)),
+                    expectation.runtimeStatusAccessibilityLabel,
+                    expectation.languageTag
+                )
+                XCTAssertEqual(
                     menuBarModelServiceStatusText([]),
                     expectation.modelServiceStatus,
+                    expectation.languageTag
+                )
+                XCTAssertEqual(
+                    menuBarModelServiceStatusAccessibilityLabel([]),
+                    expectation.modelServiceStatusAccessibilityLabel,
                     expectation.languageTag
                 )
                 XCTAssertEqual(menuBarCommandTitles(), expectation.commandTitles, expectation.languageTag)
@@ -1513,42 +1707,111 @@ final class AetherLinkLocalizationTests: XCTestCase {
         }
     }
 
+    func testMenuBarWindowAndQuitAccessibilityHintsUseSelectedLanguage() {
+        let expectations: [(
+            languageTag: String,
+            openHint: String,
+            quitHint: String
+        )] = [
+            (
+                "en",
+                "Open the AetherLink window and bring it to the front.",
+                "Quit AetherLink Runtime."
+            ),
+            (
+                "ko",
+                "AetherLink 창을 열고 앞으로 가져옵니다.",
+                "AetherLink Runtime을 종료합니다."
+            ),
+            (
+                "ja",
+                "AetherLink ウインドウを開いて前面に表示します。",
+                "AetherLink Runtime を終了します。"
+            ),
+            (
+                "zh-Hans",
+                "打开 AetherLink 窗口并置于前台。",
+                "退出 AetherLink Runtime。"
+            ),
+            (
+                "fr",
+                "Ouvre la fenêtre AetherLink et la place au premier plan.",
+                "Quitte AetherLink Runtime."
+            ),
+        ]
+
+        XCTAssertEqual(expectations.map(\.languageTag), AetherLinkAppLanguage.allCases.map(\.rawValue))
+
+        for expectation in expectations {
+            withStoredAppLanguage(expectation.languageTag) {
+                XCTAssertEqual(
+                    menuBarOpenAetherLinkAccessibilityHint(),
+                    expectation.openHint,
+                    expectation.languageTag
+                )
+                XCTAssertEqual(
+                    menuBarQuitAccessibilityHint(),
+                    expectation.quitHint,
+                    expectation.languageTag
+                )
+            }
+        }
+    }
+
     func testQuickActionAccessibilityUsesSelectedLanguage() {
         let expectations: [(
             languageTag: String,
             ready: String,
             checkProvidersHint: String,
-            loadModelsHint: String
+            loadModelsHint: String,
+            refreshRuntimeDataHint: String,
+            inspectHistoryHint: String,
+            inspectMemoryHint: String
         )] = [
             (
                 "en",
                 "Ready",
                 "Check model provider availability through AetherLink Runtime.",
-                "Load the installed local model list through AetherLink Runtime."
+                "Load the installed local model list through AetherLink Runtime.",
+                "Refresh runtime-owned chat history and memory counts.",
+                "Inspect runtime-owned chat sessions stored on AetherLink Runtime.",
+                "Inspect runtime-owned memory notes stored on AetherLink Runtime."
             ),
             (
                 "ko",
                 "준비됨",
                 "AetherLink Runtime을 통해 모델 제공자 사용 가능 여부를 확인합니다.",
-                "AetherLink Runtime을 통해 설치된 로컬 모델 목록을 불러옵니다."
+                "AetherLink Runtime을 통해 설치된 로컬 모델 목록을 불러옵니다.",
+                "런타임에 저장된 채팅 기록과 메모리 개수를 새로 고칩니다.",
+                "AetherLink Runtime에 저장된 런타임 소유 채팅 세션을 확인합니다.",
+                "AetherLink Runtime에 저장된 런타임 소유 메모리 노트를 확인합니다."
             ),
             (
                 "ja",
                 "準備完了",
                 "AetherLink Runtime 経由でモデルプロバイダーの利用可否を確認します。",
-                "AetherLink Runtime 経由でインストール済みローカルモデルの一覧を読み込みます。"
+                "AetherLink Runtime 経由でインストール済みローカルモデルの一覧を読み込みます。",
+                "ランタイムが保持するチャット履歴とメモリ数を更新します。",
+                "AetherLink Runtime に保存されたランタイム所有のチャットセッションを確認します。",
+                "AetherLink Runtime に保存されたランタイム所有のメモリノートを確認します。"
             ),
             (
                 "zh-Hans",
                 "就绪",
                 "通过 AetherLink Runtime 检查模型提供方可用性。",
-                "通过 AetherLink Runtime 加载已安装的本地模型列表。"
+                "通过 AetherLink Runtime 加载已安装的本地模型列表。",
+                "刷新运行时保存的聊天历史和记忆数量。",
+                "检查 AetherLink Runtime 中存储的运行时拥有的聊天会话。",
+                "检查 AetherLink Runtime 中存储的运行时拥有的记忆笔记。"
             ),
             (
                 "fr",
                 "Prêt",
                 "Vérifie la disponibilité des fournisseurs de modèles via AetherLink Runtime.",
-                "Charge la liste des modèles locaux installés via AetherLink Runtime."
+                "Charge la liste des modèles locaux installés via AetherLink Runtime.",
+                "Actualise l’historique de chat et les compteurs de mémoire conservés par le runtime.",
+                "Inspecter les sessions de chat détenues par le runtime et stockées dans AetherLink Runtime.",
+                "Inspecter les notes de mémoire détenues par le runtime et stockées dans AetherLink Runtime."
             ),
         ]
 
@@ -1574,6 +1837,36 @@ final class AetherLinkLocalizationTests: XCTestCase {
                 XCTAssertEqual(
                     modelListLoadActionAccessibilityHint(),
                     expectation.loadModelsHint,
+                    expectation.languageTag
+                )
+                XCTAssertEqual(
+                    refreshRuntimeDataActionAccessibilityValue(),
+                    expectation.ready,
+                    expectation.languageTag
+                )
+                XCTAssertEqual(
+                    refreshRuntimeDataActionAccessibilityHint(),
+                    expectation.refreshRuntimeDataHint,
+                    expectation.languageTag
+                )
+                XCTAssertEqual(
+                    inspectRuntimeHistoryActionAccessibilityValue(),
+                    expectation.ready,
+                    expectation.languageTag
+                )
+                XCTAssertEqual(
+                    inspectRuntimeHistoryActionAccessibilityHint(),
+                    expectation.inspectHistoryHint,
+                    expectation.languageTag
+                )
+                XCTAssertEqual(
+                    inspectRuntimeMemoryActionAccessibilityValue(),
+                    expectation.ready,
+                    expectation.languageTag
+                )
+                XCTAssertEqual(
+                    inspectRuntimeMemoryActionAccessibilityHint(),
+                    expectation.inspectMemoryHint,
                     expectation.languageTag
                 )
             }
@@ -2099,6 +2392,63 @@ final class AetherLinkLocalizationTests: XCTestCase {
         }
     }
 
+    func testConnectionRecoveryHostWarningAccessibilityLabelUsesSelectedLanguageAndTone() {
+        let expectations: [(
+            languageTag: String,
+            warningMessage: String,
+            label: String,
+            fallback: String
+        )] = [
+            (
+                "en",
+                "This connection address is local-network only.",
+                "Connection Recovery warning. Status Needs attention. This connection address is local-network only.",
+                "Connection Recovery warning. Status Needs attention. No details available."
+            ),
+            (
+                "ko",
+                "이 연결 주소는 로컬 네트워크 전용입니다.",
+                "연결 복구 경고. 상태 확인 필요. 이 연결 주소는 로컬 네트워크 전용입니다.",
+                "연결 복구 경고. 상태 확인 필요. 사용 가능한 세부 정보가 없습니다."
+            ),
+            (
+                "ja",
+                "この接続アドレスはローカルネットワーク専用です。",
+                "接続の復旧警告。ステータス 確認が必要。この接続アドレスはローカルネットワーク専用です。",
+                "接続の復旧警告。ステータス 確認が必要。利用できる詳細はありません。"
+            ),
+            (
+                "zh-Hans",
+                "此连接地址仅限本地网络。",
+                "连接恢复警告。状态 需要注意。此连接地址仅限本地网络。",
+                "连接恢复警告。状态 需要注意。没有可用详情。"
+            ),
+            (
+                "fr",
+                "Cette adresse de connexion est réservée au réseau local.",
+                "Avertissement de récupération de connexion. État Attention requise. Cette adresse de connexion est réservée au réseau local.",
+                "Avertissement de récupération de connexion. État Attention requise. Aucun détail disponible."
+            ),
+        ]
+
+        XCTAssertEqual(expectations.map(\.languageTag), AetherLinkAppLanguage.allCases.map(\.rawValue))
+
+        for expectation in expectations {
+            withStoredAppLanguage(expectation.languageTag) {
+                XCTAssertEqual(
+                    connectionRecoveryHostWarningAccessibilityLabel(message: expectation.warningMessage),
+                    expectation.label,
+                    expectation.languageTag
+                )
+                XCTAssertEqual(
+                    connectionRecoveryHostWarningAccessibilityLabel(message: "   "),
+                    expectation.fallback,
+                    expectation.languageTag
+                )
+            }
+        }
+    }
+
     func testConnectionRecoveryFormFieldAccessibilityValuesUseSelectedLanguageAndHideSecrets() {
         let secretToken = "relay-token-should-not-be-read"
         let routeSecret = "route-secret-should-not-be-read"
@@ -2140,6 +2490,7 @@ final class AetherLinkLocalizationTests: XCTestCase {
             languageTag: String,
             ready: String,
             unavailable: String,
+            routeNotReadyValue: String,
             readyHint: String,
             routeNotReadyHint: String,
             missingActionHint: String
@@ -2148,6 +2499,7 @@ final class AetherLinkLocalizationTests: XCTestCase {
                 "en",
                 "Ready",
                 "Unavailable",
+                "Connection details not ready",
                 "Generate the latest pairing QR with saved connection details.",
                 "Connection details are not ready for QR generation. Check Connection Recovery settings.",
                 "Latest QR generation is unavailable from this view."
@@ -2156,6 +2508,7 @@ final class AetherLinkLocalizationTests: XCTestCase {
                 "ko",
                 "준비됨",
                 "사용 불가",
+                "연결 정보가 준비되지 않음",
                 "저장된 연결 정보로 최신 페어링 QR을 생성합니다.",
                 "QR 생성을 위한 연결 정보가 준비되지 않았습니다. 연결 복구 설정을 확인하세요.",
                 "이 화면에서는 최신 QR을 생성할 수 없습니다."
@@ -2164,6 +2517,7 @@ final class AetherLinkLocalizationTests: XCTestCase {
                 "ja",
                 "準備完了",
                 "利用不可",
+                "接続情報が未準備",
                 "保存済みの接続情報で最新のペアリング QR を生成します。",
                 "QR 生成用の接続情報は準備できていません。接続の復旧設定を確認してください。",
                 "この画面では最新の QR を生成できません。"
@@ -2172,6 +2526,7 @@ final class AetherLinkLocalizationTests: XCTestCase {
                 "zh-Hans",
                 "就绪",
                 "不可用",
+                "连接信息尚未就绪",
                 "使用已保存的连接信息生成最新配对二维码。",
                 "用于生成二维码的连接信息尚未就绪。请检查连接恢复设置。",
                 "此视图无法生成最新二维码。"
@@ -2180,6 +2535,7 @@ final class AetherLinkLocalizationTests: XCTestCase {
                 "fr",
                 "Prêt",
                 "Indisponible",
+                "Informations de connexion non prêtes",
                 "Générer le dernier QR de jumelage avec les informations de connexion enregistrées.",
                 "Les informations de connexion ne sont pas prêtes pour générer le QR. Vérifiez les réglages de récupération de connexion.",
                 "La génération du dernier QR n'est pas disponible depuis cette vue."
@@ -2197,7 +2553,7 @@ final class AetherLinkLocalizationTests: XCTestCase {
                 )
                 XCTAssertEqual(
                     connectionRecoveryGenerateLatestQRActionAccessibilityValue(isRouteReadyForQRCode: false),
-                    expectation.unavailable,
+                    expectation.routeNotReadyValue,
                     expectation.languageTag
                 )
                 XCTAssertEqual(
@@ -3491,6 +3847,46 @@ final class AetherLinkLocalizationTests: XCTestCase {
             withStoredAppLanguage(expectation.languageTag) {
                 XCTAssertEqual(trustedDeviceRefreshActionAccessibilityValue(), expectation.value)
                 XCTAssertEqual(trustedDeviceRefreshActionAccessibilityHint(), expectation.hint)
+            }
+        }
+    }
+
+    func testTrustedDeviceListAccessibilityUsesSelectedLanguage() {
+        let expectations: [(languageTag: String, label: String, value: String)] = [
+            (
+                "en",
+                "Allowed Devices",
+                "2 trusted devices"
+            ),
+            (
+                "ko",
+                "허용된 기기",
+                "신뢰 기기 2대"
+            ),
+            (
+                "ja",
+                "許可済みデバイス",
+                "信頼済みデバイス 2 台"
+            ),
+            (
+                "zh-Hans",
+                "允许的设备",
+                "2 台受信任设备"
+            ),
+            (
+                "fr",
+                "Appareils autorisés",
+                "2 appareils approuvés"
+            ),
+        ]
+
+        XCTAssertEqual(expectations.map(\.languageTag), AetherLinkAppLanguage.allCases.map(\.rawValue))
+
+        for expectation in expectations {
+            withStoredAppLanguage(expectation.languageTag) {
+                XCTAssertEqual(trustedDeviceListAccessibilityLabel(), expectation.label)
+                XCTAssertEqual(trustedDeviceListAccessibilityValue(count: 2), expectation.value)
+                XCTAssertEqual(trustedDeviceListAccessibilityValue(count: -1), localizedTrustedDeviceCount(0))
             }
         }
     }

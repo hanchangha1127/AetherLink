@@ -29,6 +29,8 @@ struct LocalAgentBridgeApp: App {
                 }
                 .keyboardShortcut("r", modifiers: [.command])
                 .help(modelProviderCheckActionAccessibilityHint())
+                .accessibilityValue(Text(modelProviderCheckActionAccessibilityValue()))
+                .accessibilityHint(Text(modelProviderCheckActionAccessibilityHint()))
             }
         }
 
@@ -36,12 +38,16 @@ struct LocalAgentBridgeApp: App {
             let commandTitles = menuBarCommandTitles()
 
             Text(menuBarRuntimeStatusText(model.transportState))
+                .accessibilityLabel(Text(menuBarRuntimeStatusAccessibilityLabel(model.transportState)))
             Text(menuBarModelServiceStatusText(model.providerStatuses))
+                .accessibilityLabel(Text(menuBarModelServiceStatusAccessibilityLabel(model.providerStatuses)))
             Divider()
             Button(commandTitles.openAetherLink) {
                 openWindow(id: "main")
                 NSApp.activate(ignoringOtherApps: true)
             }
+            .help(menuBarOpenAetherLinkAccessibilityHint())
+            .accessibilityHint(Text(menuBarOpenAetherLinkAccessibilityHint()))
             ForEach(companionPrimaryActionOrder(trustedDeviceCount: model.trustedDevices.count)) { action in
                 menuBarPrimaryAction(action, commandTitles: commandTitles)
             }
@@ -49,6 +55,8 @@ struct LocalAgentBridgeApp: App {
             Button(commandTitles.quit) {
                 NSApp.terminate(nil)
             }
+            .help(menuBarQuitAccessibilityHint())
+            .accessibilityHint(Text(menuBarQuitAccessibilityHint()))
         }
     }
 

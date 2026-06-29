@@ -107,7 +107,7 @@ struct PairingView: View {
             let text: String
             if !model.isDevelopmentRelayRouteEligibleForQRCode {
                 text = String(
-                    format: NSLocalizedString("Connection details for %@ cannot be included in this QR. Advanced Connection Setup needs an address both devices can reach.", comment: ""),
+                    format: NSLocalizedString("Connection details for %@ cannot be included in this QR. Connection Recovery needs an address both devices can reach.", comment: ""),
                     endpoint
                 )
             } else if !model.isDevelopmentRelayRoutePreparedForQRCode {
@@ -129,7 +129,7 @@ struct PairingView: View {
         if model.relayFrameEncryptionEnabled {
             return PairingRouteNotice(
                 text: String(
-                    format: NSLocalizedString("This QR includes connection details for %@. Devices can scan it in AetherLink to pair or refresh their saved connection.", comment: ""),
+                    format: NSLocalizedString("This QR includes connection details for %@. Pairing or refresh still requires the scanning device to reach that route.", comment: ""),
                     endpoint
                 ),
                 systemImage: "point.3.connected.trianglepath.dotted",

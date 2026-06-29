@@ -38,6 +38,16 @@ internal fun shouldReturnToChatAfterPairing(
         !isPairingAwaitingRoute
 }
 
+internal fun shouldTreatPairingQrAsOnboarding(
+    destination: AppDestination,
+    hasTrustedRuntime: Boolean,
+    isPairingAwaitingRoute: Boolean,
+): Boolean {
+    return !hasTrustedRuntime ||
+        destination == AppDestination.Chat ||
+        isPairingAwaitingRoute
+}
+
 internal fun shouldLeavePairingSettingsAfterTrustedRuntimeReady(
     destination: AppDestination,
     hasTrustedRuntime: Boolean,

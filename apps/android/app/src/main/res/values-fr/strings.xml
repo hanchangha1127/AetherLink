@@ -18,6 +18,10 @@
     <string name="chat_destination_state_ready">Prêt à ouvrir le chat.</string>
     <string name="settings_destination_state_ready">Prêt à ouvrir les réglages.</string>
     <string name="previous_chats">Chats précédents</string>
+    <string name="chat_history_group_today">Aujourd’hui</string>
+    <string name="chat_history_group_yesterday">Hier</string>
+    <string name="chat_history_group_previous_7_days">7 derniers jours</string>
+    <string name="chat_history_group_older">Plus ancien</string>
     <string name="no_previous_chats">Aucun chat précédent pour le moment.</string>
     <string name="chat_search_label">Rechercher des chats</string>
     <string name="clear_chat_search">Effacer la recherche de chats</string>
@@ -46,6 +50,8 @@
     <string name="archive">Archiver</string>
     <string name="archive_chat">Archiver le chat</string>
     <string name="archive_chat_named">Archiver le chat « %1$s »</string>
+    <string name="open_chat">Ouvrir le chat</string>
+    <string name="open_chat_named">Ouvrir le chat « %1$s »</string>
     <string name="chat_archived_snackbar">Chat archivé</string>
     <string name="undo">Annuler</string>
     <string name="archived_chat">Chat archivé</string>
@@ -55,6 +61,9 @@
     <string name="chat_history_settings_title">Historique des chats</string>
     <string name="chat_history_settings_subtitle">Archivez les chats, restaurez-les plus tard ou supprimez définitivement les chats archivés.</string>
     <string name="chat_history_action_state_wait_for_stream">Attendez la fin de la réponse en cours avant de modifier l’historique des chats.</string>
+    <string name="chat_history_refresh">Actualiser l’historique des chats</string>
+    <string name="chat_history_refresh_state_ready">L’historique des chats peut être actualisé.</string>
+    <string name="chat_history_refresh_state_connect_first">Connectez-vous à AetherLink Runtime avant d’actualiser l’historique des chats.</string>
     <string name="chat_history_bulk_actions_title">Gérer tous les chats</string>
     <string name="chat_history_bulk_actions_detail">Les actions sur tous les chats restent fermées jusqu’à l’ouverture de cette section.</string>
     <string name="archive_all_chats">Archiver tous les chats</string>
@@ -98,6 +107,9 @@
     <string name="scan_latest_qr_state_ready">Prêt à scanner le dernier QR.</string>
     <string name="qr_scanner_title">Scanner le QR AetherLink</string>
     <string name="qr_scanner_detail">Pointez la caméra vers le dernier QR AetherLink Runtime. Le QR doit vérifier AetherLink Runtime et inclure une connexion joignable par les deux appareils.</string>
+    <string name="qr_scanner_feedback_unsupported">Ce code n’est pas un QR AetherLink Runtime.</string>
+    <string name="qr_scanner_feedback_invalid">Ce QR AetherLink est invalide ou expiré. Scannez le dernier QR Runtime.</string>
+    <string name="qr_scanner_scan_target_accessibility">Zone de scan QR. Centrez le QR AetherLink Runtime dans ce cadre.</string>
     <string name="qr_scanner_close_action">Fermer le scanner QR</string>
     <string name="qr_scanner_permission_title">Accès caméra requis</string>
     <string name="qr_scanner_permission_detail">AetherLink utilise la caméra uniquement pour scanner les QR de jumelage.</string>
@@ -114,6 +126,7 @@
     <string name="manual_qr_payload_detail">Solution de diagnostic uniquement. Collez le texte QR d’AetherLink Runtime lorsque le scan caméra ne peut pas être testé; le jumelage normal reste le scan QR par caméra.</string>
     <string name="manual_qr_payload_label">Texte QR</string>
     <string name="manual_qr_payload_submit">Utiliser le texte QR</string>
+    <string name="manual_qr_payload_open_accessibility">Ouvrir le texte QR de diagnostic</string>
     <string name="manual_qr_payload_input_accessibility">Saisie du texte QR de diagnostic</string>
     <string name="manual_qr_payload_submit_accessibility">Utiliser le texte QR de diagnostic</string>
     <string name="manual_qr_payload_cancel_accessibility">Fermer le texte QR de diagnostic</string>
@@ -147,7 +160,7 @@
     <string name="forget">Oublier</string>
     <string name="forget_trusted_runtime_named">Oublier le runtime de confiance « %1$s »</string>
     <string name="forget_trusted_runtime_confirm_title">Oublier le runtime de confiance ?</string>
-    <string name="forget_trusted_runtime_confirm_message">Retirer le runtime de confiance enregistré de cet appareil ? L’accès aux modèles reste derrière AetherLink Runtime jusqu’au prochain jumelage.</string>
+    <string name="forget_trusted_runtime_confirm_message">Retirer « %1$s » ? Rejumelez pour accéder aux modèles.</string>
     <string name="forget_trusted_runtime_confirm_action">Oublier le runtime</string>
     <string name="forget_trusted_runtime_confirm_action_named">Confirmer l’oubli du runtime de confiance « %1$s »</string>
     <string name="forget_trusted_runtime_cancel_action_named">Annuler l’oubli du runtime de confiance « %1$s »</string>
@@ -208,7 +221,7 @@
     <string name="auto_reconnect">Reconnexion automatique</string>
     <string name="auto_reconnect_detail">Reconnecte le runtime de confiance au retour dans l’app.</string>
     <string name="auto_reconnect_paused">Reconnexion en pause. Utilisez Connecter pour restaurer le runtime.</string>
-    <string name="health">Santé</string>
+    <string name="health">État</string>
     <string name="disconnect">Déconnecter</string>
     <string name="yes">Oui</string>
     <string name="no">Non</string>
@@ -259,6 +272,9 @@
     <string name="model_refresh_state_loading">Actualisation des modèles en cours.</string>
     <string name="model_refresh_state_connect_first">Connectez-vous au runtime de confiance avant d’actualiser les modèles.</string>
     <string name="model_picker_state_wait_for_stream">Attendez la réponse en cours ou annulez-la avant de changer de modèle.</string>
+    <string name="model_picker_vision_recovery_state">Modèle de chat AetherLink Runtime compatible vision requis.</string>
+    <string name="model_picker_vision_recovery_detail">Cette image nécessite un modèle de chat AetherLink Runtime compatible vision. Choisissez un modèle vision installé depuis AetherLink Runtime.</string>
+    <string name="model_picker_vision_model_required_state">Un modèle vision est requis pour les images jointes.</string>
     <string name="chat_model_picker_summary">Sélecteur de modèle de chat. %1$s. %2$s</string>
     <string name="chat_model_picker_summary_selected">Sélecteur de modèle de chat. Modèle de chat sélectionné %1$s.</string>
     <string name="models_from_runtime">Les modèles sont chargés via AetherLink Runtime, pas directement depuis cette app.</string>
@@ -270,6 +286,7 @@
     <string name="model_installed">Installé</string>
     <string name="model_running">En cours</string>
     <string name="model_not_installed">Non installé</string>
+    <string name="model_not_recommended_for_images">Non recommandé pour les images</string>
     <string name="model_available_to_install">Disponible à l’installation</string>
     <string name="model_source_value">Source : %1$s</string>
     <string name="model_size_value">Taille : %1$s</string>
@@ -278,7 +295,7 @@
     <string name="model_picker_empty_state_summary">%1$s. %2$s</string>
     <string name="no_models_connected_title">Aucun modèle chargé</string>
     <string name="no_models_connected">Chargez les modèles via AetherLink Runtime.</string>
-    <string name="no_models_disconnected_title">Runtime requis</string>
+    <string name="no_models_disconnected_title">Runtime de confiance requis</string>
     <string name="no_models_disconnected">Connectez-vous au runtime de confiance avant de charger les modèles.</string>
     <string name="loading_models">Chargement des modèles...</string>
     <string name="model_search_label">Rechercher des modèles</string>
@@ -289,16 +306,16 @@
 
     <string name="chat_title">Discussion</string>
     <string name="chat_subtitle">Les messages sont diffusés via AetherLink Runtime.</string>
-    <string name="chat_via_companion">Via le runtime AetherLink</string>
+    <string name="chat_via_companion">Via AetherLink Runtime</string>
     <string name="model_value">Modèle : %1$s</string>
     <string name="model_none">Aucun modèle sélectionné</string>
     <string name="model_provider_value">Fournisseur : %1$s</string>
-    <string name="model_source_local">Local</string>
+    <string name="model_source_local">Localement installé</string>
     <string name="model_source_cloud">Géré par le fournisseur</string>
     <string name="provider_ollama">Ollama</string>
     <string name="provider_lm_studio">LM Studio</string>
     <string name="provider_companion_runtime">AetherLink Runtime</string>
-    <string name="message">Message</string>
+    <string name="message">Votre message</string>
     <string name="send">Envoyer</string>
     <string name="cancel">Annuler</string>
     <string name="attach_files">Joindre des fichiers</string>
@@ -310,12 +327,15 @@
     <string name="attach_files_state_limit_reached">%1$d fichiers joints sur %2$d. Limite de pièces jointes atteinte.</string>
     <string name="attach_files_state_unavailable">Pièces jointes indisponibles.</string>
     <string name="remove_attachment">Retirer la pièce jointe</string>
-    <string name="attachment_type_image">Image</string>
-    <string name="attachment_type_document">Document</string>
+    <string name="attachment_type_image">Image jointe</string>
+    <string name="attachment_type_document">Document joint</string>
     <string name="attachment_metadata_with_size">%1$s · %2$s</string>
     <string name="attachment_requires_vision_model">Modèle vision requis</string>
     <string name="content_desc_attachment_chip">Pièce jointe %1$s, %2$s</string>
     <string name="attachment_only_prompt_header">Analysez les éléments joints :</string>
+    <string name="shared_draft_added_text_snackbar">Texte partagé ajouté au brouillon.</string>
+    <string name="shared_draft_added_files_snackbar">Fichiers partagés ajoutés au brouillon.</string>
+    <string name="shared_draft_added_mixed_snackbar">Texte et fichiers partagés ajoutés au brouillon.</string>
     <string name="empty_chat_pairing_title">Scannez le QR pour démarrer</string>
     <string name="empty_chat_pairing">Jumelez d’abord AetherLink Runtime. Les fournisseurs de modèles restent privés derrière le runtime de confiance.</string>
     <string name="empty_chat_disconnected_title">Connectez-vous pour continuer</string>
@@ -354,7 +374,7 @@
     <string name="chat_hint_ready">Prêt à envoyer.</string>
     <string name="chat_hint_ready_with_attachments">Prêt à envoyer. %1$s</string>
     <string name="role_user">Vous</string>
-    <string name="role_assistant">Assistant</string>
+    <string name="role_assistant">Assistant IA</string>
     <string name="role_assistant_initial">A</string>
     <string name="chat_message_accessibility_summary">%1$s : %2$s</string>
     <string name="assistant_typing">Génération...</string>
@@ -405,18 +425,19 @@
     <string name="language_french">Français</string>
     <string name="runtime_endpoint">Dépannage de connexion</string>
     <string name="embedding_model_title">Modèle d’indexation de la mémoire</string>
-    <string name="embedding_model_subtitle">Choisissez le modèle d’embedding utilisé pour la mémoire et la récupération.</string>
+    <string name="embedding_model_subtitle">Choisissez le modèle d’indexation utilisé pour la mémoire et la récupération.</string>
     <string name="embedding_model_none_detail">Aucun modèle d’indexation de la mémoire sélectionné.</string>
     <string name="embedding_model_none_row_summary">Option d’indexation de la mémoire. %1$s. %2$s</string>
     <string name="embedding_model_none_row_summary_selected">Option d’indexation de la mémoire sélectionnée. %1$s. %2$s</string>
     <string name="embedding_model_row_summary">Modèle d’indexation de la mémoire « %1$s ». %2$s.</string>
     <string name="embedding_model_row_summary_selected">Modèle d’indexation de la mémoire sélectionné « %1$s ». %2$s.</string>
+    <string name="embedding_model_state_install_before_selecting">Installez ce modèle dans AetherLink Runtime avant de le sélectionner.</string>
     <string name="saved_embedding_model_row_summary">Modèle d’indexation de la mémoire enregistré « %1$s ». %2$s</string>
     <string name="selected_embedding_model">Modèle d’indexation de la mémoire sélectionné</string>
     <string name="selected_embedding_model_unavailable">Le modèle d’indexation de la mémoire enregistré manque dans la liste du runtime. Actualisez ou choisissez-en un autre.</string>
     <string name="selected_embedding_model_restoring">Restauration du modèle d’indexation de la mémoire enregistré depuis AetherLink Runtime.</string>
     <string name="embedding_model_empty">Aucun modèle d’indexation de la mémoire n’est disponible depuis AetherLink Runtime.</string>
-    <string name="embedding_model_connect_first">Connectez-vous au runtime de confiance avant de choisir un modèle d’embedding.</string>
+    <string name="embedding_model_connect_first">Connectez-vous au runtime de confiance avant de choisir un modèle d’indexation de la mémoire.</string>
     <string name="memory_title">Mémoire</string>
     <string name="memory_subtitle">Notes stockées sur le runtime de confiance pour les futurs chats.</string>
     <string name="memory_add_label">Ajouter une mémoire</string>
@@ -428,13 +449,15 @@
     <string name="memory_empty">Aucune mémoire enregistrée pour le moment.</string>
     <string name="memory_empty_disconnected">Connectez-vous au runtime de confiance pour charger la mémoire enregistrée.</string>
     <string name="memory_connect_to_load">Connectez-vous au runtime de confiance pour charger et gérer la mémoire.</string>
-    <string name="memory_read_only_notice">La mémoire en cache reste en lecture seule jusqu’à la reconnexion au runtime de confiance.</string>
+    <string name="memory_read_only_notice">La mémoire affichée dans cette session est en lecture seule. Reconnectez le runtime de confiance pour l’actualiser ou la gérer.</string>
+    <string name="memory_refresh">Actualiser la mémoire</string>
+    <string name="memory_refresh_state_ready">Prêt à actualiser la mémoire.</string>
     <string name="memory_remove">Supprimer la mémoire</string>
     <string name="memory_remove_named">Supprimer la mémoire « %1$s »</string>
     <string name="memory_enable_named">Activer la mémoire « %1$s »</string>
     <string name="memory_pause_named">Mettre en pause la mémoire « %1$s »</string>
     <string name="memory_remove_confirm_title">Supprimer la mémoire ?</string>
-    <string name="memory_remove_confirm_message">Supprimer cette mémoire du runtime de confiance ?</string>
+    <string name="memory_remove_confirm_message">Supprimer la mémoire « %1$s » du runtime de confiance ?</string>
     <string name="memory_enabled">Activée</string>
     <string name="memory_paused">En pause</string>
 
@@ -469,6 +492,7 @@
     <string name="error_no_connectable_runtime_route">Le runtime est approuvé, mais la connexion demande un nouveau scan QR.</string>
     <string name="error_remote_routes_unavailable">Scannez le dernier QR AetherLink Runtime avec les informations de connexion.</string>
     <string name="error_remote_route_unreachable">La connexion enregistrée ne répond pas. Préparez les informations de connexion distante dans AetherLink Runtime, puis scannez le dernier QR avec les informations de connexion.</string>
+    <string name="error_remote_route_unreachable_from_device">Cet appareil ne peut pas atteindre la route de relais du QR. Utilisez une route publique, VPN, tunnel ou overlay privé accessible depuis les deux appareils, puis scannez un nouveau QR.</string>
     <string name="error_remote_route_expired">Les informations de connexion ont expiré. Scannez le dernier QR AetherLink Runtime avec de nouvelles informations de connexion.</string>
     <string name="error_discovery_failed">La découverte du runtime a échoué.</string>
     <string name="error_invalid_pairing_qr">Ce code QR de jumelage AetherLink n’est pas valide.</string>
@@ -499,9 +523,10 @@
     <string name="error_chat_session_sync_failed">Impossible de synchroniser cette modification avec AetherLink Runtime.</string>
     <string name="error_chat_history_runtime_required">Connectez-vous à AetherLink Runtime avant de modifier les chats enregistrés par le runtime.</string>
     <string name="error_memory_runtime_required">Connectez-vous au runtime de confiance avant de modifier la mémoire.</string>
+    <string name="error_memory_load_failed">Impossible de charger la mémoire depuis AetherLink Runtime.</string>
     <string name="error_runtime_error">Erreur du runtime.</string>
     <string name="error_send_failed">Impossible d’envoyer le message à AetherLink Runtime.</string>
-    <string name="error_regenerate_unavailable">Aucune réponse assistant terminée ne peut être régénérée.</string>
+    <string name="error_regenerate_unavailable">Aucune réponse de l’assistant terminée ne peut être régénérée.</string>
     <string name="error_regenerate_attachment_context_unavailable">Cette réponse utilisait une pièce jointe qui n’est plus disponible pour la régénération.</string>
     <string name="error_reuse_message_unavailable">Ce message ne peut pas être réutilisé comme brouillon.</string>
     <string name="error_invalid_payload">AetherLink Runtime a envoyé des données non valides.</string>
@@ -530,6 +555,7 @@
     <string name="route_diagnostic_direct_failed_remote_pending">La route locale ne répond pas. Scannez le dernier QR AetherLink Runtime avec les informations de connexion.</string>
     <string name="route_diagnostic_remote_pending">Les informations de connexion distante manquent. La découverte proche fonctionne seulement si les deux appareils voient le même chemin local; scannez le dernier QR avec les informations de connexion.</string>
     <string name="route_diagnostic_relay_failed">La connexion enregistrée ne répond pas. Préparez les informations de connexion distante dans AetherLink Runtime, puis scannez le dernier QR avec les informations de connexion.</string>
+    <string name="route_diagnostic_relay_unreachable_from_device">Cet appareil n’a pas pu ouvrir la route de relais. Vérifiez le relais, le VPN, le tunnel ou l’overlay privé, puis scannez un nouveau QR.</string>
     <string name="route_diagnostic_relay_auth_failed">Les informations de connexion enregistrées n’ont pas pu être authentifiées. Scannez un nouveau QR depuis le runtime de confiance.</string>
     <string name="route_diagnostic_remote_route_expired">Les informations de connexion enregistrées ont expiré. Scannez le dernier QR AetherLink Runtime avec de nouvelles informations de connexion.</string>
     <string name="route_diagnostic_direct_qr_rejected">Ce QR contient une route de diagnostic de proximité et ne peut pas jumeler à travers différents réseaux.</string>

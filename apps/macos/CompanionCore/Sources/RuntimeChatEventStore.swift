@@ -202,7 +202,9 @@ public struct RuntimeChatStoredMessage: Equatable, Sendable {
 public protocol RuntimeChatEventStore: Sendable {
     func append(_ event: RuntimeChatStoredEvent) throws
     func listSessions(ownerDeviceID: String?, limit: Int, includeArchived: Bool) throws -> [RuntimeChatStoredSession]
+    func listAllSessions(limit: Int, includeArchived: Bool) throws -> [RuntimeChatStoredSession]
     func listMessages(ownerDeviceID: String?, sessionID: String, limit: Int) throws -> [RuntimeChatStoredMessage]
+    func listAllMessages(sessionID: String, limit: Int) throws -> [RuntimeChatStoredMessage]
     func mutateSession(
         ownerDeviceID: String?,
         sessionID: String,
@@ -221,8 +223,16 @@ public extension RuntimeChatEventStore {
         try listSessions(limit: limit, includeArchived: false)
     }
 
+    func listAllSessions(limit: Int) throws -> [RuntimeChatStoredSession] {
+        try listAllSessions(limit: limit, includeArchived: false)
+    }
+
     func listMessages(sessionID: String, limit: Int) throws -> [RuntimeChatStoredMessage] {
         try listMessages(ownerDeviceID: nil, sessionID: sessionID, limit: limit)
+    }
+
+    func listAllMessages(sessionID: String) throws -> [RuntimeChatStoredMessage] {
+        try listAllMessages(sessionID: sessionID, limit: 200)
     }
 
     func mutateSession(
@@ -250,7 +260,15 @@ public struct NullRuntimeChatEventStore: RuntimeChatEventStore {
         []
     }
 
+    public func listAllSessions(limit: Int, includeArchived: Bool) throws -> [RuntimeChatStoredSession] {
+        []
+    }
+
     public func listMessages(ownerDeviceID: String?, sessionID: String, limit: Int) throws -> [RuntimeChatStoredMessage] {
+        []
+    }
+
+    public func listAllMessages(sessionID: String, limit: Int) throws -> [RuntimeChatStoredMessage] {
         []
     }
 
@@ -298,6 +316,20 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
         }
     }
 
+    public func listAllSessions(
+        limit: Int = 100,
+        includeArchived: Bool = false
+    ) throws -> [RuntimeChatStoredSession] {
+        guard limit > 0 else { return [] }
+        return try lock.withLock {
+            try Self.sessions(
+                from: readEvents(),
+                limit: limit,
+                includeArchived: includeArchived
+            )
+        }
+    }
+
     public func listMessages(
         ownerDeviceID: String?,
         sessionID: String,
@@ -306,6 +338,16 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
         guard limit > 0 else { return [] }
         return try lock.withLock {
             try Self.messages(from: readEvents(ownerDeviceID: ownerDeviceID), sessionID: sessionID, limit: limit)
+        }
+    }
+
+    public func listAllMessages(
+        sessionID: String,
+        limit: Int = 200
+    ) throws -> [RuntimeChatStoredMessage] {
+        guard limit > 0 else { return [] }
+        return try lock.withLock {
+            try Self.messages(from: readEvents(), sessionID: sessionID, limit: limit)
         }
     }
 

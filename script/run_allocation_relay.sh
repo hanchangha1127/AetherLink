@@ -6,6 +6,7 @@ HOST="${AETHERLINK_RELAY_BIND_HOST:-0.0.0.0}"
 PORT="${AETHERLINK_RELAY_PORT:-43171}"
 ALLOCATION_STORE="${AETHERLINK_RELAY_ALLOCATION_STORE:-}"
 ALLOCATION_TOKEN="${AETHERLINK_RELAY_ALLOCATION_TOKEN:-}"
+ALLOCATION_TTL_SECONDS="${AETHERLINK_RELAY_ALLOCATION_TTL_SECONDS:-}"
 REQUIRE_ALLOCATION=1
 DRY_RUN=0
 EPHEMERAL_ALLOCATIONS=0
@@ -13,12 +14,14 @@ EPHEMERAL_ALLOCATIONS=0
 usage() {
   cat <<'USAGE'
 Usage:
-  script/run_allocation_relay.sh [--host <bind-host>] [--port <port>] [--allocation-token <token>] [--allocation-store <path>] [--ephemeral-allocations] [--allow-legacy] [--dry-run]
+  script/run_allocation_relay.sh [--host <bind-host>] [--port <port>] [--allocation-token <token>] [--allocation-ttl-seconds <seconds>] [--allocation-store <path>] [--ephemeral-allocations] [--allow-legacy] [--dry-run]
 
 Starts the AetherLink development relay. By default it requires route allocation,
 which is the path used by QR pairing across different networks.
 Allocation tickets are persisted by AetherLinkRelay by default so issued QR
-relay ids can survive relay process restarts.
+relay ids can survive relay process restarts. Relay allocation leases are
+short-lived by default; use --allocation-ttl-seconds only for explicit
+development diagnostics that need a longer route lease.
 
 This relay forwards encrypted AetherLink runtime frames only. It is not an AI
 backend and does not expose Ollama, LM Studio, prompts, chat history, or files.
@@ -81,6 +84,14 @@ while [[ $# -gt 0 ]]; do
       ALLOCATION_TOKEN="$2"
       shift 2
       ;;
+    --allocation-ttl-seconds)
+      if [[ $# -lt 2 ]]; then
+        echo "--allocation-ttl-seconds requires a value." >&2
+        exit 2
+      fi
+      ALLOCATION_TTL_SECONDS="$2"
+      shift 2
+      ;;
     --ephemeral-allocations)
       EPHEMERAL_ALLOCATIONS=1
       shift
@@ -103,6 +114,14 @@ done
 
 if ! [[ "$PORT" =~ ^[0-9]+$ ]] || (( PORT < 1 || PORT > 65535 )); then
   echo "Invalid relay port: $PORT" >&2
+  exit 2
+fi
+
+if [[ -n "$ALLOCATION_TTL_SECONDS" ]] && (
+  ! [[ "$ALLOCATION_TTL_SECONDS" =~ ^[0-9]+([.][0-9]+)?$ ]] ||
+    ! python3 -c 'import sys; raise SystemExit(0 if float(sys.argv[1]) > 0 else 1)' "$ALLOCATION_TTL_SECONDS"
+); then
+  echo "Invalid allocation TTL seconds: $ALLOCATION_TTL_SECONDS" >&2
   exit 2
 fi
 
@@ -129,6 +148,11 @@ if [[ "$DRY_RUN" == "1" ]]; then
   else
     echo "Allocation token: not required"
   fi
+  if [[ -n "$ALLOCATION_TTL_SECONDS" ]]; then
+    echo "Allocation TTL: ${ALLOCATION_TTL_SECONDS}s"
+  else
+    echo "Allocation TTL: AetherLinkRelay default"
+  fi
   echo "After the relay is running, verify the advertised host with:"
   echo "  script/run_different_network_dev_runtime.sh --relay-host <public-or-vpn-host> --relay-port $PORT --preflight-only"
   echo "Do not use the bind address as the QR relay host unless the trusted device can actually reach it."
@@ -140,6 +164,8 @@ RELAY_BIN="$(swift build --show-bin-path)/AetherLinkRelay"
 ARGS=("$RELAY_BIN" --host "$HOST" --port "$PORT")
 if [[ "$REQUIRE_ALLOCATION" == "1" ]]; then
   ARGS+=(--require-allocation)
+else
+  ARGS+=(--allow-legacy)
 fi
 if [[ "$EPHEMERAL_ALLOCATIONS" == "1" ]]; then
   ARGS+=(--ephemeral-allocations)
@@ -148,6 +174,9 @@ elif [[ -n "$ALLOCATION_STORE" ]]; then
 fi
 if [[ -n "$ALLOCATION_TOKEN" ]]; then
   ARGS+=(--allocation-token "$ALLOCATION_TOKEN")
+fi
+if [[ -n "$ALLOCATION_TTL_SECONDS" ]]; then
+  ARGS+=(--allocation-ttl-seconds "$ALLOCATION_TTL_SECONDS")
 fi
 
 echo "Starting AetherLink development relay on $HOST:$PORT"
@@ -167,6 +196,11 @@ if [[ -n "$ALLOCATION_TOKEN" ]]; then
   echo "Allocation token is required for route allocation."
 else
   echo "WARNING: no allocation token is required. Use this only on a private development relay."
+fi
+if [[ -n "$ALLOCATION_TTL_SECONDS" ]]; then
+  echo "Allocation leases expire after ${ALLOCATION_TTL_SECONDS}s."
+else
+  echo "Allocation leases use the AetherLinkRelay short default TTL."
 fi
 echo "Use a public, VPN, tunnel, or overlay address that both paired devices can reach."
 echo "Preflight that advertised address with: script/run_different_network_dev_runtime.sh --relay-host <public-or-vpn-host> --relay-port $PORT --preflight-only"

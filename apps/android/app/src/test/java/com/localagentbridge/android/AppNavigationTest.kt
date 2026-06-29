@@ -97,6 +97,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.Calendar
 
 class AppNavigationTest {
     @Test
@@ -237,6 +238,46 @@ class AppNavigationTest {
                 hasTrustedRuntime = true,
                 settingsOpenedForPairingOnboarding = false,
                 isPairingAwaitingRoute = false,
+            ),
+        )
+    }
+
+    @Test
+    fun settingsQrRefreshForTrustedRuntimeStaysInSettings() {
+        assertEquals(
+            false,
+            shouldTreatPairingQrAsOnboarding(
+                destination = AppDestination.Settings,
+                hasTrustedRuntime = true,
+                isPairingAwaitingRoute = false,
+            ),
+        )
+    }
+
+    @Test
+    fun firstPairingChatQrAndPendingRouteQrUseOnboardingFlow() {
+        assertEquals(
+            true,
+            shouldTreatPairingQrAsOnboarding(
+                destination = AppDestination.Settings,
+                hasTrustedRuntime = false,
+                isPairingAwaitingRoute = false,
+            ),
+        )
+        assertEquals(
+            true,
+            shouldTreatPairingQrAsOnboarding(
+                destination = AppDestination.Chat,
+                hasTrustedRuntime = true,
+                isPairingAwaitingRoute = false,
+            ),
+        )
+        assertEquals(
+            true,
+            shouldTreatPairingQrAsOnboarding(
+                destination = AppDestination.Settings,
+                hasTrustedRuntime = true,
+                isPairingAwaitingRoute = true,
             ),
         )
     }
@@ -392,7 +433,10 @@ class AppNavigationTest {
 
     @Test
     fun androidSystemAppLanguageSyncNormalizesCurrentAndSelectedTags() {
-        assertTrue(shouldSynchronizeAndroidSystemAppLanguage(null, "en"))
+        assertFalse(shouldSynchronizeAndroidSystemAppLanguage(null, "en"))
+        assertFalse(shouldSynchronizeAndroidSystemAppLanguage("  ", "en"))
+        assertTrue(shouldSynchronizeAndroidSystemAppLanguage(null, "ko"))
+        assertTrue(shouldSynchronizeAndroidSystemAppLanguage("  ", "fr"))
         assertFalse(shouldSynchronizeAndroidSystemAppLanguage("en-US", "en"))
         assertFalse(shouldSynchronizeAndroidSystemAppLanguage("ko-KR", "ko"))
         assertFalse(shouldSynchronizeAndroidSystemAppLanguage("zh-Hans", "zh-CN"))
@@ -785,6 +829,42 @@ class AppNavigationTest {
                 currentText = "Existing draft   ",
                 sharedText = " New shared text ",
             ),
+        )
+    }
+
+    @Test
+    fun sharedChatDraftConfirmationMessageMatchesImportedContentType() {
+        val sharedUri = Uri.parse("content://aetherlink/shared/one.pdf")
+
+        assertEquals(
+            R.string.shared_draft_added_text_snackbar,
+            sharedChatDraftConfirmationMessageRes(
+                SharedChatDraft(text = "Summarize this", attachmentUris = emptyList()),
+            ),
+        )
+        assertEquals(
+            R.string.shared_draft_added_files_snackbar,
+            sharedChatDraftConfirmationMessageRes(
+                SharedChatDraft(text = "", attachmentUris = listOf(sharedUri)),
+            ),
+        )
+        assertEquals(
+            R.string.shared_draft_added_mixed_snackbar,
+            sharedChatDraftConfirmationMessageRes(
+                SharedChatDraft(text = "Summarize this", attachmentUris = listOf(sharedUri)),
+            ),
+        )
+    }
+
+    @Test
+    fun sharedChatDraftConfirmationFeedbackUsesLightweightHaptic() {
+        assertEquals(
+            AetherLinkInteractionFeedback.PrimaryAction,
+            sharedChatDraftConfirmationFeedback(),
+        )
+        assertEquals(
+            HapticFeedbackType.TextHandleMove,
+            aetherLinkHapticFeedbackType(sharedChatDraftConfirmationFeedback()),
         )
     }
 
@@ -1401,6 +1481,36 @@ class AppNavigationTest {
     }
 
     @Test
+    fun pairingQrScannerClassifiesRawValuesBeforeConsumingCameraResult() {
+        val validQr = "aetherlink://pair?v=1&n=nonce-1&c=123456" +
+            "&rid=runtime-1&rn=AetherLink%20Runtime&rf=fp-1&rk=runtime-public-key" +
+            "&rt=route-1&rh=relay.example.test&rp=443&ri=relay-1&rs=secret-1" +
+            "&rx=4102444800000&rrn=nonce-route-1&rsc=remote"
+        val invalidPairQr = "aetherlink://pair?pairing_code=123456"
+        val expiredPairQr = "aetherlink://pair?version=1&pairing_nonce=nonce-1&pairing_code=123456" +
+            "&runtime_device_id=runtime-1&runtime_key_fingerprint=fp-1" +
+            "&relay_host=relay.example.test&relay_port=443&relay_id=relay-1" +
+            "&relay_secret=secret-1&relay_expires_at=1000&relay_nonce=nonce-route-1"
+
+        assertEquals(
+            PairingQrRawValueScanResult.Valid,
+            "\n  $validQr  ".aetherLinkPairingQrRawValueScanResult(),
+        )
+        assertEquals(
+            PairingQrRawValueScanResult.InvalidPairingQr,
+            invalidPairQr.aetherLinkPairingQrRawValueScanResult(),
+        )
+        assertEquals(
+            PairingQrRawValueScanResult.InvalidPairingQr,
+            expiredPairQr.aetherLinkPairingQrRawValueScanResult(),
+        )
+        assertEquals(
+            PairingQrRawValueScanResult.UnsupportedQr,
+            "https://example.test/pair?pairing_code=123456".aetherLinkPairingQrRawValueScanResult(),
+        )
+    }
+
+    @Test
     fun pairingDeepLinkAcceptsPairActionCaseInsensitively() {
         val rawUri = "aetherlink://PAIR?version=1&pairing_nonce=nonce-1&pairing_code=123456" +
             "&runtime_device_id=runtime-1&runtime_key_fingerprint=fp-1"
@@ -1527,6 +1637,72 @@ class AppNavigationTest {
     }
 
     @Test
+    fun chatSessionDrawerGroupLabelUsesLocalCalendarDays() {
+        val now = testLocalMillis(2026, Calendar.JUNE, 29, 12)
+
+        assertEquals(
+            R.string.chat_history_group_today,
+            chatSessionDrawerGroupLabelRes(
+                updatedAtMillis = testLocalMillis(2026, Calendar.JUNE, 29, 0),
+                nowMillis = now,
+            ),
+        )
+        assertEquals(
+            R.string.chat_history_group_yesterday,
+            chatSessionDrawerGroupLabelRes(
+                updatedAtMillis = testLocalMillis(2026, Calendar.JUNE, 28, 23),
+                nowMillis = now,
+            ),
+        )
+        assertEquals(
+            R.string.chat_history_group_previous_7_days,
+            chatSessionDrawerGroupLabelRes(
+                updatedAtMillis = testLocalMillis(2026, Calendar.JUNE, 22, 0),
+                nowMillis = now,
+            ),
+        )
+        assertEquals(
+            R.string.chat_history_group_older,
+            chatSessionDrawerGroupLabelRes(
+                updatedAtMillis = testLocalMillis(2026, Calendar.JUNE, 21, 23),
+                nowMillis = now,
+            ),
+        )
+        assertEquals(
+            R.string.chat_history_group_older,
+            chatSessionDrawerGroupLabelRes(updatedAtMillis = 0L, nowMillis = now),
+        )
+    }
+
+    @Test
+    fun chatSessionDrawerGroupsUseStableBucketOrderAndPreserveOrderInsideBuckets() {
+        val now = testLocalMillis(2026, Calendar.JUNE, 29, 12)
+        val sessions = listOf(
+            RuntimeChatSession(id = "today-1", title = "Today first", updatedAtMillis = testLocalMillis(2026, Calendar.JUNE, 29, 11), messageCount = 1),
+            RuntimeChatSession(id = "previous", title = "Earlier this week", updatedAtMillis = testLocalMillis(2026, Calendar.JUNE, 26, 9), messageCount = 1),
+            RuntimeChatSession(id = "yesterday", title = "Yesterday", updatedAtMillis = testLocalMillis(2026, Calendar.JUNE, 28, 10), messageCount = 1),
+            RuntimeChatSession(id = "today-2", title = "Today second", updatedAtMillis = testLocalMillis(2026, Calendar.JUNE, 29, 8), messageCount = 1),
+            RuntimeChatSession(id = "older", title = "Older", updatedAtMillis = testLocalMillis(2026, Calendar.JUNE, 1, 8), messageCount = 1),
+        )
+
+        val groups = chatSessionDrawerGroups(sessions = sessions, nowMillis = now)
+
+        assertEquals(
+            listOf(
+                R.string.chat_history_group_today,
+                R.string.chat_history_group_yesterday,
+                R.string.chat_history_group_previous_7_days,
+                R.string.chat_history_group_older,
+            ),
+            groups.map { it.labelRes },
+        )
+        assertEquals(listOf("today-1", "today-2"), groups[0].sessions.map { it.id })
+        assertEquals(listOf("yesterday"), groups[1].sessions.map { it.id })
+        assertEquals(listOf("previous"), groups[2].sessions.map { it.id })
+        assertEquals(listOf("older"), groups[3].sessions.map { it.id })
+    }
+
+    @Test
     fun chatHistorySearchMatchesTitleModelAndRuntimeMetadata() {
         val sessions = listOf(
             RuntimeChatSession(
@@ -1588,6 +1764,53 @@ class AppNavigationTest {
                 untitledTitle = "Untitled chat",
             ),
         )
+    }
+
+    @Test
+    fun chatTopBarActiveTitleHidesOnlyUnprovenanceDefaultTitle() {
+        fun stateFor(session: RuntimeChatSession): RuntimeUiState {
+            return RuntimeUiState(
+                activeChatSessionId = session.id,
+                chatSessions = listOf(session),
+            )
+        }
+
+        val defaultSession = RuntimeChatSession(
+            id = "default",
+            title = "New chat",
+            updatedAtMillis = 1_000L,
+            messageCount = 1,
+        )
+        val manualDefaultTitleSession = defaultSession.copy(
+            id = "manual-default",
+            titleManuallyEdited = true,
+        )
+        val generatedDefaultTitleSession = defaultSession.copy(
+            id = "generated-default",
+            titleGenerated = true,
+        )
+        val namedSession = defaultSession.copy(
+            id = "named",
+            title = "Runtime roadmap",
+        )
+
+        assertNull(chatTopBarActiveTitle(RuntimeUiState(), untitledTitle = "New Chat"))
+        assertNull(chatTopBarActiveTitle(stateFor(defaultSession), untitledTitle = "New Chat"))
+        assertEquals("New Chat", chatTopBarActiveTitle(stateFor(manualDefaultTitleSession), "New Chat"))
+        assertEquals("New Chat", chatTopBarActiveTitle(stateFor(generatedDefaultTitleSession), "New Chat"))
+        assertEquals("Runtime roadmap", chatTopBarActiveTitle(stateFor(namedSession), "New Chat"))
+    }
+
+    private fun testLocalMillis(
+        year: Int,
+        month: Int,
+        dayOfMonth: Int,
+        hourOfDay: Int,
+    ): Long {
+        return Calendar.getInstance().apply {
+            clear()
+            set(year, month, dayOfMonth, hourOfDay, 0, 0)
+        }.timeInMillis
     }
 
     @Test
@@ -2007,6 +2230,26 @@ class AppNavigationTest {
     }
 
     @Test
+    fun routeAvailabilityNoticeUsesDeviceReachabilityDiagnosticForRelayQrPreflightFailure() {
+        val state = RuntimeUiState(
+            trustedRuntime = trustedRuntime(
+                relayExpiresAtEpochMillis = Long.MAX_VALUE,
+                relayNonce = "nonce-1",
+            ),
+            error = RuntimeUiError(
+                code = "remote_route_unreachable_from_device",
+                diagnosticCode = "route_diagnostic_relay_unreachable_from_device",
+            ),
+        )
+
+        assertEquals(RouteNoticePrimaryAction.ScanLatestQr, routeNoticePrimaryAction(state))
+        assertEquals(
+            R.string.route_diagnostic_relay_unreachable_from_device,
+            routeAvailabilityCompactLabelRes(requireNotNull(state.error)),
+        )
+    }
+
+    @Test
     fun routeAvailabilityNoticeExplainsIdentityOnlyQrNeedsConnectionRoute() {
         val state = RuntimeUiState(
             trustedRuntime = trustedRuntime(),
@@ -2309,6 +2552,25 @@ class AppNavigationTest {
     }
 
     @Test
+    fun emptyChatPrefersQrRefreshWhenDeviceCannotReachRelayQrRoute() {
+        val state = RuntimeUiState(
+            isConnected = false,
+            trustedRuntime = trustedRuntime(),
+            error = RuntimeUiError(
+                code = "remote_route_unreachable_from_device",
+                diagnosticCode = "route_diagnostic_relay_unreachable_from_device",
+            ),
+        )
+
+        assertEquals(true, shouldScanLatestQrFromEmptyChat(state))
+        assertEquals(false, shouldShowChatBottomError(state))
+        assertEquals(
+            R.string.route_diagnostic_relay_unreachable_from_device,
+            chatEmptyTextRes(state, preferQrRouteRefresh = true),
+        )
+    }
+
+    @Test
     fun emptyChatPrefersQrRefreshForEndpointUnavailable() {
         val state = RuntimeUiState(
             isConnected = false,
@@ -2462,13 +2724,52 @@ class AppNavigationTest {
     fun emptyChatKeepsConnectActionWithoutRouteRefreshError() {
         val state = RuntimeUiState(
             isConnected = false,
-            trustedRuntime = trustedRuntime(),
+            trustedRuntime = trustedRuntime(
+                relayExpiresAtEpochMillis = Long.MAX_VALUE,
+                relayNonce = "nonce-1",
+            ),
             error = null,
         )
 
         assertEquals(false, shouldScanLatestQrFromEmptyChat(state))
         assertEquals(true, shouldShowChatEmptyState(state))
         assertEquals(ChatEmptyPrimaryAction.Connect, chatEmptyPrimaryAction(state))
+    }
+
+    @Test
+    fun emptyChatPrefersLatestQrWhenTrustedRuntimeHasNoConnectableRoute() {
+        val state = RuntimeUiState(
+            isConnected = false,
+            trustedRuntime = trustedRuntime(
+                relayHost = null,
+                relayPort = null,
+                relayId = null,
+                relaySecret = null,
+            ),
+            error = null,
+        )
+
+        assertEquals(false, hasConnectableTrustedRuntimeRoute(state))
+        assertEquals(true, shouldScanLatestQrFromEmptyChat(state))
+        assertEquals(ChatEmptyPrimaryAction.ScanQr, chatEmptyPrimaryAction(state))
+        assertEquals(R.string.chat_hint_scan_latest_qr, chatInputHintRes(state))
+    }
+
+    @Test
+    fun emptyChatKeepsConnectActionWhenTrustedRuntimeHasConnectableRoute() {
+        val state = RuntimeUiState(
+            isConnected = false,
+            trustedRuntime = trustedRuntime(
+                relayExpiresAtEpochMillis = Long.MAX_VALUE,
+                relayNonce = "nonce-1",
+            ),
+            error = null,
+        )
+
+        assertEquals(true, hasConnectableTrustedRuntimeRoute(state))
+        assertEquals(false, shouldScanLatestQrFromEmptyChat(state))
+        assertEquals(ChatEmptyPrimaryAction.Connect, chatEmptyPrimaryAction(state))
+        assertEquals(R.string.chat_hint_connect, chatInputHintRes(state))
     }
 
     @Test

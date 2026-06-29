@@ -58,11 +58,15 @@ struct RuntimeDevServer {
         let routeRefresher = DevelopmentRuntimeRouteRefresher(
             runtimeDeviceID: identity.deviceID,
             runtimeKeyFingerprint: identity.fingerprint,
+            initialAllocation: relayRouteAllocation,
             allocationProvider: {
                 Self.relayRouteAllocation(environment: environment, identity: identity)
             },
             relayStatusHandler: relayStatusHandler,
             relayMessageHandler: relayMessageHandler,
+            relayDisconnectHandler: { connectionID in
+                routerBox.connectionDidClose(connectionID)
+            },
             relayScopeProvider: { host in Self.relayScope(for: host) }
         )
         let router = LocalRuntimeMessageRouter(
@@ -109,7 +113,8 @@ struct RuntimeDevServer {
             print("[runtime] Bonjour advertising disabled for this development run.")
         }
         if let relayConfiguration {
-            print("[runtime] Relay route enabled: \(relayConfiguration.host):\(relayConfiguration.port) id=\(relayConfiguration.relayID)")
+            let relayScope = Self.relayScope(for: relayConfiguration.host) ?? "unknown"
+            print("[runtime] Relay route enabled: \(relayConfiguration.host):\(relayConfiguration.port) scope=\(relayScope)")
         }
         printDevelopmentConnectionHint(
             port: port,
@@ -600,43 +605,69 @@ private final class DevelopmentRuntimeRouteRefresher: RuntimeRouteRefreshing {
     private let allocationProvider: () -> CompanionRemoteRelayRouteAllocation?
     private let relayStatusHandler: @Sendable (RelayPeerStatus) -> Void
     private let relayMessageHandler: LocalPeerMessageHandler
+    private let relayDisconnectHandler: @Sendable (UUID) -> Void
     private let relayScopeProvider: (String) -> String?
-    private var refreshedRelayClient: RelayPeerClient?
+    private var activeAllocation: CompanionRemoteRelayRouteAllocation?
+    private var refreshedRelayClients: [ObjectIdentifier: RelayPeerClient] = [:]
 
     init(
         runtimeDeviceID: String,
         runtimeKeyFingerprint: String,
+        initialAllocation: CompanionRemoteRelayRouteAllocation?,
         allocationProvider: @escaping () -> CompanionRemoteRelayRouteAllocation?,
         relayStatusHandler: @escaping @Sendable (RelayPeerStatus) -> Void,
         relayMessageHandler: @escaping LocalPeerMessageHandler,
+        relayDisconnectHandler: @escaping @Sendable (UUID) -> Void,
         relayScopeProvider: @escaping (String) -> String?
     ) {
         self.runtimeDeviceID = runtimeDeviceID
         self.runtimeKeyFingerprint = runtimeKeyFingerprint
+        self.activeAllocation = initialAllocation
         self.allocationProvider = allocationProvider
         self.relayStatusHandler = relayStatusHandler
         self.relayMessageHandler = relayMessageHandler
+        self.relayDisconnectHandler = relayDisconnectHandler
         self.relayScopeProvider = relayScopeProvider
     }
 
     func refreshRuntimeRoute() async throws -> RuntimeRouteRefreshResult? {
+        if let activeAllocation,
+           !Self.shouldRenew(lease: activeAllocation.lease),
+           let result = routeRefreshResult(for: activeAllocation) {
+            return result
+        }
         guard let allocation = allocationProvider() else {
             return nil
         }
+        guard let result = routeRefreshResult(for: allocation) else {
+            return nil
+        }
+        activeAllocation = allocation
+        let configuration = allocation.configuration
+        let refreshedRelayClient = RelayPeerClient()
+        let clientID = ObjectIdentifier(refreshedRelayClient)
+        refreshedRelayClients[clientID] = refreshedRelayClient
+        refreshedRelayClient.onDisconnect = { [weak self] connectionID in
+            self?.relayDisconnectHandler(connectionID)
+            Task { @MainActor [weak self] in
+                self?.refreshedRelayClients.removeValue(forKey: clientID)
+            }
+        }
+        refreshedRelayClient.start(
+            configuration: configuration,
+            onStatusChange: relayStatusHandler,
+            onMessage: relayMessageHandler
+        )
+        return result
+    }
+
+    private func routeRefreshResult(for allocation: CompanionRemoteRelayRouteAllocation) -> RuntimeRouteRefreshResult? {
         let configuration = allocation.configuration
         guard let relaySecret = configuration.relaySecret?.takeIfNotEmpty,
               let lease = allocation.lease
         else {
             return nil
         }
-        let refreshedRelayClient = RelayPeerClient()
-        self.refreshedRelayClient?.stop()
-        self.refreshedRelayClient = refreshedRelayClient
-        refreshedRelayClient.start(
-            configuration: configuration,
-            onStatusChange: relayStatusHandler,
-            onMessage: relayMessageHandler
-        )
         return RuntimeRouteRefreshResult(
             runtimeDeviceID: runtimeDeviceID,
             runtimeKeyFingerprint: runtimeKeyFingerprint,
@@ -648,6 +679,13 @@ private final class DevelopmentRuntimeRouteRefresher: RuntimeRouteRefreshing {
             relayNonce: lease.nonce,
             relayScope: relayScopeProvider(configuration.host)
         )
+    }
+
+    private static func shouldRenew(lease: CompanionRemoteRouteLease?) -> Bool {
+        guard let lease else {
+            return true
+        }
+        return lease.isExpired(renewalMarginSeconds: 60)
     }
 }
 

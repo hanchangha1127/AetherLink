@@ -4296,6 +4296,325 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
     }
 
     @MainActor
+    func testCompanionAppModelPublishesRuntimeDataSummaryFromInjectedStores() throws {
+        let chatStore = JSONLRuntimeChatEventStore(
+            fileURL: FileManager.default.temporaryDirectory
+                .appendingPathComponent(UUID().uuidString)
+                .appendingPathComponent("runtime-chat-events.jsonl")
+        )
+        try chatStore.append(RuntimeChatStoredEvent(
+            timestamp: Date(timeIntervalSince1970: 100),
+            kind: .request,
+            requestID: "request-active",
+            sessionID: "active-1",
+            model: "llama",
+            messages: [ChatMessage(role: "user", content: "Active device-scoped chat.")],
+            ownerDeviceID: "device-a"
+        ))
+        try chatStore.append(RuntimeChatStoredEvent(
+            timestamp: Date(timeIntervalSince1970: 101),
+            kind: .request,
+            requestID: "request-archived",
+            sessionID: "archived-1",
+            model: "llama",
+            messages: [ChatMessage(role: "user", content: "Archived device-scoped chat.")],
+            ownerDeviceID: "device-a"
+        ))
+        _ = try chatStore.mutateSession(
+            ownerDeviceID: "device-a",
+            sessionID: "archived-1",
+            requestID: "archive-archived",
+            mutation: .archive,
+            timestamp: Date(timeIntervalSince1970: 102)
+        )
+        XCTAssertTrue(try chatStore.listSessions(limit: 10, includeArchived: true).isEmpty)
+        let memoryStore = JSONLRuntimeMemoryStore(
+            fileURL: FileManager.default.temporaryDirectory
+                .appendingPathComponent(UUID().uuidString)
+                .appendingPathComponent("runtime-memory-events.jsonl")
+        )
+        _ = try memoryStore.upsert(
+            ownerDeviceID: "device-a",
+            id: "memory-enabled",
+            content: "Use Korean UI.",
+            enabled: true,
+            timestamp: Date(timeIntervalSince1970: 103)
+        )
+        _ = try memoryStore.upsert(
+            ownerDeviceID: "device-a",
+            id: "memory-paused",
+            content: "Paused detail.",
+            enabled: false,
+            timestamp: Date(timeIntervalSince1970: 104)
+        )
+        XCTAssertTrue(try memoryStore.list().isEmpty)
+
+        let model = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: FakeRuntimeTransport(),
+            advertiser: FakeRuntimeAdvertiser(),
+            runtimeChatEventStore: chatStore,
+            runtimeMemoryStore: memoryStore,
+            runtimeRouteHostProvider: { "192.168.1.44" }
+        )
+
+        XCTAssertEqual(model.runtimeDataSummary.activeChatSessionCount, 1)
+        XCTAssertEqual(model.runtimeDataSummary.archivedChatSessionCount, 1)
+        XCTAssertEqual(model.runtimeChatSessions.map(\.sessionID), ["archived-1", "active-1"])
+        XCTAssertEqual(model.runtimeChatSessions.map(\.status), ["archived", "active"])
+        XCTAssertEqual(model.runtimeChatSessions.map(\.messageCount), [1, 1])
+        XCTAssertNil(model.runtimeChatSessionsError)
+        XCTAssertEqual(model.runtimeDataSummary.enabledMemoryCount, 1)
+        XCTAssertEqual(model.runtimeDataSummary.pausedMemoryCount, 1)
+        XCTAssertEqual(model.runtimeMemoryEntries.map(\.id), ["memory-paused", "memory-enabled"])
+        XCTAssertEqual(model.runtimeMemoryEntries.map(\.content), ["Paused detail.", "Use Korean UI."])
+        XCTAssertEqual(model.runtimeMemoryEntries.map(\.enabled), [false, true])
+        XCTAssertNil(model.runtimeMemoryEntriesError)
+        XCTAssertNotNil(model.runtimeDataSummary.lastRefreshedAt)
+        XCTAssertNil(model.runtimeDataSummary.errorMessage)
+    }
+
+    @MainActor
+    func testCompanionAppModelPublishesRuntimeHistoryTranscriptPreviewAcrossOwners() throws {
+        let chatStore = JSONLRuntimeChatEventStore(
+            fileURL: FileManager.default.temporaryDirectory
+                .appendingPathComponent(UUID().uuidString)
+                .appendingPathComponent("runtime-chat-events.jsonl")
+        )
+        try chatStore.append(RuntimeChatStoredEvent(
+            timestamp: Date(timeIntervalSince1970: 100),
+            kind: .request,
+            requestID: "request-preview",
+            sessionID: "session-preview",
+            model: "llama",
+            messages: [ChatMessage(role: "user", content: "Explain the runtime boundary.")],
+            ownerDeviceID: "device-a"
+        ))
+        try chatStore.append(RuntimeChatStoredEvent(
+            timestamp: Date(timeIntervalSince1970: 101),
+            kind: .reasoningDelta,
+            requestID: "request-preview",
+            sessionID: "session-preview",
+            model: "llama",
+            reasoningDelta: "Think first.",
+            ownerDeviceID: "device-a"
+        ))
+        try chatStore.append(RuntimeChatStoredEvent(
+            timestamp: Date(timeIntervalSince1970: 102),
+            kind: .assistantDelta,
+            requestID: "request-preview",
+            sessionID: "session-preview",
+            model: "llama",
+            delta: "Runtime owns model access.",
+            ownerDeviceID: "device-a"
+        ))
+        try chatStore.append(RuntimeChatStoredEvent(
+            timestamp: Date(timeIntervalSince1970: 103),
+            kind: .done,
+            requestID: "request-preview",
+            sessionID: "session-preview",
+            model: "llama",
+            ownerDeviceID: "device-a"
+        ))
+        XCTAssertTrue(try chatStore.listMessages(sessionID: "session-preview", limit: 10).isEmpty)
+
+        let model = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: FakeRuntimeTransport(),
+            advertiser: FakeRuntimeAdvertiser(),
+            runtimeChatEventStore: chatStore,
+            runtimeRouteHostProvider: { "192.168.1.44" }
+        )
+
+        model.refreshRuntimeChatTranscriptPreview(sessionID: "session-preview", limit: 10)
+
+        let messages = try XCTUnwrap(model.runtimeChatTranscriptMessages["session-preview"])
+        XCTAssertEqual(messages.map(\.role), ["user", "assistant"])
+        XCTAssertEqual(messages.map(\.content), ["Explain the runtime boundary.", "Runtime owns model access."])
+        XCTAssertEqual(messages.last?.reasoning, "Think first.")
+        XCTAssertNil(model.runtimeChatTranscriptErrors["session-preview"])
+    }
+
+    @MainActor
+    func testCompanionAppModelPublishesRuntimeHistoryInspectorError() throws {
+        let model = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: FakeRuntimeTransport(),
+            advertiser: FakeRuntimeAdvertiser(),
+            runtimeChatEventStore: FailingRuntimeChatEventStore(),
+            runtimeRouteHostProvider: { "192.168.1.44" }
+        )
+
+        model.refreshRuntimeChatSessions()
+
+        XCTAssertTrue(model.runtimeChatSessions.isEmpty)
+        XCTAssertEqual(model.runtimeChatSessionsError, "chat store read failed")
+        XCTAssertEqual(model.runtimeDataSummary.errorMessage, "chat store read failed")
+
+        model.refreshRuntimeChatTranscriptPreview(sessionID: "broken-session")
+
+        XCTAssertEqual(model.runtimeChatTranscriptMessages["broken-session"], [])
+        XCTAssertEqual(model.runtimeChatTranscriptErrors["broken-session"], "chat store messages failed")
+    }
+
+    @MainActor
+    func testCompanionAppModelPublishesRuntimeMemoryInspectorError() throws {
+        let chatStore = JSONLRuntimeChatEventStore(
+            fileURL: FileManager.default.temporaryDirectory
+                .appendingPathComponent(UUID().uuidString)
+                .appendingPathComponent("runtime-chat-events.jsonl")
+        )
+        let model = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: FakeRuntimeTransport(),
+            advertiser: FakeRuntimeAdvertiser(),
+            runtimeChatEventStore: chatStore,
+            runtimeMemoryStore: FailingRuntimeMemoryStore(),
+            runtimeRouteHostProvider: { "192.168.1.44" }
+        )
+
+        model.refreshRuntimeMemoryEntries()
+
+        XCTAssertTrue(model.runtimeMemoryEntries.isEmpty)
+        XCTAssertEqual(model.runtimeMemoryEntriesError, "memory store read failed")
+        XCTAssertEqual(model.runtimeDataSummary.errorMessage, "memory store read failed")
+    }
+
+    @MainActor
+    func testCompanionAppModelRefreshRuntimeMemoryEntriesClearsRecoveredSummaryError() throws {
+        let memoryStore = SequencedRuntimeMemoryStore(results: [
+            .failure(testRuntimeInspectorError("memory store read failed")),
+            .success([
+                RuntimeMemoryEntry(
+                    id: "memory-enabled",
+                    content: "Recovered runtime memory.",
+                    enabled: true,
+                    createdAt: Date(timeIntervalSince1970: 100),
+                    updatedAt: Date(timeIntervalSince1970: 100)
+                )
+            ])
+        ])
+        let model = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: FakeRuntimeTransport(),
+            advertiser: FakeRuntimeAdvertiser(),
+            runtimeChatEventStore: NullRuntimeChatEventStore(),
+            runtimeMemoryStore: memoryStore,
+            runtimeRouteHostProvider: { "192.168.1.44" }
+        )
+        XCTAssertEqual(model.runtimeDataSummary.errorMessage, "memory store read failed")
+
+        model.refreshRuntimeMemoryEntries()
+
+        XCTAssertNil(model.runtimeMemoryEntriesError)
+        XCTAssertNil(model.runtimeDataSummary.errorMessage)
+        XCTAssertEqual(model.runtimeDataSummary.enabledMemoryCount, 1)
+        XCTAssertEqual(model.runtimeDataSummary.pausedMemoryCount, 0)
+    }
+
+    @MainActor
+    func testCompanionAppModelRefreshRuntimeChatSessionsClearsRecoveredSummaryError() throws {
+        let chatStore = SequencedRuntimeChatEventStore(results: [
+            .failure(testRuntimeInspectorError("chat store read failed")),
+            .success([
+                RuntimeChatStoredSession(
+                    sessionID: "session-recovered",
+                    title: "Recovered session",
+                    model: "llama",
+                    lastActivityAt: Date(timeIntervalSince1970: 100),
+                    messageCount: 1
+                )
+            ])
+        ])
+        let model = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: FakeRuntimeTransport(),
+            advertiser: FakeRuntimeAdvertiser(),
+            runtimeChatEventStore: chatStore,
+            runtimeMemoryStore: NullRuntimeMemoryStore(),
+            runtimeRouteHostProvider: { "192.168.1.44" }
+        )
+        XCTAssertEqual(model.runtimeDataSummary.errorMessage, "chat store read failed")
+
+        model.refreshRuntimeChatSessions()
+
+        XCTAssertNil(model.runtimeChatSessionsError)
+        XCTAssertNil(model.runtimeDataSummary.errorMessage)
+        XCTAssertEqual(model.runtimeDataSummary.activeChatSessionCount, 1)
+        XCTAssertEqual(model.runtimeDataSummary.archivedChatSessionCount, 0)
+    }
+
+    @MainActor
+    func testCompanionAppModelRefreshRuntimeMemoryEntriesPreservesChatSummaryError() throws {
+        let chatStore = FailingRuntimeChatEventStore()
+        let memoryStore = SequencedRuntimeMemoryStore(results: [
+            .failure(testRuntimeInspectorError("memory store read failed")),
+            .success([
+                RuntimeMemoryEntry(
+                    id: "memory-recovered",
+                    content: "Recovered while chat history is still unavailable.",
+                    enabled: false,
+                    createdAt: Date(timeIntervalSince1970: 100),
+                    updatedAt: Date(timeIntervalSince1970: 101)
+                )
+            ])
+        ])
+        let model = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: FakeRuntimeTransport(),
+            advertiser: FakeRuntimeAdvertiser(),
+            runtimeChatEventStore: chatStore,
+            runtimeMemoryStore: memoryStore,
+            runtimeRouteHostProvider: { "192.168.1.44" }
+        )
+        XCTAssertEqual(model.runtimeDataSummary.errorMessage, "chat store read failed")
+        XCTAssertEqual(model.runtimeMemoryEntriesError, "memory store read failed")
+
+        model.refreshRuntimeMemoryEntries()
+
+        XCTAssertNil(model.runtimeMemoryEntriesError)
+        XCTAssertEqual(model.runtimeChatSessionsError, "chat store read failed")
+        XCTAssertEqual(model.runtimeDataSummary.errorMessage, "chat store read failed")
+        XCTAssertEqual(model.runtimeDataSummary.enabledMemoryCount, 0)
+        XCTAssertEqual(model.runtimeDataSummary.pausedMemoryCount, 1)
+    }
+
+    @MainActor
+    func testCompanionAppModelRefreshRuntimeChatSessionsPreservesMemorySummaryError() throws {
+        let chatStore = SequencedRuntimeChatEventStore(results: [
+            .failure(testRuntimeInspectorError("chat store read failed")),
+            .success([
+                RuntimeChatStoredSession(
+                    sessionID: "session-recovered-with-memory-error",
+                    title: "Recovered chat",
+                    model: "llama",
+                    lastActivityAt: Date(timeIntervalSince1970: 100),
+                    messageCount: 1
+                )
+            ])
+        ])
+        let memoryStore = FailingRuntimeMemoryStore()
+        let model = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: FakeRuntimeTransport(),
+            advertiser: FakeRuntimeAdvertiser(),
+            runtimeChatEventStore: chatStore,
+            runtimeMemoryStore: memoryStore,
+            runtimeRouteHostProvider: { "192.168.1.44" }
+        )
+        XCTAssertEqual(model.runtimeDataSummary.errorMessage, "chat store read failed")
+        XCTAssertEqual(model.runtimeMemoryEntriesError, "memory store read failed")
+
+        model.refreshRuntimeChatSessions()
+
+        XCTAssertNil(model.runtimeChatSessionsError)
+        XCTAssertEqual(model.runtimeMemoryEntriesError, "memory store read failed")
+        XCTAssertEqual(model.runtimeDataSummary.errorMessage, "memory store read failed")
+        XCTAssertEqual(model.runtimeDataSummary.activeChatSessionCount, 1)
+        XCTAssertEqual(model.runtimeDataSummary.archivedChatSessionCount, 0)
+    }
+
+    @MainActor
     func testCompanionAppModelPublishesRemoteRoutePreparationIssueWhenBootstrapAllocationThrows() throws {
         let allocator = FakeRemoteRelayRouteAllocator(
             allocation: nil,
@@ -6591,6 +6910,10 @@ private struct FailingRuntimeMemoryStore: RuntimeMemoryStore {
         )
     }
 
+    func listAll() throws -> [RuntimeMemoryEntry] {
+        try list(ownerDeviceID: nil)
+    }
+
     func upsert(
         ownerDeviceID: String?,
         id: String?,
@@ -6611,6 +6934,46 @@ private struct FailingRuntimeMemoryStore: RuntimeMemoryStore {
             code: 3,
             userInfo: [NSLocalizedDescriptionKey: "memory store delete failed"]
         )
+    }
+}
+
+private final class SequencedRuntimeMemoryStore: RuntimeMemoryStore, @unchecked Sendable {
+    private let lock = NSLock()
+    private var results: [Result<[RuntimeMemoryEntry], Error>]
+
+    init(results: [Result<[RuntimeMemoryEntry], Error>]) {
+        self.results = results
+    }
+
+    func list(ownerDeviceID: String?) throws -> [RuntimeMemoryEntry] {
+        try listAll()
+    }
+
+    func listAll() throws -> [RuntimeMemoryEntry] {
+        let result = lock.withLock {
+            results.isEmpty ? .success([]) : results.removeFirst()
+        }
+        return try result.get()
+    }
+
+    func upsert(
+        ownerDeviceID: String?,
+        id: String?,
+        content: String,
+        enabled: Bool?,
+        timestamp: Date
+    ) throws -> RuntimeMemoryEntry {
+        RuntimeMemoryEntry(
+            id: id ?? UUID().uuidString,
+            content: content,
+            enabled: enabled ?? true,
+            createdAt: timestamp,
+            updatedAt: timestamp
+        )
+    }
+
+    func delete(ownerDeviceID: String?, id: String, timestamp: Date) throws -> RuntimeMemoryDeleteResult {
+        RuntimeMemoryDeleteResult(id: id, deletedAt: timestamp)
     }
 }
 
@@ -7008,9 +7371,113 @@ private final class RecordingRuntimeChatEventStore: RuntimeChatEventStore, @unch
         lock.withLock { Array(storedSessions.prefix(limit)) }
     }
 
+    func listAllSessions(limit: Int, includeArchived: Bool) throws -> [RuntimeChatStoredSession] {
+        lock.withLock { Array(storedSessions.prefix(limit)) }
+    }
+
     func listMessages(ownerDeviceID: String?, sessionID: String, limit: Int) throws -> [RuntimeChatStoredMessage] {
         lock.withLock { Array((storedMessages[sessionID] ?? []).suffix(limit)) }
     }
+
+    func listAllMessages(sessionID: String, limit: Int) throws -> [RuntimeChatStoredMessage] {
+        lock.withLock { Array((storedMessages[sessionID] ?? []).suffix(limit)) }
+    }
+}
+
+private struct FailingRuntimeChatEventStore: RuntimeChatEventStore {
+    func append(_ event: RuntimeChatStoredEvent) throws {
+        throw NSError(
+            domain: "AetherLinkTests",
+            code: 1,
+            userInfo: [NSLocalizedDescriptionKey: "chat store write failed"]
+        )
+    }
+
+    func listSessions(ownerDeviceID: String?, limit: Int, includeArchived: Bool) throws -> [RuntimeChatStoredSession] {
+        throw NSError(
+            domain: "AetherLinkTests",
+            code: 2,
+            userInfo: [NSLocalizedDescriptionKey: "chat store read failed"]
+        )
+    }
+
+    func listAllSessions(limit: Int, includeArchived: Bool) throws -> [RuntimeChatStoredSession] {
+        try listSessions(ownerDeviceID: nil, limit: limit, includeArchived: includeArchived)
+    }
+
+    func listMessages(ownerDeviceID: String?, sessionID: String, limit: Int) throws -> [RuntimeChatStoredMessage] {
+        throw NSError(
+            domain: "AetherLinkTests",
+            code: 3,
+            userInfo: [NSLocalizedDescriptionKey: "chat store messages failed"]
+        )
+    }
+
+    func listAllMessages(sessionID: String, limit: Int) throws -> [RuntimeChatStoredMessage] {
+        try listMessages(ownerDeviceID: nil, sessionID: sessionID, limit: limit)
+    }
+
+    func mutateSession(
+        ownerDeviceID: String?,
+        sessionID: String,
+        requestID: String,
+        mutation: RuntimeChatSessionMutation,
+        timestamp: Date
+    ) throws -> RuntimeChatSessionMutationResult {
+        throw NSError(
+            domain: "AetherLinkTests",
+            code: 4,
+            userInfo: [NSLocalizedDescriptionKey: "chat store mutation failed"]
+        )
+    }
+}
+
+private final class SequencedRuntimeChatEventStore: RuntimeChatEventStore, @unchecked Sendable {
+    private let lock = NSLock()
+    private var results: [Result<[RuntimeChatStoredSession], Error>]
+
+    init(results: [Result<[RuntimeChatStoredSession], Error>]) {
+        self.results = results
+    }
+
+    func append(_ event: RuntimeChatStoredEvent) throws {}
+
+    func listSessions(ownerDeviceID: String?, limit: Int, includeArchived: Bool) throws -> [RuntimeChatStoredSession] {
+        try listAllSessions(limit: limit, includeArchived: includeArchived)
+    }
+
+    func listAllSessions(limit: Int, includeArchived: Bool) throws -> [RuntimeChatStoredSession] {
+        let result = lock.withLock {
+            results.isEmpty ? .success([]) : results.removeFirst()
+        }
+        return Array(try result.get().prefix(limit))
+    }
+
+    func listMessages(ownerDeviceID: String?, sessionID: String, limit: Int) throws -> [RuntimeChatStoredMessage] {
+        []
+    }
+
+    func listAllMessages(sessionID: String, limit: Int) throws -> [RuntimeChatStoredMessage] {
+        []
+    }
+
+    func mutateSession(
+        ownerDeviceID: String?,
+        sessionID: String,
+        requestID: String,
+        mutation: RuntimeChatSessionMutation,
+        timestamp: Date
+    ) throws -> RuntimeChatSessionMutationResult {
+        RuntimeChatSessionMutationResult(sessionID: sessionID, mutation: mutation, timestamp: timestamp)
+    }
+}
+
+private func testRuntimeInspectorError(_ message: String) -> NSError {
+    NSError(
+        domain: "AetherLinkTests",
+        code: 100,
+        userInfo: [NSLocalizedDescriptionKey: message]
+    )
 }
 
 private extension RuntimeChatSessionMutation {

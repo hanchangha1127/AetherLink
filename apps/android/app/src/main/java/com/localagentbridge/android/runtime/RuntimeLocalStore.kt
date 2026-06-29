@@ -187,7 +187,9 @@ internal fun PersistedRuntimeData.sanitized(): PersistedRuntimeData {
             val fallbackTitle = titleForMessages(session.messages.map { it.toRuntimeChatMessage() })
             val cleanTitle = session.title.trim().takeIf(String::isNotBlank) ?: DEFAULT_CHAT_TITLE
             val migratedTitle = when {
-                cleanTitle == LEGACY_DEFAULT_CHAT_TITLE -> DEFAULT_CHAT_TITLE
+                cleanTitle == LEGACY_DEFAULT_CHAT_TITLE &&
+                    !session.titleManuallyEdited &&
+                    !session.titleGenerated -> DEFAULT_CHAT_TITLE
                 session.hasLegacyPromptTitle(cleanTitle, fallbackTitle) -> DEFAULT_CHAT_TITLE
                 else -> cleanTitle
             }
@@ -578,6 +580,29 @@ internal fun PersistedRuntimeData.withRenamedChatSession(
     ).sanitized()
 }
 
+internal fun PersistedRuntimeData.withRevertedRuntimeChatSessionRename(
+    sessionId: String,
+    previousTitle: String,
+    previousTitleManuallyEdited: Boolean,
+    previousTitleGenerated: Boolean,
+    nowMillis: Long,
+): PersistedRuntimeData {
+    return copy(
+        sessions = sessions.map { session ->
+            if (session.id == sessionId && session.runtimeOwned) {
+                session.copy(
+                    title = previousTitle,
+                    titleManuallyEdited = previousTitleManuallyEdited,
+                    titleGenerated = previousTitleGenerated,
+                    updatedAtMillis = nowMillis,
+                )
+            } else {
+                session
+            }
+        },
+    ).sanitized()
+}
+
 internal fun PersistedRuntimeData.withArchivedChatSession(
     sessionId: String,
     nowMillis: Long,
@@ -620,6 +645,14 @@ internal fun PersistedRuntimeData.withUnarchivedChatSession(
                 session
             }
         },
+    ).sanitized()
+}
+
+internal fun PersistedRuntimeData.withoutRuntimeChatSessionSuppression(
+    sessionId: String,
+): PersistedRuntimeData {
+    return copy(
+        suppressedRuntimeSessions = suppressedRuntimeSessions.filterNot { it.sessionId == sessionId },
     ).sanitized()
 }
 
@@ -1012,6 +1045,8 @@ private fun PersistedChatSession.toRuntimeChatSession(): RuntimeChatSession {
         updatedAtMillis = updatedAtMillis,
         messageCount = runtimeMessageCount ?: messages.size,
         archivedAtMillis = archivedAtMillis,
+        titleManuallyEdited = titleManuallyEdited,
+        titleGenerated = titleGenerated,
         lastEvent = lastEvent,
         lastFinishReason = lastFinishReason,
         lastErrorCode = lastErrorCode,

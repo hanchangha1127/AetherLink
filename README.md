@@ -218,33 +218,36 @@ testing, run a temporary relay on a public, tunnel, or VPN-managed address that
 is reachable from both peers and explicitly eligible for remote QR generation:
 
 ```bash
-swift run AetherLinkRelay --host 0.0.0.0 --port 43171 --require-allocation
+swift run AetherLinkRelay --host 0.0.0.0 --port 43171
 ```
 
 `AetherLinkRelay` is the SwiftPM-native development relay executable. It
+requires allocation by default, rejects unknown or expired relay ids, and then
 accepts the same handshake lines as the compatibility Python script:
 `AETHERLINK_RELAY runtime <relay_id>` and
 `AETHERLINK_RELAY client <relay_id>`. After matching one runtime and one client
 with the same `relay_id`, it sends `AETHERLINK_RELAY ready\n` to both sides and
 blindly forwards bytes in both directions. It does not decode AetherLink
 protocol frames and never calls Ollama, LM Studio, or any other model backend.
-It persists allocation tickets to `~/.aetherlink-relay/allocations.json` by
-default so issued QR relay ids survive relay process restarts; pass
-`--ephemeral-allocations` only for one-shot diagnostics. The relay does not
-persist relay frame secrets.
+It issues short-lived allocation tickets and persists them to
+`~/.aetherlink-relay/allocations.json` by default so issued QR relay ids survive
+relay process restarts during their lease; pass `--ephemeral-allocations` only
+for one-shot diagnostics. The relay does not persist relay frame secrets. Use
+`--allow-legacy` only for old local diagnostics that intentionally accept
+arbitrary relay ids.
 `script/aetherlink_relay.py` is legacy-only and intentionally refuses to start
 unless `--allow-legacy-no-allocation` is passed. It does not implement relay
 allocation leases and must not be used for current QR pairing or
 different-network validation.
 
-Then configure the runtime app's advanced connection setup. Loopback,
+Then configure the runtime app's Connection Recovery settings. Loopback,
 `.local`, link-local, carrier-grade NAT, and private relay IP literals are
 diagnostic/development-only and must not be presented as normal remote QR
 routes. Prefer a public, VPN, tunnel, DNS, or future private-overlay route name
 that both devices can reach:
 
 1. Open AetherLink Runtime.
-2. Open `Advanced Connection Setup`.
+2. Open `Connection Recovery`.
 3. Expand `Connection Setup` only if AetherLink cannot prepare connection details automatically.
 4. Enter the connection address and port.
 5. Save the connection details.

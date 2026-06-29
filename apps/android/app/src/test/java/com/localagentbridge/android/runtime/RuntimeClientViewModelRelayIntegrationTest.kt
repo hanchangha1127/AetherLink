@@ -344,6 +344,7 @@ class RuntimeClientViewModelRelayIntegrationTest {
                 val routeRefreshEnvelope = awaitFuture(relay.routeRefreshRequest)
                 val healthEnvelope = awaitFuture(relay.healthRequest)
                 val connectedState = awaitActiveRouteKind(viewModel, RuntimeActiveRouteKind.Relay)
+                val healthyState = awaitRuntimeStatus(viewModel, "ok")
 
                 assertEquals(0, directConnectionAttempts)
                 assertTrue(relay.handshakeLine.get(1, TimeUnit.SECONDS).endsWith(" $relayId"))
@@ -356,7 +357,7 @@ class RuntimeClientViewModelRelayIntegrationTest {
                 assertTrue(!authResponsePayload.signature.isNullOrBlank())
                 assertEquals(MessageType.RouteRefresh, routeRefreshEnvelope.type)
                 assertEquals(MessageType.RuntimeHealth, healthEnvelope.type)
-                assertEquals("ok", viewModel.state.value.runtimeStatus)
+                assertEquals("ok", healthyState.runtimeStatus)
                 assertEquals("100.64.2.20", connectedState.trustedRuntime?.relayHost)
                 assertEquals("private_overlay", connectedState.trustedRuntime?.relayScope)
                 assertEquals(RuntimeActiveRouteKind.Relay, connectedState.activeRouteKind)
@@ -393,6 +394,22 @@ class RuntimeClientViewModelRelayIntegrationTest {
             advanceUntilIdle()
             val state = viewModel.state.value
             if (state.activeRouteKind == expected) return state
+            Thread.sleep(10)
+        }
+        advanceUntilIdle()
+        return viewModel.state.value
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private fun TestScope.awaitRuntimeStatus(
+        viewModel: RuntimeClientViewModel,
+        expected: String,
+    ): RuntimeUiState {
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(4)
+        while (System.nanoTime() < deadline) {
+            advanceUntilIdle()
+            val state = viewModel.state.value
+            if (state.runtimeStatus == expected) return state
             Thread.sleep(10)
         }
         advanceUntilIdle()
@@ -548,7 +565,7 @@ class RuntimeClientViewModelRelayIntegrationTest {
                         ),
                     )
 
-                    while (!healthRequest.isDone) {
+                    while (!healthRequest.isDone || !routeRefreshRequest.isDone) {
                         val request = readEncryptedEnvelope(input, cryptor)
                         when (request.type) {
                             MessageType.RouteRefresh -> {

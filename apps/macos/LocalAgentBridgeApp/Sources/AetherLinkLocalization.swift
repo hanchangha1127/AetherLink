@@ -144,6 +144,26 @@ func localizedAvailableModelProviderCount(_ count: Int) -> String {
     localizedCount(count, singularKey: "1 model provider available", pluralKey: "%d model providers available")
 }
 
+func localizedRuntimeActiveChatSessionCount(_ count: Int) -> String {
+    localizedCount(count, singularKey: "1 active chat", pluralKey: "%d active chats")
+}
+
+func localizedRuntimeArchivedChatSessionCount(_ count: Int) -> String {
+    localizedCount(count, singularKey: "1 archived chat", pluralKey: "%d archived chats")
+}
+
+func localizedRuntimeChatMessageCount(_ count: Int) -> String {
+    localizedCount(count, singularKey: "1 message", pluralKey: "%d messages")
+}
+
+func localizedRuntimeEnabledMemoryCount(_ count: Int) -> String {
+    localizedCount(count, singularKey: "1 enabled memory note", pluralKey: "%d enabled memory notes")
+}
+
+func localizedRuntimePausedMemoryCount(_ count: Int) -> String {
+    localizedCount(count, singularKey: "1 paused memory note", pluralKey: "%d paused memory notes")
+}
+
 func localizedLoadedLocalModelLogCount(_ countText: String) -> String {
     if Int(countText.trimmingCharacters(in: .whitespacesAndNewlines)) == 1 {
         return NSLocalizedString("Loaded 1 model", comment: "")

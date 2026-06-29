@@ -94,6 +94,35 @@ public struct CompanionProviderStatus: Identifiable, Equatable, Sendable {
     }
 }
 
+public struct CompanionRuntimeDataSummary: Equatable, Sendable {
+    public var activeChatSessionCount: Int
+    public var archivedChatSessionCount: Int
+    public var enabledMemoryCount: Int
+    public var pausedMemoryCount: Int
+    public var lastRefreshedAt: Date?
+    public var errorMessage: String?
+
+    public init(
+        activeChatSessionCount: Int = 0,
+        archivedChatSessionCount: Int = 0,
+        enabledMemoryCount: Int = 0,
+        pausedMemoryCount: Int = 0,
+        lastRefreshedAt: Date? = nil,
+        errorMessage: String? = nil
+    ) {
+        self.activeChatSessionCount = activeChatSessionCount
+        self.archivedChatSessionCount = archivedChatSessionCount
+        self.enabledMemoryCount = enabledMemoryCount
+        self.pausedMemoryCount = pausedMemoryCount
+        self.lastRefreshedAt = lastRefreshedAt
+        self.errorMessage = errorMessage
+    }
+
+    public var hasError: Bool {
+        errorMessage?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+    }
+}
+
 public enum CompanionRelayConfigurationResult: Equatable, Sendable {
     case disabled
     case savedStatic(endpoint: String)
@@ -590,10 +619,19 @@ public final class CompanionAppModel: ObservableObject {
     @Published public private(set) var trustedDevices: [TrustedDevice] = []
     @Published public private(set) var models: [ModelInfo] = []
     @Published public private(set) var modelResidency: CompanionModelResidencyStatus = .inactive
+    @Published public private(set) var runtimeDataSummary = CompanionRuntimeDataSummary()
+    @Published public private(set) var runtimeChatSessions: [RuntimeChatStoredSession] = []
+    @Published public private(set) var runtimeChatSessionsError: String?
+    @Published public private(set) var runtimeChatTranscriptMessages: [String: [RuntimeChatStoredMessage]] = [:]
+    @Published public private(set) var runtimeChatTranscriptErrors: [String: String] = [:]
+    @Published public private(set) var runtimeMemoryEntries: [RuntimeMemoryEntry] = []
+    @Published public private(set) var runtimeMemoryEntriesError: String?
     @Published public private(set) var logs: [String] = []
 
     private let backend: any LlmBackend
     private var runtimeRouter: LocalRuntimeMessageRouter!
+    private let runtimeChatEventStore: any RuntimeChatEventStore
+    private let runtimeMemoryStore: any RuntimeMemoryStore
     private let pairingCoordinator = PairingCoordinator()
     private let trustedDeviceStore = TrustedDeviceStore()
     private let userDefaults: UserDefaults
@@ -675,6 +713,8 @@ public final class CompanionAppModel: ObservableObject {
         environment: [String: String] = ProcessInfo.processInfo.environment,
         userDefaults: UserDefaults = .standard,
         relaySecretStore: any CompanionRelaySecretStoring = KeychainCompanionRelaySecretStore(),
+        runtimeChatEventStore: any RuntimeChatEventStore = JSONLRuntimeChatEventStore(),
+        runtimeMemoryStore: any RuntimeMemoryStore = JSONLRuntimeMemoryStore(),
         runtimeRouteHostProvider: (() -> String?)? = nil
     ) {
         let loadedBootstrapRelaySettings = Self.loadBootstrapRelaySettings(
@@ -691,6 +731,8 @@ public final class CompanionAppModel: ObservableObject {
         self.bootstrapRelaySettings = loadedBootstrapRelaySettings
         self.relayClient = relayClient
         self.relaySecretStore = relaySecretStore
+        self.runtimeChatEventStore = runtimeChatEventStore
+        self.runtimeMemoryStore = runtimeMemoryStore
         self.remoteRelayRouteAllocator = remoteRelayRouteAllocator ?? Self.makeRemoteRelayRouteAllocator(
             environment: environment,
             bootstrapRelaySettings: loadedBootstrapRelaySettings,
@@ -728,6 +770,8 @@ public final class CompanionAppModel: ObservableObject {
             backend: backend,
             pairingCoordinator: pairingCoordinator,
             trustedDeviceStore: trustedDeviceStore,
+            chatEventStore: runtimeChatEventStore,
+            memoryStore: runtimeMemoryStore,
             routeRefresher: self,
             runtimeChallengeSigner: runtimeIdentity.signer,
             onPairingAccepted: { [weak self] device in
@@ -753,6 +797,7 @@ public final class CompanionAppModel: ObservableObject {
         if let runtimeIdentityWarning {
             log(runtimeIdentityWarning)
         }
+        refreshRuntimeDataSummary()
     }
 
     public func start(port: UInt16 = 43170) {
@@ -828,6 +873,161 @@ public final class CompanionAppModel: ObservableObject {
             backendStatus = error.message
             log(error.message)
         }
+    }
+
+    public func refreshRuntimeDataSummary() {
+        let refreshedAt = Date()
+        var activeChatSessionCount = runtimeDataSummary.activeChatSessionCount
+        var archivedChatSessionCount = runtimeDataSummary.archivedChatSessionCount
+        var enabledMemoryCount = runtimeDataSummary.enabledMemoryCount
+        var pausedMemoryCount = runtimeDataSummary.pausedMemoryCount
+        var errorMessages: [String] = []
+
+        do {
+            let sessions = try runtimeChatEventStore.listAllSessions(
+                limit: Int.max,
+                includeArchived: true
+            )
+            publishRuntimeChatSessions(sessions)
+            activeChatSessionCount = sessions.filter { $0.status == "active" }.count
+            archivedChatSessionCount = sessions.filter { $0.status == "archived" }.count
+            runtimeChatSessionsError = nil
+        } catch {
+            let message = error.localizedDescription
+            runtimeChatSessionsError = message
+            errorMessages.append(message)
+            log("Runtime chat history summary failed: \(message)")
+        }
+
+        do {
+            let memoryEntries = try runtimeMemoryStore.listAll()
+            publishRuntimeMemoryEntries(memoryEntries)
+            enabledMemoryCount = memoryEntries.filter(\.enabled).count
+            pausedMemoryCount = memoryEntries.filter { !$0.enabled }.count
+            runtimeMemoryEntriesError = nil
+        } catch {
+            let message = error.localizedDescription
+            runtimeMemoryEntriesError = message
+            errorMessages.append(message)
+            log("Runtime memory summary failed: \(message)")
+        }
+
+        runtimeDataSummary = CompanionRuntimeDataSummary(
+            activeChatSessionCount: activeChatSessionCount,
+            archivedChatSessionCount: archivedChatSessionCount,
+            enabledMemoryCount: enabledMemoryCount,
+            pausedMemoryCount: pausedMemoryCount,
+            lastRefreshedAt: refreshedAt,
+            errorMessage: errorMessages.first
+        )
+    }
+
+    public func refreshRuntimeMemoryEntries() {
+        do {
+            let memoryEntries = try runtimeMemoryStore.listAll()
+            publishRuntimeMemoryEntries(memoryEntries)
+            runtimeMemoryEntriesError = nil
+            runtimeDataSummary = CompanionRuntimeDataSummary(
+                activeChatSessionCount: runtimeDataSummary.activeChatSessionCount,
+                archivedChatSessionCount: runtimeDataSummary.archivedChatSessionCount,
+                enabledMemoryCount: memoryEntries.filter(\.enabled).count,
+                pausedMemoryCount: memoryEntries.filter { !$0.enabled }.count,
+                lastRefreshedAt: Date(),
+                errorMessage: runtimeDataSummaryErrorMessage()
+            )
+        } catch {
+            let message = error.localizedDescription
+            runtimeMemoryEntriesError = message
+            runtimeDataSummary = CompanionRuntimeDataSummary(
+                activeChatSessionCount: runtimeDataSummary.activeChatSessionCount,
+                archivedChatSessionCount: runtimeDataSummary.archivedChatSessionCount,
+                enabledMemoryCount: runtimeDataSummary.enabledMemoryCount,
+                pausedMemoryCount: runtimeDataSummary.pausedMemoryCount,
+                lastRefreshedAt: Date(),
+                errorMessage: runtimeDataSummaryErrorMessage()
+            )
+            log("Runtime memory inspector failed: \(message)")
+        }
+    }
+
+    public func refreshRuntimeChatSessions() {
+        do {
+            let sessions = try runtimeChatEventStore.listAllSessions(
+                limit: Int.max,
+                includeArchived: true
+            )
+            publishRuntimeChatSessions(sessions)
+            runtimeChatSessionsError = nil
+            runtimeDataSummary = CompanionRuntimeDataSummary(
+                activeChatSessionCount: sessions.filter { $0.status == "active" }.count,
+                archivedChatSessionCount: sessions.filter { $0.status == "archived" }.count,
+                enabledMemoryCount: runtimeDataSummary.enabledMemoryCount,
+                pausedMemoryCount: runtimeDataSummary.pausedMemoryCount,
+                lastRefreshedAt: Date(),
+                errorMessage: runtimeDataSummaryErrorMessage()
+            )
+        } catch {
+            let message = error.localizedDescription
+            runtimeChatSessionsError = message
+            runtimeDataSummary = CompanionRuntimeDataSummary(
+                activeChatSessionCount: runtimeDataSummary.activeChatSessionCount,
+                archivedChatSessionCount: runtimeDataSummary.archivedChatSessionCount,
+                enabledMemoryCount: runtimeDataSummary.enabledMemoryCount,
+                pausedMemoryCount: runtimeDataSummary.pausedMemoryCount,
+                lastRefreshedAt: Date(),
+                errorMessage: runtimeDataSummaryErrorMessage()
+            )
+            log("Runtime chat history inspector failed: \(message)")
+        }
+    }
+
+    public func refreshRuntimeChatTranscriptPreview(sessionID: String, limit: Int = 20) {
+        let cleanSessionID = sessionID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanSessionID.isEmpty else { return }
+        do {
+            let messages = try runtimeChatEventStore.listAllMessages(
+                sessionID: cleanSessionID,
+                limit: limit
+            )
+            var messageMap = runtimeChatTranscriptMessages
+            messageMap[cleanSessionID] = messages
+            runtimeChatTranscriptMessages = messageMap
+
+            var errorMap = runtimeChatTranscriptErrors
+            errorMap.removeValue(forKey: cleanSessionID)
+            runtimeChatTranscriptErrors = errorMap
+        } catch {
+            var messageMap = runtimeChatTranscriptMessages
+            messageMap[cleanSessionID] = []
+            runtimeChatTranscriptMessages = messageMap
+
+            var errorMap = runtimeChatTranscriptErrors
+            errorMap[cleanSessionID] = error.localizedDescription
+            runtimeChatTranscriptErrors = errorMap
+            log("Runtime chat transcript preview failed: \(error.localizedDescription)")
+        }
+    }
+
+    private func publishRuntimeChatSessions(_ sessions: [RuntimeChatStoredSession]) {
+        runtimeChatSessions = sessions.sorted { lhs, rhs in
+            if lhs.lastActivityAt != rhs.lastActivityAt {
+                return lhs.lastActivityAt > rhs.lastActivityAt
+            }
+            return lhs.sessionID < rhs.sessionID
+        }
+    }
+
+    private func publishRuntimeMemoryEntries(_ entries: [RuntimeMemoryEntry]) {
+        runtimeMemoryEntries = entries.sorted { lhs, rhs in
+            if lhs.updatedAt != rhs.updatedAt {
+                return lhs.updatedAt > rhs.updatedAt
+            }
+            return lhs.id < rhs.id
+        }
+    }
+
+    private func runtimeDataSummaryErrorMessage() -> String? {
+        runtimeChatSessionsError ?? runtimeMemoryEntriesError
     }
 
     public func loadModels() async {

@@ -5,6 +5,8 @@ import android.content.res.Configuration
 import android.os.LocaleList
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -29,6 +31,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.util.Locale
@@ -200,6 +203,8 @@ class PairingQrScannerChromeNoDeviceComposeTest {
                 .assert(hasHeading())
             compose.onNodeWithText(expected.detail).assertIsDisplayed()
             compose.onNodeWithTag(CAMERA_PREVIEW_TAG).assertIsDisplayed()
+            compose.onNodeWithTag(PAIRING_QR_SCANNER_TARGET_TEST_TAG).assertIsDisplayed()
+            compose.onNodeWithContentDescription(expected.scanTarget).assertIsDisplayed()
             compose.onNodeWithContentDescription(expected.closeScanner).assertIsDisplayed()
             compose.onNodeWithTag(PAIRING_QR_FLASHLIGHT_BUTTON_TEST_TAG, useUnmergedTree = true)
                 .assert(hasStateDescription(expected.flashlightStateOff))
@@ -218,6 +223,149 @@ class PairingQrScannerChromeNoDeviceComposeTest {
                 listOf(HapticFeedbackType.TextHandleMove, HapticFeedbackType.TextHandleMove),
                 hapticFeedback.events,
             )
+        }
+    }
+
+    @Test
+    fun scannerChromeShowsInvalidQrFeedbackWithoutClosingScanner() {
+        val currentExpectation = mutableStateOf(scannerLocaleExpectations().first())
+        val feedback = mutableStateOf(PairingQrScannerFeedback.InvalidPairingQr)
+        var cancelClicks = 0
+
+        compose.setContent {
+            LocalizedScannerContent(languageTag = currentExpectation.value.languageTag) {
+                PairingQrScannerChrome(
+                    hasCameraPermission = true,
+                    torchAvailable = false,
+                    torchEnabled = false,
+                    scannerFeedback = feedback.value,
+                    onTorchToggle = {},
+                    onCancel = { cancelClicks += 1 },
+                    onRequestCameraPermission = {},
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .testTag(CAMERA_PREVIEW_TAG),
+                    )
+                }
+            }
+        }
+
+        scannerLocaleExpectations().forEach { expected ->
+            currentExpectation.value = expected
+
+            feedback.value = PairingQrScannerFeedback.InvalidPairingQr
+            compose.waitForIdle()
+            compose.onNodeWithText(expected.invalidQrFeedback).assertIsDisplayed()
+            compose.onNodeWithContentDescription(expected.invalidQrFeedback).assertIsDisplayed()
+            compose.onNodeWithTag(CAMERA_PREVIEW_TAG).assertIsDisplayed()
+            compose.onNodeWithTag(PAIRING_QR_SCANNER_TARGET_TEST_TAG).assertIsDisplayed()
+            compose.onNodeWithText(expected.cancel).assertIsDisplayed()
+            compose.onNodeWithContentDescription(expected.closeScanner).assertIsDisplayed()
+
+            feedback.value = PairingQrScannerFeedback.UnsupportedQr
+            compose.waitForIdle()
+            compose.onNodeWithText(expected.unsupportedQrFeedback).assertIsDisplayed()
+            compose.onNodeWithContentDescription(expected.unsupportedQrFeedback).assertIsDisplayed()
+            compose.onNodeWithTag(CAMERA_PREVIEW_TAG).assertIsDisplayed()
+            compose.onNodeWithTag(PAIRING_QR_SCANNER_TARGET_TEST_TAG).assertIsDisplayed()
+        }
+
+        compose.onNodeWithText(scannerLocaleExpectations().last().cancel).performClick()
+        assertEquals(1, cancelClicks)
+    }
+
+    @Test
+    fun scannerChromeRendersCompactPairingStatesAcrossSupportedLanguages() {
+        val currentExpectation = mutableStateOf(scannerLocaleExpectations().first())
+        val scannerState = mutableStateOf(CompactScannerState.ActiveCamera)
+
+        compose.setContent {
+            LocalizedScannerContent(languageTag = currentExpectation.value.languageTag) {
+                Box(
+                    modifier = Modifier
+                        .width(320.dp)
+                        .height(520.dp),
+                ) {
+                    when (scannerState.value) {
+                        CompactScannerState.ActiveCamera -> PairingQrScannerChrome(
+                            hasCameraPermission = true,
+                            torchAvailable = true,
+                            torchEnabled = false,
+                            onTorchToggle = {},
+                            onCancel = {},
+                            onRequestCameraPermission = {},
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .testTag(CAMERA_PREVIEW_TAG),
+                            )
+                        }
+
+                        CompactScannerState.PermissionPrompt -> PairingQrScannerChrome(
+                            hasCameraPermission = false,
+                            torchAvailable = false,
+                            torchEnabled = false,
+                            onTorchToggle = {},
+                            onCancel = {},
+                            onRequestCameraPermission = {},
+                        )
+
+                        CompactScannerState.SettingsRecovery -> PairingQrScannerChrome(
+                            hasCameraPermission = false,
+                            cameraPermissionPermanentlyDenied = true,
+                            torchAvailable = false,
+                            torchEnabled = false,
+                            onTorchToggle = {},
+                            onCancel = {},
+                            onRequestCameraPermission = {},
+                            onOpenAppSettings = {},
+                        )
+                    }
+                }
+            }
+        }
+
+        scannerLocaleExpectations().forEach { expected ->
+            currentExpectation.value = expected
+
+            scannerState.value = CompactScannerState.ActiveCamera
+            compose.waitForIdle()
+            compose.onNodeWithText(expected.title)
+                .assertIsDisplayed()
+                .assert(hasHeading())
+            compose.onNodeWithText(expected.detail).assertIsDisplayed()
+            compose.onNodeWithTag(CAMERA_PREVIEW_TAG).assertIsDisplayed()
+            compose.onNodeWithTag(PAIRING_QR_SCANNER_TARGET_TEST_TAG).assertIsDisplayed()
+            compose.onNodeWithContentDescription(expected.scanTarget).assertIsDisplayed()
+            compose.onNodeWithContentDescription(expected.flashlightOn).assertIsDisplayed()
+            compose.onNodeWithText(expected.cancel).assertIsDisplayed()
+
+            scannerState.value = CompactScannerState.PermissionPrompt
+            compose.waitForIdle()
+            compose.onNodeWithText(expected.title)
+                .assertIsDisplayed()
+                .assert(hasHeading())
+            compose.onNodeWithText(expected.permissionTitle)
+                .assertIsDisplayed()
+                .assert(hasHeading())
+            compose.onNodeWithText(expected.permissionDetail).assertIsDisplayed()
+            compose.onNodeWithText(expected.permissionAction).assertIsDisplayed()
+            compose.onNodeWithText(expected.cancel).assertIsDisplayed()
+
+            scannerState.value = CompactScannerState.SettingsRecovery
+            compose.waitForIdle()
+            compose.onNodeWithText(expected.title)
+                .assertIsDisplayed()
+                .assert(hasHeading())
+            compose.onNodeWithText(expected.blockedPermissionTitle)
+                .assertIsDisplayed()
+                .assert(hasHeading())
+            compose.onNodeWithText(expected.blockedPermissionDetail).assertIsDisplayed()
+            compose.onNodeWithText(expected.settingsAction).assertIsDisplayed()
+            compose.onNodeWithText(expected.cancel).assertIsDisplayed()
         }
     }
 
@@ -245,6 +393,9 @@ class PairingQrScannerChromeNoDeviceComposeTest {
                 languageTag = languageTag,
                 title = localizedContext.getString(R.string.qr_scanner_title),
                 detail = localizedContext.getString(R.string.qr_scanner_detail),
+                unsupportedQrFeedback = localizedContext.getString(R.string.qr_scanner_feedback_unsupported),
+                invalidQrFeedback = localizedContext.getString(R.string.qr_scanner_feedback_invalid),
+                scanTarget = localizedContext.getString(R.string.qr_scanner_scan_target_accessibility),
                 permissionTitle = localizedContext.getString(R.string.qr_scanner_permission_title),
                 permissionDetail = localizedContext.getString(R.string.qr_scanner_permission_detail),
                 permissionAction = localizedContext.getString(R.string.qr_scanner_permission_action),
@@ -295,6 +446,9 @@ class PairingQrScannerChromeNoDeviceComposeTest {
         val languageTag: String,
         val title: String,
         val detail: String,
+        val unsupportedQrFeedback: String,
+        val invalidQrFeedback: String,
+        val scanTarget: String,
         val permissionTitle: String,
         val permissionDetail: String,
         val permissionAction: String,
@@ -308,6 +462,12 @@ class PairingQrScannerChromeNoDeviceComposeTest {
         val closeScanner: String,
         val cancel: String,
     )
+
+    private enum class CompactScannerState {
+        ActiveCamera,
+        PermissionPrompt,
+        SettingsRecovery,
+    }
 
     private companion object {
         const val CAMERA_PREVIEW_TAG = "pairing_qr_camera_preview"

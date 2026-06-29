@@ -227,9 +227,23 @@ func menuBarRuntimeStatusText(_ status: CompanionTransportStatus) -> String {
     )
 }
 
+func menuBarRuntimeStatusAccessibilityLabel(_ status: CompanionTransportStatus) -> String {
+    String(
+        format: NSLocalizedString("Runtime status: %@", comment: "Accessibility label for menu-bar runtime status."),
+        localizedTransportStatus(status)
+    )
+}
+
 func menuBarModelServiceStatusText(_ statuses: [CompanionProviderStatus]) -> String {
     String(
         format: NSLocalizedString("Model service: %@", comment: ""),
+        localizedBackendStatus(statuses)
+    )
+}
+
+func menuBarModelServiceStatusAccessibilityLabel(_ statuses: [CompanionProviderStatus]) -> String {
+    String(
+        format: NSLocalizedString("Model service status: %@", comment: "Accessibility label for menu-bar model-service status."),
         localizedBackendStatus(statuses)
     )
 }
@@ -241,6 +255,14 @@ func menuBarCommandTitles() -> MenuBarCommandTitles {
         loadModels: NSLocalizedString("Load Models", comment: ""),
         quit: NSLocalizedString("Quit", comment: "")
     )
+}
+
+func menuBarOpenAetherLinkAccessibilityHint() -> String {
+    NSLocalizedString("Open the AetherLink window and bring it to the front.", comment: "")
+}
+
+func menuBarQuitAccessibilityHint() -> String {
+    NSLocalizedString("Quit AetherLink Runtime.", comment: "")
 }
 
 func companionPrimaryActionOrder(trustedDeviceCount: Int) -> [CompanionPrimaryAction] {
@@ -271,6 +293,30 @@ func modelListLoadActionAccessibilityValue() -> String {
 
 func modelListLoadActionAccessibilityHint() -> String {
     NSLocalizedString("Load the installed local model list through AetherLink Runtime.", comment: "")
+}
+
+func refreshRuntimeDataActionAccessibilityValue() -> String {
+    NSLocalizedString("Ready", comment: "")
+}
+
+func refreshRuntimeDataActionAccessibilityHint() -> String {
+    NSLocalizedString("Refresh runtime-owned chat history and memory counts.", comment: "")
+}
+
+func inspectRuntimeHistoryActionAccessibilityValue() -> String {
+    NSLocalizedString("Ready", comment: "")
+}
+
+func inspectRuntimeHistoryActionAccessibilityHint() -> String {
+    NSLocalizedString("Inspect runtime-owned chat sessions stored on AetherLink Runtime.", comment: "")
+}
+
+func inspectRuntimeMemoryActionAccessibilityValue() -> String {
+    NSLocalizedString("Ready", comment: "")
+}
+
+func inspectRuntimeMemoryActionAccessibilityHint() -> String {
+    NSLocalizedString("Inspect runtime-owned memory notes stored on AetherLink Runtime.", comment: "")
 }
 
 private func localizedProviderAvailableStatus(_ provider: ModelProvider) -> String {

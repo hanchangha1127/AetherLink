@@ -207,7 +207,7 @@ func localizedLogDisplay(_ line: String) -> LogDisplay {
         ) {
             return LogDisplay(
                 summary: String(
-                    format: NSLocalizedString("Connection details for %@ cannot be included in this QR. Advanced Connection Setup needs an address both devices can reach.", comment: ""),
+                    format: NSLocalizedString("Connection details for %@ cannot be included in this QR. Connection Recovery needs an address both devices can reach.", comment: ""),
                     endpoint
                 ),
                 diagnostic: line
@@ -314,37 +314,37 @@ func localizedLogDisplay(_ line: String) -> LogDisplay {
         }
         if let detail = detail(after: "Remote route allocation failed: ", in: line) {
             return LogDisplay(
-                summary: NSLocalizedString("Advanced connection setup needs attention.", comment: ""),
+                summary: NSLocalizedString("Connection Recovery needs attention.", comment: ""),
                 diagnostic: detail
             )
         }
         if let detail = detail(after: "Remote route bootstrap failed: ", in: line) {
             return LogDisplay(
-                summary: NSLocalizedString("Advanced connection setup needs attention.", comment: ""),
+                summary: NSLocalizedString("Connection Recovery needs attention.", comment: ""),
                 diagnostic: detail
             )
         }
         if let detail = detail(after: "Remote route lease refresh failed: ", in: line) {
             return LogDisplay(
-                summary: NSLocalizedString("Advanced connection setup needs attention.", comment: ""),
+                summary: NSLocalizedString("Connection Recovery needs attention.", comment: ""),
                 diagnostic: detail
             )
         }
         if let detail = detail(after: "Remote route bootstrap rejected unreachable connection address ", in: line) {
             return LogDisplay(
-                summary: NSLocalizedString("Advanced connection setup needs attention.", comment: ""),
+                summary: NSLocalizedString("Connection Recovery needs attention.", comment: ""),
                 diagnostic: detail
             )
         }
         if let detail = detail(after: "Remote route lease refresh rejected unreachable connection address ", in: line) {
             return LogDisplay(
-                summary: NSLocalizedString("Advanced connection setup needs attention.", comment: ""),
+                summary: NSLocalizedString("Connection Recovery needs attention.", comment: ""),
                 diagnostic: detail
             )
         }
         if line == "Remote route lease refresh skipped: route secret is missing" {
             return LogDisplay(
-                summary: NSLocalizedString("Advanced connection setup needs attention.", comment: ""),
+                summary: NSLocalizedString("Connection Recovery needs attention.", comment: ""),
                 diagnostic: line
             )
         }

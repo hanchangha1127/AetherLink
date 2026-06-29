@@ -203,6 +203,8 @@ data class RuntimeChatSession(
     val updatedAtMillis: Long,
     val messageCount: Int,
     val archivedAtMillis: Long? = null,
+    val titleManuallyEdited: Boolean = false,
+    val titleGenerated: Boolean = false,
     val lastEvent: String? = null,
     val lastFinishReason: String? = null,
     val lastErrorCode: String? = null,

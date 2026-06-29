@@ -11,6 +11,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.LocaleList
 import android.provider.Settings
+import androidx.annotation.StringRes
 import androidx.activity.SystemBarStyle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.LocalActivityResultRegistryOwner
@@ -143,11 +144,12 @@ import com.localagentbridge.android.runtime.RuntimeChatSession
 import com.localagentbridge.android.runtime.RuntimeModel
 import com.localagentbridge.android.runtime.RuntimeAppLanguage
 import com.localagentbridge.android.runtime.RuntimeAppTheme
+import com.localagentbridge.android.runtime.RuntimePairingQrParseResult
 import com.localagentbridge.android.runtime.RuntimeUiState
 import com.localagentbridge.android.runtime.isChatModel
 import com.localagentbridge.android.runtime.isRuntimeHostLocalModel
+import com.localagentbridge.android.runtime.parseRuntimePairingQrPayload
 import com.localagentbridge.android.runtime.supportsImageInput
-import com.localagentbridge.android.core.pairing.RuntimePairingPayloadParser
 import com.localagentbridge.android.ui.AetherLinkInteractionFeedback
 import com.localagentbridge.android.ui.ChatScreen
 import com.localagentbridge.android.ui.SettingsScreen
@@ -158,6 +160,7 @@ import com.localagentbridge.android.ui.filterChatHistorySessions
 import com.localagentbridge.android.ui.runtimeProviderDisplayName
 import kotlinx.coroutines.launch
 import java.net.URI
+import java.util.Calendar
 import java.util.Locale
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
@@ -255,6 +258,20 @@ internal fun sharedChatDraftComposerText(currentText: String, sharedText: String
     }
 }
 
+internal fun sharedChatDraftConfirmationMessageRes(draft: SharedChatDraft): Int {
+    val hasText = draft.text.isNotBlank()
+    val hasAttachments = draft.attachmentUris.isNotEmpty()
+    return when {
+        hasText && hasAttachments -> R.string.shared_draft_added_mixed_snackbar
+        hasAttachments -> R.string.shared_draft_added_files_snackbar
+        else -> R.string.shared_draft_added_text_snackbar
+    }
+}
+
+internal fun sharedChatDraftConfirmationFeedback(): AetherLinkInteractionFeedback {
+    return AetherLinkInteractionFeedback.PrimaryAction
+}
+
 @Suppress("DEPRECATION")
 private fun Intent.streamExtraUriOrNull(): Uri? {
     return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -297,6 +314,9 @@ internal fun shouldSynchronizeAndroidSystemAppLanguage(
     selectedLanguageTag: String,
 ): Boolean {
     val selected = RuntimeAppLanguage.normalizeLanguageTag(selectedLanguageTag)
+    if (currentLanguageTag.isNullOrBlank()) {
+        return selected != RuntimeAppLanguage.English.languageTag
+    }
     val current = RuntimeAppLanguage.supportedLanguageTagOrNull(currentLanguageTag)
     return current != selected
 }
@@ -396,10 +416,13 @@ private fun LocalAgentBridgeApp(
                 handlePickedAttachments(uris, viewModel::addAttachments)
             }
             val handlePairingQr: (String) -> Unit = { rawValue ->
-                returnToChatAfterPairing = state.trustedRuntime == null ||
-                    destination == AppDestination.Chat ||
-                    state.isPairingAwaitingRoute
-                settingsOpenedForPairingOnboarding = true
+                val treatAsOnboarding = shouldTreatPairingQrAsOnboarding(
+                    destination = destination,
+                    hasTrustedRuntime = state.trustedRuntime != null,
+                    isPairingAwaitingRoute = state.isPairingAwaitingRoute,
+                )
+                returnToChatAfterPairing = treatAsOnboarding
+                settingsOpenedForPairingOnboarding = treatAsOnboarding
                 destination = AppDestination.Settings
                 viewModel.trustRuntimeFromPairingQr(rawValue)
             }
@@ -416,7 +439,7 @@ private fun LocalAgentBridgeApp(
                 onPairingUriConsumed()
             }
 
-            LaunchedEffect(sharedChatDraft) {
+            LaunchedEffect(sharedChatDraft, context) {
                 val draft = sharedChatDraft ?: return@LaunchedEffect
                 val updatedText = sharedChatDraftComposerText(
                     currentText = state.chatInput,
@@ -427,7 +450,12 @@ private fun LocalAgentBridgeApp(
                 }
                 handlePickedAttachments(draft.attachmentUris, viewModel::addAttachments)
                 destination = AppDestination.Chat
+                hapticFeedback.performAetherLinkFeedback(sharedChatDraftConfirmationFeedback())
+                val confirmationMessage = context.getString(sharedChatDraftConfirmationMessageRes(draft))
                 onSharedChatDraftConsumed()
+                scope.launch {
+                    snackbarHostState.showSnackbar(confirmationMessage)
+                }
             }
 
             LaunchedEffect(
@@ -638,6 +666,20 @@ private fun LocalAgentBridgeApp(
                                 onAddMemoryEntry = viewModel::addMemoryEntry,
                                 onRemoveMemoryEntry = viewModel::removeMemoryEntry,
                                 onSetMemoryEntryEnabled = viewModel::setMemoryEntryEnabled,
+                                onRefreshMemory = viewModel::refreshRuntimeMemory,
+                                onRefreshChatHistory = viewModel::refreshRuntimeChatHistory,
+                                onOpenChatSession = { sessionId ->
+                                    viewModel.selectChatSession(sessionId)
+                                    destination = AppDestination.Chat
+                                },
+                                onRenameChatSession = { sessionId ->
+                                    val session = (state.chatSessions + state.archivedChatSessions)
+                                        .firstOrNull { it.id == sessionId }
+                                    if (session != null) {
+                                        renamingSessionId = session.id
+                                        renameDraft = session.editableTitle()
+                                    }
+                                },
                                 onArchiveChatSession = viewModel::archiveChatSession,
                                 onRestoreChatSession = viewModel::unarchiveChatSession,
                                 onPermanentlyDeleteChatSession = viewModel::deleteChatSession,
@@ -654,7 +696,8 @@ private fun LocalAgentBridgeApp(
             }
             }
 
-            val sessionBeingRenamed = state.chatSessions.firstOrNull { it.id == renamingSessionId }
+            val sessionBeingRenamed = (state.chatSessions + state.archivedChatSessions)
+                .firstOrNull { it.id == renamingSessionId }
             if (sessionBeingRenamed != null) {
                 RenameChatSessionDialog(
                     title = renameDraft,
@@ -903,7 +946,7 @@ internal fun ChatTopAppBarTitle(
 ) {
     val activeChatTitle = chatTopBarActiveTitle(
         state = state,
-        untitledTitle = stringResource(R.string.untitled_chat),
+        untitledTitle = stringResource(R.string.new_chat),
     )
     val activeChatTitleSummary = activeChatTitle?.let { title ->
         stringResource(R.string.chat_top_bar_active_title_summary, title)
@@ -938,10 +981,15 @@ internal fun ChatTopAppBarTitle(
 
 internal fun chatTopBarActiveTitle(state: RuntimeUiState, untitledTitle: String): String? {
     val activeSessionId = state.activeChatSessionId ?: return null
-    return state.chatSessions
-        .firstOrNull { it.id == activeSessionId }
-        ?.localizedTitle(untitledTitle)
-        ?: untitledTitle
+    val session = state.chatSessions.firstOrNull { it.id == activeSessionId }
+    val title = session?.localizedTitle(untitledTitle) ?: untitledTitle
+    val isDefaultPlaceholder = session == null ||
+        (
+            !session.titleManuallyEdited &&
+                !session.titleGenerated &&
+                title == untitledTitle
+            )
+    return title.takeUnless { isDefaultPlaceholder }
 }
 
 @Composable
@@ -969,6 +1017,7 @@ private fun ChatModelTopBarMenu(
         state.isConnected -> stringResource(R.string.selected_model_unavailable)
         else -> stringResource(R.string.selected_model_restoring)
     }
+    val imageAttachmentVisionRecoveryNeeded = imageAttachmentVisionRecoveryNeeded(state, selectedModel)
     val selectedLabel = chatModelPickerClosedLabel(
         state = state,
         loadingModelsLabel = stringResource(R.string.loading_models),
@@ -976,6 +1025,7 @@ private fun ChatModelTopBarMenu(
     )
     val modelPickerStateDescription = when {
         state.isStreaming -> stringResource(R.string.model_picker_state_wait_for_stream)
+        imageAttachmentVisionRecoveryNeeded -> stringResource(R.string.model_picker_vision_recovery_state)
         selectedModel != null -> selectedModel.name
         state.isLoadingModels -> stringResource(R.string.loading_models)
         !state.isConnected -> stringResource(R.string.chat_status_disconnected)
@@ -1040,11 +1090,11 @@ private fun ChatModelTopBarMenu(
                 disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.52f),
             ),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                horizontal = 12.dp,
-                vertical = 6.dp,
+                horizontal = 10.dp,
+                vertical = 5.dp,
             ),
             modifier = Modifier
-                .widthIn(max = 220.dp)
+                .widthIn(max = 176.dp)
                 .semantics {
                     contentDescription = modelPickerContentDescription
                     stateDescription = modelPickerStateDescription
@@ -1061,7 +1111,7 @@ private fun ChatModelTopBarMenu(
                 text = selectedLabel,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                style = MaterialTheme.typography.labelLarge,
+                style = MaterialTheme.typography.labelMedium,
             )
             Icon(
                 imageVector = Icons.Filled.KeyboardArrowDown,
@@ -1132,6 +1182,23 @@ private fun ChatModelTopBarMenu(
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
+                }
+                HorizontalDivider()
+            }
+            if (imageAttachmentVisionRecoveryNeeded) {
+                val visionRecoverySummary = stringResource(R.string.model_picker_vision_recovery_detail)
+                DropdownInfoItem {
+                    Text(
+                        text = visionRecoverySummary,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.semantics {
+                            contentDescription = visionRecoverySummary
+                            liveRegion = LiveRegionMode.Polite
+                        },
+                    )
                 }
                 HorizontalDivider()
             }
@@ -1243,6 +1310,7 @@ private fun ChatModelTopBarMenu(
                         selected = model.id == state.selectedModelId,
                         installing = model.id == state.installingModelId,
                         actionsEnabled = modelMenuActionsEnabled,
+                        visionRecoveryMode = imageAttachmentVisionRecoveryNeeded,
                         onSelect = {
                             hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.SelectionChange)
                             onSelectModel(model.id)
@@ -1275,16 +1343,23 @@ private fun ChatModelMenuItem(
     selected: Boolean,
     installing: Boolean,
     actionsEnabled: Boolean = true,
+    visionRecoveryMode: Boolean = false,
     onSelect: () -> Unit,
 ) {
-    val statusLine = modelMenuStatusLine(model = model, installing = installing)
+    val statusLine = modelMenuStatusLine(
+        model = model,
+        installing = installing,
+        visionRecoveryMode = visionRecoveryMode,
+    )
     val rowContentDescription = chatModelMenuItemContentDescription(
         model = model,
         selected = selected,
         statusLine = statusLine,
     )
     val rowActionLabel = stringResource(
-        if (!model.installed && !installing) {
+        if (visionRecoveryMode && !model.supportsImageInput()) {
+            R.string.model_not_recommended_for_images
+        } else if (!model.installed && !installing) {
             R.string.install_model
         } else {
             R.string.choose_model
@@ -1296,6 +1371,7 @@ private fun ChatModelMenuItem(
             selected = selected,
             installing = installing,
             actionsEnabled = actionsEnabled,
+            visionRecoveryMode = visionRecoveryMode,
             contentDescription = rowContentDescription,
             actionLabel = rowActionLabel,
         ),
@@ -1316,7 +1392,16 @@ private fun ChatModelMenuItem(
             }
         },
         trailingIcon = {
-            if (!model.installed && !installing) {
+            if (visionRecoveryMode && !model.supportsImageInput()) {
+                Text(
+                    text = stringResource(R.string.model_not_recommended_for_images),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.error,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.widthIn(max = 132.dp),
+                )
+            } else if (!model.installed && !installing) {
                 Text(
                     text = stringResource(R.string.install_model),
                     style = MaterialTheme.typography.labelSmall,
@@ -1332,7 +1417,11 @@ private fun ChatModelMenuItem(
                 )
             }
         },
-        enabled = actionsEnabled && chatModelMenuItemEnabled(model, installing),
+        enabled = actionsEnabled && chatModelMenuItemEnabled(
+            model = model,
+            installing = installing,
+            visionRecoveryMode = visionRecoveryMode,
+        ),
         onClick = onSelect,
     )
 }
@@ -1343,12 +1432,18 @@ private fun chatModelMenuItemSemanticsModifier(
     selected: Boolean,
     installing: Boolean,
     actionsEnabled: Boolean,
+    visionRecoveryMode: Boolean,
     contentDescription: String,
     actionLabel: String,
 ): Modifier {
-    val enabled = actionsEnabled && chatModelMenuItemEnabled(model, installing)
+    val enabled = actionsEnabled && chatModelMenuItemEnabled(
+        model = model,
+        installing = installing,
+        visionRecoveryMode = visionRecoveryMode,
+    )
     val stateDescriptionRes = when {
         !actionsEnabled -> R.string.model_picker_state_wait_for_stream
+        visionRecoveryMode && !model.supportsImageInput() -> R.string.model_picker_vision_model_required_state
         selected -> R.string.selection_state_selected
         !model.installed && !installing -> R.string.install_model
         else -> null
@@ -1361,6 +1456,9 @@ private fun chatModelMenuItemSemanticsModifier(
         }
         if (selectedStateDescription != null) {
             stateDescription = selectedStateDescription
+        }
+        if (!enabled) {
+            disabled()
         }
     }
 }
@@ -1382,8 +1480,15 @@ private fun chatModelMenuItemContentDescription(
     )
 }
 
-internal fun chatModelMenuItemEnabled(model: RuntimeModel, installing: Boolean): Boolean {
-    return model.isChatModel() && model.isRuntimeHostLocalModel() && !installing
+internal fun chatModelMenuItemEnabled(
+    model: RuntimeModel,
+    installing: Boolean,
+    visionRecoveryMode: Boolean = false,
+): Boolean {
+    return model.isChatModel() &&
+        model.isRuntimeHostLocalModel() &&
+        !installing &&
+        (!visionRecoveryMode || model.supportsImageInput())
 }
 
 internal fun modelMenuSearchAvailable(models: List<RuntimeModel>): Boolean {
@@ -1391,8 +1496,13 @@ internal fun modelMenuSearchAvailable(models: List<RuntimeModel>): Boolean {
 }
 
 @Composable
-private fun modelMenuStatusLine(model: RuntimeModel, installing: Boolean): String {
+private fun modelMenuStatusLine(
+    model: RuntimeModel,
+    installing: Boolean,
+    visionRecoveryMode: Boolean = false,
+): String {
     val availability = when {
+        visionRecoveryMode && !model.supportsImageInput() -> stringResource(R.string.model_not_recommended_for_images)
         installing -> stringResource(R.string.installing_model)
         !model.installed -> stringResource(R.string.model_not_installed)
         model.running -> stringResource(R.string.model_running)
@@ -1403,6 +1513,15 @@ private fun modelMenuStatusLine(model: RuntimeModel, installing: Boolean): Strin
         runtimeProviderDisplayName(model.provider),
         availability,
     )
+}
+
+internal fun imageAttachmentVisionRecoveryNeeded(
+    state: RuntimeUiState,
+    selectedModel: RuntimeModel? = state.models.firstOrNull { it.id == state.selectedModelId && it.isChatModel() },
+): Boolean {
+    return state.pendingAttachments.any { it.type == "image" } &&
+        state.selectedModelId != null &&
+        selectedModel?.supportsImageInput() != true
 }
 
 internal fun chatModelMenuModels(
@@ -1574,6 +1693,7 @@ internal fun AetherLinkNavigationDrawerContent(
     hasChatSearchQuery: Boolean,
     hasChatSearchResults: Boolean,
     filteredChatSessions: List<RuntimeChatSession>,
+    chatSessionGroupingNowMillis: Long = System.currentTimeMillis(),
     onChatSearchQueryChange: (String) -> Unit,
     onClearChatSearch: () -> Unit,
     onNewChat: () -> Unit,
@@ -1661,25 +1781,31 @@ internal fun AetherLinkNavigationDrawerContent(
                             },
                     )
                 } else {
-                    filteredChatSessions.forEach { session ->
-                        ChatSessionDrawerItem(
-                            session = session,
-                            models = state.models,
-                            selected = effectiveDestination == AppDestination.Chat &&
-                                session.id == state.activeChatSessionId,
-                            enabled = !state.isStreaming,
-                            onClick = { onSelectChatSession(session) },
-                            onRename = {
-                                hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
-                                onRenameChatSession(session)
-                            },
-                            onArchive = {
-                                hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
-                                onArchiveChatSession(session)
-                            },
-                            onRestore = null,
-                            onDelete = null,
-                        )
+                    chatSessionDrawerGroups(
+                        sessions = filteredChatSessions,
+                        nowMillis = chatSessionGroupingNowMillis,
+                    ).forEach { group ->
+                        DrawerHistoryGroupLabel(text = stringResource(group.labelRes))
+                        group.sessions.forEach { session ->
+                            ChatSessionDrawerItem(
+                                session = session,
+                                models = state.models,
+                                selected = effectiveDestination == AppDestination.Chat &&
+                                    session.id == state.activeChatSessionId,
+                                enabled = !state.isStreaming,
+                                onClick = { onSelectChatSession(session) },
+                                onRename = {
+                                    hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
+                                    onRenameChatSession(session)
+                                },
+                                onArchive = {
+                                    hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.SelectionChange)
+                                    onArchiveChatSession(session)
+                                },
+                                onRestore = null,
+                                onDelete = null,
+                            )
+                        }
                     }
                 }
             }
@@ -1818,7 +1944,8 @@ private fun ChatHistorySearchField(
     onQueryChange: (String) -> Unit,
     onClear: () -> Unit,
 ) {
-    val clearChatSearchContentDescription = stringResource(R.string.clear_chat_search_named, query)
+    val clearQuery = query.trim().ifBlank { query }
+    val clearChatSearchContentDescription = stringResource(R.string.clear_chat_search_named, clearQuery)
     OutlinedTextField(
         value = query,
         onValueChange = onQueryChange,
@@ -1874,6 +2001,78 @@ private fun DrawerSectionLabel(text: String) {
                 heading()
             },
     )
+}
+
+@Composable
+private fun DrawerHistoryGroupLabel(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.secondary,
+        modifier = Modifier
+            .padding(start = 28.dp, end = 28.dp, top = 14.dp, bottom = 4.dp)
+            .semantics {
+                heading()
+            },
+    )
+}
+
+internal data class ChatSessionDrawerGroup(
+    @param:StringRes val labelRes: Int,
+    val sessions: List<RuntimeChatSession>,
+)
+
+internal fun chatSessionDrawerGroups(
+    sessions: List<RuntimeChatSession>,
+    nowMillis: Long = System.currentTimeMillis(),
+): List<ChatSessionDrawerGroup> {
+    val orderedBuckets = listOf(
+        R.string.chat_history_group_today,
+        R.string.chat_history_group_yesterday,
+        R.string.chat_history_group_previous_7_days,
+        R.string.chat_history_group_older,
+    )
+    return orderedBuckets.mapNotNull { labelRes ->
+        val groupedSessions = sessions.filter { session ->
+            chatSessionDrawerGroupLabelRes(
+                updatedAtMillis = session.updatedAtMillis,
+                nowMillis = nowMillis,
+            ) == labelRes
+        }
+        if (groupedSessions.isEmpty()) {
+            null
+        } else {
+            ChatSessionDrawerGroup(labelRes = labelRes, sessions = groupedSessions)
+        }
+    }
+}
+
+@StringRes
+internal fun chatSessionDrawerGroupLabelRes(
+    updatedAtMillis: Long,
+    nowMillis: Long,
+): Int {
+    if (updatedAtMillis <= 0L) return R.string.chat_history_group_older
+    val todayStart = localDayStartMillis(nowMillis)
+    val yesterdayStart = localDayStartMillis(nowMillis, daysOffset = -1)
+    val previousSevenDaysStart = localDayStartMillis(nowMillis, daysOffset = -7)
+    return when {
+        updatedAtMillis >= todayStart -> R.string.chat_history_group_today
+        updatedAtMillis >= yesterdayStart -> R.string.chat_history_group_yesterday
+        updatedAtMillis >= previousSevenDaysStart -> R.string.chat_history_group_previous_7_days
+        else -> R.string.chat_history_group_older
+    }
+}
+
+private fun localDayStartMillis(timeMillis: Long, daysOffset: Int = 0): Long {
+    return Calendar.getInstance().apply {
+        timeInMillis = timeMillis
+        add(Calendar.DATE, daysOffset)
+        set(Calendar.HOUR_OF_DAY, 0)
+        set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+    }.timeInMillis
 }
 
 @Composable
@@ -2305,6 +2504,7 @@ private fun PairingQrScannerScreen(
     var torchEnabled by rememberSaveable { mutableStateOf(false) }
     var torchAvailable by rememberSaveable { mutableStateOf(false) }
     var cameraPermissionRequested by rememberSaveable { mutableStateOf(false) }
+    var scannerFeedback by rememberSaveable { mutableStateOf<PairingQrScannerFeedback?>(null) }
     var hasCameraPermission by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
@@ -2376,6 +2576,7 @@ private fun PairingQrScannerScreen(
         cameraPermissionPermanentlyDenied = cameraPermissionPermanentlyDenied,
         torchAvailable = torchAvailable,
         torchEnabled = torchEnabled,
+        scannerFeedback = scannerFeedback,
         onTorchToggle = {
             torchEnabled = !torchEnabled
         },
@@ -2387,6 +2588,12 @@ private fun PairingQrScannerScreen(
         PairingQrCameraPreview(
             onResult = onResult,
             onFailure = onFailure,
+            onUnsupportedQr = {
+                scannerFeedback = PairingQrScannerFeedback.UnsupportedQr
+            },
+            onInvalidPairingQr = {
+                scannerFeedback = PairingQrScannerFeedback.InvalidPairingQr
+            },
             torchEnabled = torchEnabled,
             onTorchAvailabilityChanged = { available ->
                 torchAvailable = available
@@ -2406,6 +2613,7 @@ internal fun PairingQrScannerChrome(
     cameraPermissionPermanentlyDenied: Boolean = false,
     torchAvailable: Boolean,
     torchEnabled: Boolean,
+    scannerFeedback: PairingQrScannerFeedback? = null,
     onTorchToggle: () -> Unit,
     onCancel: () -> Unit,
     onRequestCameraPermission: () -> Unit,
@@ -2489,6 +2697,7 @@ internal fun PairingQrScannerChrome(
         },
     ) { padding ->
         if (hasCameraPermission) {
+            val scanTargetDescription = stringResource(R.string.qr_scanner_scan_target_accessibility)
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -2499,6 +2708,10 @@ internal fun PairingQrScannerChrome(
                     modifier = Modifier
                         .align(Alignment.Center)
                         .size(260.dp)
+                        .testTag(PAIRING_QR_SCANNER_TARGET_TEST_TAG)
+                        .semantics {
+                            contentDescription = scanTargetDescription
+                        }
                         .border(
                             border = BorderStroke(
                                 width = 3.dp,
@@ -2525,6 +2738,18 @@ internal fun PairingQrScannerChrome(
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
+                        scannerFeedback?.let { feedback ->
+                            val feedbackText = stringResource(feedback.messageRes)
+                            Text(
+                                text = feedbackText,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.semantics {
+                                    contentDescription = feedbackText
+                                    liveRegion = LiveRegionMode.Polite
+                                },
+                            )
+                        }
                         TextButton(
                             onClick = {
                                 hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Toggle)
@@ -2609,11 +2834,14 @@ internal fun PairingQrScannerChrome(
 }
 
 internal const val PAIRING_QR_FLASHLIGHT_BUTTON_TEST_TAG = "pairing_qr_flashlight_button"
+internal const val PAIRING_QR_SCANNER_TARGET_TEST_TAG = "pairing_qr_scanner_target"
 
 @Composable
 private fun PairingQrCameraPreview(
     onResult: (String) -> Unit,
     onFailure: (String?) -> Unit,
+    onUnsupportedQr: () -> Unit,
+    onInvalidPairingQr: () -> Unit,
     torchEnabled: Boolean,
     onTorchAvailabilityChanged: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
@@ -2672,9 +2900,19 @@ private fun PairingQrCameraPreview(
                                     )
                                     barcodeScanner.process(inputImage)
                                         .addOnSuccessListener { barcodes ->
-                                            val rawValue = barcodes.firstAetherLinkPairingRawValueOrNull()
-                                            if (rawValue != null && resultConsumed.compareAndSet(false, true)) {
-                                                onResult(rawValue)
+                                            when (val scanResult = barcodes.aetherLinkPairingScanResultOrNull()) {
+                                                is PairingQrBarcodeScanResult.Valid -> {
+                                                    if (resultConsumed.compareAndSet(false, true)) {
+                                                        onResult(scanResult.rawValue)
+                                                    }
+                                                }
+                                                PairingQrBarcodeScanResult.InvalidPairingQr -> {
+                                                    onInvalidPairingQr()
+                                                }
+                                                PairingQrBarcodeScanResult.UnsupportedQr -> {
+                                                    onUnsupportedQr()
+                                                }
+                                                null -> Unit
                                             }
                                         }
                                         .addOnFailureListener {
@@ -2712,14 +2950,44 @@ private fun PairingQrCameraPreview(
     )
 }
 
+internal enum class PairingQrScannerFeedback(
+    @param:StringRes val messageRes: Int,
+) {
+    UnsupportedQr(R.string.qr_scanner_feedback_unsupported),
+    InvalidPairingQr(R.string.qr_scanner_feedback_invalid),
+}
+
+internal enum class PairingQrRawValueScanResult {
+    Valid,
+    InvalidPairingQr,
+    UnsupportedQr,
+}
+
+private sealed interface PairingQrBarcodeScanResult {
+    data class Valid(val rawValue: String) : PairingQrBarcodeScanResult
+    data object InvalidPairingQr : PairingQrBarcodeScanResult
+    data object UnsupportedQr : PairingQrBarcodeScanResult
+}
+
 internal fun String.isAetherLinkPairingQrValue(): Boolean {
-    return runCatching {
-        RuntimePairingPayloadParser.parse(
-            rawValue = trim(),
-            allowDebugLoopbackRelay = BuildConfig.DEBUG,
-            allowDiagnosticLocalDirectEndpoint = BuildConfig.DEBUG,
-        )
-    }.isSuccess
+    val result = parseRuntimePairingQrPayload(
+        rawValue = trim(),
+        allowDebugLoopbackRelay = BuildConfig.DEBUG,
+        allowDiagnosticLocalDirectEndpoint = BuildConfig.DEBUG,
+    )
+    return result is RuntimePairingQrParseResult.Accepted
+}
+
+internal fun String.aetherLinkPairingQrRawValueScanResult(): PairingQrRawValueScanResult {
+    val trimmed = trim()
+    if (!trimmed.isAetherLinkPairingQrCandidateValue()) {
+        return PairingQrRawValueScanResult.UnsupportedQr
+    }
+    return if (trimmed.isAetherLinkPairingQrValue()) {
+        PairingQrRawValueScanResult.Valid
+    } else {
+        PairingQrRawValueScanResult.InvalidPairingQr
+    }
 }
 
 internal fun String.isAetherLinkPairingQrCandidateValue(): Boolean {
@@ -2730,11 +2998,29 @@ internal fun String.isAetherLinkPairingQrCandidateValue(): Boolean {
     return action == "pair"
 }
 
-private fun List<Barcode>.firstAetherLinkPairingRawValueOrNull(): String? {
-    return firstNotNullOfOrNull { barcode ->
-        barcode.rawValue
+private fun List<Barcode>.aetherLinkPairingScanResultOrNull(): PairingQrBarcodeScanResult? {
+    var sawInvalidPairingQr = false
+    var sawUnsupportedQr = false
+    for (barcode in this) {
+        val rawValue = barcode.rawValue
             ?.takeIf { it.isNotBlank() }
-            ?.takeIf { it.isAetherLinkPairingQrCandidateValue() }
+            ?: continue
+        when (rawValue.aetherLinkPairingQrRawValueScanResult()) {
+            PairingQrRawValueScanResult.Valid -> {
+                return PairingQrBarcodeScanResult.Valid(rawValue)
+            }
+            PairingQrRawValueScanResult.InvalidPairingQr -> {
+                sawInvalidPairingQr = true
+            }
+            PairingQrRawValueScanResult.UnsupportedQr -> {
+                sawUnsupportedQr = true
+            }
+        }
+    }
+    return when {
+        sawInvalidPairingQr -> PairingQrBarcodeScanResult.InvalidPairingQr
+        sawUnsupportedQr -> PairingQrBarcodeScanResult.UnsupportedQr
+        else -> null
     }
 }
 

@@ -65,6 +65,8 @@ struct TrustedDevicesView: View {
                     }
                     .listStyle(.inset)
                     .frame(minHeight: 280)
+                    .accessibilityLabel(Text(trustedDeviceListAccessibilityLabel()))
+                    .accessibilityValue(Text(trustedDeviceListAccessibilityValue(count: model.trustedDevices.count)))
                 }
             }
 
@@ -296,4 +298,12 @@ func trustedDeviceRefreshActionAccessibilityValue() -> String {
 
 func trustedDeviceRefreshActionAccessibilityHint() -> String {
     NSLocalizedString("Refresh trusted devices from AetherLink Runtime.", comment: "")
+}
+
+func trustedDeviceListAccessibilityLabel() -> String {
+    NSLocalizedString("Allowed Devices", comment: "")
+}
+
+func trustedDeviceListAccessibilityValue(count: Int) -> String {
+    localizedTrustedDeviceCount(max(0, count))
 }

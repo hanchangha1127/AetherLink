@@ -117,7 +117,7 @@ When Bonjour/local discovery is available after pairing, TXT hints should prefer
 
 The client app still talks only to the trusted runtime; Ollama and LM Studio stay behind the runtime host adapter.
 
-Development bootstrap relay configuration may name one endpoint with `AETHERLINK_BOOTSTRAP_RELAY_HOST/PORT` or multiple failover endpoints with `AETHERLINK_BOOTSTRAP_RELAY_ENDPOINTS` before QR generation. Those environment variables select where the runtime obtains temporary relay route material; they are not included as backend URLs and they are not production NAT traversal.
+Development bootstrap relay configuration may name one endpoint with `AETHERLINK_BOOTSTRAP_RELAY_HOST/PORT` or multiple failover endpoints with `AETHERLINK_BOOTSTRAP_RELAY_ENDPOINTS` before QR generation. Those environment variables select where the runtime obtains temporary relay route material; they are not included as backend URLs and they are not production NAT traversal. `AetherLinkRelay` requires allocation by default, rejects unknown or expired relay ids, and issues short-lived route leases. Explicit legacy relay-id handshakes require diagnostic `--allow-legacy` mode.
 
 ## Connection Metadata And Relay Boundaries
 

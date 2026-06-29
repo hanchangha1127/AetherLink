@@ -37,7 +37,7 @@ struct RemoteRelayRoutePanel: View {
     @State private var isRemoveSavedConnectionDetailsConfirmationPresented = false
 
     var body: some View {
-        CompanionPanel(title: NSLocalizedString("Advanced Connection Setup", comment: ""), systemImage: "point.3.connected.trianglepath.dotted") {
+        CompanionPanel(title: NSLocalizedString("Connection Recovery", comment: ""), systemImage: "point.3.connected.trianglepath.dotted") {
             VStack(alignment: .leading, spacing: 12) {
                 relayStatus
 
@@ -346,7 +346,7 @@ struct RemoteRelayRoutePanel: View {
                 }
                 .padding(.top, 4)
             } label: {
-                Label(NSLocalizedString("Advanced Connection Setup", comment: ""), systemImage: "wrench.and.screwdriver")
+                Label(NSLocalizedString("Connection Recovery", comment: ""), systemImage: "wrench.and.screwdriver")
                     .font(.caption.weight(.medium))
             }
             .tint(.secondary)
@@ -363,10 +363,13 @@ struct RemoteRelayRoutePanel: View {
     @ViewBuilder
     private func relayHostWarning(settings: CompanionDevelopmentRelaySettings) -> some View {
         if let warning = settings.hostReachabilityWarning {
-            Label(relayHostWarningText(warning), systemImage: "exclamationmark.triangle")
+            let warningText = relayHostWarningText(warning)
+            Label(warningText, systemImage: "exclamationmark.triangle")
                 .font(.caption)
                 .foregroundStyle(StatusTone.warning.color)
                 .fixedSize(horizontal: false, vertical: true)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(Text(connectionRecoveryHostWarningAccessibilityLabel(message: warningText)))
         }
     }
 
@@ -502,7 +505,7 @@ struct RemoteRelayRoutePanel: View {
             return String(format: NSLocalizedString("Reconnecting through %@.", comment: ""), endpoint)
         case .failed:
             return String(
-                format: NSLocalizedString("Connection through %@ failed. Check Advanced Connection Setup, then try again.", comment: ""),
+                format: NSLocalizedString("Connection through %@ failed. Check Connection Recovery, then try again.", comment: ""),
                 endpoint
             )
         }
@@ -616,7 +619,7 @@ struct RemoteRelayRoutePanel: View {
             message = NSLocalizedString("Connection details are being prepared. Keep this window open; the QR appears when AetherLink Runtime is ready.", comment: "")
             messageTone = .neutral
         } else {
-            message = NSLocalizedString("Connection details cannot be included in QR. Advanced Connection Setup needs an address reachable by both devices.", comment: "")
+            message = NSLocalizedString("Connection details cannot be included in QR. Connection Recovery needs an address reachable by both devices.", comment: "")
             messageTone = .warning
         }
     }
@@ -671,7 +674,7 @@ struct RemoteRelayRoutePanel: View {
         case .allocated:
             return NSLocalizedString("Connection details prepared and saved. Generate the latest QR and scan it in AetherLink to pair or refresh connectivity.", comment: "")
         case .allocationFailed:
-            return NSLocalizedString("Connection details saved, but preparation failed. Check Advanced Connection Setup, then generate the latest QR again or save the connection again.", comment: "")
+            return NSLocalizedString("Connection details saved, but preparation failed. Check Connection Recovery, then generate the latest QR again or save the connection again.", comment: "")
         }
     }
 
@@ -803,6 +806,17 @@ func connectionRecoveryResultAccessibilityLabel(message: String, tone: StatusTon
     )
 }
 
+func connectionRecoveryHostWarningAccessibilityLabel(message: String) -> String {
+    let resolvedMessage = message.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+        ?? NSLocalizedString("No details available.", comment: "")
+    return String(
+        format: NSLocalizedString("%@. Status %@. %@", comment: ""),
+        NSLocalizedString("Connection Recovery warning", comment: ""),
+        NSLocalizedString("Needs attention", comment: ""),
+        resolvedMessage
+    )
+}
+
 func relayStatusRowAccessibilityLabel(title: String, value: String, detail: String) -> String {
     let resolvedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
         ?? NSLocalizedString("Connection setting", comment: "")
@@ -893,9 +907,13 @@ func connectionRecoveryGenerateLatestQRActionAccessibilityValue(
     isRouteReadyForQRCode: Bool,
     hasAction: Bool = true
 ) -> String {
-    isRouteReadyForQRCode && hasAction
-        ? NSLocalizedString("Ready", comment: "")
-        : NSLocalizedString("Unavailable", comment: "")
+    if !hasAction {
+        return NSLocalizedString("Unavailable", comment: "")
+    }
+    if !isRouteReadyForQRCode {
+        return NSLocalizedString("Connection details not ready", comment: "")
+    }
+    return NSLocalizedString("Ready", comment: "")
 }
 
 func connectionRecoveryGenerateLatestQRActionAccessibilityHint(

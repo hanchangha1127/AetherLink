@@ -18,6 +18,10 @@
     <string name="chat_destination_state_ready">채팅을 열 준비가 되었습니다.</string>
     <string name="settings_destination_state_ready">설정을 열 준비가 되었습니다.</string>
     <string name="previous_chats">이전 채팅</string>
+    <string name="chat_history_group_today">오늘</string>
+    <string name="chat_history_group_yesterday">어제</string>
+    <string name="chat_history_group_previous_7_days">지난 7일</string>
+    <string name="chat_history_group_older">이전</string>
     <string name="no_previous_chats">아직 이전 채팅이 없습니다.</string>
     <string name="chat_search_label">채팅 검색</string>
     <string name="clear_chat_search">채팅 검색 지우기</string>
@@ -46,6 +50,8 @@
     <string name="archive">보관</string>
     <string name="archive_chat">채팅 보관</string>
     <string name="archive_chat_named">%1$s 채팅 보관</string>
+    <string name="open_chat">채팅 열기</string>
+    <string name="open_chat_named">%1$s 채팅 열기</string>
     <string name="chat_archived_snackbar">채팅을 보관했습니다</string>
     <string name="undo">실행 취소</string>
     <string name="archived_chat">보관된 채팅</string>
@@ -55,6 +61,9 @@
     <string name="chat_history_settings_title">채팅 기록</string>
     <string name="chat_history_settings_subtitle">채팅을 보관하고 나중에 복원하거나, 보관된 채팅만 영구 삭제합니다.</string>
     <string name="chat_history_action_state_wait_for_stream">채팅 기록을 변경하기 전에 현재 응답이 끝날 때까지 기다리세요.</string>
+    <string name="chat_history_refresh">채팅 기록 새로고침</string>
+    <string name="chat_history_refresh_state_ready">채팅 기록을 새로고칠 수 있습니다.</string>
+    <string name="chat_history_refresh_state_connect_first">채팅 기록을 새로고치려면 먼저 AetherLink Runtime에 연결하세요.</string>
     <string name="chat_history_bulk_actions_title">전체 채팅 관리</string>
     <string name="chat_history_bulk_actions_detail">전체 채팅 작업은 이 섹션을 열 때만 표시됩니다.</string>
     <string name="archive_all_chats">모든 채팅 보관</string>
@@ -98,6 +107,9 @@
     <string name="scan_latest_qr_state_ready">최신 QR을 스캔할 준비가 되었습니다.</string>
     <string name="qr_scanner_title">AetherLink QR 스캔</string>
     <string name="qr_scanner_detail">카메라를 최신 AetherLink Runtime QR에 맞추세요. QR은 AetherLink Runtime을 확인하고 두 기기가 모두 접근할 수 있는 연결 정보를 포함해야 합니다.</string>
+    <string name="qr_scanner_feedback_unsupported">이 코드는 AetherLink Runtime QR이 아닙니다.</string>
+    <string name="qr_scanner_feedback_invalid">이 AetherLink QR은 올바르지 않거나 만료되었습니다. 최신 Runtime QR을 스캔하세요.</string>
+    <string name="qr_scanner_scan_target_accessibility">QR 스캔 영역입니다. AetherLink Runtime QR을 이 프레임 안에 맞추세요.</string>
     <string name="qr_scanner_close_action">QR 스캐너 닫기</string>
     <string name="qr_scanner_permission_title">카메라 접근이 필요합니다</string>
     <string name="qr_scanner_permission_detail">AetherLink는 페어링 QR 코드를 스캔할 때만 카메라를 사용합니다.</string>
@@ -114,6 +126,7 @@
     <string name="manual_qr_payload_detail">진단용 대체 수단입니다. 카메라 스캔을 테스트할 수 없을 때만 AetherLink Runtime QR 텍스트를 붙여넣으세요. 일반 페어링은 카메라 QR 스캔만 사용합니다.</string>
     <string name="manual_qr_payload_label">QR 텍스트</string>
     <string name="manual_qr_payload_submit">QR 텍스트 사용</string>
+    <string name="manual_qr_payload_open_accessibility">진단용 QR 텍스트 열기</string>
     <string name="manual_qr_payload_input_accessibility">진단용 QR 텍스트 입력</string>
     <string name="manual_qr_payload_submit_accessibility">진단용 QR 텍스트 사용</string>
     <string name="manual_qr_payload_cancel_accessibility">진단용 QR 텍스트 닫기</string>
@@ -147,7 +160,7 @@
     <string name="forget">삭제</string>
     <string name="forget_trusted_runtime_named">신뢰된 런타임 %1$s 삭제</string>
     <string name="forget_trusted_runtime_confirm_title">신뢰된 런타임을 삭제할까요?</string>
-    <string name="forget_trusted_runtime_confirm_message">이 기기에 저장된 신뢰된 런타임을 삭제할까요? 다시 페어링할 때까지 모델 접근은 AetherLink Runtime 뒤에 유지됩니다.</string>
+    <string name="forget_trusted_runtime_confirm_message">%1$s 삭제? 모델 접근은 다시 페어링해야 가능합니다.</string>
     <string name="forget_trusted_runtime_confirm_action">런타임 삭제</string>
     <string name="forget_trusted_runtime_confirm_action_named">신뢰된 런타임 %1$s 삭제 확인</string>
     <string name="forget_trusted_runtime_cancel_action_named">신뢰된 런타임 %1$s 삭제 취소</string>
@@ -259,6 +272,9 @@
     <string name="model_refresh_state_loading">모델 새로고침이 진행 중입니다.</string>
     <string name="model_refresh_state_connect_first">모델을 새로고침하기 전에 신뢰된 런타임에 연결하세요.</string>
     <string name="model_picker_state_wait_for_stream">현재 응답을 기다리거나 취소한 뒤 모델을 변경하세요.</string>
+    <string name="model_picker_vision_recovery_state">비전 지원 AetherLink Runtime 채팅 모델이 필요합니다.</string>
+    <string name="model_picker_vision_recovery_detail">이 이미지는 비전 지원 AetherLink Runtime 채팅 모델이 필요합니다. AetherLink Runtime에서 설치된 비전 모델을 선택하세요.</string>
+    <string name="model_picker_vision_model_required_state">이미지 첨부에는 비전 모델이 필요합니다.</string>
     <string name="chat_model_picker_summary">채팅 모델 선택기. %1$s. %2$s</string>
     <string name="chat_model_picker_summary_selected">채팅 모델 선택기. 선택된 채팅 모델 %1$s.</string>
     <string name="models_from_runtime">모델은 이 앱에서 직접 불러오지 않고 AetherLink Runtime을 통해 불러옵니다.</string>
@@ -270,6 +286,7 @@
     <string name="model_installed">설치됨</string>
     <string name="model_running">실행 중</string>
     <string name="model_not_installed">설치되지 않음</string>
+    <string name="model_not_recommended_for_images">이미지에는 권장되지 않음</string>
     <string name="model_available_to_install">설치 가능</string>
     <string name="model_source_value">소스: %1$s</string>
     <string name="model_size_value">크기: %1$s</string>
@@ -316,6 +333,9 @@
     <string name="attachment_requires_vision_model">비전 모델 필요</string>
     <string name="content_desc_attachment_chip">첨부 %1$s, %2$s</string>
     <string name="attachment_only_prompt_header">첨부한 입력을 분석하세요:</string>
+    <string name="shared_draft_added_text_snackbar">공유된 텍스트를 초안에 추가했습니다.</string>
+    <string name="shared_draft_added_files_snackbar">공유된 파일을 초안에 추가했습니다.</string>
+    <string name="shared_draft_added_mixed_snackbar">공유된 텍스트와 파일을 초안에 추가했습니다.</string>
     <string name="empty_chat_pairing_title">QR 스캔으로 시작</string>
     <string name="empty_chat_pairing">먼저 AetherLink Runtime과 페어링하세요. 모델 제공자는 신뢰된 런타임 뒤에 비공개로 유지됩니다.</string>
     <string name="empty_chat_disconnected_title">계속하려면 연결하세요</string>
@@ -411,6 +431,7 @@
     <string name="embedding_model_none_row_summary_selected">선택된 메모리 색인 옵션. %1$s. %2$s</string>
     <string name="embedding_model_row_summary">메모리 색인 모델 %1$s. %2$s.</string>
     <string name="embedding_model_row_summary_selected">선택된 메모리 색인 모델 %1$s. %2$s.</string>
+    <string name="embedding_model_state_install_before_selecting">선택하기 전에 이 모델을 AetherLink Runtime에 설치하세요.</string>
     <string name="saved_embedding_model_row_summary">저장된 메모리 색인 모델 %1$s. %2$s</string>
     <string name="selected_embedding_model">선택된 메모리 색인 모델</string>
     <string name="selected_embedding_model_unavailable">저장된 메모리 색인 모델이 런타임 목록에 없습니다. 새로고침하거나 다른 모델을 선택하세요.</string>
@@ -428,13 +449,15 @@
     <string name="memory_empty">저장된 메모리가 아직 없습니다.</string>
     <string name="memory_empty_disconnected">저장된 메모리를 불러오려면 신뢰된 런타임에 연결하세요.</string>
     <string name="memory_connect_to_load">메모리를 불러오고 관리하려면 신뢰된 런타임에 연결하세요.</string>
-    <string name="memory_read_only_notice">캐시된 메모리는 신뢰된 런타임에 다시 연결될 때까지 읽기 전용입니다.</string>
+    <string name="memory_read_only_notice">현재 세션에 표시된 메모리는 읽기 전용입니다. 새로고침하거나 관리하려면 신뢰된 런타임에 다시 연결하세요.</string>
+    <string name="memory_refresh">메모리 새로고침</string>
+    <string name="memory_refresh_state_ready">메모리를 새로고침할 준비가 되었습니다.</string>
     <string name="memory_remove">메모리 삭제</string>
     <string name="memory_remove_named">%1$s 메모리 삭제</string>
     <string name="memory_enable_named">%1$s 메모리 사용</string>
     <string name="memory_pause_named">%1$s 메모리 일시 중지</string>
     <string name="memory_remove_confirm_title">메모리를 삭제할까요?</string>
-    <string name="memory_remove_confirm_message">신뢰된 런타임에서 이 메모리를 삭제할까요?</string>
+    <string name="memory_remove_confirm_message">신뢰된 런타임에서 %1$s 메모리를 삭제할까요?</string>
     <string name="memory_enabled">사용 중</string>
     <string name="memory_paused">일시 중지</string>
 
@@ -469,6 +492,7 @@
     <string name="error_no_connectable_runtime_route">런타임은 신뢰됐지만 최신 QR 스캔으로 연결을 갱신해야 합니다.</string>
     <string name="error_remote_routes_unavailable">연결 정보가 포함된 최신 AetherLink Runtime QR을 스캔하세요.</string>
     <string name="error_remote_route_unreachable">저장된 연결이 응답하지 않습니다. AetherLink Runtime에서 원격 연결 정보를 준비한 다음 연결 정보가 포함된 최신 QR을 스캔하세요.</string>
+    <string name="error_remote_route_unreachable_from_device">이 기기에서 QR의 릴레이 경로에 도달할 수 없습니다. 두 기기 모두에서 접근 가능한 공용, VPN, 터널 또는 프라이빗 오버레이 경로를 사용한 뒤 새 QR을 스캔하세요.</string>
     <string name="error_remote_route_expired">연결 정보가 만료되었습니다. 새 연결 정보가 포함된 최신 AetherLink Runtime QR을 스캔하세요.</string>
     <string name="error_discovery_failed">런타임 검색에 실패했습니다.</string>
     <string name="error_invalid_pairing_qr">올바른 AetherLink 페어링 QR 코드가 아닙니다.</string>
@@ -499,9 +523,10 @@
     <string name="error_chat_session_sync_failed">이 채팅 변경을 AetherLink Runtime과 동기화할 수 없습니다.</string>
     <string name="error_chat_history_runtime_required">런타임에 저장된 채팅을 변경하려면 먼저 AetherLink Runtime에 연결하세요.</string>
     <string name="error_memory_runtime_required">메모리를 변경하기 전에 신뢰된 런타임에 연결하세요.</string>
+    <string name="error_memory_load_failed">AetherLink Runtime에서 메모리를 불러오지 못했습니다.</string>
     <string name="error_runtime_error">런타임 오류가 발생했습니다.</string>
     <string name="error_send_failed">AetherLink Runtime으로 메시지를 보낼 수 없습니다.</string>
-    <string name="error_regenerate_unavailable">다시 생성할 완료된 assistant 응답이 없습니다.</string>
+    <string name="error_regenerate_unavailable">다시 생성할 완료된 어시스턴트 응답이 없습니다.</string>
     <string name="error_regenerate_attachment_context_unavailable">이 응답은 다시 생성에 필요한 첨부 파일 데이터를 더 이상 사용할 수 없습니다.</string>
     <string name="error_reuse_message_unavailable">이 메시지는 초안으로 다시 사용할 수 없습니다.</string>
     <string name="error_invalid_payload">AetherLink Runtime이 올바르지 않은 데이터를 보냈습니다.</string>
@@ -530,6 +555,7 @@
     <string name="route_diagnostic_direct_failed_remote_pending">로컬 경로가 응답하지 않았습니다. 연결 정보가 포함된 최신 AetherLink Runtime QR을 스캔하세요.</string>
     <string name="route_diagnostic_remote_pending">원격 연결 정보가 없습니다. 두 기기가 같은 로컬 경로를 볼 수 있을 때만 근거리 발견이 동작하므로, 연결 정보가 포함된 최신 QR을 스캔하세요.</string>
     <string name="route_diagnostic_relay_failed">저장된 연결이 응답하지 않았습니다. AetherLink Runtime에서 원격 연결 정보를 준비한 다음 연결 정보가 포함된 최신 QR을 스캔하세요.</string>
+    <string name="route_diagnostic_relay_unreachable_from_device">이 기기에서 릴레이 경로를 열 수 없습니다. 릴레이, VPN, 터널 또는 프라이빗 오버레이를 확인한 뒤 새 QR을 스캔하세요.</string>
     <string name="route_diagnostic_relay_auth_failed">저장된 연결 정보를 인증할 수 없습니다. 신뢰한 런타임에서 새 QR을 스캔하세요.</string>
     <string name="route_diagnostic_remote_route_expired">저장된 연결 정보가 만료되었습니다. 새 연결 정보가 포함된 최신 AetherLink Runtime QR을 스캔하세요.</string>
     <string name="route_diagnostic_direct_qr_rejected">이 QR에는 근거리 전용 진단 경로가 포함되어 있어 다른 네트워크 페어링에 사용할 수 없습니다.</string>

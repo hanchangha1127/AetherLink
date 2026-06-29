@@ -51,6 +51,7 @@ public enum RuntimeMemoryStoreError: Error, LocalizedError, Equatable {
 
 public protocol RuntimeMemoryStore: Sendable {
     func list(ownerDeviceID: String?) throws -> [RuntimeMemoryEntry]
+    func listAll() throws -> [RuntimeMemoryEntry]
     func upsert(
         ownerDeviceID: String?,
         id: String?,
@@ -79,6 +80,10 @@ public struct NullRuntimeMemoryStore: RuntimeMemoryStore {
     public init() {}
 
     public func list(ownerDeviceID: String?) throws -> [RuntimeMemoryEntry] {
+        []
+    }
+
+    public func listAll() throws -> [RuntimeMemoryEntry] {
         []
     }
 
@@ -121,6 +126,12 @@ public final class JSONLRuntimeMemoryStore: RuntimeMemoryStore, @unchecked Senda
     public func list(ownerDeviceID: String?) throws -> [RuntimeMemoryEntry] {
         try lock.withLock {
             Self.entries(from: try readEvents(ownerDeviceID: ownerDeviceID))
+        }
+    }
+
+    public func listAll() throws -> [RuntimeMemoryEntry] {
+        try lock.withLock {
+            Self.entries(from: try readEvents())
         }
     }
 

@@ -94,14 +94,14 @@ REQUIRED_REMOTE_ROUTE_PREPARATION_KEYS = (
     "Connection health",
     "Connection preparation",
     "Connection diagnostics",
-    "AetherLink could not get connection details from the route service. Check Advanced Connection Setup, then generate a fresh QR.",
+    "AetherLink could not get connection details from the route service. Check Connection Recovery, then generate a fresh QR.",
     "Connection details for %@ cannot be used from another network. Use a public, VPN, or relay address, then generate a fresh QR.",
     "Connection details cannot be used from another network. Use a public, VPN, or relay address, then generate a fresh QR.",
-    "Connection details for %@ could not be prepared automatically. Check Advanced Connection Setup, then generate a fresh QR.",
-    "Connection details could not be prepared automatically. Check Advanced Connection Setup, then generate a fresh QR.",
+    "Connection details for %@ could not be prepared automatically. Check Connection Recovery, then generate a fresh QR.",
+    "Connection details could not be prepared automatically. Check Connection Recovery, then generate a fresh QR.",
     "Connection details need a secure connection secret before they can be included in a QR.",
-    "Connection through %@ failed. Check Advanced Connection Setup, then generate a fresh QR.",
-    "Connection failed. Check Advanced Connection Setup, then generate a fresh QR.",
+    "Connection through %@ failed. Check Connection Recovery, then generate a fresh QR.",
+    "Connection failed. Check Connection Recovery, then generate a fresh QR.",
 )
 REQUIRED_CONNECTION_RECOVERY_ACCESSIBILITY_KEYS = (
     "Bootstrap relay Private Overlay Route",
@@ -125,12 +125,16 @@ REQUIRED_RELEASE_COPY_VALUES = {
         "Rotate Secret": "Refresh Key",
         "Technical Details": "Details",
         "Provider endpoint redacted.": "Provider address hidden.",
-        "Advanced connection setup needs attention.": "Connection Recovery needs attention.",
-        "Advanced Connection Setup": "Connection Recovery",
+        "Connection Recovery needs attention.": "Connection Recovery needs attention.",
+        "Connection Recovery": "Connection Recovery",
         "Connection Setup": "Recovery Details",
         "Connection setup secret": "Protected connection key",
         "Connection setup secret regenerated.": "Protected connection key refreshed.",
-        "Connection through %@ failed. Check Advanced Connection Setup, then generate a fresh QR.": (
+        "Close Runtime History Inspector": "Close Runtime History Inspector",
+        "Close Runtime Memory Inspector": "Close Runtime Memory Inspector",
+        "Refresh Runtime History Inspector": "Refresh Runtime History Inspector",
+        "Refresh Runtime Memory Inspector": "Refresh Runtime Memory Inspector",
+        "Connection through %@ failed. Check Connection Recovery, then generate a fresh QR.": (
             "Connection through %@ failed. Check Connection Recovery, then generate a fresh QR."
         ),
     },
@@ -139,12 +143,16 @@ REQUIRED_RELEASE_COPY_VALUES = {
         "Rotate Secret": "키 새로 고침",
         "Technical Details": "세부 정보",
         "Provider endpoint redacted.": "제공자 주소가 숨겨졌습니다.",
-        "Advanced connection setup needs attention.": "연결 복구 확인이 필요합니다.",
-        "Advanced Connection Setup": "연결 복구",
+        "Connection Recovery needs attention.": "연결 복구 확인이 필요합니다.",
+        "Connection Recovery": "연결 복구",
         "Connection Setup": "복구 세부 정보",
         "Connection setup secret": "보호된 연결 키",
         "Connection setup secret regenerated.": "보호된 연결 키를 새로 고쳤습니다.",
-        "Connection through %@ failed. Check Advanced Connection Setup, then generate a fresh QR.": (
+        "Close Runtime History Inspector": "런타임 기록 점검 닫기",
+        "Close Runtime Memory Inspector": "런타임 메모리 점검 닫기",
+        "Refresh Runtime History Inspector": "런타임 기록 점검 새로 고침",
+        "Refresh Runtime Memory Inspector": "런타임 메모리 점검 새로 고침",
+        "Connection through %@ failed. Check Connection Recovery, then generate a fresh QR.": (
             "%@을(를) 통한 연결에 실패했습니다. 연결 복구를 확인한 뒤 새 QR을 생성하세요."
         ),
     },
@@ -153,12 +161,16 @@ REQUIRED_RELEASE_COPY_VALUES = {
         "Rotate Secret": "キーを更新",
         "Technical Details": "詳細",
         "Provider endpoint redacted.": "プロバイダーのアドレスは非表示です。",
-        "Advanced connection setup needs attention.": "接続の復旧に確認が必要です。",
-        "Advanced Connection Setup": "接続の復旧",
+        "Connection Recovery needs attention.": "接続の復旧に確認が必要です。",
+        "Connection Recovery": "接続の復旧",
         "Connection Setup": "復旧の詳細",
         "Connection setup secret": "保護された接続キー",
         "Connection setup secret regenerated.": "保護された接続キーを更新しました。",
-        "Connection through %@ failed. Check Advanced Connection Setup, then generate a fresh QR.": (
+        "Close Runtime History Inspector": "ランタイム履歴インスペクタを閉じる",
+        "Close Runtime Memory Inspector": "ランタイムメモリインスペクタを閉じる",
+        "Refresh Runtime History Inspector": "ランタイム履歴インスペクタを更新",
+        "Refresh Runtime Memory Inspector": "ランタイムメモリインスペクタを更新",
+        "Connection through %@ failed. Check Connection Recovery, then generate a fresh QR.": (
             "%@ 経由の接続に失敗しました。接続の復旧を確認してから、新しい QR を生成してください。"
         ),
     },
@@ -167,12 +179,16 @@ REQUIRED_RELEASE_COPY_VALUES = {
         "Rotate Secret": "刷新密钥",
         "Technical Details": "详情",
         "Provider endpoint redacted.": "提供方地址已隐藏。",
-        "Advanced connection setup needs attention.": "连接恢复需要检查。",
-        "Advanced Connection Setup": "连接恢复",
+        "Connection Recovery needs attention.": "连接恢复需要检查。",
+        "Connection Recovery": "连接恢复",
         "Connection Setup": "恢复详情",
         "Connection setup secret": "受保护的连接密钥",
         "Connection setup secret regenerated.": "已刷新受保护的连接密钥。",
-        "Connection through %@ failed. Check Advanced Connection Setup, then generate a fresh QR.": (
+        "Close Runtime History Inspector": "关闭运行时历史检查器",
+        "Close Runtime Memory Inspector": "关闭运行时记忆检查器",
+        "Refresh Runtime History Inspector": "刷新运行时历史检查器",
+        "Refresh Runtime Memory Inspector": "刷新运行时记忆检查器",
+        "Connection through %@ failed. Check Connection Recovery, then generate a fresh QR.": (
             "通过 %@ 的连接失败。请检查连接恢复，然后生成新的二维码。"
         ),
     },
@@ -181,12 +197,18 @@ REQUIRED_RELEASE_COPY_VALUES = {
         "Rotate Secret": "Actualiser la clé",
         "Technical Details": "Détails",
         "Provider endpoint redacted.": "Adresse du fournisseur masquée.",
-        "Advanced connection setup needs attention.": "La récupération de connexion demande une vérification.",
-        "Advanced Connection Setup": "Récupération de connexion",
+        "Connection Recovery needs attention.": "La récupération de connexion demande une vérification.",
+        "Connection Recovery": "Récupération de connexion",
         "Connection Setup": "Détails de récupération",
         "Connection setup secret": "Clé de connexion protégée",
         "Connection setup secret regenerated.": "Clé de connexion protégée actualisée.",
-        "Connection through %@ failed. Check Advanced Connection Setup, then generate a fresh QR.": (
+        "Assistant": "Assistant IA",
+        "Chat": "Discussion",
+        "Close Runtime History Inspector": "Fermer l’inspecteur d’historique du runtime",
+        "Close Runtime Memory Inspector": "Fermer l’inspecteur de mémoire du runtime",
+        "Refresh Runtime History Inspector": "Actualiser l’inspecteur d’historique du runtime",
+        "Refresh Runtime Memory Inspector": "Actualiser l’inspecteur de mémoire du runtime",
+        "Connection through %@ failed. Check Connection Recovery, then generate a fresh QR.": (
             "La connexion via %@ a échoué. Vérifiez la récupération de connexion, puis générez un nouveau QR."
         ),
     },
@@ -741,6 +763,9 @@ def check_remote_connection_destructive_confirmation() -> list[str]:
             "routeDiagnosticDisclosureAccessibilityHint()",
             "connectionRecoveryResultAccessibilityLabel(message: message, tone: messageTone)",
             "func connectionRecoveryResultAccessibilityLabel(message: String, tone: StatusTone) -> String",
+            ".accessibilityLabel(Text(connectionRecoveryHostWarningAccessibilityLabel(message: warningText)))",
+            "func connectionRecoveryHostWarningAccessibilityLabel(message: String) -> String",
+            "Connection Recovery warning",
             "No details available.",
             "%@. Status %@. %@",
             "func routeDiagnosticDisclosureAccessibilityLabel(context: String) -> String",
@@ -769,6 +794,7 @@ def check_remote_connection_destructive_confirmation() -> list[str]:
             "connectionRecoveryOptionalSecureFieldAccessibilityValue(",
             "connectionRecoveryGeneratedSecretAccessibilityValue(",
             "connectionRecoveryGenerateLatestQRActionAccessibilityValue(",
+            "Connection details not ready",
             "connectionRecoveryGenerateLatestQRActionAccessibilityHint(",
             "connectionRecoverySaveBootstrapRelayActionAccessibilityHint(",
             "connectionRecoveryBootstrapAllocationTokenWarning(",
@@ -842,6 +868,13 @@ def check_remote_connection_destructive_confirmation() -> list[str]:
             "接続の復旧結果。ステータス 準備完了。接続詳細を準備しました。",
             "连接恢复结果。状态 就绪。连接详情已准备好。",
             "Résultat de récupération de connexion. État Prêt. Détails de connexion préparés.",
+            "testConnectionRecoveryHostWarningAccessibilityLabelUsesSelectedLanguageAndTone",
+            "connectionRecoveryHostWarningAccessibilityLabel(",
+            "Connection Recovery warning. Status Needs attention. This connection address is local-network only.",
+            "연결 복구 경고. 상태 확인 필요. 이 연결 주소는 로컬 네트워크 전용입니다.",
+            "接続の復旧警告。ステータス 確認が必要。この接続アドレスはローカルネットワーク専用です。",
+            "连接恢复警告。状态 需要注意。此连接地址仅限本地网络。",
+            "Avertissement de récupération de connexion. État Attention requise. Cette adresse de connexion est réservée au réseau local.",
             "testConnectionRecoverySaveBootstrapRelayAccessibilityValueUsesSelectedLanguage",
             "testConnectionRecoveryBootstrapAllocationTokenWarningUsesSelectedLanguage",
             "testBootstrapRelayAllocationTokenWarningClassifiesNonLocalEndpoints",
@@ -977,19 +1010,33 @@ def check_menu_bar_localization_helpers() -> list[str]:
             (
                 "struct MenuBarCommandTitles: Equatable",
                 "func menuBarRuntimeStatusText(_ status: CompanionTransportStatus) -> String",
+                "func menuBarRuntimeStatusAccessibilityLabel(_ status: CompanionTransportStatus) -> String",
                 "func menuBarModelServiceStatusText(_ statuses: [CompanionProviderStatus]) -> String",
+                "func menuBarModelServiceStatusAccessibilityLabel(_ statuses: [CompanionProviderStatus]) -> String",
                 "func menuBarCommandTitles() -> MenuBarCommandTitles",
+                "func menuBarOpenAetherLinkAccessibilityHint() -> String",
+                "func menuBarQuitAccessibilityHint() -> String",
                 "func pairingQRGenerationCommandTitle(hasActiveSession: Bool) -> String",
                 "func modelProviderCheckActionAccessibilityValue() -> String",
                 "func modelProviderCheckActionAccessibilityHint() -> String",
                 "func modelListLoadActionAccessibilityValue() -> String",
                 "func modelListLoadActionAccessibilityHint() -> String",
+                "func refreshRuntimeDataActionAccessibilityValue() -> String",
+                "func refreshRuntimeDataActionAccessibilityHint() -> String",
+                "func inspectRuntimeHistoryActionAccessibilityValue() -> String",
+                "func inspectRuntimeHistoryActionAccessibilityHint() -> String",
+                "func inspectRuntimeMemoryActionAccessibilityValue() -> String",
+                "func inspectRuntimeMemoryActionAccessibilityHint() -> String",
                 "Runtime: %@",
+                "Runtime status: %@",
                 "Model service: %@",
+                "Model service status: %@",
                 "Open AetherLink",
                 "Generate Pairing QR",
                 "Generate New QR",
                 "Load Models",
+                "Open the AetherLink window and bring it to the front.",
+                "Quit AetherLink Runtime.",
                 "Check model provider availability through AetherLink Runtime.",
                 "Load the installed local model list through AetherLink Runtime.",
             ),
@@ -998,10 +1045,21 @@ def check_menu_bar_localization_helpers() -> list[str]:
         *missing_source_snippets(
             APP_ENTRY_SOURCE,
             (
+                """Button(NSLocalizedString("Check Model Providers", comment: "")) {
+                    Task { await model.refreshBackendStatus() }
+                }
+                .keyboardShortcut("r", modifiers: [.command])
+                .help(modelProviderCheckActionAccessibilityHint())
+                .accessibilityValue(Text(modelProviderCheckActionAccessibilityValue()))
+                .accessibilityHint(Text(modelProviderCheckActionAccessibilityHint()))""",
                 "let commandTitles = menuBarCommandTitles()",
                 "Text(menuBarRuntimeStatusText(model.transportState))",
+                ".accessibilityLabel(Text(menuBarRuntimeStatusAccessibilityLabel(model.transportState)))",
                 "Text(menuBarModelServiceStatusText(model.providerStatuses))",
+                ".accessibilityLabel(Text(menuBarModelServiceStatusAccessibilityLabel(model.providerStatuses)))",
                 "Button(commandTitles.openAetherLink)",
+                ".help(menuBarOpenAetherLinkAccessibilityHint())",
+                ".accessibilityHint(Text(menuBarOpenAetherLinkAccessibilityHint()))",
                 """Button(commandTitles.refresh) {
                 Task { await model.refreshBackendStatus() }
             }
@@ -1016,6 +1074,8 @@ def check_menu_bar_localization_helpers() -> list[str]:
             .accessibilityHint(Text(modelListLoadActionAccessibilityHint()))""",
                 "Button(pairingQRGenerationCommandTitle(hasActiveSession: model.pairingSession != nil))",
                 "Button(commandTitles.quit)",
+                ".help(menuBarQuitAccessibilityHint())",
+                ".accessibilityHint(Text(menuBarQuitAccessibilityHint()))",
             ),
             "macOS menu-bar helper wiring",
         ),
@@ -1026,6 +1086,15 @@ def check_menu_bar_localization_helpers() -> list[str]:
                 ".accessibilityHint(Text(modelProviderCheckActionAccessibilityHint()))",
                 ".accessibilityValue(Text(modelListLoadActionAccessibilityValue()))",
                 ".accessibilityHint(Text(modelListLoadActionAccessibilityHint()))",
+                ".help(refreshRuntimeDataActionAccessibilityHint())",
+                ".accessibilityValue(Text(refreshRuntimeDataActionAccessibilityValue()))",
+                ".accessibilityHint(Text(refreshRuntimeDataActionAccessibilityHint()))",
+                ".help(inspectRuntimeHistoryActionAccessibilityHint())",
+                ".accessibilityValue(Text(inspectRuntimeHistoryActionAccessibilityValue()))",
+                ".accessibilityHint(Text(inspectRuntimeHistoryActionAccessibilityHint()))",
+                ".help(inspectRuntimeMemoryActionAccessibilityHint())",
+                ".accessibilityValue(Text(inspectRuntimeMemoryActionAccessibilityValue()))",
+                ".accessibilityHint(Text(inspectRuntimeMemoryActionAccessibilityHint()))",
             ),
             "macOS quick action accessibility wiring",
         ),
@@ -1046,15 +1115,26 @@ def check_menu_bar_localization_helpers() -> list[str]:
             (
                 "testMenuBarStatusAndCommandTitlesUseSelectedLanguage",
                 "testMenuBarPairingQRCommandTitleTracksActiveSessionAndLanguage",
+                "testMenuBarWindowAndQuitAccessibilityHintsUseSelectedLanguage",
                 "testPrimaryActionsPrioritizePairingQRWhenNoTrustedDevicesExist",
                 "testQuickActionAccessibilityUsesSelectedLanguage",
                 "companionPrimaryActionOrder(trustedDeviceCount: 0)",
                 "menuBarRuntimeStatusText(.advertising(serviceName: \"AetherLink\", port: 43170))",
+                "menuBarRuntimeStatusAccessibilityLabel(.advertising(serviceName: \"AetherLink\", port: 43170))",
                 "menuBarModelServiceStatusText([])",
+                "menuBarModelServiceStatusAccessibilityLabel([])",
                 "menuBarCommandTitles()",
                 "pairingQRGenerationCommandTitle(hasActiveSession: true)",
+                "menuBarOpenAetherLinkAccessibilityHint()",
+                "menuBarQuitAccessibilityHint()",
                 "modelProviderCheckActionAccessibilityHint()",
                 "modelListLoadActionAccessibilityHint()",
+                "refreshRuntimeDataActionAccessibilityValue()",
+                "refreshRuntimeDataActionAccessibilityHint()",
+                "inspectRuntimeHistoryActionAccessibilityValue()",
+                "inspectRuntimeHistoryActionAccessibilityHint()",
+                "inspectRuntimeMemoryActionAccessibilityValue()",
+                "inspectRuntimeMemoryActionAccessibilityHint()",
             ),
             "macOS menu-bar localization tests",
         ),
@@ -1188,7 +1268,7 @@ def check_remote_route_preparation_issue_display() -> list[str]:
         (
             "func remoteRoutePreparationIssueText(_ issue: CompanionRemoteRoutePreparationIssue) -> String",
             "Connection details for %@ cannot be used from another network. Use a public, VPN, or relay address, then generate a fresh QR.",
-            "Connection through %@ failed. Check Advanced Connection Setup, then generate a fresh QR.",
+            "Connection through %@ failed. Check Connection Recovery, then generate a fresh QR.",
         ),
         "macOS remote-route preparation issue copy",
     ))
@@ -1238,6 +1318,44 @@ def check_remote_route_preparation_issue_display() -> list[str]:
             "No cross-network connection details are saved yet. Nearby pairing still works. For another network, use a reachable relay, VPN, or tunnel before generating the latest QR.",
         ),
         "macOS Status route preparation issue display",
+    ))
+    return failures
+
+
+def check_runtime_inspector_close_button_accessibility() -> list[str]:
+    failures: list[str] = []
+    failures.extend(missing_source_snippets(
+        STATUS_VIEW_SOURCE,
+        (
+            'Text(NSLocalizedString("Close", comment: ""))',
+            '.accessibilityLabel(Text(NSLocalizedString("Refresh Runtime History Inspector", comment: "")))',
+            '.accessibilityLabel(Text(NSLocalizedString("Close Runtime History Inspector", comment: "")))',
+            '.accessibilityLabel(Text(NSLocalizedString("Refresh Runtime Memory Inspector", comment: "")))',
+            '.accessibilityLabel(Text(NSLocalizedString("Close Runtime Memory Inspector", comment: "")))',
+            "runtimeTranscriptPreviewLoadAccessibilityLabel(title: session.title)",
+            "runtimeTranscriptPreviewLoadAccessibilityLabel(title: titleText)",
+            'func runtimeTranscriptPreviewLoadAccessibilityLabel(title: String) -> String',
+            'NSLocalizedString("Load transcript preview for %@", comment: "")',
+        ),
+        "macOS runtime inspector close-button accessibility labels",
+    ))
+    failures.extend(missing_source_snippets(
+        LOCALIZATION_TEST_SOURCE,
+        (
+            'NSLocalizedString("Close Runtime History Inspector", comment: "")',
+            'NSLocalizedString("Close Runtime Memory Inspector", comment: "")',
+            'NSLocalizedString("Refresh Runtime History Inspector", comment: "")',
+            'NSLocalizedString("Refresh Runtime Memory Inspector", comment: "")',
+            "Actualiser l’inspecteur d’historique du runtime",
+            "Actualiser l’inspecteur de mémoire du runtime",
+            "Fermer l’inspecteur d’historique du runtime",
+            "Fermer l’inspecteur de mémoire du runtime",
+            "runtimeTranscriptPreviewLoadAccessibilityLabel(title:",
+            "Load transcript preview for Release planning",
+            "Charger l’aperçu de la transcription pour Planification de version",
+            "Charger l’aperçu de la transcription pour Chat sans titre",
+        ),
+        "macOS runtime inspector close-button localization tests",
     ))
     return failures
 
@@ -1346,6 +1464,7 @@ def main() -> int:
     failures.extend(check_provider_status_redaction())
     failures.extend(check_trusted_device_identity_display())
     failures.extend(check_remote_route_preparation_issue_display())
+    failures.extend(check_runtime_inspector_close_button_accessibility())
 
     if failures:
         print("macOS localization check failed:", file=sys.stderr)

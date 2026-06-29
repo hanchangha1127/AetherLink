@@ -445,8 +445,49 @@ dump_ui_xml() {
 node_center_by_content_description() {
   local xml_path="$1"
   local content_description="$2"
-  python3 - "$xml_path" "$content_description" <<'PY'
+  local strategy="${3:-first}"
+  python3 - "$xml_path" "$content_description" "$strategy" <<'PY'
 import re
+import sys
+import xml.etree.ElementTree as ET
+
+xml_path, expected, strategy = sys.argv[1], sys.argv[2], sys.argv[3]
+try:
+    root = ET.parse(xml_path).getroot()
+except Exception:
+    raise SystemExit(1)
+
+bounds_pattern = re.compile(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]")
+candidates = []
+for node in root.iter("node"):
+    if node.attrib.get("content-desc") != expected:
+        continue
+    if strategy == "bottom-enabled" and node.attrib.get("enabled") == "false":
+        continue
+    bounds = node.attrib.get("bounds", "")
+    match = bounds_pattern.fullmatch(bounds)
+    if not match:
+        continue
+    left, top, right, bottom = map(int, match.groups())
+    if right <= left or bottom <= top:
+        continue
+    if strategy == "bottom-enabled":
+        candidates.append((bottom, top, right, left))
+        continue
+    print(f"{(left + right) // 2} {(top + bottom) // 2}")
+    raise SystemExit(0)
+if candidates:
+    bottom, top, right, left = max(candidates)
+    print(f"{(left + right) // 2} {(top + bottom) // 2}")
+    raise SystemExit(0)
+raise SystemExit(1)
+PY
+}
+
+ui_xml_contains_text() {
+  local xml_path="$1"
+  local expected_text="$2"
+  python3 - "$xml_path" "$expected_text" <<'PY'
 import sys
 import xml.etree.ElementTree as ET
 
@@ -456,24 +497,35 @@ try:
 except Exception:
     raise SystemExit(1)
 
-bounds_pattern = re.compile(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]")
 for node in root.iter("node"):
-    if node.attrib.get("content-desc") != expected:
-        continue
-    bounds = node.attrib.get("bounds", "")
-    match = bounds_pattern.fullmatch(bounds)
-    if not match:
-        continue
-    left, top, right, bottom = map(int, match.groups())
-    print(f"{(left + right) // 2} {(top + bottom) // 2}")
-    raise SystemExit(0)
+    for attribute in ("text", "content-desc"):
+        value = node.attrib.get(attribute, "")
+        if expected and expected in value:
+            raise SystemExit(0)
 raise SystemExit(1)
 PY
+}
+
+assert_reconnect_screen_not_route_recovery() {
+  local xml_path
+  xml_path="$(dump_ui_xml "reconnect-post-health")"
+  for unexpected_text in \
+    "Scan latest QR" \
+    "Scan the latest AetherLink Runtime QR with connection details." \
+    "Scan the latest AetherLink Runtime QR before sending."; do
+    if ui_xml_contains_text "$xml_path" "$unexpected_text"; then
+      echo "Reconnect reached runtime.health but the UI fell back to latest-QR route recovery: $unexpected_text" >&2
+      echo "Reconnect UI XML: $xml_path" >&2
+      return 1
+    fi
+  done
+  return 0
 }
 
 tap_content_description() {
   local content_description="$1"
   local timeout="${2:-10}"
+  local strategy="${3:-first}"
   local start
   local xml_path
   local coordinates
@@ -481,7 +533,7 @@ tap_content_description() {
 
   while true; do
     xml_path="$(dump_ui_xml "ui-$(date +%s)-$RANDOM")"
-    if coordinates="$(node_center_by_content_description "$xml_path" "$content_description" 2>/dev/null)"; then
+    if coordinates="$(node_center_by_content_description "$xml_path" "$content_description" "$strategy" 2>/dev/null)"; then
       echo "Tapping '$content_description' at $coordinates"
       "$ADB" -s "$SERIAL" shell "input tap $coordinates"
       return 0
@@ -493,6 +545,30 @@ tap_content_description() {
     fi
     sleep 0.25
   done
+}
+
+wait_for_log_match_count_quiet() {
+  local file="$1"
+  local pattern="$2"
+  local expected_count="$3"
+  local timeout="${4:-3}"
+  local start
+  local current_count
+  start="$(date +%s)"
+  while true; do
+    current_count="$(count_log_matches "$file" "$pattern")"
+    if (( current_count >= expected_count )); then
+      return 0
+    fi
+    if (( $(date +%s) - start >= timeout )); then
+      return 1
+    fi
+    sleep 0.25
+  done
+}
+
+android_input_shown() {
+  "$ADB" -s "$SERIAL" shell dumpsys input_method 2>/dev/null | grep -q "mInputShown=true"
 }
 
 adb_input_text() {
@@ -512,6 +588,35 @@ PY
   "$ADB" -s "$SERIAL" shell "input text '$escaped'"
 }
 
+tap_send_message_until_observed() {
+  local expected_count
+  local attempt
+  local xml_path
+  CHAT_SEND_TAP_FAILURE="chat-send-not-observed"
+  expected_count=$(( $(count_log_matches "$RUNTIME_LOG" "chat.send") + 1 ))
+
+  for attempt in 1 2 3; do
+    if ! tap_content_description "Send message" 5 "bottom-enabled"; then
+      if android_input_shown; then
+        echo "Send message is not visible while the input method is shown; closing input method before retry"
+        "$ADB" -s "$SERIAL" shell "input keyevent KEYCODE_BACK" >/dev/null 2>&1 || true
+        sleep 0.5
+        continue
+      fi
+      CHAT_SEND_TAP_FAILURE="chat-send-missing"
+      return 1
+    fi
+    if wait_for_log_match_count_quiet "$RUNTIME_LOG" "chat.send" "$expected_count" 3; then
+      return 0
+    fi
+    xml_path="$(dump_ui_xml "chat-send-retry-$attempt")"
+    echo "No chat.send observed after Send tap attempt $attempt; retry UI XML: $xml_path" >&2
+    sleep 0.5
+  done
+
+  wait_for_log_match_count "$RUNTIME_LOG" "chat.send" "$expected_count" 6
+}
+
 run_chat_cancel_smoke() {
   echo "Running physical Android chat send/cancel UI smoke"
 
@@ -527,12 +632,11 @@ run_chat_cancel_smoke() {
   adb_input_text "$CHAT_TEXT"
   sleep 0.25
 
-  if ! tap_content_description "Send message" 10; then
-    dump_android_artifacts "chat-send-missing"
-    exit 15
-  fi
-  if ! wait_for_log "$RUNTIME_LOG" "chat.send" 15; then
-    dump_android_artifacts "chat-send-not-observed"
+  if ! tap_send_message_until_observed; then
+    dump_android_artifacts "$CHAT_SEND_TAP_FAILURE"
+    if [[ "$CHAT_SEND_TAP_FAILURE" == "chat-send-missing" ]]; then
+      exit 15
+    fi
     exit 16
   fi
   if ! wait_for_log "$RUNTIME_LOG" "chat.delta" "$CHAT_DELTA_TIMEOUT"; then
@@ -890,10 +994,21 @@ fi
 if [[ "$EXPECT_RECONNECT" -eq 1 ]]; then
   FIRST_HEALTH_COUNT="$(count_log_matches "$RUNTIME_LOG" "runtime.health")"
   EXPECTED_HEALTH_COUNT=$(( FIRST_HEALTH_COUNT + 1 ))
+  FIRST_MODEL_LIST_COUNT="$(count_log_matches "$RUNTIME_LOG" "received type=models.list")"
+  EXPECTED_MODEL_LIST_COUNT=$(( FIRST_MODEL_LIST_COUNT + 1 ))
   relaunch_android_app_without_clearing_data
   if ! wait_for_log_match_count "$RUNTIME_LOG" "runtime.health" "$EXPECTED_HEALTH_COUNT" 30; then
     dump_android_artifacts "reconnect-health-missing"
     exit 12
+  fi
+  if ! wait_for_log_match_count "$RUNTIME_LOG" "received type=models.list" "$EXPECTED_MODEL_LIST_COUNT" 30; then
+    dump_android_artifacts "reconnect-model-list-missing"
+    exit 22
+  fi
+  sleep 1
+  if ! assert_reconnect_screen_not_route_recovery; then
+    dump_android_artifacts "reconnect-route-recovery-ui"
+    exit 23
   fi
 fi
 

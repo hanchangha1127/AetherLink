@@ -6,7 +6,7 @@ func remoteRoutePreparationIssueText(_ issue: CompanionRemoteRoutePreparationIss
 
     switch issue.kind {
     case .automaticPreparationUnavailable:
-        return NSLocalizedString("AetherLink could not get connection details from the route service. Check Advanced Connection Setup, then generate a fresh QR.", comment: "")
+        return NSLocalizedString("AetherLink could not get connection details from the route service. Check Connection Recovery, then generate a fresh QR.", comment: "")
     case .automaticPreparationRejected, .routeLeaseRefreshRejected:
         if let endpoint = fallbackEndpoint {
             return String(
@@ -18,21 +18,21 @@ func remoteRoutePreparationIssueText(_ issue: CompanionRemoteRoutePreparationIss
     case .automaticPreparationFailed, .routeLeaseRefreshFailed:
         if let endpoint = fallbackEndpoint {
             return String(
-                format: NSLocalizedString("Connection details for %@ could not be prepared automatically. Check Advanced Connection Setup, then generate a fresh QR.", comment: ""),
+                format: NSLocalizedString("Connection details for %@ could not be prepared automatically. Check Connection Recovery, then generate a fresh QR.", comment: ""),
                 endpoint
             )
         }
-        return NSLocalizedString("Connection details could not be prepared automatically. Check Advanced Connection Setup, then generate a fresh QR.", comment: "")
+        return NSLocalizedString("Connection details could not be prepared automatically. Check Connection Recovery, then generate a fresh QR.", comment: "")
     case .routeLeaseSecretMissing:
         return NSLocalizedString("Connection details need a secure connection secret before they can be included in a QR.", comment: "")
     case .relayConnectionFailed:
         if let endpoint = fallbackEndpoint {
             return String(
-                format: NSLocalizedString("Connection through %@ failed. Check Advanced Connection Setup, then generate a fresh QR.", comment: ""),
+                format: NSLocalizedString("Connection through %@ failed. Check Connection Recovery, then generate a fresh QR.", comment: ""),
                 endpoint
             )
         }
-        return NSLocalizedString("Connection failed. Check Advanced Connection Setup, then generate a fresh QR.", comment: "")
+        return NSLocalizedString("Connection failed. Check Connection Recovery, then generate a fresh QR.", comment: "")
     }
 }
 
@@ -46,7 +46,7 @@ func relayQRCodeReadinessText(
         return NSLocalizedString("Pairing from another network needs connection details inside the pairing QR.", comment: "")
     }
     guard isEligibleForQRCode else {
-        return NSLocalizedString("Advanced Connection Setup needs an address reachable by both devices before it can be included in the QR.", comment: "")
+        return NSLocalizedString("Connection Recovery needs an address reachable by both devices before it can be included in the QR.", comment: "")
     }
     guard isPreparedForQRCode else {
         return NSLocalizedString("Connection details are being prepared. Keep this window open; the QR appears when AetherLink Runtime is ready.", comment: "")
@@ -63,11 +63,11 @@ func relayQRCodeReadinessText(
         let endpoint = connectionStatus.endpoint?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
         if let endpoint {
             return String(
-                format: NSLocalizedString("Connection through %@ failed. Check Advanced Connection Setup, then generate a fresh QR.", comment: ""),
+                format: NSLocalizedString("Connection through %@ failed. Check Connection Recovery, then generate a fresh QR.", comment: ""),
                 endpoint
             )
         }
-        return NSLocalizedString("Connection failed. Check Advanced Connection Setup, then generate a fresh QR.", comment: "")
+        return NSLocalizedString("Connection failed. Check Connection Recovery, then generate a fresh QR.", comment: "")
     case .waitingForPeer, .ready:
         return NSLocalizedString("Connection details are ready. Generate the latest QR to pair this device.", comment: "")
     }

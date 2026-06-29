@@ -2,6 +2,19 @@ import XCTest
 @testable import RelayServerCore
 
 final class RelayAllocationTests: XCTestCase {
+    func testRelayServerConfigurationUsesShortDefaultAllocationTTL() {
+        let configuration = RelayServerConfiguration()
+
+        XCTAssertEqual(configuration.allocationTTLSeconds, 15 * 60)
+        XCTAssertTrue(configuration.requiresAllocation)
+    }
+
+    func testRelayServerConfigurationCanExplicitlyAllowLegacyUnallocatedRelays() {
+        let configuration = RelayServerConfiguration(requiresAllocation: false)
+
+        XCTAssertFalse(configuration.requiresAllocation)
+    }
+
     func testParsesAllocationRequest() throws {
         let request = try RelayAllocationRequest.parse("AETHERLINK_RELAY allocate route-token-1\n")
 

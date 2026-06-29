@@ -2,6 +2,8 @@ import Darwin
 import Foundation
 
 public struct RelayServerConfiguration: Equatable, Sendable {
+    public static let defaultAllocationTTLSeconds: TimeInterval = 15 * 60
+
     public var host: String
     public var port: UInt16
     public var allocationTTLSeconds: TimeInterval
@@ -12,8 +14,8 @@ public struct RelayServerConfiguration: Equatable, Sendable {
     public init(
         host: String = "0.0.0.0",
         port: UInt16 = 43171,
-        allocationTTLSeconds: TimeInterval = 30 * 24 * 60 * 60,
-        requiresAllocation: Bool = false,
+        allocationTTLSeconds: TimeInterval = Self.defaultAllocationTTLSeconds,
+        requiresAllocation: Bool = true,
         allocationStoreURL: URL? = nil,
         allocationToken: String? = nil
     ) {

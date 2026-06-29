@@ -1259,6 +1259,7 @@ private fun ProviderStatusRows(providers: List<RuntimeProviderStatus>) {
 
 @Composable
 private fun ProviderStatusRow(provider: RuntimeProviderStatus) {
+    val providerLabel = runtimeProviderDisplayName(providerStatusDisplayNameSource(provider))
     val statusText = if (provider.available) {
         stringResource(R.string.provider_status_ready)
     } else {
@@ -1282,7 +1283,7 @@ private fun ProviderStatusRow(provider: RuntimeProviderStatus) {
     val rowAccessibilitySummary = if (retryableHint != null) {
         stringResource(
             R.string.provider_status_row_summary_retryable,
-            provider.name,
+            providerLabel,
             statusText,
             detailText,
             retryableHint,
@@ -1290,7 +1291,7 @@ private fun ProviderStatusRow(provider: RuntimeProviderStatus) {
     } else {
         stringResource(
             R.string.provider_status_row_summary,
-            provider.name,
+            providerLabel,
             statusText,
             detailText,
         )
@@ -1309,7 +1310,7 @@ private fun ProviderStatusRow(provider: RuntimeProviderStatus) {
         } else {
             R.string.provider_show_diagnostics_for
         },
-        provider.name,
+        providerLabel,
     )
     val hapticFeedback = LocalHapticFeedback.current
 
@@ -1342,7 +1343,7 @@ private fun ProviderStatusRow(provider: RuntimeProviderStatus) {
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        text = provider.name,
+                        text = providerLabel,
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Medium,
                         maxLines = 1,
@@ -1805,6 +1806,10 @@ fun SettingsScreen(
     onAddMemoryEntry: (String) -> Unit,
     onRemoveMemoryEntry: (String) -> Unit,
     onSetMemoryEntryEnabled: (String, Boolean) -> Unit,
+    onRefreshMemory: () -> Unit = {},
+    onRefreshChatHistory: () -> Unit = {},
+    onOpenChatSession: (String) -> Unit = {},
+    onRenameChatSession: (String) -> Unit = {},
     onArchiveChatSession: (String) -> Unit,
     onRestoreChatSession: (String) -> Unit,
     onPermanentlyDeleteChatSession: (String) -> Unit,
@@ -1819,14 +1824,6 @@ fun SettingsScreen(
                 ScreenHeader(
                     title = R.string.settings_title,
                     subtitle = R.string.settings_subtitle,
-                )
-            }
-        }
-        if (state.trustedRuntime == null) {
-            item {
-                FirstRunLanguagePreferencePanel(
-                    selectedLanguageTag = state.selectedLanguageTag,
-                    onSetLanguageTag = onSetLanguageTag,
                 )
             }
         }
@@ -1882,7 +1879,6 @@ fun SettingsScreen(
                 onSetLanguageTag = onSetLanguageTag,
                 selectedTheme = state.selectedTheme,
                 onSetTheme = onSetTheme,
-                showLanguageSelector = state.trustedRuntime != null,
             )
         }
         if (settingsScreenShowsTroubleshootingSection(showDeveloperDiagnostics)) {
@@ -1938,6 +1934,7 @@ fun SettingsScreen(
                     onAddMemoryEntry = onAddMemoryEntry,
                     onRemoveMemoryEntry = onRemoveMemoryEntry,
                     onSetMemoryEntryEnabled = onSetMemoryEntryEnabled,
+                    onRefreshMemory = onRefreshMemory,
                     showHeader = false,
                 )
             }
@@ -1953,6 +1950,11 @@ fun SettingsScreen(
                     archivedSessions = state.archivedChatSessions,
                     models = state.models,
                     isActionEnabled = !state.isStreaming,
+                    canRefreshChatHistory = chatHistoryRefreshEnabled(state),
+                    refreshStateDescriptionRes = chatHistoryRefreshStateDescriptionRes(state),
+                    onRefreshChatHistory = onRefreshChatHistory,
+                    onOpenChatSession = onOpenChatSession,
+                    onRenameChatSession = onRenameChatSession,
                     onArchiveChatSession = onArchiveChatSession,
                     onRestoreChatSession = onRestoreChatSession,
                     onPermanentlyDeleteChatSession = onPermanentlyDeleteChatSession,
@@ -2247,6 +2249,10 @@ private fun TrustedRuntimePanel(
     }
 
     if (trustedRuntime != null && showForgetConfirmation) {
+        val forgetTrustedRuntimeConfirmMessage = stringResource(
+            R.string.forget_trusted_runtime_confirm_message,
+            trustedRuntime.name,
+        )
         val confirmForgetActionContentDescription = stringResource(
             R.string.forget_trusted_runtime_confirm_action_named,
             trustedRuntime.name,
@@ -2258,7 +2264,14 @@ private fun TrustedRuntimePanel(
         AlertDialog(
             onDismissRequest = { showForgetConfirmation = false },
             title = { Text(stringResource(R.string.forget_trusted_runtime_confirm_title)) },
-            text = { Text(stringResource(R.string.forget_trusted_runtime_confirm_message)) },
+            text = {
+                Text(
+                    text = forgetTrustedRuntimeConfirmMessage,
+                    modifier = Modifier.semantics {
+                        contentDescription = forgetTrustedRuntimeConfirmMessage
+                    },
+                )
+            },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -2447,12 +2460,19 @@ private fun DeveloperDiagnosticsPanel(
                 )
             }
             if (isEnabled.value) {
+                val manualQrPayloadOpenAccessibilityLabel =
+                    stringResource(R.string.manual_qr_payload_open_accessibility)
                 OutlinedButton(
                     onClick = {
                         hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
                         showManualPayloadDialog = true
                     },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .semantics {
+                            contentDescription = manualQrPayloadOpenAccessibilityLabel
+                            onClick(label = manualQrPayloadOpenAccessibilityLabel, action = null)
+                        },
                 ) {
                     Icon(
                         Icons.Filled.ContentCopy,
@@ -3145,24 +3165,10 @@ private fun AssistantMessage(
     val hasReasoning = message.reasoning.isNotBlank()
     val hapticFeedback = LocalHapticFeedback.current
     var isReasoningExpanded by rememberSaveable(message.id) {
-        mutableStateOf(message.isReasoningOpen)
-    }
-    var isReasoningExpansionUserControlled by rememberSaveable(message.id) {
         mutableStateOf(false)
     }
     val showTyping = assistantShowsTypingPlaceholder(message, isStreaming)
     val assistantTypingText = stringResource(R.string.assistant_typing)
-
-    LaunchedEffect(
-        message.id,
-        hasReasoning,
-        message.isReasoningOpen,
-        isReasoningExpansionUserControlled,
-    ) {
-        if (hasReasoning && message.isReasoningOpen && !isReasoningExpansionUserControlled) {
-            isReasoningExpanded = true
-        }
-    }
 
     Column(
         modifier = Modifier
@@ -3176,7 +3182,6 @@ private fun AssistantMessage(
                 expanded = isReasoningExpanded,
                 announceUpdates = isStreaming && message.isReasoningOpen,
                 onExpandedChange = {
-                    isReasoningExpansionUserControlled = true
                     isReasoningExpanded = it
                 },
             )
@@ -3294,7 +3299,7 @@ private fun SuggestedQuestions(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
-        if (isLoading && visibleSuggestions.isEmpty()) {
+        if (isLoading) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -4805,30 +4810,11 @@ private fun CompanionOnlyPanel() {
 }
 
 @Composable
-private fun FirstRunLanguagePreferencePanel(
-    selectedLanguageTag: String,
-    onSetLanguageTag: (String) -> Unit,
-) {
-    OutlinedCard(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            LanguagePreferenceSelector(
-                selectedLanguageTag = selectedLanguageTag,
-                onSetLanguageTag = onSetLanguageTag,
-            )
-        }
-    }
-}
-
-@Composable
 private fun AppPreferencesPanel(
     selectedLanguageTag: String,
     onSetLanguageTag: (String) -> Unit,
     selectedTheme: RuntimeAppTheme,
     onSetTheme: (RuntimeAppTheme) -> Unit,
-    showLanguageSelector: Boolean = true,
 ) {
     OutlinedCard(modifier = Modifier.fillMaxWidth()) {
         Column(
@@ -4847,12 +4833,10 @@ private fun AppPreferencesPanel(
                 selectedTheme = selectedTheme,
                 onSetTheme = onSetTheme,
             )
-            if (showLanguageSelector) {
-                LanguagePreferenceSelector(
-                    selectedLanguageTag = selectedLanguageTag,
-                    onSetLanguageTag = onSetLanguageTag,
-                )
-            }
+            LanguagePreferenceSelector(
+                selectedLanguageTag = selectedLanguageTag,
+                onSetLanguageTag = onSetLanguageTag,
+            )
         }
     }
 }
@@ -5218,6 +5202,12 @@ private fun EmbeddingModelRow(
         model.name,
         modelStatusText,
     )
+    val rowEnabled = enabled && model.installed
+    val rowDisabledStateDescription = when {
+        !enabled -> stringResource(R.string.model_picker_state_wait_for_stream)
+        !model.installed -> stringResource(R.string.embedding_model_state_install_before_selecting)
+        else -> null
+    }
     OutlinedButton(
         onClick = {
             if (shouldPerformSelectionChangeHaptic(selected)) {
@@ -5225,11 +5215,12 @@ private fun EmbeddingModelRow(
             }
             onSelectEmbeddingModel(model.id)
         },
-        enabled = enabled && model.installed,
+        enabled = rowEnabled,
         modifier = selectedEmbeddingModelRowModifier(
             selected = selected,
-            enabled = enabled,
+            enabled = rowEnabled,
             contentDescription = accessibilitySummary,
+            disabledStateDescription = rowDisabledStateDescription,
         ),
         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
     ) {
@@ -5268,15 +5259,17 @@ private fun selectedEmbeddingModelRowModifier(
     selected: Boolean,
     enabled: Boolean,
     contentDescription: String,
+    disabledStateDescription: String? = null,
 ): Modifier {
     val selectedStateDescription = stringResource(R.string.selection_state_selected)
-    val disabledStateDescription = stringResource(R.string.model_picker_state_wait_for_stream)
+    val resolvedDisabledStateDescription = disabledStateDescription
+        ?: stringResource(R.string.model_picker_state_wait_for_stream)
     return Modifier
         .fillMaxWidth()
         .semantics {
             this.contentDescription = contentDescription
             if (!enabled) {
-                stateDescription = disabledStateDescription
+                stateDescription = resolvedDisabledStateDescription
             } else if (selected) {
                 stateDescription = selectedStateDescription
             }
@@ -5379,6 +5372,11 @@ private fun ChatHistorySettingsPanel(
     archivedSessions: List<RuntimeChatSession>,
     models: List<RuntimeModel>,
     isActionEnabled: Boolean,
+    canRefreshChatHistory: Boolean,
+    @StringRes refreshStateDescriptionRes: Int,
+    onRefreshChatHistory: () -> Unit,
+    onOpenChatSession: (String) -> Unit,
+    onRenameChatSession: (String) -> Unit,
     onArchiveChatSession: (String) -> Unit,
     onRestoreChatSession: (String) -> Unit,
     onPermanentlyDeleteChatSession: (String) -> Unit,
@@ -5428,6 +5426,8 @@ private fun ChatHistorySettingsPanel(
         archivedSessionCount = archivedSessions.size,
     )
     val deleteArchivedActionLabel = stringResource(R.string.permanently_delete_archived_chats)
+    val refreshChatHistoryContentDescription = stringResource(R.string.chat_history_refresh)
+    val refreshChatHistoryStateDescription = stringResource(refreshStateDescriptionRes)
     val hasBulkActions = chatHistoryBulkActionsAvailable(
         activeSessionCount = activeSessions.size,
         archivedSessionCount = archivedSessions.size,
@@ -5474,6 +5474,18 @@ private fun ChatHistorySettingsPanel(
                         color = MaterialTheme.colorScheme.secondary,
                     )
                 }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+            ) {
+                ChatHistoryRefreshButton(
+                    canRefreshChatHistory = canRefreshChatHistory,
+                    refreshContentDescription = refreshChatHistoryContentDescription,
+                    refreshStateDescription = refreshChatHistoryStateDescription,
+                    onRefreshChatHistory = onRefreshChatHistory,
+                    hapticFeedback = hapticFeedback,
+                )
             }
             StatusLine(
                 label = stringResource(R.string.previous_chats),
@@ -5627,6 +5639,8 @@ private fun ChatHistorySettingsPanel(
                             session = session,
                             models = models,
                             isActionEnabled = isActionEnabled,
+                            onOpenChatSession = onOpenChatSession,
+                            onRenameChatSession = onRenameChatSession,
                             onArchiveChatSession = onArchiveChatSession,
                             onRestoreChatSession = onRestoreChatSession,
                             onPermanentlyDeleteChatSession = onPermanentlyDeleteChatSession,
@@ -5647,6 +5661,8 @@ private fun ChatHistorySettingsPanel(
                             session = session,
                             models = models,
                             isActionEnabled = isActionEnabled,
+                            onOpenChatSession = onOpenChatSession,
+                            onRenameChatSession = onRenameChatSession,
                             onArchiveChatSession = onArchiveChatSession,
                             onRestoreChatSession = onRestoreChatSession,
                             onPermanentlyDeleteChatSession = onPermanentlyDeleteChatSession,
@@ -5744,11 +5760,50 @@ internal fun chatHistoryBulkActionsAvailable(
     return activeSessionCount > 0 || archivedSessionCount > 0
 }
 
+internal fun chatHistoryRefreshEnabled(state: RuntimeUiState): Boolean {
+    return state.isConnected && !state.isStreaming
+}
+
+@StringRes
+internal fun chatHistoryRefreshStateDescriptionRes(state: RuntimeUiState): Int {
+    return when {
+        state.isStreaming -> R.string.chat_history_action_state_wait_for_stream
+        state.isConnected -> R.string.chat_history_refresh_state_ready
+        else -> R.string.chat_history_refresh_state_connect_first
+    }
+}
+
+@Composable
+private fun ChatHistoryRefreshButton(
+    canRefreshChatHistory: Boolean,
+    refreshContentDescription: String,
+    refreshStateDescription: String,
+    onRefreshChatHistory: () -> Unit,
+    hapticFeedback: HapticFeedback,
+) {
+    IconButton(
+        onClick = {
+            hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
+            onRefreshChatHistory()
+        },
+        enabled = canRefreshChatHistory,
+        modifier = Modifier.semantics {
+            contentDescription = refreshContentDescription
+            stateDescription = refreshStateDescription
+            onClick(label = refreshContentDescription, action = null)
+        },
+    ) {
+        Icon(Icons.Filled.Refresh, contentDescription = null)
+    }
+}
+
 @Composable
 private fun ChatHistorySettingsRow(
     session: RuntimeChatSession,
     models: List<RuntimeModel>,
     isActionEnabled: Boolean,
+    onOpenChatSession: (String) -> Unit,
+    onRenameChatSession: (String) -> Unit,
     onArchiveChatSession: (String) -> Unit,
     onRestoreChatSession: (String) -> Unit,
     onPermanentlyDeleteChatSession: (String) -> Unit,
@@ -5777,7 +5832,9 @@ private fun ChatHistorySettingsRow(
     val rowAccessibilitySummary = modelText?.let { model ->
         stringResource(R.string.chat_session_row_summary_with_model, title, statusText, model)
     } ?: stringResource(R.string.chat_session_row_summary, title, statusText)
+    val renameActionContentDescription = stringResource(R.string.rename_chat_named, title)
     val archiveActionContentDescription = stringResource(R.string.archive_chat_named, title)
+    val openActionContentDescription = stringResource(R.string.open_chat_named, title)
     val restoreActionContentDescription = stringResource(R.string.restore_chat_named, title)
     val permanentlyDeleteActionContentDescription =
         stringResource(R.string.permanently_delete_chat_named, title)
@@ -5817,11 +5874,11 @@ private fun ChatHistorySettingsRow(
             modifier = Modifier.padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                 Column(
                     modifier = Modifier
                         .weight(1f)
@@ -5908,11 +5965,33 @@ private fun ChatHistorySettingsRow(
                     OutlinedButton(
                         onClick = {
                             hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
+                            onOpenChatSession(session.id)
+                        },
+                        enabled = isActionEnabled,
+                        modifier = Modifier
+                            .weight(1f)
+                            .semantics {
+                                contentDescription = openActionContentDescription
+                                onClick(label = openActionContentDescription, action = null)
+                                chatHistoryActionStateDescription?.let { stateDescription = it }
+                            },
+                    ) {
+                        Icon(Icons.Filled.Link, contentDescription = null)
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            text = stringResource(R.string.open_chat),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
                             onArchiveChatSession(session.id)
                         },
                         enabled = isActionEnabled,
                         modifier = Modifier
-                            .fillMaxWidth()
+                            .weight(1f)
                             .semantics {
                                 contentDescription = archiveActionContentDescription
                                 onClick(label = archiveActionContentDescription, action = null)
@@ -5920,16 +5999,30 @@ private fun ChatHistorySettingsRow(
                             },
                     ) {
                         Icon(Icons.Filled.Archive, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
+                        Spacer(Modifier.width(6.dp))
                         Text(
                             text = stringResource(R.string.archive_chat),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
+                        }
+                    }
+                    IconButton(
+                        onClick = {
+                            hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
+                            onRenameChatSession(session.id)
+                        },
+                        enabled = isActionEnabled,
+                        modifier = Modifier.semantics {
+                            contentDescription = renameActionContentDescription
+                            onClick(label = renameActionContentDescription, action = null)
+                            chatHistoryActionStateDescription?.let { stateDescription = it }
+                        },
+                    ) {
+                        Icon(Icons.Filled.Edit, contentDescription = null)
                     }
                 }
             }
-        }
     }
 }
 
@@ -6074,6 +6167,7 @@ private fun MemoryPanel(
     onAddMemoryEntry: (String) -> Unit,
     onRemoveMemoryEntry: (String) -> Unit,
     onSetMemoryEntryEnabled: (String, Boolean) -> Unit,
+    onRefreshMemory: () -> Unit,
     showHeader: Boolean = true,
 ) {
     val draft = rememberSaveable { mutableStateOf("") }
@@ -6085,6 +6179,7 @@ private fun MemoryPanel(
         draft.value.isBlank() -> stringResource(R.string.memory_add_state_enter_memory)
         else -> stringResource(R.string.memory_add_state_ready)
     }
+    val memoryRefreshContentDescription = stringResource(R.string.memory_refresh)
     val memoryAddContentDescription = stringResource(R.string.memory_add_label)
     val memoryAddActionLabel = stringResource(R.string.memory_add)
 
@@ -6094,19 +6189,24 @@ private fun MemoryPanel(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             if (showHeader) {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(
-                        text = stringResource(R.string.memory_title),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.semantics {
-                            heading()
-                        },
-                    )
-                    Text(
-                        text = stringResource(R.string.memory_subtitle),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.secondary,
+                MemoryPanelHeader(
+                    actionsEnabled = actionsEnabled,
+                    actionsDisabledReason = actionsDisabledReason,
+                    memoryRefreshContentDescription = memoryRefreshContentDescription,
+                    onRefreshMemory = onRefreshMemory,
+                    hapticFeedback = hapticFeedback,
+                )
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    MemoryRefreshButton(
+                        actionsEnabled = actionsEnabled,
+                        actionsDisabledReason = actionsDisabledReason,
+                        memoryRefreshContentDescription = memoryRefreshContentDescription,
+                        onRefreshMemory = onRefreshMemory,
+                        hapticFeedback = hapticFeedback,
                     )
                 }
             }
@@ -6184,6 +6284,76 @@ private fun MemoryPanel(
 }
 
 @Composable
+private fun MemoryPanelHeader(
+    actionsEnabled: Boolean,
+    actionsDisabledReason: String,
+    memoryRefreshContentDescription: String,
+    onRefreshMemory: () -> Unit,
+    hapticFeedback: HapticFeedback,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.memory_title),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.semantics {
+                    heading()
+                },
+            )
+            Text(
+                text = stringResource(R.string.memory_subtitle),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.secondary,
+            )
+        }
+        MemoryRefreshButton(
+            actionsEnabled = actionsEnabled,
+            actionsDisabledReason = actionsDisabledReason,
+            memoryRefreshContentDescription = memoryRefreshContentDescription,
+            onRefreshMemory = onRefreshMemory,
+            hapticFeedback = hapticFeedback,
+        )
+    }
+}
+
+@Composable
+private fun MemoryRefreshButton(
+    actionsEnabled: Boolean,
+    actionsDisabledReason: String,
+    memoryRefreshContentDescription: String,
+    onRefreshMemory: () -> Unit,
+    hapticFeedback: HapticFeedback,
+) {
+    val memoryRefreshReadyStateDescription = stringResource(R.string.memory_refresh_state_ready)
+    IconButton(
+        onClick = {
+            hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
+            onRefreshMemory()
+        },
+        enabled = actionsEnabled,
+        modifier = Modifier.semantics {
+            contentDescription = memoryRefreshContentDescription
+            stateDescription = if (actionsEnabled) {
+                memoryRefreshReadyStateDescription
+            } else {
+                actionsDisabledReason
+            }
+            onClick(label = memoryRefreshContentDescription, action = null)
+        },
+    ) {
+        Icon(Icons.Filled.Refresh, contentDescription = null)
+    }
+}
+
+@Composable
 private fun MemoryEntryRow(
     entry: RuntimeMemoryEntry,
     actionsEnabled: Boolean,
@@ -6228,7 +6398,7 @@ private fun MemoryEntryRow(
                 Text(stringResource(R.string.memory_remove_confirm_title))
             },
             text = {
-                Text(stringResource(R.string.memory_remove_confirm_message))
+                Text(stringResource(R.string.memory_remove_confirm_message, memoryActionLabel))
             },
             confirmButton = {
                 TextButton(
@@ -6659,12 +6829,14 @@ private fun routeAvailabilityCompactLabel(error: RuntimeUiError): String {
 @StringRes
 internal fun routeAvailabilityCompactLabelRes(error: RuntimeUiError): Int {
     return when (error.diagnosticCode) {
+        "route_diagnostic_relay_unreachable_from_device" -> R.string.route_diagnostic_relay_unreachable_from_device
         "route_diagnostic_relay_failed" -> R.string.route_diagnostic_relay_failed
         "route_diagnostic_relay_auth_failed" -> R.string.route_diagnostic_relay_auth_failed
         "route_diagnostic_remote_route_expired" -> R.string.route_diagnostic_remote_route_expired
         "route_diagnostic_direct_qr_rejected" -> R.string.route_diagnostic_direct_qr_rejected
         "route_diagnostic_relay_qr_unreachable" -> R.string.route_diagnostic_relay_qr_unreachable
         else -> when {
+            error.code == "remote_route_unreachable_from_device" -> R.string.error_remote_route_unreachable_from_device
             error.code == "remote_route_unreachable" -> R.string.error_remote_route_unreachable
             error.code == "pairing_endpoint_unavailable" -> R.string.route_notice_pairing_endpoint_unavailable
             error.code == "remote_routes_unavailable" ||
@@ -6687,6 +6859,7 @@ private val ROUTE_AVAILABILITY_NOTICE_CODES = setOf(
     "no_route",
     "no_connectable_route",
     "remote_routes_unavailable",
+    "remote_route_unreachable_from_device",
     "remote_route_unreachable",
     "remote_route_expired",
     "pairing_required",
@@ -6701,6 +6874,7 @@ private val ROUTE_AVAILABILITY_DIAGNOSTIC_CODES = setOf(
     "route_diagnostic_local_missing_remote_pending",
     "route_diagnostic_direct_failed_remote_pending",
     "route_diagnostic_remote_pending",
+    "route_diagnostic_relay_unreachable_from_device",
     "route_diagnostic_relay_failed",
     "route_diagnostic_relay_auth_failed",
     "route_diagnostic_remote_route_expired",
@@ -6712,6 +6886,7 @@ private val RELAY_ROUTE_NEEDED_DIAGNOSTIC_CODES = setOf(
     "route_diagnostic_local_missing_remote_pending",
     "route_diagnostic_direct_failed_remote_pending",
     "route_diagnostic_remote_pending",
+    "route_diagnostic_relay_unreachable_from_device",
     "route_diagnostic_relay_failed",
     "route_diagnostic_relay_auth_failed",
     "route_diagnostic_remote_route_expired",
@@ -6721,6 +6896,7 @@ private val RELAY_ROUTE_NEEDED_DIAGNOSTIC_CODES = setOf(
 
 private val QR_REFRESH_EMPTY_CHAT_ERROR_CODES = setOf(
     "remote_routes_unavailable",
+    "remote_route_unreachable_from_device",
     "remote_route_unreachable",
     "remote_route_expired",
     "pairing_required",
@@ -6871,6 +7047,10 @@ internal fun chatEmptyTextRes(state: RuntimeUiState, preferQrRouteRefresh: Boole
     val error = state.error
     return when {
         preferQrRouteRefresh && (
+            error?.diagnosticCode == "route_diagnostic_relay_unreachable_from_device" ||
+                error?.code == "remote_route_unreachable_from_device"
+        ) -> R.string.route_diagnostic_relay_unreachable_from_device
+        preferQrRouteRefresh && (
             error?.diagnosticCode == "route_diagnostic_relay_failed" ||
                 error?.code == "remote_route_unreachable"
         ) -> R.string.empty_chat_relay_route_unreachable
@@ -6903,6 +7083,7 @@ internal fun chatEmptyTextRes(state: RuntimeUiState, preferQrRouteRefresh: Boole
 
 internal fun shouldScanLatestQrFromEmptyChat(state: RuntimeUiState): Boolean {
     if (state.isConnected || state.trustedRuntime == null) return false
+    if (!hasConnectableTrustedRuntimeRoute(state)) return true
     val error = state.error ?: return false
     return error.code in QR_REFRESH_EMPTY_CHAT_ERROR_CODES ||
         error.diagnosticCode in QR_REFRESH_EMPTY_CHAT_DIAGNOSTIC_CODES
@@ -7031,6 +7212,7 @@ private fun runtimeErrorLabel(error: RuntimeUiError): String {
         "no_route" -> stringResource(R.string.error_no_runtime_route)
         "no_connectable_route" -> stringResource(R.string.error_no_connectable_runtime_route)
         "remote_routes_unavailable" -> stringResource(R.string.error_remote_routes_unavailable)
+        "remote_route_unreachable_from_device" -> stringResource(R.string.error_remote_route_unreachable_from_device)
         "remote_route_unreachable" -> stringResource(R.string.error_remote_route_unreachable)
         "remote_route_expired" -> stringResource(R.string.error_remote_route_expired)
         "discovery_failed" -> stringResource(R.string.error_discovery_failed)
@@ -7063,6 +7245,7 @@ private fun runtimeErrorLabel(error: RuntimeUiError): String {
         "chat_session_sync_failed" -> stringResource(R.string.error_chat_session_sync_failed)
         "chat_history_runtime_required" -> stringResource(R.string.error_chat_history_runtime_required)
         "memory_runtime_required" -> stringResource(R.string.error_memory_runtime_required)
+        "memory_load_failed" -> stringResource(R.string.error_memory_load_failed)
         "runtime_error" -> stringResource(R.string.error_runtime_error)
         "send_failed" -> stringResource(R.string.error_send_failed)
         "regenerate_unavailable" -> stringResource(R.string.error_regenerate_unavailable)
@@ -7183,6 +7366,8 @@ private fun runtimeErrorDiagnosticLabel(error: RuntimeUiError): String? {
             stringResource(R.string.route_diagnostic_direct_failed_remote_pending)
         "route_diagnostic_remote_pending" ->
             stringResource(R.string.route_diagnostic_remote_pending)
+        "route_diagnostic_relay_unreachable_from_device" ->
+            stringResource(R.string.route_diagnostic_relay_unreachable_from_device)
         "route_diagnostic_relay_failed" ->
             stringResource(R.string.route_diagnostic_relay_failed)
         "route_diagnostic_relay_auth_failed" ->
@@ -7217,15 +7402,40 @@ private fun providerStatusSummary(state: RuntimeUiState): String {
 
 @Composable
 private fun providerStatusDetail(provider: RuntimeProviderStatus): String {
+    val providerLabel = runtimeProviderDisplayName(providerStatusDisplayNameSource(provider))
     if (provider.available) {
-        return stringResource(R.string.provider_status_ready_detail, provider.name)
+        return stringResource(R.string.provider_status_ready_detail, providerLabel)
     }
-    return when (provider.id) {
+    return when (provider.id.normalizedProviderStatusId()) {
         "ollama" -> stringResource(R.string.provider_ollama_unavailable_hint)
-        "lm_studio" -> stringResource(R.string.provider_lm_studio_unavailable_hint)
-        else -> stringResource(R.string.provider_unavailable_hint, provider.name)
+        "lm_studio", "lmstudio" -> stringResource(R.string.provider_lm_studio_unavailable_hint)
+        else -> stringResource(R.string.provider_unavailable_hint, providerLabel)
     }
 }
+
+private fun providerStatusDisplayNameSource(provider: RuntimeProviderStatus): String {
+    val normalizedId = provider.id.normalizedProviderStatusId()
+    return if (normalizedId in knownProviderStatusIds) {
+        provider.id
+    } else {
+        provider.name.ifBlank { provider.id }
+    }
+}
+
+private fun String.normalizedProviderStatusId(): String =
+    trim()
+        .lowercase(Locale.US)
+        .replace('-', '_')
+        .replace(' ', '_')
+
+private val knownProviderStatusIds = setOf(
+    "ollama",
+    "lm_studio",
+    "lmstudio",
+    "companion_runtime",
+    "local_runtime",
+    "runtime",
+)
 
 private fun savedRuntimeModelDisplayName(modelId: String): String {
     val trimmed = modelId.trim()
