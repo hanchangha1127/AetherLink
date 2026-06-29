@@ -32,9 +32,6 @@
                 <data
                     android:host="pair"
                     android:scheme="aetherlink" />
-                <data
-                    android:host="pair"
-                    android:scheme="lab" />
             </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />

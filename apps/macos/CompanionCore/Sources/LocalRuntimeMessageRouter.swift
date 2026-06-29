@@ -22,6 +22,10 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
     private let dateFormatter = ISO8601DateFormatter()
     private let authLock = NSLock()
     private var authSessions: [UUID: AuthSessionState] = [:]
+    private let chatStorageLock = NSLock()
+    private var activeChatStorageContexts: [String: RuntimeChatStorageContext] = [:]
+    private var activeChatRequestIDsByConnection: [UUID: Set<String>] = [:]
+    private var recordedCancelledChatRequestIDs = Set<String>()
 
     public init(
         backend: any LlmBackend,
@@ -56,6 +60,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         authLock.withLock {
             authSessions[connectionID] = nil
         }
+        cancelActiveChats(for: connectionID)
     }
 
     private func dispatch(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) async {
@@ -495,18 +500,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                 ))
                 return
             }
-            var payload: [String: JSONValue] = [
-                "runtime_device_id": .string(route.runtimeDeviceID),
-                "runtime_key_fingerprint": .string(route.runtimeKeyFingerprint),
-                "relay_host": .string(route.relayHost),
-                "relay_port": .number(Double(route.relayPort)),
-                "relay_id": .string(route.relayID),
-                "relay_secret": .string(route.relaySecret),
-                "relay_expires_at": .number(Double(route.relayExpiresAtEpochMillis)),
-                "relay_nonce": .string(route.relayNonce)
-            ]
-            let relayScope = route.normalizedRelayScope()
-            if route.relayScope != nil && relayScope == nil {
+            guard let payload = route.routeRefreshPayload() else {
                 sink.send(errorEnvelope(
                     requestID: envelope.requestID,
                     code: "route_refresh_unavailable",
@@ -514,9 +508,6 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                     retryable: true
                 ))
                 return
-            }
-            if let relayScope {
-                payload["relay_scope"] = .string(relayScope)
             }
             sink.send(ProtocolEnvelope(
                 type: MessageType.routeRefresh,
@@ -535,6 +526,12 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
 
     private func handleChatSend(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) async {
         var storageContext: RuntimeChatStorageContext?
+        var activeStorageRequestID: String?
+        defer {
+            if let activeStorageRequestID {
+                unregisterActiveChatStorageContext(requestID: activeStorageRequestID)
+            }
+        }
         do {
             let ownerDeviceID = commandOwnerDeviceID(connectionID: sink.connectionID)
             let parsedClientRequest = try parsedChatRequest(from: envelope)
@@ -544,6 +541,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                 requestID: envelope.requestID,
                 sessionID: clientRequest.sessionID,
                 model: clientRequest.model,
+                connectionID: sink.connectionID,
                 ownerDeviceID: ownerDeviceID
             )
             let storedMessages = Self.chatStorageMessages(from: parsedClientRequest.storageMessages)
@@ -567,6 +565,8 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                 messages: storedMessages,
                 ownerDeviceID: ownerDeviceID
             ))
+            registerActiveChatStorageContext(storageContext)
+            activeStorageRequestID = envelope.requestID
             let model = try await resolvedInstalledChatModel(backendRequest.model)
             try validateAttachments(in: backendRequest, for: model)
             var inlineReasoningSplitter = RuntimeInlineReasoningSplitter()
@@ -737,6 +737,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
 
     private func recordCancelledChatEventIfPossible(context: RuntimeChatStorageContext?) {
         guard let context else { return }
+        guard markCancelledChatRequestIfNeeded(requestID: context.requestID) else { return }
         try? recordChatEvent(.init(
             kind: .cancelled,
             requestID: context.requestID,
@@ -745,6 +746,72 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
             finishReason: "cancelled",
             ownerDeviceID: context.ownerDeviceID
         ))
+    }
+
+    private func registerActiveChatStorageContext(_ context: RuntimeChatStorageContext?) {
+        guard let context else { return }
+        chatStorageLock.withLock {
+            activeChatStorageContexts[context.requestID] = context
+            activeChatRequestIDsByConnection[context.connectionID, default: []].insert(context.requestID)
+            recordedCancelledChatRequestIDs.remove(context.requestID)
+        }
+    }
+
+    private func unregisterActiveChatStorageContext(requestID: String) {
+        chatStorageLock.withLock {
+            if let connectionID = activeChatStorageContexts[requestID]?.connectionID {
+                activeChatRequestIDsByConnection[connectionID]?.remove(requestID)
+                if activeChatRequestIDsByConnection[connectionID]?.isEmpty == true {
+                    activeChatRequestIDsByConnection[connectionID] = nil
+                }
+            } else {
+                for connectionID in Array(activeChatRequestIDsByConnection.keys) {
+                    activeChatRequestIDsByConnection[connectionID]?.remove(requestID)
+                    if activeChatRequestIDsByConnection[connectionID]?.isEmpty == true {
+                        activeChatRequestIDsByConnection[connectionID] = nil
+                    }
+                }
+            }
+            activeChatStorageContexts[requestID] = nil
+            recordedCancelledChatRequestIDs.remove(requestID)
+        }
+    }
+
+    private func activeChatStorageContext(for requestID: String) -> RuntimeChatStorageContext? {
+        chatStorageLock.withLock {
+            activeChatStorageContexts[requestID]
+        }
+    }
+
+    private func markCancelledChatRequestIfNeeded(requestID: String) -> Bool {
+        chatStorageLock.withLock {
+            if recordedCancelledChatRequestIDs.contains(requestID) {
+                return false
+            }
+            recordedCancelledChatRequestIDs.insert(requestID)
+            return true
+        }
+    }
+
+    private func cancelActiveChats(for connectionID: UUID) {
+        let contexts = takeActiveChatStorageContexts(for: connectionID)
+        for context in contexts {
+            if case .cancelled = backend.cancel(generationID: context.requestID) {
+                recordCancelledChatEventIfPossible(context: context)
+            }
+        }
+    }
+
+    private func takeActiveChatStorageContexts(for connectionID: UUID) -> [RuntimeChatStorageContext] {
+        chatStorageLock.withLock {
+            let requestIDs = activeChatRequestIDsByConnection[connectionID, default: []]
+            activeChatRequestIDsByConnection[connectionID] = nil
+            return requestIDs.compactMap { requestID in
+                let context = activeChatStorageContexts[requestID]
+                activeChatStorageContexts[requestID] = nil
+                return context
+            }
+        }
     }
 
     private func recordChatErrorIfPossible(context: RuntimeChatStorageContext?, error: Error) {
@@ -841,6 +908,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
             let targetRequestID = try requiredString("target_request_id", in: envelope.payload)
             switch backend.cancel(generationID: targetRequestID) {
             case .cancelled:
+                recordCancelledChatEventIfPossible(context: activeChatStorageContext(for: targetRequestID))
                 sink.send(ProtocolEnvelope(
                     type: MessageType.chatCancel,
                     requestID: envelope.requestID,
@@ -1893,6 +1961,7 @@ private struct RuntimeChatStorageContext {
     var requestID: String
     var sessionID: String
     var model: String
+    var connectionID: UUID
     var ownerDeviceID: String?
 }
 
@@ -1937,12 +2006,70 @@ private let allowedRouteRefreshRelayScopes: Set<String> = [
 ]
 
 private extension RuntimeRouteRefreshResult {
-    func normalizedRelayScope() -> String? {
-        guard let relayScope, !relayScope.isEmpty else {
+    func routeRefreshPayload(nowEpochMillis: Int64 = currentRouteRefreshEpochMillis()) -> [String: JSONValue]? {
+        guard runtimeDeviceID.isCanonicalRouteRefreshValue,
+              runtimeKeyFingerprint.isCanonicalRouteRefreshValue,
+              relayHost.isCanonicalRouteRefreshValue,
+              relayID.isCanonicalRouteRefreshValue,
+              relaySecret.isCanonicalRouteRefreshValue,
+              relayNonce.isCanonicalRouteRefreshValue,
+              (1...65_535).contains(relayPort),
+              relayExpiresAtEpochMillis > nowEpochMillis
+        else {
             return nil
         }
-        return allowedRouteRefreshRelayScopes.contains(relayScope) ? relayScope : nil
+        guard let validatedRelayScope else {
+            return nil
+        }
+        guard relayHost.isEligibleRouteRefreshRelayHost(relayScope: validatedRelayScope) else {
+            return nil
+        }
+
+        var payload: [String: JSONValue] = [
+            "runtime_device_id": .string(runtimeDeviceID),
+            "runtime_key_fingerprint": .string(runtimeKeyFingerprint),
+            "relay_host": .string(relayHost),
+            "relay_port": .number(Double(relayPort)),
+            "relay_id": .string(relayID),
+            "relay_secret": .string(relaySecret),
+            "relay_expires_at": .number(Double(relayExpiresAtEpochMillis)),
+            "relay_nonce": .string(relayNonce)
+        ]
+        if let validatedRelayScope {
+            payload["relay_scope"] = .string(validatedRelayScope)
+        }
+        return payload
     }
+
+    var validatedRelayScope: String?? {
+        guard let relayScope else {
+            return .some(nil)
+        }
+        return allowedRouteRefreshRelayScopes.contains(relayScope) ? .some(relayScope) : nil
+    }
+}
+
+private extension String {
+    var isCanonicalRouteRefreshValue: Bool {
+        !isEmpty && rangeOfCharacter(from: .whitespacesAndNewlines) == nil
+    }
+
+    func isEligibleRouteRefreshRelayHost(relayScope: String?) -> Bool {
+        switch CompanionDevelopmentRelaySettings.hostReachabilityWarning(for: self) {
+        case nil:
+            return true
+        case .loopback:
+            return relayScope == "usb_reverse"
+        case .privateNetwork:
+            return relayScope == "private_overlay"
+        case .invalidFormat, .localName:
+            return false
+        }
+    }
+}
+
+private func currentRouteRefreshEpochMillis() -> Int64 {
+    Int64((Date().timeIntervalSince1970 * 1000).rounded())
 }
 
 private struct ChatSuggestionsResult: Decodable {

@@ -60,6 +60,21 @@
     <string name="restore_chat_named">「%1$s」を復元</string>
     <string name="chat_history_settings_title">チャット履歴</string>
     <string name="chat_history_settings_subtitle">チャットをアーカイブし、後で復元するか、アーカイブ済みチャットだけを完全削除します。</string>
+    <string name="chat_history_summary_title">保存済みチャット</string>
+    <plurals name="chat_history_saved_count">
+        <item quantity="one">保存済みチャット %1$d 件</item>
+        <item quantity="other">保存済みチャット %1$d 件</item>
+    </plurals>
+    <plurals name="chat_history_active_count">
+        <item quantity="one">アクティブなチャット %1$d 件</item>
+        <item quantity="other">アクティブなチャット %1$d 件</item>
+    </plurals>
+    <plurals name="chat_history_archived_count">
+        <item quantity="one">アーカイブ済みチャット %1$d 件</item>
+        <item quantity="other">アーカイブ済みチャット %1$d 件</item>
+    </plurals>
+    <string name="chat_history_summary_detail">アクティブ: %1$s。アーカイブ済み: %2$s。</string>
+    <string name="chat_history_summary_accessibility">チャット履歴の概要。%1$s。%2$s</string>
     <string name="chat_history_action_state_wait_for_stream">チャット履歴を変更する前に、現在の応答が終わるまでお待ちください。</string>
     <string name="chat_history_refresh">チャット履歴を更新</string>
     <string name="chat_history_refresh_state_ready">チャット履歴を更新できます。</string>
@@ -375,7 +390,7 @@
     <string name="chat_hint_ready_with_attachments">送信できます。%1$s</string>
     <string name="role_user">あなた</string>
     <string name="role_assistant">アシスタント</string>
-    <string name="role_assistant_initial">A</string>
+    <string name="role_assistant_initial">ア</string>
     <string name="chat_message_accessibility_summary">%1$s: %2$s</string>
     <string name="assistant_typing">回答を生成中...</string>
     <string name="assistant_reasoning_label">思考</string>
@@ -399,6 +414,21 @@
     <string name="copy_code_block">コードブロックをコピー</string>
     <string name="copy_code_block_named">%1$s コードブロック %2$d をコピー</string>
     <string name="copy_code_block_numbered">コードブロック %1$d をコピー</string>
+    <plurals name="code_block_line_count">
+        <item quantity="one">%1$d 行</item>
+        <item quantity="other">%1$d 行</item>
+    </plurals>
+    <string name="code_block_language_unspecified">言語未指定</string>
+    <string name="code_block_accessibility_summary">コードブロック。%1$s。%2$s。</string>
+    <plurals name="markdown_table_column_count">
+        <item quantity="one">%1$d 列</item>
+        <item quantity="other">%1$d 列</item>
+    </plurals>
+    <plurals name="markdown_table_row_count">
+        <item quantity="one">%1$d 行</item>
+        <item quantity="other">%1$d 行</item>
+    </plurals>
+    <string name="markdown_table_accessibility_summary">表。%1$s。%2$s。</string>
     <string name="message_copied">コピーしました</string>
     <string name="runtime_error_technical_details">技術的な詳細</string>
     <string name="runtime_error_show_technical_details">技術的な詳細を表示</string>
@@ -450,6 +480,15 @@
     <string name="memory_empty_disconnected">保存済みメモリを読み込むには、信頼済みランタイムに接続してください。</string>
     <string name="memory_connect_to_load">メモリを読み込み、管理するには、信頼済みランタイムに接続してください。</string>
     <string name="memory_read_only_notice">このセッションに表示されているメモリは読み取り専用です。更新または管理するには、信頼済みランタイムに再接続してください。</string>
+    <plurals name="memory_saved_count">
+        <item quantity="one">保存済みメモリ %1$d 件</item>
+        <item quantity="other">保存済みメモリ %1$d 件</item>
+    </plurals>
+    <plurals name="memory_paused_count">
+        <item quantity="one">一時停止 %1$d 件</item>
+        <item quantity="other">一時停止 %1$d 件</item>
+    </plurals>
+    <string name="memory_summary">%1$s、%2$s。</string>
     <string name="memory_refresh">メモリを更新</string>
     <string name="memory_refresh_state_ready">メモリを更新できます。</string>
     <string name="memory_remove">メモリを削除</string>

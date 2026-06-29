@@ -589,17 +589,22 @@ def android_runtime_boundary_guard_failures() -> list[str]:
     if 'android:scheme="aetherlink"' not in manifest_text or 'android:host="pair"' not in manifest_text:
         failures.append(
             f"{manifest_path.relative_to(ROOT)}: Android pairing deep links must remain scoped to "
-            "aetherlink://pair and legacy lab://pair."
+            "aetherlink://pair."
         )
-    if re.search(r'<data\s+android:scheme="(?:aetherlink|lab)"\s*/>', manifest_text):
+    if 'android:scheme="lab"' in manifest_text:
+        failures.append(
+            f"{manifest_path.relative_to(ROOT)}: Do not expose legacy lab://pair as an Android OS "
+            "deep link; keep any legacy compatibility inside QR parsing only."
+        )
+    if re.search(r'<data\s+android:scheme="aetherlink"\s*/>', manifest_text):
         failures.append(
             f"{manifest_path.relative_to(ROOT)}: Android manifest must not accept broad custom-scheme "
             "links without android:host=\"pair\"."
         )
-    if manifest_text.count('android:host="pair"') != 2:
+    if manifest_text.count('android:host="pair"') != 1:
         failures.append(
-            f"{manifest_path.relative_to(ROOT)}: Android manifest should expose only the two pair-host "
-            "schemes: aetherlink and legacy lab."
+            f"{manifest_path.relative_to(ROOT)}: Android manifest should expose only the AetherLink "
+            "pair-host scheme."
         )
     if 'android:mimeType="application/*"' in manifest_text:
         failures.append(
@@ -1082,10 +1087,15 @@ def android_runtime_boundary_guard_failures() -> list[str]:
             f"{runtime_store_path.relative_to(ROOT)}: Android chat.send payload assembly must not "
             "inject runtime-owned memory prompt context; the runtime host owns memory injection."
         )
-    if "chatSendMessagesPrependsCapabilityGuardWithoutClientSuppliedMemoryContext" not in runtime_test_text:
+    if "AetherLink currently provides runtime-mediated" in runtime_store_text:
+        failures.append(
+            f"{runtime_store_path.relative_to(ROOT)}: Android chat.send payload assembly must not "
+            "inject the runtime-owned capability guard; the runtime host owns backend prompt policy."
+        )
+    if "chatSendMessagesSerializesOnlyClientVisibleConversationAndFinalAttachments" not in runtime_test_text:
         failures.append(
             f"{runtime_test_path.relative_to(ROOT)}: Missing Android chat.send regression proving "
-            "memory entries are not serialized as client-supplied Runtime user memory context."
+            "only client-visible conversation messages and final-user attachments are serialized."
         )
     required_runtime_owned_local_data_snippets = (
         (
@@ -1343,6 +1353,30 @@ def android_chat_history_danger_guard_failures() -> list[str]:
             "Settings chat-history rows must expose localized title, status, and model metadata in accessibility summaries when model data exists.",
         ),
         (
+            "ChatHistorySummary(",
+            "Settings chat history must show the saved/active/archived summary card.",
+        ),
+        (
+            "R.plurals.chat_history_saved_count",
+            "Settings chat-history summary must use localized saved-chat plurals.",
+        ),
+        (
+            "R.plurals.chat_history_active_count",
+            "Settings chat-history summary must use localized active-chat plurals.",
+        ),
+        (
+            "R.plurals.chat_history_archived_count",
+            "Settings chat-history summary must use localized archived-chat plurals.",
+        ),
+        (
+            "R.string.chat_history_summary_accessibility",
+            "Settings chat-history summary must expose a localized accessibility summary.",
+        ),
+        (
+            "modifier = Modifier.semantics { heading() }",
+            "Rendered markdown headings in chat messages must be real accessibility headings.",
+        ),
+        (
             "return isActionEnabled && isArchived",
             "Single permanent delete must remain limited to archived chats.",
         ),
@@ -1427,6 +1461,11 @@ def android_chat_history_danger_guard_failures() -> list[str]:
         "R.string.confirmation_final_action_named",
         "R.string.confirmation_cancel_action_named",
         "settingsChatHistoryRowsExposeLocalizedAccessibilitySummaries",
+        "settingsChatHistorySummaryLocalizesSavedActiveAndArchivedCounts",
+        "R.string.chat_history_summary_accessibility",
+        "Chat history summary. 2 saved chats. Active: 1 active chat. Archived: 1 archived chat.",
+        'hasContentDescription(expected.accessibilitySummary)',
+        "compose.onNode(hasText(\"Plan\") and hasHeading(), useUnmergedTree = true)",
         "chatDrawerDisabledItemsExplainStreamingLockoutAcrossSupportedLanguages",
         "CompositionLocalProvider(LocalHapticFeedback provides hapticFeedback)",
         "onClick = { rowClicks += 1 }",
@@ -3420,6 +3459,22 @@ def android_haptic_guard_failures() -> list[str]:
             "Multiple unlabeled code-block copy buttons must expose ordinal context.",
         ),
         (
+            "R.plurals.code_block_line_count",
+            "Code blocks must expose localized line-count accessibility copy.",
+        ),
+        (
+            "R.string.code_block_language_unspecified",
+            "Code blocks must expose a localized fallback when the language is unspecified.",
+        ),
+        (
+            "R.string.code_block_accessibility_summary",
+            "Code blocks must expose a localized language-plus-line-count accessibility summary.",
+        ),
+        (
+            "contentDescription = codeBlockAccessibilitySummary",
+            "Code block accessibility summaries must stay attached to the code block container.",
+        ),
+        (
             "contentDescription = copyActionLabel",
             "Copy buttons must expose their localized label on the actionable button.",
         ),
@@ -3451,6 +3506,14 @@ def android_haptic_guard_failures() -> list[str]:
         (
             "stateDescription = autoReconnectStateDescription",
             "Auto reconnect switch must expose localized on/off state to accessibility.",
+        ),
+        (
+            "val summary = \"$title. $detail\"",
+            "Private model access panel must expose title and detail as one accessibility summary.",
+        ),
+        (
+            "contentDescription = summary\n                liveRegion = LiveRegionMode.Polite",
+            "Private model access panel must announce the runtime-boundary guidance as a polite live region.",
         ),
         (
             "autoReconnectActionLabel",
@@ -3618,6 +3681,22 @@ def android_haptic_guard_failures() -> list[str]:
             "Memory empty states must announce localized empty/disconnected changes politely.",
         ),
         (
+            "pluralStringResource(\n            R.plurals.memory_saved_count",
+            "Memory panel must summarize the saved memory count through localized plurals.",
+        ),
+        (
+            "pluralStringResource(\n            R.plurals.memory_paused_count",
+            "Memory panel must summarize the paused memory count through localized plurals.",
+        ),
+        (
+            "MemorySummary(summary = memorySummary)",
+            "Memory panel must show a localized saved/paused summary before memory rows.",
+        ),
+        (
+            "contentDescription = summary\n                liveRegion = LiveRegionMode.Polite",
+            "Memory summary must be announced politely when runtime memory counts change.",
+        ),
+        (
             "contentDescription = memoryAddContentDescription",
             "Memory add input field must expose the stable accessibility label.",
         ),
@@ -3628,6 +3707,18 @@ def android_haptic_guard_failures() -> list[str]:
         (
             "MEMORY_ACTION_LABEL_MAX_CHARS = 80",
             "Memory action accessibility labels must keep a stable cap.",
+        ),
+        (
+            "MEMORY_ENTRY_CONTENT_TEST_TAG = \"memory_entry_content\"",
+            "Memory rows must keep the long content area separately testable.",
+        ),
+        (
+            "MEMORY_ENTRY_ACTIONS_TEST_TAG = \"memory_entry_actions\"",
+            "Memory rows must keep the action area separately testable.",
+        ),
+        (
+            "verticalArrangement = Arrangement.spacedBy(10.dp)",
+            "Memory rows must stack long content above controls instead of squeezing everything into one line.",
         ),
         (
             "memoryRemoveContentDescription = stringResource(R.string.memory_remove_named, memoryActionLabel)",
@@ -3656,11 +3747,8 @@ def android_haptic_guard_failures() -> list[str]:
             "Memory delete confirmation cancel buttons must expose the memory text in their click action label.",
         ),
         (
-            "onClick = {\n"
-            "                    hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)\n"
-            "                    showDeleteConfirmation.value = true\n"
-            "                },\n"
-            "                enabled = actionsEnabled,",
+            "hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)\n"
+            "                        showDeleteConfirmation.value = true",
             "Memory remove buttons must open confirmation with lightweight haptic feedback.",
         ),
         (
@@ -3799,6 +3887,34 @@ def android_haptic_guard_failures() -> list[str]:
             "TextDecoration.Underline",
             "Chat message rendering must visually distinguish simple Markdown links.",
         ),
+        (
+            "R.plurals.markdown_table_column_count",
+            "Chat message tables must expose localized column-count accessibility copy.",
+        ),
+        (
+            "R.plurals.markdown_table_row_count",
+            "Chat message tables must expose localized row-count accessibility copy.",
+        ),
+        (
+            "R.string.markdown_table_accessibility_summary",
+            "Chat message tables must expose a localized accessibility summary.",
+        ),
+        (
+            "contentDescription = tableAccessibilitySummary",
+            "Chat message table accessibility summaries must stay attached to the table container.",
+        ),
+        (
+            "AssistantIdentityMarker(roleLabel = assistantRoleLabel)",
+            "Assistant replies must keep a visible localized identity marker.",
+        ),
+        (
+            "R.string.role_assistant_initial",
+            "Assistant identity marker must use the localized assistant initial resource.",
+        ),
+        (
+            "ASSISTANT_IDENTITY_MARKER_TEST_TAG",
+            "Assistant identity marker must stay testable without changing user-facing copy.",
+        ),
     )
     for snippet, guidance in required_ui_snippets:
         if snippet not in ui_text:
@@ -3888,6 +4004,7 @@ def android_haptic_guard_failures() -> list[str]:
         "Message attachment chip should remain above the docked composer controls.",
         "parseMessageContentPreservesCodeBlocksAndNormalizesMarkdownTextBlocks",
         "chatScreenRendersMarkdownListsAndInlineCode",
+        "chatScreenMarkdownTablesExposeLocalizedAccessibilitySummaryAcrossSupportedLanguages",
         "MessageTextBlock.Heading(2, \"Plan\")",
         "MessageTextBlock.Quote(\"Keep this local-first.\")",
         "MessageTextBlock.Separator",
@@ -3899,8 +4016,22 @@ def android_haptic_guard_failures() -> list[str]:
         "compose.onAllNodesWithText(\"| Route | Purpose |\").assertCountEquals(0)",
         "Send `chat.send`",
         "Open [docs](https://example.test)",
+        "R.string.markdown_table_accessibility_summary",
+        "R.plurals.markdown_table_column_count",
+        "R.plurals.markdown_table_row_count",
+        "Table. 2 columns. 2 rows.",
+        "표. 열 2개. 행 2개.",
+        "表。2 列。2 行。",
+        "表格。2 列。2 行。",
+        "Tableau. 2 colonnes. 2 lignes.",
         "chatScreenMessageRowsExposeLocalizedRoleAccessibilitySummaries",
         "R.string.chat_message_accessibility_summary",
+        "ASSISTANT_IDENTITY_MARKER_TEST_TAG",
+        "R.string.role_assistant_initial",
+        "\"ko\" -> \"어\"",
+        "\"ja\" -> \"ア\"",
+        "\"zh-CN\" -> \"助\"",
+        "\"fr\" -> \"IA\"",
         "chatScreenMessageCopyActionsExposeLocalizedActionLabels",
         "onAllNodesWithContentDescription(expected.copyAction, useUnmergedTree = true)",
         "performSemanticsAction(SemanticsActions.OnLongClick)",
@@ -3908,7 +4039,15 @@ def android_haptic_guard_failures() -> list[str]:
         "waitForClipboardPayload(\n                label = expected.copyAction,\n                text = \"Copyable assistant reply\",",
         "List((index + 1) * 2) { HapticFeedbackType.LongPress }",
         "chatScreenCodeBlockCopyUsesLocalizedCodeActionLabels",
+        "chatScreenCodeBlocksExposeLocalizedAccessibilitySummaryAcrossSupportedLanguages",
         "waitForClipboardPayload(\n                label = expected.codeCopyAction,\n                text = \"val route = \\\"runtime\\\"\",",
+        "R.string.code_block_accessibility_summary",
+        "R.plurals.code_block_line_count",
+        "Code block. kotlin. 2 lines.",
+        "코드 블록. kotlin. 2줄.",
+        "コードブロック。kotlin。2 行。",
+        "代码块。kotlin。2 行。",
+        "Bloc de code. kotlin. 2 lignes.",
         "private fun waitForClipboardPayload(label: String, text: String)",
         "private fun clipboardLabel(): CharSequence?",
         "private fun clipboardText(): String?",
@@ -3935,6 +4074,10 @@ def android_haptic_guard_failures() -> list[str]:
         "hasContentDescription(emptyText) and hasPoliteLiveRegion()",
         "Cancel: Remove memory Project Alpha prefers concise Korean summaries",
         "settingsAutoReconnectSwitchExposesAccessibilityState",
+        "settingsCompanionOnlyPanelAnnouncesLocalizedPrivateModelAccessAcrossSupportedLanguages",
+        "R.string.companion_only_title",
+        "R.string.companion_only_detail",
+        "hasContentDescription(summary) and hasPoliteLiveRegion()",
         'hasClickActionLabel("Disable Auto reconnect")',
         'hasClickActionLabel("Enable Auto reconnect")',
         "settingsDiscoveredRuntimeActionsUseContextualAccessibilityLabels",
@@ -4101,6 +4244,17 @@ def android_haptic_guard_failures() -> list[str]:
         "MEMORY_ACTION_LABEL_MAX_CHARS",
         "Pause memory $cappedMemory",
         "Remove memory $cappedMemory",
+        "settingsMemoryRowsKeepActionsBelowLongContentOnCompactWidth",
+        "MEMORY_ENTRY_CONTENT_TEST_TAG",
+        "MEMORY_ENTRY_ACTIONS_TEST_TAG",
+        "actionBounds.top >= contentBounds.bottom",
+        "settingsMemorySummaryLocalizesSavedAndPausedCountsAcrossSupportedLanguages",
+        "2 saved memories, 1 paused.",
+        "저장된 메모리 2개, 일시 중지 1개.",
+        "保存済みメモリ 2 件、一時停止 1 件。",
+        "已保存 2 条记忆，已暂停 1 条。",
+        "2 mémoires enregistrées, 1 en pause.",
+        "hasContentDescription(expected.summary) and hasPoliteLiveRegion()",
         "settingsMemoryAddControlsLocalizeReadinessStateAcrossSupportedLanguages",
         "hasContentDescription(memoryAddLabel) and hasSetTextAction() and hasStateDescription(emptyState)",
         "hasContentDescription(memoryAddLabel) and hasSetTextAction() and hasStateDescription(readyState)",
@@ -4586,6 +4740,14 @@ def attachment_ingestion_guard_failures() -> list[str]:
             "Android share-sheet intake must keep a testable draft/attachment parser.",
         ),
         (
+            "sharedChatDraftAttachmentUris(",
+            "Android share-sheet intake must keep a testable content-URI attachment filter.",
+        ),
+        (
+            'uri.scheme?.equals("content", ignoreCase = true) == true',
+            "Android share-sheet attachment filtering must accept only content:// stream URIs.",
+        ),
+        (
             "sharedChatDraftComposerText(",
             "Android share-sheet text intake must merge shared text through a testable helper.",
         ),
@@ -4613,6 +4775,8 @@ def attachment_ingestion_guard_failures() -> list[str]:
     required_share_sheet_test_snippets = (
         "shareIntentTextBecomesChatDraftWithoutBackendAccess",
         "shareIntentStreamsBecomeDistinctChatAttachments",
+        "shareIntentStreamsKeepOnlyContentAttachmentUris",
+        "aetherlink://pair?pairing_code=123456",
         "shareIntentParserRejectsNonShareAndEmptyShareIntents",
         "sharedChatDraftComposerTextAppendsWithoutDroppingExistingDraft",
         "sharedChatDraftConfirmationMessageMatchesImportedContentType",
@@ -4757,6 +4921,14 @@ def runtime_history_storage_guard_failures() -> list[str]:
 
     required_android_store_snippets = (
         (
+            "val cleanMessageCount = summary.messageCount.coerceAtLeast(0)",
+            "Runtime session summaries must clamp malformed negative message counts before persistence.",
+        ),
+        (
+            "messageCount = (runtimeMessageCount ?: messages.size).coerceAtLeast(0)",
+            "Runtime session rows must defensively clamp stale negative persisted message counts.",
+        ),
+        (
             "val existing = sessions.firstOrNull { it.id == cleanSessionId }?.takeIf { it.runtimeOwned }\n        ?: return this",
             "Runtime message sync must only update sessions that still exist in the latest runtime-owned cache.",
         ),
@@ -4774,6 +4946,9 @@ def runtime_history_storage_guard_failures() -> list[str]:
             failures.append(f"{android_store_relative}: {guidance}")
 
     required_android_test_snippets = (
+        "runtimeSessionSummariesClampNegativeMessageCounts",
+        "assertEquals(0, merged.sessions.first { it.id == \"runtime-existing\" }.runtimeMessageCount)",
+        "assertEquals(0, runtimeChatSessions(stalePersistedData).single().messageCount)",
         "runtimeMessagesDoNotResurrectSessionMissingFromLatestRuntimeSummary",
         "val afterSummarySync = data.withRuntimeChatSessionSummaries(\n            sessions = emptyList(),",
         "val afterLateMessageSync = afterSummarySync.withRuntimeChatMessages(",
@@ -5131,6 +5306,14 @@ def macos_model_visibility_guard_failures() -> list[str]:
             "func modelGroupHeaderAccessibilityLabel(title: String, count: String) -> String",
             "Status Models group header accessibility helper must stay testable.",
         ),
+        (
+            "LazyVGrid(\n                    columns: [GridItem(.adaptive(minimum: 104)",
+            "Status Models rows must keep adaptive metadata layout for long localized/model identifiers.",
+        ),
+        (
+            ".lineLimit(2)\n                    .truncationMode(.middle)",
+            "Status Models rows must allow long local model names enough vertical space before truncating.",
+        ),
     )
     for snippet, guidance in required_status_snippets:
         if snippet not in status_text:
@@ -5177,6 +5360,14 @@ def macos_runtime_local_chat_routing_guard_failures() -> list[str]:
             "guard candidate.source == .local else { return false }",
             "Aggregating backend chat routing must reject provider-managed/cloud models.",
         ),
+        (
+            "private static func firstBackendsByProvider(",
+            "Aggregating backend must de-duplicate provider registrations without crashing.",
+        ),
+        (
+            "if byProvider[backend.provider] == nil",
+            "Aggregating backend must keep the first registered backend for each provider.",
+        ),
     )
     for snippet, guidance in required_aggregate_snippets:
         if snippet not in aggregate_text:
@@ -5198,6 +5389,7 @@ def macos_runtime_local_chat_routing_guard_failures() -> list[str]:
 
     required_aggregate_test_snippets = (
         "testInstalledCloudChatModelIsNotRoutedAsChat",
+        "testDuplicateProviderBackendsKeepFirstProviderInsteadOfCrashing",
         "source: .cloud",
         "XCTAssertTrue(ollama.routedModels.isEmpty)",
     )
@@ -5816,6 +6008,17 @@ def macos_quick_action_accessibility_guard_failures() -> list[str]:
                 f"{chrome_path.relative_to(ROOT)}: Missing macOS quick action accessibility helper {snippet}."
             )
 
+    required_status_layout_snippets = (
+        "struct StatusQuickActions: View",
+        "LazyVGrid(columns: columns, alignment: .leading, spacing: 10)",
+        ".adaptive(minimum: 210)",
+    )
+    for snippet in required_status_layout_snippets:
+        if snippet not in status_text:
+            failures.append(
+                f"{status_path.relative_to(ROOT)}: Missing macOS compact quick-action layout {snippet}."
+            )
+
     required_action_snippets = (
         ".help(modelProviderCheckActionAccessibilityHint())",
         ".accessibilityValue(Text(modelProviderCheckActionAccessibilityValue()))",
@@ -5907,6 +6110,10 @@ def macos_sidebar_brand_accessibility_guard_failures() -> list[str]:
         (
             ".accessibilityLabel(Text(sidebarBrandAccessibilityLabel()))",
             "Sidebar brand header must use the testable localized accessibility helper.",
+        ),
+        (
+            ".accessibilityAddTraits(.isHeader)",
+            "Sidebar brand header must expose a VoiceOver heading trait.",
         ),
         (
             "func sidebarBrandAccessibilityLabel() -> String",
@@ -6532,6 +6739,14 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device quality gate must run the macOS auth-session disconnect cleanup regression.",
         ),
         (
+            "LocalRuntimeMessageRouterTests/testConnectionCloseCancelsActiveChatGenerationAndPersistsCancelledEvent",
+            "Default no-device quality gate must run the macOS connection-close generation cancellation regression.",
+        ),
+        (
+            "macOS connection-close generation cancellation",
+            "Default no-device gate coverage summary must mention macOS connection-close generation cancellation.",
+        ),
+        (
             "LocalRuntimeMessageRouterTests/testRemovedTrustedDeviceCannotContinueUsingAuthenticatedConnection",
             "Default no-device quality gate must run the macOS trusted-device removal live-session revocation regression.",
         ),
@@ -6872,6 +7087,10 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate must run the Android narrow-phone chat surface layout regression.",
         ),
         (
+            "ClientScreensNoDeviceComposeTest.chatScreenCoreControlsRemainReachableAtLargeFontScaleAcrossSupportedLanguages",
+            "Default no-device gate must run the Android large-font multilingual Chat render regression.",
+        ),
+        (
             "ClientScreensNoDeviceComposeTest.parseMessageContentPreservesCodeBlocksAndNormalizesMarkdownTextBlocks",
             "Default no-device gate must run the Android markdown message parsing regression.",
         ),
@@ -6880,12 +7099,36 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate must run the Android markdown message rendering regression.",
         ),
         (
+            "ClientScreensNoDeviceComposeTest.chatScreenMarkdownTablesExposeLocalizedAccessibilitySummaryAcrossSupportedLanguages",
+            "Default no-device gate must run the Android markdown table accessibility regression.",
+        ),
+        (
+            "ClientScreensNoDeviceComposeTest.settingsChatHistorySummaryLocalizesSavedActiveAndArchivedCounts",
+            "Default no-device gate must run the Settings chat-history summary localization regression.",
+        ),
+        (
             "Android ChatGPT-like chat surface narrow-phone layout regression",
             "Default no-device gate coverage summary must mention Android narrow-phone chat surface layout coverage.",
         ),
         (
+            "Android large-font multilingual Chat render",
+            "Default no-device gate coverage summary must mention Android large-font multilingual Chat render.",
+        ),
+        (
             "Android markdown message rendering",
             "Default no-device gate coverage summary must mention Android markdown message rendering coverage.",
+        ),
+        (
+            "Android markdown heading accessibility",
+            "Default no-device gate coverage summary must mention Android markdown heading accessibility.",
+        ),
+        (
+            "Android markdown table accessibility",
+            "Default no-device gate coverage summary must mention Android markdown table accessibility.",
+        ),
+        (
+            "Android Settings chat-history saved/archived summary localization",
+            "Default no-device gate coverage summary must mention Android Settings chat-history saved/archived summary localization.",
         ),
         (
             "Android chat history display-model search",
@@ -6920,12 +7163,28 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate must run the populated Settings history and Memory narrow-phone render regression.",
         ),
         (
+            "ClientScreensNoDeviceComposeTest.settingsMemoryRowsKeepActionsBelowLongContentOnCompactWidth",
+            "Default no-device gate must run the Android Settings memory compact long-content actions layout regression.",
+        ),
+        (
+            "ClientScreensNoDeviceComposeTest.settingsMemorySummaryLocalizesSavedAndPausedCountsAcrossSupportedLanguages",
+            "Default no-device gate must run the Android Settings memory saved/paused summary localization regression.",
+        ),
+        (
             "Settings chat history model metadata",
             "Default no-device gate coverage summary must mention Settings chat-history model metadata.",
         ),
         (
             "Android populated Settings history and Memory narrow-phone render",
             "Default no-device gate coverage summary must mention populated Settings history and Memory narrow-phone render coverage.",
+        ),
+        (
+            "Android Settings memory compact long-content actions layout",
+            "Default no-device gate coverage summary must mention Android Settings memory compact long-content actions layout.",
+        ),
+        (
+            "Android Settings memory saved/paused summary localization",
+            "Default no-device gate coverage summary must mention Android Settings memory saved/paused summary localization.",
         ),
         (
             "Android QR-first chat empty state",
@@ -7088,6 +7347,10 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate coverage summary must mention Android message role accessibility summary coverage.",
         ),
         (
+            "Android assistant identity marker",
+            "Default no-device gate coverage summary must mention Android assistant identity marker coverage.",
+        ),
+        (
             "Android message copy accessibility labels",
             "Default no-device gate coverage summary must mention Android message copy accessibility labels.",
         ),
@@ -7106,6 +7369,10 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         (
             "Android code block copy accessibility labels",
             "Default no-device gate coverage summary must mention Android code block copy accessibility labels.",
+        ),
+        (
+            "Android code block accessibility summary",
+            "Default no-device gate coverage summary must mention Android code block accessibility summary.",
         ),
         (
             "Android multi-code-block copy action labels",
@@ -7352,6 +7619,10 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate coverage summary must mention Settings connection switch accessibility coverage.",
         ),
         (
+            "Android Settings private model access live-region summary",
+            "Default no-device gate coverage summary must mention Android Settings private model access live-region summary.",
+        ),
+        (
             "Settings discovered route contextual action accessibility",
             "Default no-device gate coverage summary must mention Settings discovered route contextual action accessibility.",
         ),
@@ -7520,6 +7791,22 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate coverage summary must mention macOS active Pairing QR compact render-smoke coverage.",
         ),
         (
+            "macOS compact Quick Actions render smoke",
+            "Default no-device gate coverage summary must mention macOS compact Quick Actions render-smoke coverage.",
+        ),
+        (
+            "macOS compact long model row render smoke",
+            "Default no-device gate coverage summary must mention macOS compact long model row render-smoke coverage.",
+        ),
+        (
+            "Android runtime history message-count clamp",
+            "Default no-device gate coverage summary must mention Android runtime history message-count clamp coverage.",
+        ),
+        (
+            "macOS runtime history message-count clamp",
+            "Default no-device gate coverage summary must mention macOS runtime history message-count clamp coverage.",
+        ),
+        (
             "macOS first-run diagnostics hiding",
             "Default no-device gate coverage summary must mention macOS first-run diagnostics hiding.",
         ),
@@ -7558,6 +7845,10 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         (
             "macOS sidebar brand accessibility label",
             "Default no-device gate coverage summary must mention macOS sidebar brand accessibility label.",
+        ),
+        (
+            "macOS sidebar brand heading trait",
+            "Default no-device gate coverage summary must mention macOS sidebar brand heading trait.",
         ),
         (
             "macOS page header accessibility labels",
@@ -7682,6 +7973,18 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         (
             "macOS runtime data status cards",
             "Default no-device gate coverage summary must mention macOS runtime data status cards.",
+        ),
+        (
+            "macOS runtime history saved/archived status card summary",
+            "Default no-device gate coverage summary must mention macOS runtime history saved/archived status-card summary.",
+        ),
+        (
+            "macOS runtime memory saved/paused status card summary",
+            "Default no-device gate coverage summary must mention macOS runtime memory saved/paused status-card summary.",
+        ),
+        (
+            "macOS runtime history inspector saved/archived summary",
+            "Default no-device gate coverage summary must mention macOS Runtime History inspector saved/archived summary.",
         ),
         (
             "macOS runtime data all-owner summary",
@@ -7838,6 +8141,14 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         (
             "Android chat top-bar model picker closed-button accessibility summary",
             "Default no-device gate coverage summary must mention Android chat top-bar model picker closed-button accessibility summary.",
+        ),
+        (
+            "ClientScreensNoDeviceComposeTest.settingsCoreControlsRemainReachableAtLargeFontScaleAcrossSupportedLanguages",
+            "Default no-device gate must run the Android large-font multilingual Settings render regression.",
+        ),
+        (
+            "Android large-font multilingual Settings render",
+            "Default no-device gate coverage summary must mention Android large-font multilingual Settings render.",
         ),
         (
             "Settings memory action accessibility labels",
@@ -8381,8 +8692,32 @@ def macos_render_smoke_guard_failures() -> list[str]:
             "macOS primary surface render smoke must run across all supported languages and appearances.",
         ),
         (
+            "testCompanionShellPreferenceControlsRenderAtAccessibilitySizeAcrossLanguages",
+            "macOS render smoke must cover sidebar preference controls at large accessibility text size.",
+        ),
+        (
+            ".environment(\\.dynamicTypeSize, .accessibility3)",
+            "macOS large-text render smoke must force an accessibility Dynamic Type size.",
+        ),
+        (
             "testActivePairingQRCodeRendersAtCompactDetailSizeAcrossLanguagesAndAppearances",
             "macOS render smoke must cover the active Pairing QR card across languages and appearances.",
+        ),
+        (
+            "testStatusQuickActionsRenderAtCompactDetailSizeAcrossLanguagesAndAppearances",
+            "macOS render smoke must cover the Status Quick Actions panel at compact detail size.",
+        ),
+        (
+            "testStatusModelRowsRenderLongLocalModelNamesAtCompactDetailSizeAcrossLanguagesAndAppearances",
+            "macOS render smoke must cover long local model rows at compact detail size.",
+        ),
+        (
+            "Qwen3.6 Coder Super Long Local Runtime Model Name With Vision Tools 35B",
+            "macOS long-model render smoke must include a long chat model name.",
+        ),
+        (
+            "StatusView(model: model, onGenerateRelayQRCode: {})",
+            "macOS compact Status Quick Actions render smoke must exercise all quick-action controls.",
         ),
         (
             "compactDetailSize",
@@ -8621,12 +8956,20 @@ def macos_localization_script_guard_failures() -> list[str]:
             "macOS localization guard must require Activity technical-details accessibility hints.",
         ),
         (
-            "logRowAccessibilityLabel(summary: display.summary, tone: tone)",
+            "logRowAccessibilityLabel(",
             "macOS localization guard must require Activity row tone accessibility labels.",
         ),
         (
-            ".accessibilityLabel(Text(logRowAccessibilityLabel(summary: display.summary, tone: tone)))",
+            "summary: display.summary,",
             "macOS localization guard must keep Activity row summary labels on the summary text.",
+        ),
+        (
+            "position: position,",
+            "macOS localization guard must keep Activity row position labels on the summary text.",
+        ),
+        (
+            "totalCount: totalCount",
+            "macOS localization guard must keep Activity row total-count labels on the summary text.",
         ),
         (
             "Activity rows with technical details must not merge disclosure controls.",
@@ -9131,33 +9474,49 @@ def route_refresh_relay_scope_guard_failures() -> list[str]:
         '"remote"',
         '"private_overlay"',
         '"usb_reverse"',
-        "route.normalizedRelayScope()",
+        "guard let payload = route.routeRefreshPayload() else",
+        "func routeRefreshPayload(nowEpochMillis: Int64 = currentRouteRefreshEpochMillis()) -> [String: JSONValue]?",
+        "runtimeDeviceID.isCanonicalRouteRefreshValue",
+        "relayHost.isCanonicalRouteRefreshValue",
+        "relayExpiresAtEpochMillis > nowEpochMillis",
+        "guard let validatedRelayScope else",
+        "relayHost.isEligibleRouteRefreshRelayHost(relayScope: validatedRelayScope)",
+        "return allowedRouteRefreshRelayScopes.contains(relayScope) ? .some(relayScope) : nil",
         'code: "route_refresh_unavailable"',
     ):
         if snippet not in macos_router_text:
             failures.append(
                 f"{macos_router_path.relative_to(ROOT)}: macOS route.refresh must fail closed for "
-                f"unknown relay_scope values before emitting route material; missing {snippet}."
+                f"invalid refreshed route material before emitting route material; missing {snippet}."
             )
     for snippet in (
         "testRouteRefreshRejectsUnknownRelayScopeFromRuntimeProvider",
+        "testRouteRefreshRejectsMalformedRelayMaterialFromRuntimeProvider",
+        "testRouteRefreshAllowsPrivateOverlayAndUsbReverseScopedRelayMaterial",
         'relayScope: "public"',
+        'routeRefreshResult(relayHost: "127.0.0.1", relayScope: "remote")',
+        'routeRefreshResult(relayHost: "100.64.1.10", relayScope: "private_overlay")',
+        'routeRefreshResult(relayHost: "127.0.0.1", relayScope: "usb_reverse")',
         'XCTAssertNil(message?.payload["relay_scope"])',
     ):
         if snippet not in macos_test_text:
             failures.append(
                 f"{macos_test_path.relative_to(ROOT)}: Missing macOS route.refresh relay_scope "
-                f"enum regression {snippet}."
+                f"fail-closed validation regression {snippet}."
             )
     for snippet in (
         "RuntimeClientViewModelTest.routeRefreshPayloadRejectsUnknownRelayScope",
         "LocalRuntimeMessageRouterTests/testRouteRefreshRejectsUnknownRelayScopeFromRuntimeProvider",
+        "LocalRuntimeMessageRouterTests/testRouteRefreshRejectsMalformedRelayMaterialFromRuntimeProvider",
+        "LocalRuntimeMessageRouterTests/testRouteRefreshAllowsPrivateOverlayAndUsbReverseScopedRelayMaterial",
         "route.refresh relay-scope enum validation",
+        "route.refresh malformed relay material validation",
+        "route.refresh private-overlay and usb-reverse scoped relay material validation",
     ):
         if snippet not in no_device_text:
             failures.append(
                 f"{no_device_path.relative_to(ROOT)}: Default no-device gate must cover route.refresh "
-                f"relay_scope enum validation; missing {snippet}."
+                f"relay material validation; missing {snippet}."
             )
 
     return failures

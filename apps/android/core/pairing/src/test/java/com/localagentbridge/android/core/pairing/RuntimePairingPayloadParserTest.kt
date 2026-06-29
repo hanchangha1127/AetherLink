@@ -137,6 +137,25 @@ class RuntimePairingPayloadParserTest {
     }
 
     @Test
+    fun rejectsUnknownOrCaseMutatedRemoteRelayScope() {
+        listOf("public", "REMOTE", "privateOverlay").forEach { relayScope ->
+            try {
+                RuntimePairingPayloadParser.parse(
+                    "aetherlink://pair?version=1&pairing_nonce=nonce-1&pairing_code=123456" +
+                        "&runtime_device_id=runtime-1&runtime_name=AetherLink+Runtime" +
+                        "&runtime_key_fingerprint=fp-1&relay_host=relay.example.test" +
+                        "&relay_port=443&relay_id=relay-1&relay_secret=secret-1" +
+                        "&relay_expires_at=4102444800000&relay_nonce=nonce-route-1" +
+                        "&relay_scope=$relayScope"
+                )
+                fail("Expected QR with unsupported relay scope $relayScope to throw")
+            } catch (_: IllegalArgumentException) {
+                // Expected.
+            }
+        }
+    }
+
+    @Test
     fun normalizesBlankRuntimeNameToDefaultRuntimeName() {
         val payload = RuntimePairingPayloadParser.parse(
             "aetherlink://pair?version=1&pairing_nonce=nonce-1&pairing_code=123456" +
@@ -256,6 +275,16 @@ class RuntimePairingPayloadParserTest {
         assertEquals("192.168.1.10", payload.host)
         assertEquals(43170, payload.port)
         assertEquals("local_diagnostic", payload.relayScope)
+
+        try {
+            RuntimePairingPayloadParser.parse(
+                rawPayload.replace("local_diagnostic", "LOCAL_DIAGNOSTIC"),
+                allowDiagnosticLocalDirectEndpoint = true,
+            )
+            fail("Expected case-mutated diagnostic scope to throw")
+        } catch (_: IllegalArgumentException) {
+            // Expected.
+        }
     }
 
     @Test
@@ -691,10 +720,11 @@ class RuntimePairingPayloadParserTest {
         try {
             RuntimePairingPayloadParser.parse(
                 "aetherlink://pair?version=1&pairing_nonce=nonce-1&pairing_code=123456" +
-                    "&mac_device_id=mac-1&fingerprint=fp-1&route_token=relay%201" +
-                    "&relay_host=relay.example.test&relay_port=443"
+                    "&mac_device_id=mac-1&fingerprint=fp-1&route_token=route-1" +
+                    "&relay_host=relay.example.test&relay_port=443&relay_secret=secret-1" +
+                    "&relay_expires_at=4102444800000&relay_nonce=nonce-route-1"
             )
-            fail("Expected route-token fallback relay id with whitespace to throw")
+            fail("Expected route token not to be accepted as relay id")
         } catch (_: IllegalArgumentException) {
             // Expected.
         }

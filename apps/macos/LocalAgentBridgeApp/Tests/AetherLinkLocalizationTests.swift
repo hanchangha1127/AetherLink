@@ -839,8 +839,12 @@ final class AetherLinkLocalizationTests: XCTestCase {
                 localizedRuntimeActiveChatSessionCount(2),
                 localizedRuntimeArchivedChatSessionCount(1),
                 localizedRuntimeArchivedChatSessionCount(3),
+                localizedRuntimeSavedChatSessionCount(1),
+                localizedRuntimeSavedChatSessionCount(3),
                 localizedRuntimeChatMessageCount(1),
                 localizedRuntimeChatMessageCount(5),
+                localizedRuntimeSavedMemoryCount(1),
+                localizedRuntimeSavedMemoryCount(3),
                 localizedRuntimeEnabledMemoryCount(1),
                 localizedRuntimeEnabledMemoryCount(2),
                 localizedRuntimePausedMemoryCount(1),
@@ -863,14 +867,56 @@ final class AetherLinkLocalizationTests: XCTestCase {
             XCTAssertEqual(copy[11], "2 active chats")
             XCTAssertEqual(copy[12], "1 archived chat")
             XCTAssertEqual(copy[13], "3 archived chats")
-            XCTAssertEqual(copy[14], "1 message")
-            XCTAssertEqual(copy[15], "5 messages")
-            XCTAssertEqual(copy[16], "1 enabled memory note")
-            XCTAssertEqual(copy[17], "2 enabled memory notes")
-            XCTAssertEqual(copy[18], "1 paused memory note")
-            XCTAssertEqual(copy[19], "4 paused memory notes")
-            XCTAssertEqual(copy[20], "Ollama llama3.1 active. Idle unload after 1 minute.")
-            XCTAssertEqual(copy[21], "Ollama llama3.1 active. Idle unload after 10 minutes.")
+            XCTAssertEqual(copy[14], "1 saved chat")
+            XCTAssertEqual(copy[15], "3 saved chats")
+            XCTAssertEqual(localizedRuntimeActiveChatSessionCount(-3), "0 active chats")
+            XCTAssertEqual(localizedRuntimeArchivedChatSessionCount(-3), "0 archived chats")
+            XCTAssertEqual(localizedRuntimeSavedChatSessionCount(-3), "0 saved chats")
+            XCTAssertEqual(runtimeHistoryCardValue(activeCount: 2, archivedCount: 1), "3 saved chats")
+            XCTAssertEqual(
+                runtimeHistoryCardDetail(activeCount: 2, archivedCount: 1),
+                "Runtime context: 2 active chats. Archived: 1 archived chat."
+            )
+            XCTAssertEqual(
+                runtimeHistoryInspectorSummaryAccessibilityLabel(
+                    value: runtimeHistoryCardValue(activeCount: 2, archivedCount: 1),
+                    detail: runtimeHistoryCardDetail(activeCount: 2, archivedCount: 1)
+                ),
+                "Runtime history summary. 3 saved chats. Runtime context: 2 active chats. Archived: 1 archived chat."
+            )
+            XCTAssertEqual(
+                runtimeHistoryCardDetail(activeCount: 0, archivedCount: 0),
+                "No runtime chat sessions are stored on AetherLink Runtime."
+            )
+            XCTAssertEqual(copy[16], "1 message")
+            XCTAssertEqual(copy[17], "5 messages")
+            XCTAssertEqual(localizedRuntimeChatMessageCount(-3), "0 messages")
+            XCTAssertEqual(copy[18], "1 saved memory note")
+            XCTAssertEqual(copy[19], "3 saved memory notes")
+            XCTAssertEqual(localizedRuntimeSavedMemoryCount(-3), "0 saved memory notes")
+            XCTAssertEqual(copy[20], "1 enabled memory note")
+            XCTAssertEqual(copy[21], "2 enabled memory notes")
+            XCTAssertEqual(copy[22], "1 paused memory note")
+            XCTAssertEqual(copy[23], "4 paused memory notes")
+            XCTAssertEqual(runtimeMemoryCardValue(enabledCount: 2, pausedCount: 1), "3 saved memory notes")
+            XCTAssertEqual(
+                runtimeMemoryCardDetail(enabledCount: 2, pausedCount: 1),
+                "Runtime context: 2 enabled memory notes. Paused: 1 paused memory note."
+            )
+            XCTAssertEqual(
+                runtimeMemoryInspectorSummaryAccessibilityLabel(
+                    value: runtimeMemoryCardValue(enabledCount: 2, pausedCount: 1),
+                    detail: runtimeMemoryCardDetail(enabledCount: 2, pausedCount: 1)
+                ),
+                "Runtime memory summary. 3 saved memory notes. Runtime context: 2 enabled memory notes. Paused: 1 paused memory note."
+            )
+            XCTAssertEqual(runtimeMemoryCardValue(enabledCount: -2, pausedCount: 1), "1 saved memory note")
+            XCTAssertEqual(
+                runtimeMemoryCardDetail(enabledCount: 0, pausedCount: 0),
+                "No runtime memory notes are stored on AetherLink Runtime."
+            )
+            XCTAssertEqual(copy[24], "Ollama llama3.1 active. Idle unload after 1 minute.")
+            XCTAssertEqual(copy[25], "Ollama llama3.1 active. Idle unload after 10 minutes.")
             XCTAssertFalse(copy.contains { $0.contains("(s)") })
         }
 
@@ -879,8 +925,48 @@ final class AetherLinkLocalizationTests: XCTestCase {
             XCTAssertEqual(localizedLoadedModelCount(2), "모델 2개 불러옴")
             XCTAssertEqual(localizedLoadedLocalModelLogCount("2"), "모델 2개 불러옴")
             XCTAssertEqual(localizedRuntimeActiveChatSessionCount(2), "활성 채팅 2개")
+            XCTAssertEqual(localizedRuntimeSavedChatSessionCount(3), "저장된 채팅 3개")
+            XCTAssertEqual(
+                runtimeHistoryCardDetail(activeCount: 2, archivedCount: 1),
+                "런타임 컨텍스트: 활성 채팅 2개. 보관됨: 보관된 채팅 1개."
+            )
             XCTAssertEqual(localizedRuntimeChatMessageCount(2), "메시지 2개")
+            XCTAssertEqual(localizedRuntimeSavedMemoryCount(3), "저장된 메모리 노트 3개")
             XCTAssertEqual(localizedRuntimeEnabledMemoryCount(2), "사용 중인 메모리 노트 2개")
+            XCTAssertEqual(
+                runtimeMemoryCardDetail(enabledCount: 2, pausedCount: 1),
+                "런타임 컨텍스트: 사용 중인 메모리 노트 2개. 일시 중지: 일시 중지된 메모리 노트 1개."
+            )
+        }
+
+        withStoredAppLanguage("ja") {
+            XCTAssertEqual(localizedRuntimeSavedChatSessionCount(3), "保存済みチャット 3 件")
+            XCTAssertEqual(
+                runtimeHistoryCardDetail(activeCount: 2, archivedCount: 1),
+                "ランタイムコンテキスト: アクティブなチャット 2 件。アーカイブ済み: アーカイブ済みチャット 1 件。"
+            )
+            XCTAssertEqual(localizedRuntimeSavedMemoryCount(3), "保存済みメモリノート 3 件")
+            XCTAssertEqual(localizedRuntimeEnabledMemoryCount(2), "有効なメモリノート 2 件")
+            XCTAssertEqual(localizedRuntimePausedMemoryCount(1), "一時停止中のメモリノート 1 件")
+            XCTAssertEqual(
+                runtimeMemoryCardDetail(enabledCount: 2, pausedCount: 1),
+                "ランタイムコンテキスト: 有効なメモリノート 2 件。一時停止: 一時停止中のメモリノート 1 件。"
+            )
+        }
+
+        withStoredAppLanguage("zh-Hans") {
+            XCTAssertEqual(localizedRuntimeSavedChatSessionCount(3), "3 个已保存聊天")
+            XCTAssertEqual(
+                runtimeHistoryCardDetail(activeCount: 2, archivedCount: 1),
+                "运行时上下文：2 个活跃聊天。已归档：1 个已归档聊天。"
+            )
+            XCTAssertEqual(localizedRuntimeSavedMemoryCount(3), "3 条已保存记忆")
+            XCTAssertEqual(localizedRuntimeEnabledMemoryCount(2), "2 条已启用记忆")
+            XCTAssertEqual(localizedRuntimePausedMemoryCount(1), "1 条已暂停记忆")
+            XCTAssertEqual(
+                runtimeMemoryCardDetail(enabledCount: 2, pausedCount: 1),
+                "运行时上下文：2 条已启用记忆。已暂停：1 条已暂停记忆。"
+            )
         }
 
         withStoredAppLanguage("fr") {
@@ -889,8 +975,18 @@ final class AetherLinkLocalizationTests: XCTestCase {
             XCTAssertEqual(localizedAvailableModelProviderCount(1), "1 fournisseur de modèles disponible")
             XCTAssertEqual(localizedAvailableModelProviderCount(2), "2 fournisseurs de modèles disponibles")
             XCTAssertEqual(localizedRuntimeArchivedChatSessionCount(2), "2 chats archivés")
+            XCTAssertEqual(localizedRuntimeSavedChatSessionCount(3), "3 chats enregistrés")
+            XCTAssertEqual(
+                runtimeHistoryCardDetail(activeCount: 2, archivedCount: 1),
+                "Contexte du runtime : 2 chats actifs. Archivés : 1 chat archivé."
+            )
             XCTAssertEqual(localizedRuntimeChatMessageCount(2), "2 messages")
+            XCTAssertEqual(localizedRuntimeSavedMemoryCount(3), "3 notes mémoire enregistrées")
             XCTAssertEqual(localizedRuntimePausedMemoryCount(2), "2 notes mémoire suspendues")
+            XCTAssertEqual(
+                runtimeMemoryCardDetail(enabledCount: 2, pausedCount: 1),
+                "Contexte du runtime : 2 notes mémoire activées. En pause : 1 note mémoire suspendue."
+            )
         }
     }
 
@@ -901,12 +997,20 @@ final class AetherLinkLocalizationTests: XCTestCase {
             XCTAssertEqual(NSLocalizedString("Close Runtime History Inspector", comment: ""), "Close Runtime History Inspector")
             XCTAssertEqual(NSLocalizedString("Refresh Runtime History Inspector", comment: ""), "Refresh Runtime History Inspector")
             XCTAssertEqual(NSLocalizedString("No runtime chat sessions", comment: ""), "No runtime chat sessions")
+            XCTAssertEqual(NSLocalizedString("No runtime chat sessions are stored on AetherLink Runtime.", comment: ""), "No runtime chat sessions are stored on AetherLink Runtime.")
+            XCTAssertEqual(NSLocalizedString("Runtime history summary. %@. %@", comment: ""), "Runtime history summary. %@. %@")
             XCTAssertEqual(NSLocalizedString("Transcript Preview", comment: ""), "Transcript Preview")
             XCTAssertEqual(NSLocalizedString("Load transcript preview", comment: ""), "Load transcript preview")
             XCTAssertEqual(runtimeTranscriptPreviewLoadAccessibilityLabel(title: " Release planning "), "Load transcript preview for Release planning")
             XCTAssertEqual(runtimeTranscriptPreviewLoadAccessibilityLabel(title: " "), "Load transcript preview for Untitled chat")
             XCTAssertEqual(NSLocalizedString("No transcript messages", comment: ""), "No transcript messages")
-            XCTAssertEqual(NSLocalizedString("Reasoning", comment: ""), "Reasoning")
+            XCTAssertEqual(NSLocalizedString("Thinking", comment: ""), "Thinking")
+            XCTAssertEqual(runtimeTranscriptReasoningToggleTitle(isExpanded: false), "Show thinking")
+            XCTAssertEqual(runtimeTranscriptReasoningToggleTitle(isExpanded: true), "Hide thinking")
+            XCTAssertEqual(runtimeTranscriptReasoningToggleAccessibilityValue(isExpanded: false), "Thinking collapsed")
+            XCTAssertEqual(runtimeTranscriptReasoningToggleAccessibilityValue(isExpanded: true), "Thinking expanded")
+            XCTAssertEqual(runtimeTranscriptReasoningToggleAccessibilityHint(isExpanded: false), "Expand to show full thinking.")
+            XCTAssertEqual(runtimeTranscriptReasoningToggleAccessibilityHint(isExpanded: true), "Collapse to keep thinking preview short.")
             XCTAssertEqual(localizedRuntimeChatSessionStatus("active"), "Active")
             XCTAssertEqual(localizedRuntimeChatSessionStatus("archived"), "Archived")
             XCTAssertEqual(runtimeHistoryEventDisplayName("done"), "Completed")
@@ -922,6 +1026,16 @@ final class AetherLinkLocalizationTests: XCTestCase {
                 ),
                 "Chat session Release planning. Status Active. Model ollama:llama3.1:8b. 4 messages. Updated Jun 29, 2026 at 2:00 AM."
             )
+            XCTAssertEqual(
+                runtimeChatSessionAccessibilityLabel(
+                    title: " Damaged count ",
+                    status: "Active",
+                    model: "ollama:llama3.1:8b",
+                    messageCount: localizedRuntimeChatMessageCount(-3),
+                    updatedAt: "Jun 29, 2026 at 2:00 AM"
+                ),
+                "Chat session Damaged count. Status Active. Model ollama:llama3.1:8b. 0 messages. Updated Jun 29, 2026 at 2:00 AM."
+            )
         }
 
         withStoredAppLanguage("ko") {
@@ -930,9 +1044,14 @@ final class AetherLinkLocalizationTests: XCTestCase {
             XCTAssertEqual(NSLocalizedString("Close Runtime History Inspector", comment: ""), "런타임 기록 점검 닫기")
             XCTAssertEqual(NSLocalizedString("Refresh Runtime History Inspector", comment: ""), "런타임 기록 점검 새로 고침")
             XCTAssertEqual(NSLocalizedString("No runtime chat sessions", comment: ""), "런타임 채팅 세션 없음")
+            XCTAssertEqual(NSLocalizedString("No runtime chat sessions are stored on AetherLink Runtime.", comment: ""), "AetherLink Runtime에 저장된 런타임 채팅 세션이 없습니다.")
+            XCTAssertEqual(NSLocalizedString("Runtime history summary. %@. %@", comment: ""), "런타임 기록 요약. %@. %@")
             XCTAssertEqual(NSLocalizedString("Transcript Preview", comment: ""), "대화 미리보기")
             XCTAssertEqual(runtimeTranscriptPreviewLoadAccessibilityLabel(title: " 출시 계획 "), "출시 계획 대화 미리보기 불러오기")
             XCTAssertEqual(NSLocalizedString("No transcript messages", comment: ""), "대화 메시지 없음")
+            XCTAssertEqual(NSLocalizedString("Thinking", comment: ""), "생각")
+            XCTAssertEqual(runtimeTranscriptReasoningToggleTitle(isExpanded: false), "생각 펼치기")
+            XCTAssertEqual(runtimeTranscriptReasoningToggleAccessibilityValue(isExpanded: true), "생각 펼쳐짐")
             XCTAssertEqual(runtimeTranscriptRoleDisplayName("user"), "사용자")
             XCTAssertEqual(localizedRuntimeChatSessionStatus("archived"), "보관됨")
         }
@@ -943,9 +1062,14 @@ final class AetherLinkLocalizationTests: XCTestCase {
             XCTAssertEqual(NSLocalizedString("Close Runtime History Inspector", comment: ""), "ランタイム履歴インスペクタを閉じる")
             XCTAssertEqual(NSLocalizedString("Refresh Runtime History Inspector", comment: ""), "ランタイム履歴インスペクタを更新")
             XCTAssertEqual(NSLocalizedString("No runtime chat sessions", comment: ""), "ランタイムチャットセッションはありません")
+            XCTAssertEqual(NSLocalizedString("No runtime chat sessions are stored on AetherLink Runtime.", comment: ""), "AetherLink Runtime にランタイムチャットセッションは保存されていません。")
+            XCTAssertEqual(NSLocalizedString("Runtime history summary. %@. %@", comment: ""), "ランタイム履歴の概要。%@。%@")
             XCTAssertEqual(NSLocalizedString("Transcript Preview", comment: ""), "会話プレビュー")
             XCTAssertEqual(runtimeTranscriptPreviewLoadAccessibilityLabel(title: " リリース計画 "), "「リリース計画」の会話プレビューを読み込む")
             XCTAssertEqual(NSLocalizedString("No transcript messages", comment: ""), "会話メッセージはありません")
+            XCTAssertEqual(NSLocalizedString("Thinking", comment: ""), "思考")
+            XCTAssertEqual(runtimeTranscriptReasoningToggleTitle(isExpanded: true), "思考を隠す")
+            XCTAssertEqual(runtimeTranscriptReasoningToggleAccessibilityHint(isExpanded: false), "展開して思考全文を表示します。")
             XCTAssertEqual(runtimeTranscriptRoleDisplayName("assistant"), "アシスタント")
             XCTAssertEqual(localizedRuntimeChatSessionStatus("active"), "アクティブ")
         }
@@ -956,9 +1080,14 @@ final class AetherLinkLocalizationTests: XCTestCase {
             XCTAssertEqual(NSLocalizedString("Close Runtime History Inspector", comment: ""), "关闭运行时历史检查器")
             XCTAssertEqual(NSLocalizedString("Refresh Runtime History Inspector", comment: ""), "刷新运行时历史检查器")
             XCTAssertEqual(NSLocalizedString("No runtime chat sessions", comment: ""), "没有运行时聊天会话")
+            XCTAssertEqual(NSLocalizedString("No runtime chat sessions are stored on AetherLink Runtime.", comment: ""), "AetherLink Runtime 中没有已保存的运行时聊天会话。")
+            XCTAssertEqual(NSLocalizedString("Runtime history summary. %@. %@", comment: ""), "运行时历史摘要。%@。%@")
             XCTAssertEqual(NSLocalizedString("Transcript Preview", comment: ""), "对话预览")
             XCTAssertEqual(runtimeTranscriptPreviewLoadAccessibilityLabel(title: " 发布计划 "), "加载“发布计划”的对话预览")
             XCTAssertEqual(NSLocalizedString("No transcript messages", comment: ""), "没有对话消息")
+            XCTAssertEqual(NSLocalizedString("Thinking", comment: ""), "思考")
+            XCTAssertEqual(runtimeTranscriptReasoningToggleTitle(isExpanded: false), "显示思考")
+            XCTAssertEqual(runtimeTranscriptReasoningToggleAccessibilityValue(isExpanded: false), "思考已折叠")
             XCTAssertEqual(runtimeTranscriptRoleDisplayName("system"), "系统消息")
             XCTAssertEqual(localizedRuntimeChatSessionStatus("archived"), "已归档")
         }
@@ -969,6 +1098,8 @@ final class AetherLinkLocalizationTests: XCTestCase {
             XCTAssertEqual(NSLocalizedString("Close Runtime History Inspector", comment: ""), "Fermer l’inspecteur d’historique du runtime")
             XCTAssertEqual(NSLocalizedString("Refresh Runtime History Inspector", comment: ""), "Actualiser l’inspecteur d’historique du runtime")
             XCTAssertEqual(NSLocalizedString("No runtime chat sessions", comment: ""), "Aucune session de chat du runtime")
+            XCTAssertEqual(NSLocalizedString("No runtime chat sessions are stored on AetherLink Runtime.", comment: ""), "Aucune session de chat du runtime n’est stockée dans AetherLink Runtime.")
+            XCTAssertEqual(NSLocalizedString("Runtime history summary. %@. %@", comment: ""), "Résumé de l’historique du runtime. %@. %@")
             XCTAssertEqual(NSLocalizedString("Transcript Preview", comment: ""), "Aperçu de la transcription")
             XCTAssertEqual(
                 runtimeTranscriptPreviewLoadAccessibilityLabel(title: " Planification de version "),
@@ -979,10 +1110,50 @@ final class AetherLinkLocalizationTests: XCTestCase {
                 "Charger l’aperçu de la transcription pour Chat sans titre"
             )
             XCTAssertEqual(NSLocalizedString("No transcript messages", comment: ""), "Aucun message de transcription")
+            XCTAssertEqual(NSLocalizedString("Thinking", comment: ""), "Réflexion")
+            XCTAssertEqual(runtimeTranscriptReasoningToggleTitle(isExpanded: false), "Afficher la réflexion")
+            XCTAssertEqual(runtimeTranscriptReasoningToggleTitle(isExpanded: true), "Masquer la réflexion")
+            XCTAssertEqual(runtimeTranscriptReasoningToggleAccessibilityHint(isExpanded: true), "Réduire pour garder un aperçu court de la réflexion.")
             XCTAssertEqual(runtimeTranscriptRoleDisplayName("assistant"), "Assistant IA")
             XCTAssertEqual(runtimeTranscriptRoleDisplayName("other"), "Message")
             XCTAssertEqual(localizedRuntimeChatSessionStatus("active"), "Actif")
         }
+    }
+
+    func testRuntimeTranscriptReasoningPreviewStaysShortUntilExpanded() {
+        let reasoning = "first step\nsecond step\nthird step\nfourth step"
+        let collapsed = runtimeTranscriptReasoningDisplayPolicy(
+            reasoning: reasoning,
+            expanded: false
+        )
+        let expanded = runtimeTranscriptReasoningDisplayPolicy(
+            reasoning: reasoning,
+            expanded: true
+        )
+
+        XCTAssertEqual(collapsed.text, "first step\nsecond step\nthird step")
+        XCTAssertEqual(collapsed.maxLines, runtimeTranscriptReasoningPreviewMaxLines)
+        XCTAssertEqual(collapsed.contentOpacity, runtimeTranscriptReasoningCollapsedOpacity)
+        XCTAssertTrue(collapsed.expandable)
+        XCTAssertFalse(collapsed.isExpanded)
+
+        XCTAssertEqual(expanded.text, reasoning)
+        XCTAssertNil(expanded.maxLines)
+        XCTAssertEqual(expanded.contentOpacity, runtimeTranscriptReasoningExpandedOpacity)
+        XCTAssertTrue(expanded.expandable)
+        XCTAssertTrue(expanded.isExpanded)
+    }
+
+    func testRuntimeTranscriptReasoningPreviewHandlesShortAndLongParagraphs() {
+        XCTAssertFalse(runtimeTranscriptReasoningNeedsExpansion("first step\nsecond step\nthird step"))
+        XCTAssertFalse(runtimeTranscriptReasoningNeedsExpansion(" \n\t\n "))
+
+        let longParagraph = Array(repeating: "planning", count: 80).joined(separator: " ")
+        let preview = runtimeTranscriptReasoningPreview(longParagraph)
+
+        XCTAssertTrue(runtimeTranscriptReasoningNeedsExpansion(longParagraph))
+        XCTAssertTrue(preview.hasSuffix("..."))
+        XCTAssertLessThanOrEqual(preview.count, 183)
     }
 
     func testRuntimeMemoryInspectorCopyLocalizesAcrossSupportedLanguages() {
@@ -1212,30 +1383,35 @@ final class AetherLinkLocalizationTests: XCTestCase {
     }
 
     func testActivityLogRowAccessibilityLabelIncludesLocalizedTone() {
-        let expectations: [(languageTag: String, warningLabel: String, fallbackLabel: String)] = [
+        let expectations: [(languageTag: String, warningLabel: String, positionedWarningLabel: String, fallbackLabel: String)] = [
             (
                 "en",
                 "Activity item AetherLink Runtime needs attention. Status Needs attention.",
+                "Activity item 2 of 5. AetherLink Runtime needs attention. Status Needs attention.",
                 "Activity item Runtime event recorded. Status Pending."
             ),
             (
                 "ko",
                 "활동 항목 AetherLink Runtime 확인이 필요합니다. 상태 확인 필요.",
+                "활동 항목 2/5. AetherLink Runtime 확인이 필요합니다. 상태 확인 필요.",
                 "활동 항목 런타임 이벤트가 기록되었습니다. 상태 대기 중."
             ),
             (
                 "ja",
                 "アクティビティ項目 AetherLink Runtime の確認が必要です。ステータス 確認が必要。",
+                "アクティビティ項目 2/5。AetherLink Runtime の確認が必要です。ステータス 確認が必要。",
                 "アクティビティ項目 ランタイムイベントを記録しました。ステータス 保留中。"
             ),
             (
                 "zh-Hans",
                 "活动项 AetherLink Runtime 需要检查。状态 需要注意。",
+                "活动项 2/5。AetherLink Runtime 需要检查。状态 需要注意。",
                 "活动项 已记录运行时事件。状态 待处理。"
             ),
             (
                 "fr",
                 "Élément d’activité AetherLink Runtime demande une vérification. État Attention requise.",
+                "Élément d’activité 2 sur 5. AetherLink Runtime demande une vérification. État Attention requise.",
                 "Élément d’activité Événement du runtime enregistré. État En attente."
             ),
         ]
@@ -1246,6 +1422,10 @@ final class AetherLinkLocalizationTests: XCTestCase {
             withStoredAppLanguage(expectation.languageTag) {
                 let warningSummary = localizedLogDisplay("Runtime listener failed: port unavailable").summary
                 XCTAssertEqual(logRowAccessibilityLabel(summary: warningSummary, tone: .warning), expectation.warningLabel)
+                XCTAssertEqual(
+                    logRowAccessibilityLabel(summary: warningSummary, tone: .warning, position: 2, totalCount: 5),
+                    expectation.positionedWarningLabel
+                )
                 XCTAssertEqual(logRowAccessibilityLabel(summary: " ", tone: .neutral), expectation.fallbackLabel)
             }
         }

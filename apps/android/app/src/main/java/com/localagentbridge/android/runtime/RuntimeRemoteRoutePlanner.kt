@@ -1,6 +1,7 @@
 package com.localagentbridge.android.runtime
 
 import com.localagentbridge.android.core.pairing.RuntimePairingPayload
+import com.localagentbridge.android.core.pairing.isAllowedRemoteRelayScope
 import com.localagentbridge.android.core.pairing.isEligibleRemoteRelayHost
 import com.localagentbridge.android.core.transport.PairedRuntimeIdentity
 import com.localagentbridge.android.core.transport.PreparedRemoteRuntimeRoute
@@ -41,7 +42,8 @@ internal fun RuntimeTrustedRuntime?.hasRelayRoute(
 ): Boolean {
     val host = this?.relayHost?.takeIf { it.isNotBlank() } ?: return false
     val expiresAt = relayExpiresAtEpochMillis
-    return (isEligibleRemoteRelayHost(host, relayScope) || isDebugUsbReverseRelayRoute(host, relayScope)) &&
+    return isAllowedRemoteRelayScope(relayScope) &&
+        (isEligibleRemoteRelayHost(host, relayScope) || isDebugUsbReverseRelayRoute(host, relayScope)) &&
         relayPort != null &&
         relayPort in 1..65535 &&
         !relayId.isNullOrBlank() &&
@@ -64,7 +66,8 @@ internal fun RuntimePairingPayload.hasRelayRoute(
 ): Boolean {
     val expiresAt = relayExpiresAtEpochMillis
     val host = relayHost?.takeIf { it.isNotBlank() } ?: return false
-    return (isEligibleRemoteRelayHost(host, relayScope) || isDebugUsbReverseRelayRoute(host, relayScope)) &&
+    return isAllowedRemoteRelayScope(relayScope) &&
+        (isEligibleRemoteRelayHost(host, relayScope) || isDebugUsbReverseRelayRoute(host, relayScope)) &&
         relayPort != null &&
         relayPort in 1..65535 &&
         !relayId.isNullOrBlank() &&
@@ -77,7 +80,8 @@ internal fun RuntimePairingPayload.hasRelayRoute(
 private fun RuntimeTrustedRuntime.hasCompleteRelayRoute(): Boolean {
     val expiresAt = relayExpiresAtEpochMillis
     val host = relayHost?.takeIf { it.isNotBlank() } ?: return false
-    return (isEligibleRemoteRelayHost(host, relayScope) || isDebugUsbReverseRelayRoute(host, relayScope)) &&
+    return isAllowedRemoteRelayScope(relayScope) &&
+        (isEligibleRemoteRelayHost(host, relayScope) || isDebugUsbReverseRelayRoute(host, relayScope)) &&
         relayPort != null &&
         relayPort in 1..65535 &&
         !relayId.isNullOrBlank() &&
@@ -88,7 +92,7 @@ private fun RuntimeTrustedRuntime.hasCompleteRelayRoute(): Boolean {
 }
 
 private fun isDebugUsbReverseRelayRoute(host: String, relayScope: String?): Boolean {
-    if (relayScope?.trim()?.lowercase() != "usb_reverse") return false
+    if (relayScope != "usb_reverse") return false
     val normalizedHost = host.trim()
         .removePrefix("[")
         .removeSuffix("]")

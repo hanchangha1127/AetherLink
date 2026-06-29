@@ -60,6 +60,21 @@
     <string name="restore_chat_named">Restaurer le chat « %1$s »</string>
     <string name="chat_history_settings_title">Historique des chats</string>
     <string name="chat_history_settings_subtitle">Archivez les chats, restaurez-les plus tard ou supprimez définitivement les chats archivés.</string>
+    <string name="chat_history_summary_title">Chats enregistrés</string>
+    <plurals name="chat_history_saved_count">
+        <item quantity="one">%1$d chat enregistré</item>
+        <item quantity="other">%1$d chats enregistrés</item>
+    </plurals>
+    <plurals name="chat_history_active_count">
+        <item quantity="one">%1$d chat actif</item>
+        <item quantity="other">%1$d chats actifs</item>
+    </plurals>
+    <plurals name="chat_history_archived_count">
+        <item quantity="one">%1$d chat archivé</item>
+        <item quantity="other">%1$d chats archivés</item>
+    </plurals>
+    <string name="chat_history_summary_detail">Actifs : %1$s. Archivés : %2$s.</string>
+    <string name="chat_history_summary_accessibility">Résumé de l’historique des chats. %1$s. %2$s</string>
     <string name="chat_history_action_state_wait_for_stream">Attendez la fin de la réponse en cours avant de modifier l’historique des chats.</string>
     <string name="chat_history_refresh">Actualiser l’historique des chats</string>
     <string name="chat_history_refresh_state_ready">L’historique des chats peut être actualisé.</string>
@@ -375,7 +390,7 @@
     <string name="chat_hint_ready_with_attachments">Prêt à envoyer. %1$s</string>
     <string name="role_user">Vous</string>
     <string name="role_assistant">Assistant IA</string>
-    <string name="role_assistant_initial">A</string>
+    <string name="role_assistant_initial">IA</string>
     <string name="chat_message_accessibility_summary">%1$s : %2$s</string>
     <string name="assistant_typing">Génération...</string>
     <string name="assistant_reasoning_label">Réflexion</string>
@@ -399,6 +414,21 @@
     <string name="copy_code_block">Copier le bloc de code</string>
     <string name="copy_code_block_named">Copier le bloc de code %1$s %2$d</string>
     <string name="copy_code_block_numbered">Copier le bloc de code %1$d</string>
+    <plurals name="code_block_line_count">
+        <item quantity="one">%1$d ligne</item>
+        <item quantity="other">%1$d lignes</item>
+    </plurals>
+    <string name="code_block_language_unspecified">Langage non spécifié</string>
+    <string name="code_block_accessibility_summary">Bloc de code. %1$s. %2$s.</string>
+    <plurals name="markdown_table_column_count">
+        <item quantity="one">%1$d colonne</item>
+        <item quantity="other">%1$d colonnes</item>
+    </plurals>
+    <plurals name="markdown_table_row_count">
+        <item quantity="one">%1$d ligne</item>
+        <item quantity="other">%1$d lignes</item>
+    </plurals>
+    <string name="markdown_table_accessibility_summary">Tableau. %1$s. %2$s.</string>
     <string name="message_copied">Copié</string>
     <string name="runtime_error_technical_details">Détails techniques</string>
     <string name="runtime_error_show_technical_details">Afficher les détails techniques</string>
@@ -450,6 +480,15 @@
     <string name="memory_empty_disconnected">Connectez-vous au runtime de confiance pour charger la mémoire enregistrée.</string>
     <string name="memory_connect_to_load">Connectez-vous au runtime de confiance pour charger et gérer la mémoire.</string>
     <string name="memory_read_only_notice">La mémoire affichée dans cette session est en lecture seule. Reconnectez le runtime de confiance pour l’actualiser ou la gérer.</string>
+    <plurals name="memory_saved_count">
+        <item quantity="one">%1$d mémoire enregistrée</item>
+        <item quantity="other">%1$d mémoires enregistrées</item>
+    </plurals>
+    <plurals name="memory_paused_count">
+        <item quantity="one">%1$d en pause</item>
+        <item quantity="other">%1$d en pause</item>
+    </plurals>
+    <string name="memory_summary">%1$s, %2$s.</string>
     <string name="memory_refresh">Actualiser la mémoire</string>
     <string name="memory_refresh_state_ready">Prêt à actualiser la mémoire.</string>
     <string name="memory_remove">Supprimer la mémoire</string>

@@ -1848,7 +1848,6 @@ class RuntimeClientViewModel internal constructor(
                     model = model,
                     messages = chatSendMessages(
                         messages = current.messages + userMessage,
-                        memoryEntries = current.memoryEntries,
                         attachments = attachments,
                     ),
                     locale = current.runtimeRequestLocale(),
@@ -1924,7 +1923,6 @@ class RuntimeClientViewModel internal constructor(
                     model = model,
                     messages = chatSendMessages(
                         messages = retry.contextMessages,
-                        memoryEntries = current.memoryEntries,
                     ),
                     locale = current.runtimeRequestLocale(),
                 )

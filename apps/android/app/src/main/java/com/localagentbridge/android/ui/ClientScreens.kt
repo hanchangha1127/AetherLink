@@ -126,6 +126,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.localagentbridge.android.R
+import com.localagentbridge.android.core.pairing.isAllowedRemoteRelayScope
 import com.localagentbridge.android.core.pairing.isEligibleRemoteRelayHost
 import com.localagentbridge.android.core.transport.RuntimeEndpointSource
 import com.localagentbridge.android.runtime.RuntimeAppLanguage
@@ -800,7 +801,8 @@ internal fun connectionStatusHeroDetailRes(state: RuntimeUiState): Int {
 
 internal fun RuntimeTrustedRuntime?.hasRelayRouteMaterial(): Boolean {
     val host = this?.relayHost?.takeIf { it.isNotBlank() } ?: return false
-    return isEligibleRemoteRelayHost(host, relayScope) &&
+    return isAllowedRemoteRelayScope(relayScope) &&
+        isEligibleRemoteRelayHost(host, relayScope) &&
         relayPort != null &&
         relayPort in 1..65535 &&
         !relayId.isNullOrBlank() &&
@@ -828,7 +830,8 @@ private fun RuntimeTrustedRuntime?.hasUnusableRelayRouteHint(): Boolean {
 internal fun RuntimeTrustedRuntime?.hasRelayRouteWithoutSecret(): Boolean {
     val runtime = this ?: return false
     val host = runtime.relayHost?.takeIf { it.isNotBlank() } ?: return false
-    return isEligibleRemoteRelayHost(host, runtime.relayScope) &&
+    return isAllowedRemoteRelayScope(runtime.relayScope) &&
+        isEligibleRemoteRelayHost(host, runtime.relayScope) &&
         runtime.relayPort != null &&
         runtime.relayPort in 1..65535 &&
         !runtime.relayId.isNullOrBlank() &&
@@ -3169,6 +3172,7 @@ private fun AssistantMessage(
     }
     val showTyping = assistantShowsTypingPlaceholder(message, isStreaming)
     val assistantTypingText = stringResource(R.string.assistant_typing)
+    val assistantRoleLabel = stringResource(R.string.role_assistant)
 
     Column(
         modifier = Modifier
@@ -3208,44 +3212,52 @@ private fun AssistantMessage(
                     }
                 }
             }
-            MessageContent(
-                content = visibleContent,
-                textColor = MaterialTheme.colorScheme.onSurface,
-                modifier = contentModifier,
-            )
-            if ((showVisibleCopyAction && !showTyping) || showRegenerateAction) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    if (showVisibleCopyAction && !showTyping) {
-                        MessageCopyButton(
-                            textToCopy = message.content,
-                            copyActionLabel = copyMessageActionLabel,
-                        )
-                    }
-                    if (showRegenerateAction) {
-                        val regenerateActionLabel = stringResource(R.string.regenerate_response)
-                        val regenerateActionStateDescription =
-                            stringResource(R.string.regenerate_response_state_ready)
-                        IconButton(
-                            onClick = {
-                                hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
-                                onRegenerateLatestResponse()
-                            },
-                            modifier = Modifier
-                                .size(36.dp)
-                                .semantics {
-                                    contentDescription = regenerateActionLabel
-                                    stateDescription = regenerateActionStateDescription
-                                    onClick(label = regenerateActionLabel, action = null)
-                                },
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.Top,
+            ) {
+                AssistantIdentityMarker(roleLabel = assistantRoleLabel)
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    MessageContent(
+                        content = visibleContent,
+                        textColor = MaterialTheme.colorScheme.onSurface,
+                        modifier = contentModifier,
+                    )
+                    if ((showVisibleCopyAction && !showTyping) || showRegenerateAction) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Icon(
-                                imageVector = Icons.Filled.Refresh,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp),
-                            )
+                            if (showVisibleCopyAction && !showTyping) {
+                                MessageCopyButton(
+                                    textToCopy = message.content,
+                                    copyActionLabel = copyMessageActionLabel,
+                                )
+                            }
+                            if (showRegenerateAction) {
+                                val regenerateActionLabel = stringResource(R.string.regenerate_response)
+                                val regenerateActionStateDescription =
+                                    stringResource(R.string.regenerate_response_state_ready)
+                                IconButton(
+                                    onClick = {
+                                        hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
+                                        onRegenerateLatestResponse()
+                                    },
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .semantics {
+                                            contentDescription = regenerateActionLabel
+                                            stateDescription = regenerateActionStateDescription
+                                            onClick(label = regenerateActionLabel, action = null)
+                                        },
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Refresh,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp),
+                                    )
+                                }
+                            }
                         }
                     }
                 }
@@ -3265,6 +3277,34 @@ private fun AssistantMessage(
                 onSuggestionClick = onSuggestionClick,
             )
         }
+    }
+}
+
+@Composable
+private fun AssistantIdentityMarker(roleLabel: String) {
+    Box(
+        modifier = Modifier
+            .padding(top = 1.dp)
+            .size(28.dp)
+            .background(
+                color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.82f),
+                shape = RoundedCornerShape(999.dp),
+            )
+            .semantics(mergeDescendants = true) {
+                contentDescription = roleLabel
+            }
+            .testTag(ASSISTANT_IDENTITY_MARKER_TEST_TAG),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = stringResource(R.string.role_assistant_initial),
+            color = MaterialTheme.colorScheme.onSecondaryContainer,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Clip,
+            textAlign = TextAlign.Center,
+        )
     }
 }
 
@@ -3458,6 +3498,7 @@ private fun MessageText(
                 is MessageTextBlock.Heading -> {
                     Text(
                         text = markdownInlineText(block.text, textColor),
+                        modifier = Modifier.semantics { heading() },
                         style = when (block.level) {
                             1 -> MaterialTheme.typography.titleMedium
                             2 -> MaterialTheme.typography.titleSmall
@@ -3542,9 +3583,29 @@ private fun MarkdownTable(
     textColor: androidx.compose.ui.graphics.Color,
 ) {
     val scrollState = rememberScrollState()
+    val columnCount = table.headers.size.coerceAtLeast(0)
+    val rowCount = table.rows.size.coerceAtLeast(0)
+    val columnCountText = pluralStringResource(
+        R.plurals.markdown_table_column_count,
+        columnCount,
+        columnCount,
+    )
+    val rowCountText = pluralStringResource(
+        R.plurals.markdown_table_row_count,
+        rowCount,
+        rowCount,
+    )
+    val tableAccessibilitySummary = stringResource(
+        R.string.markdown_table_accessibility_summary,
+        columnCountText,
+        rowCountText,
+    )
     Box(
         modifier = Modifier
             .fillMaxWidth()
+            .semantics {
+                contentDescription = tableAccessibilitySummary
+            }
             .horizontalScroll(scrollState),
     ) {
         Surface(
@@ -3661,8 +3722,30 @@ private fun CodeBlock(
         trimmedLanguage.isNotBlank() -> stringResource(R.string.copy_code_block_named, trimmedLanguage, index)
         else -> stringResource(R.string.copy_code_block_numbered, index)
     }
+    val codeLineCount = if (code.isBlank()) {
+        0
+    } else {
+        code.lines().size
+    }
+    val lineCountText = pluralStringResource(
+        R.plurals.code_block_line_count,
+        codeLineCount,
+        codeLineCount,
+    )
+    val languageText = trimmedLanguage.ifBlank {
+        stringResource(R.string.code_block_language_unspecified)
+    }
+    val codeBlockAccessibilitySummary = stringResource(
+        R.string.code_block_accessibility_summary,
+        languageText,
+        lineCountText,
+    )
     Surface(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .semantics {
+                contentDescription = codeBlockAccessibilitySummary
+            },
         shape = RoundedCornerShape(10.dp),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
         contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -4785,8 +4868,16 @@ private fun attachmentMetadataLabel(attachment: RuntimePendingAttachment): Strin
 
 @Composable
 private fun CompanionOnlyPanel() {
+    val title = stringResource(R.string.companion_only_title)
+    val detail = stringResource(R.string.companion_only_detail)
+    val summary = "$title. $detail"
     Surface(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .semantics(mergeDescendants = true) {
+                contentDescription = summary
+                liveRegion = LiveRegionMode.Polite
+            },
         shape = RoundedCornerShape(8.dp),
         color = MaterialTheme.colorScheme.primaryContainer,
     ) {
@@ -4795,13 +4886,13 @@ private fun CompanionOnlyPanel() {
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Text(
-                text = stringResource(R.string.companion_only_title),
+                text = title,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onPrimaryContainer,
             )
             Text(
-                text = stringResource(R.string.companion_only_detail),
+                text = detail,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onPrimaryContainer,
             )
@@ -5487,13 +5578,9 @@ private fun ChatHistorySettingsPanel(
                     hapticFeedback = hapticFeedback,
                 )
             }
-            StatusLine(
-                label = stringResource(R.string.previous_chats),
-                value = activeSessions.size.toString(),
-            )
-            StatusLine(
-                label = stringResource(R.string.archived_chats),
-                value = archivedSessions.size.toString(),
+            ChatHistorySummary(
+                activeCount = activeSessions.size,
+                archivedCount = archivedSessions.size,
             )
             OutlinedTextField(
                 value = chatSearchQuery,
@@ -6160,7 +6247,7 @@ private fun TwoStepConfirmationDialog(
 }
 
 @Composable
-private fun MemoryPanel(
+internal fun MemoryPanel(
     entries: List<RuntimeMemoryEntry>,
     actionsEnabled: Boolean,
     @StringRes actionsDisabledReasonRes: Int = memoryLockNoticeTextRes(hasEntries = entries.isNotEmpty()),
@@ -6182,6 +6269,20 @@ private fun MemoryPanel(
     val memoryRefreshContentDescription = stringResource(R.string.memory_refresh)
     val memoryAddContentDescription = stringResource(R.string.memory_add_label)
     val memoryAddActionLabel = stringResource(R.string.memory_add)
+    val pausedMemoryCount = entries.count { !it.enabled }
+    val memorySummary = stringResource(
+        R.string.memory_summary,
+        pluralStringResource(
+            R.plurals.memory_saved_count,
+            entries.size,
+            entries.size,
+        ),
+        pluralStringResource(
+            R.plurals.memory_paused_count,
+            pausedMemoryCount,
+            pausedMemoryCount,
+        ),
+    )
 
     OutlinedCard(modifier = Modifier.fillMaxWidth()) {
         Column(
@@ -6267,6 +6368,7 @@ private fun MemoryPanel(
                     announceChanges = true,
                 )
             } else {
+                MemorySummary(summary = memorySummary)
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     entries.forEach { entry ->
                         MemoryEntryRow(
@@ -6280,6 +6382,28 @@ private fun MemoryPanel(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun MemorySummary(summary: String) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .semantics {
+                contentDescription = summary
+                liveRegion = LiveRegionMode.Polite
+            },
+        shape = RoundedCornerShape(8.dp),
+        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.55f),
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+    ) {
+        Text(
+            text = summary,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.Medium,
+        )
     }
 }
 
@@ -6354,7 +6478,7 @@ private fun MemoryRefreshButton(
 }
 
 @Composable
-private fun MemoryEntryRow(
+internal fun MemoryEntryRow(
     entry: RuntimeMemoryEntry,
     actionsEnabled: Boolean,
     disabledActionStateDescription: String?,
@@ -6439,16 +6563,17 @@ private fun MemoryEntryRow(
         shape = RoundedCornerShape(8.dp),
         color = MaterialTheme.colorScheme.surfaceVariant,
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(12.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalAlignment = Alignment.CenterVertically,
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Text(
                 text = entry.content,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(MEMORY_ENTRY_CONTENT_TEST_TAG),
                 style = MaterialTheme.typography.bodyMedium,
                 color = if (entry.enabled) {
                     MaterialTheme.colorScheme.onSurfaceVariant
@@ -6456,56 +6581,67 @@ private fun MemoryEntryRow(
                     MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.58f)
                 },
             )
-            Text(
-                text = stringResource(
-                    if (entry.enabled) {
-                        R.string.memory_enabled
-                    } else {
-                        R.string.memory_paused
-                    },
-                ),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.secondary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Switch(
-                checked = entry.enabled,
-                onCheckedChange = { enabled ->
-                    hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Toggle)
-                    onSetMemoryEntryEnabled(entry.id, enabled)
-                },
-                enabled = actionsEnabled,
-                modifier = Modifier.semantics {
-                    contentDescription = memoryToggleContentDescription
-                    stateDescription = memoryActionStateDescription
-                    onClick(label = memoryToggleContentDescription, action = null)
-                },
-            )
-            FilledTonalIconButton(
-                onClick = {
-                    hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
-                    showDeleteConfirmation.value = true
-                },
-                enabled = actionsEnabled,
+            Row(
                 modifier = Modifier
-                    .size(40.dp)
-                    .semantics {
-                        contentDescription = memoryRemoveContentDescription
-                        disabledActionStateDescription?.let { stateDescription = it }
-                        onClick(label = memoryRemoveContentDescription, action = null)
-                    },
+                    .fillMaxWidth()
+                    .testTag(MEMORY_ENTRY_ACTIONS_TEST_TAG),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(
-                    imageVector = Icons.Filled.Delete,
-                    contentDescription = null,
+                Text(
+                    text = stringResource(
+                        if (entry.enabled) {
+                            R.string.memory_enabled
+                        } else {
+                            R.string.memory_paused
+                        },
+                    ),
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.secondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
+                Switch(
+                    checked = entry.enabled,
+                    onCheckedChange = { enabled ->
+                        hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Toggle)
+                        onSetMemoryEntryEnabled(entry.id, enabled)
+                    },
+                    enabled = actionsEnabled,
+                    modifier = Modifier.semantics {
+                        contentDescription = memoryToggleContentDescription
+                        stateDescription = memoryActionStateDescription
+                        onClick(label = memoryToggleContentDescription, action = null)
+                    },
+                )
+                FilledTonalIconButton(
+                    onClick = {
+                        hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
+                        showDeleteConfirmation.value = true
+                    },
+                    enabled = actionsEnabled,
+                    modifier = Modifier
+                        .size(40.dp)
+                        .semantics {
+                            contentDescription = memoryRemoveContentDescription
+                            disabledActionStateDescription?.let { stateDescription = it }
+                            onClick(label = memoryRemoveContentDescription, action = null)
+                        },
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Delete,
+                        contentDescription = null,
+                    )
+                }
             }
         }
     }
 }
 
 internal const val MEMORY_ACTION_LABEL_MAX_CHARS = 80
+internal const val MEMORY_ENTRY_CONTENT_TEST_TAG = "memory_entry_content"
+internal const val MEMORY_ENTRY_ACTIONS_TEST_TAG = "memory_entry_actions"
 
 private fun memoryAccessibilityActionLabel(
     content: String,
@@ -6536,6 +6672,78 @@ private fun StatusLine(label: String, value: String) {
             overflow = TextOverflow.Ellipsis,
         )
         HorizontalDivider()
+    }
+}
+
+@Composable
+private fun ChatHistorySummary(
+    activeCount: Int,
+    archivedCount: Int,
+) {
+    val safeActiveCount = activeCount.coerceAtLeast(0)
+    val safeArchivedCount = archivedCount.coerceAtLeast(0)
+    val savedCount = safeActiveCount + safeArchivedCount
+    val savedText = pluralStringResource(
+        R.plurals.chat_history_saved_count,
+        savedCount,
+        savedCount,
+    )
+    val activeText = pluralStringResource(
+        R.plurals.chat_history_active_count,
+        safeActiveCount,
+        safeActiveCount,
+    )
+    val archivedText = pluralStringResource(
+        R.plurals.chat_history_archived_count,
+        safeArchivedCount,
+        safeArchivedCount,
+    )
+    val detailText = stringResource(
+        R.string.chat_history_summary_detail,
+        activeText,
+        archivedText,
+    )
+    val accessibilitySummary = stringResource(
+        R.string.chat_history_summary_accessibility,
+        savedText,
+        detailText,
+    )
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .semantics(mergeDescendants = true) {
+                contentDescription = accessibilitySummary
+            },
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.58f),
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.chat_history_summary_title),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.secondary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = savedText,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = detailText,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.secondary,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
 
@@ -6915,6 +7123,7 @@ private fun RuntimeUiError.requiresLatestQrRouteNotice(): Boolean {
 }
 
 internal const val CHAT_MESSAGE_LIST_TEST_TAG = "aetherlink_chat_message_list"
+internal const val ASSISTANT_IDENTITY_MARKER_TEST_TAG = "aetherlink_assistant_identity_marker"
 
 private fun selectedModelIsUsable(state: RuntimeUiState): Boolean {
     val selectedId = state.selectedModelId ?: return false

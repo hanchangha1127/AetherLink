@@ -230,7 +230,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
             relayPort: 43171,
             relayID: "relay-id-1",
             relaySecret: "relay-secret-1",
-            relayExpiresAtEpochMillis: 1_782_205_505_000,
+            relayExpiresAtEpochMillis: 4_102_444_800_000,
             relayNonce: "relay-nonce-1",
             relayScope: "remote"
         ))
@@ -250,7 +250,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(message?.payload["relay_port"], .number(43171))
         XCTAssertEqual(message?.payload["relay_id"], .string("relay-id-1"))
         XCTAssertEqual(message?.payload["relay_secret"], .string("relay-secret-1"))
-        XCTAssertEqual(message?.payload["relay_expires_at"], .number(1_782_205_505_000))
+        XCTAssertEqual(message?.payload["relay_expires_at"], .number(4_102_444_800_000))
         XCTAssertEqual(message?.payload["relay_nonce"], .string("relay-nonce-1"))
         XCTAssertEqual(message?.payload["relay_scope"], .string("remote"))
         XCTAssertEqual(routeRefresher.refreshCount, 1)
@@ -280,7 +280,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
             relayPort: 43171,
             relayID: "relay-id-1",
             relaySecret: "relay-secret-1",
-            relayExpiresAtEpochMillis: 1_782_205_505_000,
+            relayExpiresAtEpochMillis: 4_102_444_800_000,
             relayNonce: "relay-nonce-1",
             relayScope: "public"
         ))
@@ -299,6 +299,74 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(message?.payload["retryable"], .bool(true))
         XCTAssertNil(message?.payload["relay_scope"])
         XCTAssertEqual(routeRefresher.refreshCount, 1)
+    }
+
+    @MainActor
+    func testRouteRefreshRejectsMalformedRelayMaterialFromRuntimeProvider() async throws {
+        let invalidRoutes: [RuntimeRouteRefreshResult] = [
+            routeRefreshResult(relayHost: "relay.example.test", relayPort: 0),
+            routeRefreshResult(relayHost: "relay.example.test", relayID: ""),
+            routeRefreshResult(relayHost: "relay.example.test", relaySecret: ""),
+            routeRefreshResult(relayHost: "relay.example.test", relayExpiresAtEpochMillis: 1),
+            routeRefreshResult(relayHost: "relay.example.test", relayNonce: ""),
+            routeRefreshResult(relayHost: "aetherlink.local"),
+            routeRefreshResult(relayHost: "127.0.0.1", relayScope: "remote"),
+            routeRefreshResult(relayHost: "100.64.1.10", relayScope: nil),
+            routeRefreshResult(relayHost: "100.64.1.10", relayScope: "remote"),
+            routeRefreshResult(runtimeDeviceID: "runtime 1", relayHost: "relay.example.test"),
+        ]
+
+        for (index, route) in invalidRoutes.enumerated() {
+            let sink = RecordingSink()
+            let routeRefresher = FakeRuntimeRouteRefresher(result: route)
+            let router = makeRouter(
+                backend: MockBackend(),
+                routeRefresher: routeRefresher
+            )
+
+            router.handle(
+                ProtocolEnvelope(type: MessageType.routeRefresh, requestID: "route-refresh-invalid-\(index)"),
+                sink: sink
+            )
+
+            let message = try await sink.waitForMessages(count: 1).first
+            XCTAssertEqual(message?.type, MessageType.error)
+            XCTAssertEqual(message?.requestID, "route-refresh-invalid-\(index)")
+            XCTAssertEqual(message?.payload["code"], .string("route_refresh_unavailable"))
+            XCTAssertEqual(message?.payload["message"], .string("AetherLink Runtime could not refresh remote route material."))
+            XCTAssertEqual(message?.payload["retryable"], .bool(true))
+            XCTAssertNil(message?.payload["relay_secret"])
+            XCTAssertEqual(routeRefresher.refreshCount, 1)
+        }
+    }
+
+    @MainActor
+    func testRouteRefreshAllowsPrivateOverlayAndUsbReverseScopedRelayMaterial() async throws {
+        let validRoutes: [(RuntimeRouteRefreshResult, String)] = [
+            (routeRefreshResult(relayHost: "100.64.1.10", relayScope: "private_overlay"), "private_overlay"),
+            (routeRefreshResult(relayHost: "127.0.0.1", relayScope: "usb_reverse"), "usb_reverse"),
+        ]
+
+        for (index, item) in validRoutes.enumerated() {
+            let (route, expectedScope) = item
+            let sink = RecordingSink()
+            let router = makeRouter(
+                backend: MockBackend(),
+                routeRefresher: FakeRuntimeRouteRefresher(result: route)
+            )
+
+            router.handle(
+                ProtocolEnvelope(type: MessageType.routeRefresh, requestID: "route-refresh-scoped-\(index)"),
+                sink: sink
+            )
+
+            let message = try await sink.waitForMessages(count: 1).first
+            XCTAssertEqual(message?.type, MessageType.routeRefresh)
+            XCTAssertEqual(message?.requestID, "route-refresh-scoped-\(index)")
+            XCTAssertEqual(message?.payload["relay_host"], .string(route.relayHost))
+            XCTAssertEqual(message?.payload["relay_scope"], .string(expectedScope))
+            XCTAssertEqual(message?.payload["relay_secret"], .string("relay-secret-1"))
+        }
     }
 
     @MainActor
@@ -3307,6 +3375,111 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         let message = try await sink.waitForMessages(count: 1).first
         XCTAssertEqual(message?.type, MessageType.chatCancel)
         XCTAssertEqual(message?.payload["cancelled"], .bool(true))
+    }
+
+    func testChatCancelAcknowledgementPersistsRuntimeOwnedCancelledEvent() async throws {
+        let sink = RecordingSink()
+        let store = RecordingRuntimeChatEventStore()
+        let router = makeRouter(
+            backend: MockBackend(
+                models: [ModelInfo(id: "llama3.1:8b", name: "llama3.1:8b", installed: true)],
+                finishChatStream: false,
+                cancelFinishesChatStream: true,
+                cancelResult: GenerationCancellationResult.cancelled(generationID: "chat-cancel-store")
+            ),
+            chatEventStore: store
+        )
+        let chatEnvelope = ProtocolEnvelope(
+            type: MessageType.chatSend,
+            requestID: "chat-cancel-store",
+            payload: [
+                "session_id": .string("session-cancel-store"),
+                "model": .string("llama3.1:8b"),
+                "messages": .array([
+                    .object([
+                        "role": .string("user"),
+                        "content": .string("Cancel this from the runtime.")
+                    ])
+                ])
+            ]
+        )
+
+        router.handle(chatEnvelope, sink: sink)
+
+        let requestEvents = try await waitForRecordedEvents(in: store, count: 1)
+        XCTAssertEqual(requestEvents.map(\.kind), [.request])
+        XCTAssertEqual(requestEvents.first?.sessionID, "session-cancel-store")
+
+        let cancelEnvelope = ProtocolEnvelope(
+            type: MessageType.chatCancel,
+            requestID: "cancel-store-1",
+            payload: ["target_request_id": .string("chat-cancel-store")]
+        )
+        router.handle(cancelEnvelope, sink: sink)
+
+        let messages = try await sink.waitForMessages(count: 1)
+        XCTAssertTrue(messages.contains { message in
+            message.type == MessageType.chatCancel &&
+                message.requestID == "cancel-store-1" &&
+                message.payload["target_request_id"] == .string("chat-cancel-store") &&
+                message.payload["cancelled"] == .bool(true)
+        })
+
+        let storedEvents = try await waitForRecordedEvents(in: store, count: 2)
+        let cancelledEvents = storedEvents.filter { $0.kind == .cancelled }
+        XCTAssertEqual(cancelledEvents.count, 1)
+        XCTAssertEqual(cancelledEvents.first?.requestID, "chat-cancel-store")
+        XCTAssertEqual(cancelledEvents.first?.sessionID, "session-cancel-store")
+        XCTAssertEqual(cancelledEvents.first?.model, "llama3.1:8b")
+        XCTAssertEqual(cancelledEvents.first?.finishReason, "cancelled")
+
+        try await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(store.events.filter { $0.kind == .cancelled }.count, 1)
+    }
+
+    func testConnectionCloseCancelsActiveChatGenerationAndPersistsCancelledEvent() async throws {
+        let sink = RecordingSink()
+        let store = RecordingRuntimeChatEventStore()
+        let backend = MockBackend(
+            models: [ModelInfo(id: "llama3.1:8b", name: "llama3.1:8b", installed: true)],
+            finishChatStream: false,
+            cancelFinishesChatStream: true,
+            cancelResult: GenerationCancellationResult.cancelled(generationID: "chat-disconnect")
+        )
+        let router = makeRouter(backend: backend, chatEventStore: store)
+        let chatEnvelope = ProtocolEnvelope(
+            type: MessageType.chatSend,
+            requestID: "chat-disconnect",
+            payload: [
+                "session_id": .string("session-disconnect"),
+                "model": .string("llama3.1:8b"),
+                "messages": .array([
+                    .object([
+                        "role": .string("user"),
+                        "content": .string("Cancel this when the socket closes.")
+                    ])
+                ])
+            ]
+        )
+
+        router.handle(chatEnvelope, sink: sink)
+
+        let requestEvents = try await waitForRecordedEvents(in: store, count: 1)
+        XCTAssertEqual(requestEvents.map(\.kind), [.request])
+
+        router.connectionDidClose(sink.connectionID)
+
+        let storedEvents = try await waitForRecordedEvents(in: store, count: 2)
+        XCTAssertEqual(backend.cancelledGenerationIDs, ["chat-disconnect"])
+        let cancelledEvents = storedEvents.filter { $0.kind == .cancelled }
+        XCTAssertEqual(cancelledEvents.count, 1)
+        XCTAssertEqual(cancelledEvents.first?.requestID, "chat-disconnect")
+        XCTAssertEqual(cancelledEvents.first?.sessionID, "session-disconnect")
+        XCTAssertEqual(cancelledEvents.first?.model, "llama3.1:8b")
+        XCTAssertEqual(cancelledEvents.first?.finishReason, "cancelled")
+
+        try await Task.sleep(nanoseconds: 50_000_000)
+        XCTAssertEqual(store.events.filter { $0.kind == .cancelled }.count, 1)
     }
 
     func testChatCancelUnknownGenerationReturnsProtocolError() async throws {
@@ -6884,6 +7057,30 @@ private struct RuntimeRouteRefreshTestError: Error, LocalizedError {
     }
 }
 
+private func routeRefreshResult(
+    runtimeDeviceID: String = "runtime-1",
+    runtimeKeyFingerprint: String = "runtime-fingerprint",
+    relayHost: String,
+    relayPort: Int = 43171,
+    relayID: String = "relay-id-1",
+    relaySecret: String = "relay-secret-1",
+    relayExpiresAtEpochMillis: Int64 = 4_102_444_800_000,
+    relayNonce: String = "relay-nonce-1",
+    relayScope: String? = "remote"
+) -> RuntimeRouteRefreshResult {
+    RuntimeRouteRefreshResult(
+        runtimeDeviceID: runtimeDeviceID,
+        runtimeKeyFingerprint: runtimeKeyFingerprint,
+        relayHost: relayHost,
+        relayPort: relayPort,
+        relayID: relayID,
+        relaySecret: relaySecret,
+        relayExpiresAtEpochMillis: relayExpiresAtEpochMillis,
+        relayNonce: relayNonce,
+        relayScope: relayScope
+    )
+}
+
 private struct TestRuntimeChallengeSigner: RuntimeChallengeSigning {
     var privateKey: P256.Signing.PrivateKey
 
@@ -7204,6 +7401,23 @@ private func waitForSessionTitle(
     return lastTitle
 }
 
+private func waitForRecordedEvents(
+    in store: RecordingRuntimeChatEventStore,
+    count: Int,
+    timeout: TimeInterval = 1.0
+) async throws -> [RuntimeChatStoredEvent] {
+    let deadline = Date().addingTimeInterval(timeout)
+    var lastEvents = store.events
+    while Date() < deadline {
+        lastEvents = store.events
+        if lastEvents.count >= count {
+            return lastEvents
+        }
+        try await Task.sleep(nanoseconds: 20_000_000)
+    }
+    return lastEvents
+}
+
 private func pairingEnvelope(
     requestID: String,
     session: PairingSession,
@@ -7240,6 +7454,12 @@ private final class MockBackend: LlmBackend, @unchecked Sendable {
     private let chatEvents: [ChatStreamEvent]
     private let chatEventBatchesLock = NSLock()
     private var chatEventBatches: [[ChatStreamEvent]]
+    private let chatContinuationsLock = NSLock()
+    private var chatContinuations: [AsyncThrowingStream<ChatStreamEvent, Error>.Continuation] = []
+    private let cancelledGenerationIDsLock = NSLock()
+    private var cancelledIDs: [String] = []
+    private let finishChatStream: Bool
+    private let cancelFinishesChatStream: Bool
     private let cancelResult: GenerationCancellationResult
     private let onChatRequest: ((ChatRequest) -> Void)?
 
@@ -7252,6 +7472,8 @@ private final class MockBackend: LlmBackend, @unchecked Sendable {
         pullError: Error? = nil,
         chatEvents: [ChatStreamEvent] = [],
         chatEventBatches: [[ChatStreamEvent]] = [],
+        finishChatStream: Bool = true,
+        cancelFinishesChatStream: Bool = false,
         cancelResult: GenerationCancellationResult = .notFound(generationID: "missing"),
         onChatRequest: ((ChatRequest) -> Void)? = nil
     ) {
@@ -7263,8 +7485,14 @@ private final class MockBackend: LlmBackend, @unchecked Sendable {
         self.pullError = pullError
         self.chatEvents = chatEvents
         self.chatEventBatches = chatEventBatches
+        self.finishChatStream = finishChatStream
+        self.cancelFinishesChatStream = cancelFinishesChatStream
         self.cancelResult = cancelResult
         self.onChatRequest = onChatRequest
+    }
+
+    var cancelledGenerationIDs: [String] {
+        cancelledGenerationIDsLock.withLock { cancelledIDs }
     }
 
     func healthCheck() async -> BackendStatus {
@@ -7289,12 +7517,31 @@ private final class MockBackend: LlmBackend, @unchecked Sendable {
         AsyncThrowingStream { continuation in
             onChatRequest?(request)
             nextChatEvents().forEach { continuation.yield($0) }
-            continuation.finish()
+            if finishChatStream {
+                continuation.finish()
+            } else {
+                chatContinuationsLock.withLock {
+                    chatContinuations.append(continuation)
+                }
+            }
         }
     }
 
     func cancel(generationID: String) -> GenerationCancellationResult {
-        cancelResult
+        cancelledGenerationIDsLock.withLock {
+            cancelledIDs.append(generationID)
+        }
+        if cancelFinishesChatStream {
+            let continuations = chatContinuationsLock.withLock {
+                let continuations = chatContinuations
+                chatContinuations.removeAll()
+                return continuations
+            }
+            continuations.forEach { continuation in
+                continuation.finish(throwing: OllamaBackendError.generationCancelled(generationID: generationID))
+            }
+        }
+        return cancelResult
     }
 
     private func nextChatEvents() -> [ChatStreamEvent] {

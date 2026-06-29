@@ -104,6 +104,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -212,6 +213,8 @@ internal data class SharedChatDraft(
     val attachmentUris: List<Uri> = emptyList(),
 )
 
+internal const val SHARED_CHAT_DRAFT_ANNOUNCEMENT_TEST_TAG = "shared_chat_draft_announcement"
+
 internal fun Intent?.sharedChatDraftOrNull(): SharedChatDraft? {
     val intent = this ?: return null
     val streams = buildList {
@@ -241,9 +244,15 @@ internal fun sharedChatDraftOrNull(
     }
     return SharedChatDraft(
         text = sharedText.orEmpty().trim(),
-        attachmentUris = attachmentUris.distinct(),
+        attachmentUris = sharedChatDraftAttachmentUris(attachmentUris),
     )
         .takeIf { it.text.isNotBlank() || it.attachmentUris.isNotEmpty() }
+}
+
+internal fun sharedChatDraftAttachmentUris(attachmentUris: List<Uri>): List<Uri> {
+    return attachmentUris
+        .filter { uri -> uri.scheme?.equals("content", ignoreCase = true) == true }
+        .distinct()
 }
 
 internal fun sharedChatDraftComposerText(currentText: String, sharedText: String): String {
@@ -270,6 +279,23 @@ internal fun sharedChatDraftConfirmationMessageRes(draft: SharedChatDraft): Int 
 
 internal fun sharedChatDraftConfirmationFeedback(): AetherLinkInteractionFeedback {
     return AetherLinkInteractionFeedback.PrimaryAction
+}
+
+@Composable
+internal fun SharedChatDraftImportAnnouncement(
+    message: String?,
+    modifier: Modifier = Modifier,
+) {
+    val announcement = message ?: return
+    Box(
+        modifier = modifier
+            .size(1.dp)
+            .testTag(SHARED_CHAT_DRAFT_ANNOUNCEMENT_TEST_TAG)
+            .clearAndSetSemantics {
+                contentDescription = announcement
+                liveRegion = LiveRegionMode.Polite
+            },
+    )
 }
 
 @Suppress("DEPRECATION")
@@ -373,6 +399,7 @@ private fun LocalAgentBridgeApp(
             val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
             val scope = rememberCoroutineScope()
             val snackbarHostState = remember { SnackbarHostState() }
+            var sharedDraftAnnouncementMessage by remember { mutableStateOf<String?>(null) }
             val usePermanentNavigation = shouldUsePermanentNavigationRail(configuration.screenWidthDp)
             var destination by rememberSaveable { mutableStateOf(AppDestination.Chat) }
             var renamingSessionId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -452,6 +479,9 @@ private fun LocalAgentBridgeApp(
                 destination = AppDestination.Chat
                 hapticFeedback.performAetherLinkFeedback(sharedChatDraftConfirmationFeedback())
                 val confirmationMessage = context.getString(sharedChatDraftConfirmationMessageRes(draft))
+                sharedDraftAnnouncementMessage = null
+                withFrameNanos { }
+                sharedDraftAnnouncementMessage = confirmationMessage
                 onSharedChatDraftConsumed()
                 scope.launch {
                     snackbarHostState.showSnackbar(confirmationMessage)
@@ -624,71 +654,76 @@ private fun LocalAgentBridgeApp(
                             )
                         },
                     ) { padding ->
-                        when (effectiveDestination) {
-                            AppDestination.Chat -> ChatScreen(
-                                state = state,
-                                onInputChange = viewModel::updateChatInput,
-                                onSend = viewModel::sendChatMessage,
-                                onCancel = viewModel::cancelGeneration,
-                                onConnect = viewModel::connectToTrustedRuntime,
-                                onScanPairingQr = scanPairingQr,
-                                onRefreshHealth = viewModel::requestRuntimeHealth,
-                                onAttachFiles = { attachmentPickerLauncher.launch(attachmentPickerMimeTypes(state)) },
-                                onRemoveAttachment = viewModel::removePendingAttachment,
-                                onSuggestionClick = viewModel::useSuggestedQuestion,
-                                onScanLatestQr = scanPairingQr,
-                                onRegenerateLatestResponse = viewModel::regenerateLatestResponse,
-                                onReuseLatestUserMessage = viewModel::reuseLatestUserMessageAsDraft,
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .padding(padding),
-                            )
-                            AppDestination.Settings -> SettingsScreen(
-                                state = state,
-                                onHostChange = viewModel::updateHost,
-                                onPortChange = viewModel::updatePort,
-                                onUseUsbReverse = viewModel::useUsbReverseEndpoint,
-                                onUseEmulator = viewModel::useEmulatorEndpoint,
-                                onStartDiscovery = viewModel::startDiscovery,
-                                onStopDiscovery = viewModel::stopDiscovery,
-                                onUseDiscoveredRuntime = viewModel::useDiscoveredRuntime,
-                                onForgetTrustedRuntime = viewModel::forgetTrustedRuntime,
-                                onScanPairingQr = scanPairingQr,
-                                onSubmitPairingPayload = handlePairingQr,
-                                onConnect = viewModel::connectToTrustedRuntime,
-                                onRefreshHealth = viewModel::requestRuntimeHealth,
-                                onRequestModels = viewModel::requestModels,
-                                onDisconnect = viewModel::disconnect,
-                                onSetAutoReconnectEnabled = viewModel::setTrustedRuntimeAutoReconnectEnabled,
-                                onSetLanguageTag = viewModel::setAppLanguageTag,
-                                onSetTheme = viewModel::setAppTheme,
-                                onSelectEmbeddingModel = viewModel::selectEmbeddingModel,
-                                onAddMemoryEntry = viewModel::addMemoryEntry,
-                                onRemoveMemoryEntry = viewModel::removeMemoryEntry,
-                                onSetMemoryEntryEnabled = viewModel::setMemoryEntryEnabled,
-                                onRefreshMemory = viewModel::refreshRuntimeMemory,
-                                onRefreshChatHistory = viewModel::refreshRuntimeChatHistory,
-                                onOpenChatSession = { sessionId ->
-                                    viewModel.selectChatSession(sessionId)
-                                    destination = AppDestination.Chat
-                                },
-                                onRenameChatSession = { sessionId ->
-                                    val session = (state.chatSessions + state.archivedChatSessions)
-                                        .firstOrNull { it.id == sessionId }
-                                    if (session != null) {
-                                        renamingSessionId = session.id
-                                        renameDraft = session.editableTitle()
-                                    }
-                                },
-                                onArchiveChatSession = viewModel::archiveChatSession,
-                                onRestoreChatSession = viewModel::unarchiveChatSession,
-                                onPermanentlyDeleteChatSession = viewModel::deleteChatSession,
-                                onArchiveAllChatSessions = viewModel::archiveChatSessions,
-                                onPermanentlyDeleteArchivedChatSessions = viewModel::clearArchivedChatSessions,
-                                showDeveloperDiagnostics = showDeveloperDiagnostics,
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .padding(padding),
+                        Box(modifier = Modifier.fillMaxSize()) {
+                            when (effectiveDestination) {
+                                AppDestination.Chat -> ChatScreen(
+                                    state = state,
+                                    onInputChange = viewModel::updateChatInput,
+                                    onSend = viewModel::sendChatMessage,
+                                    onCancel = viewModel::cancelGeneration,
+                                    onConnect = viewModel::connectToTrustedRuntime,
+                                    onScanPairingQr = scanPairingQr,
+                                    onRefreshHealth = viewModel::requestRuntimeHealth,
+                                    onAttachFiles = { attachmentPickerLauncher.launch(attachmentPickerMimeTypes(state)) },
+                                    onRemoveAttachment = viewModel::removePendingAttachment,
+                                    onSuggestionClick = viewModel::useSuggestedQuestion,
+                                    onScanLatestQr = scanPairingQr,
+                                    onRegenerateLatestResponse = viewModel::regenerateLatestResponse,
+                                    onReuseLatestUserMessage = viewModel::reuseLatestUserMessageAsDraft,
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(padding),
+                                )
+                                AppDestination.Settings -> SettingsScreen(
+                                    state = state,
+                                    onHostChange = viewModel::updateHost,
+                                    onPortChange = viewModel::updatePort,
+                                    onUseUsbReverse = viewModel::useUsbReverseEndpoint,
+                                    onUseEmulator = viewModel::useEmulatorEndpoint,
+                                    onStartDiscovery = viewModel::startDiscovery,
+                                    onStopDiscovery = viewModel::stopDiscovery,
+                                    onUseDiscoveredRuntime = viewModel::useDiscoveredRuntime,
+                                    onForgetTrustedRuntime = viewModel::forgetTrustedRuntime,
+                                    onScanPairingQr = scanPairingQr,
+                                    onSubmitPairingPayload = handlePairingQr,
+                                    onConnect = viewModel::connectToTrustedRuntime,
+                                    onRefreshHealth = viewModel::requestRuntimeHealth,
+                                    onRequestModels = viewModel::requestModels,
+                                    onDisconnect = viewModel::disconnect,
+                                    onSetAutoReconnectEnabled = viewModel::setTrustedRuntimeAutoReconnectEnabled,
+                                    onSetLanguageTag = viewModel::setAppLanguageTag,
+                                    onSetTheme = viewModel::setAppTheme,
+                                    onSelectEmbeddingModel = viewModel::selectEmbeddingModel,
+                                    onAddMemoryEntry = viewModel::addMemoryEntry,
+                                    onRemoveMemoryEntry = viewModel::removeMemoryEntry,
+                                    onSetMemoryEntryEnabled = viewModel::setMemoryEntryEnabled,
+                                    onRefreshMemory = viewModel::refreshRuntimeMemory,
+                                    onRefreshChatHistory = viewModel::refreshRuntimeChatHistory,
+                                    onOpenChatSession = { sessionId ->
+                                        viewModel.selectChatSession(sessionId)
+                                        destination = AppDestination.Chat
+                                    },
+                                    onRenameChatSession = { sessionId ->
+                                        val session = (state.chatSessions + state.archivedChatSessions)
+                                            .firstOrNull { it.id == sessionId }
+                                        if (session != null) {
+                                            renamingSessionId = session.id
+                                            renameDraft = session.editableTitle()
+                                        }
+                                    },
+                                    onArchiveChatSession = viewModel::archiveChatSession,
+                                    onRestoreChatSession = viewModel::unarchiveChatSession,
+                                    onPermanentlyDeleteChatSession = viewModel::deleteChatSession,
+                                    onArchiveAllChatSessions = viewModel::archiveChatSessions,
+                                    onPermanentlyDeleteArchivedChatSessions = viewModel::clearArchivedChatSessions,
+                                    showDeveloperDiagnostics = showDeveloperDiagnostics,
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(padding),
+                                )
+                            }
+                            SharedChatDraftImportAnnouncement(
+                                message = sharedDraftAnnouncementMessage,
                             )
                         }
                     }
@@ -3041,7 +3076,7 @@ internal fun pairingUriStringOrNull(
     rawUri: String,
 ): String? {
     val normalizedScheme = scheme?.lowercase(Locale.US)
-    if (normalizedScheme != "aetherlink" && normalizedScheme != "lab") return null
+    if (normalizedScheme != "aetherlink") return null
     val action = host?.lowercase(Locale.US)
     if (action != "pair") return null
     return rawUri

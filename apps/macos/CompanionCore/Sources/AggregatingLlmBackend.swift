@@ -18,8 +18,9 @@ public final class AggregatingLlmBackend: LlmBackend, @unchecked Sendable {
         _ backends: [any LlmBackend],
         modelIdleUnloadDelayNanoseconds: UInt64 = 600_000_000_000
     ) {
-        orderedBackends = backends
-        backendsByProvider = Dictionary(uniqueKeysWithValues: backends.map { ($0.provider, $0) })
+        let uniqueBackends = Self.firstBackendsByProvider(backends)
+        orderedBackends = uniqueBackends.ordered
+        backendsByProvider = uniqueBackends.byProvider
         self.modelIdleUnloadDelayNanoseconds = modelIdleUnloadDelayNanoseconds
     }
 
@@ -197,6 +198,20 @@ public final class AggregatingLlmBackend: LlmBackend, @unchecked Sendable {
             )
         }
         return backend
+    }
+
+    private static func firstBackendsByProvider(
+        _ backends: [any LlmBackend]
+    ) -> (ordered: [any LlmBackend], byProvider: [ModelProvider: any LlmBackend]) {
+        var ordered: [any LlmBackend] = []
+        var byProvider: [ModelProvider: any LlmBackend] = [:]
+        for backend in backends {
+            if byProvider[backend.provider] == nil {
+                ordered.append(backend)
+                byProvider[backend.provider] = backend
+            }
+        }
+        return (ordered, byProvider)
     }
 
     private func remember(generationID: String, provider: ModelProvider) {

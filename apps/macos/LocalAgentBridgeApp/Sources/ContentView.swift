@@ -39,6 +39,7 @@ struct ContentView: View {
                 .padding(.top, 12)
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(Text(sidebarBrandAccessibilityLabel()))
+                .accessibilityAddTraits(.isHeader)
 
                 List(CompanionSection.allCases, selection: $selectedSection) { section in
                     Label(section.title, systemImage: section.systemImage)

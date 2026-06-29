@@ -82,7 +82,7 @@ object RuntimePairingPayloadParser {
                 ?: query["network_id"]
                 ?: query["ri"]
             ).optionalOpaqueQrValue("Invalid relay id")
-        val relayId = (explicitRelayId ?: routeToken)?.takeIf { it.isNotBlank() }
+        val relayId = explicitRelayId?.takeIf { it.isNotBlank() }
         val relaySecret = (
             query["relay_secret"]
                 ?: query["remote_secret"]
@@ -137,6 +137,7 @@ object RuntimePairingPayloadParser {
         }
         if (hasExplicitRelayField) {
             require(relayHost != null) { "Missing relay host" }
+            require(isAllowedRemoteRelayScope(relayScope)) { "Invalid relay scope" }
             require(
                 isEligibleRemoteRelayHost(relayHost, relayScope) ||
                     relayHost.isAllowedDebugLoopbackRelay(relayScope, allowDebugLoopbackRelay)
@@ -252,6 +253,9 @@ fun isEligibleRemoteRelayHost(host: String, relayScope: String? = null): Boolean
     return true
 }
 
+fun isAllowedRemoteRelayScope(relayScope: String?): Boolean =
+    relayScope == null || relayScope in ALLOWED_REMOTE_RELAY_SCOPES
+
 private fun String.isPrivateOrLocalIpv4Literal(): Boolean {
     val octets = split('.')
     if (octets.size != 4) return false
@@ -319,7 +323,7 @@ private fun String.isAllowedDebugLoopbackRelay(
     allowDebugLoopbackRelay: Boolean,
 ): Boolean {
     if (!allowDebugLoopbackRelay) return false
-    if (relayScope?.trim()?.lowercase() != DEBUG_USB_REVERSE_RELAY_SCOPE) return false
+    if (relayScope != DEBUG_USB_REVERSE_RELAY_SCOPE) return false
     val normalized = trim()
         .removePrefix("[")
         .removeSuffix("]")
@@ -334,9 +338,14 @@ private fun String.isAllowedDebugLoopbackRelay(
 private const val DEBUG_USB_REVERSE_RELAY_SCOPE = "usb_reverse"
 private const val PRIVATE_OVERLAY_RELAY_SCOPE = "private_overlay"
 private const val LOCAL_DIRECT_DIAGNOSTIC_SCOPE = "local_diagnostic"
+private val ALLOWED_REMOTE_RELAY_SCOPES = setOf(
+    "remote",
+    PRIVATE_OVERLAY_RELAY_SCOPE,
+    DEBUG_USB_REVERSE_RELAY_SCOPE,
+)
 
 private fun String?.isDiagnosticLocalDirectScope(): Boolean =
-    this?.trim()?.lowercase() == LOCAL_DIRECT_DIAGNOSTIC_SCOPE
+    this == LOCAL_DIRECT_DIAGNOSTIC_SCOPE
 
 private fun String?.isPrivateOverlayScope(): Boolean =
-    this?.trim()?.lowercase() == PRIVATE_OVERLAY_RELAY_SCOPE
+    this == PRIVATE_OVERLAY_RELAY_SCOPE

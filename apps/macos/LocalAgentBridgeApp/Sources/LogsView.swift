@@ -33,9 +33,16 @@ struct LogsView: View {
                         )
                     )
                 } else {
-                    List(model.logs, id: \.self) { line in
-                        LogRow(display: localizedLogDisplay(line), tone: logTone(line))
+                    List {
+                        ForEach(Array(model.logs.enumerated()), id: \.offset) { index, line in
+                            LogRow(
+                                display: localizedLogDisplay(line),
+                                tone: logTone(line),
+                                position: index + 1,
+                                totalCount: model.logs.count
+                            )
                             .padding(.vertical, 4)
+                        }
                     }
                     .listStyle(.inset)
                     .frame(minHeight: 300)
@@ -53,6 +60,8 @@ struct LogsView: View {
 private struct LogRow: View {
     let display: LogDisplay
     let tone: StatusTone
+    let position: Int
+    let totalCount: Int
     @State private var diagnosticsExpanded = false
 
     var body: some View {
@@ -67,7 +76,16 @@ private struct LogRow: View {
                     .font(.body)
                     .lineLimit(3)
                     .textSelection(.enabled)
-                    .accessibilityLabel(Text(logRowAccessibilityLabel(summary: display.summary, tone: tone)))
+                    .accessibilityLabel(
+                        Text(
+                            logRowAccessibilityLabel(
+                                summary: display.summary,
+                                tone: tone,
+                                position: position,
+                                totalCount: totalCount
+                            )
+                        )
+                    )
                 if let diagnostic = display.diagnostic {
                     DisclosureGroup(isExpanded: $diagnosticsExpanded) {
                         Text(diagnostic)
@@ -158,6 +176,19 @@ func logRowAccessibilityLabel(summary: String, tone: StatusTone) -> String {
     let eventSummary = normalizedLogAccessibilitySummary(summary)
     return String(
         format: NSLocalizedString("Activity item %@. Status %@.", comment: ""),
+        eventSummary,
+        logToneAccessibilityStatus(tone)
+    )
+}
+
+func logRowAccessibilityLabel(summary: String, tone: StatusTone, position: Int, totalCount: Int) -> String {
+    let eventSummary = normalizedLogAccessibilitySummary(summary)
+    let safePosition = max(1, position)
+    let safeTotalCount = max(safePosition, totalCount)
+    return String(
+        format: NSLocalizedString("Activity item %d of %d. %@. Status %@.", comment: ""),
+        safePosition,
+        safeTotalCount,
         eventSummary,
         logToneAccessibilityStatus(tone)
     )

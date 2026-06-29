@@ -7,6 +7,7 @@ JAVA_HOME="${JAVA_HOME:-/Applications/Android Studio.app/Contents/jbr/Contents/H
 ADB="${ADB:-$ANDROID_HOME/platform-tools/adb}"
 PACKAGE_NAME="com.localagentbridge.android"
 MODE="relay"
+REQUESTED_SERIAL=""
 SKIP_INSTALL=0
 KEEP_APP_DATA=0
 EXTERNAL_RELAY_HOST=""
@@ -23,7 +24,7 @@ CHAT_DELTA_TIMEOUT="${AETHERLINK_ANDROID_CHAT_DELTA_TIMEOUT_SECONDS:-15}"
 
 usage() {
   cat <<'USAGE'
-Usage: script/android_pairing_deeplink_smoke.sh [--relay|--direct] [--skip-install] [--keep-app-data] [--expect-reconnect] [--expect-chat-cancel] [--live-backend] [--chat-text <text>] [--chat-delta-timeout <seconds>]
+Usage: script/android_pairing_deeplink_smoke.sh [--relay|--direct] [--serial <adb-serial>] [--skip-install] [--keep-app-data] [--expect-reconnect] [--expect-chat-cancel] [--live-backend] [--chat-text <text>] [--chat-delta-timeout <seconds>]
        script/android_pairing_deeplink_smoke.sh --relay --external-relay-host <host> [--external-relay-port <port>] [--allocation-token <token>] [--allow-private-relay] [--allow-direct-fallback] [--probe-external-relay-from-device]
 
 Runs a physical-device smoke for the QR result path by injecting an
@@ -36,6 +37,10 @@ pairing.request and runtime.health.
 Use --expect-reconnect to force-stop and relaunch the Android app after the
 first runtime.health without clearing app data, then wait for a second
 runtime.health that proves the saved trusted relay route reconnects.
+
+Use --serial when multiple adb devices are attached or when the QA evidence must
+bind to a specific physical phone. The smoke fails if that serial is absent or
+unauthorized.
 
 Use --expect-chat-cancel to drive the physical Android UI after pairing:
 tap the chat input, type a short smoke message, tap Send, wait for streamed
@@ -140,6 +145,14 @@ while [[ $# -gt 0 ]]; do
     --skip-install)
       SKIP_INSTALL=1
       shift
+      ;;
+    --serial)
+      if [[ $# -lt 2 ]]; then
+        echo "--serial requires a value." >&2
+        exit 2
+      fi
+      REQUESTED_SERIAL="$2"
+      shift 2
       ;;
     --keep-app-data)
       KEEP_APP_DATA=1
@@ -691,6 +704,15 @@ DEVICE_LINES="$("$ADB" devices | awk 'NR > 1 && NF >= 2 { print $1 " " $2 }')"
 if [[ -z "$DEVICE_LINES" ]]; then
   echo "No Android device found. Connect a phone with USB debugging enabled." >&2
   exit 3
+fi
+
+if [[ -n "$REQUESTED_SERIAL" ]]; then
+  DEVICE_LINES="$(printf '%s\n' "$DEVICE_LINES" | awk -v serial="$REQUESTED_SERIAL" '$1 == serial { print $1 " " $2 }')"
+  if [[ -z "$DEVICE_LINES" ]]; then
+    echo "Requested Android device '$REQUESTED_SERIAL' was not found." >&2
+    "$ADB" devices -l >&2
+    exit 5
+  fi
 fi
 
 if echo "$DEVICE_LINES" | awk '$2 == "unauthorized" { found = 1 } END { exit found ? 0 : 1 }'; then

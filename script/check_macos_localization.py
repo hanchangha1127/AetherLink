@@ -119,6 +119,15 @@ REQUIRED_CONNECTION_RECOVERY_ACCESSIBILITY_KEYS = (
     "Enter only the connection address. Put the port in the Port field.",
     "Enter a valid connection port.",
 )
+REQUIRED_RUNTIME_REASONING_KEYS = (
+    "Thinking",
+    "Show thinking",
+    "Hide thinking",
+    "Thinking expanded",
+    "Thinking collapsed",
+    "Expand to show full thinking.",
+    "Collapse to keep thinking preview short.",
+)
 REQUIRED_RELEASE_COPY_VALUES = {
     "en": {
         "Generated automatically if blank": "Created automatically if left blank",
@@ -526,6 +535,7 @@ def check_app_appearance_wiring() -> list[str]:
         ".accessibilityHidden(true)",
         ".accessibilityElement(children: .ignore)",
         ".accessibilityLabel(Text(sidebarBrandAccessibilityLabel()))",
+        ".accessibilityAddTraits(.isHeader)",
         "func sidebarBrandAccessibilityLabel() -> String",
         ".accessibilityValue(Text(AetherLinkAppAppearance.normalized(appearance).title))",
         ".accessibilityValue(Text(AetherLinkAppLanguage.normalized(languageTag).title))",
@@ -957,9 +967,16 @@ def check_activity_log_redaction() -> list[str]:
             "logAccessibilityTerminalPunctuation",
             "func logTechnicalDetailsAccessibilityValue(isExpanded: Bool) -> String",
             "func logTechnicalDetailsAccessibilityHint(isExpanded: Bool) -> String",
-            "logRowAccessibilityLabel(summary: display.summary, tone: tone)",
-            ".accessibilityLabel(Text(logRowAccessibilityLabel(summary: display.summary, tone: tone)))",
+            "ForEach(Array(model.logs.enumerated()), id: \\.offset)",
+            "position: index + 1",
+            "totalCount: model.logs.count",
+            "logRowAccessibilityLabel(",
+            "summary: display.summary,",
+            "position: position,",
+            "totalCount: totalCount",
+            ".accessibilityLabel(",
             "func logRowAccessibilityLabel(summary: String, tone: StatusTone) -> String",
+            "func logRowAccessibilityLabel(summary: String, tone: StatusTone, position: Int, totalCount: Int) -> String",
             "activityLogListAccessibilityLabel()",
             "activityLogListAccessibilityValue(count: model.logs.count)",
             "func activityLogListAccessibilityLabel() -> String",
@@ -971,6 +988,7 @@ def check_activity_log_redaction() -> list[str]:
             "Activity log",
             "%d activity items",
             "Activity item %@. Status %@.",
+            "Activity item %d of %d. %@. Status %@.",
             "Technical details for %@",
             "Activity technical details expanded",
             "Activity technical details collapsed",
@@ -1360,6 +1378,161 @@ def check_runtime_inspector_close_button_accessibility() -> list[str]:
     return failures
 
 
+def check_runtime_transcript_reasoning_preview() -> list[str]:
+    failures: list[str] = []
+    failures.extend(missing_source_snippets(
+        STATUS_VIEW_SOURCE,
+        (
+            "RuntimeTranscriptReasoningBlock(reasoning: reasoning)",
+            "runtimeTranscriptReasoningDisplayPolicy(",
+            "runtimeTranscriptReasoningPreviewMaxLines = 3",
+            "runtimeTranscriptReasoningSingleLinePreviewLimit = 180",
+            "runtimeTranscriptReasoningCollapsedOpacity",
+            "runtimeTranscriptReasoningExpandedOpacity",
+            "runtimeTranscriptReasoningToggleTitle(isExpanded:",
+            "runtimeTranscriptReasoningToggleAccessibilityValue(isExpanded:",
+            "runtimeTranscriptReasoningToggleAccessibilityHint(isExpanded:",
+        ),
+        "macOS runtime transcript reasoning preview and toggle wiring",
+    ))
+    failures.extend(missing_source_snippets(
+        LOCALIZATION_TEST_SOURCE,
+        (
+            "testRuntimeTranscriptReasoningPreviewStaysShortUntilExpanded",
+            "testRuntimeTranscriptReasoningPreviewHandlesShortAndLongParagraphs",
+            "runtimeTranscriptReasoningToggleTitle(isExpanded: false)",
+            "runtimeTranscriptReasoningToggleAccessibilityHint(isExpanded: true)",
+            "runtimeTranscriptReasoningDisplayPolicy(",
+            "runtimeTranscriptReasoningNeedsExpansion(longParagraph)",
+        ),
+        "macOS runtime transcript reasoning preview localization tests",
+    ))
+    return failures
+
+
+def check_runtime_history_message_count_clamp() -> list[str]:
+    failures: list[str] = []
+    failures.extend(missing_source_snippets(
+        APP_LOCALIZATION_SOURCE,
+        (
+            "func localizedRuntimeChatMessageCount(_ count: Int) -> String",
+            "localizedCount(max(0, count), singularKey: \"1 message\", pluralKey: \"%d messages\")",
+        ),
+        "macOS runtime history message-count clamp helper",
+    ))
+    failures.extend(missing_source_snippets(
+        LOCALIZATION_TEST_SOURCE,
+        (
+            "localizedRuntimeChatMessageCount(-3)",
+            "\"0 messages\"",
+            "runtimeChatSessionAccessibilityLabel(",
+            "\"Chat session Damaged count. Status Active. Model ollama:llama3.1:8b. 0 messages. Updated Jun 29, 2026 at 2:00 AM.\"",
+        ),
+        "macOS runtime history message-count clamp localization tests",
+    ))
+    return failures
+
+
+def check_runtime_history_card_summary() -> list[str]:
+    failures: list[str] = []
+    failures.extend(missing_source_snippets(
+        APP_LOCALIZATION_SOURCE,
+        (
+            "func localizedRuntimeSavedChatSessionCount(_ count: Int) -> String",
+            "localizedCount(max(0, count), singularKey: \"1 active chat\", pluralKey: \"%d active chats\")",
+            "localizedCount(max(0, count), singularKey: \"1 archived chat\", pluralKey: \"%d archived chats\")",
+            "localizedCount(max(0, count), singularKey: \"1 saved chat\", pluralKey: \"%d saved chats\")",
+        ),
+        "macOS runtime history saved/active/archived count helpers",
+    ))
+    failures.extend(missing_source_snippets(
+        STATUS_VIEW_SOURCE,
+        (
+            "runtimeHistoryCardValue(",
+            "runtimeHistoryCardDetail(",
+            "RuntimeHistoryInspectorSummary(",
+            "sessions.filter { $0.status != \"archived\" }.count",
+            "sessions.filter { $0.status == \"archived\" }.count",
+            "private struct RuntimeHistoryInspectorSummary: View",
+            "runtimeHistoryInspectorSummaryAccessibilityLabel(value: valueText, detail: detailText)",
+            "func runtimeHistoryInspectorSummaryAccessibilityLabel(value: String, detail: String) -> String",
+            "NSLocalizedString(\"Runtime history summary. %@. %@\", comment: \"\")",
+            "localizedRuntimeSavedChatSessionCount(max(0, activeCount) + max(0, archivedCount))",
+            "NSLocalizedString(\"No runtime chat sessions are stored on AetherLink Runtime.\", comment: \"\")",
+            "NSLocalizedString(\"Runtime context: %@. Archived: %@.\", comment: \"\")",
+        ),
+        "macOS runtime history card saved/archived summary wiring",
+    ))
+    failures.extend(missing_source_snippets(
+        LOCALIZATION_TEST_SOURCE,
+        (
+            "localizedRuntimeSavedChatSessionCount(3)",
+            "localizedRuntimeSavedChatSessionCount(-3)",
+            "runtimeHistoryCardValue(activeCount: 2, archivedCount: 1)",
+            "runtimeHistoryCardDetail(activeCount: 2, archivedCount: 1)",
+            "\"Runtime context: 2 active chats. Archived: 1 archived chat.\"",
+            "\"런타임 컨텍스트: 활성 채팅 2개. 보관됨: 보관된 채팅 1개.\"",
+            "\"ランタイムコンテキスト: アクティブなチャット 2 件。アーカイブ済み: アーカイブ済みチャット 1 件。\"",
+            "\"运行时上下文：2 个活跃聊天。已归档：1 个已归档聊天。\"",
+            "\"Contexte du runtime : 2 chats actifs. Archivés : 1 chat archivé.\"",
+            "runtimeHistoryInspectorSummaryAccessibilityLabel(",
+            "\"Runtime history summary. 3 saved chats. Runtime context: 2 active chats. Archived: 1 archived chat.\"",
+        ),
+        "macOS runtime history card summary localization tests",
+    ))
+    return failures
+
+
+def check_runtime_memory_card_summary() -> list[str]:
+    failures: list[str] = []
+    failures.extend(missing_source_snippets(
+        APP_LOCALIZATION_SOURCE,
+        (
+            "func localizedRuntimeSavedMemoryCount(_ count: Int) -> String",
+            "localizedCount(max(0, count), singularKey: \"1 saved memory note\", pluralKey: \"%d saved memory notes\")",
+            "localizedCount(max(0, count), singularKey: \"1 enabled memory note\", pluralKey: \"%d enabled memory notes\")",
+            "localizedCount(max(0, count), singularKey: \"1 paused memory note\", pluralKey: \"%d paused memory notes\")",
+        ),
+        "macOS runtime memory saved/enabled/paused count helpers",
+    ))
+    failures.extend(missing_source_snippets(
+        STATUS_VIEW_SOURCE,
+        (
+            "runtimeMemoryCardValue(",
+            "runtimeMemoryCardDetail(",
+            "RuntimeMemoryInspectorSummary(",
+            "entries.filter { $0.enabled }.count",
+            "entries.filter { !$0.enabled }.count",
+            "private struct RuntimeMemoryInspectorSummary: View",
+            "runtimeMemoryInspectorSummaryAccessibilityLabel(value: valueText, detail: detailText)",
+            "func runtimeMemoryInspectorSummaryAccessibilityLabel(value: String, detail: String) -> String",
+            "NSLocalizedString(\"Runtime memory summary. %@. %@\", comment: \"\")",
+            "localizedRuntimeSavedMemoryCount(max(0, enabledCount) + max(0, pausedCount))",
+            "NSLocalizedString(\"No runtime memory notes are stored on AetherLink Runtime.\", comment: \"\")",
+            "NSLocalizedString(\"Runtime context: %@. Paused: %@.\", comment: \"\")",
+        ),
+        "macOS runtime memory card saved/paused summary wiring",
+    ))
+    failures.extend(missing_source_snippets(
+        LOCALIZATION_TEST_SOURCE,
+        (
+            "localizedRuntimeSavedMemoryCount(3)",
+            "localizedRuntimeSavedMemoryCount(-3)",
+            "runtimeMemoryCardValue(enabledCount: 2, pausedCount: 1)",
+            "runtimeMemoryCardDetail(enabledCount: 2, pausedCount: 1)",
+            "\"Runtime context: 2 enabled memory notes. Paused: 1 paused memory note.\"",
+            "\"런타임 컨텍스트: 사용 중인 메모리 노트 2개. 일시 중지: 일시 중지된 메모리 노트 1개.\"",
+            "\"ランタイムコンテキスト: 有効なメモリノート 2 件。一時停止: 一時停止中のメモリノート 1 件。\"",
+            "\"运行时上下文：2 条已启用记忆。已暂停：1 条已暂停记忆。\"",
+            "\"Contexte du runtime : 2 notes mémoire activées. En pause : 1 note mémoire suspendue.\"",
+            "runtimeMemoryInspectorSummaryAccessibilityLabel(",
+            "\"Runtime memory summary. 3 saved memory notes. Runtime context: 2 enabled memory notes. Paused: 1 paused memory note.\"",
+        ),
+        "macOS runtime memory card summary localization tests",
+    ))
+    return failures
+
+
 def main() -> int:
     failures: list[str] = []
     locale_keys: dict[str, list[str]] = {}
@@ -1445,6 +1618,7 @@ def main() -> int:
             + REQUIRED_TRUSTED_DEVICE_KEYS
             + REQUIRED_REMOTE_ROUTE_PREPARATION_KEYS
             + REQUIRED_CONNECTION_RECOVERY_ACCESSIBILITY_KEYS
+            + REQUIRED_RUNTIME_REASONING_KEYS
         ):
             if key not in base_key_set:
                 failures.append(f"{strings_path(BASE_LOCALE).relative_to(ROOT)}: missing app key {key!r}")
@@ -1465,6 +1639,10 @@ def main() -> int:
     failures.extend(check_trusted_device_identity_display())
     failures.extend(check_remote_route_preparation_issue_display())
     failures.extend(check_runtime_inspector_close_button_accessibility())
+    failures.extend(check_runtime_transcript_reasoning_preview())
+    failures.extend(check_runtime_history_message_count_clamp())
+    failures.extend(check_runtime_history_card_summary())
+    failures.extend(check_runtime_memory_card_summary())
 
     if failures:
         print("macOS localization check failed:", file=sys.stderr)

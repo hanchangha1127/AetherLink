@@ -2764,7 +2764,7 @@ class RuntimeClientViewModelTest {
                     requestId = "auth-accepted",
                 ),
             )
-            runCurrent()
+            advanceUntilIdle()
 
             val firstRouteRefresh = channel.sentEnvelopes.single { it.type == MessageType.RouteRefresh }
             channel.enqueue(
@@ -2805,6 +2805,7 @@ class RuntimeClientViewModelTest {
     fun routeRefreshAuthenticationRequiredDoesNotRetainRouteMaterialTechnicalDetail() = runTest {
         val mainDispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(mainDispatcher)
+        var runtimeViewModel: RuntimeClientViewModel? = null
         try {
             var currentTimeMillis = 1_000L
             val channel = ScriptedRuntimeProtocolChannel()
@@ -2843,6 +2844,7 @@ class RuntimeClientViewModelTest {
                     currentTimeMillis = { currentTimeMillis },
                 ),
             )
+            runtimeViewModel = viewModel
             advanceUntilIdle()
 
             viewModel.connectToTrustedRuntime()
@@ -2855,7 +2857,7 @@ class RuntimeClientViewModelTest {
                     requestId = "auth-accepted",
                 ),
             )
-            runCurrent()
+            advanceUntilIdle()
 
             val firstRouteRefresh = channel.sentEnvelopes.single { it.type == MessageType.RouteRefresh }
             channel.enqueue(
@@ -2891,6 +2893,8 @@ class RuntimeClientViewModelTest {
 
             assertEquals(1, channel.sentEnvelopes.count { it.type == MessageType.RouteRefresh })
         } finally {
+            runtimeViewModel?.clearForTest()
+            runCurrent()
             Dispatchers.resetMain()
         }
     }
@@ -2900,6 +2904,7 @@ class RuntimeClientViewModelTest {
     fun authenticatedTrustedRuntimeMarksRouteExpiredWhenRefreshErrorCannotRetryBeforeLeaseExpiry() = runTest {
         val mainDispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(mainDispatcher)
+        var runtimeViewModel: RuntimeClientViewModel? = null
         try {
             var currentTimeMillis = 1_000L
             val channel = ScriptedRuntimeProtocolChannel()
@@ -2938,6 +2943,7 @@ class RuntimeClientViewModelTest {
                     currentTimeMillis = { currentTimeMillis },
                 ),
             )
+            runtimeViewModel = viewModel
             advanceUntilIdle()
 
             viewModel.connectToTrustedRuntime()
@@ -2950,7 +2956,7 @@ class RuntimeClientViewModelTest {
                     requestId = "auth-accepted",
                 ),
             )
-            runCurrent()
+            advanceUntilIdle()
 
             val firstRouteRefresh = channel.sentEnvelopes.single { it.type == MessageType.RouteRefresh }
             channel.enqueue(
@@ -2985,6 +2991,8 @@ class RuntimeClientViewModelTest {
             assertEquals(1, channel.sentEnvelopes.count { it.type == MessageType.RouteRefresh })
             assertEquals("relay.example.test", trustedStore.trusted?.relayHost)
         } finally {
+            runtimeViewModel?.clearForTest()
+            runCurrent()
             Dispatchers.resetMain()
         }
     }
@@ -2994,6 +3002,7 @@ class RuntimeClientViewModelTest {
     fun authenticatedTrustedRuntimeRetriesRejectedRouteRefreshPayloadBeforeLeaseExpiry() = runTest {
         val mainDispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(mainDispatcher)
+        var runtimeViewModel: RuntimeClientViewModel? = null
         try {
             var currentTimeMillis = 1_000L
             val channel = ScriptedRuntimeProtocolChannel()
@@ -3032,6 +3041,7 @@ class RuntimeClientViewModelTest {
                     currentTimeMillis = { currentTimeMillis },
                 ),
             )
+            runtimeViewModel = viewModel
             advanceUntilIdle()
 
             viewModel.connectToTrustedRuntime()
@@ -3044,7 +3054,7 @@ class RuntimeClientViewModelTest {
                     requestId = "auth-accepted",
                 ),
             )
-            runCurrent()
+            advanceUntilIdle()
 
             val firstRouteRefresh = channel.sentEnvelopes.single { it.type == MessageType.RouteRefresh }
             channel.enqueue(
@@ -3079,6 +3089,8 @@ class RuntimeClientViewModelTest {
             assertEquals(2, routeRefreshRequests.size)
             assertTrue(routeRefreshRequests[1].requestId != routeRefreshRequests[0].requestId)
         } finally {
+            runtimeViewModel?.clearForTest()
+            runCurrent()
             Dispatchers.resetMain()
         }
     }
@@ -9380,6 +9392,62 @@ class RuntimeClientViewModelTest {
     }
 
     @Test
+    fun runtimeSessionSummariesClampNegativeMessageCounts() {
+        val data = PersistedRuntimeData(
+            sessions = listOf(
+                PersistedChatSession(
+                    id = "runtime-existing",
+                    title = "Existing runtime",
+                    createdAtMillis = 10L,
+                    updatedAtMillis = 10L,
+                    runtimeOwned = true,
+                    runtimeMessageCount = -9,
+                ),
+            ),
+        )
+
+        val merged = data.withRuntimeChatSessionSummaries(
+            sessions = listOf(
+                ChatSessionSummaryPayload(
+                    sessionId = "runtime-existing",
+                    title = "Existing runtime",
+                    model = "ollama:llama3.1:8b",
+                    lastActivityAt = "2026-06-23T09:02:05Z",
+                    messageCount = -3,
+                ),
+                ChatSessionSummaryPayload(
+                    sessionId = "runtime-new",
+                    title = "New runtime",
+                    model = "ollama:qwen3:8b",
+                    lastActivityAt = "2026-06-23T09:02:06Z",
+                    messageCount = -1,
+                ),
+            ),
+            nowMillis = 100L,
+        )
+
+        assertEquals(0, merged.sessions.first { it.id == "runtime-existing" }.runtimeMessageCount)
+        assertEquals(0, merged.sessions.first { it.id == "runtime-new" }.runtimeMessageCount)
+        assertEquals(0, runtimeChatSessions(merged).first { it.id == "runtime-existing" }.messageCount)
+        assertEquals(0, runtimeChatSessions(merged).first { it.id == "runtime-new" }.messageCount)
+
+        val stalePersistedData = PersistedRuntimeData(
+            sessions = listOf(
+                PersistedChatSession(
+                    id = "runtime-stale",
+                    title = "Stale runtime",
+                    createdAtMillis = 10L,
+                    updatedAtMillis = 20L,
+                    runtimeOwned = true,
+                    runtimeMessageCount = -7,
+                ),
+            ),
+        )
+
+        assertEquals(0, runtimeChatSessions(stalePersistedData).single().messageCount)
+    }
+
+    @Test
     fun runtimeSessionSummariesRestoreArchivedRuntimeSessions() {
         val data = PersistedRuntimeData(
             activeSessionId = "runtime-archived",
@@ -11081,39 +11149,36 @@ class RuntimeClientViewModelTest {
     }
 
     @Test
-    fun chatSendMessagesPrependsCapabilityGuardWithoutClientSuppliedMemoryContext() {
+    fun chatSendMessagesSerializesOnlyClientVisibleConversationAndFinalAttachments() {
         val messages = listOf(
             RuntimeChatMessage(role = "system", content = "UI-only system"),
             RuntimeChatMessage(role = "user", content = "Hello"),
-            RuntimeChatMessage(role = "assistant", content = ""),
-        )
-        val memory = listOf(
-            RuntimeMemoryEntry(
-                id = "enabled",
-                content = "Prefers concise answers",
-                enabled = true,
-                createdAtMillis = 1L,
-                updatedAtMillis = 1L,
+            RuntimeChatMessage(
+                role = "system",
+                content = "Runtime user memory:\n- stale client memory",
             ),
-            RuntimeMemoryEntry(
-                id = "disabled",
-                content = "Disabled memory",
-                enabled = false,
-                createdAtMillis = 2L,
-                updatedAtMillis = 2L,
+            RuntimeChatMessage(role = "assistant", content = "Runtime answered"),
+            RuntimeChatMessage(role = "user", content = "Review this file"),
+        )
+        val attachments = listOf(
+            RuntimePendingAttachment(
+                id = "attachment-1",
+                type = "document",
+                name = "brief.pdf",
+                mimeType = "application/pdf",
+                sizeBytes = 12L,
+                dataBase64 = "ZmFrZQ==",
             ),
         )
 
-        val payloadMessages = chatSendMessages(messages, memory)
+        val payloadMessages = chatSendMessages(messages, attachments)
 
-        assertEquals("system", payloadMessages[0].role)
-        assertEquals(AETHERLINK_RUNTIME_CAPABILITY_GUARD, payloadMessages[0].content)
-        assertTrue(payloadMessages[0].content.contains("does not provide live web search"))
-        assertTrue(payloadMessages[0].content.contains("Do not claim that you can search the web"))
-        assertEquals("user", payloadMessages[1].role)
-        assertEquals("Hello", payloadMessages[1].content)
+        assertEquals(listOf("user", "assistant", "user"), payloadMessages.map { it.role })
+        assertEquals(listOf("Hello", "Runtime answered", "Review this file"), payloadMessages.map { it.content })
         assertTrue(payloadMessages.none { it.content.contains("Runtime user memory:") })
-        assertEquals(2, payloadMessages.size)
+        assertTrue(payloadMessages.none { it.content.contains("AetherLink currently provides") })
+        assertTrue(payloadMessages.dropLast(1).all { it.attachments.isEmpty() })
+        assertEquals("brief.pdf", payloadMessages.last().attachments.single().name)
     }
 
     @Test

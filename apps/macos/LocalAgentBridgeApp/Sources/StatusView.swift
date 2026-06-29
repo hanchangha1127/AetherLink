@@ -85,87 +85,19 @@ struct StatusView: View {
                 }
 
                 CompanionPanel(title: NSLocalizedString("Quick Actions", comment: ""), systemImage: "bolt.horizontal") {
-                    HStack(spacing: 10) {
-                        let canRunPairingQRAction = canGeneratePairingQR && onGenerateRelayQRCode != nil
-                        let pairingQRActionHint = pairingQRGenerationActionAccessibilityHint(
-                            isAvailable: canGeneratePairingQR,
-                            hasAction: onGenerateRelayQRCode != nil
-                        )
-                        Button {
-                            onGenerateRelayQRCode?()
-                        } label: {
-                            if model.pairingSession == nil {
-                                Label(NSLocalizedString("Generate Pairing QR", comment: ""), systemImage: "qrcode")
-                            } else {
-                                Label(NSLocalizedString("Generate New QR", comment: ""), systemImage: "arrow.triangle.2.circlepath")
-                            }
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(!canRunPairingQRAction)
-                        .help(pairingQRActionHint)
-                        .accessibilityValue(
-                            Text(
-                                pairingQRGenerationActionAccessibilityValue(
-                                    isAvailable: canGeneratePairingQR,
-                                    hasAction: onGenerateRelayQRCode != nil
-                                )
-                            )
-                        )
-                        .accessibilityHint(Text(pairingQRActionHint))
-
-                        Button {
-                            Task { await model.refreshBackendStatus() }
-                        } label: {
-                            Label(NSLocalizedString("Check Model Providers", comment: ""), systemImage: "arrow.clockwise")
-                        }
-                        .buttonStyle(.bordered)
-                        .help(modelProviderCheckActionAccessibilityHint())
-                        .accessibilityValue(Text(modelProviderCheckActionAccessibilityValue()))
-                        .accessibilityHint(Text(modelProviderCheckActionAccessibilityHint()))
-
-                        Button {
-                            Task { await model.loadModels() }
-                        } label: {
-                            Label(NSLocalizedString("Load Models", comment: ""), systemImage: "shippingbox")
-                        }
-                        .buttonStyle(.bordered)
-                        .help(modelListLoadActionAccessibilityHint())
-                        .accessibilityValue(Text(modelListLoadActionAccessibilityValue()))
-                        .accessibilityHint(Text(modelListLoadActionAccessibilityHint()))
-
-                        Button {
-                            model.refreshRuntimeDataSummary()
-                        } label: {
-                            Label(NSLocalizedString("Refresh Runtime Data", comment: ""), systemImage: "arrow.triangle.2.circlepath")
-                        }
-                        .buttonStyle(.bordered)
-                        .help(refreshRuntimeDataActionAccessibilityHint())
-                        .accessibilityValue(Text(refreshRuntimeDataActionAccessibilityValue()))
-                        .accessibilityHint(Text(refreshRuntimeDataActionAccessibilityHint()))
-
-                        Button {
+                    StatusQuickActions(
+                        model: model,
+                        canGeneratePairingQR: canGeneratePairingQR,
+                        onGenerateRelayQRCode: onGenerateRelayQRCode,
+                        onInspectRuntimeHistory: {
                             model.refreshRuntimeChatSessions()
                             isRuntimeHistoryInspectorPresented = true
-                        } label: {
-                            Label(NSLocalizedString("Inspect Runtime History", comment: ""), systemImage: "text.bubble")
-                        }
-                        .buttonStyle(.bordered)
-                        .help(inspectRuntimeHistoryActionAccessibilityHint())
-                        .accessibilityValue(Text(inspectRuntimeHistoryActionAccessibilityValue()))
-                        .accessibilityHint(Text(inspectRuntimeHistoryActionAccessibilityHint()))
-
-                        Button {
+                        },
+                        onInspectRuntimeMemory: {
                             model.refreshRuntimeMemoryEntries()
                             isRuntimeMemoryInspectorPresented = true
-                        } label: {
-                            Label(NSLocalizedString("Inspect Runtime Memory", comment: ""), systemImage: "list.bullet.rectangle")
                         }
-                        .buttonStyle(.bordered)
-                        .help(inspectRuntimeMemoryActionAccessibilityHint())
-                        .accessibilityValue(Text(inspectRuntimeMemoryActionAccessibilityValue()))
-                        .accessibilityHint(Text(inspectRuntimeMemoryActionAccessibilityHint()))
-                    }
-                    .controlSize(.regular)
+                    )
                 }
 
                 CompanionPanel(title: NSLocalizedString("Model Providers", comment: ""), systemImage: "server.rack") {
@@ -427,20 +359,19 @@ struct StatusView: View {
         guard !model.runtimeDataSummary.hasError else {
             return NSLocalizedString("Needs attention", comment: "")
         }
-        return localizedRuntimeActiveChatSessionCount(model.runtimeDataSummary.activeChatSessionCount)
+        return runtimeHistoryCardValue(
+            activeCount: model.runtimeDataSummary.activeChatSessionCount,
+            archivedCount: model.runtimeDataSummary.archivedChatSessionCount
+        )
     }
 
     private var runtimeHistoryDetail: String {
         guard !model.runtimeDataSummary.hasError else {
             return NSLocalizedString("Runtime chat history could not be read. Check Activity.", comment: "")
         }
-        let archivedCount = model.runtimeDataSummary.archivedChatSessionCount
-        if archivedCount == 0 {
-            return NSLocalizedString("No archived chats are stored on AetherLink Runtime.", comment: "")
-        }
-        return String(
-            format: NSLocalizedString("%@ stored separately from active memory context.", comment: ""),
-            localizedRuntimeArchivedChatSessionCount(archivedCount)
+        return runtimeHistoryCardDetail(
+            activeCount: model.runtimeDataSummary.activeChatSessionCount,
+            archivedCount: model.runtimeDataSummary.archivedChatSessionCount
         )
     }
 
@@ -448,20 +379,19 @@ struct StatusView: View {
         guard !model.runtimeDataSummary.hasError else {
             return NSLocalizedString("Needs attention", comment: "")
         }
-        return localizedRuntimeEnabledMemoryCount(model.runtimeDataSummary.enabledMemoryCount)
+        return runtimeMemoryCardValue(
+            enabledCount: model.runtimeDataSummary.enabledMemoryCount,
+            pausedCount: model.runtimeDataSummary.pausedMemoryCount
+        )
     }
 
     private var runtimeMemoryDetail: String {
         guard !model.runtimeDataSummary.hasError else {
             return NSLocalizedString("Runtime memory could not be read. Check Activity.", comment: "")
         }
-        let pausedCount = model.runtimeDataSummary.pausedMemoryCount
-        if pausedCount == 0 {
-            return NSLocalizedString("No paused memory notes are stored on AetherLink Runtime.", comment: "")
-        }
-        return String(
-            format: NSLocalizedString("%@ kept out of runtime context until re-enabled.", comment: ""),
-            localizedRuntimePausedMemoryCount(pausedCount)
+        return runtimeMemoryCardDetail(
+            enabledCount: model.runtimeDataSummary.enabledMemoryCount,
+            pausedCount: model.runtimeDataSummary.pausedMemoryCount
         )
     }
 
@@ -631,8 +561,137 @@ struct StatusView: View {
         )
     }
 
-    private var pairingQRGenerationHelpText: String {
-        pairingQRGenerationActionAccessibilityHint(isAvailable: canGeneratePairingQR)
+}
+
+func runtimeHistoryCardValue(activeCount: Int, archivedCount: Int) -> String {
+    localizedRuntimeSavedChatSessionCount(max(0, activeCount) + max(0, archivedCount))
+}
+
+func runtimeHistoryCardDetail(activeCount: Int, archivedCount: Int) -> String {
+    let cleanActiveCount = max(0, activeCount)
+    let cleanArchivedCount = max(0, archivedCount)
+    if cleanActiveCount + cleanArchivedCount == 0 {
+        return NSLocalizedString("No runtime chat sessions are stored on AetherLink Runtime.", comment: "")
+    }
+    return String(
+        format: NSLocalizedString("Runtime context: %@. Archived: %@.", comment: ""),
+        localizedRuntimeActiveChatSessionCount(cleanActiveCount),
+        localizedRuntimeArchivedChatSessionCount(cleanArchivedCount)
+    )
+}
+
+func runtimeMemoryCardValue(enabledCount: Int, pausedCount: Int) -> String {
+    localizedRuntimeSavedMemoryCount(max(0, enabledCount) + max(0, pausedCount))
+}
+
+func runtimeMemoryCardDetail(enabledCount: Int, pausedCount: Int) -> String {
+    let cleanEnabledCount = max(0, enabledCount)
+    let cleanPausedCount = max(0, pausedCount)
+    if cleanEnabledCount + cleanPausedCount == 0 {
+        return NSLocalizedString("No runtime memory notes are stored on AetherLink Runtime.", comment: "")
+    }
+    return String(
+        format: NSLocalizedString("Runtime context: %@. Paused: %@.", comment: ""),
+        localizedRuntimeEnabledMemoryCount(cleanEnabledCount),
+        localizedRuntimePausedMemoryCount(cleanPausedCount)
+    )
+}
+
+private struct StatusQuickActions: View {
+    @ObservedObject var model: CompanionAppModel
+    let canGeneratePairingQR: Bool
+    let onGenerateRelayQRCode: (() -> Void)?
+    let onInspectRuntimeHistory: () -> Void
+    let onInspectRuntimeMemory: () -> Void
+
+    private let columns = [GridItem(.adaptive(minimum: 210), spacing: 10, alignment: .leading)]
+
+    var body: some View {
+        LazyVGrid(columns: columns, alignment: .leading, spacing: 10) {
+            let canRunPairingQRAction = canGeneratePairingQR && onGenerateRelayQRCode != nil
+            let pairingQRActionHint = pairingQRGenerationActionAccessibilityHint(
+                isAvailable: canGeneratePairingQR,
+                hasAction: onGenerateRelayQRCode != nil
+            )
+            Button {
+                onGenerateRelayQRCode?()
+            } label: {
+                if model.pairingSession == nil {
+                    Label(NSLocalizedString("Generate Pairing QR", comment: ""), systemImage: "qrcode")
+                } else {
+                    Label(NSLocalizedString("Generate New QR", comment: ""), systemImage: "arrow.triangle.2.circlepath")
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(!canRunPairingQRAction)
+            .help(pairingQRActionHint)
+            .accessibilityValue(
+                Text(
+                    pairingQRGenerationActionAccessibilityValue(
+                        isAvailable: canGeneratePairingQR,
+                        hasAction: onGenerateRelayQRCode != nil
+                    )
+                )
+            )
+            .accessibilityHint(Text(pairingQRActionHint))
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Button {
+                Task { await model.refreshBackendStatus() }
+            } label: {
+                Label(NSLocalizedString("Check Model Providers", comment: ""), systemImage: "arrow.clockwise")
+            }
+            .buttonStyle(.bordered)
+            .help(modelProviderCheckActionAccessibilityHint())
+            .accessibilityValue(Text(modelProviderCheckActionAccessibilityValue()))
+            .accessibilityHint(Text(modelProviderCheckActionAccessibilityHint()))
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Button {
+                Task { await model.loadModels() }
+            } label: {
+                Label(NSLocalizedString("Load Models", comment: ""), systemImage: "shippingbox")
+            }
+            .buttonStyle(.bordered)
+            .help(modelListLoadActionAccessibilityHint())
+            .accessibilityValue(Text(modelListLoadActionAccessibilityValue()))
+            .accessibilityHint(Text(modelListLoadActionAccessibilityHint()))
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Button {
+                model.refreshRuntimeDataSummary()
+            } label: {
+                Label(NSLocalizedString("Refresh Runtime Data", comment: ""), systemImage: "arrow.triangle.2.circlepath")
+            }
+            .buttonStyle(.bordered)
+            .help(refreshRuntimeDataActionAccessibilityHint())
+            .accessibilityValue(Text(refreshRuntimeDataActionAccessibilityValue()))
+            .accessibilityHint(Text(refreshRuntimeDataActionAccessibilityHint()))
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Button {
+                onInspectRuntimeHistory()
+            } label: {
+                Label(NSLocalizedString("Inspect Runtime History", comment: ""), systemImage: "text.bubble")
+            }
+            .buttonStyle(.bordered)
+            .help(inspectRuntimeHistoryActionAccessibilityHint())
+            .accessibilityValue(Text(inspectRuntimeHistoryActionAccessibilityValue()))
+            .accessibilityHint(Text(inspectRuntimeHistoryActionAccessibilityHint()))
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Button {
+                onInspectRuntimeMemory()
+            } label: {
+                Label(NSLocalizedString("Inspect Runtime Memory", comment: ""), systemImage: "list.bullet.rectangle")
+            }
+            .buttonStyle(.bordered)
+            .help(inspectRuntimeMemoryActionAccessibilityHint())
+            .accessibilityValue(Text(inspectRuntimeMemoryActionAccessibilityValue()))
+            .accessibilityHint(Text(inspectRuntimeMemoryActionAccessibilityHint()))
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .controlSize(.regular)
     }
 }
 
@@ -908,43 +967,50 @@ struct RuntimeHistoryInspectorSheet: View {
                     )
                 )
             } else {
-                HStack(alignment: .top, spacing: 14) {
-                    ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 10) {
-                            ForEach(sessions, id: \.sessionID) { session in
-                                Button {
-                                    selectedSessionID = session.sessionID
-                                    onLoadTranscriptPreview(session.sessionID)
-                                } label: {
-                                    RuntimeHistoryInspectorRow(
-                                        session: session,
-                                        isSelected: selectedSessionID == session.sessionID
+                VStack(alignment: .leading, spacing: 14) {
+                    RuntimeHistoryInspectorSummary(
+                        activeCount: sessions.filter { $0.status != "archived" }.count,
+                        archivedCount: sessions.filter { $0.status == "archived" }.count
+                    )
+
+                    HStack(alignment: .top, spacing: 14) {
+                        ScrollView {
+                            LazyVStack(alignment: .leading, spacing: 10) {
+                                ForEach(sessions, id: \.sessionID) { session in
+                                    Button {
+                                        selectedSessionID = session.sessionID
+                                        onLoadTranscriptPreview(session.sessionID)
+                                    } label: {
+                                        RuntimeHistoryInspectorRow(
+                                            session: session,
+                                            isSelected: selectedSessionID == session.sessionID
+                                        )
+                                    }
+                                    .buttonStyle(.plain)
+                                    .help(NSLocalizedString("Load transcript preview", comment: ""))
+                                    .accessibilityLabel(
+                                        Text(runtimeTranscriptPreviewLoadAccessibilityLabel(title: session.title))
                                     )
                                 }
-                                .buttonStyle(.plain)
-                                .help(NSLocalizedString("Load transcript preview", comment: ""))
-                                .accessibilityLabel(
-                                    Text(runtimeTranscriptPreviewLoadAccessibilityLabel(title: session.title))
-                                )
                             }
+                            .padding(.vertical, 2)
                         }
-                        .padding(.vertical, 2)
+                        .frame(minWidth: 300, maxWidth: 360)
+
+                        Divider()
+
+                        RuntimeTranscriptPreviewPane(
+                            session: selectedSession,
+                            messages: selectedMessages,
+                            errorMessage: selectedError,
+                            onLoad: {
+                                if let sessionID = selectedSession?.sessionID {
+                                    onLoadTranscriptPreview(sessionID)
+                                }
+                            }
+                        )
+                        .frame(minWidth: 320, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     }
-                    .frame(minWidth: 300, maxWidth: 360)
-
-                    Divider()
-
-                    RuntimeTranscriptPreviewPane(
-                        session: selectedSession,
-                        messages: selectedMessages,
-                        errorMessage: selectedError,
-                        onLoad: {
-                            if let sessionID = selectedSession?.sessionID {
-                                onLoadTranscriptPreview(sessionID)
-                            }
-                        }
-                    )
-                    .frame(minWidth: 320, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 }
                 .onAppear {
                     if selectedSessionID == nil, let firstSession = sessions.first {
@@ -967,6 +1033,53 @@ struct RuntimeHistoryInspectorSheet: View {
         .padding(24)
         .frame(minWidth: 760, minHeight: 500)
     }
+}
+
+private struct RuntimeHistoryInspectorSummary: View {
+    let activeCount: Int
+    let archivedCount: Int
+
+    private var valueText: String {
+        runtimeHistoryCardValue(activeCount: activeCount, archivedCount: archivedCount)
+    }
+
+    private var detailText: String {
+        runtimeHistoryCardDetail(activeCount: activeCount, archivedCount: archivedCount)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(valueText, systemImage: "text.bubble")
+                .font(.headline)
+            Text(detailText)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .strokeBorder(.separator.opacity(0.5), lineWidth: 1)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+            Text(runtimeHistoryInspectorSummaryAccessibilityLabel(value: valueText, detail: detailText))
+        )
+    }
+}
+
+func runtimeHistoryInspectorSummaryAccessibilityLabel(value: String, detail: String) -> String {
+    let normalizedValue = trimmedNonEmpty(value)
+        ?? localizedRuntimeSavedChatSessionCount(0)
+    let normalizedDetail = trimmedNonEmpty(detail)
+        ?? runtimeHistoryCardDetail(activeCount: 0, archivedCount: 0)
+    return String(
+        format: NSLocalizedString("Runtime history summary. %@. %@", comment: ""),
+        normalizedValue,
+        normalizedDetail
+    )
 }
 
 private struct RuntimeHistoryInspectorRow: View {
@@ -1226,7 +1339,7 @@ private struct RuntimeTranscriptReasoningBlock: View {
 
         VStack(alignment: .leading, spacing: 5) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(NSLocalizedString("Reasoning", comment: ""))
+                Text(NSLocalizedString("Thinking", comment: ""))
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
 
@@ -1268,6 +1381,7 @@ struct RuntimeTranscriptReasoningDisplayPolicy: Equatable {
 }
 
 let runtimeTranscriptReasoningPreviewMaxLines = 3
+let runtimeTranscriptReasoningSingleLinePreviewLimit = 180
 let runtimeTranscriptReasoningCollapsedOpacity = 0.58
 let runtimeTranscriptReasoningExpandedOpacity = 0.86
 
@@ -1296,15 +1410,25 @@ func runtimeTranscriptReasoningPreview(
         .filter { !$0.isEmpty }
     let linePreview = lines.prefix(maxLines).joined(separator: "\n")
     if !linePreview.isEmpty {
+        if lines.count == 1 && linePreview.count > runtimeTranscriptReasoningSingleLinePreviewLimit {
+            let endIndex = linePreview.index(
+                linePreview.startIndex,
+                offsetBy: runtimeTranscriptReasoningSingleLinePreviewLimit
+            )
+            return "\(linePreview[..<endIndex])..."
+        }
         return linePreview
     }
 
     let singleLine = reasoning.trimmingCharacters(in: .whitespacesAndNewlines)
         .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
-    guard singleLine.count > 180 else {
+    guard singleLine.count > runtimeTranscriptReasoningSingleLinePreviewLimit else {
         return singleLine
     }
-    let endIndex = singleLine.index(singleLine.startIndex, offsetBy: 180)
+    let endIndex = singleLine.index(
+        singleLine.startIndex,
+        offsetBy: runtimeTranscriptReasoningSingleLinePreviewLimit
+    )
     return "\(singleLine[..<endIndex])..."
 }
 
@@ -1320,20 +1444,20 @@ func runtimeTranscriptReasoningNeedsExpansion(_ reasoning: String) -> Bool {
 
 func runtimeTranscriptReasoningToggleTitle(isExpanded: Bool) -> String {
     isExpanded
-        ? NSLocalizedString("Hide reasoning", comment: "")
-        : NSLocalizedString("Show reasoning", comment: "")
+        ? NSLocalizedString("Hide thinking", comment: "")
+        : NSLocalizedString("Show thinking", comment: "")
 }
 
 func runtimeTranscriptReasoningToggleAccessibilityValue(isExpanded: Bool) -> String {
     isExpanded
-        ? NSLocalizedString("Reasoning expanded", comment: "")
-        : NSLocalizedString("Reasoning collapsed", comment: "")
+        ? NSLocalizedString("Thinking expanded", comment: "")
+        : NSLocalizedString("Thinking collapsed", comment: "")
 }
 
 func runtimeTranscriptReasoningToggleAccessibilityHint(isExpanded: Bool) -> String {
     isExpanded
-        ? NSLocalizedString("Collapse to keep reasoning preview short.", comment: "")
-        : NSLocalizedString("Expand to show full reasoning.", comment: "")
+        ? NSLocalizedString("Collapse to keep thinking preview short.", comment: "")
+        : NSLocalizedString("Expand to show full thinking.", comment: "")
 }
 
 func localizedRuntimeChatSessionStatus(_ status: String) -> String {
@@ -1488,6 +1612,11 @@ struct RuntimeMemoryInspectorSheet: View {
                     )
                 )
             } else {
+                RuntimeMemoryInspectorSummary(
+                    enabledCount: entries.filter { $0.enabled }.count,
+                    pausedCount: entries.filter { !$0.enabled }.count
+                )
+
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 10) {
                         ForEach(entries, id: \.id) { entry in
@@ -1501,6 +1630,53 @@ struct RuntimeMemoryInspectorSheet: View {
         .padding(24)
         .frame(minWidth: 560, minHeight: 420)
     }
+}
+
+private struct RuntimeMemoryInspectorSummary: View {
+    let enabledCount: Int
+    let pausedCount: Int
+
+    private var valueText: String {
+        runtimeMemoryCardValue(enabledCount: enabledCount, pausedCount: pausedCount)
+    }
+
+    private var detailText: String {
+        runtimeMemoryCardDetail(enabledCount: enabledCount, pausedCount: pausedCount)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(valueText, systemImage: "brain.head.profile")
+                .font(.headline)
+            Text(detailText)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 8))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8)
+                .strokeBorder(.separator.opacity(0.5), lineWidth: 1)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+            Text(runtimeMemoryInspectorSummaryAccessibilityLabel(value: valueText, detail: detailText))
+        )
+    }
+}
+
+func runtimeMemoryInspectorSummaryAccessibilityLabel(value: String, detail: String) -> String {
+    let normalizedValue = trimmedNonEmpty(value)
+        ?? localizedRuntimeSavedMemoryCount(0)
+    let normalizedDetail = trimmedNonEmpty(detail)
+        ?? runtimeMemoryCardDetail(enabledCount: 0, pausedCount: 0)
+    return String(
+        format: NSLocalizedString("Runtime memory summary. %@. %@", comment: ""),
+        normalizedValue,
+        normalizedDetail
+    )
 }
 
 private struct RuntimeMemoryInspectorRow: View {
@@ -1662,19 +1838,24 @@ private struct ModelRow: View {
     let model: ModelInfo
 
     var body: some View {
-        HStack(alignment: .center, spacing: 12) {
+        HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(model.name)
                     .font(.headline)
-                    .lineLimit(1)
+                    .lineLimit(2)
                     .truncationMode(.middle)
-                HStack(spacing: 6) {
+                LazyVGrid(
+                    columns: [GridItem(.adaptive(minimum: 104), spacing: 6, alignment: .leading)],
+                    alignment: .leading,
+                    spacing: 6
+                ) {
                     Text(model.id)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
                         .textSelection(.enabled)
+                        .frame(minWidth: 160, maxWidth: .infinity, alignment: .leading)
                     ModelBadge(text: kindName(model.kind), systemImage: kindSystemImage(model.kind))
                     ModelBadge(text: providerName(model.provider), systemImage: "server.rack")
                     ModelBadge(text: sourceName(model.source), systemImage: sourceSystemImage(model.source))

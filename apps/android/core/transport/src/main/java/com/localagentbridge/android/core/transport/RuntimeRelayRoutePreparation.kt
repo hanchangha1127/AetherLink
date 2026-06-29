@@ -27,6 +27,7 @@ fun RuntimeRelayRoutePreparation.toPreparedRelayRouteOrNull(
     nowEpochMillis: Long = System.currentTimeMillis(),
 ): PreparedRemoteRuntimeRoute.Relay? {
     val routeHost = host?.takeIf { it.isNotBlank() } ?: return null
+    if (!relayScope.isAllowedPreparedRelayScope()) return null
     if (!routeHost.isAllowedPreparedRelayHost(relayScope)) return null
     val routePort = port?.takeIf { it in 1..65535 } ?: return null
     val routeRelayId = relayId?.takeIf { it.isNotBlank() }
@@ -135,10 +136,18 @@ private fun String.isPrivateOverlayIpv6Literal(): Boolean {
 }
 
 private fun String?.isPrivateOverlayScope(): Boolean =
-    this?.trim()?.lowercase() == PRIVATE_OVERLAY_RELAY_SCOPE
+    this == PRIVATE_OVERLAY_RELAY_SCOPE
 
 private fun String?.isDebugUsbReverseScope(): Boolean =
-    this?.trim()?.lowercase() == DEBUG_USB_REVERSE_RELAY_SCOPE
+    this == DEBUG_USB_REVERSE_RELAY_SCOPE
+
+private fun String?.isAllowedPreparedRelayScope(): Boolean =
+    this == null || this in ALLOWED_PREPARED_RELAY_SCOPES
 
 private const val PRIVATE_OVERLAY_RELAY_SCOPE = "private_overlay"
 private const val DEBUG_USB_REVERSE_RELAY_SCOPE = "usb_reverse"
+private val ALLOWED_PREPARED_RELAY_SCOPES = setOf(
+    "remote",
+    PRIVATE_OVERLAY_RELAY_SCOPE,
+    DEBUG_USB_REVERSE_RELAY_SCOPE,
+)

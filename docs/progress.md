@@ -32,6 +32,262 @@ The concrete remote 1:1 connection architecture is now tracked in [connection-ov
 
 ## Implemented So Far
 
+### 2026-06-29 Android Code Block And Private Model Access Accessibility
+
+- Scope: no-device Android Compose accessibility and localization polish. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer identified the Settings private model access panel follow-up and was closed after reporting.
+- Result: rendered fenced code blocks inside chat messages now expose a localized code-block accessibility summary with language and line count across English, Korean, Japanese, Simplified Chinese, and French.
+- Result: the code text and copy button remain separately reachable in the unmerged semantics tree while the code-block container announces the summary.
+- Result: Settings > Private model access now exposes its localized title and detail as one polite live-region accessibility summary, reinforcing that model providers remain mediated by AetherLink Runtime.
+- Guardrail: `ClientScreensNoDeviceComposeTest.chatScreenCodeBlocksExposeLocalizedAccessibilitySummaryAcrossSupportedLanguages` covers the code-block summary across supported languages.
+- Guardrail: `ClientScreensNoDeviceComposeTest.settingsCompanionOnlyPanelAnnouncesLocalizedPrivateModelAccessAcrossSupportedLanguages` covers the Settings private model access panel summary across supported languages.
+- Guardrail: `script/check_copy_hygiene.py` and `script/check_no_device_quality.sh` now require the source/test/no-device coverage contract for both additions.
+- Verification scope: no-device Android resource parity, focused Compose/JVM tests, copy hygiene, script syntax, docs hygiene, and whitespace checks.
+- Caveat: this does not prove physical Android TalkBack traversal, physical Android rendering, optical QR pairing, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `python3 script/check_android_string_parity.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh`
+- `git diff --check`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenCodeBlocksExposeLocalizedAccessibilitySummaryAcrossSupportedLanguages --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsCompanionOnlyPanelAnnouncesLocalizedPrivateModelAccessAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain`
+
+### 2026-06-29 macOS Thinking Copy And Sidebar Header Accessibility
+
+- Scope: no-device macOS UI copy, localization, and accessibility polish. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer identified the sidebar brand heading-trait follow-up and was closed after reporting.
+- Result: Runtime History Inspector transcript reasoning now uses user-facing `Thinking` copy across English, Korean, Japanese, Simplified Chinese, and French while preserving the runtime/protocol `reasoning` field names internally.
+- Result: the transcript thinking block still stays muted and short by default, with localized Show/Hide thinking controls, expanded/collapsed accessibility values, and hints.
+- Result: the macOS sidebar brand block now exposes the existing localized `AetherLink Runtime` accessibility label as a VoiceOver heading.
+- Guardrail: `AetherLinkLocalizationTests.testRuntimeHistoryInspectorCopyLocalizesAcrossSupportedLanguages` covers the new Thinking label/toggle/accessibility copy across supported app languages.
+- Guardrail: `script/check_macos_localization.py`, `script/check_copy_hygiene.py`, and `script/check_no_device_quality.sh` now require the sidebar brand heading trait and Thinking localization keys.
+- Verification scope: no-device macOS localization, render smoke for the companion shell, script hygiene, docs hygiene, copy hygiene, and whitespace checks.
+- Caveat: this does not prove live VoiceOver traversal, physical Android rendering, optical QR pairing, live provider-backed chat/cancel, or production arbitrary-network connectivity.
+
+Verified after this change:
+
+- `python3 -m py_compile script/check_macos_localization.py script/check_copy_hygiene.py`
+- `python3 script/check_macos_localization.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh`
+- `git diff --check`
+- `swift test --package-path apps/macos --filter 'AetherLinkLocalizationTests/testRuntimeHistoryInspectorCopyLocalizesAcrossSupportedLanguages|AetherLinkLocalizationTests/testRuntimeTranscriptReasoningPreviewStaysShortUntilExpanded|AetherLinkLocalizationTests/testRuntimeTranscriptReasoningPreviewHandlesShortAndLongParagraphs|AetherLinkLocalizationTests/testSidebarBrandAccessibilityLabelUsesSelectedLanguage|AetherLinkRenderSmokeTests/testCompanionShellRendersAtMinimumWindowAcrossLanguagesAndAppearances'`
+
+### 2026-06-29 Android Markdown Table Accessibility
+
+- Scope: no-device Android Compose accessibility and localization polish. GPT-5.3-Codex-Spark was not used; the previously opened GPT-5.5 read-only explorer was closed after identifying this focused follow-up.
+- Result: rendered Markdown tables inside chat messages now expose a localized table-level accessibility summary with column and row counts.
+- Result: table cell text remains visible in the unmerged semantics tree, so tests and assistive traversal can still reach individual rendered cells while the table container announces the summary.
+- Guardrail: `ClientScreensNoDeviceComposeTest.chatScreenMarkdownTablesExposeLocalizedAccessibilitySummaryAcrossSupportedLanguages` covers the table summary across English, Korean, Japanese, Simplified Chinese, and French.
+- Guardrail: `script/check_copy_hygiene.py` and `script/check_no_device_quality.sh` now require the source/test/no-device coverage contract for Android Markdown table accessibility.
+- Verification scope: no-device Android resource parity, focused Compose/JVM tests, copy hygiene, script syntax, docs hygiene, and whitespace checks.
+- Caveat: this does not prove physical Android TalkBack traversal, physical Android rendering, optical QR pairing, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `python3 script/check_android_string_parity.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh`
+- `git diff --check`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenMarkdownTablesExposeLocalizedAccessibilitySummaryAcrossSupportedLanguages --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenRendersMarkdownListsAndInlineCode -Pkotlin.incremental=false --console=plain`
+
+### 2026-06-29 Android Chat History Summary And Markdown Heading Accessibility
+
+- Scope: no-device Android Compose UX/accessibility polish. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer identified the markdown-heading accessibility gap.
+- Result: Settings > Chat history now shows a localized saved/active/archived summary card instead of only two raw numeric status lines.
+- Result: the summary card exposes one merged accessibility summary across English, Korean, Japanese, Simplified Chinese, and French.
+- Result: rendered Markdown headings inside chat messages now expose heading semantics, so long assistant answers are easier to navigate with TalkBack-style heading traversal.
+- Guardrail: `ClientScreensNoDeviceComposeTest.settingsChatHistorySummaryLocalizesSavedActiveAndArchivedCounts` covers the new Settings Chat history summary card across supported languages.
+- Guardrail: `ClientScreensNoDeviceComposeTest.chatScreenRendersMarkdownListsAndInlineCode` now verifies rendered Markdown headings are accessibility headings.
+- Guardrail: `script/check_copy_hygiene.py` and `script/check_no_device_quality.sh` now require the source/test/no-device coverage contract for the Chat history summary and Markdown heading accessibility.
+- Verification scope: no-device Android resource parity, focused Compose/JVM tests, copy hygiene, script syntax, docs hygiene, and whitespace checks.
+- Caveat: this does not prove physical Android rendering, physical TalkBack traversal, optical QR pairing, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `python3 script/check_android_string_parity.py`
+- `python3 script/check_copy_hygiene.py`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsChatHistorySummaryLocalizesSavedActiveAndArchivedCounts --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenRendersMarkdownListsAndInlineCode -Pkotlin.incremental=false --console=plain`
+- `bash script/check_no_device_quality.sh`
+
+### 2026-06-29 macOS Runtime History Inspector Summary
+
+- Scope: no-device macOS Runtime History inspector readability and localization hardening. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer identified the minimal StatusView/localization/test/guard update set and was closed after reporting.
+- Result: the macOS Status > Runtime History card now shows total saved runtime chat sessions as the primary value instead of only active chats.
+- Result: the card detail now summarizes active chats in runtime context and archived chats together.
+- Result: `RuntimeHistoryInspectorSheet` now shows a compact saved/archived summary above non-empty runtime-owned chat sessions.
+- Result: active, archived, and saved chat count helpers defensively clamp malformed negative display counts to zero.
+- Result: the inspector summary uses a localized accessibility label helper so VoiceOver-facing copy stays covered by the five-language localization contract.
+- Guardrail: `AetherLinkLocalizationTests.testLocalizedCountHelpersUseNaturalSingularAndPluralCopy` covers saved chat pluralization, negative count clamping, History card detail, and the inspector summary accessibility label.
+- Guardrail: `AetherLinkLocalizationTests.testRuntimeHistoryInspectorCopyLocalizesAcrossSupportedLanguages` covers the new History summary and empty-history strings across English, Korean, Japanese, Simplified Chinese, and French.
+- Guardrail: `AetherLinkRenderSmokeTests.testRuntimeHistoryInspectorRendersAcrossLanguagesAndAppearances` verifies the inspector renders across supported app languages and appearance modes.
+- Guardrail: `script/check_macos_localization.py`, `script/check_copy_hygiene.py`, and `script/check_no_device_quality.sh` now require the source/test/no-device coverage contract for the macOS Runtime History saved/archived status-card and inspector summaries.
+- Verification scope: no-device macOS SwiftPM XCTest, macOS render smoke, macOS localization parity, copy hygiene, script syntax, docs hygiene, and whitespace checks.
+- Caveat: this does not prove live VoiceOver traversal, physical client rendering, optical QR pairing, production different-network routing, or live provider-backed chat/cancel.
+
+Verified after this change:
+
+- `python3 -m py_compile script/check_macos_localization.py script/check_copy_hygiene.py`
+- `python3 script/check_macos_localization.py`
+- `swift test --package-path apps/macos --filter LocalAgentBridgeTests.AetherLinkLocalizationTests/testLocalizedCountHelpersUseNaturalSingularAndPluralCopy`
+- `swift test --package-path apps/macos --filter LocalAgentBridgeTests.AetherLinkLocalizationTests/testRuntimeHistoryInspectorCopyLocalizesAcrossSupportedLanguages`
+- `swift test --package-path apps/macos --filter AetherLinkRenderSmokeTests/testRuntimeHistoryInspectorRendersAcrossLanguagesAndAppearances`
+- `bash script/check_no_device_quality.sh`
+
+### 2026-06-29 No-Device Gate Stabilization
+
+- Scope: no-device verification cleanup found while validating the macOS Runtime Memory inspector summary. GPT-5.3-Codex-Spark was not used.
+- Result: three Android route-refresh ViewModel tests now advance the coroutine scheduler through the scheduled `route.refresh` renewal instead of reading sent envelopes before the renewal delay can fire.
+- Result: those route-refresh tests explicitly clear the ViewModel before `Dispatchers.resetMain()`, preventing leftover Main-dispatcher work from leaking across Robolectric/JVM tests.
+- Result: `settingsScreenPreferenceAndEmbeddingControlsInvokeCallbacks` now passes the existing Settings scroll-container test tag, matching the current expandable Settings layout.
+- Verification scope: focused failing Android tests plus the full no-device quality gate.
+- Caveat: this is test-harness and no-device evidence. It does not prove physical Android rendering, physical TalkBack traversal, optical QR pairing, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshAuthenticationRequiredDoesNotRetainRouteMaterialTechnicalDetail --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.authenticatedTrustedRuntimeMarksRouteExpiredWhenRefreshErrorCannotRetryBeforeLeaseExpiry --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.authenticatedTrustedRuntimeRetriesRejectedRouteRefreshPayloadBeforeLeaseExpiry --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsScreenPreferenceAndEmbeddingControlsInvokeCallbacks -Pkotlin.incremental=false --console=plain`
+- `bash script/check_no_device_quality.sh`
+
+### 2026-06-29 macOS Runtime Memory Inspector Summary
+
+- Scope: no-device macOS Runtime Memory inspector readability and localization hardening. GPT-5.3-Codex-Spark was not used.
+- Result: `RuntimeMemoryInspectorSheet` now shows a compact saved/paused summary above non-empty memory-note rows, matching the higher-level Runtime Memory status card and Android Settings memory summary direction.
+- Result: the summary exposes the total saved runtime-memory note count as the primary label and a localized enabled/paused detail line underneath.
+- Result: the summary uses a localized accessibility label helper instead of raw interpolated visible text, so VoiceOver-facing copy stays covered by the five-language localization contract.
+- Guardrail: `AetherLinkLocalizationTests.testLocalizedCountHelpersUseNaturalSingularAndPluralCopy` now covers the inspector summary accessibility label plus Japanese and Simplified Chinese runtime-memory card detail output.
+- Guardrail: `AetherLinkRenderSmokeTests.testRuntimeMemoryInspectorRendersAcrossLanguagesAndAppearances` verifies the inspector renders across supported app languages and appearance modes.
+- Guardrail: `script/check_macos_localization.py` now requires the inspector summary source wiring, localized accessibility helper, and focused localization-test snippets.
+- Verification scope: no-device macOS SwiftPM XCTest, macOS render smoke, macOS localization parity, script syntax, and whitespace checks.
+- Caveat: this does not prove live VoiceOver traversal, physical client rendering, optical QR pairing, production different-network routing, or live provider-backed chat/cancel.
+
+Verified after this change:
+
+- `python3 -m py_compile script/check_macos_localization.py script/check_copy_hygiene.py`
+- `bash -n script/check_no_device_quality.sh`
+- `python3 script/check_macos_localization.py`
+- `swift test --package-path apps/macos --filter LocalAgentBridgeTests.AetherLinkLocalizationTests/testLocalizedCountHelpersUseNaturalSingularAndPluralCopy`
+- `swift test --package-path apps/macos --filter AetherLinkRenderSmokeTests/testRuntimeMemoryInspectorRendersAcrossLanguagesAndAppearances`
+
+### 2026-06-29 macOS Runtime Memory Status Card Summary
+
+- Scope: no-device macOS Status runtime-memory parity with the Android saved/paused Memory summary. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer identified the Status card as the highest-signal macOS surface and was closed after reporting.
+- Result: the macOS Status > Runtime Memory card now shows total saved runtime memory notes as the primary value instead of only enabled notes.
+- Result: the card detail now summarizes enabled memory notes in runtime context and paused memory notes together, while preserving the existing `Needs attention` error path.
+- Result: saved/enabled/paused memory count helpers defensively clamp negative display counts to zero.
+- Guardrail: `AetherLinkLocalizationTests.testLocalizedCountHelpersUseNaturalSingularAndPluralCopy` now covers saved memory pluralization, negative count clamping, and the Status-card value/detail helpers in English, Korean, and French.
+- Guardrail: `script/check_macos_localization.py`, `script/check_copy_hygiene.py`, and `script/check_no_device_quality.sh` now require the source/test/no-device coverage contract for the macOS Runtime Memory saved/paused status-card summary.
+- Verification scope: no-device macOS SwiftPM XCTest, macOS render smoke, macOS localization parity, copy hygiene, script syntax, docs hygiene, and whitespace checks.
+- Caveat: this does not prove live VoiceOver traversal, physical client rendering, optical QR pairing, production different-network routing, or live provider-backed chat/cancel.
+
+Verified after this change:
+
+- `swift test --package-path apps/macos --filter LocalAgentBridgeTests.AetherLinkLocalizationTests/testLocalizedCountHelpersUseNaturalSingularAndPluralCopy`
+- `swift test --package-path apps/macos --filter AetherLinkRenderSmokeTests/testPrimaryCompanionSurfacesRenderAtMinimumDetailSizeAcrossLanguagesAndAppearances`
+- `python3 -m py_compile script/check_macos_localization.py script/check_copy_hygiene.py`
+- `bash -n script/check_no_device_quality.sh`
+- `python3 script/check_macos_localization.py`
+- `python3 script/check_copy_hygiene.py`
+
+### 2026-06-29 Android Settings Memory Saved/Paused Summary
+
+- Scope: no-device Android Settings memory visibility and localization polish. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer checked Android resource/test conventions and was closed after reporting.
+- Result: Settings > Memory now shows a compact saved/paused summary above runtime-owned memory rows, for example `2 saved memories, 1 paused.` This gives users immediate confirmation that trusted-runtime memory loaded and how many notes are paused.
+- Result: the summary uses localized plural resources across English, Korean, Japanese, Simplified Chinese, and French, and exposes a polite live-region content description for screen readers.
+- Guardrail: `ClientScreensNoDeviceComposeTest.settingsMemorySummaryLocalizesSavedAndPausedCountsAcrossSupportedLanguages` verifies the five supported language outputs and the live-region semantics.
+- Guardrail: `script/check_android_string_parity.py`, `script/check_copy_hygiene.py`, and `script/check_no_device_quality.sh` now cover the plural resources, source wiring, focused Compose test, and coverage summary phrase.
+- Verification scope: no-device Android resource parity, Android JVM/Compose test evidence, copy hygiene, script syntax, docs hygiene, and whitespace checks.
+- Caveat: this does not prove physical Android rendering, physical TalkBack traversal, real device haptics, optical QR pairing, production different-network routing, or live provider-backed chat/cancel.
+
+Verified after this change:
+
+- `python3 script/check_android_string_parity.py`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsMemorySummaryLocalizesSavedAndPausedCountsAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py`
+- `bash -n script/check_no_device_quality.sh`
+- `python3 script/check_copy_hygiene.py`
+
+### 2026-06-29 Android Settings Memory Compact Row Layout
+
+- Scope: no-device Android Settings memory-row layout polish while the physical mobile device is disconnected. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer ran in parallel and was closed after recommending a separate future localized Memory summary candidate.
+- Result: Settings > Memory rows now place long memory content above the status/toggle/delete action row instead of forcing all content and controls into one horizontal line. This keeps runtime-owned memory text readable and preserves reachable pause/remove controls on compact widths.
+- Result: the existing memory pause/remove accessibility labels, disabled-state descriptions, confirmation dialog labels, and haptic behavior were preserved.
+- Guardrail: `ClientScreensNoDeviceComposeTest.settingsMemoryRowsKeepActionsBelowLongContentOnCompactWidth` renders a long memory row at 320dp width and verifies the action row is laid out below the long content.
+- Guardrail: `script/check_copy_hygiene.py` and `script/check_no_device_quality.sh` now require the compact long-content memory row test tags, source layout contract, focused test filter, and coverage summary phrase.
+- Future candidate recorded from the read-only explorer: add a localized Memory status summary showing saved and paused counts across the five supported Android languages.
+- Verification scope: no-device Android JVM/Compose tests, copy hygiene, script syntax, docs hygiene, and whitespace checks.
+- Caveat: this does not prove physical Android rendering, physical TalkBack traversal, real device haptics, optical QR pairing, production different-network routing, or live provider-backed chat/cancel.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsMemoryRowsKeepActionsBelowLongContentOnCompactWidth -Pkotlin.incremental=false --console=plain`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsMemoryRowsCapLongActionAccessibilityLabels -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py`
+- `bash -n script/check_no_device_quality.sh`
+- `python3 script/check_copy_hygiene.py`
+
+### 2026-06-29 macOS Runtime History Count Display Clamp
+
+- Scope: no-device macOS runtime-history display hardening while the physical mobile device is disconnected. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer identified this narrow macOS parity gap and was closed after reporting.
+- Result: macOS runtime-history visible copy now clamps malformed negative message counts through `localizedRuntimeChatMessageCount(_:)`, matching the Android runtime-history persistence/display guard and preventing impossible labels such as `-3 messages`.
+- Result: runtime chat-session accessibility summaries that consume the helper also announce `0 messages` for malformed negative counts instead of propagating stale/corrupt runtime data to VoiceOver copy.
+- Guardrail: `AetherLinkLocalizationTests.testLocalizedCountHelpersUseNaturalSingularAndPluralCopy` now covers the negative-count helper path and the runtime chat-session accessibility label generated from it.
+- Guardrail: `script/check_macos_localization.py`, `script/check_copy_hygiene.py`, and `script/check_no_device_quality.sh` now require the macOS runtime-history message-count clamp source/test/coverage contract.
+- Verification scope: no-device macOS SwiftPM XCTest, macOS localization parity, copy hygiene, docs hygiene, script syntax, and whitespace checks.
+- Caveat: this does not prove physical client rendering, live VoiceOver traversal, optical QR pairing, production different-network routing, or live provider-backed chat/cancel.
+
+Verified after this change:
+
+- `swift test --package-path apps/macos --filter LocalAgentBridgeTests.AetherLinkLocalizationTests/testLocalizedCountHelpersUseNaturalSingularAndPluralCopy`
+- `python3 -m py_compile script/check_macos_localization.py script/check_copy_hygiene.py`
+- `bash -n script/check_no_device_quality.sh`
+- `python3 script/check_macos_localization.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+
+### 2026-06-29 macOS Compact Long Model Rows And Android History Count Guard
+
+- Scope: polish two no-device product-quality edges: long local model identifiers in the macOS Status Models panel, and malformed runtime-provided chat history counts on Android. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer identified the Android message-count clamp candidate and was not given write access.
+- Result: macOS Status > Models rows now give long local model names two lines and move model id/provider/source/running metadata into an adaptive metadata grid, so real local model identifiers are less likely to collapse adjacent badges at compact widths.
+- Result: the macOS model-row accessibility label remains a single contextual summary with name, id, kind, provider, source, running state, and size.
+- Result: Android runtime-owned chat session summaries now clamp negative `messageCount` values before persistence, and stale persisted negative counts are also clamped before becoming `RuntimeChatSession.messageCount`.
+- Guardrail: `AetherLinkRenderSmokeTests.testStatusModelRowsRenderLongLocalModelNamesAtCompactDetailSizeAcrossLanguagesAndAppearances` renders long chat and memory-indexing model rows at compact detail size across all supported app languages and appearance modes.
+- Guardrail: `RuntimeClientViewModelTest.runtimeSessionSummariesClampNegativeMessageCounts` covers existing runtime sessions, new runtime sessions, and stale persisted runtime-owned chat sessions.
+- Guardrail: `script/check_copy_hygiene.py` and `script/check_no_device_quality.sh` now require the long-model render smoke and Android message-count clamp coverage.
+- Verification scope: no-device macOS render-smoke/source evidence, Android JVM runtime-store evidence, localization/string parity, copy hygiene, script syntax, docs, and whitespace checks.
+- Caveat: this does not prove physical Android rendering, physical TalkBack/VoiceOver traversal, optical QR scanning, production different-network routing, or live provider-backed chat/cancel.
+
+Verified after this change:
+
+- `swift test --package-path apps/macos --filter AetherLinkRenderSmokeTests/testStatusModelRowsRenderLongLocalModelNamesAtCompactDetailSizeAcrossLanguagesAndAppearances`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeSessionSummariesClampNegativeMessageCounts -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py`
+- `bash -n script/check_no_device_quality.sh`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_macos_localization.py`
+- `python3 script/check_android_string_parity.py`
+
+### 2026-06-29 macOS Compact Quick Actions Layout
+
+- Scope: reduce localized macOS Status > Quick Actions layout risk at compact window widths. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer identified the Quick Actions overflow candidate and was not given write access.
+- Result: Status > Quick Actions no longer uses one fixed horizontal row for all six actions. The buttons now live in a dedicated `StatusQuickActions` SwiftUI subview backed by an adaptive `LazyVGrid`, so longer supported-language labels can wrap into multiple rows instead of being compressed across the panel.
+- Result: existing Quick Actions behavior and accessibility values/hints were preserved for pairing QR generation, model-provider check, model loading, runtime-data refresh, runtime-history inspection, and runtime-memory inspection.
+- Guardrail: `AetherLinkRenderSmokeTests.testStatusQuickActionsRenderAtCompactDetailSizeAcrossLanguagesAndAppearances` renders Status with Quick Actions at the compact detail size across all supported app languages and appearance modes.
+- Guardrail: `script/check_copy_hygiene.py` now requires the adaptive `StatusQuickActions` layout and the compact render-smoke coverage entry.
+- Verification scope: no-device macOS source, render-smoke, localization, copy-hygiene, script-syntax, docs, and whitespace checks.
+- Caveat: this is no-device macOS evidence only. It does not prove live VoiceOver traversal, physical client rendering, optical QR scanning, production different-network routing, or live provider-backed chat/cancel.
+
+Verified after this change:
+
+- `swift test --package-path apps/macos --filter AetherLinkRenderSmokeTests/testStatusQuickActionsRenderAtCompactDetailSizeAcrossLanguagesAndAppearances`
+- `python3 -m py_compile script/check_copy_hygiene.py`
+- `bash -n script/check_no_device_quality.sh`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_macos_localization.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check`
+
 ### 2026-06-29 Android French Chat Accessibility Copy Polish
 
 - Scope: polish French TalkBack-facing copy in the core chat flow. GPT-5.3-Codex-Spark was not used; a GPT-5.5 explorer identified the French chat/attachment accessibility copy candidate and was closed after reporting.
@@ -4188,7 +4444,7 @@ Verification after this change:
 - Audited the Android QR pairing path with one GPT-5.5 read-only subagent. No GPT-5.3-Codex-Spark subagent was used, and the subagent was closed after completion.
 - Tightened Android direct-route candidate generation so selected Bonjour routes and matching discovered routes cannot become direct TCP candidates when they point at local model-provider ports `11434` or `1234`. This preserves the product boundary that the client connects to AetherLink Runtime, not directly to Ollama or LM Studio.
 - Tightened Android scanner raw-value acceptance so the camera flow only closes on QR values that the runtime pairing parser can actually accept under the same debug/product policy. Incomplete legacy `lab://pair` values are now ignored by the scanner instead of closing the scanner and surfacing a later invalid-pairing error.
-- Narrowed the Android exported browsable deep-link manifest entry to `aetherlink://pair` and legacy `lab://pair` host matches, removing the broad scheme-only filter for unrelated custom-scheme actions.
+- Narrowed the Android exported browsable deep-link manifest entry to `aetherlink://pair` and legacy `lab://pair` host matches, removing the broad scheme-only filter for unrelated custom-scheme actions. Superseded on 2026-06-29: exported Android OS pairing now exposes only `aetherlink://pair`; legacy `lab://pair` remains parser-only QR compatibility.
 - Added Android no-device regression coverage that a relay QR remains persisted after an initial relay connection failure and that a recreated ViewModel restores that pending relay QR and sends the pairing request without using direct TCP.
 - Strengthened `script/check_copy_hygiene.py` so Android pairing deep links must stay pair-host scoped, scanner acceptance must keep using the runtime pairing parser policy, and DirectTcp route candidates must keep blocking model-provider ports `11434` and `1234` across selected, discovered, and target endpoints.
 
@@ -5388,8 +5644,7 @@ Remaining QR work:
 - Android reasoning output now keeps the Ollama-style thinking panel collapsed to a dim three-line preview by default, with clearer localized show/hide thinking actions and safer header layout so the action text does not crowd the label.
 - Android Settings now has a persisted Appearance selector with System, Light, and Dark options. `AetherLinkTheme` follows the saved choice, and physical-device screenshots confirmed Light mode switching and System mode restoration.
 - Android receive-failure handling now removes an unsent blank assistant placeholder before persisting the active chat. Partial answer text or reasoning is preserved, but a relay/runtime disconnect no longer leaves an empty assistant row in chat history.
-- Android chat requests now prepend a runtime capability guard system message before runtime-owned memory/context. It tells the selected model that the current build does not provide live web search, browsing, MCP tools, skills, automations, Python execution, or other external tools unless explicit tool output is present, reducing false claims that roadmap capabilities are already available.
-- The macOS runtime now enforces the same capability guard for `chat.send` before forwarding to Ollama or LM Studio, with deduplication when a client already sent the guard. This keeps the roadmap-feature boundary on the runtime side for future iOS/desktop clients, not only in the Android UI.
+- Superseded by the 2026-06-29 prompt-boundary cleanup: Android chat requests must not prepend the runtime capability guard. The macOS runtime enforces the capability guard before forwarding to Ollama or LM Studio, with defensive deduplication for legacy clients. This keeps the roadmap-feature boundary on the runtime side for future clients.
 - Android no longer injects the USB reverse debug fallback into trusted-runtime reconnect unless the user explicitly selected the USB reverse diagnostic route. This prevents different-network failures from being masked as a generic localhost connection failure when the real issue is a missing relay/remote route.
 - `script/run_different_network_dev_runtime.sh` starts the development runtime with relay metadata in one command and can optionally start the local relay process when the configured relay host is actually reachable from both devices.
 - Client route resolution now wires current Bonjour/local discovery results and explicitly selected local/dev endpoints into route candidates before stale trusted last-known endpoint hints, while staying same-network/local-direct only. Bonjour/local candidates should carry minimal route hints when available, preferably a pairing-derived `route_token`, so the client can route a pinned trusted runtime only to matching discovered endpoints. Stable `device_id`/fingerprint TXT values are legacy/development fallbacks. Metadata-less Bonjour endpoints are not trusted identity matches and are not used as automatic or selected trusted-runtime routes; explicit USB/emulator/manual diagnostics remain the local development escape hatch. This is not real remote P2P, NAT traversal, signaling, or relay transport yet.
@@ -10963,20 +11218,20 @@ Verified after this change:
 
 - Continued under the no-Spark constraint. GPT-5.3-Codex-Spark was not used.
 - Used a GPT-5.5 Android worker for the scoped `chatSendMessages(...)` patch, then reviewed and integrated the guard updates directly in this session.
-- Android `chatSendMessages(...)` no longer serializes `memoryEntries` as a client-supplied `Runtime user memory:` system message. It still sends the capability guard, client-visible user/assistant messages, and final-user-message attachments to the runtime.
+- Android `chatSendMessages(...)` no longer serializes `memoryEntries` as a client-supplied `Runtime user memory:` system message. A later 2026-06-29 cleanup also removed Android client-side capability guard injection, so current payloads carry only client-visible user/assistant messages plus final-user-message attachments.
 - Runtime-owned memory remains visible in the Android UI while connected, but enabled-memory prompt injection is now exclusively the runtime host's responsibility. This matches the runtime-side memory store, stale-client-memory replacement, and storage-redaction boundary.
 - Strengthened `script/check_copy_hygiene.py` and `script/check_no_device_quality.sh` so client-side runtime-memory prompt injection cannot silently return.
 - Caveat: the Android phone was disconnected for this pass, so this is no-device source/JVM/script evidence only. It does not prove physical install, camera QR scanning, physical haptics, live streamed chat/cancel, or real different-network runtime connectivity.
 
 Verified after this change:
 
-- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatSendMessagesPrependsCapabilityGuardWithoutClientSuppliedMemoryContext`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatSendMessagesSerializesOnlyClientVisibleConversationAndFinalAttachments`
 - `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh`
 
 ## 2026-06-28 Runtime Memory Client Boundary Follow-up
 
 - Continued under the no-Spark constraint. GPT-5.3-Codex-Spark was not used.
-- Current clients must not prepend cached memory context into `chat.send` / `messages`. Client payloads should carry the capability guard, visible conversation, and current user attachments while leaving memory prompt injection to the runtime host.
+- Current clients must not prepend cached memory context or the runtime capability guard into `chat.send` / `messages`. Client payloads should carry visible conversation and current user attachments while leaving memory, capability guard, compaction, and prompt policy to the runtime host.
 - Stale client-supplied `Runtime user memory:` input is compatibility-only. The runtime strips that client text and rebuilds runtime-owned memory context from its own store before dispatching to the model.
 - Strengthened `script/check_docs_hygiene.py` with a file-level protocol contract so current-client memory prompt suppression, compatibility-client stripping, and runtime-owned memory storage remain documented together.
 - Caveat: the Android phone was disconnected for this documentation pass, so QR pairing, real different-network routing, physical install, live streamed chat/cancel, and live device validation remain pending.
@@ -12119,3 +12374,244 @@ Verified after this change:
 - `swift test --package-path apps/macos --filter AetherLinkLocalizationTests/testTrustedDeviceListAccessibilityUsesSelectedLanguage`
 - `python3 script/check_macos_localization.py`
 - `python3 script/check_android_string_parity.py`
+
+## 2026-06-29 macOS Runtime History Reasoning Preview
+
+- Scope: bring the macOS runtime-owned chat transcript preview closer to the Android chat reasoning UX. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer found a separate Android assistant-marker candidate and was closed without edits.
+- Result: Runtime History Inspector transcript messages now render reasoning as a dim, short preview by default. Multi-line reasoning is capped at three lines, long single-paragraph reasoning is capped to a short preview, and longer reasoning can be expanded or collapsed with localized Show/Hide controls.
+- Result: the reasoning toggle exposes localized accessibility label, expanded/collapsed value, and hint across English, Korean, Japanese, Simplified Chinese, and French.
+- Guardrail: `script/check_macos_localization.py` now requires the macOS reasoning preview/toggle helpers, localized keys, and XCTest coverage.
+- Caveat: this is no-device macOS source/resource/XCTest/script evidence. It does not prove a live VoiceOver session, rendered macOS screenshot, physical Android rendering, live provider-backed chat, or production arbitrary-network connectivity.
+
+Verified after this change:
+
+- `swift test --package-path apps/macos --filter 'AetherLinkLocalizationTests/testRuntimeHistoryInspectorCopyLocalizesAcrossSupportedLanguages|AetherLinkLocalizationTests/testRuntimeTranscriptReasoningPreviewStaysShortUntilExpanded|AetherLinkLocalizationTests/testRuntimeTranscriptReasoningPreviewHandlesShortAndLongParagraphs'`
+- `python3 -m py_compile script/check_macos_localization.py`
+- `python3 script/check_macos_localization.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check`
+
+## 2026-06-29 Android Assistant Identity Marker
+
+- Scope: tighten the Android chat surface by wiring the existing localized assistant-initial resource into visible assistant replies. GPT-5.3-Codex-Spark was not used; this follows the prior GPT-5.5 read-only explorer finding.
+- Result: assistant replies now show a compact localized identity marker before assistant content while retaining the existing localized message accessibility summary.
+- Result: assistant initials now localize as `A`, `어`, `ア`, `助`, and `IA` across English, Korean, Japanese, Simplified Chinese, and French.
+- Guardrail: `ClientScreensNoDeviceComposeTest.chatScreenMessageRowsExposeLocalizedRoleAccessibilitySummaries` now verifies the assistant marker role semantics and localized initial resources across supported Android app languages. `script/check_copy_hygiene.py` and `script/check_no_device_quality.sh` now require assistant-marker coverage.
+- Caveat: the Android phone was being disconnected, so this is no-device Android Compose/Robolectric/resource/script evidence. It does not prove physical rendering, TalkBack pronunciation on hardware, live provider-backed chat, or production arbitrary-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenMessageRowsExposeLocalizedRoleAccessibilitySummaries -Pkotlin.incremental=false --console=plain`
+- `python3 script/check_android_string_parity.py`
+- `python3 -m py_compile script/check_copy_hygiene.py`
+- `bash -n script/check_no_device_quality.sh`
+- `python3 script/check_copy_hygiene.py`
+
+## 2026-06-29 Android Share Import Accessibility Live Region
+
+- Scope: make shared text/file imports announce reliably for assistive technology without changing the existing snackbar behavior. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer identified the gap, and a GPT-5.5 worker implemented the focused Android patch.
+- Result: Android shared draft imports now render a semantics-only polite live-region node using the same localized snackbar copy for text-only, file-only, and mixed text/file imports.
+- Result: repeated identical share imports clear the live-region announcement for a frame before setting the next message, so TalkBack has a stable target to announce again.
+- Guardrail: `ClientScreensNoDeviceComposeTest.sharedChatDraftImportAnnouncementUsesLocalizedSnackbarCopyAcrossSupportedLanguages` verifies the live-region content across English, Korean, Japanese, Simplified Chinese, and French.
+- Caveat: the Android phone was being disconnected, so this is no-device Compose/Robolectric evidence. It does not prove physical TalkBack pronunciation, live provider-backed chat, or production arbitrary-network QR-only connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:compileDebugKotlin :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.sharedChatDraftImportAnnouncementUsesLocalizedSnackbarCopyAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain`
+- `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/MainActivity.kt apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt`
+
+## 2026-06-29 macOS Activity Log Row Position Accessibility
+
+- Scope: improve VoiceOver context in the macOS Activity log without changing runtime networking, QR pairing, Android UI, or provider behavior. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer identified the gap and was closed after reporting.
+- Result: Activity log rows now include their row position and total item count in the accessibility label, so repeated runtime events can be distinguished as `2 of 5` rather than only by repeated summary text.
+- Result: the existing short `Activity item ... Status ...` helper remains available for existing tests and reusable copy, while the live list row uses the new position-aware helper.
+- Guardrail: `AetherLinkLocalizationTests/testActivityLogRowAccessibilityLabelIncludesLocalizedTone` now verifies the position-aware label across English, Korean, Japanese, Simplified Chinese, and French.
+- Caveat: this is no-device macOS source/resource/XCTest/script evidence. It does not prove a live VoiceOver session, rendered macOS capture, physical Android behavior, live provider-backed chat, or production arbitrary-network connectivity.
+
+Verified after this change:
+
+- `swift test --package-path apps/macos --filter AetherLinkLocalizationTests/testActivityLogRowAccessibilityLabelIncludesLocalizedTone`
+- `python3 -m py_compile script/check_macos_localization.py`
+- `python3 script/check_macos_localization.py`
+- `git diff --check -- apps/macos/LocalAgentBridgeApp/Sources/LogsView.swift apps/macos/LocalAgentBridgeApp/Tests/AetherLinkLocalizationTests.swift script/check_macos_localization.py apps/macos/LocalAgentBridgeApp/Sources/Resources/en.lproj/Localizable.strings apps/macos/LocalAgentBridgeApp/Sources/Resources/ko.lproj/Localizable.strings apps/macos/LocalAgentBridgeApp/Sources/Resources/ja.lproj/Localizable.strings apps/macos/LocalAgentBridgeApp/Sources/Resources/zh-Hans.lproj/Localizable.strings apps/macos/LocalAgentBridgeApp/Sources/Resources/fr.lproj/Localizable.strings`
+
+## 2026-06-29 Android Relay QR Scope And Relay ID Contract Hardening
+
+- Scope: tighten the current QR-provisioned development relay path for different-network pairing work. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer identified the `route_token`/`relay_id` fallback mismatch and was closed after reporting.
+- Result: Android QR parsing now rejects unknown or case-mutated relay scopes such as `public` or `REMOTE`, even when the relay host is otherwise public and reachable.
+- Result: Android relay QR parsing now requires an explicit `relay_id`/`ri` when relay fields are present. `route_token` remains paired-runtime routing metadata and is no longer accepted as a relay-room fallback.
+- Result: saved relay route preparation now checks exact allowed relay scopes before accepting remote, private-overlay, or debug USB reverse relay routes, so mutated stored scope values cannot revive stale or diagnostic routes.
+- Result: core transport relay route preparation now repeats the same exact-scope contract immediately before building a `PreparedRemoteRuntimeRoute.Relay`, closing malformed stored/injected route material even if it bypasses QR parsing.
+- Documentation: `docs/protocol.md` and `docs/connection-overlay.md` now state the exact `relay_scope` enum behavior and the separation between `route_token` and `relay_id`.
+- Caveat: the Android phone was disconnected for this pass, so this is no-device JVM/documentation evidence only. It does not prove optical QR scan, physical install, physical haptics, live streamed chat/cancel, or actual production arbitrary-network QR-only connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:pairing:testDebugUnitTest --tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest --tests com.localagentbridge.android.core.pairing.PairingStoreTest -Pkotlin.incremental=false --console=plain`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:transport:testDebugUnitTest --tests com.localagentbridge.android.core.transport.RuntimeRelayRoutePreparationTest -Pkotlin.incremental=false --console=plain`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshPayloadRejectsUnknownRelayScope -Pkotlin.incremental=false --console=plain`
+
+## 2026-06-29 Route Refresh And Connection UI Relay Material Validation
+
+- Scope: close the remaining malformed relay-route gap after QR/parser hardening. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer identified the macOS `route.refresh` emission gap and was closed after reporting.
+- Result: Android connection UI helpers now use the exact relay-scope contract before showing a saved relay route as usable. A trusted runtime with a public relay host but malformed `relayScope = "public"` now stays on the normal QR route-recovery path instead of appearing relay-ready.
+- Result: macOS `route.refresh` now validates refreshed relay material before sending a successful protocol response. It rejects blank identity/id/secret/nonce values, invalid ports, expired leases, `.local` or invalid hosts, loopback without `usb_reverse`, and private/CGNAT/ULA hosts without `private_overlay`.
+- Result: invalid route-refresh material returns the existing retryable `route_refresh_unavailable` error without including relay secrets or provider endpoints in the payload.
+- Caveat: this is no-device Android JVM and macOS SwiftPM evidence. It does not prove optical QR scanning, physical install, physical haptics, live provider-backed streaming/cancel, or production arbitrary-network QR-only connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.AppNavigationTest.malformedRelayScopeStaysUnusableInConnectionUi --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.connectionStatusHeroSummariesUseLocalizedTrustedRuntimeContext -Pkotlin.incremental=false --console=plain`
+- `swift test --package-path apps/macos --filter 'LocalRuntimeMessageRouterTests/testRouteRefreshReturnsFreshRelayMaterialFromRuntimeProvider|LocalRuntimeMessageRouterTests/testRouteRefreshRejectsUnknownRelayScopeFromRuntimeProvider|LocalRuntimeMessageRouterTests/testRouteRefreshRejectsMalformedRelayMaterialFromRuntimeProvider|LocalRuntimeMessageRouterTests/testRouteRefreshAllowsPrivateOverlayAndUsbReverseScopedRelayMaterial'`
+
+## 2026-06-29 No-Device Quality Gate Refresh
+
+- Scope: refresh the default no-device gate after route-refresh relay material validation changed from the old `normalizedRelayScope` helper to the new `routeRefreshPayload` fail-closed payload builder. GPT-5.3-Codex-Spark was not used; a GPT-5.5 worker updated the stale copy-hygiene guard and was closed after completion.
+- Result: `script/check_copy_hygiene.py` now enforces the new macOS route-refresh validation contract, including exact relay-scope enums, canonical nonblank route values, non-expired relay leases, eligible host/scope pairing, and retryable `route_refresh_unavailable` errors.
+- Result: `script/check_no_device_quality.sh` now runs `testRouteRefreshRejectsMalformedRelayMaterialFromRuntimeProvider` and `testRouteRefreshAllowsPrivateOverlayAndUsbReverseScopedRelayMaterial` by default, in addition to the existing unknown relay-scope regression.
+- Caveat: the Android phone was disconnected for this pass, so this is no-device script/build/unit-test evidence. It does not prove physical install, optical QR scanning, physical haptics, live provider-backed streaming/cancel, or production arbitrary-network QR-only connectivity.
+
+Verified after this change:
+
+- `python3 -m py_compile script/check_copy_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `bash -n script/check_no_device_quality.sh`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_protocol_schema.py`
+- `git diff --check`
+- `bash script/check_no_device_quality.sh`
+
+## 2026-06-29 Android Large-Font Multilingual Settings Regression
+
+- Scope: add no-device coverage for production accessibility text scaling across the five supported Android app languages. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer identified the gap and a GPT-5.5 worker added the focused regression before being closed.
+- Result: `ClientScreensNoDeviceComposeTest.settingsCoreControlsRemainReachableAtLargeFontScaleAcrossSupportedLanguages` renders Settings at narrow width with `fontScale = 1.5` across English, Korean, Japanese, Simplified Chinese, and French.
+- Result: the regression verifies that Preferences/Language, Memory, and Chat history controls remain reachable through scroll and semantics at large text size, including memory pause and chat archive action labels.
+- Guardrail: `script/check_no_device_quality.sh` now runs the large-font Settings regression by default, and `script/check_copy_hygiene.py` requires the focused test plus the no-device coverage summary phrase.
+- Caveat: this is no-device Android Compose/Robolectric/script evidence. It does not prove physical TalkBack traversal, physical rendering on the attached phone, real device haptics, optical QR pairing, live provider-backed streaming/cancel, or production arbitrary-network QR-only connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsCoreControlsRemainReachableAtLargeFontScaleAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsCoreControlsRemainReachableAtLargeFontScaleAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain --rerun-tasks`
+- `python3 -m py_compile script/check_copy_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `bash -n script/check_no_device_quality.sh`
+- `git diff --check`
+
+## 2026-06-29 macOS Large Accessibility Text Sidebar Preferences
+
+- Scope: add no-device macOS coverage matching the Android large-font multilingual Settings regression. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer confirmed macOS render smoke had language and appearance coverage but no `DynamicTypeSize` accessibility-size axis.
+- Result: `AetherLinkRenderSmokeTests.testCompanionShellPreferenceControlsRenderAtAccessibilitySizeAcrossLanguages` renders the companion shell across English, Korean, Japanese, Simplified Chinese, and French with `.dynamicTypeSize = .accessibility3`.
+- Result: the test exercises the sidebar app preference controls where users choose appearance and language, using the same no-device bitmap smoke path as the existing macOS render suite.
+- Guardrail: `script/check_copy_hygiene.py` now requires the accessibility-size render test and dynamic type environment injection, and `script/check_no_device_quality.sh` records the coverage phrase in its summary. The existing no-device gate already runs the full `AetherLinkRenderSmokeTests` suite.
+- Caveat: this is no-device macOS SwiftUI bitmap-render evidence. It does not prove live VoiceOver traversal, a rendered app screenshot from a user session, physical Android behavior, live provider-backed chat/cancel, or production arbitrary-network connectivity.
+
+Verified after this change:
+
+- `swift test --package-path apps/macos --filter AetherLinkRenderSmokeTests/testCompanionShellPreferenceControlsRenderAtAccessibilitySizeAcrossLanguages`
+
+## 2026-06-29 Android Large-Font Multilingual Chat And Runtime-Owned Prompt Boundary
+
+- Scope: tighten the primary Android chat surface and client-runtime prompt boundary while the physical Android phone is disconnected. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer identified that Android still serialized a runtime-owned capability guard in `chat.send`.
+- Result: `ClientScreensNoDeviceComposeTest.chatScreenCoreControlsRemainReachableAtLargeFontScaleAcrossSupportedLanguages` renders the narrow 320dp chat surface at `fontScale = 1.45` across English, Korean, Japanese, Simplified Chinese, and French.
+- Result: the regression verifies the chat model picker, active chat title, attachment action, input field, send action, document attachment chip, collapsed reasoning preview, and suggested next-question chip remain reachable through localized semantics at large text size.
+- Result: Android `chat.send` payload assembly now serializes only client-visible `user` and `assistant` conversation messages, with pending attachments attached only to the final outgoing user message.
+- Result: Android no longer prepends the AetherLink runtime capability guard to `chat.send`; runtime-owned memory, capability guard, compaction, and backend prompt policy stay on AetherLink Runtime as documented in `docs/protocol.md`.
+- Guardrail: `script/check_no_device_quality.sh` now runs the new large-font Chat regression and the renamed `chatSendMessagesSerializesOnlyClientVisibleConversationAndFinalAttachments` boundary test. `script/check_copy_hygiene.py` fails if Android payload assembly reintroduces client-side memory or capability-guard prompt injection.
+- Caveat: this is no-device Android Compose/Robolectric/unit-test/script evidence. It does not prove physical phone rendering, TalkBack traversal, physical haptics, optical QR pairing, live streamed chat/cancel, or production arbitrary-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenCoreControlsRemainReachableAtLargeFontScaleAcrossSupportedLanguages --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.chatSendMessagesSerializesOnlyClientVisibleConversationAndFinalAttachments -Pkotlin.incremental=false --console=plain`
+
+## 2026-06-29 Physical External Relay Pairing QA Wrapper
+
+- Scope: make the real different-network QR relay path repeatable as a physical QA gate while the Android phone is disconnected. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer identified that the code had external relay pieces but no first-class physical QA wrapper.
+- Result: `script/check_physical_external_relay_pairing.sh` now wraps `script/android_pairing_deeplink_smoke.sh` in external-relay-only mode, runs the device-side relay TCP probe without adb reverse, injects the generated QR deeplink, waits for pairing and `runtime.health`, and by default force-stops/relaunches the app to prove saved-route reconnect plus `models.list`.
+- Result: the wrapper writes `build/qa/android-external-relay-pairing.json` and `build/qa/android-external-relay-pairing.log`, records whether adb reverse was absent, counts runtime protocol events from the runtime log, and redacts allocation tokens from the JSON command summary.
+- Result: `script/android_pairing_deeplink_smoke.sh` now accepts `--serial <adb-serial>` so a physical QA run can bind evidence to a specific attached phone instead of whichever adb device appears first.
+- Guardrail: the no-device quality gate now prints the physical external-relay QA command and keeps real different-network connectivity out of no-device claims.
+- Caveat: the Android phone was disconnected during this pass, so the wrapper was syntax-verified only. This does not prove an actual external relay is reachable, optical QR camera scanning works, physical haptics work, or live provider-backed chat/cancel works.
+
+Verified after this change:
+
+- `bash -n script/android_pairing_deeplink_smoke.sh script/check_physical_external_relay_pairing.sh script/check_no_device_quality.sh`
+- `./script/check_physical_external_relay_pairing.sh --help`
+- `./script/check_physical_external_relay_pairing.sh --relay-host 0.0.0.0 --json <tmp>/summary.json --log <tmp>/smoke.log` returned status 2 and wrote valid failure JSON.
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `git diff --check`
+
+## 2026-06-29 macOS Runtime-Owned Chat Cancel History
+
+- Scope: close a runtime-owned history gap where a successful `chat.cancel` acknowledgement did not itself persist cancellation state. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer identified the missing `chat.cancel` persistence path and was closed after reporting.
+- Result: `LocalRuntimeMessageRouter` now tracks active `chat.send` storage contexts by request id after the request event is stored.
+- Result: when `chat.cancel` returns a successful cancellation acknowledgement, the router records a runtime-owned `.cancelled` chat event for the target request/session/model.
+- Result: cancellation storage is de-duplicated so a backend cancellation exception after the acknowledgement does not append a second cancelled event for the same request.
+- Guardrail: `LocalRuntimeMessageRouterTests.testChatCancelAcknowledgementPersistsRuntimeOwnedCancelledEvent` holds an active generation open, sends `chat.cancel`, asserts the acknowledgement, and verifies the runtime chat event store contains exactly one cancelled event with `finishReason = "cancelled"`.
+- Guardrail: `script/check_no_device_quality.sh` now runs the new router regression in the default macOS no-device gate and mentions `macOS chat.cancel runtime-owned cancelled event` in its coverage summary.
+- Caveat: this is no-device SwiftPM/router evidence. It does not prove physical Android cancel tapping, live provider cancellation latency, optical QR pairing, or production arbitrary-network connectivity.
+
+Verified after this change:
+
+- `swift test --package-path apps/macos --filter LocalRuntimeMessageRouterTests/testChatCancelAcknowledgementPersistsRuntimeOwnedCancelledEvent`
+- `swift test --package-path apps/macos --filter 'LocalRuntimeMessageRouterTests/testChatCancelReturnsCancelAcknowledgement|LocalRuntimeMessageRouterTests/testChatCancelAcknowledgementPersistsRuntimeOwnedCancelledEvent|LocalRuntimeMessageRouterTests/testChatCancelUnknownGenerationReturnsProtocolError|LocalRuntimeMessageRouterTests/testChatSendStoresRuntimeSideProcessingEvents'`
+
+## 2026-06-29 Android AetherLink-Only OS Pairing Deep Link
+
+- Scope: remove the rebrand-era legacy OS pairing entry point so the Android app exposes only the finished-product `aetherlink://pair` deep link. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer identified the exported `lab://pair` surface and was closed after reporting.
+- Result: `AndroidManifest.xml` no longer registers `lab://pair` in the exported browsable pairing intent filter.
+- Result: `pairingUriStringOrNull(...)`, which handles Android OS intents, now accepts only `aetherlink://pair`.
+- Result: scanner/manual QR raw-value compatibility still runs through the runtime pairing parser, so complete legacy-compatible `lab://pair` QR values can remain parser-compatible without being exported as an OS app link.
+- Guardrail: `AppNavigationTest.pairingDeepLinkRejectsLegacyLabPairUris` verifies the Android OS deep-link parser rejects `lab://pair`.
+- Guardrail: `script/check_copy_hygiene.py` now fails if `android:scheme="lab"` appears in the manifest or if the exported pair-host count grows beyond the single `aetherlink://pair` entry.
+- Caveat: this is no-device manifest/unit/script evidence. It does not prove physical QR camera scanning, physical Android app-link dispatch from another app, live pairing, or production arbitrary-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.AppNavigationTest.pairingDeepLinkRejectsLegacyLabPairUris --tests com.localagentbridge.android.AppNavigationTest.pairingQrRawValueAcceptsCompactRelayPayloadsFromScanner -Pkotlin.incremental=false --console=plain`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:processDebugMainManifest -Pkotlin.incremental=false --console=plain`
+- `rg -n "android:scheme=\"lab\"|scheme=\"lab\"|lab://pair" apps/android/app/build/intermediates/merged_manifests apps/android/app/build/intermediates/packaged_manifests apps/android/app/build/intermediates/manifest_merge_blame_file || true` returned no matches.
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh script/android_pairing_deeplink_smoke.sh script/check_physical_external_relay_pairing.sh`
+- `git diff --check`
+
+## 2026-06-29 Android Share-Sheet Content URI Boundary
+
+- Scope: harden external share-sheet attachment intake so arbitrary URI schemes cannot become pending runtime attachments. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer identified that shared `EXTRA_STREAM`/`ClipData` URIs were passed through unchanged.
+- Result: `sharedChatDraftAttachmentUris(...)` now keeps only `content://` attachment streams and de-duplicates them before a `SharedChatDraft` is created.
+- Result: shared text is preserved even when invalid stream URIs are dropped, while shares containing only invalid stream URIs no longer create an attachment draft.
+- Guardrail: `AppNavigationTest.shareIntentStreamsKeepOnlyContentAttachmentUris` verifies `file://`, `https://`, and `aetherlink://pair` stream URIs are ignored while `content://` remains accepted. `AppNavigationTest` runs under Robolectric because this regression depends on real Android `Uri` behavior.
+- Guardrail: `script/check_copy_hygiene.py` now requires the content-URI filter helper, the exact content-scheme check, and the focused share-intake regression.
+- Caveat: this is no-device Robolectric/source/script evidence. It does not prove physical Android share-sheet dispatch from third-party apps, document-provider permission behavior on hardware, or live provider-backed attachment processing.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.AppNavigationTest.shareIntentStreamsKeepOnlyContentAttachmentUris --tests com.localagentbridge.android.AppNavigationTest.shareIntentStreamsBecomeDistinctChatAttachments --tests com.localagentbridge.android.AppNavigationTest.shareIntentTextBecomesChatDraftWithoutBackendAccess -Pkotlin.incremental=false --console=plain`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh script/android_pairing_deeplink_smoke.sh script/check_physical_external_relay_pairing.sh`
+- `git diff --check`
+
+## 2026-06-29 macOS Runtime Provider And Disconnect Cancellation Hardening
+
+- Scope: continue moving AetherLink Runtime from prototype behavior toward production-safe runtime mediation. GPT-5.3-Codex-Spark was not used; GPT-5.5 read-only explorers identified runtime-side stability gaps and were closed after reporting.
+- Result: `AggregatingLlmBackend` now de-duplicates provider registrations by keeping the first backend for each provider instead of crashing during initialization when a provider is accidentally registered twice.
+- Result: `LocalRuntimeMessageRouter.connectionDidClose(...)` now cancels active chat generations started by that connection, records one runtime-owned `.cancelled` chat event, and keeps the existing auth-session cleanup behavior.
+- Result: active chat storage contexts are now indexed by connection id so disconnect cleanup does not affect generations from other trusted connections.
+- Guardrail: `AggregatingLlmBackendResidencyTests.testDuplicateProviderBackendsKeepFirstProviderInsteadOfCrashing` proves duplicate provider registration does not crash and routes through the first registered provider.
+- Guardrail: `LocalRuntimeMessageRouterTests.testConnectionCloseCancelsActiveChatGenerationAndPersistsCancelledEvent` proves socket/relay disconnect cancels the active generation and persists a single cancelled event.
+- Caveat: this is no-device SwiftPM/router evidence. It does not prove physical Android disconnect timing, live Ollama/LM Studio cancellation latency, optical QR pairing, or production relay behavior.
+
+Verified after this change:
+
+- `swift test --package-path apps/macos --filter AggregatingLlmBackendResidencyTests/testDuplicateProviderBackendsKeepFirstProviderInsteadOfCrashing`
+- `swift test --package-path apps/macos --filter 'OllamaBackendTests/testListModelsUsesShowCapabilitiesToSeparateEmbeddingModels|LMStudioBackendTests/testListModelsParsesNativeLocalLLMAndEmbeddingModelsSeparately|LMStudioBackendTests/testListModelsFallsBackToOpenAICompatibleModels|AggregatingLlmBackendResidencyTests/testInstalledEmbeddingModelIsNotRoutedAsChat|AggregatingLlmBackendResidencyTests/testInstalledCloudChatModelIsNotRoutedAsChat|AggregatingLlmBackendResidencyTests/testDuplicateProviderBackendsKeepFirstProviderInsteadOfCrashing'`
+- `swift test --package-path apps/macos --filter LocalRuntimeMessageRouterTests/testConnectionCloseCancelsActiveChatGenerationAndPersistsCancelledEvent`
+- `swift test --package-path apps/macos --filter 'LocalRuntimeMessageRouterTests/testChatCancelReturnsCancelAcknowledgement|LocalRuntimeMessageRouterTests/testChatCancelAcknowledgementPersistsRuntimeOwnedCancelledEvent|LocalRuntimeMessageRouterTests/testConnectionCloseCancelsActiveChatGenerationAndPersistsCancelledEvent|LocalRuntimeMessageRouterTests/testChatCancelUnknownGenerationReturnsProtocolError|LocalRuntimeMessageRouterTests/testConnectionDidCloseClearsAuthenticatedSession'`
+- `python3 -m py_compile script/check_copy_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh script/android_pairing_deeplink_smoke.sh script/check_physical_external_relay_pairing.sh`
+- `git diff --check`

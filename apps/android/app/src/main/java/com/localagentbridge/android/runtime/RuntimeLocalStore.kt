@@ -802,6 +802,7 @@ internal fun PersistedRuntimeData.withRuntimeChatSessionSummaries(
         val existing = this.sessions.firstOrNull { it.id == summary.sessionId }
         val updatedAt = parseTimestampMillis(summary.lastActivityAt) ?: existing?.updatedAtMillis ?: nowMillis
         val modelId = summary.model.trim().takeIf(String::isNotBlank) ?: existing?.modelId
+        val cleanMessageCount = summary.messageCount.coerceAtLeast(0)
         val isArchived = summary.status.equals("archived", ignoreCase = true) || summary.archivedAt != null
         val archivedAt = if (isArchived) {
             summary.archivedAt?.let(::parseTimestampMillis)
@@ -818,7 +819,7 @@ internal fun PersistedRuntimeData.withRuntimeChatSessionSummaries(
             archivedAtMillis = archivedAt,
             titleGenerated = existing.titleGenerated || !existing.titleManuallyEdited,
             runtimeOwned = true,
-            runtimeMessageCount = summary.messageCount,
+            runtimeMessageCount = cleanMessageCount,
             lastEvent = summary.lastEvent?.trim()?.takeIf(String::isNotBlank),
             lastFinishReason = summary.lastFinishReason?.trim()?.takeIf(String::isNotBlank),
             lastErrorCode = summary.lastErrorCode?.trim()?.takeIf(String::isNotBlank),
@@ -831,7 +832,7 @@ internal fun PersistedRuntimeData.withRuntimeChatSessionSummaries(
             archivedAtMillis = archivedAt,
             titleGenerated = true,
             runtimeOwned = true,
-            runtimeMessageCount = summary.messageCount,
+            runtimeMessageCount = cleanMessageCount,
             lastEvent = summary.lastEvent?.trim()?.takeIf(String::isNotBlank),
             lastFinishReason = summary.lastFinishReason?.trim()?.takeIf(String::isNotBlank),
             lastErrorCode = summary.lastErrorCode?.trim()?.takeIf(String::isNotBlank),
@@ -1043,7 +1044,7 @@ private fun PersistedChatSession.toRuntimeChatSession(): RuntimeChatSession {
         title = title,
         modelId = modelId,
         updatedAtMillis = updatedAtMillis,
-        messageCount = runtimeMessageCount ?: messages.size,
+        messageCount = (runtimeMessageCount ?: messages.size).coerceAtLeast(0),
         archivedAtMillis = archivedAtMillis,
         titleManuallyEdited = titleManuallyEdited,
         titleGenerated = titleGenerated,
@@ -1079,17 +1080,12 @@ internal fun runtimeMemoryEntries(data: PersistedRuntimeData): List<RuntimeMemor
 
 internal fun chatSendMessages(
     messages: List<RuntimeChatMessage>,
-    memoryEntries: List<RuntimeMemoryEntry>,
     attachments: List<RuntimePendingAttachment> = emptyList(),
 ): List<ChatMessagePayload> {
-    val capabilityGuard = ChatMessagePayload(
-        role = "system",
-        content = AETHERLINK_RUNTIME_CAPABILITY_GUARD,
-    )
     val conversationMessages = messages
         .filter { it.role == "user" || it.role == "assistant" }
         .filter { it.content.isNotBlank() }
-    val conversation = conversationMessages
+    return conversationMessages
         .mapIndexed { index, message ->
             val messageAttachments = if (index == conversationMessages.lastIndex) {
                 attachments.map { attachment ->
@@ -1109,13 +1105,7 @@ internal fun chatSendMessages(
                 attachments = messageAttachments,
             )
         }
-    return listOf(capabilityGuard) + conversation
 }
-
-internal const val AETHERLINK_RUNTIME_CAPABILITY_GUARD =
-    "AetherLink currently provides runtime-mediated local model chat, model listing, file/image attachment handling when supported, chat titles, and suggested next questions. " +
-        "The current build does not provide live web search, browsing, MCP tools, skills, scheduled automations, Python execution, or other external tools unless explicit tool output is included in this conversation. " +
-        "Do not claim that you can search the web, browse, run tools, access files, or use unavailable integrations. If asked for an unavailable capability, say it is not available in this build and offer the closest supported alternative."
 
 private fun PersistedChatMessage.toRuntimeChatMessage(): RuntimeChatMessage {
     return RuntimeChatMessage(

@@ -60,6 +60,21 @@
     <string name="restore_chat_named">恢复聊天“%1$s”</string>
     <string name="chat_history_settings_title">聊天记录</string>
     <string name="chat_history_settings_subtitle">归档聊天，稍后恢复，或永久删除已归档聊天。</string>
+    <string name="chat_history_summary_title">已保存聊天</string>
+    <plurals name="chat_history_saved_count">
+        <item quantity="one">%1$d 个已保存聊天</item>
+        <item quantity="other">%1$d 个已保存聊天</item>
+    </plurals>
+    <plurals name="chat_history_active_count">
+        <item quantity="one">%1$d 个活跃聊天</item>
+        <item quantity="other">%1$d 个活跃聊天</item>
+    </plurals>
+    <plurals name="chat_history_archived_count">
+        <item quantity="one">%1$d 个已归档聊天</item>
+        <item quantity="other">%1$d 个已归档聊天</item>
+    </plurals>
+    <string name="chat_history_summary_detail">活跃：%1$s。已归档：%2$s。</string>
+    <string name="chat_history_summary_accessibility">聊天历史摘要。%1$s。%2$s</string>
     <string name="chat_history_action_state_wait_for_stream">更改聊天记录前，请等待当前回复完成。</string>
     <string name="chat_history_refresh">刷新聊天记录</string>
     <string name="chat_history_refresh_state_ready">可以刷新聊天记录。</string>
@@ -375,7 +390,7 @@
     <string name="chat_hint_ready_with_attachments">已准备好发送。%1$s</string>
     <string name="role_user">你</string>
     <string name="role_assistant">助手</string>
-    <string name="role_assistant_initial">A</string>
+    <string name="role_assistant_initial">助</string>
     <string name="chat_message_accessibility_summary">%1$s: %2$s</string>
     <string name="assistant_typing">正在生成回答...</string>
     <string name="assistant_reasoning_label">思考</string>
@@ -399,6 +414,21 @@
     <string name="copy_code_block">复制代码块</string>
     <string name="copy_code_block_named">复制 %1$s 代码块 %2$d</string>
     <string name="copy_code_block_numbered">复制代码块 %1$d</string>
+    <plurals name="code_block_line_count">
+        <item quantity="one">%1$d 行</item>
+        <item quantity="other">%1$d 行</item>
+    </plurals>
+    <string name="code_block_language_unspecified">未指定语言</string>
+    <string name="code_block_accessibility_summary">代码块。%1$s。%2$s。</string>
+    <plurals name="markdown_table_column_count">
+        <item quantity="one">%1$d 列</item>
+        <item quantity="other">%1$d 列</item>
+    </plurals>
+    <plurals name="markdown_table_row_count">
+        <item quantity="one">%1$d 行</item>
+        <item quantity="other">%1$d 行</item>
+    </plurals>
+    <string name="markdown_table_accessibility_summary">表格。%1$s。%2$s。</string>
     <string name="message_copied">已复制</string>
     <string name="runtime_error_technical_details">技术详情</string>
     <string name="runtime_error_show_technical_details">显示技术详情</string>
@@ -450,6 +480,15 @@
     <string name="memory_empty_disconnected">连接受信任运行时以加载已保存记忆。</string>
     <string name="memory_connect_to_load">连接受信任运行时以加载并管理记忆。</string>
     <string name="memory_read_only_notice">当前会话中显示的记忆为只读。请重新连接受信任运行时以刷新或管理。</string>
+    <plurals name="memory_saved_count">
+        <item quantity="one">已保存 %1$d 条记忆</item>
+        <item quantity="other">已保存 %1$d 条记忆</item>
+    </plurals>
+    <plurals name="memory_paused_count">
+        <item quantity="one">已暂停 %1$d 条</item>
+        <item quantity="other">已暂停 %1$d 条</item>
+    </plurals>
+    <string name="memory_summary">%1$s，%2$s。</string>
     <string name="memory_refresh">刷新记忆</string>
     <string name="memory_refresh_state_ready">可以刷新记忆。</string>
     <string name="memory_remove">删除记忆</string>

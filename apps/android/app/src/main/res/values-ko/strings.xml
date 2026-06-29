@@ -60,6 +60,21 @@
     <string name="restore_chat_named">%1$s 채팅 복원</string>
     <string name="chat_history_settings_title">채팅 기록</string>
     <string name="chat_history_settings_subtitle">채팅을 보관하고 나중에 복원하거나, 보관된 채팅만 영구 삭제합니다.</string>
+    <string name="chat_history_summary_title">저장된 채팅</string>
+    <plurals name="chat_history_saved_count">
+        <item quantity="one">저장된 채팅 %1$d개</item>
+        <item quantity="other">저장된 채팅 %1$d개</item>
+    </plurals>
+    <plurals name="chat_history_active_count">
+        <item quantity="one">활성 채팅 %1$d개</item>
+        <item quantity="other">활성 채팅 %1$d개</item>
+    </plurals>
+    <plurals name="chat_history_archived_count">
+        <item quantity="one">보관된 채팅 %1$d개</item>
+        <item quantity="other">보관된 채팅 %1$d개</item>
+    </plurals>
+    <string name="chat_history_summary_detail">활성: %1$s. 보관: %2$s.</string>
+    <string name="chat_history_summary_accessibility">채팅 기록 요약. %1$s. %2$s</string>
     <string name="chat_history_action_state_wait_for_stream">채팅 기록을 변경하기 전에 현재 응답이 끝날 때까지 기다리세요.</string>
     <string name="chat_history_refresh">채팅 기록 새로고침</string>
     <string name="chat_history_refresh_state_ready">채팅 기록을 새로고칠 수 있습니다.</string>
@@ -375,7 +390,7 @@
     <string name="chat_hint_ready_with_attachments">전송할 준비가 되었습니다. %1$s</string>
     <string name="role_user">나</string>
     <string name="role_assistant">어시스턴트</string>
-    <string name="role_assistant_initial">A</string>
+    <string name="role_assistant_initial">어</string>
     <string name="chat_message_accessibility_summary">%1$s: %2$s</string>
     <string name="assistant_typing">응답 생성 중...</string>
     <string name="assistant_reasoning_label">생각</string>
@@ -399,6 +414,21 @@
     <string name="copy_code_block">코드 블록 복사</string>
     <string name="copy_code_block_named">%1$s 코드 블록 %2$d 복사</string>
     <string name="copy_code_block_numbered">코드 블록 %1$d 복사</string>
+    <plurals name="code_block_line_count">
+        <item quantity="one">%1$d줄</item>
+        <item quantity="other">%1$d줄</item>
+    </plurals>
+    <string name="code_block_language_unspecified">언어 지정 안 됨</string>
+    <string name="code_block_accessibility_summary">코드 블록. %1$s. %2$s.</string>
+    <plurals name="markdown_table_column_count">
+        <item quantity="one">열 %1$d개</item>
+        <item quantity="other">열 %1$d개</item>
+    </plurals>
+    <plurals name="markdown_table_row_count">
+        <item quantity="one">행 %1$d개</item>
+        <item quantity="other">행 %1$d개</item>
+    </plurals>
+    <string name="markdown_table_accessibility_summary">표. %1$s. %2$s.</string>
     <string name="message_copied">복사됨</string>
     <string name="runtime_error_technical_details">기술 세부정보</string>
     <string name="runtime_error_show_technical_details">기술 세부정보 표시</string>
@@ -450,6 +480,15 @@
     <string name="memory_empty_disconnected">저장된 메모리를 불러오려면 신뢰된 런타임에 연결하세요.</string>
     <string name="memory_connect_to_load">메모리를 불러오고 관리하려면 신뢰된 런타임에 연결하세요.</string>
     <string name="memory_read_only_notice">현재 세션에 표시된 메모리는 읽기 전용입니다. 새로고침하거나 관리하려면 신뢰된 런타임에 다시 연결하세요.</string>
+    <plurals name="memory_saved_count">
+        <item quantity="one">저장된 메모리 %1$d개</item>
+        <item quantity="other">저장된 메모리 %1$d개</item>
+    </plurals>
+    <plurals name="memory_paused_count">
+        <item quantity="one">일시 중지 %1$d개</item>
+        <item quantity="other">일시 중지 %1$d개</item>
+    </plurals>
+    <string name="memory_summary">%1$s, %2$s.</string>
     <string name="memory_refresh">메모리 새로고침</string>
     <string name="memory_refresh_state_ready">메모리를 새로고침할 준비가 되었습니다.</string>
     <string name="memory_remove">메모리 삭제</string>

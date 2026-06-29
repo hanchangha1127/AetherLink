@@ -104,6 +104,25 @@ class RuntimeRelayRoutePreparationTest {
     }
 
     @Test
+    fun relayRoutePreparationRejectsUnknownOrMutatedRelayScope() {
+        val valid = RuntimeRelayRoutePreparation(
+            host = "relay.example.test",
+            port = 443,
+            relayId = "relay-1",
+            relayFrameSecret = "secret-1",
+            expiresAtEpochMillis = 4102444800000L,
+            antiReplayNonce = "nonce-1",
+        )
+
+        listOf("public", "REMOTE", " remote ", " private_overlay ", "USB_REVERSE").forEach { scope ->
+            assertNull(
+                "Expected relay scope $scope to be rejected",
+                valid.copy(relayScope = scope).toPreparedRelayRouteOrNull(identity),
+            )
+        }
+    }
+
+    @Test
     fun relayRoutePreparationAllowsUsbReverseScopeForLoopbackDiagnostics() {
         val route = RuntimeRelayRoutePreparation(
             host = "127.0.0.1",

@@ -1,5 +1,6 @@
 import AppKit
 import CompanionCore
+import OllamaBackend
 import SwiftUI
 import XCTest
 @testable import LocalAgentBridge
@@ -29,6 +30,27 @@ final class AetherLinkRenderSmokeTests: XCTestCase {
                         label: "ContentView \(language.rawValue) \(appearance.rawValue)"
                     )
                 }
+            }
+        }
+    }
+
+    func testCompanionShellPreferenceControlsRenderAtAccessibilitySizeAcrossLanguages() throws {
+        for language in AetherLinkAppLanguage.allCases {
+            try withStoredPreferences(language: language, appearance: .system) {
+                let bitmap = try render(
+                    ContentView(
+                        model: renderSmokeModel(),
+                        requestedSection: .constant(.status)
+                    )
+                    .environment(\.locale, Locale(identifier: language.localeIdentifier))
+                    .environment(\.dynamicTypeSize, .accessibility3),
+                    size: minimumWindowSize
+                )
+
+                assertMeaningfulRender(
+                    bitmap,
+                    label: "ContentView accessibility text preferences \(language.rawValue)"
+                )
             }
         }
     }
@@ -85,6 +107,73 @@ final class AetherLinkRenderSmokeTests: XCTestCase {
                     assertMeaningfulRender(
                         bitmap,
                         label: "Active PairingView \(language.rawValue) \(appearance.rawValue)"
+                    )
+                }
+            }
+        }
+    }
+
+    func testStatusQuickActionsRenderAtCompactDetailSizeAcrossLanguagesAndAppearances() throws {
+        for language in AetherLinkAppLanguage.allCases {
+            for appearance in AetherLinkAppAppearance.pickerOptions {
+                try withStoredPreferences(language: language, appearance: appearance) {
+                    let model = renderSmokeModel()
+
+                    let bitmap = try render(
+                        StatusView(model: model, onGenerateRelayQRCode: {})
+                            .environment(\.locale, Locale(identifier: language.localeIdentifier))
+                            .preferredColorScheme(appearance.preferredColorScheme),
+                        size: compactDetailSize
+                    )
+
+                    assertMeaningfulRender(
+                        bitmap,
+                        label: "Compact StatusView Quick Actions \(language.rawValue) \(appearance.rawValue)"
+                    )
+                }
+            }
+        }
+    }
+
+    func testStatusModelRowsRenderLongLocalModelNamesAtCompactDetailSizeAcrossLanguagesAndAppearances() async throws {
+        let models = [
+            ModelInfo(
+                id: "ollama:qwen3.6-coder-super-long-local-runtime-model-name-with-vision-tools:35b-q8_0",
+                name: "Qwen3.6 Coder Super Long Local Runtime Model Name With Vision Tools 35B",
+                provider: .ollama,
+                kind: .chat,
+                sizeBytes: 23_400_000_000,
+                installed: true,
+                running: true,
+                source: .local
+            ),
+            ModelInfo(
+                id: "lm_studio:text-embedding-nomic-long-context-index-model-q8_0",
+                name: "Text Embedding Nomic Long Context Index Model",
+                provider: .lmStudio,
+                kind: .embedding,
+                sizeBytes: 720_000_000,
+                installed: true,
+                source: .local
+            ),
+        ]
+
+        for language in AetherLinkAppLanguage.allCases {
+            for appearance in AetherLinkAppAppearance.pickerOptions {
+                try await withStoredPreferences(language: language, appearance: appearance) {
+                    let model = renderSmokeModel(backend: RenderSmokeBackend(models: models))
+                    await model.loadModels()
+
+                    let bitmap = try render(
+                        StatusView(model: model)
+                            .environment(\.locale, Locale(identifier: language.localeIdentifier))
+                            .preferredColorScheme(appearance.preferredColorScheme),
+                        size: compactDetailSize
+                    )
+
+                    assertMeaningfulRender(
+                        bitmap,
+                        label: "Compact StatusView long model rows \(language.rawValue) \(appearance.rawValue)"
                     )
                 }
             }
@@ -278,6 +367,22 @@ final class AetherLinkRenderSmokeTests: XCTestCase {
         return try assertions()
     }
 
+    private func withStoredPreferences<T>(
+        language: AetherLinkAppLanguage,
+        appearance: AetherLinkAppAppearance,
+        assertions: () async throws -> T
+    ) async throws -> T {
+        let previousLanguage = UserDefaults.standard.string(forKey: AetherLinkAppLanguageStorageKey)
+        let previousAppearance = UserDefaults.standard.string(forKey: AetherLinkAppAppearanceStorageKey)
+        UserDefaults.standard.set(language.rawValue, forKey: AetherLinkAppLanguageStorageKey)
+        UserDefaults.standard.set(appearance.rawValue, forKey: AetherLinkAppAppearanceStorageKey)
+        defer {
+            restore(previousLanguage, forKey: AetherLinkAppLanguageStorageKey)
+            restore(previousAppearance, forKey: AetherLinkAppAppearanceStorageKey)
+        }
+        return try await assertions()
+    }
+
     private func restore(_ value: String?, forKey key: String) {
         if let value {
             UserDefaults.standard.set(value, forKey: key)
@@ -293,8 +398,9 @@ final class AetherLinkRenderSmokeTests: XCTestCase {
         return defaults
     }
 
-    private func renderSmokeModel() -> CompanionAppModel {
+    private func renderSmokeModel(backend: (any LlmBackend)? = nil) -> CompanionAppModel {
         CompanionAppModel(
+            backend: backend ?? RenderSmokeBackend(models: []),
             environment: isolatedRuntimeIdentityEnvironment(),
             userDefaults: isolatedDefaults(),
             runtimeRouteHostProvider: { "127.0.0.1" }
@@ -310,6 +416,33 @@ final class AetherLinkRenderSmokeTests: XCTestCase {
 
 private enum RenderSmokeFailure: Error {
     case bitmapAllocationFailed
+}
+
+private final class RenderSmokeBackend: LlmBackend, @unchecked Sendable {
+    let provider: ModelProvider = .aggregate
+    private let models: [ModelInfo]
+
+    init(models: [ModelInfo]) {
+        self.models = models
+    }
+
+    func healthCheck() async -> BackendStatus {
+        .available
+    }
+
+    func listModels() async throws -> [ModelInfo] {
+        models
+    }
+
+    func chat(request: ChatRequest) -> AsyncThrowingStream<ChatStreamEvent, Error> {
+        AsyncThrowingStream { continuation in
+            continuation.finish()
+        }
+    }
+
+    func cancel(generationID: String) -> GenerationCancellationResult {
+        .notFound(generationID: generationID)
+    }
 }
 
 private extension Comparable {

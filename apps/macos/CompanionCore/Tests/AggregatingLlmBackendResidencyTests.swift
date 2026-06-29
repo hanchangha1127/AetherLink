@@ -160,6 +160,26 @@ final class AggregatingLlmBackendResidencyTests: XCTestCase {
         }
     }
 
+    func testDuplicateProviderBackendsKeepFirstProviderInsteadOfCrashing() async throws {
+        let primaryOllama = ResidencyTestBackend(
+            provider: .ollama,
+            models: [ModelInfo(id: "qwen-local", name: "qwen-local", provider: .ollama)]
+        )
+        let duplicateOllama = ResidencyTestBackend(
+            provider: .ollama,
+            models: [ModelInfo(id: "shadow-local", name: "shadow-local", provider: .ollama)]
+        )
+        let backend = AggregatingLlmBackend([primaryOllama, duplicateOllama])
+
+        let models = try await backend.listModels()
+        XCTAssertEqual(models.map(\.id), ["qwen-local"])
+
+        _ = try await collect(backend.chat(request: chatRequest(model: "ollama:qwen-local")))
+
+        XCTAssertEqual(primaryOllama.routedModels, ["qwen-local"])
+        XCTAssertTrue(duplicateOllama.routedModels.isEmpty)
+    }
+
     private func chatRequest(model: String) -> ChatRequest {
         ChatRequest(
             generationID: UUID().uuidString,

@@ -145,23 +145,31 @@ func localizedAvailableModelProviderCount(_ count: Int) -> String {
 }
 
 func localizedRuntimeActiveChatSessionCount(_ count: Int) -> String {
-    localizedCount(count, singularKey: "1 active chat", pluralKey: "%d active chats")
+    localizedCount(max(0, count), singularKey: "1 active chat", pluralKey: "%d active chats")
 }
 
 func localizedRuntimeArchivedChatSessionCount(_ count: Int) -> String {
-    localizedCount(count, singularKey: "1 archived chat", pluralKey: "%d archived chats")
+    localizedCount(max(0, count), singularKey: "1 archived chat", pluralKey: "%d archived chats")
+}
+
+func localizedRuntimeSavedChatSessionCount(_ count: Int) -> String {
+    localizedCount(max(0, count), singularKey: "1 saved chat", pluralKey: "%d saved chats")
 }
 
 func localizedRuntimeChatMessageCount(_ count: Int) -> String {
-    localizedCount(count, singularKey: "1 message", pluralKey: "%d messages")
+    localizedCount(max(0, count), singularKey: "1 message", pluralKey: "%d messages")
+}
+
+func localizedRuntimeSavedMemoryCount(_ count: Int) -> String {
+    localizedCount(max(0, count), singularKey: "1 saved memory note", pluralKey: "%d saved memory notes")
 }
 
 func localizedRuntimeEnabledMemoryCount(_ count: Int) -> String {
-    localizedCount(count, singularKey: "1 enabled memory note", pluralKey: "%d enabled memory notes")
+    localizedCount(max(0, count), singularKey: "1 enabled memory note", pluralKey: "%d enabled memory notes")
 }
 
 func localizedRuntimePausedMemoryCount(_ count: Int) -> String {
-    localizedCount(count, singularKey: "1 paused memory note", pluralKey: "%d paused memory notes")
+    localizedCount(max(0, count), singularKey: "1 paused memory note", pluralKey: "%d paused memory notes")
 }
 
 func localizedLoadedLocalModelLogCount(_ countText: String) -> String {

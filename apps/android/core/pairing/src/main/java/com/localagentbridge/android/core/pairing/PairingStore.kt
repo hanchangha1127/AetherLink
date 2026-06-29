@@ -356,6 +356,7 @@ internal fun TrustedRuntime.hasExpiredRelayRoute(
 private fun TrustedRuntime.hasCompleteRelayRoute(): Boolean {
     val expiresAt = relayExpiresAtEpochMillis
     return !relayHost.isNullOrBlank() &&
+        isAllowedRemoteRelayScope(relayScope) &&
         (isEligibleRemoteRelayHost(relayHost, relayScope) || relayHost.isDebugUsbReverseRelayRoute(relayScope)) &&
         relayPort != null &&
         relayPort in 1..65535 &&
@@ -386,7 +387,7 @@ internal fun TrustedRuntime.validDirectEndpointOrNull(): TrustedRuntimeDirectEnd
 }
 
 private fun String.isDebugUsbReverseRelayRoute(relayScope: String?): Boolean {
-    if (relayScope?.trim()?.lowercase() != DEBUG_USB_REVERSE_RELAY_SCOPE) return false
+    if (relayScope != DEBUG_USB_REVERSE_RELAY_SCOPE) return false
     val normalized = trim()
         .removePrefix("[")
         .removeSuffix("]")

@@ -97,8 +97,11 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 import java.util.Calendar
 
+@RunWith(RobolectricTestRunner::class)
 class AppNavigationTest {
     @Test
     fun freshInstallStartsInSettingsForPairing() {
@@ -797,6 +800,36 @@ class AppNavigationTest {
 
         assertEquals("", draft?.text)
         assertEquals(listOf(sharedUri), draft?.attachmentUris)
+    }
+
+    @Test
+    fun shareIntentStreamsKeepOnlyContentAttachmentUris() {
+        val contentUri = Uri.parse("content://aetherlink/shared/one.pdf")
+        val draft = sharedChatDraftOrNull(
+            action = Intent.ACTION_SEND_MULTIPLE,
+            sharedText = "  Summarize this  ",
+            attachmentUris = listOf(
+                contentUri,
+                Uri.parse("file:///sdcard/Download/private.pdf"),
+                Uri.parse("https://example.test/private.pdf"),
+                Uri.parse("aetherlink://pair?pairing_code=123456"),
+                contentUri,
+            ),
+        )
+
+        assertEquals("Summarize this", draft?.text)
+        assertEquals(listOf(contentUri), draft?.attachmentUris)
+        assertNull(
+            sharedChatDraftOrNull(
+                action = Intent.ACTION_SEND_MULTIPLE,
+                sharedText = "   ",
+                attachmentUris = listOf(
+                    Uri.parse("file:///sdcard/Download/private.pdf"),
+                    Uri.parse("https://example.test/private.pdf"),
+                    Uri.parse("aetherlink://pair?pairing_code=123456"),
+                ),
+            ),
+        )
     }
 
     @Test
@@ -1539,11 +1572,10 @@ class AppNavigationTest {
     }
 
     @Test
-    fun pairingDeepLinkAcceptsLegacyLabPairUris() {
+    fun pairingDeepLinkRejectsLegacyLabPairUris() {
         val rawUri = "lab://pair?pairing_code=123456"
 
-        assertEquals(
-            rawUri,
+        assertNull(
             pairingUriStringOrNull(
                 scheme = "lab",
                 host = "pair",
@@ -1942,6 +1974,21 @@ class AppNavigationTest {
         val trusted = trustedRuntime(
             relayHost = "100.64.1.10",
             relayScope = null,
+            relayExpiresAtEpochMillis = Long.MAX_VALUE,
+            relayNonce = "nonce-1",
+        )
+        val state = RuntimeUiState(trustedRuntime = trusted)
+
+        assertEquals(false, trusted.hasRelayRouteMaterial())
+        assertEquals(false, trusted.hasUsableRelayRoute())
+        assertEquals(R.string.connect_runtime, connectRuntimeActionLabelRes(state))
+    }
+
+    @Test
+    fun malformedRelayScopeStaysUnusableInConnectionUi() {
+        val trusted = trustedRuntime(
+            relayHost = "relay.example.test",
+            relayScope = "public",
             relayExpiresAtEpochMillis = Long.MAX_VALUE,
             relayNonce = "nonce-1",
         )

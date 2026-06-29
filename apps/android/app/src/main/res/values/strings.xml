@@ -60,6 +60,21 @@
     <string name="restore_chat_named">Restore chat %1$s</string>
     <string name="chat_history_settings_title">Chat history</string>
     <string name="chat_history_settings_subtitle">Archive chats, restore them later, or permanently delete archived chats.</string>
+    <string name="chat_history_summary_title">Saved chats</string>
+    <plurals name="chat_history_saved_count">
+        <item quantity="one">%1$d saved chat</item>
+        <item quantity="other">%1$d saved chats</item>
+    </plurals>
+    <plurals name="chat_history_active_count">
+        <item quantity="one">%1$d active chat</item>
+        <item quantity="other">%1$d active chats</item>
+    </plurals>
+    <plurals name="chat_history_archived_count">
+        <item quantity="one">%1$d archived chat</item>
+        <item quantity="other">%1$d archived chats</item>
+    </plurals>
+    <string name="chat_history_summary_detail">Active: %1$s. Archived: %2$s.</string>
+    <string name="chat_history_summary_accessibility">Chat history summary. %1$s. %2$s</string>
     <string name="chat_history_action_state_wait_for_stream">Wait for the current response before changing chat history.</string>
     <string name="chat_history_refresh">Refresh chat history</string>
     <string name="chat_history_refresh_state_ready">Ready to refresh chat history.</string>
@@ -399,6 +414,21 @@
     <string name="copy_code_block">Copy code block</string>
     <string name="copy_code_block_named">Copy %1$s code block %2$d</string>
     <string name="copy_code_block_numbered">Copy code block %1$d</string>
+    <plurals name="code_block_line_count">
+        <item quantity="one">%1$d line</item>
+        <item quantity="other">%1$d lines</item>
+    </plurals>
+    <string name="code_block_language_unspecified">Language not specified</string>
+    <string name="code_block_accessibility_summary">Code block. %1$s. %2$s.</string>
+    <plurals name="markdown_table_column_count">
+        <item quantity="one">%1$d column</item>
+        <item quantity="other">%1$d columns</item>
+    </plurals>
+    <plurals name="markdown_table_row_count">
+        <item quantity="one">%1$d row</item>
+        <item quantity="other">%1$d rows</item>
+    </plurals>
+    <string name="markdown_table_accessibility_summary">Table. %1$s. %2$s.</string>
     <string name="message_copied">Copied</string>
     <string name="runtime_error_technical_details">Technical details</string>
     <string name="runtime_error_show_technical_details">Show technical details</string>
@@ -450,6 +480,15 @@
     <string name="memory_empty_disconnected">Connect to the trusted runtime to load saved memory.</string>
     <string name="memory_connect_to_load">Connect to the trusted runtime to load and manage memory.</string>
     <string name="memory_read_only_notice">Memory shown in this session is read-only. Reconnect the trusted runtime to refresh or manage it.</string>
+    <plurals name="memory_saved_count">
+        <item quantity="one">%1$d saved memory</item>
+        <item quantity="other">%1$d saved memories</item>
+    </plurals>
+    <plurals name="memory_paused_count">
+        <item quantity="one">%1$d paused</item>
+        <item quantity="other">%1$d paused</item>
+    </plurals>
+    <string name="memory_summary">%1$s, %2$s.</string>
     <string name="memory_refresh">Refresh memory</string>
     <string name="memory_refresh_state_ready">Ready to refresh memory.</string>
     <string name="memory_remove">Remove memory</string>
