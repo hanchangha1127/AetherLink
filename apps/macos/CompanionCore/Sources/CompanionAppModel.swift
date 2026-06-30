@@ -8,6 +8,8 @@ import Security
 import Transport
 import TrustedDevices
 
+private let pairingQRCodeLeaseRenewalMarginSeconds: TimeInterval = 360
+
 public struct CompanionTransportStatus: Equatable, Sendable {
     public enum State: Equatable, Sendable {
         case stopped
@@ -698,7 +700,7 @@ public final class CompanionAppModel: ObservableObject {
 
     private var hasCurrentRelayRouteLeaseForQRCode: Bool {
         if let allocatedRemoteRouteLease {
-            return !allocatedRemoteRouteLease.isExpired(renewalMarginSeconds: 0)
+            return isRelayRouteLeaseFreshForPairingQRCode(allocatedRemoteRouteLease)
         }
         return false
     }
@@ -1060,11 +1062,11 @@ public final class CompanionAppModel: ObservableObject {
         let pairingRelayConfiguration = shouldIncludeDevelopmentRelayInPairingQRCode ? relayConfiguration : nil
         if routePolicy == .remoteRequired && pairingRelayConfiguration == nil {
             pairingSession = nil
-            if let endpoint = developmentRelaySettings.endpointLabel {
-                if let issue = remoteRoutePreparationIssue {
-                    shouldGenerateRemotePairingQRCodeWhenRelayReady = false
-                    log("Remote pairing QR not generated: \(issue.message)")
-                } else if isDevelopmentRelayRouteEligibleForQRCode {
+            if let issue = remoteRoutePreparationIssue {
+                shouldGenerateRemotePairingQRCodeWhenRelayReady = false
+                log("Remote pairing QR not generated: \(issue.message)")
+            } else if let endpoint = developmentRelaySettings.endpointLabel {
+                if isDevelopmentRelayRouteEligibleForQRCode {
                     shouldGenerateRemotePairingQRCodeWhenRelayReady = true
                     log("Remote pairing QR not generated: remote route \(endpoint) is not ready")
                 } else {
@@ -1073,6 +1075,10 @@ public final class CompanionAppModel: ObservableObject {
                 }
             } else {
                 shouldGenerateRemotePairingQRCodeWhenRelayReady = false
+                remoteRoutePreparationIssue = CompanionRemoteRoutePreparationIssue(
+                    kind: .automaticPreparationUnavailable,
+                    message: "Configure a reachable remote route before generating a remote pairing QR."
+                )
                 log("Remote pairing QR not generated: configure a reachable remote route first")
             }
             return
@@ -1392,7 +1398,7 @@ public final class CompanionAppModel: ObservableObject {
         guard shouldRefreshConfiguredRelayRouteLeaseForPairing else {
             return
         }
-        if allocatedRemoteRouteLease?.isExpired(renewalMarginSeconds: 0) == true {
+        if allocatedRemoteRouteLease?.isExpired(renewalMarginSeconds: pairingQRCodeLeaseRenewalMarginSeconds) == true {
             refreshConfiguredRelayRouteLeaseIfAvailable()
             return
         }
@@ -1656,7 +1662,7 @@ public final class CompanionAppModel: ObservableObject {
     ) -> (expiresAtEpochMillis: Int64, nonce: String)? {
         guard relayConfiguration != nil else { return nil }
         if let allocatedRemoteRouteLease {
-            guard !allocatedRemoteRouteLease.isExpired() else { return nil }
+            guard isRelayRouteLeaseFreshForPairingQRCode(allocatedRemoteRouteLease) else { return nil }
             return (
                 expiresAtEpochMillis: allocatedRemoteRouteLease.expiresAtEpochMillis,
                 nonce: allocatedRemoteRouteLease.nonce
@@ -2254,6 +2260,10 @@ public final class CompanionAppModel: ObservableObject {
         return true
     }
 
+}
+
+private func isRelayRouteLeaseFreshForPairingQRCode(_ lease: CompanionRemoteRouteLease) -> Bool {
+    !lease.isExpired(renewalMarginSeconds: pairingQRCodeLeaseRenewalMarginSeconds)
 }
 
 extension CompanionAppModel: RuntimeRouteRefreshing {

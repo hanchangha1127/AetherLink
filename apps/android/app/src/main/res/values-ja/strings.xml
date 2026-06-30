@@ -236,6 +236,7 @@
     <string name="auto_reconnect">自動再接続</string>
     <string name="auto_reconnect_detail">このデバイスがアプリに戻ったとき、信頼済みランタイムへ自動的に再接続します。</string>
     <string name="auto_reconnect_paused">自動再接続は一時停止中です。接続を使うと、信頼済みランタイムの復元を再開します。</string>
+    <string name="auto_reconnect_state_pair_first">オフ。自動再接続を有効にする前に AetherLink Runtime とペアリングしてください。</string>
     <string name="health">ヘルス</string>
     <string name="disconnect">切断</string>
     <string name="yes">はい</string>
@@ -359,6 +360,7 @@
     <string name="chat_empty_state_accessibility_summary">%1$s。%2$s</string>
     <string name="empty_chat_relay_qr_unreachable">この QR はこのデバイスから到達できない経路を指しています。両方のデバイスから到達できる経路を準備し、最新 QR をスキャンしてください。</string>
     <string name="empty_chat_no_model_title">モデルを選択</string>
+    <string name="empty_chat_no_model_header_hint">送信する前にチャットヘッダーからチャットモデルを選択してください。</string>
     <string name="empty_chat_no_model">送信する前にモデルを選択してください。</string>
     <string name="empty_chat_streaming_title">応答中</string>
     <string name="empty_chat_streaming">AetherLink Runtime からストリーミング応答を受信しています。</string>
@@ -395,6 +397,7 @@
     <string name="assistant_typing">回答を生成中...</string>
     <string name="assistant_reasoning_label">思考</string>
     <string name="assistant_reasoning_summary">%1$s。%2$s。%3$s</string>
+    <string name="assistant_reasoning_state_shown">すべて表示済み</string>
     <string name="assistant_reasoning_show">思考を表示</string>
     <string name="assistant_reasoning_hide">思考を非表示</string>
     <string name="suggested_next_questions">次の質問</string>
@@ -434,6 +437,9 @@
     <string name="runtime_error_show_technical_details">技術的な詳細を表示</string>
     <string name="runtime_error_hide_technical_details">技術的な詳細を非表示</string>
     <string name="runtime_error_copy_diagnostics">診断情報をコピー</string>
+    <string name="runtime_error_diagnostics_code">コード</string>
+    <string name="runtime_error_diagnostics_diagnostic_code">診断コード</string>
+    <string name="runtime_error_diagnostics_technical_detail">技術的な詳細</string>
 
     <string name="settings_title">設定</string>
     <string name="settings_subtitle">このアプリは AetherLink 経由で接続します。モデルプロバイダーは非公開に保たれます。</string>
@@ -441,6 +447,7 @@
     <string name="companion_only_detail">AetherLink はモデルアクセスを信頼済みランタイム内に保ちます。このデバイスがセッションを制御します。</string>
     <string name="preferences_title">環境設定</string>
     <string name="preference_option_accessibility_summary">%1$s: %2$s</string>
+    <string name="preference_option_accessibility_summary_with_detail">%1$s: %2$s。%3$s</string>
     <string name="preference_option_action_select">%1$s を選択</string>
     <string name="appearance_title">外観</string>
     <string name="appearance_system">システムに従う</string>
@@ -448,6 +455,8 @@
     <string name="appearance_dark">ダーク</string>
     <string name="appearance_system_detail">デバイスシステムのライトまたはダーク外観に従います。</string>
     <string name="language_title">言語</string>
+    <string name="language_follow_system">システム言語に従う</string>
+    <string name="language_follow_system_detail">対応している場合、AetherLink はデバイスのシステム言語を使用します。</string>
     <string name="language_english">English</string>
     <string name="language_korean">한국어</string>
     <string name="language_japanese">日本語</string>
@@ -473,6 +482,7 @@
     <string name="memory_add_label">メモリを追加</string>
     <string name="memory_add_placeholder">記憶する好み、プロジェクト情報、または指示</string>
     <string name="memory_add">メモリを追加</string>
+    <string name="memory_added">メモリを追加しました。</string>
     <string name="memory_add_state_enter_memory">追加するメモリを入力してください。</string>
     <string name="memory_add_state_ready">メモリを追加できます。</string>
     <string name="memory_action_state_wait_for_stream">メモリを変更する前に、現在の応答が完了するまで待ってください。</string>

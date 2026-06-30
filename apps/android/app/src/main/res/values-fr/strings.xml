@@ -236,6 +236,7 @@
     <string name="auto_reconnect">Reconnexion automatique</string>
     <string name="auto_reconnect_detail">Reconnecte le runtime de confiance au retour dans l’app.</string>
     <string name="auto_reconnect_paused">Reconnexion en pause. Utilisez Connecter pour restaurer le runtime.</string>
+    <string name="auto_reconnect_state_pair_first">Désactivé. Jumelez AetherLink Runtime avant d’activer la reconnexion automatique.</string>
     <string name="health">État</string>
     <string name="disconnect">Déconnecter</string>
     <string name="yes">Oui</string>
@@ -359,6 +360,7 @@
     <string name="chat_empty_state_accessibility_summary">%1$s. %2$s</string>
     <string name="empty_chat_relay_qr_unreachable">Ce QR pointe vers une route inaccessible depuis cet appareil. Préparez une route joignable depuis les deux appareils, puis scannez le dernier QR.</string>
     <string name="empty_chat_no_model_title">Choisissez un modèle</string>
+    <string name="empty_chat_no_model_header_hint">Choisissez un modèle de chat dans l’en-tête du chat avant l’envoi.</string>
     <string name="empty_chat_no_model">Choisissez un modèle avant l’envoi.</string>
     <string name="empty_chat_streaming_title">Réponse en cours</string>
     <string name="empty_chat_streaming">Réception d’une réponse diffusée depuis AetherLink Runtime.</string>
@@ -395,6 +397,7 @@
     <string name="assistant_typing">Génération...</string>
     <string name="assistant_reasoning_label">Réflexion</string>
     <string name="assistant_reasoning_summary">%1$s. %2$s. %3$s</string>
+    <string name="assistant_reasoning_state_shown">Entièrement affichée</string>
     <string name="assistant_reasoning_show">Afficher la réflexion</string>
     <string name="assistant_reasoning_hide">Masquer la réflexion</string>
     <string name="suggested_next_questions">Questions suivantes</string>
@@ -434,6 +437,9 @@
     <string name="runtime_error_show_technical_details">Afficher les détails techniques</string>
     <string name="runtime_error_hide_technical_details">Masquer les détails techniques</string>
     <string name="runtime_error_copy_diagnostics">Copier les diagnostics</string>
+    <string name="runtime_error_diagnostics_code">Code</string>
+    <string name="runtime_error_diagnostics_diagnostic_code">Code de diagnostic</string>
+    <string name="runtime_error_diagnostics_technical_detail">Détail technique</string>
 
     <string name="settings_title">Réglages</string>
     <string name="settings_subtitle">Cette app se connecte via AetherLink. Les fournisseurs de modèles restent privés.</string>
@@ -441,6 +447,7 @@
     <string name="companion_only_detail">AetherLink garde l’accès aux modèles dans le runtime approuvé. Cet appareil contrôle la session.</string>
     <string name="preferences_title">Préférences</string>
     <string name="preference_option_accessibility_summary">%1$s: %2$s</string>
+    <string name="preference_option_accessibility_summary_with_detail">%1$s: %2$s. %3$s</string>
     <string name="preference_option_action_select">Sélectionner %1$s</string>
     <string name="appearance_title">Apparence</string>
     <string name="appearance_system">Suit le système</string>
@@ -448,6 +455,8 @@
     <string name="appearance_dark">Sombre</string>
     <string name="appearance_system_detail">Suit l’apparence claire ou sombre du système de l’appareil.</string>
     <string name="language_title">Langue</string>
+    <string name="language_follow_system">Suivre la langue du système</string>
+    <string name="language_follow_system_detail">AetherLink utilise la langue système de l’appareil quand elle est prise en charge.</string>
     <string name="language_english">English</string>
     <string name="language_korean">한국어</string>
     <string name="language_japanese">日本語</string>
@@ -473,6 +482,7 @@
     <string name="memory_add_label">Ajouter une mémoire</string>
     <string name="memory_add_placeholder">Préférence, détail de projet ou instruction à mémoriser</string>
     <string name="memory_add">Ajouter la mémoire</string>
+    <string name="memory_added">Mémoire ajoutée.</string>
     <string name="memory_add_state_enter_memory">Saisissez une mémoire à ajouter.</string>
     <string name="memory_add_state_ready">Prêt à ajouter la mémoire.</string>
     <string name="memory_action_state_wait_for_stream">Attendez la fin de la réponse en cours avant de modifier la mémoire.</string>

@@ -128,6 +128,11 @@ REQUIRED_RUNTIME_REASONING_KEYS = (
     "Expand to show full thinking.",
     "Collapse to keep thinking preview short.",
 )
+REQUIRED_RUNTIME_HISTORY_KEYS = (
+    "Selected",
+    "Not selected",
+    "Load this runtime-owned transcript preview.",
+)
 REQUIRED_RELEASE_COPY_VALUES = {
     "en": {
         "Generated automatically if blank": "Created automatically if left blank",
@@ -143,6 +148,9 @@ REQUIRED_RELEASE_COPY_VALUES = {
         "Close Runtime Memory Inspector": "Close Runtime Memory Inspector",
         "Refresh Runtime History Inspector": "Refresh Runtime History Inspector",
         "Refresh Runtime Memory Inspector": "Refresh Runtime Memory Inspector",
+        "Selected": "Selected",
+        "Not selected": "Not selected",
+        "Load this runtime-owned transcript preview.": "Load this runtime-owned transcript preview.",
         "Connection through %@ failed. Check Connection Recovery, then generate a fresh QR.": (
             "Connection through %@ failed. Check Connection Recovery, then generate a fresh QR."
         ),
@@ -161,6 +169,9 @@ REQUIRED_RELEASE_COPY_VALUES = {
         "Close Runtime Memory Inspector": "런타임 메모리 점검 닫기",
         "Refresh Runtime History Inspector": "런타임 기록 점검 새로 고침",
         "Refresh Runtime Memory Inspector": "런타임 메모리 점검 새로 고침",
+        "Selected": "선택됨",
+        "Not selected": "선택되지 않음",
+        "Load this runtime-owned transcript preview.": "이 런타임 소유 대화 미리보기를 불러옵니다.",
         "Connection through %@ failed. Check Connection Recovery, then generate a fresh QR.": (
             "%@을(를) 통한 연결에 실패했습니다. 연결 복구를 확인한 뒤 새 QR을 생성하세요."
         ),
@@ -179,6 +190,9 @@ REQUIRED_RELEASE_COPY_VALUES = {
         "Close Runtime Memory Inspector": "ランタイムメモリインスペクタを閉じる",
         "Refresh Runtime History Inspector": "ランタイム履歴インスペクタを更新",
         "Refresh Runtime Memory Inspector": "ランタイムメモリインスペクタを更新",
+        "Selected": "選択済み",
+        "Not selected": "未選択",
+        "Load this runtime-owned transcript preview.": "このランタイム所有の会話プレビューを読み込みます。",
         "Connection through %@ failed. Check Connection Recovery, then generate a fresh QR.": (
             "%@ 経由の接続に失敗しました。接続の復旧を確認してから、新しい QR を生成してください。"
         ),
@@ -197,6 +211,9 @@ REQUIRED_RELEASE_COPY_VALUES = {
         "Close Runtime Memory Inspector": "关闭运行时记忆检查器",
         "Refresh Runtime History Inspector": "刷新运行时历史检查器",
         "Refresh Runtime Memory Inspector": "刷新运行时记忆检查器",
+        "Selected": "已选择",
+        "Not selected": "未选择",
+        "Load this runtime-owned transcript preview.": "加载这个由运行时拥有的对话预览。",
         "Connection through %@ failed. Check Connection Recovery, then generate a fresh QR.": (
             "通过 %@ 的连接失败。请检查连接恢复，然后生成新的二维码。"
         ),
@@ -217,6 +234,9 @@ REQUIRED_RELEASE_COPY_VALUES = {
         "Close Runtime Memory Inspector": "Fermer l’inspecteur de mémoire du runtime",
         "Refresh Runtime History Inspector": "Actualiser l’inspecteur d’historique du runtime",
         "Refresh Runtime Memory Inspector": "Actualiser l’inspecteur de mémoire du runtime",
+        "Selected": "Sélectionné",
+        "Not selected": "Non sélectionné",
+        "Load this runtime-owned transcript preview.": "Charger cet aperçu de transcription détenu par le runtime.",
         "Connection through %@ failed. Check Connection Recovery, then generate a fresh QR.": (
             "La connexion via %@ a échoué. Vérifiez la récupération de connexion, puis générez un nouveau QR."
         ),
@@ -236,6 +256,9 @@ FORBIDDEN_STALE_KEYS = (
     "Ollama and LM Studio are checked on this device.",
     "Model providers are checked from this device.",
     "Model providers are checked from the runtime host.",
+    "Review runtime-owned chat sessions stored on this runtime host.",
+    "Loopback routes only work on this runtime host or USB diagnostics, not from another network.",
+    "Pair a device before allowing runtime commands.",
     "%@ is not responding from this device.",
     "%@ is not responding on this device.",
     "%@ is not responding on the runtime host.",
@@ -537,10 +560,17 @@ def check_app_appearance_wiring() -> list[str]:
         ".accessibilityLabel(Text(sidebarBrandAccessibilityLabel()))",
         ".accessibilityAddTraits(.isHeader)",
         "func sidebarBrandAccessibilityLabel() -> String",
+        "Text(appPreferencesAccessibilityLabel())",
+        "func appPreferencesAccessibilityLabel() -> String",
+        "func appAppearancePickerDetailText() -> String",
+        "func appLanguagePickerDetailText() -> String",
         ".accessibilityValue(Text(AetherLinkAppAppearance.normalized(appearance).title))",
         ".accessibilityValue(Text(AetherLinkAppLanguage.normalized(languageTag).title))",
         ".accessibilityHint(Text(appAppearancePickerAccessibilityHint()))",
         ".accessibilityHint(Text(appLanguagePickerAccessibilityHint()))",
+        "System follows this device's appearance. Saved for future launches.",
+        "Choose one of the supported app languages. Saved for future launches.",
+        "App Preferences",
         "Choose how AetherLink Runtime appears. This setting is saved for future launches.",
         "Choose the app language. This setting is saved for future launches.",
     )
@@ -552,8 +582,13 @@ def check_app_appearance_wiring() -> list[str]:
             LOCALIZATION_TEST_SOURCE,
             (
                 "testSidebarPreferencePickerAccessibilityHintsUseSelectedLanguage",
+                "testSidebarPreferenceGroupLabelUsesSelectedLanguage",
+                "testSidebarPreferenceDetailTextUsesSelectedLanguage",
                 "appAppearancePickerAccessibilityHint()",
                 "appLanguagePickerAccessibilityHint()",
+                "appPreferencesAccessibilityLabel()",
+                "appAppearancePickerDetailText()",
+                "appLanguagePickerDetailText()",
                 "This setting is saved for future launches.",
             ),
             "macOS sidebar preference picker accessibility hint tests",
@@ -1235,6 +1270,9 @@ def check_trusted_device_identity_display() -> list[str]:
             "guard let pairedAt else",
             "Device ID ending %@",
             "Paired %@. Device ID ending %@",
+            "let displayName = trustedDeviceDisplayName(name)",
+            "func trustedDeviceDisplayName(_ name: String?) -> String",
+            "Text(displayName)",
             "trustedDeviceRowAccessibilityLabel(",
             "func trustedDeviceRowAccessibilityLabel(name: String, pairedAt: Date?, deviceID: String, keyFingerprint: String) -> String",
             "Pairing details unavailable.",
@@ -1248,10 +1286,10 @@ def check_trusted_device_identity_display() -> list[str]:
             ".accessibilityLabel(Text(trustedDeviceCancelRemoveAccessibilityLabel(for: pendingRemovalDevice)))",
             "func trustedDeviceCancelRemoveAccessibilityLabel(for device: TrustedDevice?) -> String",
             "Cancel removing trust for %@. Key fingerprint %@",
-            "trustedDeviceRemoveAccessibilityLabel(name: name, keyFingerprint: keyFingerprint)",
+            "trustedDeviceRemoveAccessibilityLabel(name: displayName, keyFingerprint: keyFingerprint)",
             "func trustedDeviceRemoveAccessibilityLabel(name: String, keyFingerprint: String) -> String",
             "Remove trust for %@. Key fingerprint %@",
-            ".accessibilityHint(Text(trustedDeviceRemoveAccessibilityHint(name: name)))",
+            ".accessibilityHint(Text(trustedDeviceRemoveAccessibilityHint(name: displayName)))",
             "func trustedDeviceRemoveAccessibilityHint(name: String) -> String",
             "After removal, %@ must pair again before it can use AetherLink Runtime.",
             "trustedDeviceRefreshActionAccessibilityHint()",
@@ -1270,6 +1308,8 @@ def check_trusted_device_identity_display() -> list[str]:
             "trustedDevicePairingAccessibilitySummary(pairedAt: nil, deviceID: \" ice-1 \")",
             "pairedAt: nil,\n                        deviceID: \" ice-1 \",",
             "fallbackPairingSummary",
+            "trustedDeviceDisplayName(\"   \")",
+            "fallbackDisplayName",
             "testTrustedDeviceRemoveButtonAccessibilityHintUsesSelectedLanguage",
             "trustedDeviceRemoveAccessibilityHint(name: \" Pixel \")",
             "trustedDeviceCancelRemoveAccessibilityLabel(",
@@ -1350,10 +1390,14 @@ def check_runtime_inspector_close_button_accessibility() -> list[str]:
             '.accessibilityLabel(Text(NSLocalizedString("Close Runtime History Inspector", comment: "")))',
             '.accessibilityLabel(Text(NSLocalizedString("Refresh Runtime Memory Inspector", comment: "")))',
             '.accessibilityLabel(Text(NSLocalizedString("Close Runtime Memory Inspector", comment: "")))',
-            "runtimeTranscriptPreviewLoadAccessibilityLabel(title: session.title)",
+            "runtimeChatSessionSelectionAccessibilityValue(isSelected: isSelected)",
+            "runtimeTranscriptPreviewLoadAccessibilityHint()",
             "runtimeTranscriptPreviewLoadAccessibilityLabel(title: titleText)",
             'func runtimeTranscriptPreviewLoadAccessibilityLabel(title: String) -> String',
+            'func runtimeChatSessionSelectionAccessibilityValue(isSelected: Bool) -> String',
+            'func runtimeTranscriptPreviewLoadAccessibilityHint() -> String',
             'NSLocalizedString("Load transcript preview for %@", comment: "")',
+            'NSLocalizedString("Load this runtime-owned transcript preview.", comment: "")',
         ),
         "macOS runtime inspector close-button accessibility labels",
     ))
@@ -1372,6 +1416,13 @@ def check_runtime_inspector_close_button_accessibility() -> list[str]:
             "Load transcript preview for Release planning",
             "Charger l’aperçu de la transcription pour Planification de version",
             "Charger l’aperçu de la transcription pour Chat sans titre",
+            'runtimeChatSessionSelectionAccessibilityValue(isSelected: true)',
+            'runtimeChatSessionSelectionAccessibilityValue(isSelected: false)',
+            "Load this runtime-owned transcript preview.",
+            "이 런타임 소유 대화 미리보기를 불러옵니다.",
+            "このランタイム所有の会話プレビューを読み込みます。",
+            "加载这个由运行时拥有的对话预览。",
+            "Charger cet aperçu de transcription détenu par le runtime.",
         ),
         "macOS runtime inspector close-button localization tests",
     ))
@@ -1460,6 +1511,10 @@ def check_runtime_history_card_summary() -> list[str]:
             "localizedRuntimeSavedChatSessionCount(max(0, activeCount) + max(0, archivedCount))",
             "NSLocalizedString(\"No runtime chat sessions are stored on AetherLink Runtime.\", comment: \"\")",
             "NSLocalizedString(\"Runtime context: %@. Archived: %@.\", comment: \"\")",
+            "runtimeTranscriptMessageCreatedAccessibilityLabel(createdAt: createdAtText)",
+            "func runtimeTranscriptMessageCreatedAccessibilityLabel(createdAt: String) -> String",
+            "NSLocalizedString(\"Created %@\", comment: \"\")",
+            "NSLocalizedString(\"Unknown creation time\", comment: \"\")",
         ),
         "macOS runtime history card saved/archived summary wiring",
     ))
@@ -1477,6 +1532,12 @@ def check_runtime_history_card_summary() -> list[str]:
             "\"Contexte du runtime : 2 chats actifs. Archivés : 1 chat archivé.\"",
             "runtimeHistoryInspectorSummaryAccessibilityLabel(",
             "\"Runtime history summary. 3 saved chats. Runtime context: 2 active chats. Archived: 1 archived chat.\"",
+            "runtimeTranscriptMessageCreatedAccessibilityLabel(createdAt: \"Jun 29, 2026 at 2:00 AM\")",
+            "\"Created Jun 29, 2026 at 2:00 AM\"",
+            "\"생성 알 수 없는 생성 시간\"",
+            "\"作成 不明な作成時刻\"",
+            "\"创建 未知创建时间\"",
+            "\"Créé Heure de création inconnue\"",
         ),
         "macOS runtime history card summary localization tests",
     ))
@@ -1510,6 +1571,9 @@ def check_runtime_memory_card_summary() -> list[str]:
             "localizedRuntimeSavedMemoryCount(max(0, enabledCount) + max(0, pausedCount))",
             "NSLocalizedString(\"No runtime memory notes are stored on AetherLink Runtime.\", comment: \"\")",
             "NSLocalizedString(\"Runtime context: %@. Paused: %@.\", comment: \"\")",
+            "createdAt: localizedCompanionDateString(from: entry.createdAt)",
+            "func runtimeMemoryEntryAccessibilityLabel(content: String, status: String, createdAt: String, updatedAt: String) -> String",
+            "NSLocalizedString(\"Memory note %@. Status %@. Created %@. Updated %@.\", comment: \"\")",
         ),
         "macOS runtime memory card saved/paused summary wiring",
     ))
@@ -1527,6 +1591,8 @@ def check_runtime_memory_card_summary() -> list[str]:
             "\"Contexte du runtime : 2 notes mémoire activées. En pause : 1 note mémoire suspendue.\"",
             "runtimeMemoryInspectorSummaryAccessibilityLabel(",
             "\"Runtime memory summary. 3 saved memory notes. Runtime context: 2 enabled memory notes. Paused: 1 paused memory note.\"",
+            "createdAt: \"Jun 29, 2026 at 12:50 AM\"",
+            "\"Memory note Prefer concise answers. Status Enabled. Created Jun 29, 2026 at 12:50 AM. Updated Jun 29, 2026 at 1:00 AM.\"",
         ),
         "macOS runtime memory card summary localization tests",
     ))
@@ -1619,6 +1685,7 @@ def main() -> int:
             + REQUIRED_REMOTE_ROUTE_PREPARATION_KEYS
             + REQUIRED_CONNECTION_RECOVERY_ACCESSIBILITY_KEYS
             + REQUIRED_RUNTIME_REASONING_KEYS
+            + REQUIRED_RUNTIME_HISTORY_KEYS
         ):
             if key not in base_key_set:
                 failures.append(f"{strings_path(BASE_LOCALE).relative_to(ROOT)}: missing app key {key!r}")

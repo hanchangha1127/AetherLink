@@ -30,6 +30,8 @@ script/android_pairing_deeplink_smoke.sh in external relay mode.
 Success criteria:
   - The runtime host can reach the allocation-capable relay.
   - The attached Android device can open TCP to the relay without adb reverse.
+  - The attached Android device can verify the QR relay id with the
+    non-consuming AETHERLINK_RELAY probe before pairing.
   - Pairing succeeds from the generated QR deeplink route material.
   - runtime.health reaches AetherLink Runtime.
   - By default, the app is force-stopped/relaunched and models.list reaches the
@@ -247,6 +249,27 @@ count_in_file() {
   fi
 }
 
+json_bool_at() {
+  local file="$1"
+  local dotted_key="$2"
+  python3 - "$file" "$dotted_key" <<'PY'
+import json
+import sys
+
+path, dotted_key = sys.argv[1:]
+try:
+    with open(path, "r", encoding="utf-8") as handle:
+        value = json.load(handle)
+except Exception:
+    raise SystemExit(1)
+for key in dotted_key.split("."):
+    if not isinstance(value, dict) or key not in value:
+        raise SystemExit(1)
+    value = value[key]
+raise SystemExit(0 if value is True else 1)
+PY
+}
+
 write_json_summary() {
   local status="$1"
   local started_at="$2"
@@ -258,7 +281,8 @@ write_json_summary() {
   local screenshot="$8"
   local device_probe_json="$9"
   local no_adb_reverse="${10}"
-  local redacted_command_text="${11}"
+  local device_route_probe_json="${11}"
+  local redacted_command_text="${12}"
 
   local pairing_count
   local health_count
@@ -299,6 +323,7 @@ write_json_summary() {
     "$runtime_log" \
     "$screenshot" \
     "$device_probe_json" \
+    "$device_route_probe_json" \
     "$redacted_command_text" \
     "$REQUIRE_DIFFERENT_NETWORK_CONFIRMATION" \
     "$([[ -n "$ALLOCATION_TOKEN" ]] && echo 1 || echo 0)" <<'PY'
@@ -332,6 +357,7 @@ import sys
     runtime_log,
     screenshot,
     device_probe_json,
+    device_route_probe_json,
     redacted_command,
     require_different_network_confirmation,
     allocation_token_set,
@@ -363,6 +389,33 @@ if expect_reconnect_bool and model_list_count < 1:
 if expect_chat_cancel_bool and chat_cancel_count < 1:
     caveats.append("chat_cancel_not_observed")
 
+def load_json_artifact(candidate_path):
+    if not candidate_path:
+        return None
+    try:
+        with open(candidate_path, "r", encoding="utf-8") as handle:
+            return json.load(handle)
+    except Exception as exc:
+        return {
+            "path": candidate_path,
+            "load_error": str(exc),
+        }
+
+def probe_bool(summary, key):
+    if not isinstance(summary, dict):
+        return False
+    probe = summary.get("probe")
+    return isinstance(probe, dict) and probe.get(key) is True
+
+device_endpoint_probe = load_json_artifact(device_probe_json)
+device_route_probe = load_json_artifact(device_route_probe_json)
+endpoint_reachable = probe_bool(device_endpoint_probe, "reachable")
+route_ready = probe_bool(device_route_probe, "route_ready")
+if not endpoint_reachable:
+    caveats.append("device_endpoint_probe_not_reachable_or_missing")
+if not route_ready:
+    caveats.append("device_route_probe_not_ready_or_missing")
+
 summary = {
     "generated_at": ended_at,
     "started_at": started_at,
@@ -382,7 +435,10 @@ summary = {
         "observed_adb_serial": observed_device_serial or None,
     },
     "coverage": {
-        "external_relay_probe_from_device": True,
+        "external_relay_probe_from_device": bool(device_probe_json),
+        "external_relay_route_probe_from_device": bool(device_route_probe_json),
+        "external_relay_probe_reachable": endpoint_reachable,
+        "external_relay_route_ready": route_ready,
         "adb_reverse_absence_proven": no_adb_reverse == "1",
         "pairing_accepted_count": pairing_count,
         "runtime_health_count": health_count,
@@ -399,7 +455,12 @@ summary = {
         "smoke_work_dir": smoke_work_dir or None,
         "runtime_log": runtime_log or None,
         "device_relay_probe_json": device_probe_json or None,
+        "device_relay_route_probe_json": device_route_probe_json or None,
         "screenshot": screenshot or None,
+    },
+    "probe_summaries": {
+        "device_relay_endpoint": device_endpoint_probe,
+        "device_relay_route": device_route_probe,
     },
     "caveats": caveats,
 }
@@ -432,6 +493,10 @@ DEVICE_PROBE_JSON=""
 if [[ -n "$SMOKE_WORK_DIR" && -f "$SMOKE_WORK_DIR/android-relay-reachability.json" ]]; then
   DEVICE_PROBE_JSON="$SMOKE_WORK_DIR/android-relay-reachability.json"
 fi
+DEVICE_ROUTE_PROBE_JSON=""
+if [[ -n "$SMOKE_WORK_DIR" && -f "$SMOKE_WORK_DIR/android-relay-route-readiness.json" ]]; then
+  DEVICE_ROUTE_PROBE_JSON="$SMOKE_WORK_DIR/android-relay-route-readiness.json"
+fi
 
 NO_ADB_REVERSE=0
 if grep -q "Skipping adb reverse;" "$LOG_PATH" && ! grep -q "Configuring adb reverse" "$LOG_PATH"; then
@@ -441,6 +506,15 @@ fi
 if [[ "$STATUS" -eq 0 && "$NO_ADB_REVERSE" -ne 1 ]]; then
   echo "Physical external relay smoke completed but adb reverse absence was not proven." >&2
   STATUS=24
+fi
+if [[ "$STATUS" -eq 0 ]]; then
+  if [[ -z "$DEVICE_PROBE_JSON" ]] || ! json_bool_at "$DEVICE_PROBE_JSON" "probe.reachable"; then
+    echo "Physical external relay smoke completed but Android endpoint relay reachability was not proven." >&2
+    STATUS=25
+  elif [[ -z "$DEVICE_ROUTE_PROBE_JSON" ]] || ! json_bool_at "$DEVICE_ROUTE_PROBE_JSON" "probe.route_ready"; then
+    echo "Physical external relay smoke completed but Android route-level relay readiness was not proven." >&2
+    STATUS=26
+  fi
 fi
 
 write_json_summary \
@@ -454,6 +528,7 @@ write_json_summary \
   "$SCREENSHOT" \
   "$DEVICE_PROBE_JSON" \
   "$NO_ADB_REVERSE" \
+  "$DEVICE_ROUTE_PROBE_JSON" \
   "$(redacted_command)"
 
 if [[ "$STATUS" -eq 0 ]]; then

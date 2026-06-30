@@ -11,13 +11,16 @@
 "Quit" = "退出";
 "Open the AetherLink window and bring it to the front." = "打开 AetherLink 窗口并置于前台。";
 "Quit AetherLink Runtime." = "退出 AetherLink Runtime。";
+"App Preferences" = "应用偏好设置";
 "Appearance" = "外观";
 "System" = "跟随系统";
 "Light" = "浅色";
 "Dark" = "深色";
 "Choose how AetherLink Runtime appears. This setting is saved for future launches." = "选择 AetherLink Runtime 的外观。此设置会保存到以后启动时使用。";
+"System follows this device's appearance. Saved for future launches." = "系统会跟随此设备的外观设置。此设置会保存到以后启动时使用。";
 "Language" = "语言";
 "Choose the app language. This setting is saved for future launches." = "选择应用语言。此设置会保存到以后启动时使用。";
+"Choose one of the supported app languages. Saved for future launches." = "选择一种受支持的应用语言。此设置会保存到以后启动时使用。";
 "English" = "英语";
 "Korean" = "韩语";
 "Japanese" = "日语";
@@ -46,7 +49,6 @@
 "Close Runtime History Inspector" = "关闭运行时历史检查器";
 "Refresh Runtime History Inspector" = "刷新运行时历史检查器";
 "Refresh runtime-owned chat sessions from AetherLink Runtime." = "从 AetherLink Runtime 刷新运行时拥有的聊天会话。";
-"Review runtime-owned chat sessions stored on this runtime host." = "查看此运行时主机上存储的运行时拥有的聊天会话。";
 "Runtime history inspector warning. %@" = "运行时历史检查器警告。%@";
 "No runtime chat sessions" = "没有运行时聊天会话";
 "AetherLink Runtime has not stored chat sessions yet." = "AetherLink Runtime 尚未存储聊天会话。";
@@ -66,6 +68,9 @@
 "Transcript Preview" = "对话预览";
 "Load transcript preview" = "加载对话预览";
 "Load transcript preview for %@" = "加载“%@”的对话预览";
+"Selected" = "已选择";
+"Not selected" = "未选择";
+"Load this runtime-owned transcript preview." = "加载这个由运行时拥有的对话预览。";
 "Select a chat session" = "选择聊天会话";
 "Choose a runtime-owned chat session to preview stored messages." = "选择一个运行时拥有的聊天会话以预览已存储的消息。";
 "Runtime transcript preview warning. %@" = "运行时对话预览警告。%@";
@@ -101,8 +106,9 @@
 "Created %@" = "创建 %@";
 "Updated %@" = "更新 %@";
 "Untitled memory note" = "未命名记忆笔记";
+"Unknown creation time" = "未知创建时间";
 "Unknown update time" = "未知更新时间";
-"Memory note %@. Status %@. Updated %@." = "记忆笔记 %@。状态 %@。更新 %@。";
+"Memory note %@. Status %@. Created %@. Updated %@." = "记忆笔记 %@。状态 %@。创建 %@。更新 %@。";
 "1 active chat" = "1 个活跃聊天";
 "%d active chats" = "%d 个活跃聊天";
 "1 archived chat" = "1 个已归档聊天";
@@ -255,12 +261,11 @@
 "Expires in %d sec" = "%d 秒后过期";
 "Pairing QR expired. Generate a new QR." = "配对二维码已过期。请生成新二维码。";
 
-"Manage pairing trust and remove devices allowed to use AetherLink Runtime." = "管理配对信任，并移除可使用 AetherLink Runtime 的设备。";
+"Manage devices trusted to use AetherLink Runtime. Remove trust when a device should pair again." = "管理已信任可使用 AetherLink Runtime 的设备。当设备需要重新配对时，请移除信任。";
 "Refresh Devices" = "刷新设备";
 "Refresh trusted devices from AetherLink Runtime." = "从 AetherLink Runtime 刷新受信任设备。";
 "Allowed Devices" = "允许的设备";
 "No trusted devices" = "没有受信任设备";
-"Pair a device before allowing runtime commands." = "允许运行时命令前，请先配对设备。";
 "Paired %@ · ID ending %@" = "已配对 %@ · ID 结尾 %@";
 "Paired %@. Device ID ending %@" = "已配对 %@。设备 ID 结尾 %@";
 "Device ID ending %@" = "设备 ID 结尾 %@";
@@ -486,7 +491,7 @@
 "Automatic route" = "自动路由";
 "No route" = "无路由";
 "Connection details can be included in QR for devices outside this local network." = "可将此本地网络外设备使用的连接信息写入二维码。";
-"Loopback routes only work on this runtime host or USB diagnostics, not from another network." = "回环路由只适用于此运行时主机或 USB 诊断，无法从其他网络使用。";
+"Loopback routes only work on this device or USB diagnostics, not from another network." = "回环路由只适用于此设备或 USB 诊断，无法从其他网络使用。";
 ".local names work only on nearby local networks. Use a reachable relay, VPN, or tunnel for another network." = ".local 名称只在附近本地网络中有效。跨网络时请使用可访问的中继、VPN 或隧道。";
 "Use this only when both devices can reach the same VPN, tunnel, or private overlay." = "仅当两个设备都能访问同一个 VPN、隧道或私有覆盖网络时使用。";
 "Private addresses usually do not cross unrelated networks. Use a reachable relay, VPN, tunnel, or private overlay." = "私有地址通常无法跨越无关网络。请使用可访问的中继、VPN、隧道或私有覆盖网络。";

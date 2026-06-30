@@ -67,6 +67,11 @@ public final class RelayServer: @unchecked Sendable {
                 close(socket)
                 return
             }
+            if RelayProbeRequest.isProbeLine(line) {
+                try handleProbeRequest(line: line, socket: socket)
+                close(socket)
+                return
+            }
             let handshake = try RelayHandshake.parse(line)
             guard isRelayIDAllowed(handshake.relayID) else {
                 log("rejected unallocated relay_id=\(shortID(handshake.relayID))")
@@ -103,6 +108,17 @@ public final class RelayServer: @unchecked Sendable {
         } catch {
             close(socket)
         }
+    }
+
+    private func handleProbeRequest(line: String, socket: Int32) throws {
+        let request = try RelayProbeRequest.parse(line)
+        let known = isRelayIDAllowed(request.relayID)
+        let runtimeWaiting = known && matcher.hasWaitingRuntime(relayID: request.relayID)
+        let response = RelayProbeResponse(known: known, runtimeWaiting: runtimeWaiting)
+        guard writeAll(socket: socket, data: response.responseLine()) else {
+            throw RelayServerError.probeWriteFailed
+        }
+        log("probed relay_id=\(shortID(request.relayID)) known=\(known) runtime_waiting=\(runtimeWaiting)")
     }
 
     private func handleAllocationRequest(line: String, socket: Int32) throws {
@@ -306,6 +322,7 @@ public enum RelayServerError: Error, Equatable, Sendable {
     case bindFailed(String)
     case handshakeReadFailed
     case allocationWriteFailed
+    case probeWriteFailed
 }
 
 private extension NSLock {

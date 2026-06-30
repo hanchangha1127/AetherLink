@@ -4465,6 +4465,12 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         model.beginPairing()
 
         XCTAssertNil(model.pairingSession)
+        XCTAssertEqual(model.remoteRoutePreparationIssue?.kind, .automaticPreparationUnavailable)
+        XCTAssertNil(model.remoteRoutePreparationIssue?.endpoint)
+        XCTAssertEqual(
+            model.remoteRoutePreparationIssue?.message,
+            "Configure a reachable remote route before generating a remote pairing QR."
+        )
         XCTAssertEqual(model.logs.first, "Remote pairing QR not generated: configure a reachable remote route first")
     }
 
@@ -4812,7 +4818,8 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(model.remoteRoutePreparationIssue?.kind, .automaticPreparationFailed)
         XCTAssertNil(model.remoteRoutePreparationIssue?.endpoint)
         XCTAssertEqual(model.remoteRoutePreparationIssue?.message, "Route allocator offline")
-        XCTAssertEqual(model.logs.first, "Remote pairing QR not generated: configure a reachable remote route first")
+        XCTAssertEqual(model.logs.first, "Remote pairing QR not generated: Route allocator offline")
+        XCTAssertTrue(model.logs.contains("Remote pairing QR not generated: Route allocator offline"))
         XCTAssertTrue(model.logs.contains("Remote route bootstrap failed: Route allocator offline"))
     }
 
@@ -6680,6 +6687,79 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
             attemptAllocation: true
         )
         XCTAssertEqual(result, .allocated(endpoint: "relay.example.test:443"))
+        XCTAssertFalse(model.isDevelopmentRelayQRCodeReady)
+
+        model.beginPairing()
+        XCTAssertNil(model.pairingSession)
+        XCTAssertEqual(relayClient.startedConfiguration?.relayID, "allocated-relay-fresh")
+        XCTAssertEqual(relayClient.startedConfiguration?.relayNonce, "fresh-nonce")
+        relayClient.emit(.waitingForPeer)
+        await Task.yield()
+
+        let qrItems = try queryItems(from: try XCTUnwrap(model.pairingSession).qrPayload)
+        XCTAssertEqual(qrItems["relay_host"], "relay.example.test")
+        XCTAssertEqual(qrItems["relay_port"], "443")
+        XCTAssertEqual(qrItems["relay_id"], "allocated-relay-fresh")
+        XCTAssertEqual(qrItems["relay_secret"], "allocated-secret-fresh")
+        XCTAssertEqual(qrItems["relay_expires_at"], "4102444800000")
+        XCTAssertEqual(qrItems["relay_nonce"], "fresh-nonce")
+        XCTAssertNil(qrItems["host"])
+        XCTAssertNil(qrItems["port"])
+        XCTAssertEqual(serviceAllocator.calls.count, 2)
+    }
+
+    @MainActor
+    func testCompanionAppModelRegeneratesGUIAllocatedQRCodeWithNearExpiredLease() async throws {
+        let nearExpiryEpochMillis = Int64(
+            (Date().addingTimeInterval(10).timeIntervalSince1970 * 1000).rounded()
+        )
+        let serviceAllocator = FakeRelayServiceRouteAllocator(
+            allocations: [
+                CompanionRemoteRelayRouteAllocation(
+                    configuration: RelayPeerConfiguration(
+                        host: "relay.example.test",
+                        port: 443,
+                        relayID: "allocated-relay-near-expiry",
+                        relaySecret: "allocated-secret-near-expiry"
+                    ),
+                    lease: CompanionRemoteRouteLease(
+                        expiresAtEpochMillis: nearExpiryEpochMillis,
+                        nonce: "near-expiry-nonce"
+                    )
+                ),
+                CompanionRemoteRelayRouteAllocation(
+                    configuration: RelayPeerConfiguration(
+                        host: "relay.example.test",
+                        port: 443,
+                        relayID: "allocated-relay-fresh",
+                        relaySecret: "allocated-secret-fresh"
+                    ),
+                    lease: CompanionRemoteRouteLease(
+                        expiresAtEpochMillis: 4_102_444_800_000,
+                        nonce: "fresh-nonce"
+                    )
+                )
+            ]
+        )
+        let relayClient = FakeRelayPeerClient()
+        let model = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: FakeRuntimeTransport(),
+            advertiser: FakeRuntimeAdvertiser(),
+            relayClient: relayClient,
+            relayServiceRouteAllocator: serviceAllocator,
+            userDefaults: try isolatedDefaults(),
+            runtimeRouteHostProvider: { "192.168.1.44" }
+        )
+
+        let result = model.configureDevelopmentRelay(
+            host: "relay.example.test",
+            port: 443,
+            relaySecret: "preferred-secret",
+            attemptAllocation: true
+        )
+        XCTAssertEqual(result, .allocated(endpoint: "relay.example.test:443"))
+        XCTAssertFalse(model.isDevelopmentRelayRoutePreparedForQRCode)
         XCTAssertFalse(model.isDevelopmentRelayQRCodeReady)
 
         model.beginPairing()

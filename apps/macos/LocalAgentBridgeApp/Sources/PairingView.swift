@@ -270,7 +270,11 @@ private struct ActivePairingCard: View {
                 Label(NSLocalizedString("Local Network permission helps nearby discovery; trust stays tied to this AetherLink Runtime.", comment: ""), systemImage: "network")
                 Label(expirationText(at: date), systemImage: expirationSystemImage(at: date))
                     .foregroundStyle(expiresAt <= date ? .orange : .secondary)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(Text(pairingQRExpirationAccessibilityLabel()))
+                    .accessibilityValue(Text(expirationText(at: date)))
                 expirationProgress(at: date)
+                    .accessibilityHidden(true)
                 Label(NSLocalizedString("Keep AetherLink Runtime open until pairing completes.", comment: ""), systemImage: "display")
             }
             .font(.callout)
@@ -305,8 +309,6 @@ private struct ActivePairingCard: View {
         }
         .frame(height: 6)
         .frame(maxWidth: 360)
-        .accessibilityLabel(Text(NSLocalizedString("Pairing QR time remaining", comment: "")))
-        .accessibilityValue(Text(expirationText(at: date)))
     }
 
     private func expirationProgressValue(at date: Date) -> Double {
@@ -464,4 +466,8 @@ func pairingQRExpirationText(expiresAt: Date, at date: Date) -> String {
         format: NSLocalizedString("Expires in %d sec", comment: ""),
         seconds
     )
+}
+
+func pairingQRExpirationAccessibilityLabel() -> String {
+    NSLocalizedString("Pairing QR time remaining", comment: "")
 }

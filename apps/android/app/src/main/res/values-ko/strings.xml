@@ -236,6 +236,7 @@
     <string name="auto_reconnect">자동 재연결</string>
     <string name="auto_reconnect_detail">이 기기가 앱으로 돌아오면 신뢰된 런타임에 자동으로 다시 연결합니다.</string>
     <string name="auto_reconnect_paused">자동 재연결이 일시 중지되었습니다. 연결을 사용하면 신뢰된 런타임 복구가 다시 켜집니다.</string>
+    <string name="auto_reconnect_state_pair_first">꺼짐. 자동 재연결을 켜기 전에 AetherLink Runtime과 페어링하세요.</string>
     <string name="health">상태 확인</string>
     <string name="disconnect">연결 해제</string>
     <string name="yes">예</string>
@@ -359,6 +360,7 @@
     <string name="chat_empty_state_accessibility_summary">%1$s. %2$s</string>
     <string name="empty_chat_relay_qr_unreachable">이 QR은 이 기기가 도달할 수 없는 경로를 가리킵니다. 두 기기 모두에서 도달 가능한 경로를 준비한 뒤 최신 QR을 스캔하세요.</string>
     <string name="empty_chat_no_model_title">모델 선택</string>
+    <string name="empty_chat_no_model_header_hint">전송하기 전에 채팅 헤더에서 채팅 모델을 선택하세요.</string>
     <string name="empty_chat_no_model">전송하기 전에 모델을 선택하세요.</string>
     <string name="empty_chat_streaming_title">응답 진행 중</string>
     <string name="empty_chat_streaming">AetherLink Runtime에서 스트리밍 응답을 받는 중입니다.</string>
@@ -395,6 +397,7 @@
     <string name="assistant_typing">응답 생성 중...</string>
     <string name="assistant_reasoning_label">생각</string>
     <string name="assistant_reasoning_summary">%1$s. %2$s. %3$s</string>
+    <string name="assistant_reasoning_state_shown">전체 표시됨</string>
     <string name="assistant_reasoning_show">생각 펼치기</string>
     <string name="assistant_reasoning_hide">생각 접기</string>
     <string name="suggested_next_questions">다음 질문</string>
@@ -434,6 +437,9 @@
     <string name="runtime_error_show_technical_details">기술 세부정보 표시</string>
     <string name="runtime_error_hide_technical_details">기술 세부정보 숨기기</string>
     <string name="runtime_error_copy_diagnostics">진단 정보 복사</string>
+    <string name="runtime_error_diagnostics_code">코드</string>
+    <string name="runtime_error_diagnostics_diagnostic_code">진단 코드</string>
+    <string name="runtime_error_diagnostics_technical_detail">기술 세부정보</string>
 
     <string name="settings_title">설정</string>
     <string name="settings_subtitle">이 앱은 AetherLink를 통해 연결됩니다. 모델 제공자는 비공개로 유지됩니다.</string>
@@ -441,6 +447,7 @@
     <string name="companion_only_detail">AetherLink는 모델 접근을 신뢰된 런타임 안에 유지합니다. 이 기기는 세션을 제어합니다.</string>
     <string name="preferences_title">환경설정</string>
     <string name="preference_option_accessibility_summary">%1$s: %2$s</string>
+    <string name="preference_option_accessibility_summary_with_detail">%1$s: %2$s. %3$s</string>
     <string name="preference_option_action_select">%1$s 선택</string>
     <string name="appearance_title">화면 모드</string>
     <string name="appearance_system">시스템 따름</string>
@@ -448,6 +455,8 @@
     <string name="appearance_dark">다크</string>
     <string name="appearance_system_detail">기기 시스템의 라이트 또는 다크 화면 모드를 따릅니다.</string>
     <string name="language_title">언어</string>
+    <string name="language_follow_system">시스템 언어 따르기</string>
+    <string name="language_follow_system_detail">지원되는 경우 AetherLink는 기기 시스템 언어를 사용합니다.</string>
     <string name="language_english">English</string>
     <string name="language_korean">한국어</string>
     <string name="language_japanese">日本語</string>
@@ -473,6 +482,7 @@
     <string name="memory_add_label">메모리 추가</string>
     <string name="memory_add_placeholder">기억할 선호도, 프로젝트 정보 또는 지시사항</string>
     <string name="memory_add">메모리 추가</string>
+    <string name="memory_added">메모리를 추가했습니다.</string>
     <string name="memory_add_state_enter_memory">추가할 메모리를 입력하세요.</string>
     <string name="memory_add_state_ready">메모리를 추가할 준비가 되었습니다.</string>
     <string name="memory_action_state_wait_for_stream">메모리를 변경하기 전에 현재 응답이 끝날 때까지 기다리세요.</string>

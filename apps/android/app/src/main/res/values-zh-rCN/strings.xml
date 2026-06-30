@@ -236,6 +236,7 @@
     <string name="auto_reconnect">自动重连</string>
     <string name="auto_reconnect_detail">当此设备返回应用时，自动重新连接到受信任的运行时。</string>
     <string name="auto_reconnect_paused">自动重连已暂停。使用“连接”可恢复受信任运行时恢复。</string>
+    <string name="auto_reconnect_state_pair_first">关闭。启用自动重新连接前，请先与 AetherLink Runtime 配对。</string>
     <string name="health">健康状态</string>
     <string name="disconnect">断开连接</string>
     <string name="yes">是</string>
@@ -359,6 +360,7 @@
     <string name="chat_empty_state_accessibility_summary">%1$s。%2$s</string>
     <string name="empty_chat_relay_qr_unreachable">此 QR 指向本设备无法访问的路径。请准备两台设备都可访问的路径，然后扫描最新二维码。</string>
     <string name="empty_chat_no_model_title">选择模型</string>
+    <string name="empty_chat_no_model_header_hint">发送前请从聊天标题栏选择聊天模型。</string>
     <string name="empty_chat_no_model">发送前请选择模型。</string>
     <string name="empty_chat_streaming_title">正在响应</string>
     <string name="empty_chat_streaming">正在从 AetherLink Runtime 接收流式回答。</string>
@@ -395,6 +397,7 @@
     <string name="assistant_typing">正在生成回答...</string>
     <string name="assistant_reasoning_label">思考</string>
     <string name="assistant_reasoning_summary">%1$s。%2$s。%3$s</string>
+    <string name="assistant_reasoning_state_shown">已完整显示</string>
     <string name="assistant_reasoning_show">展开思考</string>
     <string name="assistant_reasoning_hide">收起思考</string>
     <string name="suggested_next_questions">后续问题</string>
@@ -434,6 +437,9 @@
     <string name="runtime_error_show_technical_details">显示技术详情</string>
     <string name="runtime_error_hide_technical_details">隐藏技术详情</string>
     <string name="runtime_error_copy_diagnostics">复制诊断信息</string>
+    <string name="runtime_error_diagnostics_code">代码</string>
+    <string name="runtime_error_diagnostics_diagnostic_code">诊断代码</string>
+    <string name="runtime_error_diagnostics_technical_detail">技术详情</string>
 
     <string name="settings_title">设置</string>
     <string name="settings_subtitle">此应用通过 AetherLink 连接。模型提供方保持私有。</string>
@@ -441,6 +447,7 @@
     <string name="companion_only_detail">AetherLink 将模型访问保留在受信任运行时内。此设备控制会话。</string>
     <string name="preferences_title">偏好设置</string>
     <string name="preference_option_accessibility_summary">%1$s: %2$s</string>
+    <string name="preference_option_accessibility_summary_with_detail">%1$s: %2$s。%3$s</string>
     <string name="preference_option_action_select">选择 %1$s</string>
     <string name="appearance_title">外观</string>
     <string name="appearance_system">跟随系统</string>
@@ -448,6 +455,8 @@
     <string name="appearance_dark">深色</string>
     <string name="appearance_system_detail">跟随设备系统的浅色或深色外观。</string>
     <string name="language_title">语言</string>
+    <string name="language_follow_system">跟随系统语言</string>
+    <string name="language_follow_system_detail">受支持时，AetherLink 会使用设备系统语言。</string>
     <string name="language_english">English</string>
     <string name="language_korean">한국어</string>
     <string name="language_japanese">日本語</string>
@@ -473,6 +482,7 @@
     <string name="memory_add_label">添加记忆</string>
     <string name="memory_add_placeholder">要记住的偏好、项目信息或指令</string>
     <string name="memory_add">添加记忆</string>
+    <string name="memory_added">已添加记忆。</string>
     <string name="memory_add_state_enter_memory">输入要添加的记忆。</string>
     <string name="memory_add_state_ready">已准备好添加记忆。</string>
     <string name="memory_action_state_wait_for_stream">更改记忆前请等待当前响应完成。</string>

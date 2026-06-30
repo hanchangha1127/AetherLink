@@ -274,29 +274,7 @@ struct StatusView: View {
     }
 
     private var backendSummary: BackendSummary {
-        let statuses = providerStatuses
-        if statuses.allSatisfy({ $0.rawStatus == .notChecked }) {
-            return BackendSummary(
-                value: NSLocalizedString("Not checked", comment: ""),
-                detail: NSLocalizedString("Model provider status has not been checked yet.", comment: ""),
-                tone: .inactive
-            )
-        }
-
-        let availableCount = statuses.filter { $0.rawStatus == .available }.count
-        if availableCount > 0 {
-            return BackendSummary(
-                value: String(format: NSLocalizedString("%d of %d available", comment: ""), availableCount, statuses.count),
-                detail: NSLocalizedString("At least one model provider is responding.", comment: ""),
-                tone: .ready
-            )
-        }
-
-        return BackendSummary(
-            value: NSLocalizedString("Unavailable", comment: ""),
-            detail: NSLocalizedString("No model provider is responding.", comment: ""),
-            tone: .warning
-        )
+        modelProviderBackendSummary(for: model.providerStatuses)
     }
 
     private var providerStatuses: [ProviderStatus] {
@@ -926,7 +904,7 @@ struct RuntimeHistoryInspectorSheet: View {
                 .accessibilityLabel(Text(NSLocalizedString("Close Runtime History Inspector", comment: "")))
             }
 
-            Text(NSLocalizedString("Review runtime-owned chat sessions stored on this runtime host.", comment: ""))
+            Text(NSLocalizedString("Inspect runtime-owned chat sessions stored on AetherLink Runtime.", comment: ""))
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -977,20 +955,31 @@ struct RuntimeHistoryInspectorSheet: View {
                         ScrollView {
                             LazyVStack(alignment: .leading, spacing: 10) {
                                 ForEach(sessions, id: \.sessionID) { session in
+                                    let isSelected = selectedSessionID == session.sessionID
                                     Button {
                                         selectedSessionID = session.sessionID
                                         onLoadTranscriptPreview(session.sessionID)
                                     } label: {
                                         RuntimeHistoryInspectorRow(
                                             session: session,
-                                            isSelected: selectedSessionID == session.sessionID
+                                            isSelected: isSelected
                                         )
                                     }
                                     .buttonStyle(.plain)
                                     .help(NSLocalizedString("Load transcript preview", comment: ""))
                                     .accessibilityLabel(
-                                        Text(runtimeTranscriptPreviewLoadAccessibilityLabel(title: session.title))
+                                        Text(
+                                            runtimeChatSessionAccessibilityLabel(
+                                                title: session.title,
+                                                status: localizedRuntimeChatSessionStatus(session.status),
+                                                model: session.model,
+                                                messageCount: localizedRuntimeChatMessageCount(session.messageCount),
+                                                updatedAt: localizedCompanionDateString(from: session.lastActivityAt)
+                                            )
+                                        )
                                     )
+                                    .accessibilityValue(Text(runtimeChatSessionSelectionAccessibilityValue(isSelected: isSelected)))
+                                    .accessibilityHint(Text(runtimeTranscriptPreviewLoadAccessibilityHint()))
                                 }
                             }
                             .padding(.vertical, 2)
@@ -1303,9 +1292,13 @@ private struct RuntimeTranscriptPreviewMessageRow: View {
                     .foregroundStyle(.secondary)
                 Spacer(minLength: 0)
                 if let createdAt = message.createdAt {
-                    Text(localizedCompanionDateString(from: createdAt))
+                    let createdAtText = localizedCompanionDateString(from: createdAt)
+                    Text(createdAtText)
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
+                        .accessibilityLabel(
+                            Text(runtimeTranscriptMessageCreatedAccessibilityLabel(createdAt: createdAtText))
+                        )
                 }
             }
 
@@ -1484,6 +1477,15 @@ func runtimeTranscriptRoleDisplayName(_ role: String) -> String {
     }
 }
 
+func runtimeTranscriptMessageCreatedAccessibilityLabel(createdAt: String) -> String {
+    let normalizedCreatedAt = trimmedNonEmpty(createdAt)
+        ?? NSLocalizedString("Unknown creation time", comment: "")
+    return String(
+        format: NSLocalizedString("Created %@", comment: ""),
+        normalizedCreatedAt
+    )
+}
+
 func runtimeHistoryEventDisplayName(_ event: String) -> String {
     switch event.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
     case "done":
@@ -1537,6 +1539,14 @@ func runtimeTranscriptPreviewLoadAccessibilityLabel(title: String) -> String {
         format: NSLocalizedString("Load transcript preview for %@", comment: ""),
         normalizedTitle
     )
+}
+
+func runtimeChatSessionSelectionAccessibilityValue(isSelected: Bool) -> String {
+    isSelected ? NSLocalizedString("Selected", comment: "") : NSLocalizedString("Not selected", comment: "")
+}
+
+func runtimeTranscriptPreviewLoadAccessibilityHint() -> String {
+    NSLocalizedString("Load this runtime-owned transcript preview.", comment: "")
 }
 
 struct RuntimeMemoryInspectorSheet: View {
@@ -1695,9 +1705,6 @@ private struct RuntimeMemoryInspectorRow: View {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 StatusPill(text: statusText, tone: tone)
                 Spacer(minLength: 0)
-                Text(String(format: NSLocalizedString("Updated %@", comment: ""), localizedCompanionDateString(from: entry.updatedAt)))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
 
             Text(entry.content)
@@ -1726,6 +1733,7 @@ private struct RuntimeMemoryInspectorRow: View {
                 runtimeMemoryEntryAccessibilityLabel(
                     content: entry.content,
                     status: statusText,
+                    createdAt: localizedCompanionDateString(from: entry.createdAt),
                     updatedAt: localizedCompanionDateString(from: entry.updatedAt)
                 )
             )
@@ -1733,17 +1741,20 @@ private struct RuntimeMemoryInspectorRow: View {
     }
 }
 
-func runtimeMemoryEntryAccessibilityLabel(content: String, status: String, updatedAt: String) -> String {
+func runtimeMemoryEntryAccessibilityLabel(content: String, status: String, createdAt: String, updatedAt: String) -> String {
     let normalizedContent = trimmedNonEmpty(content)
         ?? NSLocalizedString("Untitled memory note", comment: "")
     let normalizedStatus = trimmedNonEmpty(status)
         ?? NSLocalizedString("Unknown status", comment: "")
+    let normalizedCreatedAt = trimmedNonEmpty(createdAt)
+        ?? NSLocalizedString("Unknown creation time", comment: "")
     let normalizedUpdatedAt = trimmedNonEmpty(updatedAt)
         ?? NSLocalizedString("Unknown update time", comment: "")
     return String(
-        format: NSLocalizedString("Memory note %@. Status %@. Updated %@.", comment: ""),
+        format: NSLocalizedString("Memory note %@. Status %@. Created %@. Updated %@.", comment: ""),
         normalizedContent,
         normalizedStatus,
+        normalizedCreatedAt,
         normalizedUpdatedAt
     )
 }
@@ -2144,10 +2155,44 @@ private struct ProviderStatusRow: View {
     }
 }
 
-private struct BackendSummary {
+struct BackendSummary {
     let value: String
     let detail: String
     let tone: StatusTone
+}
+
+func modelProviderBackendSummary(for providerStatuses: [CompanionProviderStatus]) -> BackendSummary {
+    let statuses = providerStatuses.map(ProviderStatus.init(status:))
+    if statuses.isEmpty {
+        return BackendSummary(
+            value: NSLocalizedString("No model providers available", comment: ""),
+            detail: NSLocalizedString("AetherLink Runtime has not reported any model providers yet.", comment: ""),
+            tone: .inactive
+        )
+    }
+
+    if statuses.allSatisfy({ $0.rawStatus == .notChecked }) {
+        return BackendSummary(
+            value: NSLocalizedString("Not checked", comment: ""),
+            detail: NSLocalizedString("Model provider status has not been checked yet.", comment: ""),
+            tone: .inactive
+        )
+    }
+
+    let availableCount = statuses.filter { $0.rawStatus == .available }.count
+    if availableCount > 0 {
+        return BackendSummary(
+            value: String(format: NSLocalizedString("%d of %d available", comment: ""), availableCount, statuses.count),
+            detail: NSLocalizedString("At least one model provider is responding.", comment: ""),
+            tone: .ready
+        )
+    }
+
+    return BackendSummary(
+        value: NSLocalizedString("Unavailable", comment: ""),
+        detail: NSLocalizedString("No model provider is responding.", comment: ""),
+        tone: .warning
+    )
 }
 
 private struct ProviderStatus: Identifiable {

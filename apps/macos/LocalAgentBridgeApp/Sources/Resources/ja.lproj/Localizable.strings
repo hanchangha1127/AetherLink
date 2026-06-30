@@ -11,13 +11,16 @@
 "Quit" = "終了";
 "Open the AetherLink window and bring it to the front." = "AetherLink ウインドウを開いて前面に表示します。";
 "Quit AetherLink Runtime." = "AetherLink Runtime を終了します。";
+"App Preferences" = "アプリ設定";
 "Appearance" = "外観";
 "System" = "システム";
 "Light" = "ライト";
 "Dark" = "ダーク";
 "Choose how AetherLink Runtime appears. This setting is saved for future launches." = "AetherLink Runtime の外観を選択します。この設定は次回起動時にも保存されます。";
+"System follows this device's appearance. Saved for future launches." = "システムはこのデバイスの外観設定に従います。次回起動時にも保存されます。";
 "Language" = "言語";
 "Choose the app language. This setting is saved for future launches." = "アプリの言語を選択します。この設定は次回起動時にも保存されます。";
+"Choose one of the supported app languages. Saved for future launches." = "対応しているアプリ言語から選択します。次回起動時にも保存されます。";
 "English" = "英語";
 "Korean" = "韓国語";
 "Japanese" = "日本語";
@@ -46,7 +49,6 @@
 "Close Runtime History Inspector" = "ランタイム履歴インスペクタを閉じる";
 "Refresh Runtime History Inspector" = "ランタイム履歴インスペクタを更新";
 "Refresh runtime-owned chat sessions from AetherLink Runtime." = "AetherLink Runtime からランタイム所有のチャットセッションを更新します。";
-"Review runtime-owned chat sessions stored on this runtime host." = "このランタイムホストに保存されたランタイム所有のチャットセッションを確認してください。";
 "Runtime history inspector warning. %@" = "ランタイム履歴インスペクタの警告。%@";
 "No runtime chat sessions" = "ランタイムチャットセッションはありません";
 "AetherLink Runtime has not stored chat sessions yet." = "AetherLink Runtime にはまだチャットセッションが保存されていません。";
@@ -66,6 +68,9 @@
 "Transcript Preview" = "会話プレビュー";
 "Load transcript preview" = "会話プレビューを読み込む";
 "Load transcript preview for %@" = "「%@」の会話プレビューを読み込む";
+"Selected" = "選択済み";
+"Not selected" = "未選択";
+"Load this runtime-owned transcript preview." = "このランタイム所有の会話プレビューを読み込みます。";
 "Select a chat session" = "チャットセッションを選択";
 "Choose a runtime-owned chat session to preview stored messages." = "保存済みメッセージをプレビューするランタイム所有のチャットセッションを選択してください。";
 "Runtime transcript preview warning. %@" = "ランタイム会話プレビューの警告。%@";
@@ -101,8 +106,9 @@
 "Created %@" = "作成 %@";
 "Updated %@" = "更新 %@";
 "Untitled memory note" = "無題のメモリノート";
+"Unknown creation time" = "不明な作成時刻";
 "Unknown update time" = "不明な更新時刻";
-"Memory note %@. Status %@. Updated %@." = "メモリノート %@。状態 %@。更新 %@。";
+"Memory note %@. Status %@. Created %@. Updated %@." = "メモリノート %@。状態 %@。作成 %@。更新 %@。";
 "1 active chat" = "アクティブなチャット 1 件";
 "%d active chats" = "アクティブなチャット %d 件";
 "1 archived chat" = "アーカイブ済みチャット 1 件";
@@ -255,12 +261,11 @@
 "Expires in %d sec" = "あと%d秒で期限切れ";
 "Pairing QR expired. Generate a new QR." = "ペアリング QR の有効期限が切れました。新しい QR を生成してください。";
 
-"Manage pairing trust and remove devices allowed to use AetherLink Runtime." = "ペアリングの信頼を管理し、AetherLink Runtime の使用を許可したデバイスを削除します。";
+"Manage devices trusted to use AetherLink Runtime. Remove trust when a device should pair again." = "AetherLink Runtime の使用を信頼したデバイスを管理します。デバイスを再度ペアリングさせる必要がある場合は、信頼を解除してください。";
 "Refresh Devices" = "デバイスを更新";
 "Refresh trusted devices from AetherLink Runtime." = "AetherLink Runtime から信頼済みデバイスを更新します。";
 "Allowed Devices" = "許可済みデバイス";
 "No trusted devices" = "信頼済みデバイスはありません";
-"Pair a device before allowing runtime commands." = "ランタイムコマンドを許可する前に、デバイスをペアリングしてください。";
 "Paired %@ · ID ending %@" = "ペアリング済み %@ · ID 末尾 %@";
 "Paired %@. Device ID ending %@" = "ペアリング済み %@。デバイス ID 末尾 %@";
 "Device ID ending %@" = "デバイス ID 末尾 %@";
@@ -486,7 +491,7 @@
 "Automatic route" = "自動ルート";
 "No route" = "ルートなし";
 "Connection details can be included in QR for devices outside this local network." = "このローカルネットワーク外のデバイス向け接続情報を QR に含められます。";
-"Loopback routes only work on this runtime host or USB diagnostics, not from another network." = "ループバックルートはこのランタイムホストまたは USB 診断でのみ動作し、別ネットワークからは使えません。";
+"Loopback routes only work on this device or USB diagnostics, not from another network." = "ループバックルートはこのデバイスまたは USB 診断でのみ動作し、別ネットワークからは使えません。";
 ".local names work only on nearby local networks. Use a reachable relay, VPN, or tunnel for another network." = ".local 名は近くのローカルネットワークでのみ動作します。別ネットワークでは到達可能なリレー、VPN、またはトンネルを使用してください。";
 "Use this only when both devices can reach the same VPN, tunnel, or private overlay." = "両方のデバイスが同じ VPN、トンネル、またはプライベートオーバーレイに到達できる場合のみ使用してください。";
 "Private addresses usually do not cross unrelated networks. Use a reachable relay, VPN, tunnel, or private overlay." = "プライベートアドレスは通常、無関係なネットワークを越えられません。到達可能なリレー、VPN、トンネル、またはプライベートオーバーレイを使用してください。";

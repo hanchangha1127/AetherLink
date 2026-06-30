@@ -236,6 +236,7 @@
     <string name="auto_reconnect">Auto reconnect</string>
     <string name="auto_reconnect_detail">Reconnect to the trusted runtime automatically when this device returns to the app.</string>
     <string name="auto_reconnect_paused">Auto reconnect is paused. Use Connect to resume trusted runtime restore.</string>
+    <string name="auto_reconnect_state_pair_first">Off. Pair with AetherLink Runtime before enabling auto reconnect.</string>
     <string name="health">Health</string>
     <string name="disconnect">Disconnect</string>
     <string name="yes">Yes</string>
@@ -359,6 +360,7 @@
     <string name="chat_empty_state_accessibility_summary">%1$s. %2$s</string>
     <string name="empty_chat_relay_qr_unreachable">That QR points to a route this device cannot reach. Prepare a route reachable from both devices, then scan the latest QR.</string>
     <string name="empty_chat_no_model_title">Choose a model</string>
+    <string name="empty_chat_no_model_header_hint">Choose a chat model from the chat header before sending.</string>
     <string name="empty_chat_no_model">Pick a model before sending.</string>
     <string name="empty_chat_streaming_title">Response in progress</string>
     <string name="empty_chat_streaming">Receiving a streamed answer from AetherLink Runtime.</string>
@@ -395,6 +397,7 @@
     <string name="assistant_typing">Generating...</string>
     <string name="assistant_reasoning_label">Thinking</string>
     <string name="assistant_reasoning_summary">%1$s. %2$s. %3$s</string>
+    <string name="assistant_reasoning_state_shown">Fully shown</string>
     <string name="assistant_reasoning_show">Show thinking</string>
     <string name="assistant_reasoning_hide">Hide thinking</string>
     <string name="suggested_next_questions">Next questions</string>
@@ -434,6 +437,9 @@
     <string name="runtime_error_show_technical_details">Show technical details</string>
     <string name="runtime_error_hide_technical_details">Hide technical details</string>
     <string name="runtime_error_copy_diagnostics">Copy diagnostics</string>
+    <string name="runtime_error_diagnostics_code">Code</string>
+    <string name="runtime_error_diagnostics_diagnostic_code">Diagnostic code</string>
+    <string name="runtime_error_diagnostics_technical_detail">Technical detail</string>
 
     <string name="settings_title">Settings</string>
     <string name="settings_subtitle">This app connects through AetherLink. Model providers stay private.</string>
@@ -441,6 +447,7 @@
     <string name="companion_only_detail">AetherLink keeps model access on the trusted runtime. This device controls the session.</string>
     <string name="preferences_title">Preferences</string>
     <string name="preference_option_accessibility_summary">%1$s: %2$s</string>
+    <string name="preference_option_accessibility_summary_with_detail">%1$s: %2$s. %3$s</string>
     <string name="preference_option_action_select">Select %1$s</string>
     <string name="appearance_title">Appearance</string>
     <string name="appearance_system">Follows system</string>
@@ -448,6 +455,8 @@
     <string name="appearance_dark">Dark</string>
     <string name="appearance_system_detail">Follows the device system light or dark appearance.</string>
     <string name="language_title">Language</string>
+    <string name="language_follow_system">Follow system language</string>
+    <string name="language_follow_system_detail">AetherLink uses the device system language when supported.</string>
     <string name="language_english">English</string>
     <string name="language_korean">한국어</string>
     <string name="language_japanese">日本語</string>
@@ -473,6 +482,7 @@
     <string name="memory_add_label">Add memory</string>
     <string name="memory_add_placeholder">Preference, project detail, or instruction to remember</string>
     <string name="memory_add">Add Memory</string>
+    <string name="memory_added">Memory added.</string>
     <string name="memory_add_state_enter_memory">Enter a memory before adding.</string>
     <string name="memory_add_state_ready">Ready to add memory.</string>
     <string name="memory_action_state_wait_for_stream">Wait for the current response before changing memory.</string>

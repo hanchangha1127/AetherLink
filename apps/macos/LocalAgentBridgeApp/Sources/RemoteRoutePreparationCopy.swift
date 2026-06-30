@@ -113,7 +113,7 @@ func remoteRouteScopeDetail(
         case .invalidFormat:
             return NSLocalizedString("Enter only the connection address. Put the port in the Port field.", comment: "")
         case .loopback:
-            return NSLocalizedString("Loopback routes only work on this runtime host or USB diagnostics, not from another network.", comment: "")
+            return NSLocalizedString("Loopback routes only work on this device or USB diagnostics, not from another network.", comment: "")
         case .localName:
             return NSLocalizedString(".local names work only on nearby local networks. Use a reachable relay, VPN, or tunnel for another network.", comment: "")
         case .privateNetwork:

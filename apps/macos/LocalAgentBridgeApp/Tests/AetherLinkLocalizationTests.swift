@@ -95,6 +95,63 @@ final class AetherLinkLocalizationTests: XCTestCase {
         }
     }
 
+    func testSidebarPreferenceGroupLabelUsesSelectedLanguage() {
+        let expectations: [(languageTag: String, label: String)] = [
+            ("en", "App Preferences"),
+            ("ko", "앱 설정"),
+            ("ja", "アプリ設定"),
+            ("zh-Hans", "应用偏好设置"),
+            ("fr", "Préférences de l’app"),
+        ]
+
+        XCTAssertEqual(expectations.map(\.languageTag), AetherLinkAppLanguage.allCases.map(\.rawValue))
+
+        for expectation in expectations {
+            withStoredAppLanguage(expectation.languageTag) {
+                XCTAssertEqual(appPreferencesAccessibilityLabel(), expectation.label)
+            }
+        }
+    }
+
+    func testSidebarPreferenceDetailTextUsesSelectedLanguage() {
+        let expectations: [(languageTag: String, appearanceDetail: String, languageDetail: String)] = [
+            (
+                "en",
+                "System follows this device's appearance. Saved for future launches.",
+                "Choose one of the supported app languages. Saved for future launches."
+            ),
+            (
+                "ko",
+                "시스템은 이 기기의 외관 설정을 따릅니다. 다음 실행에도 저장됩니다.",
+                "지원되는 앱 언어 중 하나를 선택하세요. 다음 실행에도 저장됩니다."
+            ),
+            (
+                "ja",
+                "システムはこのデバイスの外観設定に従います。次回起動時にも保存されます。",
+                "対応しているアプリ言語から選択します。次回起動時にも保存されます。"
+            ),
+            (
+                "zh-Hans",
+                "系统会跟随此设备的外观设置。此设置会保存到以后启动时使用。",
+                "选择一种受支持的应用语言。此设置会保存到以后启动时使用。"
+            ),
+            (
+                "fr",
+                "Le mode système suit l’apparence de cet appareil. Ce réglage est enregistré pour les prochains lancements.",
+                "Choisissez l’une des langues prises en charge. Ce réglage est enregistré pour les prochains lancements."
+            ),
+        ]
+
+        XCTAssertEqual(expectations.map(\.languageTag), AetherLinkAppLanguage.allCases.map(\.rawValue))
+
+        for expectation in expectations {
+            withStoredAppLanguage(expectation.languageTag) {
+                XCTAssertEqual(appAppearancePickerDetailText(), expectation.appearanceDetail)
+                XCTAssertEqual(appLanguagePickerDetailText(), expectation.languageDetail)
+            }
+        }
+    }
+
     func testAppLanguageDefaultsToEnglish() {
         XCTAssertEqual(AetherLinkAppLanguage.defaultLanguage, .english)
         XCTAssertEqual(AetherLinkAppLanguage.normalized(nil), .english)
@@ -137,6 +194,7 @@ final class AetherLinkLocalizationTests: XCTestCase {
                     "Pairing": "Pairing",
                     "Trusted Devices": "Trusted Devices",
                     "Activity": "Activity",
+                    "App Preferences": "App Preferences",
                     "Language": "Language",
                     "Appearance": "Appearance",
                 ]
@@ -148,6 +206,7 @@ final class AetherLinkLocalizationTests: XCTestCase {
                     "Pairing": "페어링",
                     "Trusted Devices": "신뢰 기기",
                     "Activity": "활동",
+                    "App Preferences": "앱 설정",
                     "Language": "언어",
                     "Appearance": "외관",
                 ]
@@ -159,6 +218,7 @@ final class AetherLinkLocalizationTests: XCTestCase {
                     "Pairing": "ペアリング",
                     "Trusted Devices": "信頼済みデバイス",
                     "Activity": "アクティビティ",
+                    "App Preferences": "アプリ設定",
                     "Language": "言語",
                     "Appearance": "外観",
                 ]
@@ -170,6 +230,7 @@ final class AetherLinkLocalizationTests: XCTestCase {
                     "Pairing": "配对",
                     "Trusted Devices": "受信任设备",
                     "Activity": "活动",
+                    "App Preferences": "应用偏好设置",
                     "Language": "语言",
                     "Appearance": "外观",
                 ]
@@ -181,6 +242,7 @@ final class AetherLinkLocalizationTests: XCTestCase {
                     "Pairing": "Jumelage",
                     "Trusted Devices": "Appareils approuvés",
                     "Activity": "Activité",
+                    "App Preferences": "Préférences de l’app",
                     "Language": "Langue",
                     "Appearance": "Apparence",
                 ]
@@ -375,6 +437,32 @@ final class AetherLinkLocalizationTests: XCTestCase {
         }
     }
 
+    func testBackendSummaryTreatsEmptyProviderListAsNoProvidersAvailable() {
+        XCTAssertEqual(AetherLinkAppLanguage.allCases.map(\.rawValue), ["en", "ko", "ja", "zh-Hans", "fr"])
+
+        for language in AetherLinkAppLanguage.allCases {
+            withStoredAppLanguage(language.rawValue) {
+                let summary = modelProviderBackendSummary(for: [])
+
+                XCTAssertEqual(summary.value, NSLocalizedString("No model providers available", comment: ""))
+                XCTAssertEqual(
+                    summary.detail,
+                    NSLocalizedString("AetherLink Runtime has not reported any model providers yet.", comment: "")
+                )
+            }
+        }
+
+        withStoredAppLanguage("en") {
+            let summary = modelProviderBackendSummary(for: [
+                .notChecked(provider: .ollama),
+                .notChecked(provider: .lmStudio),
+            ])
+
+            XCTAssertEqual(summary.value, "Not checked")
+            XCTAssertEqual(summary.detail, "Model provider status has not been checked yet.")
+        }
+    }
+
     func testPairingQRCodeAccessibilityCopyUsesSelectedLanguageAndState() {
         let routeExpirationDate = Date(timeIntervalSince1970: 1_000)
         let expectations: [
@@ -492,7 +580,7 @@ final class AetherLinkLocalizationTests: XCTestCase {
 
         for expectation in expectations {
             withStoredAppLanguage(expectation.languageTag) {
-                XCTAssertEqual(NSLocalizedString("Pairing QR time remaining", comment: ""), expectation.label)
+                XCTAssertEqual(pairingQRExpirationAccessibilityLabel(), expectation.label)
                 XCTAssertEqual(
                     pairingQRExpirationText(expiresAt: activeExpiration, at: now),
                     expectation.activeValue
@@ -993,6 +1081,7 @@ final class AetherLinkLocalizationTests: XCTestCase {
     func testRuntimeHistoryInspectorCopyLocalizesAcrossSupportedLanguages() {
         withStoredAppLanguage("en") {
             XCTAssertEqual(NSLocalizedString("Inspect Runtime History", comment: ""), "Inspect Runtime History")
+            XCTAssertEqual(NSLocalizedString("Inspect runtime-owned chat sessions stored on AetherLink Runtime.", comment: ""), "Inspect runtime-owned chat sessions stored on AetherLink Runtime.")
             XCTAssertEqual(NSLocalizedString("Runtime History Inspector", comment: ""), "Runtime History Inspector")
             XCTAssertEqual(NSLocalizedString("Close Runtime History Inspector", comment: ""), "Close Runtime History Inspector")
             XCTAssertEqual(NSLocalizedString("Refresh Runtime History Inspector", comment: ""), "Refresh Runtime History Inspector")
@@ -1003,6 +1092,9 @@ final class AetherLinkLocalizationTests: XCTestCase {
             XCTAssertEqual(NSLocalizedString("Load transcript preview", comment: ""), "Load transcript preview")
             XCTAssertEqual(runtimeTranscriptPreviewLoadAccessibilityLabel(title: " Release planning "), "Load transcript preview for Release planning")
             XCTAssertEqual(runtimeTranscriptPreviewLoadAccessibilityLabel(title: " "), "Load transcript preview for Untitled chat")
+            XCTAssertEqual(runtimeChatSessionSelectionAccessibilityValue(isSelected: true), "Selected")
+            XCTAssertEqual(runtimeChatSessionSelectionAccessibilityValue(isSelected: false), "Not selected")
+            XCTAssertEqual(runtimeTranscriptPreviewLoadAccessibilityHint(), "Load this runtime-owned transcript preview.")
             XCTAssertEqual(NSLocalizedString("No transcript messages", comment: ""), "No transcript messages")
             XCTAssertEqual(NSLocalizedString("Thinking", comment: ""), "Thinking")
             XCTAssertEqual(runtimeTranscriptReasoningToggleTitle(isExpanded: false), "Show thinking")
@@ -1016,6 +1108,14 @@ final class AetherLinkLocalizationTests: XCTestCase {
             XCTAssertEqual(runtimeHistoryEventDisplayName("done"), "Completed")
             XCTAssertEqual(runtimeTranscriptRoleDisplayName("user"), "User")
             XCTAssertEqual(runtimeTranscriptRoleDisplayName("assistant"), "Assistant")
+            XCTAssertEqual(
+                runtimeTranscriptMessageCreatedAccessibilityLabel(createdAt: "Jun 29, 2026 at 2:00 AM"),
+                "Created Jun 29, 2026 at 2:00 AM"
+            )
+            XCTAssertEqual(
+                runtimeTranscriptMessageCreatedAccessibilityLabel(createdAt: " "),
+                "Created Unknown creation time"
+            )
             XCTAssertEqual(
                 runtimeChatSessionAccessibilityLabel(
                     title: " Release planning ",
@@ -1040,6 +1140,7 @@ final class AetherLinkLocalizationTests: XCTestCase {
 
         withStoredAppLanguage("ko") {
             XCTAssertEqual(NSLocalizedString("Inspect Runtime History", comment: ""), "런타임 기록 점검")
+            XCTAssertEqual(NSLocalizedString("Inspect runtime-owned chat sessions stored on AetherLink Runtime.", comment: ""), "AetherLink Runtime에 저장된 런타임 소유 채팅 세션을 확인합니다.")
             XCTAssertEqual(NSLocalizedString("Runtime History Inspector", comment: ""), "런타임 기록 점검")
             XCTAssertEqual(NSLocalizedString("Close Runtime History Inspector", comment: ""), "런타임 기록 점검 닫기")
             XCTAssertEqual(NSLocalizedString("Refresh Runtime History Inspector", comment: ""), "런타임 기록 점검 새로 고침")
@@ -1048,16 +1149,28 @@ final class AetherLinkLocalizationTests: XCTestCase {
             XCTAssertEqual(NSLocalizedString("Runtime history summary. %@. %@", comment: ""), "런타임 기록 요약. %@. %@")
             XCTAssertEqual(NSLocalizedString("Transcript Preview", comment: ""), "대화 미리보기")
             XCTAssertEqual(runtimeTranscriptPreviewLoadAccessibilityLabel(title: " 출시 계획 "), "출시 계획 대화 미리보기 불러오기")
+            XCTAssertEqual(runtimeChatSessionSelectionAccessibilityValue(isSelected: true), "선택됨")
+            XCTAssertEqual(runtimeChatSessionSelectionAccessibilityValue(isSelected: false), "선택되지 않음")
+            XCTAssertEqual(runtimeTranscriptPreviewLoadAccessibilityHint(), "이 런타임 소유 대화 미리보기를 불러옵니다.")
             XCTAssertEqual(NSLocalizedString("No transcript messages", comment: ""), "대화 메시지 없음")
             XCTAssertEqual(NSLocalizedString("Thinking", comment: ""), "생각")
             XCTAssertEqual(runtimeTranscriptReasoningToggleTitle(isExpanded: false), "생각 펼치기")
             XCTAssertEqual(runtimeTranscriptReasoningToggleAccessibilityValue(isExpanded: true), "생각 펼쳐짐")
             XCTAssertEqual(runtimeTranscriptRoleDisplayName("user"), "사용자")
+            XCTAssertEqual(
+                runtimeTranscriptMessageCreatedAccessibilityLabel(createdAt: "2026년 6월 29일 오전 2:00"),
+                "생성 2026년 6월 29일 오전 2:00"
+            )
+            XCTAssertEqual(
+                runtimeTranscriptMessageCreatedAccessibilityLabel(createdAt: ""),
+                "생성 알 수 없는 생성 시간"
+            )
             XCTAssertEqual(localizedRuntimeChatSessionStatus("archived"), "보관됨")
         }
 
         withStoredAppLanguage("ja") {
             XCTAssertEqual(NSLocalizedString("Inspect Runtime History", comment: ""), "ランタイム履歴を確認")
+            XCTAssertEqual(NSLocalizedString("Inspect runtime-owned chat sessions stored on AetherLink Runtime.", comment: ""), "AetherLink Runtime に保存されたランタイム所有のチャットセッションを確認します。")
             XCTAssertEqual(NSLocalizedString("Runtime History Inspector", comment: ""), "ランタイム履歴インスペクタ")
             XCTAssertEqual(NSLocalizedString("Close Runtime History Inspector", comment: ""), "ランタイム履歴インスペクタを閉じる")
             XCTAssertEqual(NSLocalizedString("Refresh Runtime History Inspector", comment: ""), "ランタイム履歴インスペクタを更新")
@@ -1066,16 +1179,28 @@ final class AetherLinkLocalizationTests: XCTestCase {
             XCTAssertEqual(NSLocalizedString("Runtime history summary. %@. %@", comment: ""), "ランタイム履歴の概要。%@。%@")
             XCTAssertEqual(NSLocalizedString("Transcript Preview", comment: ""), "会話プレビュー")
             XCTAssertEqual(runtimeTranscriptPreviewLoadAccessibilityLabel(title: " リリース計画 "), "「リリース計画」の会話プレビューを読み込む")
+            XCTAssertEqual(runtimeChatSessionSelectionAccessibilityValue(isSelected: true), "選択済み")
+            XCTAssertEqual(runtimeChatSessionSelectionAccessibilityValue(isSelected: false), "未選択")
+            XCTAssertEqual(runtimeTranscriptPreviewLoadAccessibilityHint(), "このランタイム所有の会話プレビューを読み込みます。")
             XCTAssertEqual(NSLocalizedString("No transcript messages", comment: ""), "会話メッセージはありません")
             XCTAssertEqual(NSLocalizedString("Thinking", comment: ""), "思考")
             XCTAssertEqual(runtimeTranscriptReasoningToggleTitle(isExpanded: true), "思考を隠す")
             XCTAssertEqual(runtimeTranscriptReasoningToggleAccessibilityHint(isExpanded: false), "展開して思考全文を表示します。")
             XCTAssertEqual(runtimeTranscriptRoleDisplayName("assistant"), "アシスタント")
+            XCTAssertEqual(
+                runtimeTranscriptMessageCreatedAccessibilityLabel(createdAt: "2026年6月29日 2:00"),
+                "作成 2026年6月29日 2:00"
+            )
+            XCTAssertEqual(
+                runtimeTranscriptMessageCreatedAccessibilityLabel(createdAt: "\n\t"),
+                "作成 不明な作成時刻"
+            )
             XCTAssertEqual(localizedRuntimeChatSessionStatus("active"), "アクティブ")
         }
 
         withStoredAppLanguage("zh-Hans") {
             XCTAssertEqual(NSLocalizedString("Inspect Runtime History", comment: ""), "检查运行时历史")
+            XCTAssertEqual(NSLocalizedString("Inspect runtime-owned chat sessions stored on AetherLink Runtime.", comment: ""), "检查 AetherLink Runtime 中存储的运行时拥有的聊天会话。")
             XCTAssertEqual(NSLocalizedString("Runtime History Inspector", comment: ""), "运行时历史检查器")
             XCTAssertEqual(NSLocalizedString("Close Runtime History Inspector", comment: ""), "关闭运行时历史检查器")
             XCTAssertEqual(NSLocalizedString("Refresh Runtime History Inspector", comment: ""), "刷新运行时历史检查器")
@@ -1084,16 +1209,28 @@ final class AetherLinkLocalizationTests: XCTestCase {
             XCTAssertEqual(NSLocalizedString("Runtime history summary. %@. %@", comment: ""), "运行时历史摘要。%@。%@")
             XCTAssertEqual(NSLocalizedString("Transcript Preview", comment: ""), "对话预览")
             XCTAssertEqual(runtimeTranscriptPreviewLoadAccessibilityLabel(title: " 发布计划 "), "加载“发布计划”的对话预览")
+            XCTAssertEqual(runtimeChatSessionSelectionAccessibilityValue(isSelected: true), "已选择")
+            XCTAssertEqual(runtimeChatSessionSelectionAccessibilityValue(isSelected: false), "未选择")
+            XCTAssertEqual(runtimeTranscriptPreviewLoadAccessibilityHint(), "加载这个由运行时拥有的对话预览。")
             XCTAssertEqual(NSLocalizedString("No transcript messages", comment: ""), "没有对话消息")
             XCTAssertEqual(NSLocalizedString("Thinking", comment: ""), "思考")
             XCTAssertEqual(runtimeTranscriptReasoningToggleTitle(isExpanded: false), "显示思考")
             XCTAssertEqual(runtimeTranscriptReasoningToggleAccessibilityValue(isExpanded: false), "思考已折叠")
             XCTAssertEqual(runtimeTranscriptRoleDisplayName("system"), "系统消息")
+            XCTAssertEqual(
+                runtimeTranscriptMessageCreatedAccessibilityLabel(createdAt: "2026年6月29日 2:00"),
+                "创建 2026年6月29日 2:00"
+            )
+            XCTAssertEqual(
+                runtimeTranscriptMessageCreatedAccessibilityLabel(createdAt: ""),
+                "创建 未知创建时间"
+            )
             XCTAssertEqual(localizedRuntimeChatSessionStatus("archived"), "已归档")
         }
 
         withStoredAppLanguage("fr") {
             XCTAssertEqual(NSLocalizedString("Inspect Runtime History", comment: ""), "Inspecter l’historique du runtime")
+            XCTAssertEqual(NSLocalizedString("Inspect runtime-owned chat sessions stored on AetherLink Runtime.", comment: ""), "Inspecter les sessions de chat détenues par le runtime et stockées dans AetherLink Runtime.")
             XCTAssertEqual(NSLocalizedString("Runtime History Inspector", comment: ""), "Inspecteur d’historique du runtime")
             XCTAssertEqual(NSLocalizedString("Close Runtime History Inspector", comment: ""), "Fermer l’inspecteur d’historique du runtime")
             XCTAssertEqual(NSLocalizedString("Refresh Runtime History Inspector", comment: ""), "Actualiser l’inspecteur d’historique du runtime")
@@ -1109,6 +1246,9 @@ final class AetherLinkLocalizationTests: XCTestCase {
                 runtimeTranscriptPreviewLoadAccessibilityLabel(title: ""),
                 "Charger l’aperçu de la transcription pour Chat sans titre"
             )
+            XCTAssertEqual(runtimeChatSessionSelectionAccessibilityValue(isSelected: true), "Sélectionné")
+            XCTAssertEqual(runtimeChatSessionSelectionAccessibilityValue(isSelected: false), "Non sélectionné")
+            XCTAssertEqual(runtimeTranscriptPreviewLoadAccessibilityHint(), "Charger cet aperçu de transcription détenu par le runtime.")
             XCTAssertEqual(NSLocalizedString("No transcript messages", comment: ""), "Aucun message de transcription")
             XCTAssertEqual(NSLocalizedString("Thinking", comment: ""), "Réflexion")
             XCTAssertEqual(runtimeTranscriptReasoningToggleTitle(isExpanded: false), "Afficher la réflexion")
@@ -1116,6 +1256,14 @@ final class AetherLinkLocalizationTests: XCTestCase {
             XCTAssertEqual(runtimeTranscriptReasoningToggleAccessibilityHint(isExpanded: true), "Réduire pour garder un aperçu court de la réflexion.")
             XCTAssertEqual(runtimeTranscriptRoleDisplayName("assistant"), "Assistant IA")
             XCTAssertEqual(runtimeTranscriptRoleDisplayName("other"), "Message")
+            XCTAssertEqual(
+                runtimeTranscriptMessageCreatedAccessibilityLabel(createdAt: "29 juin 2026 à 02:00"),
+                "Créé 29 juin 2026 à 02:00"
+            )
+            XCTAssertEqual(
+                runtimeTranscriptMessageCreatedAccessibilityLabel(createdAt: ""),
+                "Créé Heure de création inconnue"
+            )
             XCTAssertEqual(localizedRuntimeChatSessionStatus("active"), "Actif")
         }
     }
@@ -1168,9 +1316,10 @@ final class AetherLinkLocalizationTests: XCTestCase {
                 runtimeMemoryEntryAccessibilityLabel(
                     content: " Prefer concise answers ",
                     status: NSLocalizedString("Enabled", comment: ""),
+                    createdAt: "Jun 29, 2026 at 12:50 AM",
                     updatedAt: "Jun 29, 2026 at 1:00 AM"
                 ),
-                "Memory note Prefer concise answers. Status Enabled. Updated Jun 29, 2026 at 1:00 AM."
+                "Memory note Prefer concise answers. Status Enabled. Created Jun 29, 2026 at 12:50 AM. Updated Jun 29, 2026 at 1:00 AM."
             )
         }
 
@@ -3728,29 +3877,34 @@ final class AetherLinkLocalizationTests: XCTestCase {
 
     func testTrustedDeviceRowAccessibilityLabelUsesDeviceContext() {
         let date = Date(timeIntervalSince1970: 0)
-        let expectations: [(languageTag: String, fallbackPairingSummary: String, fallbackLabel: String)] = [
+        let expectations: [(languageTag: String, fallbackDisplayName: String, fallbackPairingSummary: String, fallbackLabel: String)] = [
             (
                 "en",
+                "Selected device",
                 "Device ID ending ice-1",
                 "Trusted device Selected device. Pairing details unavailable. Key fingerprint Unavailable"
             ),
             (
                 "ko",
+                "선택한 항목",
                 "기기 ID 끝자리 ice-1",
                 "신뢰 기기 선택한 항목. 페어링 세부 정보를 사용할 수 없습니다. 키 지문 사용 불가"
             ),
             (
                 "ja",
+                "選択したデバイス",
                 "デバイス ID 末尾 ice-1",
                 "信頼済みデバイス 選択したデバイス。ペアリングの詳細は利用できません。キー指紋 利用不可"
             ),
             (
                 "zh-Hans",
+                "所选设备",
                 "设备 ID 结尾 ice-1",
                 "受信任设备 所选设备。配对详情不可用。密钥指纹 不可用"
             ),
             (
                 "fr",
+                "Appareil sélectionné",
                 "ID de l’appareil finissant par ice-1",
                 "Appareil approuvé Appareil sélectionné. Détails de jumelage indisponibles. Empreinte de clé Indisponible"
             ),
@@ -3760,6 +3914,9 @@ final class AetherLinkLocalizationTests: XCTestCase {
 
         for expectation in expectations {
             withStoredAppLanguage(expectation.languageTag) {
+                XCTAssertEqual(trustedDeviceDisplayName(" Pixel "), "Pixel", expectation.languageTag)
+                XCTAssertEqual(trustedDeviceDisplayName("   "), expectation.fallbackDisplayName, expectation.languageTag)
+                XCTAssertEqual(trustedDeviceDisplayName(nil), expectation.fallbackDisplayName, expectation.languageTag)
                 let pairingSummary = String(
                     format: NSLocalizedString("Paired %@. Device ID ending %@", comment: ""),
                     localizedCompanionDateString(from: date),
@@ -4071,6 +4228,78 @@ final class AetherLinkLocalizationTests: XCTestCase {
         }
     }
 
+    func testTrustedDevicesEmptyStateCopyUsesRuntimeRequestsAcrossSupportedLanguages() {
+        let expectations: [(languageTag: String, value: String)] = [
+            (
+                "en",
+                "Pair a device before allowing runtime requests."
+            ),
+            (
+                "ko",
+                "런타임 요청을 허용하기 전에 기기를 페어링하세요."
+            ),
+            (
+                "ja",
+                "ランタイムリクエストを許可する前に、デバイスをペアリングしてください。"
+            ),
+            (
+                "zh-Hans",
+                "允许运行时请求前，请先配对设备。"
+            ),
+            (
+                "fr",
+                "Jumelez un appareil avant d’autoriser les requêtes du runtime."
+            ),
+        ]
+
+        XCTAssertEqual(expectations.map(\.languageTag), AetherLinkAppLanguage.allCases.map(\.rawValue))
+
+        for expectation in expectations {
+            withStoredAppLanguage(expectation.languageTag) {
+                XCTAssertEqual(
+                    NSLocalizedString("Pair a device before allowing runtime requests.", comment: ""),
+                    expectation.value
+                )
+            }
+        }
+    }
+
+    func testTrustedDevicesHeaderSubtitleUsesProductNeutralCopyAcrossSupportedLanguages() {
+        let expectations: [(languageTag: String, value: String)] = [
+            (
+                "en",
+                "Manage devices trusted to use AetherLink Runtime. Remove trust when a device should pair again."
+            ),
+            (
+                "ko",
+                "AetherLink Runtime 사용을 신뢰한 기기를 관리하세요. 기기가 다시 페어링해야 할 때 신뢰를 해제하세요."
+            ),
+            (
+                "ja",
+                "AetherLink Runtime の使用を信頼したデバイスを管理します。デバイスを再度ペアリングさせる必要がある場合は、信頼を解除してください。"
+            ),
+            (
+                "zh-Hans",
+                "管理已信任可使用 AetherLink Runtime 的设备。当设备需要重新配对时，请移除信任。"
+            ),
+            (
+                "fr",
+                "Gérez les appareils approuvés pour utiliser AetherLink Runtime. Retirez l’approbation lorsqu’un appareil doit être jumelé à nouveau."
+            ),
+        ]
+
+        XCTAssertEqual(expectations.map(\.languageTag), AetherLinkAppLanguage.allCases.map(\.rawValue))
+
+        for expectation in expectations {
+            withStoredAppLanguage(expectation.languageTag) {
+                XCTAssertEqual(
+                    NSLocalizedString("Manage devices trusted to use AetherLink Runtime. Remove trust when a device should pair again.", comment: ""),
+                    expectation.value
+                )
+            }
+        }
+    }
+
     func testRemoteRoutePreparationIssueCopyIsActionableForRejectedRoute() {
         withStoredAppLanguage("en") {
             let issue = CompanionRemoteRoutePreparationIssue(
@@ -4334,6 +4563,24 @@ final class AetherLinkLocalizationTests: XCTestCase {
                 ),
                 "Private addresses usually do not cross unrelated networks. Use a reachable relay, VPN, tunnel, or private overlay."
             )
+
+            let loopbackSettings = CompanionDevelopmentRelaySettings(
+                isEnabled: true,
+                host: "127.0.0.1",
+                port: 43171,
+                relayID: "relay-1",
+                relaySecret: "secret-1"
+            )
+            let loopbackDetail = remoteRouteScopeDetail(
+                settings: loopbackSettings,
+                bootstrapSettings: .disabled,
+                canPrepareAutomatically: false
+            )
+            XCTAssertEqual(
+                loopbackDetail,
+                "Loopback routes only work on this device or USB diagnostics, not from another network."
+            )
+            XCTAssertFalse(loopbackDetail.contains("runtime host"))
 
             let overlaySettings = CompanionDevelopmentRelaySettings(
                 isEnabled: true,

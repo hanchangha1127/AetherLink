@@ -69,10 +69,10 @@ RULES = (
         "visible-app-language-system-option",
         re.compile(
             r"\b(?:language selector|app-language|app language|language support)\b.*"
-            r"\b(?:system language|Device language|System/Device language)\b",
+            r"\bSystem/Device language\b",
             re.IGNORECASE,
         ),
-        "Visible app language choices must stay exactly English, Korean, Japanese, Simplified Chinese, and French; System is only for appearance.",
+        "Use the localized Follow system language setting name rather than the stale System/Device language label.",
     ),
     DocsRule(
         "stale-remote-route-diagnostics-title",
@@ -201,6 +201,34 @@ FILE_CONTRACTS = (
         "README.md must keep cross-platform language verification and chat.send.locale handoff visible outside historical progress logs.",
     ),
     DocsFileContract(
+        "readme-no-device-quality-caveats",
+        "README.md",
+        (
+            re.compile(r"\bno-device gate\b", re.IGNORECASE),
+            re.compile(r"\bdoes not require a connected phone\b", re.IGNORECASE),
+            re.compile(r"\bphysical Android rendering\b", re.IGNORECASE),
+            re.compile(r"\bTalkBack\b.*\bVoiceOver\b|\bVoiceOver\b.*\bTalkBack\b", re.IGNORECASE | re.DOTALL),
+            re.compile(r"\boptical/camera QR\b", re.IGNORECASE),
+            re.compile(r"\blive provider-backed chat or cancel\b", re.IGNORECASE),
+            re.compile(r"\breal different-network runtime connectivity\b", re.IGNORECASE),
+        ),
+        "README.md must keep no-device quality caveats explicit for physical rendering, screen-reader traversal, optical QR, live provider chat/cancel, and real different-network connectivity.",
+    ),
+    DocsFileContract(
+        "qa-current-rule-no-device-quality-caveats",
+        "docs/qa-evidence.md",
+        (
+            re.compile(r"\bCurrent Rule\b", re.IGNORECASE),
+            re.compile(r"\bNo-device evidence does not prove\b", re.IGNORECASE),
+            re.compile(r"\bphysical Android rendering\b", re.IGNORECASE),
+            re.compile(r"\bTalkBack\b.*\bVoiceOver\b|\bVoiceOver\b.*\bTalkBack\b", re.IGNORECASE | re.DOTALL),
+            re.compile(r"\boptical/camera QR\b", re.IGNORECASE),
+            re.compile(r"\blive provider-backed chat/cancel\b", re.IGNORECASE),
+            re.compile(r"\breal different-network runtime connectivity\b", re.IGNORECASE),
+        ),
+        "docs/qa-evidence.md Current Rule must keep no-device quality caveats explicit before historical evidence entries.",
+    ),
+    DocsFileContract(
         "qa-owner-device-scoping-evidence",
         "docs/qa-evidence.md",
         (
@@ -247,6 +275,74 @@ FILE_CONTRACTS = (
             re.compile(r"\bmacOS route material diagnostic redaction\b", re.IGNORECASE),
         ),
         "docs/qa-evidence.md must keep macOS route material diagnostic redaction proof visible.",
+    ),
+    DocsFileContract(
+        "progress-macos-thinking-runtime-history-evidence",
+        "docs/progress.md",
+        (
+            re.compile(r"\bmacOS Thinking Copy And Sidebar Header Accessibility\b", re.IGNORECASE),
+            re.compile(r"\bRuntime History Inspector transcript reasoning\b", re.IGNORECASE),
+            re.compile(r"\btestRuntimeHistoryInspectorCopyLocalizesAcrossSupportedLanguages\b", re.IGNORECASE),
+            re.compile(r"\btestRuntimeTranscriptReasoningPreviewStaysShortUntilExpanded\b", re.IGNORECASE),
+            re.compile(r"\btestRuntimeTranscriptReasoningPreviewHandlesShortAndLongParagraphs\b", re.IGNORECASE),
+        ),
+        "docs/progress.md must keep macOS Runtime History Thinking/reasoning evidence visible.",
+    ),
+    DocsFileContract(
+        "qa-macos-thinking-runtime-history-evidence",
+        "docs/qa-evidence.md",
+        (
+            re.compile(r"\bmacOS Thinking Copy And Sidebar Header Accessibility\b", re.IGNORECASE),
+            re.compile(r"\bRuntime History Inspector transcript reasoning\b", re.IGNORECASE),
+            re.compile(r"\btestRuntimeHistoryInspectorCopyLocalizesAcrossSupportedLanguages\b", re.IGNORECASE),
+            re.compile(r"\btestRuntimeTranscriptReasoningPreviewStaysShortUntilExpanded\b", re.IGNORECASE),
+            re.compile(r"\btestRuntimeTranscriptReasoningPreviewHandlesShortAndLongParagraphs\b", re.IGNORECASE),
+        ),
+        "docs/qa-evidence.md must keep macOS Runtime History Thinking/reasoning proof visible.",
+    ),
+    DocsFileContract(
+        "progress-android-preference-system-detail-guard",
+        "docs/progress.md",
+        (
+            re.compile(r"\bAndroid Appearance System Detail Polish\b", re.IGNORECASE),
+            re.compile(r"\bR\.string\.appearance_system_detail\b", re.IGNORECASE),
+            re.compile(r"\blanguage_follow_system_detail\b", re.IGNORECASE),
+            re.compile(r"\bAndroid appearance system detail copy\b", re.IGNORECASE),
+        ),
+        "docs/progress.md must keep Android Settings system appearance/language detail guard evidence visible.",
+    ),
+    DocsFileContract(
+        "qa-android-preference-system-detail-guard",
+        "docs/qa-evidence.md",
+        (
+            re.compile(r"\bAndroid Appearance System Detail Polish\b", re.IGNORECASE),
+            re.compile(r"\bsettingsPreferenceRowsExposeSelectedStateToAccessibility\b", re.IGNORECASE),
+            re.compile(r"\blanguage_follow_system_detail\b", re.IGNORECASE),
+            re.compile(r"\bAndroid Settings Appearance\b", re.IGNORECASE),
+        ),
+        "docs/qa-evidence.md must keep Android Settings system appearance/language detail proof visible.",
+    ),
+    DocsFileContract(
+        "progress-android-static-thinking-state-evidence",
+        "docs/progress.md",
+        (
+            re.compile(r"\bAndroid Static Thinking Accessibility\b", re.IGNORECASE),
+            re.compile(r"\bassistant_reasoning_state_shown\b", re.IGNORECASE),
+            re.compile(r"\bchatScreenShortReasoningIsReadAsStaticThinkingAcrossSupportedLanguages\b", re.IGNORECASE),
+            re.compile(r"\bAndroid short reasoning static accessibility state\b", re.IGNORECASE),
+        ),
+        "docs/progress.md must keep Android short Thinking static accessibility evidence visible.",
+    ),
+    DocsFileContract(
+        "qa-android-static-thinking-state-evidence",
+        "docs/qa-evidence.md",
+        (
+            re.compile(r"\bAndroid Static Thinking Accessibility\b", re.IGNORECASE),
+            re.compile(r"\bassistant_reasoning_state_shown\b", re.IGNORECASE),
+            re.compile(r"\bchatScreenShortReasoningIsReadAsStaticThinkingAcrossSupportedLanguages\b", re.IGNORECASE),
+            re.compile(r"\bAndroid short reasoning static accessibility state\b", re.IGNORECASE),
+        ),
+        "docs/qa-evidence.md must keep Android short Thinking static accessibility proof visible.",
     ),
 )
 
@@ -355,6 +451,30 @@ def latest_progress_evidence_failures() -> list[str]:
     return failures
 
 
+def syntax_only_no_device_gate_evidence_failures() -> list[str]:
+    failures: list[str] = []
+    syntax_command = "bash -n script/check_no_device_quality.sh"
+
+    progress_start_line, progress_entry = latest_progress_entry()
+    if syntax_command in progress_entry and "syntax only" not in progress_entry.lower():
+        failures.append(
+            f"docs/progress.md:{progress_start_line}: `{syntax_command}` is shell syntax validation only; "
+            "label it as syntax only or record a real `bash script/check_no_device_quality.sh` run."
+        )
+
+    qa_path = ROOT / "docs/qa-evidence.md"
+    if qa_path.exists():
+        qa_lines = qa_path.read_text(encoding="utf-8", errors="replace").splitlines()
+        for line_number, line in enumerate(qa_lines[:60], 1):
+            if syntax_command in line and "syntax only" not in line.lower():
+                failures.append(
+                    f"docs/qa-evidence.md:{line_number}: `{syntax_command}` is shell syntax validation only; "
+                    "label it as syntax only or record a real `bash script/check_no_device_quality.sh` run."
+                )
+
+    return failures
+
+
 def main() -> int:
     failures: list[str] = []
 
@@ -398,6 +518,7 @@ def main() -> int:
             )
 
     failures.extend(latest_progress_evidence_failures())
+    failures.extend(syntax_only_no_device_gate_evidence_failures())
 
     if failures:
         print("Docs hygiene check failed:", file=sys.stderr)

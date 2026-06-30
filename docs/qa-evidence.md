@@ -7,7 +7,157 @@ This document separates current verification evidence from historical captures.
 - Source code, tests, smoke commands, and explicitly referenced current artifacts are authoritative.
 - Files under `artifacts/` are generated QA captures. Treat them as historical unless the latest relevant `docs/progress.md` entry names the file and explains the device/runtime state that produced it.
 - Do not use an old screenshot or XML dump as proof that the current UI copy, route behavior, QR pairing, or localization is still correct.
+- No-device evidence does not prove physical Android rendering, TalkBack/VoiceOver traversal, optical/camera QR scan reliability, live provider-backed chat/cancel, or real different-network runtime connectivity.
 - New `artifacts/*.png` and `artifacts/*.xml` files are ignored by default so stale generated captures are not accidentally committed.
+
+## 2026-06-29 Product QR Requires Remote Route
+
+- Android focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.AppNavigationTest.pairingQrRawValueAcceptsCompactRelayPayloadsFromScanner --tests com.localagentbridge.android.AppNavigationTest.pairingQrScannerClassifiesRawValuesBeforeConsumingCameraResult --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.productPairingQrParserRejectsIdentityOnlyQrWhenRemoteRouteIsRequired --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.identityOnlyQrPlanStartsDiscoveryAndWaitsForRoute -Pkotlin.incremental=false` passed.
+- Result: product QR scans and app pairing deeplinks pass `requireRemoteRoute=true` into the Android pairing parser.
+- Result: identity-only QR payloads are now invalid under the product scanner policy, while explicit diagnostic parser mode can still cover the legacy identity-only local-discovery path.
+- Result: route-less product QR entry reports the existing `pairing_endpoint_unavailable` / `route_diagnostic_remote_pending` state instead of appearing accepted and timing out later.
+- Gate evidence: `python3 -m py_compile script/check_copy_hygiene.py`, `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" bash script/check_no_device_quality.sh`, and `git diff --check` passed.
+- Caveat: this is no-device Android JVM/source/script evidence. It does not prove optical QR scanning, physical Android reconnect, real external relay reachability, live provider-backed chat/cancel, production NAT traversal, or arbitrary-network P2P connectivity.
+
+## 2026-06-29 Physical Relay Route Probe QA Path
+
+- Script syntax evidence: `bash -n script/android_relay_reachability_probe.sh script/android_pairing_deeplink_smoke.sh script/check_physical_external_relay_pairing.sh script/check_no_device_quality.sh` passed.
+- Result: the physical Android relay probe supports `--relay-id` and records `transport`, raw TCP status, and route-ready status in JSON evidence.
+- Result: the physical deeplink smoke now performs route-level relay readiness after QR route material is generated, before injecting the pairing URI.
+- Result: the physical external relay wrapper records both endpoint probe JSON and route-readiness probe JSON in `build/qa/android-external-relay-pairing.json`.
+- Result: the wrapper now treats `probe.reachable=true` and `probe.route_ready=true` as mandatory success evidence and embeds the child probe summaries in `probe_summaries`, with `coverage.external_relay_probe_reachable` and `coverage.external_relay_route_ready` as the quick pass/fail fields.
+- Result: the no-device gate now behavior-tests the wrapper summary with an invalid external relay host, proving failed runs do not claim endpoint probe coverage, route-readiness coverage, or child probe summaries.
+- Gate evidence: `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_android_string_parity.py`, `python3 script/check_android_string_parity.py`, `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, and `git diff --check` passed.
+- Caveat: this is no-device script/static evidence. It does not prove physical Android rendering, optical QR scanning, real external relay reachability, live provider-backed chat/cancel, production NAT traversal, or arbitrary-network P2P connectivity.
+
+## 2026-06-29 Non-Consuming Relay Readiness Probe
+
+- macOS focused evidence: `swift test --package-path apps/macos --filter RelayServerCoreTests` passed.
+- Android focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustRuntimeFromPairingQrWithCompactRelayUriConnectsRelayAndSendsPairingRequest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.relayQrPairingFailsBeforeConnectWhenDeviceCannotReachRelayRoute --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedRelayReconnectAttemptsRelayBeforeMatchingBonjourFallback --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.relayProbeResponseParserRequiresKnownRouteAndWaitingRuntime -Pkotlin.incremental=false --console=plain` passed.
+- Result: the relay supports `AETHERLINK_RELAY probe <relay_id>` and responds with `known` plus `runtime_waiting` flags without registering a peer or consuming the relay room.
+- Result: Android relay preflight now checks a prepared relay route with the non-consuming probe, requiring both a known route and a waiting runtime before the app opens the real client relay connection.
+- Result: focused Swift and Android tests are included in `script/check_no_device_quality.sh`, and `script/check_copy_hygiene.py` now pins that probe contract and no-device gate coverage.
+- Gate evidence: `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_android_string_parity.py`, `python3 script/check_android_string_parity.py`, `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check` passed.
+- Caveat: this is no-device Swift/Android source and unit-test evidence. It does not prove optical QR scanning, physical Android reconnect, real public relay reachability, live provider-backed chat/cancel, production NAT traversal, or arbitrary-network P2P connectivity.
+
+## 2026-06-29 Android Relay Handshake Rejection Retention
+
+- Android focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:transport:testDebugUnitTest --tests com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest.relayConnectFailsWhenReadyLineRejectsRoute :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedRelayHandshakeRejectionKeepsStoredRelayAndStopsAutoReconnectUntilUserRetries -Pkotlin.incremental=false --console=plain` passed.
+- Result: relay socket connections that receive a non-ready handshake response fail as `Relay did not accept route`.
+- Result: trusted relay handshake rejection now remains a structured `remote_route_unreachable` / `route_diagnostic_relay_failed` app error, keeps stored trusted relay material, and does not auto-retry until the user retries or scans fresher route material.
+- Result: the focused tests are included in `script/check_no_device_quality.sh`, and `script/check_copy_hygiene.py` now pins that no-device gate coverage.
+- Gate evidence: `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_android_string_parity.py`, `python3 script/check_android_string_parity.py`, `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check` passed.
+- Caveat: this is no-device Android JVM/source/script evidence. It does not prove optical QR scan, physical Android reconnect, real public relay reachability, live provider-backed chat/cancel, or production arbitrary-network P2P connectivity.
+
+## 2026-06-29 macOS Remote Pairing QR Setup Failure State
+
+- macOS focused evidence: `swift test --package-path apps/macos --filter 'LocalRuntimeMessageRouterTests/testCompanionAppModelDefaultPairingRequiresRemoteQRCodeRoute|LocalRuntimeMessageRouterTests/testCompanionAppModelPublishesRemoteRoutePreparationIssueWhenBootstrapAllocationThrows'` passed.
+- Result: missing remote-route setup now records `automaticPreparationUnavailable` with a concrete setup message before QR generation is attempted.
+- Result: automatic/bootstrap relay allocation failures now keep the concrete allocator failure message in the pairing-QR failure log instead of collapsing into generic setup copy.
+- Result: the focused tests are included in `script/check_no_device_quality.sh`, and `script/check_copy_hygiene.py` now pins that no-device gate coverage.
+- Gate evidence: `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_android_string_parity.py`, `python3 script/check_android_string_parity.py`, `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check` passed.
+- Caveat: this is no-device macOS SwiftPM/source/script evidence. It does not prove optical QR scanning, physical Android reconnect, real public relay reachability, live provider-backed chat/cancel, or production arbitrary-network P2P connectivity.
+
+## 2026-06-29 Android Trusted Relay Route Retention On Transient Failure
+
+- Android focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshQrKeepsUnreachableRelayRouteForRetryOrFreshQrRecovery --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedRelayConnectionFailureKeepsStoredRelayAndStopsAutoReconnectUntilUserRetries --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.relayReceiveAuthenticationFailureClearsStoredRelayAndStopsAutoReconnect --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.viewModelShowsExpiredRemoteRouteWhenTrustedRelayLeaseExpiredOnInit -Pkotlin.incremental=false --console=plain` passed.
+- Result: ordinary saved-relay connection failures now keep the trusted relay route material, so a temporary network or relay outage does not erase the route that was provisioned by QR.
+- Result: route-refresh QR failures with a temporarily unreachable relay also keep the freshly scanned relay host, secret, nonce, expiry, and scope while surfacing `remote_route_unreachable` / `route_diagnostic_relay_failed`.
+- Result: relay authentication failure and expired route material remain invalidating cases and still clear stale relay material.
+- Gate evidence: `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_android_string_parity.py`, `python3 script/check_android_string_parity.py`, `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check` passed.
+- Caveat: this is no-device Android source/unit/script evidence. It does not prove optical QR scan, physical Android reconnect, real public relay reachability, live provider-backed chat/cancel, or production arbitrary-network P2P connectivity.
+
+## 2026-06-29 Android Uninstalled Selected Model Empty-State Guidance
+
+- Android focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.AppNavigationTest.emptyChatShowsModelPickerHintWhenSelectedModelIsUnavailable --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatEmptyUninstalledModelGuidesUsersToInstallOrChooseAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain` passed.
+- Result: connected empty chats with a selected but uninstalled chat model now show the localized install-or-choose guidance.
+- Result: missing selected models, wrong-kind selected models, and no-selected-model states remain distinct, so users get runtime-list recovery, model-kind recovery, or chat-header model-picker guidance as appropriate.
+- Gate evidence: `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_android_string_parity.py`, `python3 script/check_android_string_parity.py`, `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check` passed.
+- Caveat: this is no-device Android Compose/JVM, resource, docs, and script evidence. It does not prove physical Android rendering, physical TalkBack traversal, QR pairing, real device haptics, live provider-backed chat/cancel, real model installation, or real different-network runtime connectivity.
+
+## 2026-06-29 Android No-Model Empty Chat Header Picker Guidance
+
+- Android focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.AppNavigationTest.emptyChatShowsModelPickerHintWhenConnectedWithoutSelectedModel --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatEmptyNoModelGuidesUsersToHeaderModelPickerAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain` passed.
+- Result: connected empty chats with no selected chat model now guide users to choose a chat model from the chat header before sending.
+- Result: the no-model empty-state body is localized across English, Korean, Japanese, Simplified Chinese, and French, and its merged empty-state accessibility summary includes the same localized guidance.
+- Gate evidence: `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_android_string_parity.py`, `python3 script/check_android_string_parity.py`, `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check` passed.
+- Caveat: this is no-device Android Compose/JVM, resource, docs, and script evidence. It does not prove physical Android rendering, physical TalkBack traversal, QR pairing, real device haptics, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+## 2026-06-29 Android Settings Chat History Selected State
+
+- Android focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsChatHistoryRowsExposeLocalizedAccessibilitySummaries --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsChatHistoryRowsExposeLocalizedModelMetadata -Pkotlin.incremental=false --console=plain` passed.
+- Result: Settings > Chat history now marks the active saved chat as selected while archived rows stay unselected.
+- Result: selected rows expose localized selected-state accessibility summaries, preserve selected summaries with model metadata, and render the localized `Selected` badge in the active row.
+- Gate evidence: `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_android_string_parity.py`, `python3 script/check_android_string_parity.py`, `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check` passed.
+- Caveat: this is no-device Android Compose/JVM, resource, docs, and script evidence. It does not prove physical Android rendering, physical TalkBack traversal, QR pairing, real device haptics, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+## 2026-06-29 Near-Expiry Relay Lease QR Renewal
+
+- macOS focused evidence: `swift test --package-path . --filter LocalRuntimeMessageRouterTests/testCompanionAppModelRegeneratesGUIAllocatedQRCodeWithNearExpiredLease` passed.
+- macOS focused evidence: `swift test --package-path . --filter 'LocalRuntimeMessageRouterTests/testCompanionAppModelRegeneratesGUIAllocatedQRCodeWithExpiredLease|LocalRuntimeMessageRouterTests/testCompanionAppModelRegeneratesGUIAllocatedQRCodeWithNearExpiredLease|LocalRuntimeMessageRouterTests/testCompanionAppModelRefreshRuntimeRouteReturnsNilWithoutFreshRelayLease|LocalRuntimeMessageRouterTests/testCompanionAppModelRefreshRuntimeRouteAllocatesFreshRelayMaterial'` passed.
+- Result: relay route material must remain fresh through the pairing QR window before AetherLink Runtime marks it QR-ready or includes it in a QR payload.
+- Result: configured relay routes with near-expired leases refresh to fresh `relay_id`, `relay_secret`, `relay_expires_at`, and `relay_nonce` before QR generation.
+- Gate evidence: `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`, `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check` passed.
+- Caveat: this is no-device macOS SwiftPM/unit, script, and docs evidence. It does not prove physical Android rendering, optical/camera QR pairing, live provider-backed chat/cancel, or real different-network relay reachability.
+
+## 2026-06-29 Runtime Transcript Created-Time Accessibility
+
+- macOS focused evidence: `swift test --package-path apps/macos --filter AetherLinkLocalizationTests/testRuntimeHistoryInspectorCopyLocalizesAcrossSupportedLanguages` passed.
+- Result: Runtime History Inspector transcript preview timestamps expose localized `Created ...` accessibility labels.
+- Result: transcript message rows keep their child structure, so nested controls such as `Thinking` expand/collapse remain separately reachable.
+- Gate evidence: `python3 -m py_compile script/check_macos_localization.py`, `python3 script/check_macos_localization.py`, and `git diff --check` passed.
+- Caveat: this is no-device macOS XCTest, resource, script, and Swift compile evidence. It does not prove physical Android rendering, physical TalkBack/VoiceOver traversal, optical/camera QR pairing, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+## 2026-06-29 Clear Draft Attachment Cleanup And Route Copy Polish
+
+- Android focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenClearDraftActionClearsComposerAndHidesWhileStreaming --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.clearChatDraftClearsActiveSessionTextAndPendingAttachments -Pkotlin.incremental=false --console=plain` passed.
+- macOS focused evidence: `swift test --package-path apps/macos --filter 'AetherLinkLocalizationTests/testRemoteRouteScopeCopyDistinguishesAutomaticRemoteAndLocalRoutes|AetherLinkRenderSmokeTests/testRuntimeMemoryInspectorRendersAcrossLanguagesAndAppearances'` passed.
+- Result: Android `Clear draft` clears both typed draft text and pending attachments for the active chat session.
+- Result: macOS Runtime Memory Inspector no longer duplicates the updated timestamp in compact rows.
+- Result: macOS loopback route guidance uses `this device` wording instead of the stale host-centric copy for that user-facing warning.
+- Gate evidence: `python3 -m py_compile script/check_macos_localization.py script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_android_string_parity.py`, `python3 script/check_macos_localization.py`, and `python3 script/check_copy_hygiene.py` passed.
+- Caveat: this is no-device Android JVM/Compose, macOS XCTest/render-smoke, resource, and script evidence. It does not prove physical Android rendering, physical TalkBack/VoiceOver traversal, Android system/per-app appearance or locale mutation on hardware, optical/camera QR pairing, real device haptics, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+## 2026-06-29 Attachment-Only Message And Runtime History Accessibility
+
+- Android focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenAttachmentOnlyMessageRowsExposeLocalizedRoleAccessibilitySummaries --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenMessageRowsExposeLocalizedRoleAccessibilitySummaries -Pkotlin.incremental=false --console=plain` passed.
+- macOS focused evidence: `swift test --package-path apps/macos --filter AetherLinkLocalizationTests/testRuntimeHistoryInspectorCopyLocalizesAcrossSupportedLanguages` passed.
+- macOS render evidence: `swift test --package-path apps/macos --filter AetherLinkRenderSmokeTests/testRuntimeHistoryInspectorRendersAcrossLanguagesAndAppearances` passed.
+- Result: Android attachment-only transcript rows expose localized role-plus-attachment accessibility summaries for both user and assistant messages.
+- Result: macOS Runtime History session buttons expose the full session summary as the label, selected/not-selected state as the value, and the load-preview action as a hint.
+- Gate evidence: `python3 -m py_compile script/check_android_string_parity.py script/check_macos_localization.py script/check_copy_hygiene.py script/check_docs_hygiene.py`, `python3 script/check_android_string_parity.py`, `python3 script/check_macos_localization.py`, `python3 script/check_copy_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check` passed.
+- Caveat: this is no-device Android JVM/Compose, macOS XCTest/render-smoke, resource, and script evidence. It does not prove physical Android rendering, physical TalkBack/VoiceOver traversal, Android system/per-app appearance or locale mutation on hardware, optical/camera QR pairing, real device haptics, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+## 2026-06-29 Per-Chat Attachment Drafts And Trusted Device Name Fallback
+
+- Android focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.openPreviousChatRestoresSessionScopedComposerDrafts --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.startNewChatClearsNoActiveDraftButKeepsSessionDrafts --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.archiveActiveChatClearsNoActiveDraftAndPendingAttachments --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.archiveAllChatsClearsNoActiveDraftAndPendingAttachments -Pkotlin.incremental=false --console=plain` passed.
+- Android focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsMemoryAddControlsLocalizeReadinessStateAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain` passed.
+- macOS focused evidence: `swift test --package-path apps/macos --filter AetherLinkLocalizationTests/testTrustedDeviceRowAccessibilityLabelUsesDeviceContext` passed.
+- macOS render evidence: `swift test --package-path apps/macos --filter AetherLinkRenderSmokeTests/testPrimaryCompanionSurfacesRenderAtMinimumDetailSizeAcrossLanguagesAndAppearances` passed.
+- Result: Android no longer drops unsent pending attachments when switching away from and back to an existing chat; the draft remains in memory per chat and is still cleared on send or destructive chat lifecycle actions.
+- Result: Android Memory added confirmation is locale-current and clears as soon as the next memory draft begins.
+- Result: macOS Trusted Devices no longer shows a blank row title for whitespace-only trusted-device names; visible and accessibility labels share the same localized fallback.
+- Gate evidence: `python3 script/check_android_string_parity.py`, `python3 script/check_macos_localization.py`, `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check` passed.
+- Caveat: this is no-device Android JVM/Compose, macOS XCTest/render-smoke, resource, and script evidence. It does not prove physical Android rendering, physical TalkBack/VoiceOver traversal, Android system/per-app appearance or locale mutation on hardware, optical/camera QR pairing, real device haptics, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+## 2026-06-29 Runtime Memory Accessibility Confirmation
+
+- Android focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsMemoryAddControlsLocalizeReadinessStateAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain` passed.
+- macOS focused evidence: `swift test --package-path apps/macos --filter AetherLinkLocalizationTests/testRuntimeMemoryInspectorCopyLocalizesAcrossSupportedLanguages` passed.
+- Result: macOS Runtime Memory Inspector accessibility labels now include created and updated timestamps for each memory row.
+- Result: Android Settings > Memory Add Memory now emits a localized polite live-region confirmation after the action succeeds, while retaining readiness-state and haptic evidence.
+- Gate evidence: `python3 -m py_compile script/check_android_string_parity.py script/check_macos_localization.py script/check_copy_hygiene.py`, `python3 script/check_android_string_parity.py`, `python3 script/check_macos_localization.py`, and `python3 script/check_copy_hygiene.py` passed.
+- Caveat: this is no-device Android Compose/JVM, macOS XCTest, resource, and script evidence. It does not prove physical Android rendering, physical TalkBack/VoiceOver traversal, Android system/per-app appearance or locale mutation on hardware, optical/camera QR pairing, real device haptics, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+## 2026-06-29 Android Static Thinking Accessibility And macOS Thinking Evidence Guard
+
+- Android focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenShortReasoningIsReadAsStaticThinkingAcrossSupportedLanguages --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenRendersReasoningCollapsedAndExpandable --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenReasoningSummaryLocalizesAcrossSupportedLanguages --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenKeepsOpenStreamingReasoningCollapsedUntilExpanded -Pkotlin.incremental=false --console=plain` passed.
+- Result: short Android Thinking blocks now use localized `assistant_reasoning_state_shown` copy instead of announcing a non-expandable block as `Collapsed`.
+- Result: expandable Android Thinking still preserves the muted preview, Collapsed/Expanded state, Show/Hide thinking action, and polite live-region handling while streaming.
+- Result: the no-device gate summary now names `Android short reasoning static accessibility state`.
+- Result: docs hygiene now pins macOS Runtime History Inspector transcript reasoning evidence and the Android static Thinking evidence so both cannot silently disappear from QA/progress records.
+- Gate evidence: `python3 -m py_compile script/check_android_string_parity.py script/check_copy_hygiene.py script/check_docs_hygiene.py`, `python3 script/check_android_string_parity.py`, `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check` passed.
+- Caveat: this is no-device Android Compose/JVM, resource, docs, and script evidence. It does not prove physical Android rendering, physical TalkBack/VoiceOver traversal, Android system/per-app appearance or locale mutation on hardware, optical/camera QR pairing, real device haptics, live provider-backed chat/cancel, or real different-network runtime connectivity.
 
 ## 2026-06-29 Android Code Block And Private Model Access Accessibility
 
@@ -17,7 +167,7 @@ The latest evidence is no-device Android Compose/JVM and resource evidence:
 - Code text and the code-copy button remain separately reachable in the unmerged semantics tree while the code-block container announces the summary.
 - Settings > Private model access exposes its localized title and detail as one polite live-region accessibility summary.
 - Latest focused Android evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenCodeBlocksExposeLocalizedAccessibilitySummaryAcrossSupportedLanguages --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsCompanionOnlyPanelAnnouncesLocalizedPrivateModelAccessAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain` passed.
-- Latest hygiene evidence: `python3 script/check_android_string_parity.py`, `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh`, and `git diff --check` passed.
+- Latest hygiene evidence: `python3 script/check_android_string_parity.py`, `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check` passed.
 - Caveat: this is no-device source/resource/test/script evidence only. It does not prove physical Android TalkBack traversal, physical Android rendering, optical QR pairing, live provider-backed chat/cancel, or real different-network runtime connectivity.
 
 ## 2026-06-29 macOS Thinking Copy And Sidebar Header Accessibility
@@ -28,7 +178,7 @@ The latest evidence is no-device macOS localization, XCTest, and render-smoke ev
 - The transcript thinking block remains muted and short by default, with localized Show/Hide thinking controls, expanded/collapsed accessibility values, and hints.
 - The macOS sidebar brand block exposes the localized `AetherLink Runtime` accessibility label as a VoiceOver heading.
 - Latest macOS XCTest/render evidence: `swift test --package-path apps/macos --filter 'AetherLinkLocalizationTests/testRuntimeHistoryInspectorCopyLocalizesAcrossSupportedLanguages|AetherLinkLocalizationTests/testRuntimeTranscriptReasoningPreviewStaysShortUntilExpanded|AetherLinkLocalizationTests/testRuntimeTranscriptReasoningPreviewHandlesShortAndLongParagraphs|AetherLinkLocalizationTests/testSidebarBrandAccessibilityLabelUsesSelectedLanguage|AetherLinkRenderSmokeTests/testCompanionShellRendersAtMinimumWindowAcrossLanguagesAndAppearances'` passed.
-- Latest hygiene evidence: `python3 -m py_compile script/check_macos_localization.py script/check_copy_hygiene.py`, `python3 script/check_macos_localization.py`, `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh`, and `git diff --check` passed.
+- Latest hygiene evidence: `python3 -m py_compile script/check_macos_localization.py script/check_copy_hygiene.py`, `python3 script/check_macos_localization.py`, `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check` passed.
 - Caveat: this is no-device source/resource/XCTest/render-smoke/script evidence only. It does not prove live VoiceOver traversal, physical Android rendering, optical QR pairing, live provider-backed chat/cancel, or production arbitrary-network connectivity.
 
 ## 2026-06-29 Android Markdown Table Accessibility
@@ -39,7 +189,7 @@ The latest evidence is no-device Android Compose/JVM and resource evidence:
 - Table cell text remains visible in the unmerged semantics tree, so the table summary does not replace the rendered cell content.
 - The table accessibility summary is covered across English, Korean, Japanese, Simplified Chinese, and French.
 - Latest focused Android evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenMarkdownTablesExposeLocalizedAccessibilitySummaryAcrossSupportedLanguages --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenRendersMarkdownListsAndInlineCode -Pkotlin.incremental=false --console=plain` passed.
-- Latest hygiene evidence: `python3 script/check_android_string_parity.py`, `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh`, and `git diff --check` passed.
+- Latest hygiene evidence: `python3 script/check_android_string_parity.py`, `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check` passed.
 - Caveat: this is no-device source/resource/test/script evidence only. It does not prove physical Android TalkBack traversal, physical Android rendering, optical QR pairing, live provider-backed chat/cancel, or real different-network runtime connectivity.
 
 ## 2026-06-29 Android Chat History Summary And Markdown Heading Accessibility
@@ -86,7 +236,7 @@ The latest evidence is no-device macOS localization and inspector render-smoke e
 - The summary uses localized total saved-memory copy and enabled/paused detail copy, plus a localized accessibility label helper.
 - Latest focused localization evidence: `swift test --package-path apps/macos --filter LocalAgentBridgeTests.AetherLinkLocalizationTests/testLocalizedCountHelpersUseNaturalSingularAndPluralCopy` passed.
 - Latest focused render evidence: `swift test --package-path apps/macos --filter AetherLinkRenderSmokeTests/testRuntimeMemoryInspectorRendersAcrossLanguagesAndAppearances` passed.
-- Latest hygiene evidence: `python3 -m py_compile script/check_macos_localization.py script/check_copy_hygiene.py`, `bash -n script/check_no_device_quality.sh`, and `python3 script/check_macos_localization.py` passed.
+- Latest hygiene evidence: `python3 -m py_compile script/check_macos_localization.py script/check_copy_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `python3 script/check_macos_localization.py` passed.
 - Caveat: this is no-device source/test/render/script evidence only. It does not prove live VoiceOver traversal, physical client rendering, optical QR pairing, production different-network routing, or live provider-backed chat/cancel.
 
 ## 2026-06-29 macOS Runtime Memory Status Card Summary
@@ -98,7 +248,7 @@ The latest evidence is no-device macOS localization and render-smoke evidence:
 - Saved/enabled/paused memory count helpers clamp malformed negative display counts to zero.
 - Latest focused macOS evidence: `swift test --package-path apps/macos --filter LocalAgentBridgeTests.AetherLinkLocalizationTests/testLocalizedCountHelpersUseNaturalSingularAndPluralCopy` passed.
 - Latest render evidence: `swift test --package-path apps/macos --filter AetherLinkRenderSmokeTests/testPrimaryCompanionSurfacesRenderAtMinimumDetailSizeAcrossLanguagesAndAppearances` passed.
-- Latest hygiene evidence: `python3 -m py_compile script/check_macos_localization.py script/check_copy_hygiene.py`, `bash -n script/check_no_device_quality.sh`, `python3 script/check_macos_localization.py`, and `python3 script/check_copy_hygiene.py` passed.
+- Latest hygiene evidence: `python3 -m py_compile script/check_macos_localization.py script/check_copy_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), `python3 script/check_macos_localization.py`, and `python3 script/check_copy_hygiene.py` passed.
 - Caveat: this is no-device source/test/render/script evidence only. It does not prove live VoiceOver traversal, physical client rendering, optical QR pairing, production different-network routing, or live provider-backed chat/cancel.
 
 ## 2026-06-29 Android Settings Memory Saved/Paused Summary
@@ -109,7 +259,7 @@ The latest evidence is no-device Android resource and Compose/JVM evidence:
 - The summary uses plural resources across English, Korean, Japanese, Simplified Chinese, and French, and exposes a polite live-region content description.
 - Latest Android resource evidence: `python3 script/check_android_string_parity.py` passed.
 - Latest focused Android evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsMemorySummaryLocalizesSavedAndPausedCountsAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain` passed.
-- Latest hygiene evidence: `python3 -m py_compile script/check_copy_hygiene.py`, `bash -n script/check_no_device_quality.sh`, and `python3 script/check_copy_hygiene.py` passed.
+- Latest hygiene evidence: `python3 -m py_compile script/check_copy_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `python3 script/check_copy_hygiene.py` passed.
 - Caveat: this is no-device source/resource/test/script evidence only. It does not prove physical Android rendering, physical TalkBack traversal, real device haptics, optical QR pairing, production different-network routing, or live provider-backed chat/cancel.
 
 ## 2026-06-29 Android Settings Memory Compact Row Layout
@@ -120,7 +270,7 @@ The latest evidence is no-device Android Compose/JVM evidence:
 - Existing long-memory action label capping still works for pause/remove actions after the layout change.
 - Latest focused Android evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsMemoryRowsKeepActionsBelowLongContentOnCompactWidth -Pkotlin.incremental=false --console=plain` passed.
 - Latest focused regression evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsMemoryRowsCapLongActionAccessibilityLabels -Pkotlin.incremental=false --console=plain` passed.
-- Latest hygiene evidence: `python3 -m py_compile script/check_copy_hygiene.py`, `bash -n script/check_no_device_quality.sh`, and `python3 script/check_copy_hygiene.py` passed.
+- Latest hygiene evidence: `python3 -m py_compile script/check_copy_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `python3 script/check_copy_hygiene.py` passed.
 - Caveat: this is no-device source/test/script evidence only. It does not prove physical Android rendering, physical TalkBack traversal, real device haptics, optical QR pairing, production different-network routing, or live provider-backed chat/cancel.
 
 ## 2026-06-29 macOS Runtime History Count Display Clamp
@@ -130,7 +280,7 @@ The latest evidence is no-device macOS localization and source evidence:
 - macOS runtime-history visible copy clamps malformed negative message counts to `0 messages`.
 - Runtime chat-session accessibility summaries generated from the same helper also expose `0 messages` instead of impossible negative counts.
 - Latest focused macOS evidence: `swift test --package-path apps/macos --filter LocalAgentBridgeTests.AetherLinkLocalizationTests/testLocalizedCountHelpersUseNaturalSingularAndPluralCopy` passed.
-- Latest hygiene evidence: `python3 -m py_compile script/check_macos_localization.py script/check_copy_hygiene.py`, `bash -n script/check_no_device_quality.sh`, `python3 script/check_macos_localization.py`, `python3 script/check_copy_hygiene.py`, and `python3 script/check_docs_hygiene.py` passed.
+- Latest hygiene evidence: `python3 -m py_compile script/check_macos_localization.py script/check_copy_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), `python3 script/check_macos_localization.py`, `python3 script/check_copy_hygiene.py`, and `python3 script/check_docs_hygiene.py` passed.
 - Caveat: this is no-device source/test/script evidence only. It does not prove physical client rendering, live VoiceOver traversal, optical QR pairing, production different-network routing, or live provider-backed chat/cancel.
 
 ## 2026-06-29 macOS Compact Long Model Rows And Android History Count Guard
@@ -141,7 +291,7 @@ The latest evidence is no-device macOS render evidence plus Android JVM runtime-
 - Android runtime-owned chat session summaries clamp negative message counts before persistence and clamp stale persisted negative values before they reach history UI state.
 - Latest focused macOS evidence: `swift test --package-path apps/macos --filter AetherLinkRenderSmokeTests/testStatusModelRowsRenderLongLocalModelNamesAtCompactDetailSizeAcrossLanguagesAndAppearances` passed.
 - Latest focused Android evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeSessionSummariesClampNegativeMessageCounts -Pkotlin.incremental=false --console=plain` passed.
-- Latest hygiene evidence: `python3 -m py_compile script/check_copy_hygiene.py`, `bash -n script/check_no_device_quality.sh`, `python3 script/check_copy_hygiene.py`, `python3 script/check_macos_localization.py`, `python3 script/check_android_string_parity.py`, `python3 script/check_docs_hygiene.py`, and `git diff --check` passed.
+- Latest hygiene evidence: `python3 -m py_compile script/check_copy_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), `python3 script/check_copy_hygiene.py`, `python3 script/check_macos_localization.py`, `python3 script/check_android_string_parity.py`, `python3 script/check_docs_hygiene.py`, and `git diff --check` passed.
 - Caveat: this is no-device source/test/render evidence only. It does not prove physical Android rendering, physical TalkBack/VoiceOver traversal, optical QR scanning, production different-network routing, or live provider-backed chat/cancel.
 
 ## 2026-06-29 macOS Compact Quick Actions Layout
@@ -151,7 +301,7 @@ The latest evidence is no-device macOS render/source evidence:
 - Status > Quick Actions now uses an adaptive `StatusQuickActions` grid instead of forcing all six localized controls into one horizontal row.
 - The pairing QR, provider check, model load, runtime-data refresh, runtime-history inspect, and runtime-memory inspect controls keep their existing accessibility value/hint wiring.
 - Latest focused render evidence: `swift test --package-path apps/macos --filter AetherLinkRenderSmokeTests/testStatusQuickActionsRenderAtCompactDetailSizeAcrossLanguagesAndAppearances` passed across supported app languages and appearance modes.
-- Latest hygiene evidence: `python3 -m py_compile script/check_copy_hygiene.py`, `bash -n script/check_no_device_quality.sh`, `python3 script/check_copy_hygiene.py`, `python3 script/check_macos_localization.py`, `python3 script/check_docs_hygiene.py`, and `git diff --check` passed.
+- Latest hygiene evidence: `python3 -m py_compile script/check_copy_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), `python3 script/check_copy_hygiene.py`, `python3 script/check_macos_localization.py`, `python3 script/check_docs_hygiene.py`, and `git diff --check` passed.
 - Caveat: this is no-device macOS source/render evidence only. It does not prove live VoiceOver traversal, physical client rendering, optical QR scanning, production different-network routing, or live provider-backed chat/cancel.
 
 ## 2026-06-29 macOS Connection Recovery Source Copy
@@ -203,7 +353,7 @@ The latest evidence is focused no-device Android provider-health UI evidence:
 - Provider row visible names, accessibility summaries, unavailable/ready details, and diagnostics show/hide labels use the normalized localized provider label.
 - Custom provider display names remain preserved from runtime-provided names when their ids are not known AetherLink provider ids.
 - Latest focused Android evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.connectionStatusProviderRowsExposeLocalizedAccessibilitySummariesAcrossSupportedLanguages --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.connectionStatusProviderDiagnosticsToggleExposesExpandedState --console=plain` passed.
-- Latest copy/string/script evidence: `python3 script/check_copy_hygiene.py`, `python3 script/check_android_string_parity.py`, and `bash -n script/check_no_device_quality.sh` passed.
+- Latest copy/string/script evidence: `python3 script/check_copy_hygiene.py`, `python3 script/check_android_string_parity.py`, and `bash -n script/check_no_device_quality.sh` (syntax only) passed.
 - Caveat: this is Android no-device UI/source evidence only. It does not prove physical TalkBack pronunciation, physical Android rendering, live provider failure payload variety, optical QR scanning, live provider-backed chat/cancel, or true different-network runtime connectivity.
 
 ## 2026-06-29 Android Drawer Chat Date Groups
@@ -231,7 +381,7 @@ The latest evidence is focused no-device Android reasoning UI evidence:
 - Open reasoning streams still expose a polite live region and suppress the generic assistant typing placeholder, so thinking updates remain separate from final answer text.
 - Latest focused Android evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenRendersReasoningCollapsedAndExpandable --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenKeepsOpenStreamingReasoningCollapsedUntilExpanded --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenReasoningSummaryLocalizesAcrossSupportedLanguages --tests com.localagentbridge.android.AppNavigationTest.reasoningDisplayPolicyKeepsCollapsedPreviewDimAndThreeLines --tests com.localagentbridge.android.AppNavigationTest.reasoningPreviewStaysShortAndDimUntilExpanded --console=plain` passed.
 - Latest copy/docs evidence: `python3 script/check_copy_hygiene.py` and `python3 script/check_docs_hygiene.py` passed.
-- Latest Android string and script evidence: `python3 script/check_android_string_parity.py`, `bash -n script/check_no_device_quality.sh`, and `git diff --check` passed.
+- Latest Android string and script evidence: `python3 script/check_android_string_parity.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check` passed.
 - Physical device evidence: `$HOME/Library/Android/sdk/platform-tools/adb devices -l` reported `R3CXC0M76VM` as `device`, model `SM_S936N`.
 - Physical build/install evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew --no-daemon :app:assembleDebug --console=plain` passed and `$HOME/Library/Android/sdk/platform-tools/adb -s R3CXC0M76VM install -r apps/android/app/build/outputs/apk/debug/app-debug.apk` returned `Success`.
 - Physical launch evidence: `$HOME/Library/Android/sdk/platform-tools/adb -s R3CXC0M76VM shell am start -W -n com.localagentbridge.android/.MainActivity` started the app, `pidof` returned a live process, and `dumpsys window` reported `com.localagentbridge.android/.MainActivity` as focused.
@@ -284,7 +434,7 @@ The latest evidence is no-device Android scanner UI, resource, and unit evidence
 - Unsupported QR values also keep the scanner open and render a localized inline message that the code is not an AetherLink Runtime QR.
 - Latest focused Android evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.AppNavigationTest.pairingQrScannerClassifiesRawValuesBeforeConsumingCameraResult --tests com.localagentbridge.android.PairingQrScannerChromeNoDeviceComposeTest.scannerChromeShowsInvalidQrFeedbackWithoutClosingScanner -Pkotlin.incremental=false --console=plain` passed.
 - Latest localization evidence: `python3 script/check_android_string_parity.py` passed for English, Korean, Japanese, Simplified Chinese, and French.
-- Latest docs, copy, shell, and diff hygiene evidence: `python3 script/check_docs_hygiene.py`, `python3 script/check_copy_hygiene.py`, `bash -n script/check_no_device_quality.sh`, and `git diff --check` passed.
+- Latest docs, copy, shell, and diff hygiene evidence: `python3 script/check_docs_hygiene.py`, `python3 script/check_copy_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check` passed.
 - Latest aggregate no-device evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh > /tmp/aetherlink-no-device-android-qr-scanner-invalid-code-recovery.log 2>&1` passed with `No-device quality checks passed.` and included `Android QR scanner invalid-code recovery`.
 - Physical device evidence: `$HOME/Library/Android/sdk/platform-tools/adb devices -l` reported `R3CXC0M76VM` as `device`, model `SM_S936N`.
 - Physical build/install evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:assembleDebug -Pkotlin.incremental=false --console=plain` passed and `$HOME/Library/Android/sdk/platform-tools/adb -s R3CXC0M76VM install -r apps/android/app/build/outputs/apk/debug/app-debug.apk` returned `Success`.
@@ -301,7 +451,7 @@ The latest evidence is no-device Android Compose, resource, and script evidence:
 - Archived rows intentionally do not expose `Open chat`; they remain restore/delete only until restored.
 - Latest focused Android evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsPerChatHistoryActionsExplainStreamingDisabledStateAcrossSupportedLanguages --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsChatHistoryActiveRowCanOpenChatWithHapticFeedback -Pkotlin.incremental=false --console=plain` passed.
 - Latest localization evidence: `python3 script/check_android_string_parity.py` passed for English, Korean, Japanese, Simplified Chinese, and French.
-- Latest docs, copy, shell, and diff hygiene evidence: `python3 script/check_docs_hygiene.py`, `python3 script/check_copy_hygiene.py`, `bash -n script/check_no_device_quality.sh`, and `git diff --check` passed.
+- Latest docs, copy, shell, and diff hygiene evidence: `python3 script/check_docs_hygiene.py`, `python3 script/check_copy_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check` passed.
 - Latest aggregate no-device evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh > /tmp/aetherlink-no-device-android-settings-chat-history-open-action.log 2>&1` passed with `No-device quality checks passed.` and included `Android Settings chat history open-chat action`.
 - Physical device evidence: `$HOME/Library/Android/sdk/platform-tools/adb devices -l` reported `R3CXC0M76VM` as `device`, model `SM_S936N`.
 - Physical build/install evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:assembleDebug -Pkotlin.incremental=false --console=plain` passed and `$HOME/Library/Android/sdk/platform-tools/adb -s R3CXC0M76VM install -r apps/android/app/build/outputs/apk/debug/app-debug.apk` returned `Success`.
@@ -320,7 +470,7 @@ The latest evidence is no-device macOS store, model, render, localization, and s
 - Latest transcript error evidence: `swift test --filter LocalRuntimeMessageRouterTests/testCompanionAppModelPublishesRuntimeHistoryInspectorError` passed and verifies per-session transcript preview failures surface without fabricating transcript messages.
 - Latest render evidence: `swift test --filter AetherLinkRenderSmokeTests/testRuntimeHistoryInspectorRendersAcrossLanguagesAndAppearances` passed with transcript preview content across supported macOS languages and appearance modes.
 - Latest localization evidence: `python3 script/check_macos_localization.py` and `swift test --filter AetherLinkLocalizationTests/testRuntimeHistoryInspectorCopyLocalizesAcrossSupportedLanguages` passed.
-- Latest docs, copy, shell, and diff hygiene evidence: `python3 script/check_docs_hygiene.py`, `python3 script/check_copy_hygiene.py`, `bash -n script/check_no_device_quality.sh`, and `git diff --check` passed.
+- Latest docs, copy, shell, and diff hygiene evidence: `python3 script/check_docs_hygiene.py`, `python3 script/check_copy_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check` passed.
 - Latest aggregate no-device evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh > /tmp/aetherlink-no-device-macos-runtime-history-transcript-preview.log 2>&1` passed with `No-device quality checks passed.` and included `macOS runtime history transcript preview`.
 - Caveat: this is no-device host UI/model evidence only. It does not prove transcript editing, physical Android interaction, optical QR scanning, production different-network routing, or live provider-backed chat/cancel.
 
@@ -350,7 +500,7 @@ The latest evidence is no-device macOS model, render, localization, and script e
 - Latest render evidence: `swift test --filter AetherLinkRenderSmokeTests/testRuntimeHistoryInspectorRendersAcrossLanguagesAndAppearances` passed across supported macOS languages and appearance modes.
 - Latest localization evidence: `python3 script/check_macos_localization.py` and `swift test --filter AetherLinkLocalizationTests/testRuntimeHistoryInspectorCopyLocalizesAcrossSupportedLanguages` passed.
 - Latest copy evidence: `python3 script/check_copy_hygiene.py` passed.
-- Latest docs, shell, and diff hygiene evidence: `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh`, and `git diff --check` passed.
+- Latest docs, shell, and diff hygiene evidence: `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check` passed.
 - Latest aggregate no-device evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh > /tmp/aetherlink-no-device-macos-runtime-history-inspector.log 2>&1` passed with `No-device quality checks passed.` and included `macOS runtime history inspector`.
 - Caveat: this is no-device host UI/model evidence only. It does not prove transcript preview, physical Android interaction, optical QR scanning, production different-network routing, or live provider-backed chat/cancel.
 
@@ -364,7 +514,7 @@ The latest evidence is no-device macOS model, render, localization, and script e
 - Latest error evidence: `swift test --filter LocalRuntimeMessageRouterTests/testCompanionAppModelPublishesRuntimeMemoryInspectorError` passed and verifies memory-store read failures surface through the inspector error state without fabricating entries.
 - Latest render evidence: `swift test --filter AetherLinkRenderSmokeTests/testRuntimeMemoryInspectorRendersAcrossLanguagesAndAppearances` passed across supported macOS languages and appearance modes.
 - Latest localization evidence: `python3 script/check_macos_localization.py` and `swift test --filter AetherLinkLocalizationTests/testRuntimeMemoryInspectorCopyLocalizesAcrossSupportedLanguages` passed.
-- Latest docs, copy, and diff hygiene evidence: `python3 script/check_docs_hygiene.py`, `python3 script/check_copy_hygiene.py`, `bash -n script/check_no_device_quality.sh`, and `git diff --check` passed.
+- Latest docs, copy, and diff hygiene evidence: `python3 script/check_docs_hygiene.py`, `python3 script/check_copy_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check` passed.
 - Latest aggregate no-device evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh > /tmp/aetherlink-no-device-macos-runtime-memory-inspector.log 2>&1` passed with `No-device quality checks passed.` and included `macOS runtime memory inspector`.
 - Caveat: this is no-device host UI/model evidence only. It does not prove physical Android interaction, optical QR scanning, production different-network routing, live provider-backed chat/cancel, or runtime-memory editing from the macOS app.
 
@@ -376,7 +526,7 @@ The latest evidence is no-device Android ViewModel, Compose, resource, script, a
 - The action follows the runtime-owned chat-history boundary: connected trusted runtime required, disabled while streaming, and duplicate manual refreshes are suppressed while a `chat.sessions.list` request is already pending.
 - Latest focused Android evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.refreshRuntimeChatHistoryRequestsFreshListAfterPendingListCompletes --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsChatHistoryRefreshActionFollowsConnectionStateAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain` passed.
 - Latest localization evidence: `python3 script/check_android_string_parity.py` passed for English, Korean, Japanese, Simplified Chinese, and French.
-- Latest docs, copy, and diff hygiene evidence: `python3 script/check_docs_hygiene.py`, `python3 script/check_copy_hygiene.py`, `bash -n script/check_no_device_quality.sh`, and `git diff --check` passed.
+- Latest docs, copy, and diff hygiene evidence: `python3 script/check_docs_hygiene.py`, `python3 script/check_copy_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check` passed.
 - Latest aggregate no-device evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh > /tmp/aetherlink-no-device-android-chat-history-manual-refresh.log 2>&1` passed with `No-device quality checks passed.` and included `Android chat history manual runtime refresh`.
 - Physical device evidence: `$HOME/Library/Android/sdk/platform-tools/adb devices -l` reported `R3CXC0M76VM` as `device`, model `SM_S936N`; `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:installDebug -Pkotlin.incremental=false --console=plain` installed the debug APK on `SM-S936N - 16`.
 - Launch evidence: `$HOME/Library/Android/sdk/platform-tools/adb shell am start -n com.localagentbridge.android/.MainActivity` focused `com.localagentbridge.android/.MainActivity`; `dumpsys window` reported `mCurrentFocus=Window{... com.localagentbridge.android/com.localagentbridge.android.MainActivity}` and `mFocusedApp=ActivityRecord{... com.localagentbridge.android/.MainActivity ...}`.
@@ -393,7 +543,7 @@ The latest evidence is no-device Android ViewModel/protocol evidence:
 - The relay integration test fake runtime now accepts either `runtime.health` or `route.refresh` first and waits for both before releasing the connection, matching the non-deterministic ordering of asynchronous client startup messages.
 - Latest focused Android evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientChatSessionMutationFailureTest -Pkotlin.incremental=false --console=plain` passed.
 - Latest relay integration evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelRelayIntegrationTest -Pkotlin.incremental=false --console=plain` passed.
-- Latest copy, docs, and diff hygiene evidence: `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh`, and `git diff --check` passed.
+- Latest copy, docs, and diff hygiene evidence: `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check` passed.
 - Latest aggregate no-device evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh > /tmp/aetherlink-no-device-android-runtime-chat-mutation-resync.log 2>&1` passed with `No-device quality checks passed.` and included `Android runtime chat mutation error resync`.
 - Physical device evidence: `$HOME/Library/Android/sdk/platform-tools/adb devices -l` reported `R3CXC0M76VM` as `device`, model `SM_S936N`; `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:installDebug -Pkotlin.incremental=false --console=plain` installed the debug APK on `SM-S936N - 16`.
 - Launch evidence: `$HOME/Library/Android/sdk/platform-tools/adb shell am start -n com.localagentbridge.android/.MainActivity` focused `com.localagentbridge.android/.MainActivity`.
@@ -439,7 +589,7 @@ The latest evidence is no-device macOS Swift/store/source/script evidence:
 - Latest focused Swift evidence: `swift test --filter LocalRuntimeMessageRouterTests/testCompanionAppModelPublishesRuntimeDataSummaryFromInjectedStores` passed.
 - Latest runtime-router evidence: `swift test --filter LocalRuntimeMessageRouterTests` passed with 142 tests.
 - Latest copy evidence: `python3 script/check_copy_hygiene.py` passed and now requires the all-owner runtime data summary API path.
-- Latest documentation and diff hygiene evidence: `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh`, and `git diff --check` passed.
+- Latest documentation and diff hygiene evidence: `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check` passed.
 - Latest aggregate no-device evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh > /tmp/aetherlink-no-device-macos-runtime-data-all-owner-summary.log 2>&1` passed with `No-device quality checks passed.` and included `macOS runtime data all-owner summary`.
 - Caveat: this is no-device store/source evidence only. It does not prove live production client sync, optical QR scanning, physical Android haptics, production different-network routing, or live provider-backed chat/cancel.
 
@@ -485,7 +635,7 @@ The latest evidence is no-device macOS model/store, localization, render, source
 - Latest localization suite evidence: `swift test --filter AetherLinkLocalizationTests` passed.
 - Latest render evidence: `swift test --filter AetherLinkRenderSmokeTests/testPrimaryCompanionSurfacesRenderAtMinimumDetailSizeAcrossLanguagesAndAppearances` passed.
 - Latest copy evidence: `python3 script/check_copy_hygiene.py` passed and requires the no-device coverage phrase `macOS runtime data status cards`.
-- Latest documentation and shell hygiene evidence: `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh`, and `git diff --check` passed.
+- Latest documentation and shell hygiene evidence: `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check` passed.
 - Latest aggregate no-device evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh > /tmp/aetherlink-no-device-macos-runtime-data-status-cards.log 2>&1` passed with `No-device quality checks passed.` and included `macOS runtime data status cards`.
 - Caveat: this does not prove live production client sync, optical QR scanning, physical Android haptics, production different-network routing, or live provider-backed chat/cancel.
 
@@ -497,7 +647,7 @@ The latest evidence includes focused Android no-device navigation tests plus phy
 - First pairing, Chat-origin QR scanning, and pending-route QR recovery still use onboarding semantics through `shouldTreatPairingQrAsOnboarding`.
 - Latest focused Android evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.AppNavigationTest -Pkotlin.incremental=false --console=plain` passed.
 - Latest localization evidence: `python3 script/check_android_string_parity.py` passed.
-- Latest hygiene evidence: `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh`, and `git diff --check` passed.
+- Latest hygiene evidence: `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check` passed.
 - Latest aggregate no-device evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh > /tmp/aetherlink-no-device-settings-qr-refresh-navigation.log 2>&1` passed with `No-device quality checks passed.`
 - Latest physical install evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" script/android_usb_install.sh` passed on device `R3CXC0M76VM` / `SM_S936N`; it installed the debug APK and launched `com.localagentbridge.android/.MainActivity`.
 - Latest physical relay evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" script/android_pairing_deeplink_smoke.sh --relay --expect-reconnect` passed with workdir `/var/folders/n2/vgx0vf052yl248_8cff1xt2r0000gn/T//aetherlink-android-pairing.ImTVsA`.
@@ -514,7 +664,7 @@ The latest evidence is no-device Android Compose/resource/source/script evidence
 - The compact render smoke covers the active camera, permission-request, and settings-recovery states and asserts that the title, scan target, camera preview, flashlight action, guidance copy, permission/settings actions, and cancel action remain displayed where applicable.
 - Latest focused Android evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.PairingQrScannerChromeNoDeviceComposeTest.scannerChromeRendersCompactPairingStatesAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain` passed.
 - Latest scanner matrix evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.PairingQrScannerChromeNoDeviceComposeTest -Pkotlin.incremental=false --console=plain` passed.
-- Latest localization and guard evidence: `python3 script/check_android_string_parity.py`, `python3 script/check_copy_hygiene.py`, `bash -n script/check_no_device_quality.sh`, and `git diff --check` passed.
+- Latest localization and guard evidence: `python3 script/check_android_string_parity.py`, `python3 script/check_copy_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check` passed.
 - Latest aggregate no-device evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh > /tmp/aetherlink-no-device-android-qr-scanner-compact-render.log 2>&1` passed with `No-device quality checks passed.` and included `Android QR scanner compact pairing-state render smoke`.
 - Caveat: this does not prove optical camera QR capture, camera permission behavior on a physical device, TalkBack traversal, real device haptics, production different-network connectivity, or live provider-backed chat/cancel.
 
@@ -527,7 +677,7 @@ The latest evidence is no-device macOS AppKit/SwiftUI render, localization, sour
 - Latest focused render evidence: `swift test --filter AetherLinkRenderSmokeTests/testActivePairingQRCodeRendersAtCompactDetailSizeAcrossLanguagesAndAppearances` passed.
 - Latest render matrix evidence: `swift test --filter AetherLinkRenderSmokeTests` passed.
 - Latest localization evidence: `swift test --filter AetherLinkLocalizationTests` and `python3 script/check_macos_localization.py` passed.
-- Latest guard evidence: `python3 script/check_copy_hygiene.py`, `bash -n script/check_no_device_quality.sh`, and `git diff --check` passed.
+- Latest guard evidence: `python3 script/check_copy_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check` passed.
 - Latest aggregate no-device evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh > /tmp/aetherlink-no-device-active-pairing-qr-render.log 2>&1` passed with `No-device quality checks passed.` and included `macOS active Pairing QR compact render smoke`.
 - Caveat: this does not prove live VoiceOver traversal, optical Android camera QR scanning, physical Android install, real device haptics, production different-network connectivity, or live provider-backed chat/cancel.
 
@@ -570,7 +720,7 @@ The latest evidence includes focused Android no-device tests plus physical insta
 - A disconnected trusted runtime with no connectable route now shows the latest-QR recovery empty state instead of the generic Connect empty state.
 - The bottom composer hint remains aligned with the center call to action: both ask for the latest AetherLink Runtime QR before sending.
 - Latest focused Android evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.AppNavigationTest.chatComposerHintRequestsLatestQrWhenTrustedRuntimeNeedsRouteRefresh --tests com.localagentbridge.android.AppNavigationTest.emptyChatPrefersLatestQrWhenTrustedRuntimeHasNoConnectableRoute --tests com.localagentbridge.android.AppNavigationTest.emptyChatKeepsConnectActionWhenTrustedRuntimeHasConnectableRoute --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenTrustedRuntimeWithoutConnectableRouteShowsLatestQrEmptyState -Pkotlin.incremental=false --console=plain` passed.
-- Latest hygiene evidence: `python3 script/check_android_string_parity.py`, `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh`, and `git diff --check` passed.
+- Latest hygiene evidence: `python3 script/check_android_string_parity.py`, `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check` passed.
 - Latest physical-device evidence: `adb devices -l` reported `R3CXC0M76VM device ... model:SM_S936N`; `adb install -r apps/android/app/build/outputs/apk/debug/app-debug.apk` returned `Success`; `adb shell monkey -p com.localagentbridge.android -c android.intent.category.LAUNCHER 1` injected the launch event; `adb shell dumpsys window` reported `mCurrentFocus` and `mFocusedApp` for `com.localagentbridge.android/.MainActivity`; `/tmp/aetherlink-device-latest-qr-aligned.png` shows the aligned latest-QR empty state and composer hint.
 - Latest aggregate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh > /tmp/aetherlink-no-device-empty-state-latest-qr-alignment.log 2>&1` passed and included `Android empty-state latest-QR composer alignment`.
 - Caveat: this does not prove physical QR camera pairing, actual different-network runtime connectivity, physical TalkBack traversal, real device haptic feel, or physical/live-backend streamed chat/cancel.
@@ -582,7 +732,7 @@ The latest evidence includes focused Android no-device tests plus physical insta
 - The trusted-runtime forget confirmation body now names the runtime being removed and exposes the same localized message as accessibility description.
 - Latest focused Android evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsTrustedRuntimeForgetRequiresConfirmation --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsTrustedRuntimeForgetActionNamesRuntimeAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain` passed.
 - Latest localization evidence: `python3 script/check_android_string_parity.py` passed.
-- Latest hygiene evidence: `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh`, and `git diff --check` passed.
+- Latest hygiene evidence: `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check` passed.
 - Latest physical-device evidence: `adb devices -l` reported `R3CXC0M76VM device ... model:SM_S936N`; `adb install -r apps/android/app/build/outputs/apk/debug/app-debug.apk` returned `Success`; `adb shell pm path com.localagentbridge.android` returned a `/data/app/.../base.apk` path; `adb shell monkey -p com.localagentbridge.android -c android.intent.category.LAUNCHER 1` injected the launch event; `adb shell dumpsys window` reported `mCurrentFocus` and `mFocusedApp` for `com.localagentbridge.android/.MainActivity`.
 - Latest aggregate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh > /tmp/aetherlink-no-device-trusted-runtime-forget-named-message.log 2>&1` passed and included `Android trusted-runtime forget confirmation named message`.
 - Caveat: this does not prove physical QR camera pairing, physical TalkBack traversal, real device haptic feel, physical/live-backend streamed chat/cancel, or real different-network runtime connectivity.
@@ -595,7 +745,7 @@ The latest evidence is no-device Android JVM/Compose/resource/source/script evid
 - Memory deletion confirmation now names the exact memory content in the visible dialog body before removing it from the trusted runtime.
 - Latest focused Android evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.AppNavigationTest.sharedChatDraftConfirmationFeedbackUsesLightweightHaptic --tests com.localagentbridge.android.AppNavigationTest.sharedChatDraftConfirmationMessageMatchesImportedContentType --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsMemoryRowsExposeContextualActionAccessibility -Pkotlin.incremental=false --console=plain` passed.
 - Latest localization evidence: `python3 script/check_android_string_parity.py` passed.
-- Latest hygiene evidence: `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh`, and `git diff --check` passed.
+- Latest hygiene evidence: `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check` passed.
 - Latest aggregate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh > /tmp/aetherlink-no-device-share-haptic-memory-message.log 2>&1` passed and included `Android share-sheet import haptic feedback` plus `Android memory delete confirmation named message`.
 - Caveat: this does not prove physical share-sheet entry from real apps, real device haptics, physical Android install, camera QR scanning, physical/live-backend streamed chat/cancel, or real different-network runtime connectivity.
 
@@ -606,7 +756,7 @@ The latest evidence is no-device Android Compose/resource/source/script evidence
 - The developer diagnostics QR text opener now exposes localized content-description and click-action semantics before opening the manual QR text dialog.
 - Latest focused Android evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.diagnosticQrTextDialogExplainsEmptyInvalidAndReadyStates --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.diagnosticQrTextAccessibilityLabelsLocalizeAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain` passed.
 - Latest localization evidence: `python3 script/check_android_string_parity.py` passed.
-- Latest hygiene evidence: `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh`, and `git diff --check` passed.
+- Latest hygiene evidence: `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check` passed.
 - Latest aggregate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh > /tmp/aetherlink-no-device-diagnostic-qr-open-labels.log 2>&1` passed and included `Android diagnostic QR text open action labels`.
 - Caveat: this does not prove physical TalkBack traversal, physical Android install, camera QR scanning, physical haptics, physical/live-backend streamed chat/cancel, or real different-network runtime connectivity.
 
@@ -618,7 +768,7 @@ The latest evidence is no-device Android JVM/resource/source/script evidence onl
 - Latest focused Android evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.AppNavigationTest -Pkotlin.incremental=false --console=plain` passed.
 - Latest compile evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:compileDebugKotlin -Pkotlin.incremental=false --console=plain` passed.
 - Latest localization evidence: `python3 script/check_android_string_parity.py` passed.
-- Latest hygiene evidence: `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `python3 script/check_macos_localization.py`, `bash -n script/check_no_device_quality.sh`, and `git diff --check` passed.
+- Latest hygiene evidence: `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `python3 script/check_macos_localization.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check` passed.
 - Latest aggregate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh > /tmp/aetherlink-no-device-share-confirmation.log 2>&1` passed and included `Android share-sheet import confirmation`.
 - Caveat: this does not prove physical share-sheet entry from real apps, physical Android install, physical snackbar timing, physical haptics, camera QR scanning, physical/live-backend streamed chat/cancel, or real different-network runtime connectivity.
 
@@ -640,7 +790,7 @@ The latest evidence is no-device Android Compose/resource/script evidence only:
 - The active camera QR scanner frame now exposes a localized scan-target accessibility description and stable test tag.
 - Latest focused Android evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.PairingQrScannerChromeNoDeviceComposeTest -Pkotlin.incremental=false --console=plain` passed.
 - Latest localization evidence: `python3 script/check_android_string_parity.py` passed.
-- Latest hygiene evidence: `python3 script/check_copy_hygiene.py`, `python3 script/check_macos_localization.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh`, and `git diff --check` passed.
+- Latest hygiene evidence: `python3 script/check_copy_hygiene.py`, `python3 script/check_macos_localization.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check` passed.
 - Latest aggregate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh > /tmp/aetherlink-no-device-qr-scan-target-command-menu.log 2>&1` passed and included `Android QR scanner scan-target accessibility label`.
 - Caveat: this does not prove physical TalkBack traversal, optical QR capture, physical Android install, camera permission behavior on device, physical haptics, physical/live-backend streamed chat/cancel, or real different-network runtime connectivity.
 
@@ -651,7 +801,7 @@ The latest evidence is no-device macOS SwiftUI/source/script evidence only:
 - The command-menu `Check Model Providers` action now shares the localized accessibility value and hint used by the Status, toolbar, and menu-bar quick actions.
 - Latest focused evidence: `swift test --filter AetherLinkLocalizationTests/testQuickActionAccessibilityUsesSelectedLanguage` passed.
 - Latest localization evidence: `python3 script/check_macos_localization.py` passed.
-- Latest hygiene evidence: `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh`, and `git diff --check` passed.
+- Latest hygiene evidence: `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check` passed.
 - Latest aggregate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh > /tmp/aetherlink-no-device-qr-scan-target-command-menu.log 2>&1` passed and included `testQuickActionAccessibilityUsesSelectedLanguage`.
 - Caveat: this does not prove rendered command-menu traversal, live VoiceOver output, physical Android install, camera QR scanning, physical haptics, physical/live-backend streamed chat/cancel, or real different-network runtime connectivity.
 
@@ -673,7 +823,7 @@ The latest evidence is no-device macOS SwiftPM and script evidence only:
 - Menu-bar `Open AetherLink` and `Quit` actions now expose localized help/accessibility hints.
 - Latest focused evidence: `swift test --filter AetherLinkLocalizationTests/testMenuBarWindowAndQuitAccessibilityHintsUseSelectedLanguage` passed.
 - Latest localization evidence: `python3 script/check_macos_localization.py` passed.
-- Latest hygiene evidence: `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `python3 script/check_android_string_parity.py`, `bash -n script/check_no_device_quality.sh`, and `git diff --check` passed.
+- Latest hygiene evidence: `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `python3 script/check_android_string_parity.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check` passed.
 - Latest aggregate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh > /tmp/aetherlink-no-device-menu-bar-window-quit-hints.log 2>&1` passed and included `macOS menu-bar window and quit accessibility hints`.
 - Caveat: this does not prove live VoiceOver traversal, rendered menu-bar screenshots, physical Android install, camera QR scanning, physical haptics, physical/live-backend streamed chat/cancel, or real different-network runtime connectivity.
 
@@ -685,7 +835,7 @@ The latest evidence is no-device macOS SwiftPM, Android Robolectric/Compose, and
 - Android permanent navigation rail and drawer footer `Settings` controls now expose a localized ready state in addition to localized click action labels.
 - Latest focused macOS evidence: `swift test --filter 'AetherLinkLocalizationTests/testActivityTechnicalDetailsAccessibilityLabelUsesEventContext|AetherLinkLocalizationTests/testActivityTechnicalDetailsAccessibilityStateUsesSelectedLanguage|AetherLinkLocalizationTests/testActivityLogRowAccessibilityLabelIncludesLocalizedTone'` passed.
 - Latest focused Android evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.navigationDrawerSettingsFooterLocalizesActionSemanticsAcrossSupportedLanguages --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.permanentNavigationRailSettingsItemLocalizesActionSemantics -Pkotlin.incremental=false --console=plain` passed.
-- Latest hygiene evidence: `python3 script/check_macos_localization.py`, `python3 script/check_android_string_parity.py`, `python3 script/check_copy_hygiene.py`, `bash -n script/check_no_device_quality.sh`, and `git diff --check` passed.
+- Latest hygiene evidence: `python3 script/check_macos_localization.py`, `python3 script/check_android_string_parity.py`, `python3 script/check_copy_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check` passed.
 - Latest aggregate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh > /tmp/aetherlink-no-device-activity-disclosure-rail-settings.log 2>&1` passed and included `macOS Activity diagnostic disclosure separate focus`, `Android drawer Settings footer readiness state`, and `Android permanent rail Settings readiness state`.
 - Note: one earlier full no-device run hit a transient timeout in `RuntimeClientViewModelRelayIntegrationTest.trustedPrivateOverlayRelayReconnectUsesRealRelayTcpClientAndAuthenticatedSession`; the test passed when run alone, and the subsequent full no-device run passed with the log above.
 - Caveat: this does not prove rendered VoiceOver or TalkBack traversal, physical Android install, camera QR scanning, physical haptics, physical/live-backend streamed chat/cancel, or real different-network runtime connectivity.
@@ -698,7 +848,7 @@ The latest evidence is no-device macOS SwiftPM, Android Robolectric/Compose, and
 - The Android first-step `Forget` trusted-runtime action now exposes a localized runtime-specific click action label, matching the existing confirm/cancel dialog action-label coverage.
 - Latest focused macOS evidence: `swift test --filter AetherLinkLocalizationTests/testActivityLogListAccessibilitySummaryUsesSelectedLanguage` passed.
 - Latest focused Android evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsTrustedRuntimeForgetActionNamesRuntimeAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain` passed.
-- Latest hygiene evidence: `python3 script/check_macos_localization.py`, `python3 script/check_android_string_parity.py`, `python3 script/check_copy_hygiene.py`, `bash -n script/check_no_device_quality.sh`, and `git diff --check` passed.
+- Latest hygiene evidence: `python3 script/check_macos_localization.py`, `python3 script/check_android_string_parity.py`, `python3 script/check_copy_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check` passed.
 - Latest docs evidence: `python3 script/check_docs_hygiene.py` passed.
 - Latest aggregate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh > /tmp/aetherlink-no-device-activity-list-forget-click.log 2>&1` passed and included `macOS Activity log list accessibility summary` plus `Android trusted-runtime forget named click label`.
 - Caveat: this does not prove rendered VoiceOver or TalkBack traversal, physical Android install, camera QR scanning, physical haptics, physical/live-backend streamed chat/cancel, or real different-network runtime connectivity.
@@ -2721,7 +2871,7 @@ The latest no-device checks prove only local/runtime/script behavior, not physic
 - macOS no-device render smoke pass on 2026-06-26 KST. The Android phone was disconnected, so this is macOS AppKit/SwiftUI render evidence only. It proves the real companion shell renders at `860x560` across English, Korean, Japanese, Simplified Chinese, and French in system/light/dark appearances, and that Status, Pairing, Trusted Devices, and Activity detail surfaces also render non-empty bitmaps at minimum detail size across the same five-language system/light/dark matrix. It is not Android Compose render evidence, physical-device screenshot evidence, optical QR evidence, haptic evidence, or real different-network reachability evidence.
 - `swift test --filter AetherLinkRenderSmokeTests`
 - `python3 script/check_macos_localization.py`
-- `bash -n script/check_no_device_quality.sh`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
 - Android empty chat model-selection state pass on 2026-06-26 KST. The Android phone was disconnected, so this is source/unit evidence only, not rendered device layout or physical touch evidence.
 - `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.AppNavigationTest -Pkotlin.incremental=false`
 - `./script/check_no_device_quality.sh`
@@ -2751,7 +2901,7 @@ The latest no-device checks prove only local/runtime/script behavior, not physic
 - Android core protocol no-device gate pass on 2026-06-26 KST. This is unit evidence for protocol model/codec contracts, not physical client-runtime transport evidence.
 - `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew --no-daemon :core:protocol:testDebugUnitTest -Pkotlin.incremental=false`
 - Validation script syntax pass on 2026-06-26 KST.
-- `bash -n script/check_no_device_quality.sh`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
 - `python3 -m py_compile script/check_android_string_parity.py script/check_docs_hygiene.py`
 - `./script/check_no_device_quality.sh`
 - Android QR URI policy hardening pass on 2026-06-26 KST. The Android phone was disconnected, so this is source/unit/documentation evidence only, not optical QR scan or external camera deeplink evidence. It proves external pairing deeplink handling is limited to canonical `aetherlink://pair?...` host-form URIs and release-mode QR parsing rejects local diagnostic direct-route payloads instead of treating them as product pairing routes.
@@ -2905,7 +3055,7 @@ The latest no-device checks prove only local/runtime/script behavior, not physic
 - `./script/check_no_device_quality.sh`
 - Android raw visible string localization guard pass on 2026-06-26 KST. A GPT-5.5 read-only explorer recommended this no-device improvement and was closed; GPT-5.3-Codex-Spark was not used. The Android phone was disconnected, so this is source/script evidence only. It proves Android string parity now scans Kotlin UI sources for raw visible Compose/accessibility literals such as `Text("...")`, raw `contentDescription`, raw `placeholder`, raw `label`, raw `Toast.makeText`, and raw `showSnackbar` text, forcing new UI copy through localized resources across English, Korean, Japanese, Simplified Chinese, and French. It is not physical rendering, physical language switching, IME behavior, haptic feel, optical QR scan, or real different-network connectivity evidence.
 - `python3 -m py_compile script/check_android_string_parity.py script/check_copy_hygiene.py && python3 script/check_android_string_parity.py && python3 script/check_copy_hygiene.py`
-- `bash -n script/check_no_device_quality.sh`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
 - `python3 script/check_docs_hygiene.py`
 - `git diff --check -- script/check_android_string_parity.py script/check_copy_hygiene.py script/check_no_device_quality.sh docs/progress.md docs/qa-evidence.md`
 - `./script/check_no_device_quality.sh`
@@ -3636,7 +3786,7 @@ Some existing historical XML dumps and screenshots may still show older copy suc
 
 - `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.relayPairingQrPersistsPendingRouteAfterInitialConnectionFailure --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.recreatedViewModelRestoresPendingRelayPairingAndSendsPairingRequest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.persistedRuntimeDataStoresPendingPairingRouteUntilShorterRelayExpiry --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.persistedRuntimeDataRejectsIncompletePendingPairingRoute -Pkotlin.incremental=false --console=plain`
 - Result: passed. Covered retryable pending QR relay pairing, process-recreation restore, incomplete pending route rejection, and raw `relay_secret` removal from persisted runtime UI JSON in favor of a `relaySecretRef`.
-- `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh`, and `git diff --check` passed after adding the guardrails.
+- `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check` passed after adding the guardrails.
 - Guardrail: the default no-device gate now runs `RuntimeClientViewModelTest.persistedRuntimeDataStoresPendingPairingRouteUntilShorterRelayExpiry` and the summary includes `Android pending relay QR secret-store boundary`.
 - Full no-device aggregate passed with `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh > /tmp/aetherlink-no-device-pending-secret-boundary.log 2>&1`; the log ends with `No-device quality checks passed.` and includes `Android pending relay QR secret-store boundary`.
 - Caveat: the client device was disconnected, so this does not prove physical install, optical camera QR scanning, physical haptic feel, physical/live-backend streamed chat/cancel, or actual different-network runtime connectivity.
@@ -3663,7 +3813,7 @@ Some existing historical XML dumps and screenshots may still show older copy suc
 - `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:pairing:testDebugUnitTest --tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest --tests com.localagentbridge.android.core.pairing.RuntimeIdentityProofVerifierTest --tests com.localagentbridge.android.core.pairing.DeviceIdentityStoreTest --tests com.localagentbridge.android.core.pairing.PairingStoreTest -Pkotlin.incremental=false --console=plain`
 - Result: passed. Covered QR parsing for trusted runtime identity, route material, device identity proof verification, device identity persistence, and trusted pairing-store cleanup regressions.
 - New focused regression: `RuntimePairingPayloadParserTest.rejectsWhitespaceMutatedTrustAndRouteIdentityQrValues` proves whitespace-mutated `pairing_nonce`, `runtime_device_id`, `runtime_key_fingerprint`, `runtime_public_key`, `route_token`, `relay_id`, `relay_nonce`, and `relay_scope` fail before trust or route persistence.
-- `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh`, and `git diff --check` passed after adding the guardrails.
+- `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check` passed after adding the guardrails.
 - Full no-device aggregate passed with `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh > /tmp/aetherlink-no-device-qr-trust-value-whitespace.log 2>&1`; the log ends with `No-device quality checks passed.` and includes `Android QR trust value whitespace guard`.
 - Caveat: the client device was disconnected, so this does not prove physical install, optical camera QR scanning, physical haptic feel, physical/live-backend streamed chat/cancel, or actual different-network runtime connectivity.
 
@@ -3671,7 +3821,7 @@ Some existing historical XML dumps and screenshots may still show older copy suc
 
 - `swift test --filter TrustedDeviceStoreTests`
 - Result: passed. Covered `TrustedDeviceStore.trust(_:)` creating `trusted-devices.json` as `0600` in a `0700` directory, `load()` correcting broad legacy permissions without dropping trusted devices, and `remove(deviceID:)` preserving owner-only file permissions.
-- `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh`, and `git diff --check` passed after adding the guardrails.
+- `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check` passed after adding the guardrails.
 - Full no-device aggregate passed with `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh > /tmp/aetherlink-no-device-trusted-device-store-permissions.log 2>&1`; the log ends with `No-device quality checks passed.` and includes `TrustedDeviceStoreTests` plus `macOS trusted-device store file permission hardening`.
 - Caveat: no-device SwiftPM/source/script evidence only. Not covered: encrypted-at-rest trusted-device storage, tamper detection, rendered macOS trusted-device UI behavior, optical QR scanning, live device removal/reconnect, physical Android install, or actual different-network runtime connectivity.
 
@@ -3690,7 +3840,7 @@ Some existing historical XML dumps and screenshots may still show older copy suc
 - Result: passed. Covered accepted pairing with a real P-256 DER public-key fixture, rejection of whitespace-mutated device ids, whitespace-mutated public keys, non-Base64 public keys, and Base64 material that is not a P-256 DER key.
 - Result: malformed identity returned `pairing_invalid_device_identity`, did not write a trusted-device record, and a later valid identity in the same active pairing session stored a normalized display name and the submitted public key.
 - Guardrail: `script/check_no_device_quality.sh` now runs the pairing identity regression and reports `macOS pairing trusted-device identity validation`; `script/check_copy_hygiene.py` verifies the source/test/no-device contract.
-- `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh`, and `git diff --check` passed after adding the guardrails.
+- `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check` passed after adding the guardrails.
 - Full no-device aggregate passed with `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh > /tmp/aetherlink-no-device-pairing-identity-validation.log 2>&1`; the log ends with `No-device quality checks passed.` and includes `testPairingRequestRejectsWhitespaceMutatedDeviceIdentityBeforeTrusting`, `testPairingRequestStoresTrustedDeviceAndReturnsAccepted`, and `macOS pairing trusted-device identity validation`.
 - Caveat: no-device SwiftPM/source/script evidence only. Not covered: optical QR scanning, physical install, live client pairing, physical reconnect after pairing, live streamed chat/cancel, or actual different-network runtime connectivity.
 
@@ -3699,7 +3849,7 @@ Some existing historical XML dumps and screenshots may still show older copy suc
 - `swift test --filter AetherLinkLocalizationTests/testConnectionRecoveryBootstrapRelayRemovalAccessibilityUsesSelectedLanguage`
 - Result: passed. Covered the explicit bootstrap relay removal action, confirmation title/body, removal result, endpoint-specific accessibility label, fallback accessibility label, cancel label, and action hint across English, Korean, Japanese, Simplified Chinese, and French.
 - Guardrail: `script/check_no_device_quality.sh` now reports `macOS Connection Recovery bootstrap relay removal accessibility labels`; `script/check_copy_hygiene.py` verifies the source/test/no-device contract.
-- `python3 script/check_macos_localization.py`, `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh`, and `git diff --check` passed after adding the guardrails.
+- `python3 script/check_macos_localization.py`, `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check` passed after adding the guardrails.
 - Full no-device aggregate passed with `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh > /tmp/aetherlink-no-device-bootstrap-relay-removal.log 2>&1`; the log ends with `No-device quality checks passed.` and includes `testConnectionRecoveryBootstrapRelayRemovalAccessibilityUsesSelectedLanguage` plus `macOS Connection Recovery bootstrap relay removal accessibility labels`.
 - Caveat: no-device SwiftUI/source/XCTest/script evidence only. Not covered: rendered click behavior, live VoiceOver traversal, optical QR scanning, physical install, live different-network routing, physical reconnect after pairing, or live streamed chat/cancel.
 
@@ -3709,7 +3859,7 @@ Some existing historical XML dumps and screenshots may still show older copy suc
 - Result: passed. Covered localized destructive removal hints for saved fallback connection details and saved bootstrap relay settings across English, Korean, Japanese, Simplified Chinese, and French.
 - Result: the visible destructive buttons and the confirmation destructive actions now share the same hint helpers, and removing saved fallback connection details clears stale route diagnostics.
 - Guardrail: `script/check_no_device_quality.sh` now reports `macOS Connection Recovery destructive removal action hints`; `script/check_macos_localization.py` and `script/check_copy_hygiene.py` verify the source/test/no-device contract.
-- `python3 script/check_macos_localization.py`, `python3 script/check_copy_hygiene.py`, `bash -n script/check_no_device_quality.sh`, and `git diff --check` passed after adding the guardrails.
+- `python3 script/check_macos_localization.py`, `python3 script/check_copy_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check` passed after adding the guardrails.
 - `python3 script/check_docs_hygiene.py` passed after the QA/progress record update.
 - Full no-device aggregate passed with `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh > /tmp/aetherlink-no-device-destructive-removal-hints.log 2>&1`; the log ends with `No-device quality checks passed.` and includes `macOS Connection Recovery destructive removal action hints`.
 - Caveat: the Android phone was disconnected for this pass, so this is no-device SwiftUI/source/XCTest/script evidence only. It does not prove rendered click behavior, live VoiceOver traversal, optical QR scanning, physical install, live different-network routing, physical reconnect after pairing, or live streamed chat/cancel.
@@ -3720,7 +3870,7 @@ Some existing historical XML dumps and screenshots may still show older copy suc
 - Result: passed. Covered the Connection Status route notice for a trusted runtime with relay host, port, id, expiry, and nonce but a missing relay secret.
 - Result: the notice exposes `Refresh needed`, the localized `Scan latest QR` action, polite live-region semantics, the remote-route recovery copy, latest-QR callback routing, and primary-action haptic feedback.
 - Guardrail: `script/check_no_device_quality.sh` now reports `Android connection status incomplete relay route live-region recovery`; `script/check_copy_hygiene.py` verifies the source/test/no-device contract.
-- `python3 script/check_android_string_parity.py`, `python3 script/check_copy_hygiene.py`, `bash -n script/check_no_device_quality.sh`, and `git diff --check` passed after adding the guardrails.
+- `python3 script/check_android_string_parity.py`, `python3 script/check_copy_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check` passed after adding the guardrails.
 - `python3 script/check_docs_hygiene.py` passed after the QA/progress record update.
 - Full no-device aggregate passed with `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh > /tmp/aetherlink-no-device-incomplete-relay-live-region.log 2>&1`; the log ends with `No-device quality checks passed.` and includes `Android connection status incomplete relay route live-region recovery`.
 - Caveat: the Android phone was disconnected for this pass, so this is no-device Compose/source/script evidence only. It does not prove physical TalkBack output, camera QR scanning, physical haptics, physical install, live streamed chat/cancel, or actual different-network runtime connectivity.
@@ -3731,7 +3881,7 @@ Some existing historical XML dumps and screenshots may still show older copy suc
 - Result: passed. Covered the non-local bootstrap relay allocation-token warning, missing-token accessibility value, Save Bootstrap Relay token-aware accessibility value, and local diagnostic endpoint exemptions.
 - Result: the warning is localized across English, Korean, Japanese, Simplified Chinese, and French, and endpoint classification distinguishes remote hostnames/private remote addresses/public IPv6 candidates from loopback, `.local`, and link-local diagnostics.
 - Guardrail: `script/check_no_device_quality.sh` now reports `macOS Connection Recovery bootstrap allocation token warning`; `script/check_macos_localization.py` and `script/check_copy_hygiene.py` verify the source/test/no-device contract.
-- `python3 script/check_macos_localization.py`, `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh`, and `git diff --check` passed after adding the guardrails.
+- `python3 script/check_macos_localization.py`, `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check` passed after adding the guardrails.
 - Full no-device aggregate passed with `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh > /tmp/aetherlink-no-device-bootstrap-token-warning.log 2>&1`; the log ends with `No-device quality checks passed.` and includes `testConnectionRecoveryBootstrapAllocationTokenWarningUsesSelectedLanguage`, `testBootstrapRelayAllocationTokenWarningClassifiesNonLocalEndpoints`, and `macOS Connection Recovery bootstrap allocation token warning`.
 - Caveat: the Android phone was disconnected for this pass, so this is no-device SwiftUI/source/XCTest/script evidence only. It does not prove rendered click behavior, live VoiceOver traversal, optical QR scanning, physical install, live different-network routing, physical reconnect after pairing, or live streamed chat/cancel.
 
@@ -3741,7 +3891,7 @@ Some existing historical XML dumps and screenshots may still show older copy suc
 - Result: passed. Covered the chat composer clear-draft action across English, Korean, Japanese, Simplified Chinese, and French.
 - Result: the button now exposes the localized `clear_draft_state_ready` state description together with the localized clear-draft label and click action label.
 - Guardrail: `script/check_no_device_quality.sh` now reports `Android composer clear-draft localized state`; `script/check_copy_hygiene.py` verifies the source/test/no-device contract.
-- `python3 script/check_android_string_parity.py`, `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh`, and `git diff --check` passed after adding the guardrails.
+- `python3 script/check_android_string_parity.py`, `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check` passed after adding the guardrails.
 - Full no-device aggregate passed with `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh > /tmp/aetherlink-no-device-clear-draft-localized-state.log 2>&1`; the log ends with `No-device quality checks passed.` and includes `Android composer clear-draft localized state`.
 - Caveat: the Android phone was disconnected for this pass, so this is no-device Compose/resource/script evidence only. It does not prove physical TalkBack output, physical haptic feel, physical Android install, camera QR scanning, live streamed chat/cancel, or actual different-network runtime connectivity.
 
@@ -3751,7 +3901,7 @@ Some existing historical XML dumps and screenshots may still show older copy suc
 - Result: passed. Covered the Settings heading surface across English, Korean, Japanese, Simplified Chinese, and French.
 - Result: the expanded `Memory indexing model` and `Memory` in-panel titles now expose heading semantics, matching the existing Settings and Preferences panel heading behavior.
 - Guardrail: `script/check_no_device_quality.sh` now reports `Android Settings panel heading semantics`; `script/check_copy_hygiene.py` verifies the source/test/no-device contract.
-- `python3 script/check_android_string_parity.py`, `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh`, and `git diff --check` passed after adding the guardrails.
+- `python3 script/check_android_string_parity.py`, `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check` passed after adding the guardrails.
 - Full no-device aggregate passed with `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh > /tmp/aetherlink-no-device-settings-panel-heading.log 2>&1`; the log ends with `No-device quality checks passed.` and includes `Android Settings panel heading semantics`.
 - Caveat: the Android phone was disconnected for this pass, so this is no-device Compose/source/script evidence only. It does not prove physical TalkBack traversal, physical Android install, real device haptics, camera QR scanning, live streamed chat/cancel, or actual different-network runtime connectivity.
 
@@ -3761,7 +3911,7 @@ Some existing historical XML dumps and screenshots may still show older copy suc
 - Result: passed. Covered the attachment picker policy and share-intent draft parsing regressions.
 - Result: the Android manifest now removes broad `application/*` share intake and lists the explicit supported application document MIME types instead, while keeping `text/*` and `image/*` entry points.
 - Guardrail: `script/check_copy_hygiene.py` now blocks broad `application/*` manifest intake and requires representative explicit document MIME types. `script/check_no_device_quality.sh` now reports `Android explicit share-sheet MIME scope`.
-- `python3 script/check_copy_hygiene.py`, `python3 script/check_android_string_parity.py`, `bash -n script/check_no_device_quality.sh`, and `git diff --check` passed after adding the guardrails.
+- `python3 script/check_copy_hygiene.py`, `python3 script/check_android_string_parity.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check` passed after adding the guardrails.
 - Full no-device aggregate passed with `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh > /tmp/aetherlink-no-device-explicit-share-mime.log 2>&1`; the log ends with `No-device quality checks passed.` and includes `Android explicit share-sheet MIME scope`.
 - Caveat: the Android phone was disconnected for this pass, so this is no-device manifest/JVM/source/script evidence only. It does not prove physical share-sheet integration from real apps, physical Android install, camera QR scanning, physical haptic feel, live streamed chat/cancel, or actual different-network runtime connectivity.
 
@@ -3771,7 +3921,7 @@ Some existing historical XML dumps and screenshots may still show older copy suc
 - Result: passed. Covered the latest assistant regenerate action and latest user-message draft reuse action across English, Korean, Japanese, Simplified Chinese, and French.
 - Result: both compact message follow-up actions now expose localized state descriptions alongside localized content descriptions and click-action labels.
 - Guardrail: `script/check_copy_hygiene.py` now requires the state-description resources, UI semantics, and Compose regression. `script/check_no_device_quality.sh` now reports `Android message follow-up action localized states`.
-- `python3 script/check_android_string_parity.py`, `python3 script/check_copy_hygiene.py`, `bash -n script/check_no_device_quality.sh`, and `git diff --check` passed after adding the guardrails.
+- `python3 script/check_android_string_parity.py`, `python3 script/check_copy_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check` passed after adding the guardrails.
 - Full no-device aggregate passed with `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh > /tmp/aetherlink-no-device-message-followup-states.log 2>&1`; the log ends with `No-device quality checks passed.` and includes `Android message follow-up action localized states`.
 - Caveat: the Android phone was disconnected for this pass, so this is no-device Compose/resource/script evidence only. It does not prove physical TalkBack output, physical haptic feel, physical Android install, camera QR scanning, live streamed chat/cancel, or actual different-network runtime connectivity.
 
@@ -3781,7 +3931,7 @@ Some existing historical XML dumps and screenshots may still show older copy suc
 - Result: passed. Covered message-copy and code-block copy actions after each click by checking the system clipboard description label.
 - Result: message copy uses the localized `copy_message` label as the clipboard payload label, and code-block copy uses the localized code-block action label instead of a hardcoded app name.
 - Guardrail: `script/check_copy_hygiene.py` blocks hardcoded `ClipData.newPlainText("AetherLink", ...)` and requires clipboard-label assertions. `script/check_no_device_quality.sh` now reports `Android localized clipboard payload labels`.
-- `python3 script/check_copy_hygiene.py`, `bash -n script/check_no_device_quality.sh`, and `git diff --check` passed after adding the guardrails.
+- `python3 script/check_copy_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check` passed after adding the guardrails.
 - Full no-device aggregate passed with `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh > /tmp/aetherlink-no-device-localized-clipboard-labels.log 2>&1`; the log ends with `No-device quality checks passed.` and includes `Android localized clipboard payload labels`.
 - Caveat: the Android phone was disconnected for this pass, so this is no-device Compose/Robolectric/source/script evidence only. It does not prove physical Android clipboard UI, physical TalkBack output, physical haptic feel, physical Android install, camera QR scanning, live streamed chat/cancel, or actual different-network runtime connectivity.
 
@@ -3799,7 +3949,7 @@ Some existing historical XML dumps and screenshots may still show older copy suc
 - Result: passed. Covered connected `Refresh health` and `Disconnect` actions while `isConnected=true` and `isConnecting=true`.
 - Result: the actions remain visible but disabled, expose localized click-action labels, and reuse `connect_runtime_state_connecting` as the disabled state description across English, Korean, Japanese, Simplified Chinese, and French.
 - Guardrail: `script/check_copy_hygiene.py` verifies the source/test/no-device contract. `script/check_no_device_quality.sh` now reports `Android connected action reconnect lockout`.
-- `python3 script/check_android_string_parity.py`, `python3 script/check_copy_hygiene.py`, `bash -n script/check_no_device_quality.sh`, and `git diff --check` passed after adding the guardrails.
+- `python3 script/check_android_string_parity.py`, `python3 script/check_copy_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check` passed after adding the guardrails.
 - Full no-device aggregate passed with `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh > /tmp/aetherlink-no-device-connected-action-lockout.log 2>&1`; the log ends with `No-device quality checks passed.` and includes `Android connected action reconnect lockout`.
 - Caveat: the Android phone was disconnected for this pass, so this is no-device Compose/source/script evidence only. It does not prove physical TalkBack output, physical haptic feel, physical Android install, camera QR scanning, live streamed chat/cancel, or actual different-network runtime connectivity.
 
@@ -3867,7 +4017,7 @@ Some existing historical XML dumps and screenshots may still show older copy suc
 - Result: Android Settings now has a no-device regression that renders representative populated Chat history and Memory data on a 260dp-wide phone surface across English, Korean, Japanese, Simplified Chinese, and French.
 - Result: the test expands Memory and Chat history in product order, proving active and paused memory rows plus active and archived chat rows remain reachable and visible with localized section titles.
 - Guardrail: `script/check_no_device_quality.sh` now runs the focused render regression, and `script/check_copy_hygiene.py` requires both the test and the no-device coverage summary phrase.
-- Hygiene evidence: `python3 script/check_copy_hygiene.py`, `python3 script/check_android_string_parity.py`, `bash -n script/check_no_device_quality.sh`, and `git diff --check` passed.
+- Hygiene evidence: `python3 script/check_copy_hygiene.py`, `python3 script/check_android_string_parity.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check` passed.
 - Caveat: this is no-device Compose/Robolectric render evidence. It does not prove physical TalkBack output, real device haptics, optical QR scanning, live backend chat/cancel, or production different-network runtime connectivity.
 
 ## 2026-06-29 no-device Gate Runtime Recovery Wiring
@@ -3876,7 +4026,7 @@ Some existing historical XML dumps and screenshots may still show older copy suc
 - macOS Runtime Data recovery tests passed with `swift test --package-path apps/macos --filter 'LocalRuntimeMessageRouterTests/testCompanionAppModelRefreshRuntimeMemoryEntriesClearsRecoveredSummaryError|LocalRuntimeMessageRouterTests/testCompanionAppModelRefreshRuntimeChatSessionsClearsRecoveredSummaryError|LocalRuntimeMessageRouterTests/testCompanionAppModelRefreshRuntimeMemoryEntriesPreservesChatSummaryError|LocalRuntimeMessageRouterTests/testCompanionAppModelRefreshRuntimeChatSessionsPreservesMemorySummaryError'`.
 - Result: the default no-device gate now directly runs the macOS Runtime Data summary error recovery regressions instead of relying only on focused evidence.
 - Result: `script/check_copy_hygiene.py` now requires the no-device gate to keep both macOS recovery test filters and the `macOS runtime data summary error recovery` coverage summary.
-- Hygiene evidence: `python3 script/check_copy_hygiene.py`, `bash -n script/check_no_device_quality.sh`, and `git diff --check` passed.
+- Hygiene evidence: `python3 script/check_copy_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check` passed.
 - Caveat: `RuntimeClientChatSessionMutationFailureTest.kt` is still an untracked file in Git status until it is staged by the user. The file exists and passes locally, but omitting it from the eventual commit would break the documented no-device gate.
 
 ## 2026-06-29 Android Runtime Data Load Error Surfacing
@@ -3885,7 +4035,7 @@ Some existing historical XML dumps and screenshots may still show older copy suc
 - Result: `chat.messages.list` error handling clears the active runtime-owned chat loading state and shows `chat_history_load_failed` while retaining the technical runtime detail outside the user-visible detail field.
 - Result: `chat.sessions.list` and `memory.list` error handling now allow a later manual refresh to issue a fresh request after an error.
 - Result: `memory_load_failed` is localized across the default Android resources plus English, Korean, Japanese, Simplified Chinese, and French.
-- Hygiene evidence: `python3 script/check_android_string_parity.py`, `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh`, and `git diff --check` passed.
+- Hygiene evidence: `python3 script/check_android_string_parity.py`, `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check` passed.
 - Device evidence: `R3CXC0M76VM` / `SM-S936N` was connected as `device`; `./gradlew --no-daemon :app:installDebug -Pkotlin.incremental=false --console=plain` installed the current debug APK successfully.
 - Physical relay smoke passed with `PATH="/Users/hanchangha/Library/Android/sdk/platform-tools:$PATH" AETHERLINK_ANDROID_CHAT_DELTA_TIMEOUT_SECONDS=20 ./script/android_pairing_deeplink_smoke.sh --relay --skip-install --expect-chat-cancel --chat-delta-timeout 20`.
 - Runtime log from the passing run: `/var/folders/n2/vgx0vf052yl248_8cff1xt2r0000gn/T//aetherlink-android-pairing.SHGluR/runtime.log`.
@@ -3904,7 +4054,7 @@ Some existing historical XML dumps and screenshots may still show older copy suc
 - Verification scope: no-device Android resource, Compose accessibility, copy hygiene, docs hygiene, and whitespace checks.
 - Verified commands:
   - `python3 -m py_compile script/check_copy_hygiene.py`
-  - `bash -n script/check_no_device_quality.sh`
+  - `bash -n script/check_no_device_quality.sh` (syntax only)
   - `python3 script/check_copy_hygiene.py`
   - `python3 script/check_android_string_parity.py`
   - `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenSendButtonLocalizesReadinessStateAcrossSupportedLanguages --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenAttachmentSizeUsesSelectedAppLanguageContext --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenMessageRowsExposeLocalizedRoleAccessibilitySummaries -Pkotlin.incremental=false --console=plain`
@@ -3946,7 +4096,7 @@ Some existing historical XML dumps and screenshots may still show older copy suc
 - Focused macOS Runtime Data filter passed with `swift test --package-path apps/macos --filter 'LocalRuntimeMessageRouterTests/testCompanionAppModelPublishesRuntimeDataSummaryFromInjectedStores|LocalRuntimeMessageRouterTests/testCompanionAppModelPublishesRuntimeHistoryTranscriptPreviewAcrossOwners|LocalRuntimeMessageRouterTests/testCompanionAppModelRefreshRuntimeMemoryEntriesClearsRecoveredSummaryError|LocalRuntimeMessageRouterTests/testCompanionAppModelRefreshRuntimeChatSessionsClearsRecoveredSummaryError|LocalRuntimeMessageRouterTests/testCompanionAppModelRefreshRuntimeMemoryEntriesPreservesChatSummaryError|LocalRuntimeMessageRouterTests/testCompanionAppModelRefreshRuntimeChatSessionsPreservesMemorySummaryError'`.
 - Result: no-device coverage now runs the macOS all-owner runtime data summary and transcript preview tests that the coverage text reports.
 - Result: `RuntimeDevServer` startup relay logging no longer prints the relay id; it logs host, port, and scope only.
-- Hygiene evidence: `python3 script/check_android_string_parity.py`, `python3 script/check_macos_localization.py`, `python3 script/check_protocol_schema.py`, `python3 script/check_docs_hygiene.py`, `python3 script/check_copy_hygiene.py`, `bash -n script/check_no_device_quality.sh`, and `git diff --check` passed.
+- Hygiene evidence: `python3 script/check_android_string_parity.py`, `python3 script/check_macos_localization.py`, `python3 script/check_protocol_schema.py`, `python3 script/check_docs_hygiene.py`, `python3 script/check_copy_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check` passed.
 - Device evidence: `R3CXC0M76VM` / `SM-S936N` was connected as `device`; `./gradlew --no-daemon :app:installDebug -Pkotlin.incremental=false --console=plain` installed the current debug APK successfully.
 - Physical relay smoke passed with `PATH="/Users/hanchangha/Library/Android/sdk/platform-tools:$PATH" AETHERLINK_ANDROID_CHAT_DELTA_TIMEOUT_SECONDS=20 ./script/android_pairing_deeplink_smoke.sh --relay --skip-install --expect-chat-cancel --chat-delta-timeout 20`.
 - Runtime log from the passing run: `/var/folders/n2/vgx0vf052yl248_8cff1xt2r0000gn/T//aetherlink-android-pairing.bLcEcx/runtime.log`.
@@ -3960,7 +4110,7 @@ Some existing historical XML dumps and screenshots may still show older copy suc
 - Focused Android tests passed with `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.selectModelRejectsUnknownModelWithoutPersistingOrPulling --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.requestModelInstallRejectsUnknownModelWithoutPersistingOrPulling --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.selectModelRejectsProviderManagedOrUnknownSourceChatModelWithoutPersisting -Pkotlin.incremental=false --console=plain`.
 - Result: selecting an absent chat model id now rejects with `select_chat_model`, keeps the previous selected model in UI state and local storage, keeps `installingModelId` null, and sends no `models.pull`.
 - Guardrail evidence: `script/check_no_device_quality.sh` now includes `RuntimeClientViewModelTest.selectModelRejectsUnknownModelWithoutPersistingOrPulling`, and `script/check_copy_hygiene.py` requires the model-selection and model-install unknown-id regressions.
-- Hygiene evidence: `python3 script/check_copy_hygiene.py`, `python3 script/check_android_string_parity.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh`, and `git diff --check` passed.
+- Hygiene evidence: `python3 script/check_copy_hygiene.py`, `python3 script/check_android_string_parity.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check` passed.
 - Device evidence: `R3CXC0M76VM` / `SM-S936N` was connected as `device`; `./gradlew --no-daemon :app:installDebug -Pkotlin.incremental=false --console=plain` installed the current debug APK successfully.
 - Physical relay smoke passed with `PATH="/Users/hanchangha/Library/Android/sdk/platform-tools:$PATH" AETHERLINK_ANDROID_CHAT_DELTA_TIMEOUT_SECONDS=20 ./script/android_pairing_deeplink_smoke.sh --relay --skip-install --expect-chat-cancel --chat-delta-timeout 20`.
 - Runtime log from the passing run: `/var/folders/n2/vgx0vf052yl248_8cff1xt2r0000gn/T//aetherlink-android-pairing.l4fPZm/runtime.log`.
@@ -3975,7 +4125,7 @@ Some existing historical XML dumps and screenshots may still show older copy suc
 - Result: `shouldSynchronizeAndroidSystemAppLanguage(null, "en")` and blank-current English remain false, preserving the fresh-install guard that avoids pinning default English into Android app-specific locales.
 - Result: `shouldSynchronizeAndroidSystemAppLanguage(null, "ko")` and blank-current French now return true, so an explicit supported non-English in-app language selection can be written into Android 13+ `LocaleManager.applicationLocales`.
 - Guardrail evidence: `script/check_copy_hygiene.py` now requires both the fresh-install English skip assertions and the explicit non-English sync assertions.
-- Hygiene evidence: `python3 script/check_copy_hygiene.py`, `python3 script/check_android_string_parity.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh`, and `git diff --check` passed.
+- Hygiene evidence: `python3 script/check_copy_hygiene.py`, `python3 script/check_android_string_parity.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check` passed.
 - Device evidence: `R3CXC0M76VM` / `SM-S936N` was connected as `device`; `./gradlew --no-daemon :app:installDebug -Pkotlin.incremental=false --console=plain` installed the current debug APK successfully.
 - Physical relay smoke passed with `PATH="/Users/hanchangha/Library/Android/sdk/platform-tools:$PATH" AETHERLINK_ANDROID_CHAT_DELTA_TIMEOUT_SECONDS=20 ./script/android_pairing_deeplink_smoke.sh --relay --skip-install --expect-chat-cancel --chat-delta-timeout 20`.
 - Runtime log from the passing run: `/var/folders/n2/vgx0vf052yl248_8cff1xt2r0000gn/T//aetherlink-android-pairing.qbE1vf/runtime.log`.
@@ -3991,7 +4141,7 @@ Some existing historical XML dumps and screenshots may still show older copy suc
 - Result: the selected chat-model top-bar pill is capped at a compact width for long model names while retaining the full model name in the `Chat model picker` accessibility summary.
 - Result: the compact pill leaves measurable width for the active chat title on a 320dp-wide surface.
 - Guardrail evidence: `script/check_no_device_quality.sh` now includes `ClientScreensNoDeviceComposeTest.chatTopBarModelPickerKeepsLongModelNamesCompact`, and `script/check_copy_hygiene.py` requires both the test filter and the `Android chat top-bar compact long model name` coverage phrase.
-- Hygiene evidence: `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh`, and `git diff --check` passed.
+- Hygiene evidence: `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check` passed.
 - Device evidence: `R3CXC0M76VM` / `SM-S936N` was connected as `device`; `./gradlew --no-daemon :app:installDebug -Pkotlin.incremental=false --console=plain` installed the current debug APK successfully.
 - Physical relay smoke passed with `PATH="/Users/hanchangha/Library/Android/sdk/platform-tools:$PATH" AETHERLINK_ANDROID_CHAT_DELTA_TIMEOUT_SECONDS=20 ./script/android_pairing_deeplink_smoke.sh --relay --skip-install --expect-chat-cancel --chat-delta-timeout 20`.
 - Runtime log from the passing run: `/var/folders/n2/vgx0vf052yl248_8cff1xt2r0000gn/T//aetherlink-android-pairing.wmfgHp/runtime.log`.
@@ -4008,7 +4158,7 @@ Some existing historical XML dumps and screenshots may still show older copy suc
 - Result: manual and runtime-generated titles remain visible even if the title text is `New chat`; persisted title provenance is now mapped into `RuntimeChatSession`.
 - Result: persisted session sanitization preserves manual/generated `New chat` titles instead of migrating them to the blank/default title.
 - Guardrail evidence: `script/check_copy_hygiene.py` requires `chatTopBarActiveTitleHidesOnlyUnprovenanceDefaultTitle` and `chatTopBarShowsNamedActiveChatTitleAndHidesDefaultNewChatFallback`; `script/check_no_device_quality.sh` includes the renamed Compose top-bar title regression.
-- Hygiene evidence: `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh`, and `git diff --check` passed.
+- Hygiene evidence: `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check` passed.
 - Device evidence: `R3CXC0M76VM` / `SM-S936N` was connected as `device`; `./gradlew --no-daemon :app:installDebug -Pkotlin.incremental=false --console=plain` installed the current debug APK successfully.
 - Physical relay smoke passed with `PATH="/Users/hanchangha/Library/Android/sdk/platform-tools:$PATH" AETHERLINK_ANDROID_CHAT_DELTA_TIMEOUT_SECONDS=20 ./script/android_pairing_deeplink_smoke.sh --relay --skip-install --expect-chat-cancel --chat-delta-timeout 20`.
 - Runtime log from the passing run: `/var/folders/n2/vgx0vf052yl248_8cff1xt2r0000gn/T//aetherlink-android-pairing.d6rp54/runtime.log`.
@@ -4099,7 +4249,7 @@ Some existing historical XML dumps and screenshots may still show older copy suc
 
 - Android Compose evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenMessageRowsExposeLocalizedRoleAccessibilitySummaries -Pkotlin.incremental=false --console=plain` passed.
 - Android localization evidence: `python3 script/check_android_string_parity.py` passed after localizing assistant initials.
-- Copy/gate evidence: `python3 -m py_compile script/check_copy_hygiene.py`, `bash -n script/check_no_device_quality.sh`, and `python3 script/check_copy_hygiene.py` passed after adding assistant-marker guardrails.
+- Copy/gate evidence: `python3 -m py_compile script/check_copy_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `python3 script/check_copy_hygiene.py` passed after adding assistant-marker guardrails.
 - Result: assistant replies now render a compact localized identity marker before assistant content while preserving localized role/message accessibility summaries.
 - Caveat: the Android phone was being disconnected, so this is no-device Compose/Robolectric/resource/script evidence. It does not prove physical Android rendering, TalkBack pronunciation on hardware, live provider-backed chat, or production arbitrary-network connectivity.
 
@@ -4138,7 +4288,7 @@ Some existing historical XML dumps and screenshots may still show older copy suc
 
 ## 2026-06-29 No-Device Quality Gate Refresh
 
-- Script evidence: `python3 -m py_compile script/check_copy_hygiene.py`, `python3 script/check_copy_hygiene.py`, and `bash -n script/check_no_device_quality.sh` passed after updating the stale route-refresh hygiene guard.
+- Script evidence: `python3 -m py_compile script/check_copy_hygiene.py`, `python3 script/check_copy_hygiene.py`, and `bash -n script/check_no_device_quality.sh` (syntax only) passed after updating the stale route-refresh hygiene guard.
 - Documentation/schema evidence: `python3 script/check_docs_hygiene.py`, `python3 script/check_protocol_schema.py`, and `git diff --check` passed after recording the refreshed validation scope.
 - Full no-device gate evidence: `bash script/check_no_device_quality.sh` passed after adding the malformed relay material and private-overlay/USB-reverse route-refresh tests to the default gate.
 - Result: the default no-device gate now executes the route-refresh malformed-material rejection and scoped private-overlay/USB-reverse acceptance tests, and its coverage summary includes those route-refresh validations.
@@ -4148,7 +4298,7 @@ Some existing historical XML dumps and screenshots may still show older copy suc
 
 - Android Compose evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsCoreControlsRemainReachableAtLargeFontScaleAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain` passed.
 - Android forced-run evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsCoreControlsRemainReachableAtLargeFontScaleAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain --rerun-tasks` passed with `78 actionable tasks: 78 executed`.
-- Script evidence: `python3 -m py_compile script/check_copy_hygiene.py`, `python3 script/check_copy_hygiene.py`, `bash -n script/check_no_device_quality.sh`, and `git diff --check` passed after adding the large-font Settings regression to the default no-device gate contract.
+- Script evidence: `python3 -m py_compile script/check_copy_hygiene.py`, `python3 script/check_copy_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check` passed after adding the large-font Settings regression to the default no-device gate contract.
 - Result: Settings is now covered at `fontScale = 1.5` across English, Korean, Japanese, Simplified Chinese, and French, with Preferences/Language, Memory, and Chat history controls verified reachable through scroll and semantics.
 - Caveat: this is no-device Android Compose/Robolectric evidence. It does not prove physical TalkBack traversal, physical rendering on the attached phone, real device haptics, optical QR pairing, live streamed chat/cancel, or production arbitrary-network connectivity.
 
@@ -4213,3 +4363,110 @@ Some existing historical XML dumps and screenshots may still show older copy suc
 - Result: when a trusted connection closes during an active chat stream, the runtime calls backend cancellation for that generation and stores one runtime-owned cancelled event for history.
 - Gate evidence: `python3 -m py_compile script/check_copy_hygiene.py`, `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh script/android_pairing_deeplink_smoke.sh script/check_physical_external_relay_pairing.sh`, and `git diff --check` passed. `script/check_no_device_quality.sh` now includes the duplicate-provider and connection-close cancellation regressions, and reports `macOS duplicate provider registration guard` plus `macOS connection-close generation cancellation`.
 - Caveat: this is no-device SwiftPM/router evidence. It does not prove physical phone disconnect behavior, live provider cancellation latency, camera QR pairing, or production relay behavior.
+
+## 2026-06-29 Android Follow System Language Preference
+
+- Android focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.AppNavigationTest.settingsSystemLanguageOptionIsSeparateFromFixedLaunchLanguages --tests com.localagentbridge.android.AppNavigationTest.settingsLanguageOptionsKeepCurrentLaunchLanguageSetAndOrder --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.viewModelReconcilesSystemAppLanguageUntilInAppLanguageIsSelected --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.systemAppLanguageHelperDoesNotOverrideInAppLanguageSelection -Pkotlin.incremental=false --console=plain` passed.
+- Android Compose evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsCoreControlsRemainReachableAtLargeFontScaleAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain` passed.
+- Result: Android Settings now has a localized `Follow system language` option above the five fixed in-app languages, and the selected language source is preserved separately from the normalized language tag.
+- Result: returning from an explicit in-app language to the system option clears Android 13+ per-app locale overrides and lets supported system languages reconcile again.
+- Result: fixed language radio rows remain unselected while the system-following row is active, preventing duplicate selected states in the same language group.
+- Gate evidence: `python3 -m py_compile script/check_copy_hygiene.py script/check_android_string_parity.py`, `python3 script/check_android_string_parity.py`, `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh script/android_pairing_deeplink_smoke.sh script/check_physical_external_relay_pairing.sh`, and `git diff --check` passed. `script/check_no_device_quality.sh` now explicitly includes `AppNavigationTest.settingsSystemLanguageOptionIsSeparateFromFixedLaunchLanguages` and reports `Android follow system language preference`.
+- Caveat: the Android phone was disconnected for this pass, so this is no-device JVM/Compose/resource/script evidence. It does not prove physical Settings rendering, platform locale mutation on hardware, TalkBack behavior, haptics, QR pairing, live chat/cancel, or production arbitrary-network connectivity.
+
+## 2026-06-29 Android System-Language And Runtime Diagnostics Polish
+
+- Android focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.AppNavigationTest.androidSystemAppLanguageSyncNormalizesCurrentAndSelectedTags --tests com.localagentbridge.android.AppNavigationTest.settingsSystemLanguageOptionIsSeparateFromFixedLaunchLanguages --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.viewModelReconcilesSystemAppLanguageUntilInAppLanguageIsSelected --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenTechnicalDiagnosticsAreCollapsedAndRedactUnsafeRuntimeDetails -Pkotlin.incremental=false --console=plain` passed.
+- Result: the Android follow-device-locale path now reads the device locale separately from Android's app-locale override, and in-app language synchronization compares against the app override or effective device locale before writing a new override.
+- Result: runtime technical diagnostics still redact unsafe endpoint and route material, but the visible/copyable diagnostic labels now come from localized Android resources instead of hardcoded English keys.
+- Gate evidence: `python3 script/check_android_string_parity.py`, `python3 script/check_copy_hygiene.py`, and `git diff --check` passed after adding guards for device-system locale lookup, app-locale override separation, and localized diagnostics label wiring.
+- Caveat: this is no-device Android JVM/Compose/resource/script evidence. It does not prove physical Settings rendering, platform locale mutation on hardware, TalkBack behavior, haptics, QR pairing, live chat/cancel, or production arbitrary-network connectivity.
+
+## 2026-06-29 macOS Model Provider Empty-State Summary
+
+- macOS focused evidence: `swift test --filter AetherLinkLocalizationTests/testBackendSummaryTreatsEmptyProviderListAsNoProvidersAvailable` passed.
+- macOS localization evidence: `swift test --filter AetherLinkLocalizationTests` passed with 104 tests, and `python3 script/check_macos_localization.py` passed for all five supported app languages.
+- Result: the macOS Status model-provider summary now reports the localized empty-provider state when no providers have been reported, instead of falling through to the `Not checked` summary reserved for known providers.
+- Result: known-but-not-checked providers still summarize as `Not checked`, preserving the intended first-check state after provider identities are available.
+- Gate evidence: `python3 script/check_copy_hygiene.py` passed after the source and test change.
+- Caveat: the Android phone was disconnected for this pass, so this is no-device macOS SwiftPM/source/script evidence. It does not prove physical Android pairing, live provider discovery, camera QR scan, streamed chat/cancel, or production arbitrary-network connectivity.
+
+## 2026-06-29 macOS Pairing QR Countdown Accessibility
+
+- macOS focused evidence: `swift test --filter AetherLinkLocalizationTests/testPairingQRExpirationProgressAccessibilityUsesSelectedLanguage` passed.
+- macOS render evidence: `swift test --filter AetherLinkRenderSmokeTests/testActivePairingQRCodeRendersAtCompactDetailSizeAcrossLanguagesAndAppearances` passed.
+- Result: the active Pairing QR expiry row now owns the localized `Pairing QR time remaining` accessibility label and countdown value.
+- Result: the visual countdown meter is hidden from accessibility so assistive technology does not announce duplicate changing QR-expiry state.
+- Gate evidence: `python3 script/check_macos_localization.py` and `python3 script/check_copy_hygiene.py` passed after the source, test, and guard update.
+- Caveat: this is no-device macOS SwiftPM/render/source/script evidence. It does not prove live VoiceOver traversal, physical camera QR scan, live pairing over a real relay, streamed chat/cancel, or production arbitrary-network connectivity.
+
+## 2026-06-29 Android Auto Reconnect Pairing-Required Accessibility
+
+- Android focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsAutoReconnectSwitchExposesAccessibilityState -Pkotlin.incremental=false --console=plain` passed.
+- Result: Auto reconnect still exposes localized on/off state and enable/disable click labels after a runtime is trusted.
+- Result: before pairing, the disabled Auto reconnect switch now exposes a localized pairing-required state without a custom `OnClick` action, avoiding a misleading non-working TalkBack action in first-run Settings.
+- Gate evidence: `python3 script/check_android_string_parity.py`, `python3 -m py_compile script/check_copy_hygiene.py script/check_android_string_parity.py`, `python3 script/check_copy_hygiene.py`, and `python3 script/check_docs_hygiene.py` passed after the source, resource, test, and guard update.
+- Caveat: this is no-device Android Compose/source/script evidence. It does not prove physical TalkBack traversal, physical Settings rendering, QR pairing, haptics, live chat/cancel, or production arbitrary-network connectivity.
+
+## 2026-06-29 Android QR-First Empty-State Heading
+
+- Android focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenUntrustedRuntimeShowsQrFirstPairingCallToAction -Pkotlin.incremental=false --console=plain` passed.
+- Result: the first-run chat empty state now exposes the merged QR-first onboarding copy as a heading while preserving the existing provider-privacy summary.
+- Gate evidence: `python3 -m py_compile script/check_copy_hygiene.py`, `python3 script/check_copy_hygiene.py`, and `python3 script/check_android_string_parity.py` passed after the source, test, and guard update.
+- Caveat: this is no-device Android Compose/source/script evidence. It does not prove physical TalkBack heading traversal, first-launch hardware rendering, camera QR scan, haptics, live chat/cancel, or production arbitrary-network connectivity.
+
+## 2026-06-29 Runtime-Mediated Copy And No-Device Caveat Polish
+
+- Android focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatTopBarModelPickerEmptyStatesShowLocalizedTitleAndLiveRegion -Pkotlin.incremental=false --console=plain` passed.
+- macOS focused evidence: `swift test --package-path apps/macos --filter AetherLinkLocalizationTests/testRuntimeHistoryInspectorCopyLocalizesAcrossSupportedLanguages` passed.
+- Result: Android's connected-but-empty chat model picker now states that models are loaded through AetherLink Runtime and not directly from the app.
+- Result: macOS Runtime History Inspector no longer uses the stale `this runtime host` wording, and all five macOS localization bundles use the AetherLink Runtime phrasing.
+- Result: the no-device gate caveat now explicitly excludes physical TalkBack/VoiceOver traversal and Android system/per-app locale mutation on hardware.
+- Gate evidence: `python3 script/check_android_string_parity.py`, `python3 script/check_macos_localization.py`, `python3 -m py_compile script/check_copy_hygiene.py script/check_android_string_parity.py script/check_macos_localization.py`, `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, and `bash -n script/check_no_device_quality.sh script/check_physical_external_relay_pairing.sh script/android_pairing_deeplink_smoke.sh` passed.
+- Caveat: this is no-device Android Compose, macOS SwiftPM, resource, and script evidence. It does not prove physical TalkBack/VoiceOver traversal, Android system/per-app locale mutation on hardware, physical QR scanning, real device haptics, live chat/cancel, or production different-network connectivity.
+
+## 2026-06-29 Follow-System Language And Trusted-Device Copy Polish
+
+- Android focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsPreferenceRowsExposeSelectedStateToAccessibility --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsLanguagePreferenceRowsDispatchSystemAndFixedSelectionCallbacks -Pkotlin.incremental=false --console=plain` passed.
+- macOS focused evidence: `swift test --package-path apps/macos --filter AetherLinkLocalizationTests/testTrustedDevicesEmptyStateCopyUsesRuntimeRequestsAcrossSupportedLanguages` passed.
+- Result: Android Settings accessibility tests now prove that fixed in-app language rows and `Follow system language` rows expose the correct selected state across the five supported app languages.
+- Result: Android Settings callback coverage now proves the system-following row dispatches `onFollowSystemLanguage`, while fixed language rows dispatch `onSetLanguageTag`.
+- Result: macOS Trusted Devices empty state now uses `runtime requests` copy and no longer ships the stale `runtime commands` localization key.
+- Result: latest QA/progress evidence must mark `bash -n script/check_no_device_quality.sh` as syntax-only unless a real `bash script/check_no_device_quality.sh` run is recorded.
+- Gate evidence: `python3 script/check_android_string_parity.py`, `python3 script/check_macos_localization.py`, `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_macos_localization.py script/check_android_string_parity.py`, `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, and `bash -n script/check_no_device_quality.sh` (syntax only) passed.
+- Caveat: this is no-device Android Compose, macOS SwiftPM, resource, and script evidence. It does not prove physical TalkBack/VoiceOver traversal, Android system/per-app locale mutation on hardware, physical QR scanning, real device haptics, live chat/cancel, or production different-network connectivity.
+
+## 2026-06-29 Follow-System Detail And Trusted-Devices Header Polish
+
+- Android focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsPreferenceRowsExposeSelectedStateToAccessibility --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsLanguagePreferenceRowsDispatchSystemAndFixedSelectionCallbacks -Pkotlin.incremental=false --console=plain` passed.
+- macOS focused evidence: `swift test --package-path apps/macos --filter AetherLinkLocalizationTests/testTrustedDevicesHeaderSubtitleUsesProductNeutralCopyAcrossSupportedLanguages` passed.
+- Result: Android Settings now renders localized `Follow system language` detail copy and includes it in the row accessibility summary while preserving selected-state and callback behavior.
+- Result: macOS Trusted Devices now uses product-neutral pair-again header copy across English, Korean, Japanese, Simplified Chinese, and French.
+- Result: README now states that the no-device gate does not prove physical Android rendering, TalkBack/VoiceOver traversal, optical/camera QR scan reliability, live provider-backed chat/cancel, or real different-network runtime connectivity.
+- Gate evidence: `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`, `python3 script/check_android_string_parity.py`, `python3 script/check_macos_localization.py`, `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check` passed.
+- Caveat: this is no-device Android Compose/JVM, macOS SwiftPM, resource, docs, and script evidence. It does not prove physical Android rendering, physical TalkBack/VoiceOver traversal, Android system/per-app locale mutation on hardware, optical/camera QR pairing, real device haptics, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+## 2026-06-29 macOS Sidebar Preferences And QA Caveat Contract
+
+- macOS focused evidence: `swift test --package-path apps/macos --filter 'AetherLinkLocalizationTests/testLocalizedVisibleAnchorsAcrossInitialLanguages|AetherLinkLocalizationTests/testSidebarPreferencePickerAccessibilityHintsUseSelectedLanguage|AetherLinkLocalizationTests/testSidebarPreferenceGroupLabelUsesSelectedLanguage|AetherLinkLocalizationTests/testSidebarPreferenceDetailTextUsesSelectedLanguage|AetherLinkRenderSmokeTests/testCompanionShellPreferenceControlsRenderAtAccessibilitySizeAcrossLanguages'` passed.
+- Result: the macOS sidebar footer now presents Appearance and Language under a localized `App Preferences` heading.
+- Result: the sidebar preference pickers now show localized secondary detail copy while preserving the existing accessibility value and hint behavior.
+- Result: the QA Evidence Current Rule now explicitly states that no-device evidence does not prove physical Android rendering, TalkBack/VoiceOver traversal, optical/camera QR scan reliability, live provider-backed chat/cancel, or real different-network runtime connectivity.
+- Gate evidence: `python3 -m py_compile script/check_macos_localization.py script/check_copy_hygiene.py script/check_docs_hygiene.py`, `python3 script/check_macos_localization.py`, `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check` passed.
+- Caveat: this is no-device macOS SwiftPM/render, resource, docs, and script evidence. It does not prove physical Android rendering, physical TalkBack/VoiceOver traversal, Android system/per-app locale mutation on hardware, optical/camera QR pairing, real device haptics, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+## 2026-06-29 Android Appearance System Detail Polish
+
+- Android focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsPreferenceRowsExposeSelectedStateToAccessibility --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsLanguagePreferenceRowsDispatchSystemAndFixedSelectionCallbacks -Pkotlin.incremental=false --console=plain` passed.
+- Result: Android Settings Appearance now shows localized detail copy under `Follows system`, explaining that it follows the device system light/dark appearance.
+- Result: that appearance detail is included in the row accessibility summary and select action label across English, Korean, Japanese, Simplified Chinese, and French.
+- Gate evidence: `python3 -m py_compile script/check_copy_hygiene.py`, `python3 script/check_android_string_parity.py`, `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check` passed.
+- Caveat: this is no-device Android Compose/JVM, resource, docs, and script evidence. It does not prove physical Android rendering, physical TalkBack traversal, Android system/per-app appearance mutation on hardware, optical/camera QR pairing, real device haptics, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+## 2026-06-29 Android Preference Detail Guard Contract
+
+- Android focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsPreferenceRowsExposeSelectedStateToAccessibility --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsLanguagePreferenceRowsDispatchSystemAndFixedSelectionCallbacks -Pkotlin.incremental=false --console=plain` passed.
+- Result: `script/check_android_string_parity.py` now requires both `appearance_system_detail` and `language_follow_system_detail` across the Android resource set.
+- Result: `script/check_copy_hygiene.py` now guards those required string-parity keys, and `script/check_docs_hygiene.py` pins this Android Settings Appearance/Language detail evidence in progress and QA docs.
+- Gate evidence: `python3 -m py_compile script/check_android_string_parity.py script/check_copy_hygiene.py script/check_docs_hygiene.py`, `python3 script/check_android_string_parity.py`, `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check` passed.
+- Caveat: this is no-device Android JVM/resource, docs, and script evidence. It does not prove physical Android rendering, physical TalkBack traversal, Android system/per-app appearance or locale mutation on hardware, optical/camera QR pairing, real device haptics, live provider-backed chat/cancel, or real different-network runtime connectivity.

@@ -140,7 +140,7 @@ internal interface RuntimeAttachmentReader {
 }
 
 internal fun interface RuntimeRelayReachabilityChecker {
-    suspend fun isReachable(host: String, port: Int, timeoutMillis: Int): Boolean
+    suspend fun isReachable(route: PreparedRemoteRuntimeRoute.Relay, timeoutMillis: Int): Boolean
 }
 
 private data class PendingChatSessionLifecycleMutation(
@@ -167,7 +167,7 @@ internal data class RuntimeClientViewModelDependencies(
     val lifecycleCallbacksRegistrar: RuntimeLifecycleCallbacksRegistrar,
     val attachmentReader: RuntimeAttachmentReader? = null,
     val attachmentPromptHeaderProvider: ((String) -> String)? = null,
-    val relayReachabilityChecker: RuntimeRelayReachabilityChecker = RuntimeRelayReachabilityChecker { _, _, _ -> true },
+    val relayReachabilityChecker: RuntimeRelayReachabilityChecker = RuntimeRelayReachabilityChecker { _, _ -> true },
     val currentTimeMillis: () -> Long = { System.currentTimeMillis() },
 ) {
     companion object {
@@ -197,14 +197,62 @@ internal data class RuntimeClientViewModelDependencies(
 }
 
 private class AndroidRuntimeRelayReachabilityChecker : RuntimeRelayReachabilityChecker {
-    override suspend fun isReachable(host: String, port: Int, timeoutMillis: Int): Boolean = withContext(Dispatchers.IO) {
+    override suspend fun isReachable(
+        route: PreparedRemoteRuntimeRoute.Relay,
+        timeoutMillis: Int,
+    ): Boolean = withContext(Dispatchers.IO) {
         runCatching {
             Socket().use { socket ->
                 socket.tcpNoDelay = true
-                socket.connect(InetSocketAddress(host, port), timeoutMillis)
+                socket.soTimeout = timeoutMillis
+                socket.connect(InetSocketAddress(route.host, route.port), timeoutMillis)
+                val request = "AETHERLINK_RELAY probe ${route.relayId.sanitizeRelayProbeToken()}\n"
+                socket.outputStream.write(request.toByteArray(Charsets.UTF_8))
+                socket.outputStream.flush()
+                socket.inputStream.readAsciiLine(maxBytes = 256).isRelayProbeReady()
             }
-        }.isSuccess
+        }.getOrDefault(false)
     }
+}
+
+private fun String.sanitizeRelayProbeToken(): String {
+    require(isNotBlank()) { "Relay token must not be blank" }
+    require(none { it <= ' ' }) { "Relay token must not contain whitespace" }
+    return this
+}
+
+internal fun String.isRelayProbeReady(): Boolean {
+    val tokens = trim().split(Regex("\\s+")).filter { it.isNotBlank() }
+    if (tokens.size < 3 || tokens[0] != "AETHERLINK_RELAY" || tokens[1] != "probe") {
+        return false
+    }
+    if (tokens[2] == "ready") return true
+    val values = tokens.drop(2).associate { token ->
+        val separator = token.indexOf('=')
+        if (separator <= 0) {
+            token to "true"
+        } else {
+            token.substring(0, separator) to token.substring(separator + 1)
+        }
+    }
+    val known = values["known"].isRelayProbeTruthy() || values["allocated"].isRelayProbeTruthy()
+    return known &&
+        values["runtime_waiting"].isRelayProbeTruthy()
+}
+
+private fun String?.isRelayProbeTruthy(): Boolean {
+    return this == "1" || equals("true", ignoreCase = true) || equals("yes", ignoreCase = true)
+}
+
+private fun java.io.InputStream.readAsciiLine(maxBytes: Int): String {
+    val buffer = StringBuilder()
+    while (buffer.length < maxBytes) {
+        val next = read()
+        if (next == -1) break
+        if (next == '\n'.code) return buffer.toString().trimEnd('\r')
+        buffer.append(next.toChar())
+    }
+    error("Relay probe response was not a complete line")
 }
 
 private class AndroidTrustedRuntimeStore(
@@ -421,6 +469,7 @@ class RuntimeClientViewModel internal constructor(
     private val pendingChatSessionRenameRequestIds = mutableSetOf<String>()
     private val pendingChatSessionLifecycleMutationsByRequestId = mutableMapOf<String, PendingChatSessionLifecycleMutation>()
     private val pendingChatSessionRenameMutationsByRequestId = mutableMapOf<String, PendingChatSessionRenameMutation>()
+    private val pendingAttachmentsBySession = mutableMapOf<String?, List<RuntimePendingAttachment>>()
     private var modelIdToSelectAfterRefresh: String? = null
     private var isSessionAuthenticated = false
     private var persistedRuntimeData = PersistedRuntimeData()
@@ -545,6 +594,22 @@ class RuntimeClientViewModel internal constructor(
         mutableState.update { it.copy(chatInput = cleanDraft) }
     }
 
+    fun clearChatDraft() {
+        if (state.value.isStreaming) {
+            showError("generation_in_progress")
+            return
+        }
+        if (rejectUserMutationWhileActiveChatMessagesLoading()) return
+        val cleanDraft = clearComposerDraft()
+        clearPendingAttachmentsForSession()
+        mutableState.update {
+            it.copy(
+                chatInput = cleanDraft,
+                pendingAttachments = emptyList(),
+            )
+        }
+    }
+
     fun useSuggestedQuestion(question: String) {
         val trimmed = question.trim()
         if (trimmed.isBlank()) return
@@ -613,6 +678,7 @@ class RuntimeClientViewModel internal constructor(
                     },
                 )
             }
+            rememberPendingAttachmentsForCurrentSession()
         }
     }
 
@@ -628,11 +694,19 @@ class RuntimeClientViewModel internal constructor(
                 error = null,
             )
         }
+        rememberPendingAttachmentsForCurrentSession()
     }
 
     fun setAppLanguageTag(languageTag: String) {
         publishPersistedRuntimeData(
             persistedRuntimeData.withAppLanguageTag(languageTag),
+            save = true,
+        )
+    }
+
+    fun followSystemAppLanguageTag(languageTag: String?) {
+        publishPersistedRuntimeData(
+            persistedRuntimeData.withFollowSystemAppLanguageTag(languageTag),
             save = true,
         )
     }
@@ -656,6 +730,8 @@ class RuntimeClientViewModel internal constructor(
             showError("generation_in_progress")
             return
         }
+        rememberPendingAttachmentsForCurrentSession()
+        clearPendingAttachmentsForSession(null)
         clearPendingSuggestions()
         publishPersistedRuntimeData(
             persistedRuntimeData
@@ -666,7 +742,6 @@ class RuntimeClientViewModel internal constructor(
         )
         mutableState.update {
             it.copy(
-                pendingAttachments = emptyList(),
                 loadingChatSessionId = null,
                 isLoadingSuggestions = false,
             )
@@ -682,6 +757,7 @@ class RuntimeClientViewModel internal constructor(
             showError("chat_session_not_found")
             return
         }
+        rememberPendingAttachmentsForCurrentSession()
         clearPendingSuggestions()
         publishPersistedRuntimeData(
             persistedRuntimeData.withActiveSession(sessionId),
@@ -690,7 +766,6 @@ class RuntimeClientViewModel internal constructor(
         )
         mutableState.update {
             it.copy(
-                pendingAttachments = emptyList(),
                 loadingChatSessionId = null,
                 isLoadingSuggestions = false,
             )
@@ -740,6 +815,7 @@ class RuntimeClientViewModel internal constructor(
             return
         }
         if (isRuntimeOwnedChatMutationBlocked(listOf(session))) return
+        clearPendingAttachmentsForSession(sessionId)
         val now = nowMillis()
         publishPersistedRuntimeData(
             persistedRuntimeData.withoutArchivedChatSession(sessionId, nowMillis = now),
@@ -771,6 +847,7 @@ class RuntimeClientViewModel internal constructor(
             return
         }
         if (isRuntimeOwnedChatMutationBlocked(listOf(session))) return
+        clearPendingAttachmentsForSession(sessionId)
         publishPersistedRuntimeData(
             persistedRuntimeData.withArchivedChatSession(sessionId, nowMillis()),
             save = true,
@@ -797,6 +874,8 @@ class RuntimeClientViewModel internal constructor(
         }
         val sessionsToArchive = persistedRuntimeData.sessions.filter { it.archivedAtMillis == null }
         if (isRuntimeOwnedChatMutationBlocked(sessionsToArchive)) return
+        sessionsToArchive.forEach { clearPendingAttachmentsForSession(it.id) }
+        clearPendingAttachmentsForSession(null)
         publishPersistedRuntimeData(
             persistedRuntimeData.withArchivedChatSessions(nowMillis()),
             save = true,
@@ -844,6 +923,8 @@ class RuntimeClientViewModel internal constructor(
         }
         val archivedSessionsToDelete = persistedRuntimeData.sessions.filter { it.archivedAtMillis != null }
         if (isRuntimeOwnedChatMutationBlocked(archivedSessionsToDelete)) return
+        archivedSessionsToDelete.forEach { clearPendingAttachmentsForSession(it.id) }
+        clearPendingAttachmentsForSession(null)
         val now = nowMillis()
         publishPersistedRuntimeData(
             persistedRuntimeData.withoutArchivedChatSessions(nowMillis = now),
@@ -1006,7 +1087,10 @@ class RuntimeClientViewModel internal constructor(
         }
     }
 
-    fun trustRuntimeFromPairingQr(rawValue: String) {
+    fun trustRuntimeFromPairingQr(
+        rawValue: String,
+        requireRemoteRoute: Boolean = false,
+    ) {
         if (rejectUserMutationWhileStreaming()) return
         viewModelScope.launch {
             cancelPendingPairingRetry()
@@ -1017,6 +1101,7 @@ class RuntimeClientViewModel internal constructor(
                     rawValue = rawValue,
                     allowDebugLoopbackRelay = BuildConfig.DEBUG,
                     allowDiagnosticLocalDirectEndpoint = BuildConfig.DEBUG,
+                    requireRemoteRoute = requireRemoteRoute,
                 )
             ) {
                 is RuntimePairingQrParseResult.Accepted -> parsed.payload
@@ -1821,8 +1906,10 @@ class RuntimeClientViewModel internal constructor(
         val updatedMessages = current.messages + userMessage + assistantMessage
         clearPendingSuggestions()
         persistComposerDraft("", sessionId = sessionId)
+        clearPendingAttachmentsForSession(sessionId)
         if (startedWithoutActiveSession) {
             persistComposerDraft("", sessionId = null)
+            clearPendingAttachmentsForSession(null)
         }
         mutableState.update {
             it.copy(
@@ -1952,6 +2039,7 @@ class RuntimeClientViewModel internal constructor(
             return
         }
         clearPendingSuggestions()
+        clearPendingAttachmentsForSession()
         val cleanDraft = persistComposerDraft(latestUserMessage.content)
         mutableState.update {
             it.copy(
@@ -2022,7 +2110,7 @@ class RuntimeClientViewModel internal constructor(
             val current = state.value
             val trustedRuntimeWithoutFailedRelay = if (
                 pendingPairingPayload == null &&
-                preflightError.requiresFreshRemoteRouteBeforeReconnect()
+                preflightError.invalidatesStoredRemoteRoute()
             ) {
                 current.trustedRuntime?.withoutRelayRoute()
             } else {
@@ -2091,7 +2179,7 @@ class RuntimeClientViewModel internal constructor(
             val current = state.value
             val trustedRuntimeWithoutFailedRelay = if (
                 pendingPairingPayload == null &&
-                uiError.requiresFreshRemoteRouteBeforeReconnect()
+                uiError.invalidatesStoredRemoteRoute()
             ) {
                 current.trustedRuntime?.withoutRelayRoute()
             } else {
@@ -2157,8 +2245,7 @@ class RuntimeClientViewModel internal constructor(
             ?: return null
         val reachable = runCatching {
             dependencies.relayReachabilityChecker.isReachable(
-                host = relayRoute.host,
-                port = relayRoute.port,
+                route = relayRoute,
                 timeoutMillis = RELAY_REACHABILITY_PREFLIGHT_TIMEOUT_MS,
             )
         }.getOrDefault(false)
@@ -2193,7 +2280,7 @@ class RuntimeClientViewModel internal constructor(
                             clearPendingTitleRequest()
                             val current = state.value
                             val uiError = current.runtimeReceiveFailureUiError(error)
-                            val trustedRuntimeWithoutFailedRelay = if (uiError.requiresFreshRemoteRouteBeforeReconnect()) {
+                            val trustedRuntimeWithoutFailedRelay = if (uiError.invalidatesStoredRemoteRoute()) {
                                 current.trustedRuntime?.withoutRelayRoute()
                             } else {
                                 null
@@ -3276,9 +3363,15 @@ class RuntimeClientViewModel internal constructor(
                 } else {
                     it.chatInput
                 },
+                pendingAttachments = if (syncComposerDraft) {
+                    pendingAttachmentsBySession[cleanData.activeSessionId].orEmpty()
+                } else {
+                    it.pendingAttachments
+                },
                 messages = activeSessionMessages(cleanData),
                 memoryEntries = runtimeMemoryEntries(cleanData),
                 selectedLanguageTag = cleanData.appLanguageTag,
+                selectedLanguageSource = cleanData.appLanguageSource ?: APP_LANGUAGE_SOURCE_DEFAULT,
                 selectedTheme = RuntimeAppTheme.fromStorage(cleanData.appTheme),
                 trustedRuntimeAutoReconnectEnabled = cleanData.trustedRuntimeAutoReconnectEnabled,
                 pairingOnboardingCompleted = cleanData.pairingOnboardingCompleted,
@@ -3299,6 +3392,28 @@ class RuntimeClientViewModel internal constructor(
 
     private fun clearComposerDraft(sessionId: String? = state.value.activeChatSessionId): String {
         return persistComposerDraft("", sessionId = sessionId)
+    }
+
+    private fun rememberPendingAttachmentsForCurrentSession() {
+        rememberPendingAttachmentsForSession(
+            sessionId = state.value.activeChatSessionId,
+            attachments = state.value.pendingAttachments,
+        )
+    }
+
+    private fun rememberPendingAttachmentsForSession(
+        sessionId: String?,
+        attachments: List<RuntimePendingAttachment>,
+    ) {
+        if (attachments.isEmpty()) {
+            pendingAttachmentsBySession.remove(sessionId)
+        } else {
+            pendingAttachmentsBySession[sessionId] = attachments
+        }
+    }
+
+    private fun clearPendingAttachmentsForSession(sessionId: String? = state.value.activeChatSessionId) {
+        pendingAttachmentsBySession.remove(sessionId)
     }
 
     private fun persistSelectedModel(modelId: String?, publish: Boolean = true) {
@@ -4222,6 +4337,7 @@ internal fun parseRuntimePairingQrPayload(
     rawValue: String,
     allowDebugLoopbackRelay: Boolean,
     allowDiagnosticLocalDirectEndpoint: Boolean,
+    requireRemoteRoute: Boolean = false,
 ): RuntimePairingQrParseResult {
     val payload = runCatching {
         RuntimePairingPayloadParser.parse(
@@ -4239,6 +4355,14 @@ internal fun parseRuntimePairingQrPayload(
                 diagnosticCode = "route_diagnostic_remote_route_expired",
             ),
             clearPendingPairing = true,
+        )
+    }
+    if (requireRemoteRoute && !payload.hasRelayRoute()) {
+        return RuntimePairingQrParseResult.Rejected(
+            error = RuntimeUiError(
+                code = "pairing_endpoint_unavailable",
+                diagnosticCode = "route_diagnostic_remote_pending",
+            ),
         )
     }
     return RuntimePairingQrParseResult.Accepted(payload)
@@ -4715,6 +4839,13 @@ private fun RuntimeUiError?.requiresFreshRemoteRouteBeforeReconnect(): Boolean {
         this?.diagnosticCode == "route_diagnostic_relay_auth_failed" ||
         this?.diagnosticCode == "route_diagnostic_relay_unreachable_from_device" ||
         this?.diagnosticCode == "route_diagnostic_relay_failed" ||
+        this?.diagnosticCode == "route_diagnostic_remote_route_expired"
+}
+
+private fun RuntimeUiError?.invalidatesStoredRemoteRoute(): Boolean {
+    return this?.code == "remote_route_auth_failed" ||
+        this?.code == "remote_route_expired" ||
+        this?.diagnosticCode == "route_diagnostic_relay_auth_failed" ||
         this?.diagnosticCode == "route_diagnostic_remote_route_expired"
 }
 

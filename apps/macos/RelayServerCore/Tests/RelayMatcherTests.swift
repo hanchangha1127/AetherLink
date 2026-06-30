@@ -32,4 +32,28 @@ final class RelayMatcherTests: XCTestCase {
         XCTAssertEqual(matcher.register(secondRuntime), .waiting(replaced: firstRuntime))
         XCTAssertEqual(matcher.register(client), .matched(runtime: secondRuntime, client: client))
     }
+
+    func testRuntimeWaitingProbeDoesNotConsumePendingRuntime() {
+        let matcher = RelayMatcher()
+        let runtime = RelayPeerRegistration(role: .runtime, relayID: "shared")
+        let client = RelayPeerRegistration(role: .client, relayID: "shared")
+
+        XCTAssertEqual(matcher.register(runtime), .waiting(replaced: nil))
+        XCTAssertTrue(matcher.hasWaitingRuntime(relayID: "shared"))
+        XCTAssertEqual(matcher.pendingCount(relayID: "shared"), 1)
+
+        XCTAssertTrue(matcher.hasWaitingRuntime(relayID: "shared"))
+        XCTAssertEqual(matcher.register(client), .matched(runtime: runtime, client: client))
+        XCTAssertFalse(matcher.hasWaitingRuntime(relayID: "shared"))
+        XCTAssertEqual(matcher.pendingCount(relayID: "shared"), 0)
+    }
+
+    func testRuntimeWaitingProbeIgnoresWaitingClient() {
+        let matcher = RelayMatcher()
+        let client = RelayPeerRegistration(role: .client, relayID: "shared")
+
+        XCTAssertEqual(matcher.register(client), .waiting(replaced: nil))
+        XCTAssertFalse(matcher.hasWaitingRuntime(relayID: "shared"))
+        XCTAssertEqual(matcher.pendingCount(relayID: "shared"), 1)
+    }
 }

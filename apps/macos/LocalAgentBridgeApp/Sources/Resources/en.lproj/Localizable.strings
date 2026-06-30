@@ -11,13 +11,16 @@
 "Quit" = "Quit";
 "Open the AetherLink window and bring it to the front." = "Open the AetherLink window and bring it to the front.";
 "Quit AetherLink Runtime." = "Quit AetherLink Runtime.";
+"App Preferences" = "App Preferences";
 "Appearance" = "Appearance";
 "System" = "System";
 "Light" = "Light";
 "Dark" = "Dark";
 "Choose how AetherLink Runtime appears. This setting is saved for future launches." = "Choose how AetherLink Runtime appears. This setting is saved for future launches.";
+"System follows this device's appearance. Saved for future launches." = "System follows this device's appearance. Saved for future launches.";
 "Language" = "Language";
 "Choose the app language. This setting is saved for future launches." = "Choose the app language. This setting is saved for future launches.";
+"Choose one of the supported app languages. Saved for future launches." = "Choose one of the supported app languages. Saved for future launches.";
 "English" = "English";
 "Korean" = "Korean";
 "Japanese" = "Japanese";
@@ -46,7 +49,6 @@
 "Close Runtime History Inspector" = "Close Runtime History Inspector";
 "Refresh Runtime History Inspector" = "Refresh Runtime History Inspector";
 "Refresh runtime-owned chat sessions from AetherLink Runtime." = "Refresh runtime-owned chat sessions from AetherLink Runtime.";
-"Review runtime-owned chat sessions stored on this runtime host." = "Review runtime-owned chat sessions stored on this runtime host.";
 "Runtime history inspector warning. %@" = "Runtime history inspector warning. %@";
 "No runtime chat sessions" = "No runtime chat sessions";
 "AetherLink Runtime has not stored chat sessions yet." = "AetherLink Runtime has not stored chat sessions yet.";
@@ -66,6 +68,9 @@
 "Transcript Preview" = "Transcript Preview";
 "Load transcript preview" = "Load transcript preview";
 "Load transcript preview for %@" = "Load transcript preview for %@";
+"Selected" = "Selected";
+"Not selected" = "Not selected";
+"Load this runtime-owned transcript preview." = "Load this runtime-owned transcript preview.";
 "Select a chat session" = "Select a chat session";
 "Choose a runtime-owned chat session to preview stored messages." = "Choose a runtime-owned chat session to preview stored messages.";
 "Runtime transcript preview warning. %@" = "Runtime transcript preview warning. %@";
@@ -101,8 +106,9 @@
 "Created %@" = "Created %@";
 "Updated %@" = "Updated %@";
 "Untitled memory note" = "Untitled memory note";
+"Unknown creation time" = "Unknown creation time";
 "Unknown update time" = "Unknown update time";
-"Memory note %@. Status %@. Updated %@." = "Memory note %@. Status %@. Updated %@.";
+"Memory note %@. Status %@. Created %@. Updated %@." = "Memory note %@. Status %@. Created %@. Updated %@.";
 "1 active chat" = "1 active chat";
 "%d active chats" = "%d active chats";
 "1 archived chat" = "1 archived chat";
@@ -255,12 +261,11 @@
 "Expires in %d sec" = "Expires in %d sec";
 "Pairing QR expired. Generate a new QR." = "Pairing QR expired. Generate a new QR.";
 
-"Manage pairing trust and remove devices allowed to use AetherLink Runtime." = "Manage pairing trust and remove devices allowed to use AetherLink Runtime.";
+"Manage devices trusted to use AetherLink Runtime. Remove trust when a device should pair again." = "Manage devices trusted to use AetherLink Runtime. Remove trust when a device should pair again.";
 "Refresh Devices" = "Refresh Devices";
 "Refresh trusted devices from AetherLink Runtime." = "Refresh trusted devices from AetherLink Runtime.";
 "Allowed Devices" = "Allowed Devices";
 "No trusted devices" = "No trusted devices";
-"Pair a device before allowing runtime commands." = "Pair a device before allowing runtime commands.";
 "Paired %@ · ID ending %@" = "Paired %@ · ID ending %@";
 "Paired %@. Device ID ending %@" = "Paired %@. Device ID ending %@";
 "Device ID ending %@" = "Device ID ending %@";
@@ -486,7 +491,7 @@
 "Automatic route" = "Automatic route";
 "No route" = "No route";
 "Connection details can be included in QR for devices outside this local network." = "Connection details can be included in QR for devices outside this local network.";
-"Loopback routes only work on this runtime host or USB diagnostics, not from another network." = "Loopback routes only work on this runtime host or USB diagnostics, not from another network.";
+"Loopback routes only work on this device or USB diagnostics, not from another network." = "Loopback routes only work on this device or USB diagnostics, not from another network.";
 ".local names work only on nearby local networks. Use a reachable relay, VPN, or tunnel for another network." = ".local names work only on nearby local networks. Use a reachable relay, VPN, or tunnel for another network.";
 "Use this only when both devices can reach the same VPN, tunnel, or private overlay." = "Use this only when both devices can reach the same VPN, tunnel, or private overlay.";
 "Private addresses usually do not cross unrelated networks. Use a reachable relay, VPN, tunnel, or private overlay." = "Private addresses usually do not cross unrelated networks. Use a reachable relay, VPN, tunnel, or private overlay.";

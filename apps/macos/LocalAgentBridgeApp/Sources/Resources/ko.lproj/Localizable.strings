@@ -11,13 +11,16 @@
 "Quit" = "종료";
 "Open the AetherLink window and bring it to the front." = "AetherLink 창을 열고 앞으로 가져옵니다.";
 "Quit AetherLink Runtime." = "AetherLink Runtime을 종료합니다.";
+"App Preferences" = "앱 설정";
 "Appearance" = "외관";
 "System" = "시스템";
 "Light" = "라이트";
 "Dark" = "다크";
 "Choose how AetherLink Runtime appears. This setting is saved for future launches." = "AetherLink Runtime의 외관을 선택합니다. 이 설정은 다음 실행에도 저장됩니다.";
+"System follows this device's appearance. Saved for future launches." = "시스템은 이 기기의 외관 설정을 따릅니다. 다음 실행에도 저장됩니다.";
 "Language" = "언어";
 "Choose the app language. This setting is saved for future launches." = "앱 언어를 선택합니다. 이 설정은 다음 실행에도 저장됩니다.";
+"Choose one of the supported app languages. Saved for future launches." = "지원되는 앱 언어 중 하나를 선택하세요. 다음 실행에도 저장됩니다.";
 "English" = "영어";
 "Korean" = "한국어";
 "Japanese" = "일본어";
@@ -46,7 +49,6 @@
 "Close Runtime History Inspector" = "런타임 기록 점검 닫기";
 "Refresh Runtime History Inspector" = "런타임 기록 점검 새로 고침";
 "Refresh runtime-owned chat sessions from AetherLink Runtime." = "AetherLink Runtime에서 런타임 소유 채팅 세션을 새로 고칩니다.";
-"Review runtime-owned chat sessions stored on this runtime host." = "이 런타임 호스트에 저장된 런타임 소유 채팅 세션을 검토하세요.";
 "Runtime history inspector warning. %@" = "런타임 기록 점검 경고. %@";
 "No runtime chat sessions" = "런타임 채팅 세션 없음";
 "AetherLink Runtime has not stored chat sessions yet." = "AetherLink Runtime에 저장된 채팅 세션이 아직 없습니다.";
@@ -66,6 +68,9 @@
 "Transcript Preview" = "대화 미리보기";
 "Load transcript preview" = "대화 미리보기 불러오기";
 "Load transcript preview for %@" = "%@ 대화 미리보기 불러오기";
+"Selected" = "선택됨";
+"Not selected" = "선택되지 않음";
+"Load this runtime-owned transcript preview." = "이 런타임 소유 대화 미리보기를 불러옵니다.";
 "Select a chat session" = "채팅 세션 선택";
 "Choose a runtime-owned chat session to preview stored messages." = "저장된 메시지를 미리 보려면 런타임 소유 채팅 세션을 선택하세요.";
 "Runtime transcript preview warning. %@" = "런타임 대화 미리보기 경고. %@";
@@ -101,8 +106,9 @@
 "Created %@" = "생성 %@";
 "Updated %@" = "수정 %@";
 "Untitled memory note" = "제목 없는 메모리 노트";
+"Unknown creation time" = "알 수 없는 생성 시간";
 "Unknown update time" = "알 수 없는 수정 시간";
-"Memory note %@. Status %@. Updated %@." = "메모리 노트 %@. 상태 %@. 수정 %@.";
+"Memory note %@. Status %@. Created %@. Updated %@." = "메모리 노트 %@. 상태 %@. 생성 %@. 수정 %@.";
 "1 active chat" = "활성 채팅 1개";
 "%d active chats" = "활성 채팅 %d개";
 "1 archived chat" = "보관된 채팅 1개";
@@ -255,12 +261,11 @@
 "Expires in %d sec" = "%d초 후 만료";
 "Pairing QR expired. Generate a new QR." = "페어링 QR이 만료되었습니다. 새 QR을 생성하세요.";
 
-"Manage pairing trust and remove devices allowed to use AetherLink Runtime." = "AetherLink Runtime 사용이 허용된 기기의 신뢰를 관리하고 제거합니다.";
+"Manage devices trusted to use AetherLink Runtime. Remove trust when a device should pair again." = "AetherLink Runtime 사용을 신뢰한 기기를 관리하세요. 기기가 다시 페어링해야 할 때 신뢰를 해제하세요.";
 "Refresh Devices" = "기기 새로고침";
 "Refresh trusted devices from AetherLink Runtime." = "AetherLink Runtime에서 신뢰 기기 목록을 새로고침합니다.";
 "Allowed Devices" = "허용된 기기";
 "No trusted devices" = "신뢰 기기 없음";
-"Pair a device before allowing runtime commands." = "런타임 명령을 허용하기 전에 기기를 페어링하세요.";
 "Paired %@ · ID ending %@" = "%@ 페어링됨 · ID 끝자리 %@";
 "Paired %@. Device ID ending %@" = "%@ 페어링됨. 기기 ID 끝자리 %@";
 "Device ID ending %@" = "기기 ID 끝자리 %@";
@@ -486,7 +491,7 @@
 "Automatic route" = "자동 경로";
 "No route" = "경로 없음";
 "Connection details can be included in QR for devices outside this local network." = "이 로컬 네트워크 밖의 기기용 연결 정보를 QR에 포함할 수 있습니다.";
-"Loopback routes only work on this runtime host or USB diagnostics, not from another network." = "루프백 경로는 이 런타임 호스트 또는 USB 진단에서만 동작하며 다른 네트워크에서는 사용할 수 없습니다.";
+"Loopback routes only work on this device or USB diagnostics, not from another network." = "루프백 경로는 이 기기 또는 USB 진단에서만 동작하며 다른 네트워크에서는 사용할 수 없습니다.";
 ".local names work only on nearby local networks. Use a reachable relay, VPN, or tunnel for another network." = ".local 이름은 근처 로컬 네트워크에서만 동작합니다. 다른 네트워크에서는 접근 가능한 릴레이, VPN 또는 터널을 사용하세요.";
 "Use this only when both devices can reach the same VPN, tunnel, or private overlay." = "두 기기가 같은 VPN, 터널 또는 사설 오버레이에 접근할 수 있을 때만 사용하세요.";
 "Private addresses usually do not cross unrelated networks. Use a reachable relay, VPN, tunnel, or private overlay." = "사설 주소는 보통 관련 없는 네트워크를 넘지 못합니다. 접근 가능한 릴레이, VPN, 터널 또는 사설 오버레이를 사용하세요.";

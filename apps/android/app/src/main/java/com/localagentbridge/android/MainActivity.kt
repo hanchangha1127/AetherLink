@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.Configuration
+import android.content.res.Resources
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -140,6 +141,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
+import com.localagentbridge.android.runtime.APP_LANGUAGE_SOURCE_IN_APP
 import com.localagentbridge.android.runtime.RuntimeClientViewModel
 import com.localagentbridge.android.runtime.RuntimeChatSession
 import com.localagentbridge.android.runtime.RuntimeModel
@@ -327,12 +329,22 @@ private fun Intent.developerDiagnosticsRequested(): Boolean {
     return getBooleanExtra(DEVELOPER_DIAGNOSTICS_EXTRA, false)
 }
 
-internal fun androidSystemAppLanguageTag(context: Context): String? {
+internal fun androidLanguageTagFromLocaleList(locales: LocaleList): String? {
+    if (locales.size() == 0) return null
+    return locales.get(0).toLanguageTag().takeIf { it.isNotBlank() }
+}
+
+internal fun androidAppLocaleOverrideLanguageTag(context: Context): String? {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return null
     val localeManager = context.getSystemService(LocaleManager::class.java) ?: return null
-    val locales = localeManager.applicationLocales
-    if (locales.size() == 0) return null
-    return locales.get(0).toLanguageTag()
+    return androidLanguageTagFromLocaleList(localeManager.applicationLocales)
+}
+
+internal fun androidSystemAppLanguageTag(context: Context): String? {
+    return androidLanguageTagFromLocaleList(Resources.getSystem().configuration.locales)
+        ?: androidLanguageTagFromLocaleList(context.resources.configuration.locales)
+        ?: Locale.getDefault().toLanguageTag()
+            .takeIf { it.isNotBlank() }
 }
 
 internal fun shouldSynchronizeAndroidSystemAppLanguage(
@@ -350,13 +362,20 @@ internal fun shouldSynchronizeAndroidSystemAppLanguage(
 internal fun synchronizeAndroidSystemAppLanguageTag(
     context: Context,
     selectedLanguageTag: String,
+    selectedLanguageSource: String = APP_LANGUAGE_SOURCE_IN_APP,
 ) {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
     val localeManager = context.getSystemService(LocaleManager::class.java) ?: return
+    if (selectedLanguageSource != APP_LANGUAGE_SOURCE_IN_APP) {
+        if (localeManager.applicationLocales.size() > 0) {
+            localeManager.applicationLocales = LocaleList.getEmptyLocaleList()
+        }
+        return
+    }
     val normalizedLanguageTag = RuntimeAppLanguage.normalizeLanguageTag(selectedLanguageTag)
     if (
         !shouldSynchronizeAndroidSystemAppLanguage(
-            currentLanguageTag = androidSystemAppLanguageTag(context),
+            currentLanguageTag = androidAppLocaleOverrideLanguageTag(context) ?: androidSystemAppLanguageTag(context),
             selectedLanguageTag = normalizedLanguageTag,
         )
     ) {
@@ -382,9 +401,13 @@ private fun LocalAgentBridgeApp(
         viewModel.reconcileSystemAppLanguageTag(androidSystemAppLanguageTag(baseContext))
         systemLanguageReconciled = true
     }
-    LaunchedEffect(baseContext, state.selectedLanguageTag, systemLanguageReconciled) {
+    LaunchedEffect(baseContext, state.selectedLanguageTag, state.selectedLanguageSource, systemLanguageReconciled) {
         if (systemLanguageReconciled) {
-            synchronizeAndroidSystemAppLanguageTag(baseContext, state.selectedLanguageTag)
+            synchronizeAndroidSystemAppLanguageTag(
+                context = baseContext,
+                selectedLanguageTag = state.selectedLanguageTag,
+                selectedLanguageSource = state.selectedLanguageSource,
+            )
         }
     }
     AetherLinkTheme(theme = state.selectedTheme) {
@@ -451,7 +474,10 @@ private fun LocalAgentBridgeApp(
                 returnToChatAfterPairing = treatAsOnboarding
                 settingsOpenedForPairingOnboarding = treatAsOnboarding
                 destination = AppDestination.Settings
-                viewModel.trustRuntimeFromPairingQr(rawValue)
+                viewModel.trustRuntimeFromPairingQr(
+                    rawValue = rawValue,
+                    requireRemoteRoute = true,
+                )
             }
             val scanPairingQr = {
                 showPairingQrScanner = true
@@ -462,7 +488,10 @@ private fun LocalAgentBridgeApp(
                 returnToChatAfterPairing = true
                 settingsOpenedForPairingOnboarding = true
                 destination = AppDestination.Settings
-                viewModel.trustRuntimeFromPairingQr(uri)
+                viewModel.trustRuntimeFromPairingQr(
+                    rawValue = uri,
+                    requireRemoteRoute = true,
+                )
                 onPairingUriConsumed()
             }
 
@@ -659,6 +688,7 @@ private fun LocalAgentBridgeApp(
                                 AppDestination.Chat -> ChatScreen(
                                     state = state,
                                     onInputChange = viewModel::updateChatInput,
+                                    onClearDraft = viewModel::clearChatDraft,
                                     onSend = viewModel::sendChatMessage,
                                     onCancel = viewModel::cancelGeneration,
                                     onConnect = viewModel::connectToTrustedRuntime,
@@ -692,6 +722,9 @@ private fun LocalAgentBridgeApp(
                                     onDisconnect = viewModel::disconnect,
                                     onSetAutoReconnectEnabled = viewModel::setTrustedRuntimeAutoReconnectEnabled,
                                     onSetLanguageTag = viewModel::setAppLanguageTag,
+                                    onFollowSystemLanguage = {
+                                        viewModel.followSystemAppLanguageTag(androidSystemAppLanguageTag(baseContext))
+                                    },
                                     onSetTheme = viewModel::setAppTheme,
                                     onSelectEmbeddingModel = viewModel::selectEmbeddingModel,
                                     onAddMemoryEntry = viewModel::addMemoryEntry,
@@ -1291,7 +1324,7 @@ private fun ChatModelTopBarMenu(
                 )
                 val emptyStateDetail = stringResource(
                     if (state.isConnected) {
-                        R.string.no_models_connected
+                        R.string.models_from_runtime
                     } else {
                         R.string.no_models_disconnected
                     },
@@ -3004,21 +3037,26 @@ private sealed interface PairingQrBarcodeScanResult {
     data object UnsupportedQr : PairingQrBarcodeScanResult
 }
 
-internal fun String.isAetherLinkPairingQrValue(): Boolean {
+internal fun String.isAetherLinkPairingQrValue(
+    requireRemoteRoute: Boolean = true,
+): Boolean {
     val result = parseRuntimePairingQrPayload(
         rawValue = trim(),
         allowDebugLoopbackRelay = BuildConfig.DEBUG,
         allowDiagnosticLocalDirectEndpoint = BuildConfig.DEBUG,
+        requireRemoteRoute = requireRemoteRoute,
     )
     return result is RuntimePairingQrParseResult.Accepted
 }
 
-internal fun String.aetherLinkPairingQrRawValueScanResult(): PairingQrRawValueScanResult {
+internal fun String.aetherLinkPairingQrRawValueScanResult(
+    requireRemoteRoute: Boolean = true,
+): PairingQrRawValueScanResult {
     val trimmed = trim()
     if (!trimmed.isAetherLinkPairingQrCandidateValue()) {
         return PairingQrRawValueScanResult.UnsupportedQr
     }
-    return if (trimmed.isAetherLinkPairingQrValue()) {
+    return if (trimmed.isAetherLinkPairingQrValue(requireRemoteRoute = requireRemoteRoute)) {
         PairingQrRawValueScanResult.Valid
     } else {
         PairingQrRawValueScanResult.InvalidPairingQr

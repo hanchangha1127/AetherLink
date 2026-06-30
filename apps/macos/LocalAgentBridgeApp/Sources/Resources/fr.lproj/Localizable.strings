@@ -11,13 +11,16 @@
 "Quit" = "Quitter";
 "Open the AetherLink window and bring it to the front." = "Ouvre la fenêtre AetherLink et la place au premier plan.";
 "Quit AetherLink Runtime." = "Quitte AetherLink Runtime.";
+"App Preferences" = "Préférences de l’app";
 "Appearance" = "Apparence";
 "System" = "Système";
 "Light" = "Clair";
 "Dark" = "Sombre";
 "Choose how AetherLink Runtime appears. This setting is saved for future launches." = "Choisissez l’apparence d’AetherLink Runtime. Ce réglage est enregistré pour les prochains lancements.";
+"System follows this device's appearance. Saved for future launches." = "Le mode système suit l’apparence de cet appareil. Ce réglage est enregistré pour les prochains lancements.";
 "Language" = "Langue";
 "Choose the app language. This setting is saved for future launches." = "Choisissez la langue de l’app. Ce réglage est enregistré pour les prochains lancements.";
+"Choose one of the supported app languages. Saved for future launches." = "Choisissez l’une des langues prises en charge. Ce réglage est enregistré pour les prochains lancements.";
 "English" = "Anglais";
 "Korean" = "Coréen";
 "Japanese" = "Japonais";
@@ -46,7 +49,6 @@
 "Close Runtime History Inspector" = "Fermer l’inspecteur d’historique du runtime";
 "Refresh Runtime History Inspector" = "Actualiser l’inspecteur d’historique du runtime";
 "Refresh runtime-owned chat sessions from AetherLink Runtime." = "Actualiser les sessions de chat détenues par le runtime depuis AetherLink Runtime.";
-"Review runtime-owned chat sessions stored on this runtime host." = "Examinez les sessions de chat détenues par le runtime et stockées sur cet hôte d’exécution.";
 "Runtime history inspector warning. %@" = "Avertissement de l’inspecteur d’historique du runtime. %@";
 "No runtime chat sessions" = "Aucune session de chat du runtime";
 "AetherLink Runtime has not stored chat sessions yet." = "AetherLink Runtime n’a pas encore stocké de sessions de chat.";
@@ -66,6 +68,9 @@
 "Transcript Preview" = "Aperçu de la transcription";
 "Load transcript preview" = "Charger l’aperçu de la transcription";
 "Load transcript preview for %@" = "Charger l’aperçu de la transcription pour %@";
+"Selected" = "Sélectionné";
+"Not selected" = "Non sélectionné";
+"Load this runtime-owned transcript preview." = "Charger cet aperçu de transcription détenu par le runtime.";
 "Select a chat session" = "Sélectionner une session de chat";
 "Choose a runtime-owned chat session to preview stored messages." = "Choisissez une session de chat détenue par le runtime pour prévisualiser les messages stockés.";
 "Runtime transcript preview warning. %@" = "Avertissement d’aperçu de transcription du runtime. %@";
@@ -101,8 +106,9 @@
 "Created %@" = "Créé %@";
 "Updated %@" = "Mis à jour %@";
 "Untitled memory note" = "Note de mémoire sans titre";
+"Unknown creation time" = "Heure de création inconnue";
 "Unknown update time" = "Heure de mise à jour inconnue";
-"Memory note %@. Status %@. Updated %@." = "Note de mémoire %@. État %@. Mise à jour %@.";
+"Memory note %@. Status %@. Created %@. Updated %@." = "Note de mémoire %@. État %@. Créée %@. Mise à jour %@.";
 "1 active chat" = "1 chat actif";
 "%d active chats" = "%d chats actifs";
 "1 archived chat" = "1 chat archivé";
@@ -255,12 +261,11 @@
 "Expires in %d sec" = "Expire dans %d s";
 "Pairing QR expired. Generate a new QR." = "Le QR de jumelage a expiré. Générez un nouveau QR.";
 
-"Manage pairing trust and remove devices allowed to use AetherLink Runtime." = "Gérez la confiance de jumelage et retirez les appareils autorisés à utiliser AetherLink Runtime.";
+"Manage devices trusted to use AetherLink Runtime. Remove trust when a device should pair again." = "Gérez les appareils approuvés pour utiliser AetherLink Runtime. Retirez l’approbation lorsqu’un appareil doit être jumelé à nouveau.";
 "Refresh Devices" = "Actualiser les appareils";
 "Refresh trusted devices from AetherLink Runtime." = "Actualise les appareils approuvés depuis AetherLink Runtime.";
 "Allowed Devices" = "Appareils autorisés";
 "No trusted devices" = "Aucun appareil approuvé";
-"Pair a device before allowing runtime commands." = "Jumelez un appareil avant d’autoriser les commandes du runtime.";
 "Paired %@ · ID ending %@" = "Jumelé %@ · ID finissant par %@";
 "Paired %@. Device ID ending %@" = "Jumelé %@. ID de l’appareil finissant par %@";
 "Device ID ending %@" = "ID de l’appareil finissant par %@";
@@ -486,7 +491,7 @@
 "Automatic route" = "Route automatique";
 "No route" = "Aucune route";
 "Connection details can be included in QR for devices outside this local network." = "Les informations de connexion peuvent être incluses dans le QR pour les appareils hors de ce réseau local.";
-"Loopback routes only work on this runtime host or USB diagnostics, not from another network." = "Les routes de bouclage fonctionnent uniquement sur cet hôte d'exécution ou en diagnostic USB, pas depuis un autre réseau.";
+"Loopback routes only work on this device or USB diagnostics, not from another network." = "Les routes de bouclage fonctionnent uniquement sur cet appareil ou en diagnostic USB, pas depuis un autre réseau.";
 ".local names work only on nearby local networks. Use a reachable relay, VPN, or tunnel for another network." = "Les noms .local ne fonctionnent que sur les réseaux locaux proches. Pour un autre réseau, utilisez un relais, VPN ou tunnel joignable.";
 "Use this only when both devices can reach the same VPN, tunnel, or private overlay." = "Utilisez ceci uniquement lorsque les deux appareils peuvent atteindre le même VPN, tunnel ou réseau en superposition privée.";
 "Private addresses usually do not cross unrelated networks. Use a reachable relay, VPN, tunnel, or private overlay." = "Les adresses privées ne traversent généralement pas les réseaux sans lien. Utilisez un relais, VPN, tunnel ou réseau en superposition privée joignable.";

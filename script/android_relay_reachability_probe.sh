@@ -6,6 +6,7 @@ ANDROID_HOME="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
 ADB="${ADB:-$ANDROID_HOME/platform-tools/adb}"
 HOST=""
 PORT=""
+RELAY_ID=""
 SERIAL=""
 TIMEOUT_SECONDS=5
 JSON_PATH=""
@@ -14,14 +15,18 @@ INCLUDE_NETWORK_SUMMARY=0
 usage() {
   cat <<'USAGE'
 Usage:
-  script/android_relay_reachability_probe.sh --host <relay-host> --port <relay-port> [--timeout <seconds>] [--json <path>]
+  script/android_relay_reachability_probe.sh --host <relay-host> --port <relay-port> [--relay-id <relay-id>] [--timeout <seconds>] [--json <path>]
 
 Checks whether a physically connected Android device can open a TCP connection
-to an AetherLink relay endpoint without adb reverse. This is a route diagnostic
+to an AetherLink relay endpoint without adb reverse. With --relay-id, it sends
+AETHERLINK_RELAY probe <relay-id> from the device network and requires the relay
+to report both a known route and a waiting runtime. This is a route diagnostic
 only: it does not pair, authenticate, call AetherLink Runtime, or call Ollama or
 LM Studio.
 
 Options:
+  --relay-id <relay-id>         Run the non-consuming AetherLink relay probe
+                                instead of a TCP-connect-only check.
   --serial <adb-serial>          Use a specific adb device.
   --timeout <seconds>           TCP connect timeout used on the device.
   --json <path>                 Write a machine-readable reachability summary.
@@ -46,6 +51,14 @@ while [[ $# -gt 0 ]]; do
         exit 2
       fi
       PORT="$2"
+      shift 2
+      ;;
+    --relay-id)
+      if [[ $# -lt 2 ]]; then
+        echo "--relay-id requires a value." >&2
+        exit 2
+      fi
+      RELAY_ID="$2"
       shift 2
       ;;
     --serial)
@@ -107,6 +120,13 @@ fi
 if ! [[ "$TIMEOUT_SECONDS" =~ ^[0-9]+$ ]] || (( TIMEOUT_SECONDS < 1 || TIMEOUT_SECONDS > 120 )); then
   echo "--timeout must be an integer in 1..120 seconds." >&2
   exit 2
+fi
+
+if [[ -n "$RELAY_ID" ]]; then
+  if [[ "$RELAY_ID" == -* || "$RELAY_ID" == *[[:space:]]* ]]; then
+    echo "--relay-id must be a non-empty relay token without whitespace." >&2
+    exit 2
+  fi
 fi
 
 if [[ ! -x "$ADB" ]]; then
@@ -187,9 +207,60 @@ print(time.monotonic_ns())
 PY
 )"
 
+shell_quote() {
+  python3 - "$1" <<'PY'
+import sys
+
+value = sys.argv[1]
+print("'" + value.replace("'", "'\\''") + "'")
+PY
+}
+
+parse_relay_probe_ready() {
+  python3 - "$1" <<'PY'
+import sys
+
+lines = sys.argv[1].strip().splitlines()
+line = lines[-1] if lines else ""
+parts = line.split()
+if len(parts) < 3 or parts[0] != "AETHERLINK_RELAY" or parts[1] != "probe":
+    raise SystemExit(1)
+values = {}
+for token in parts[2:]:
+    if "=" in token:
+        key, value = token.split("=", 1)
+    else:
+        key, value = token, "true"
+    values[key] = value.lower()
+truthy = {"1", "true", "yes"}
+known = values.get("known") in truthy or values.get("allocated") in truthy
+runtime_waiting = values.get("runtime_waiting") in truthy
+raise SystemExit(0 if known and runtime_waiting else 1)
+PY
+}
+
+PROBE_MODE="tcp_connect"
+RAW_PROBE_STATUS=0
+PROBE_READY=0
+
 set +e
-PROBE_OUTPUT="$("$ADB" "${ADB_TARGET[@]}" shell nc -z -w "$TIMEOUT_SECONDS" "$HOST" "$PORT" 2>&1 </dev/null)"
-PROBE_STATUS=$?
+if [[ -n "$RELAY_ID" ]]; then
+  PROBE_MODE="aetherlink_relay_probe"
+  REMOTE_REQUEST="$(shell_quote "AETHERLINK_RELAY probe $RELAY_ID")"
+  REMOTE_HOST="$(shell_quote "$HOST")"
+  PROBE_OUTPUT="$("$ADB" "${ADB_TARGET[@]}" shell "printf '%s\n' $REMOTE_REQUEST | nc -w $TIMEOUT_SECONDS $REMOTE_HOST $PORT" 2>&1 </dev/null)"
+  RAW_PROBE_STATUS=$?
+  if parse_relay_probe_ready "$PROBE_OUTPUT"; then
+    PROBE_READY=1
+    PROBE_STATUS=0
+  else
+    PROBE_STATUS=1
+  fi
+else
+  PROBE_OUTPUT="$("$ADB" "${ADB_TARGET[@]}" shell nc -z -w "$TIMEOUT_SECONDS" "$HOST" "$PORT" 2>&1 </dev/null)"
+  RAW_PROBE_STATUS=$?
+  PROBE_STATUS=$RAW_PROBE_STATUS
+fi
 set -e
 
 END_NS="$(python3 - <<'PY'
@@ -217,6 +288,10 @@ write_json() {
     "$HOST_CLASS" \
     "$TIMEOUT_SECONDS" \
     "$PROBE_STATUS" \
+    "$RAW_PROBE_STATUS" \
+    "$PROBE_MODE" \
+    "$RELAY_ID" \
+    "$PROBE_READY" \
     "$DURATION_MS" \
     "$PROBE_OUTPUT" \
     "$NETWORK_SUMMARY" <<'PY'
@@ -233,19 +308,25 @@ import sys
     host_class,
     timeout_seconds,
     probe_status,
+    raw_probe_status,
+    probe_mode,
+    relay_id,
+    probe_ready,
     duration_ms,
     probe_output,
     network_summary,
 ) = sys.argv[1:]
 
 caveats = [
-    "tcp_connect_only_not_pairing_or_authentication",
+    "route_probe_not_pairing_or_authentication",
     "adb_probe_not_optical_qr_scan",
 ]
+if not relay_id:
+    caveats.append("tcp_connect_only_not_relay_room_readiness")
 if host_class in {"local", "link_local", "private_or_cgnat"}:
     caveats.append("endpoint_class_may_not_cross_unrelated_networks")
 if int(probe_status) != 0:
-    caveats.append("android_device_could_not_reach_relay_endpoint")
+    caveats.append("android_device_relay_probe_failed")
 
 summary = {
     "generated_at": started_at,
@@ -256,12 +337,16 @@ summary = {
         "host": host,
         "port": int(port),
         "host_class": host_class,
+        "relay_id": relay_id or None,
     },
     "probe": {
-        "transport": "android_device_tcp_connect",
+        "transport": probe_mode,
         "timeout_seconds": int(timeout_seconds),
         "duration_ms": int(duration_ms),
         "exit_status": int(probe_status),
+        "raw_exit_status": int(raw_probe_status),
+        "tcp_reachable": int(raw_probe_status) == 0,
+        "route_ready": probe_ready == "1",
         "reachable": int(probe_status) == 0,
         "output": probe_output.strip() or None,
     },
@@ -281,14 +366,22 @@ PY
 write_json
 
 if [[ "$PROBE_STATUS" -eq 0 ]]; then
-  echo "OK: Android device $SERIAL can open TCP to $HOST:$PORT."
+  if [[ -n "$RELAY_ID" ]]; then
+    echo "OK: Android device $SERIAL sees relay route $RELAY_ID ready at $HOST:$PORT."
+  else
+    echo "OK: Android device $SERIAL can open TCP to $HOST:$PORT."
+  fi
   if [[ -n "$JSON_PATH" ]]; then
     echo "Summary: $JSON_PATH"
   fi
   exit 0
 fi
 
-echo "Android device $SERIAL could not open TCP to $HOST:$PORT within ${TIMEOUT_SECONDS}s." >&2
+if [[ -n "$RELAY_ID" ]]; then
+  echo "Android device $SERIAL could not verify relay route $RELAY_ID at $HOST:$PORT within ${TIMEOUT_SECONDS}s." >&2
+else
+  echo "Android device $SERIAL could not open TCP to $HOST:$PORT within ${TIMEOUT_SECONDS}s." >&2
+fi
 if [[ -n "$PROBE_OUTPUT" ]]; then
   echo "$PROBE_OUTPUT" >&2
 fi

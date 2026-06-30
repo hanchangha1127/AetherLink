@@ -899,6 +899,18 @@ else:
         raise SystemExit("Direct pairing info unexpectedly includes relay fields")
 PY
 
+PAIRING_RELAY_ID=""
+if [[ "$MODE" == "relay" ]]; then
+  PAIRING_RELAY_ID="$(python3 - "$PAIRING_INFO_JSON" <<'PY'
+import json
+import sys
+
+info = json.loads(sys.argv[1])
+print(info.get("relay_id") or "")
+PY
+)"
+fi
+
 PAIRING_URI_FROM_LOG="$(python3 - "$RUNTIME_LOG" <<'PY'
 import sys
 
@@ -974,6 +986,28 @@ if [[ "$REVERSE_RUNTIME" -eq 1 || "$REVERSE_RELAY" -eq 1 ]]; then
   "$ADB" -s "$SERIAL" reverse --list
 else
   echo "Skipping adb reverse; Android must reach relay $EXTERNAL_RELAY_HOST:$RELAY_PORT directly."
+fi
+
+if [[ "$MODE" == "relay" && -n "$EXTERNAL_RELAY_HOST" && "$PROBE_EXTERNAL_RELAY_FROM_DEVICE" -eq 1 ]]; then
+  if [[ -z "$PAIRING_RELAY_ID" ]]; then
+    echo "Pairing info did not include relay_id; cannot run Android route-level relay readiness probe." >&2
+    exit 22
+  fi
+  echo "Waiting for runtime host to register with relay before route-level device probe"
+  wait_for_log "$RUNTIME_LOG" "relay status=waiting_for_peer" 15
+  echo "Checking Android-device relay route readiness without adb reverse"
+  DEVICE_RELAY_ROUTE_PROBE_JSON="$WORK_DIR/android-relay-route-readiness.json"
+  if ! script/android_relay_reachability_probe.sh \
+    --serial "$SERIAL" \
+    --host "$EXTERNAL_RELAY_HOST" \
+    --port "$RELAY_PORT" \
+    --relay-id "$PAIRING_RELAY_ID" \
+    --timeout 5 \
+    --json "$DEVICE_RELAY_ROUTE_PROBE_JSON" \
+    --include-network-summary; then
+    echo "Android can open the relay endpoint only if TCP probe passed, but the QR relay route is not ready for this relay_id. Regenerate the QR after the runtime host is waiting on the relay." >&2
+    exit 23
+  fi
 fi
 
 if [[ "$SKIP_INSTALL" -eq 0 ]]; then

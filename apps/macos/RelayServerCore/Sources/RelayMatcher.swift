@@ -38,6 +38,12 @@ public final class RelayMatcher: @unchecked Sendable {
         }
     }
 
+    public func hasWaitingRuntime(relayID: String) -> Bool {
+        lock.withLock {
+            pending[relayID]?[.runtime] != nil
+        }
+    }
+
     private func registerLocked(_ peer: RelayPeerRegistration) -> RelayRegistrationResult {
         var room = pending[peer.relayID] ?? [:]
         let replaced = room.removeValue(forKey: peer.role)

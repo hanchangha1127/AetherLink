@@ -19,7 +19,9 @@ func usage(exitCode: Int32) -> Never {
     runtime and one client by relay_id, sends AETHERLINK_RELAY ready, then
     blindly forwards bytes. It also accepts
     AETHERLINK_RELAY allocate <route_token> [relay_secret] to issue or renew
-    stable relay route material for QR development flows.
+    stable relay route material for QR development flows, and
+    AETHERLINK_RELAY probe <relay_id> to report whether the relay ID is known
+    and whether a runtime is waiting without consuming any pending peer.
     Runtime/client handshakes for unknown or expired relay IDs are rejected by
     default. Use --allow-legacy only for old local diagnostics that intentionally
     accept arbitrary relay IDs.

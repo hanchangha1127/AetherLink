@@ -2,8 +2,12 @@ package com.localagentbridge.android
 
 import android.content.Intent
 import android.net.Uri
+import android.os.LocaleList
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import com.localagentbridge.android.core.transport.RuntimeEndpointSource
+import com.localagentbridge.android.runtime.APP_LANGUAGE_SOURCE_DEFAULT
+import com.localagentbridge.android.runtime.APP_LANGUAGE_SOURCE_IN_APP
+import com.localagentbridge.android.runtime.APP_LANGUAGE_SOURCE_SYSTEM
 import com.localagentbridge.android.runtime.RuntimeActiveRouteKind
 import com.localagentbridge.android.runtime.RuntimeDiscoveredRuntime
 import com.localagentbridge.android.runtime.RuntimeAppLanguage
@@ -18,8 +22,10 @@ import com.localagentbridge.android.runtime.RuntimeUiError
 import com.localagentbridge.android.runtime.RuntimeUiState
 import com.localagentbridge.android.ui.AetherLinkInteractionFeedback
 import com.localagentbridge.android.ui.aetherLinkHapticFeedbackType
+import com.localagentbridge.android.ui.appLanguagePreferenceFixedOptionSelected
 import com.localagentbridge.android.ui.appLanguagePreferenceOptionSelected
 import com.localagentbridge.android.ui.appLanguagePreferenceOptions
+import com.localagentbridge.android.ui.appLanguagePreferenceSystemOptionSelected
 import com.localagentbridge.android.ui.appThemePreferenceOptions
 import com.localagentbridge.android.ui.assistantShowsTypingPlaceholder
 import com.localagentbridge.android.ui.CHAT_COMPOSER_CONTAINER_ALPHA
@@ -410,6 +416,51 @@ class AppNavigationTest {
     }
 
     @Test
+    fun settingsSystemLanguageOptionIsSeparateFromFixedLaunchLanguages() {
+        assertEquals(
+            true,
+            appLanguagePreferenceSystemOptionSelected(APP_LANGUAGE_SOURCE_DEFAULT),
+        )
+        assertEquals(
+            true,
+            appLanguagePreferenceSystemOptionSelected(APP_LANGUAGE_SOURCE_SYSTEM),
+        )
+        assertEquals(
+            true,
+            appLanguagePreferenceSystemOptionSelected(null),
+        )
+        assertEquals(
+            false,
+            appLanguagePreferenceSystemOptionSelected(APP_LANGUAGE_SOURCE_IN_APP),
+        )
+        assertEquals(
+            false,
+            appLanguagePreferenceFixedOptionSelected(
+                selectedLanguageTag = RuntimeAppLanguage.English.languageTag,
+                selectedLanguageSource = APP_LANGUAGE_SOURCE_DEFAULT,
+                language = RuntimeAppLanguage.English,
+            ),
+        )
+        assertEquals(
+            false,
+            appLanguagePreferenceFixedOptionSelected(
+                selectedLanguageTag = RuntimeAppLanguage.Korean.languageTag,
+                selectedLanguageSource = APP_LANGUAGE_SOURCE_SYSTEM,
+                language = RuntimeAppLanguage.Korean,
+            ),
+        )
+        assertEquals(
+            true,
+            appLanguagePreferenceFixedOptionSelected(
+                selectedLanguageTag = RuntimeAppLanguage.French.languageTag,
+                selectedLanguageSource = APP_LANGUAGE_SOURCE_IN_APP,
+                language = RuntimeAppLanguage.French,
+            ),
+        )
+        assertEquals(5, appLanguagePreferenceOptions().size)
+    }
+
+    @Test
     fun settingsLanguageSelectionNormalizesStoredAliases() {
         assertEquals(
             true,
@@ -436,6 +487,8 @@ class AppNavigationTest {
 
     @Test
     fun androidSystemAppLanguageSyncNormalizesCurrentAndSelectedTags() {
+        assertNull(androidLanguageTagFromLocaleList(LocaleList.getEmptyLocaleList()))
+        assertEquals("ko-KR", androidLanguageTagFromLocaleList(LocaleList.forLanguageTags("ko-KR,en-US")))
         assertFalse(shouldSynchronizeAndroidSystemAppLanguage(null, "en"))
         assertFalse(shouldSynchronizeAndroidSystemAppLanguage("  ", "en"))
         assertTrue(shouldSynchronizeAndroidSystemAppLanguage(null, "ko"))
@@ -1483,11 +1536,15 @@ class AppNavigationTest {
             "&rid=runtime-1&rn=AetherLink%20Runtime&rf=fp-1&rk=runtime-public-key" +
             "&rt=route-1&rh=relay.example.test&rp=443&ri=relay-1&rs=secret-1" +
             "&rx=4102444800000&rrn=nonce-route-1&rsc=remote"
-        val completeLegacyUri = "lab://pair?version=1&pairing_nonce=nonce-1&pairing_code=123456" +
+        val identityOnlyLegacyUri = "lab://pair?version=1&pairing_nonce=nonce-1&pairing_code=123456" +
             "&runtime_device_id=runtime-1&runtime_key_fingerprint=fp-1"
 
         assertEquals(true, "\n  $rawUri  ".isAetherLinkPairingQrValue())
-        assertEquals(true, completeLegacyUri.isAetherLinkPairingQrValue())
+        assertEquals(false, identityOnlyLegacyUri.isAetherLinkPairingQrValue())
+        assertEquals(
+            true,
+            identityOnlyLegacyUri.isAetherLinkPairingQrValue(requireRemoteRoute = false),
+        )
         assertEquals(false, "lab://pair?pairing_code=123456".isAetherLinkPairingQrValue())
         assertEquals(false, "https://example.test/pair?code=123456".isAetherLinkPairingQrValue())
         assertEquals(false, "aetherlink://settings?pairing_code=123456".isAetherLinkPairingQrValue())
@@ -1520,6 +1577,8 @@ class AppNavigationTest {
             "&rt=route-1&rh=relay.example.test&rp=443&ri=relay-1&rs=secret-1" +
             "&rx=4102444800000&rrn=nonce-route-1&rsc=remote"
         val invalidPairQr = "aetherlink://pair?pairing_code=123456"
+        val identityOnlyPairQr = "aetherlink://pair?version=1&pairing_nonce=nonce-1" +
+            "&pairing_code=123456&runtime_device_id=runtime-1&runtime_key_fingerprint=fp-1"
         val expiredPairQr = "aetherlink://pair?version=1&pairing_nonce=nonce-1&pairing_code=123456" +
             "&runtime_device_id=runtime-1&runtime_key_fingerprint=fp-1" +
             "&relay_host=relay.example.test&relay_port=443&relay_id=relay-1" +
@@ -1532,6 +1591,14 @@ class AppNavigationTest {
         assertEquals(
             PairingQrRawValueScanResult.InvalidPairingQr,
             invalidPairQr.aetherLinkPairingQrRawValueScanResult(),
+        )
+        assertEquals(
+            PairingQrRawValueScanResult.InvalidPairingQr,
+            identityOnlyPairQr.aetherLinkPairingQrRawValueScanResult(),
+        )
+        assertEquals(
+            PairingQrRawValueScanResult.Valid,
+            identityOnlyPairQr.aetherLinkPairingQrRawValueScanResult(requireRemoteRoute = false),
         )
         assertEquals(
             PairingQrRawValueScanResult.InvalidPairingQr,
@@ -2869,11 +2936,13 @@ class AppNavigationTest {
     fun emptyChatShowsModelPickerHintWhenConnectedWithoutSelectedModel() {
         val state = RuntimeUiState(
             isConnected = true,
+            trustedRuntime = trustedRuntime(),
             selectedModelId = null,
             models = listOf(RuntimeModel(id = "chat-model", name = "Chat Model")),
         )
 
         assertEquals(true, shouldShowChatEmptyState(state))
+        assertEquals(R.string.empty_chat_no_model_header_hint, chatEmptyTextRes(state))
         assertNull(chatEmptyPrimaryAction(state))
     }
 
@@ -2881,11 +2950,13 @@ class AppNavigationTest {
     fun emptyChatShowsModelPickerHintWhenSelectedModelIsUnavailable() {
         val missingState = RuntimeUiState(
             isConnected = true,
+            trustedRuntime = trustedRuntime(),
             selectedModelId = "missing-model",
             models = listOf(RuntimeModel(id = "chat-model", name = "Chat Model")),
         )
         val uninstalledState = RuntimeUiState(
             isConnected = true,
+            trustedRuntime = trustedRuntime(),
             selectedModelId = "chat-model",
             models = listOf(
                 RuntimeModel(id = "chat-model", name = "Chat Model", installed = false),
@@ -2893,6 +2964,7 @@ class AppNavigationTest {
         )
         val embeddingState = RuntimeUiState(
             isConnected = true,
+            trustedRuntime = trustedRuntime(),
             selectedModelId = "embed-model",
             models = listOf(
                 RuntimeModel(id = "embed-model", name = "Embedding Model", modelKind = "embedding"),
@@ -2900,8 +2972,11 @@ class AppNavigationTest {
         )
 
         assertEquals(true, shouldShowChatEmptyState(missingState))
+        assertEquals(R.string.selected_model_unavailable, chatEmptyTextRes(missingState))
         assertEquals(true, shouldShowChatEmptyState(uninstalledState))
+        assertEquals(R.string.chat_hint_install_model, chatEmptyTextRes(uninstalledState))
         assertEquals(true, shouldShowChatEmptyState(embeddingState))
+        assertEquals(R.string.selected_model_unavailable, chatEmptyTextRes(embeddingState))
     }
 
     @Test

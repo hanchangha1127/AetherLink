@@ -133,6 +133,49 @@ class RuntimeRelayTcpClientTest {
     }
 
     @Test
+    fun relayConnectFailsWhenReadyLineRejectsRoute() {
+        val server = ServerSocket(0)
+        val receivedHandshake = CompletableFuture<String>()
+        val serverThread = thread(start = true, isDaemon = true) {
+            runCatching {
+                server.accept().use { socket ->
+                    receivedHandshake.complete(socket.getInputStream().readAsciiLine())
+                    socket.getOutputStream().write("AETHERLINK_RELAY rejected\n".toByteArray(Charsets.UTF_8))
+                    socket.getOutputStream().flush()
+                }
+            }.onFailure(receivedHandshake::completeExceptionally)
+        }
+        val client = RuntimeRelayTcpClient()
+        val identity = PairedRuntimeIdentity(
+            deviceId = "runtime-1",
+            name = "AetherLink",
+            fingerprint = "fingerprint",
+        )
+        val route = PreparedRemoteRuntimeRoute.Relay(
+            identity = identity,
+            relayId = "relay-rejected",
+            host = "127.0.0.1",
+            port = server.localPort,
+            security = RemoteRouteSecurityContext(
+                rendezvousToken = "relay-rejected",
+                expiresAtEpochMillis = Long.MAX_VALUE,
+                antiReplayNonce = "relay-rejected",
+            ),
+        )
+
+        val error = assertThrows(IllegalArgumentException::class.java) {
+            runBlocking {
+                client.connect(route, timeoutMillis = 1_000)
+            }
+        }
+
+        assertEquals("AETHERLINK_RELAY client relay-rejected", receivedHandshake.get(2, TimeUnit.SECONDS))
+        assertEquals("Relay did not accept route", error.message)
+        server.close()
+        serverThread.join(1_500)
+    }
+
+    @Test
     fun relayClientSerializesEncryptionWithConcurrentSends() = runBlocking {
         val codec = ProtocolCodec()
         val relaySecret = "relay-concurrent-secret"

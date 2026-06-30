@@ -383,6 +383,21 @@ def android_runtime_boundary_matcher_self_test_failures() -> list[str]:
 def android_client_ui_resource_copy_guard_failures() -> list[str]:
     failures: list[str] = []
     string_paths = sorted(ROOT.glob("apps/android/app/src/main/res/values*/strings.xml"))
+    main_activity_path = ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/MainActivity.kt"
+    runtime_local_store_path = ROOT / (
+        "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeLocalStore.kt"
+    )
+    runtime_view_model_path = ROOT / (
+        "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt"
+    )
+    client_screens_path = ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/ui/ClientScreens.kt"
+    app_navigation_test_path = ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/AppNavigationTest.kt"
+    runtime_view_model_test_path = ROOT / (
+        "apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt"
+    )
+    compose_test_path = ROOT / (
+        "apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt"
+    )
     os_product_noun_re = re.compile(r"\b(?:Android|Mac|macOS|Windows|iPhone|iOS)\b")
     direct_provider_access_re = re.compile(
         r"\b(?:"
@@ -414,6 +429,22 @@ def android_client_ui_resource_copy_guard_failures() -> list[str]:
         "attachment_type_image": "Image jointe",
         "attachment_type_document": "Document joint",
         "role_assistant": "Assistant IA",
+    }
+    language_follow_system_strings_by_dir = {
+        "values": "Follow system language",
+        "values-en": "Follow system language",
+        "values-ko": "시스템 언어 따르기",
+        "values-ja": "システム言語に従う",
+        "values-zh-rCN": "跟随系统语言",
+        "values-fr": "Suivre la langue du système",
+    }
+    language_follow_system_detail_strings_by_dir = {
+        "values": "AetherLink uses the device system language when supported.",
+        "values-en": "AetherLink uses the device system language when supported.",
+        "values-ko": "지원되는 경우 AetherLink는 기기 시스템 언어를 사용합니다.",
+        "values-ja": "対応している場合、AetherLink はデバイスのシステム言語を使用します。",
+        "values-zh-rCN": "受支持时，AetherLink 会使用设备系统语言。",
+        "values-fr": "AetherLink utilise la langue système de l’appareil quand elle est prise en charge.",
     }
 
     unsafe_samples = (
@@ -484,6 +515,162 @@ def android_client_ui_resource_copy_guard_failures() -> list[str]:
                     f"{relative}: string {name!r} must use French chat accessibility value "
                     f"{expected_french_value!r}, got {value!r}."
                 )
+            expected_follow_system = language_follow_system_strings_by_dir.get(path.parent.name)
+            if name == "language_follow_system" and expected_follow_system is not None:
+                if value != expected_follow_system:
+                    failures.append(
+                        f"{relative}: string {name!r} must use system-following language label "
+                        f"{expected_follow_system!r}, got {value!r}."
+                    )
+            expected_follow_system_detail = language_follow_system_detail_strings_by_dir.get(path.parent.name)
+            if name == "language_follow_system_detail" and expected_follow_system_detail is not None:
+                if value != expected_follow_system_detail:
+                    failures.append(
+                        f"{relative}: string {name!r} must use system-following language detail "
+                        f"{expected_follow_system_detail!r}, got {value!r}."
+                    )
+
+    for resource_dir, expected_follow_system in language_follow_system_strings_by_dir.items():
+        path = ROOT / f"apps/android/app/src/main/res/{resource_dir}/strings.xml"
+        text = path.read_text(encoding="utf-8", errors="replace")
+        if 'name="language_follow_system"' not in text or expected_follow_system not in text:
+            failures.append(
+                f"{path.relative_to(ROOT)}: Missing localized system-following language option "
+                f"{expected_follow_system!r}."
+            )
+        expected_follow_system_detail = language_follow_system_detail_strings_by_dir[resource_dir]
+        if 'name="language_follow_system_detail"' not in text or expected_follow_system_detail not in text:
+            failures.append(
+                f"{path.relative_to(ROOT)}: Missing localized system-following language detail "
+                f"{expected_follow_system_detail!r}."
+            )
+
+    main_activity_text = main_activity_path.read_text(encoding="utf-8", errors="replace")
+    runtime_local_store_text = runtime_local_store_path.read_text(encoding="utf-8", errors="replace")
+    runtime_view_model_text = runtime_view_model_path.read_text(encoding="utf-8", errors="replace")
+    client_screens_text = client_screens_path.read_text(encoding="utf-8", errors="replace")
+    app_navigation_test_text = app_navigation_test_path.read_text(encoding="utf-8", errors="replace")
+    runtime_view_model_test_text = runtime_view_model_test_path.read_text(encoding="utf-8", errors="replace")
+    compose_test_text = compose_test_path.read_text(encoding="utf-8", errors="replace")
+    required_follow_system_snippets = (
+        (
+            main_activity_path,
+            main_activity_text,
+            "Resources.getSystem().configuration.locales",
+            "Follow-system app language must read the device system locale, not only the per-app override.",
+        ),
+        (
+            main_activity_path,
+            main_activity_text,
+            "androidAppLocaleOverrideLanguageTag(context) ?: androidSystemAppLanguageTag(context)",
+            "In-app language synchronization must compare against the app override or effective system language.",
+        ),
+        (
+            main_activity_path,
+            main_activity_text,
+            "LocaleList.getEmptyLocaleList()",
+            "Android app-language sync must clear per-app locale overrides when following the system.",
+        ),
+        (
+            main_activity_path,
+            main_activity_text,
+            "selectedLanguageSource = state.selectedLanguageSource",
+            "Android app-language sync must consider language source, not only language tag.",
+        ),
+        (
+            runtime_local_store_path,
+            runtime_local_store_text,
+            "withFollowSystemAppLanguageTag",
+            "Persisted runtime data must support returning from in-app language to system-following language.",
+        ),
+        (
+            runtime_view_model_path,
+            runtime_view_model_text,
+            "fun followSystemAppLanguageTag",
+            "RuntimeClientViewModel must expose a system-following app-language action.",
+        ),
+        (
+            client_screens_path,
+            client_screens_text,
+            "appLanguagePreferenceSystemOptionSelected",
+            "Settings language selector must model the system-following radio state separately.",
+        ),
+        (
+            client_screens_path,
+            client_screens_text,
+            "appLanguagePreferenceFixedOptionSelected",
+            "Settings language selector must keep fixed language radios unselected while following system language.",
+        ),
+        (
+            client_screens_path,
+            client_screens_text,
+            "R.string.appearance_system_detail",
+            "Settings appearance selector must render the system appearance detail.",
+        ),
+        (
+            client_screens_path,
+            client_screens_text,
+            "R.string.language_follow_system",
+            "Settings language selector must render the localized system-following option.",
+        ),
+        (
+            client_screens_path,
+            client_screens_text,
+            "R.string.language_follow_system_detail",
+            "Settings language selector must render the system-following language detail.",
+        ),
+        (
+            client_screens_path,
+            client_screens_text,
+            "R.string.preference_option_accessibility_summary_with_detail",
+            "Settings language selector must include the system-following language detail in accessibility copy.",
+        ),
+        (
+            client_screens_path,
+            client_screens_text,
+            "onFollowSystemLanguage",
+            "Settings language selector must wire the system-following action.",
+        ),
+        (
+            app_navigation_test_path,
+            app_navigation_test_text,
+            "appLanguagePreferenceFixedOptionSelected",
+            "AppNavigationTest must cover fixed language radios separately from system-following language.",
+        ),
+        (
+            app_navigation_test_path,
+            app_navigation_test_text,
+            "settingsSystemLanguageOptionIsSeparateFromFixedLaunchLanguages",
+            "AppNavigationTest must cover the system-following option separately from fixed launch languages.",
+        ),
+        (
+            runtime_view_model_test_path,
+            runtime_view_model_test_text,
+            'followSystemAppLanguageTag("ja-JP")',
+            "RuntimeClientViewModelTest must cover returning to system-following app language.",
+        ),
+        (
+            compose_test_path,
+            compose_test_text,
+            "Follows the device system light or dark appearance.",
+            "Settings Compose coverage must verify the system appearance detail remains reachable.",
+        ),
+        (
+            compose_test_path,
+            compose_test_text,
+            "R.string.language_follow_system",
+            "Settings Compose coverage must verify the localized system-following option remains reachable.",
+        ),
+        (
+            compose_test_path,
+            compose_test_text,
+            "R.string.language_follow_system_detail",
+            "Settings Compose coverage must verify the system-following language detail remains reachable.",
+        ),
+    )
+    for path, text, snippet, guidance in required_follow_system_snippets:
+        if snippet not in text:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
 
     return failures
 
@@ -554,6 +741,10 @@ def android_runtime_boundary_guard_failures() -> list[str]:
         "ClientScreensNoDeviceComposeTest.kt"
     )
     runtime_test_path = ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt"
+    relay_tcp_client_test_path = (
+        ROOT / "apps/android/core/transport/src/test/java/com/localagentbridge/android/core/transport/"
+        "RuntimeRelayTcpClientTest.kt"
+    )
     relay_integration_test_path = (
         ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/runtime/"
         "RuntimeClientViewModelRelayIntegrationTest.kt"
@@ -567,6 +758,7 @@ def android_runtime_boundary_guard_failures() -> list[str]:
     test_text = test_path.read_text(encoding="utf-8", errors="replace")
     client_screens_test_text = client_screens_test_path.read_text(encoding="utf-8", errors="replace")
     runtime_test_text = runtime_test_path.read_text(encoding="utf-8", errors="replace")
+    relay_tcp_client_test_text = relay_tcp_client_test_path.read_text(encoding="utf-8", errors="replace")
     relay_integration_test_text = relay_integration_test_path.read_text(encoding="utf-8", errors="replace")
     source_patterns = (
         "apps/android/app/src/main/**/*.kt",
@@ -638,6 +830,7 @@ def android_runtime_boundary_guard_failures() -> list[str]:
         "parseRuntimePairingQrPayload(",
         "allowDebugLoopbackRelay = BuildConfig.DEBUG",
         "allowDiagnosticLocalDirectEndpoint = BuildConfig.DEBUG",
+        "requireRemoteRoute = true",
         "internal data class SharedChatDraft(",
         "internal fun Intent?.sharedChatDraftOrNull(): SharedChatDraft?",
         "internal fun sharedChatDraftConfirmationMessageRes(draft: SharedChatDraft): Int",
@@ -1002,6 +1195,32 @@ def android_runtime_boundary_guard_failures() -> list[str]:
             f"{runtime_test_path.relative_to(ROOT)}: Missing Android fresh relay QR recovery test that "
             "replaces an expired trusted relay route and reconnects through relay."
         )
+    if (
+        "relayConnectFailsWhenReadyLineRejectsRoute" not in relay_tcp_client_test_text or
+        "Relay did not accept route" not in relay_tcp_client_test_text
+    ):
+        failures.append(
+            f"{relay_tcp_client_test_path.relative_to(ROOT)}: Missing Android relay TCP handshake "
+            "rejection regression for routes that connect but are not accepted by the relay."
+        )
+    if "trustedRelayHandshakeRejectionKeepsStoredRelayAndStopsAutoReconnectUntilUserRetries" not in runtime_test_text:
+        failures.append(
+            f"{runtime_test_path.relative_to(ROOT)}: Missing Android trusted relay handshake rejection "
+            "retention regression that keeps stored relay material and stops auto-retry."
+        )
+    required_relay_probe_snippets = (
+        "AETHERLINK_RELAY probe",
+        "isRelayProbeReady()",
+        "runtime_waiting",
+        "relayProbeResponseParserRequiresKnownRouteAndWaitingRuntime",
+        "relayQrPairingFailsBeforeConnectWhenDeviceCannotReachRelayRoute",
+    )
+    for snippet in required_relay_probe_snippets:
+        if snippet not in runtime_text and snippet not in runtime_test_text:
+            failures.append(
+                f"{runtime_path.relative_to(ROOT)} / {runtime_test_path.relative_to(ROOT)}: "
+                "Android relay preflight must use the non-consuming relay probe and pin the response contract."
+            )
     required_relay_auth_terminal_snippets = (
         "requiresFreshRemoteRouteBeforeReconnect()",
         "trustedRuntimeWithoutFailedRelay",
@@ -1132,6 +1351,19 @@ def android_runtime_boundary_guard_failures() -> list[str]:
         failures.append(
             f"{test_path.relative_to(ROOT)}: Missing Android scanner regression test for incomplete "
             "legacy pair QR values."
+        )
+    if (
+        "identityOnlyPairQr.aetherLinkPairingQrRawValueScanResult()" not in test_text or
+        "identityOnlyPairQr.aetherLinkPairingQrRawValueScanResult(requireRemoteRoute = false)" not in test_text
+    ):
+        failures.append(
+            f"{test_path.relative_to(ROOT)}: Missing Android scanner regression that product QR scans "
+            "reject identity-only pairing data while diagnostic parser mode can still exercise it."
+        )
+    if "productPairingQrParserRejectsIdentityOnlyQrWhenRemoteRouteIsRequired" not in runtime_test_text:
+        failures.append(
+            f"{runtime_test_path.relative_to(ROOT)}: Missing Android parser regression that UI QR "
+            "entry requires a complete remote route for different-network pairing."
         )
     if "http://192.168.1.23:11434/api/tags" not in test_text or (
         "model-provider.example.test:1234/v1/models" not in test_text
@@ -1353,6 +1585,30 @@ def android_chat_history_danger_guard_failures() -> list[str]:
             "Settings chat-history rows must expose localized title, status, and model metadata in accessibility summaries when model data exists.",
         ),
         (
+            "activeChatSessionId = state.activeChatSessionId",
+            "Settings chat-history panel must know the active chat session id.",
+        ),
+        (
+            "selected = session.id == activeChatSessionId",
+            "Settings chat-history active rows must mark the current active chat as selected.",
+        ),
+        (
+            "selected = false",
+            "Settings archived chat-history rows must not inherit active-chat selected state.",
+        ),
+        (
+            "R.string.chat_session_row_summary_selected",
+            "Settings chat-history active rows must expose selected-state accessibility summaries.",
+        ),
+        (
+            "R.string.chat_session_row_summary_selected_with_model",
+            "Settings chat-history active rows must preserve selected-state accessibility summaries with model metadata.",
+        ),
+        (
+            "R.string.selection_state_selected",
+            "Settings chat-history active rows must visibly label the selected chat using localized selected-state copy.",
+        ),
+        (
             "ChatHistorySummary(",
             "Settings chat history must show the saved/active/archived summary card.",
         ),
@@ -1461,6 +1717,11 @@ def android_chat_history_danger_guard_failures() -> list[str]:
         "R.string.confirmation_final_action_named",
         "R.string.confirmation_cancel_action_named",
         "settingsChatHistoryRowsExposeLocalizedAccessibilitySummaries",
+        'activeChatSessionId = "active-chat"',
+        "R.string.chat_session_row_summary_selected",
+        "hasAnyAncestor(hasContentDescription(activeSummary))",
+        'activeChatSessionId = "active-model-chat"',
+        "R.string.chat_session_row_summary_selected_with_model",
         "settingsChatHistorySummaryLocalizesSavedActiveAndArchivedCounts",
         "R.string.chat_history_summary_accessibility",
         "Chat history summary. 2 saved chats. Active: 1 active chat. Archived: 1 archived chat.",
@@ -1729,7 +1990,7 @@ def android_chat_model_menu_guard_failures() -> list[str]:
             "User-triggered route, trust, connection, and refresh mutations must share one streaming lockout helper.",
         ),
         (
-            "fun trustRuntimeFromPairingQr(rawValue: String) {\n        if (rejectUserMutationWhileStreaming()) return",
+            "fun trustRuntimeFromPairingQr(\n        rawValue: String,\n        requireRemoteRoute: Boolean = false,\n    ) {\n        if (rejectUserMutationWhileStreaming()) return",
             "QR pairing and route refresh must not preempt an active generation.",
         ),
         (
@@ -1756,6 +2017,7 @@ def android_chat_model_menu_guard_failures() -> list[str]:
 
     required_model_empty_state_snippets = (
         "R.string.no_models_connected_title",
+        "R.string.models_from_runtime",
         "R.string.no_models_disconnected_title",
         "R.string.model_picker_empty_state_summary",
         "Modifier.semantics(mergeDescendants = true) {\n                            contentDescription = emptyStateSummary\n                            liveRegion = LiveRegionMode.Polite",
@@ -1843,6 +2105,8 @@ def android_chat_model_menu_guard_failures() -> list[str]:
         "chatTopBarModelPickerEmptyStatesShowLocalizedTitleAndLiveRegion",
         "model_picker_empty_state_summary",
         "no_models_connected_title",
+        "models_from_runtime",
+        "Models are loaded through AetherLink Runtime, not directly from this app.",
         "no_models_disconnected_title",
         "Chat model picker. Selected chat model Qwen3 8B.",
         "채팅 모델 선택기. 선택된 채팅 모델 Qwen3 8B.",
@@ -2317,6 +2581,7 @@ def android_reasoning_accessibility_guard_failures() -> list[str]:
     required_ui_snippets = (
         "val reasoningLabel = stringResource(R.string.assistant_reasoning_label)",
         "R.string.assistant_reasoning_summary",
+        "R.string.assistant_reasoning_state_shown",
         "displayPolicy.text.replace(Regex(\"\\\\s+\"), \" \")",
         "contentDescription = accessibilitySummary",
         "mutableStateOf(false)",
@@ -2332,10 +2597,13 @@ def android_reasoning_accessibility_guard_failures() -> list[str]:
         "chatScreenRendersReasoningCollapsedAndExpandable",
         "chatScreenReasoningSummaryLocalizesAcrossSupportedLanguages",
         "chatScreenKeepsOpenStreamingReasoningCollapsedUntilExpanded",
+        "chatScreenShortReasoningIsReadAsStaticThinkingAcrossSupportedLanguages",
         "isReasoningOpen = true",
         "SemanticsMatcher.expectValue(SemanticsProperties.LiveRegion, LiveRegionMode.Polite)",
         "Thinking. Collapsed. first step second step third step",
         "Thinking. Expanded. first step second step third step fourth step",
+        "R.string.assistant_reasoning_state_shown",
+        "assertFalse(reasoningNode.config.contains(SemanticsActions.OnClick))",
         "hasContentDescription(expectedSummary)",
         'hasClickActionLabel("Show thinking")',
         'hasClickActionLabel("Hide thinking")',
@@ -2351,6 +2619,10 @@ def android_reasoning_accessibility_guard_failures() -> list[str]:
         if 'name="assistant_reasoning_summary"' not in text:
             failures.append(
                 f"{path.relative_to(ROOT)}: Missing localized assistant_reasoning_summary resource."
+            )
+        if 'name="assistant_reasoning_state_shown"' not in text:
+            failures.append(
+                f"{path.relative_to(ROOT)}: Missing localized assistant_reasoning_state_shown resource."
             )
 
     return failures
@@ -2533,11 +2805,14 @@ def android_chat_pairing_empty_state_guard_failures() -> list[str]:
         "chatComposerShouldShowStatus(",
         "internal fun chatComposerShouldShowStatus(",
         "internal fun chatEmptyTextRes(state: RuntimeUiState, preferQrRouteRefresh: Boolean = false): Int",
+        "state.selectedModelId == null -> R.string.empty_chat_no_model_header_hint",
+        "!selectedModelIsUsable(state) -> R.string.chat_hint_install_model",
         "state.trustedRuntime != null",
         "if (!hasConnectableTrustedRuntimeRoute(state)) return true",
         "internal fun chatEmptyScanActionLabelRes(state: RuntimeUiState): Int",
         "onScanLatestQr = onScanLatestQr",
         "if (preferQrRouteRefresh) {\n                                onScanLatestQr()\n                            } else {\n                                onScanPairingQr()\n                            }",
+        "heading()\n                contentDescription = emptyAccessibilitySummary",
     )
     for snippet in required_ui_snippets:
         if snippet not in ui_text:
@@ -2546,6 +2821,7 @@ def android_chat_pairing_empty_state_guard_failures() -> list[str]:
     required_string_keys = (
         'name="empty_chat_pairing_title"',
         'name="empty_chat_pairing"',
+        'name="empty_chat_no_model_header_hint"',
         'name="chat_hint_pairing"',
         'name="chat_hint_scan_latest_qr"',
     )
@@ -2556,9 +2832,14 @@ def android_chat_pairing_empty_state_guard_failures() -> list[str]:
     required_compose_test_snippets = (
         "chatScreenUntrustedRuntimeShowsQrFirstPairingCallToAction",
         "chatScreenTrustedRuntimeWithoutConnectableRouteShowsLatestQrEmptyState",
+        "chatEmptyNoModelGuidesUsersToHeaderModelPickerAcrossSupportedLanguages",
+        "chatEmptyUninstalledModelGuidesUsersToInstallOrChooseAcrossSupportedLanguages",
         "chatScreenUntrustedRuntimeUsesLocalizedQrFirstCopy",
+        "R.string.empty_chat_no_model_header_hint",
+        "R.string.chat_hint_install_model",
         "chatScreenShowsComposerReadinessHintWhenPreviousChatCannotSend",
         "assertNoVisibleText(\"Connect to continue\")",
+        "hasContentDescription(\n                \"Scan QR to start. Pair with AetherLink Runtime first. Model providers stay private behind the trusted runtime.\",\n            ) and hasHeading()",
         "Scan the latest AetherLink Runtime QR before sending.",
         "assertEquals(0, scanPairingQrClicks)",
         "assertEquals(1, scanLatestQrClicks)",
@@ -2579,6 +2860,8 @@ def android_chat_pairing_empty_state_guard_failures() -> list[str]:
         "emptyChatKeepsConnectActionWhenTrustedRuntimeHasConnectableRoute",
         "emptyChatPrefersQrRefreshForRejectedDirectQrRoute",
         "emptyChatPrefersQrRefreshForExpiredRemoteRoute",
+        "assertEquals(R.string.empty_chat_no_model_header_hint, chatEmptyTextRes(state))",
+        "assertEquals(R.string.chat_hint_install_model, chatEmptyTextRes(uninstalledState))",
     )
     for snippet in required_helper_test_snippets:
         if snippet not in helper_test_text:
@@ -3365,9 +3648,16 @@ def android_haptic_guard_failures() -> list[str]:
             "Backend readiness and generic error banners must announce new error states politely.",
         ),
         (
-            "runtimeTechnicalDiagnosticsReport(error)?.let { report ->\n"
-            "                ErrorTechnicalDiagnostics(report = report)",
-            "Generic error banner must keep a separate safe technical-diagnostics affordance.",
+            "codeLabel = stringResource(R.string.runtime_error_diagnostics_code)",
+            "Generic error banner must localize technical-diagnostics code labels.",
+        ),
+        (
+            "diagnosticCodeLabel = stringResource(R.string.runtime_error_diagnostics_diagnostic_code)",
+            "Generic error banner must localize technical-diagnostics diagnostic-code labels.",
+        ),
+        (
+            "technicalDetailLabel = stringResource(R.string.runtime_error_diagnostics_technical_detail)",
+            "Generic error banner must localize technical-diagnostics detail labels.",
         ),
         (
             "copyActionLabel = stringResource(R.string.runtime_error_copy_diagnostics)",
@@ -3441,6 +3731,18 @@ def android_haptic_guard_failures() -> list[str]:
         (
             "contentDescription = messageAccessibilitySummary",
             "Chat message rows must expose the localized role-plus-message summary to accessibility.",
+        ),
+        (
+            "attachmentAccessibilitySummary = attachmentLabels.joinToString(separator = \". \")",
+            "Attachment-only message rows must include attachment chip summaries in role accessibility copy.",
+        ),
+        (
+            "attachmentAccessibilityDescription(attachment)",
+            "Attachment-only row summaries must reuse the localized attachment chip accessibility description.",
+        ),
+        (
+            "isAttachmentOnlyMessage && messageAccessibilitySummary != null",
+            "Attachment-only message rows must expose a row-level role summary.",
         ),
         (
             "hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Clipboard)",
@@ -3518,6 +3820,13 @@ def android_haptic_guard_failures() -> list[str]:
         (
             "autoReconnectActionLabel",
             "Auto reconnect switch must expose localized enable/disable action labels.",
+        ),
+        (
+            "Modifier.clearAndSetSemantics {\n"
+            "            contentDescription = autoReconnectContentDescription\n"
+            "            stateDescription = autoReconnectDisabledStateDescription\n"
+            "            disabled()",
+            "Disabled Auto reconnect switch must explain that pairing is required and expose no stale click action.",
         ),
         (
             "stateDescription = diagnosticsStateDescription",
@@ -3631,8 +3940,8 @@ def android_haptic_guard_failures() -> list[str]:
             "Settings preference option row semantics must include the localized group plus option summary.",
         ),
         (
-            "onClick(label = optionSelectActionLabel, action = null)",
-            "Settings preference option rows must expose explicit localized click action labels.",
+            "onClick(label = optionSelectActionLabel) {",
+            "Settings preference option rows must expose explicit localized click action labels with executable accessibility actions.",
         ),
         (
             "shouldPerformSelectionChangeHaptic(selected)",
@@ -3808,16 +4117,16 @@ def android_haptic_guard_failures() -> list[str]:
             "Chat composer clear-draft action must expose a localized ready state.",
         ),
         (
-            "val canClearDraft = enabled && value.isNotBlank() && !isStreaming",
-            "Chat composer clear-draft action must only appear for editable non-streaming text drafts.",
+            "val canClearDraft = enabled && (value.isNotBlank() || attachments.isNotEmpty()) && !isStreaming",
+            "Chat composer clear-draft action must appear for editable non-streaming text or attachment drafts.",
         ),
         (
             "stateDescription = clearDraftStateDescription",
             "Chat composer clear-draft action must expose its localized state to accessibility.",
         ),
         (
-            "onInputChange(\"\")",
-            "Chat composer clear-draft action must actually clear the draft text.",
+            "onClearDraft()",
+            "Chat composer clear-draft action must clear the full draft through the clear-draft callback.",
         ),
         (
             "LocalCopySuccessAnnouncer",
@@ -3946,7 +4255,9 @@ def android_haptic_guard_failures() -> list[str]:
         "chatScreenGenericErrorBannerExposesAccessibilitySummaryAndRedactsUnsafeDetail",
         "chatScreenTechnicalDiagnosticsAreCollapsedAndRedactUnsafeRuntimeDetails",
         "technical_detail: relay timed out near [redacted] [redacted] [redacted]",
-        'hasClickActionLabel("Copy diagnostics")',
+        "R.string.runtime_error_diagnostics_diagnostic_code",
+        "val copyDiagnostics = localizedContext.getString(R.string.runtime_error_copy_diagnostics)",
+        "hasClickActionLabel(copyDiagnostics)",
         'onAllNodesWithText("route_token=secret", useUnmergedTree = true).assertCountEquals(0)',
         "chatScreenGenericErrorAccessibilitySummaryLocalizesAcrossSupportedLanguages",
         ".assert(hasPoliteLiveRegion())",
@@ -4025,6 +4336,7 @@ def android_haptic_guard_failures() -> list[str]:
         "表格。2 列。2 行。",
         "Tableau. 2 colonnes. 2 lignes.",
         "chatScreenMessageRowsExposeLocalizedRoleAccessibilitySummaries",
+        "chatScreenAttachmentOnlyMessageRowsExposeLocalizedRoleAccessibilitySummaries",
         "R.string.chat_message_accessibility_summary",
         "ASSISTANT_IDENTITY_MARKER_TEST_TAG",
         "R.string.role_assistant_initial",
@@ -4072,6 +4384,10 @@ def android_haptic_guard_failures() -> list[str]:
         "R.string.memory_empty_disconnected",
         "R.string.memory_empty",
         "hasContentDescription(emptyText) and hasPoliteLiveRegion()",
+        "settingsLanguagePreferenceRowsDispatchSystemAndFixedSelectionCallbacks",
+        "onFollowSystemLanguage = { followSystemCount += 1 }",
+        "assertEquals(1, followSystemCount)",
+        'assertEquals(listOf("ko"), selectedLanguageTags)',
         "Cancel: Remove memory Project Alpha prefers concise Korean summaries",
         "settingsAutoReconnectSwitchExposesAccessibilityState",
         "settingsCompanionOnlyPanelAnnouncesLocalizedPrivateModelAccessAcrossSupportedLanguages",
@@ -4080,6 +4396,8 @@ def android_haptic_guard_failures() -> list[str]:
         "hasContentDescription(summary) and hasPoliteLiveRegion()",
         'hasClickActionLabel("Disable Auto reconnect")',
         'hasClickActionLabel("Enable Auto reconnect")',
+        "Off. Pair with AetherLink Runtime before enabling auto reconnect.",
+        "assertFalse(disabledAutoReconnect.config.contains(SemanticsActions.OnClick))",
         "settingsDiscoveredRuntimeActionsUseContextualAccessibilityLabels",
         "settingsDiscoveredRuntimeUnavailableRowsExposeContextualAccessibilityLabels",
         "settingsDiscoveryActionsExplainIdleAndRunningStatesAcrossSupportedLanguages",
@@ -4259,6 +4577,9 @@ def android_haptic_guard_failures() -> list[str]:
         "hasContentDescription(memoryAddLabel) and hasSetTextAction() and hasStateDescription(emptyState)",
         "hasContentDescription(memoryAddLabel) and hasSetTextAction() and hasStateDescription(readyState)",
         "hasClickActionLabel(addButton)",
+        "val addedNotice = localizedContext.getString(R.string.memory_added)",
+        "hasContentDescription(addedNotice) and hasPoliteLiveRegion()",
+        "assertEquals(listOf(HapticFeedbackType.TextHandleMove), hapticFeedback.events)",
         "settingsMemoryActionsWaitForStreamAcrossSupportedLanguages",
         "R.string.memory_action_state_wait_for_stream",
         "hasStateDescription(streamingLock)",
@@ -4296,6 +4617,9 @@ def android_haptic_guard_failures() -> list[str]:
         'hasClickActionLabel("Clear draft")',
         "R.string.clear_draft_state_ready",
         "hasStateDescription(expectedState)",
+        "onClearDraft = {",
+        "pendingAttachments = emptyList()",
+        "assertTrue(state.value.pendingAttachments.isEmpty())",
     )
     for snippet in required_compose_test_snippets:
         if snippet not in compose_test_text:
@@ -4398,6 +4722,7 @@ def android_haptic_guard_failures() -> list[str]:
         'name="preference_option_action_select"',
         'name="memory_add_state_enter_memory"',
         'name="memory_add_state_ready"',
+        'name="memory_added"',
         'name="memory_action_state_wait_for_stream"',
         'name="rename_chat_title_state_empty"',
         'name="rename_chat_title_state_ready"',
@@ -4599,6 +4924,18 @@ def android_physical_chat_smoke_guard_failures() -> list[str]:
             "Physical external-relay smoke must probe relay reachability from the Android device before QR injection when requested.",
         ),
         (
+            "--relay-id",
+            "Physical external-relay smoke must run the Android device relay-id readiness probe after QR route material is generated.",
+        ),
+        (
+            "android-relay-route-readiness.json",
+            "Physical external-relay smoke must keep route-level relay readiness JSON evidence.",
+        ),
+        (
+            "relay status=waiting_for_peer",
+            "Physical external-relay smoke must wait until the runtime is waiting on the relay before route-level probing.",
+        ),
+        (
             'tap_content_description "Message"',
             "Physical chat/cancel smoke must tap the accessibility-labelled chat input.",
         ),
@@ -4622,6 +4959,93 @@ def android_physical_chat_smoke_guard_failures() -> list[str]:
     for snippet, guidance in required_snippets:
         if snippet not in text:
             failures.append(f"{relative}: {guidance}")
+
+    relay_probe_path = ROOT / "script/android_relay_reachability_probe.sh"
+    relay_probe_text = relay_probe_path.read_text(encoding="utf-8", errors="replace")
+    relay_probe_relative = relay_probe_path.relative_to(ROOT)
+    required_relay_probe_snippets = (
+        (
+            "AETHERLINK_RELAY probe",
+            "Android physical relay probe must support the non-consuming relay-id probe line.",
+        ),
+        (
+            "runtime_waiting",
+            "Android physical relay probe must require the relay to report a waiting runtime.",
+        ),
+        (
+            "route_ready",
+            "Android physical relay probe JSON must distinguish route readiness from raw TCP reachability.",
+        ),
+        (
+            "tcp_connect_only_not_relay_room_readiness",
+            "Android physical relay probe must keep the TCP-only caveat when --relay-id is omitted.",
+        ),
+    )
+    for snippet, guidance in required_relay_probe_snippets:
+        if snippet not in relay_probe_text:
+            failures.append(f"{relay_probe_relative}: {guidance}")
+
+    physical_wrapper_path = ROOT / "script/check_physical_external_relay_pairing.sh"
+    physical_wrapper_text = physical_wrapper_path.read_text(encoding="utf-8", errors="replace")
+    physical_wrapper_relative = physical_wrapper_path.relative_to(ROOT)
+    required_physical_wrapper_snippets = (
+        (
+            "device_relay_route_probe_json",
+            "Physical external-relay QA summary must record the route-readiness probe artifact.",
+        ),
+        (
+            "external_relay_route_probe_from_device",
+            "Physical external-relay QA summary must expose route-readiness coverage separately from endpoint reachability.",
+        ),
+        (
+            "external_relay_probe_reachable",
+            "Physical external-relay QA summary must expose the endpoint probe success boolean.",
+        ),
+        (
+            "external_relay_route_ready",
+            "Physical external-relay QA summary must expose the route-readiness probe success boolean.",
+        ),
+        (
+            "probe_summaries",
+            "Physical external-relay QA summary must embed child probe summaries for durable evidence.",
+        ),
+        (
+            '"external_relay_probe_from_device": bool(device_probe_json)',
+            "Physical external-relay QA summary must not claim endpoint probe coverage when no probe artifact exists.",
+        ),
+        (
+            'json_bool_at "$DEVICE_ROUTE_PROBE_JSON" "probe.route_ready"',
+            "Physical external-relay QA must fail successful-looking runs when route readiness is not proven.",
+        ),
+    )
+    for snippet, guidance in required_physical_wrapper_snippets:
+        if snippet not in physical_wrapper_text:
+            failures.append(f"{physical_wrapper_relative}: {guidance}")
+
+    no_device_path = ROOT / "script/check_no_device_quality.sh"
+    no_device_text = no_device_path.read_text(encoding="utf-8", errors="replace")
+    no_device_relative = no_device_path.relative_to(ROOT)
+    required_no_device_physical_wrapper_snippets = (
+        (
+            "check_physical_external_relay_summary_guard",
+            "No-device quality gate must behavior-test the physical external-relay summary contract.",
+        ),
+        (
+            'summary["coverage"]["external_relay_probe_reachable"] is False',
+            "No-device physical wrapper guard must prove failed endpoint probe coverage is false.",
+        ),
+        (
+            'summary["coverage"]["external_relay_route_ready"] is False',
+            "No-device physical wrapper guard must prove failed route readiness coverage is false.",
+        ),
+        (
+            'summary["probe_summaries"]["device_relay_endpoint"] is None',
+            "No-device physical wrapper guard must prove missing child probe summaries stay explicit.",
+        ),
+    )
+    for snippet, guidance in required_no_device_physical_wrapper_snippets:
+        if snippet not in no_device_text:
+            failures.append(f"{no_device_relative}: {guidance}")
 
     return failures
 
@@ -5467,6 +5891,14 @@ def macos_remote_qr_lease_guard_failures() -> list[str]:
             "RelayDefaults.leaseRelayID",
             "Saved remote QR leases must be bound to relay id.",
         ),
+        (
+            "pairingQRCodeLeaseRenewalMarginSeconds",
+            "Remote QR lease readiness must reserve the pairing-window freshness margin.",
+        ),
+        (
+            "isRelayRouteLeaseFreshForPairingQRCode",
+            "Remote QR lease readiness and QR payload generation must share the same freshness check.",
+        ),
     )
     for snippet, guidance in required_model_snippets:
         if snippet not in model_text:
@@ -5478,6 +5910,9 @@ def macos_remote_qr_lease_guard_failures() -> list[str]:
         "Remote pairing QR not generated: Remote route allocation response was invalid.",
         "Remote route ready: relay.example.test:43171",
         "testCompanionAppModelDoesNotReuseSavedLeaseForDifferentRelayRoute",
+        "testCompanionAppModelRegeneratesGUIAllocatedQRCodeWithNearExpiredLease",
+        "near-expiry-nonce",
+        "fresh-nonce",
         '"aetherlink.relay.lease_host"',
         '"aetherlink.relay.lease_id"',
     )
@@ -5797,12 +6232,16 @@ def macos_pairing_qr_accessibility_guard_failures() -> list[str]:
             "Pairing QR image must explain runtime verification, connection details, and route expiry when present.",
         ),
         (
-            '.accessibilityLabel(Text(NSLocalizedString("Pairing QR time remaining"',
-            "Pairing QR expiration progress must expose a stable accessibility label.",
+            ".accessibilityLabel(Text(pairingQRExpirationAccessibilityLabel()))",
+            "Pairing QR expiration label must expose a stable testable accessibility label.",
         ),
         (
             ".accessibilityValue(Text(expirationText(at: date)))",
-            "Pairing QR expiration progress must expose the countdown through accessibility value.",
+            "Pairing QR expiration label must expose the countdown through accessibility value.",
+        ),
+        (
+            ".accessibilityHidden(true)",
+            "Pairing QR expiration progress bar must be hidden from accessibility to avoid duplicate countdown announcements.",
         ),
         (
             "func pairingQRCodeAccessibilityLabel() -> String",
@@ -5831,6 +6270,10 @@ def macos_pairing_qr_accessibility_guard_failures() -> list[str]:
         (
             "func pairingQRExpirationText(expiresAt: Date, at date: Date) -> String",
             "Pairing QR expiration accessibility value must stay testable without rendering SwiftUI.",
+        ),
+        (
+            "func pairingQRExpirationAccessibilityLabel() -> String",
+            "Pairing QR expiration accessibility label must stay testable without rendering SwiftUI.",
         ),
         (
             "private struct PairingRouteNoticeLabel: View",
@@ -6260,6 +6703,7 @@ def macos_empty_state_accessibility_guard_failures() -> list[str]:
         return failures
 
     chrome_text = chrome_path.read_text(encoding="utf-8", errors="replace")
+    trusted_text = trusted_path.read_text(encoding="utf-8", errors="replace")
     test_text = test_path.read_text(encoding="utf-8", errors="replace")
     required_chrome_snippets = (
         "func companionEmptyStateAccessibilityLabel(title: String, description: String) -> String",
@@ -6291,7 +6735,9 @@ def macos_empty_state_accessibility_guard_failures() -> list[str]:
 
     required_test_snippets = (
         "testCompanionEmptyStateAccessibilityLabelUsesSelectedLanguageAndFallbacks",
+        "testTrustedDevicesEmptyStateCopyUsesRuntimeRequestsAcrossSupportedLanguages",
         "companionEmptyStateAccessibilityLabel(",
+        "Pair a device before allowing runtime requests.",
         "불러온 모델 없음. AetherLink Runtime에서 사용할 수 있는 모델을 불러오세요.",
         "読み込まれたモデルはありません。AetherLink Runtime で利用できるモデルを読み込みます。",
         "尚未加载模型。加载 AetherLink Runtime 可用的模型。",
@@ -6300,6 +6746,25 @@ def macos_empty_state_accessibility_guard_failures() -> list[str]:
     for snippet in required_test_snippets:
         if snippet not in test_text:
             failures.append(f"{test_path.relative_to(ROOT)}: Missing macOS empty-state accessibility regression {snippet}.")
+
+    trusted_devices_subtitle = (
+        "Manage devices trusted to use AetherLink Runtime. Remove trust when a device should pair again."
+    )
+    if trusted_devices_subtitle not in trusted_text:
+        failures.append(
+            f"{trusted_path.relative_to(ROOT)}: Trusted Devices header must use product-neutral pair-again copy."
+        )
+    required_trusted_subtitle_test_snippets = (
+        "testTrustedDevicesHeaderSubtitleUsesProductNeutralCopyAcrossSupportedLanguages",
+        trusted_devices_subtitle,
+        "AetherLink Runtime 사용을 신뢰한 기기를 관리하세요. 기기가 다시 페어링해야 할 때 신뢰를 해제하세요.",
+        "管理已信任可使用 AetherLink Runtime 的设备。当设备需要重新配对时，请移除信任。",
+    )
+    for snippet in required_trusted_subtitle_test_snippets:
+        if snippet not in test_text:
+            failures.append(
+                f"{test_path.relative_to(ROOT)}: Missing macOS Trusted Devices subtitle regression {snippet}."
+            )
 
     return failures
 
@@ -6336,12 +6801,40 @@ def macos_sidebar_preference_accessibility_guard_failures() -> list[str]:
             "Language picker must explain that the selected language is saved for future launches.",
         ),
         (
+            "Text(appPreferencesAccessibilityLabel())",
+            "Sidebar preference footer must expose a visible localized group heading.",
+        ),
+        (
+            "func appPreferencesAccessibilityLabel() -> String",
+            "Sidebar preference group label must stay testable without rendering SwiftUI.",
+        ),
+        (
+            "appAppearancePickerDetailText()",
+            "Appearance picker must render localized secondary detail copy.",
+        ),
+        (
+            "appLanguagePickerDetailText()",
+            "Language picker must render localized secondary detail copy.",
+        ),
+        (
             "Choose how AetherLink Runtime appears. This setting is saved for future launches.",
             "Appearance picker accessibility hint must be localized through a stable key.",
         ),
         (
             "Choose the app language. This setting is saved for future launches.",
             "Language picker accessibility hint must be localized through a stable key.",
+        ),
+        (
+            "System follows this device's appearance. Saved for future launches.",
+            "Appearance picker detail must be localized through a stable key.",
+        ),
+        (
+            "Choose one of the supported app languages. Saved for future launches.",
+            "Language picker detail must be localized through a stable key.",
+        ),
+        (
+            "App Preferences",
+            "Sidebar preference group heading must be localized through a stable key.",
         ),
     )
     for snippet, guidance in required_view_snippets:
@@ -6357,9 +6850,17 @@ def macos_sidebar_preference_accessibility_guard_failures() -> list[str]:
         'AetherLinkAppAppearance.normalized("dark").title',
         "AetherLinkAppLanguage.normalized(expectation.languageTag).title",
         "testSidebarPreferencePickerAccessibilityHintsUseSelectedLanguage",
+        "testSidebarPreferenceGroupLabelUsesSelectedLanguage",
+        "testSidebarPreferenceDetailTextUsesSelectedLanguage",
         "appAppearancePickerAccessibilityHint()",
         "appLanguagePickerAccessibilityHint()",
+        "appPreferencesAccessibilityLabel()",
+        "appAppearancePickerDetailText()",
+        "appLanguagePickerDetailText()",
         "This setting is saved for future launches.",
+        "System follows this device's appearance. Saved for future launches.",
+        "Choose one of the supported app languages. Saved for future launches.",
+        "Préférences de l’app",
     )
     for snippet in required_test_snippets:
         if snippet not in test_text:
@@ -6699,12 +7200,32 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             failures.append(f"{path.relative_to(ROOT)}: Missing localized memory load failure string.")
     required_snippets = (
         (
+            "Not covered by this no-device gate:",
+            "Default no-device quality gate must clearly label its unverified physical coverage.",
+        ),
+        (
+            "physical TalkBack/VoiceOver traversal",
+            "Default no-device quality gate caveat must not imply physical accessibility traversal was verified.",
+        ),
+        (
+            "Android system/per-app locale mutation on hardware",
+            "Default no-device quality gate caveat must not imply physical Android locale mutation was verified.",
+        ),
+        (
             "./script/runtime_authenticated_mock_smoke.swift --relay",
             "Default no-device quality gate must run the authenticated relay E2E smoke.",
         ),
         (
             "authenticated mock relay E2E",
             "Default no-device gate coverage summary must mention authenticated relay E2E coverage.",
+        ),
+        (
+            "non-consuming relay readiness probe",
+            "Default no-device gate coverage summary must mention the non-consuming relay readiness probe.",
+        ),
+        (
+            "Android route-level relay preflight",
+            "Default no-device gate coverage summary must mention Android route-level relay preflight coverage.",
         ),
         (
             "RuntimeClientViewModelRelayIntegrationTest.compactRelayQrPairingUsesRealRelayTcpClientAndPersistsTrustedRelay",
@@ -6959,6 +7480,34 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate coverage summary must mention Android OS app-language handoff coverage.",
         ),
         (
+            "Android follow system language preference",
+            "Default no-device gate coverage summary must mention Android follow-system language preference coverage.",
+        ),
+        (
+            "ClientScreensNoDeviceComposeTest.settingsPreferenceRowsExposeSelectedStateToAccessibility",
+            "Default no-device gate must run the Android selected preference row semantics regression.",
+        ),
+        (
+            "ClientScreensNoDeviceComposeTest.settingsLanguagePreferenceRowsDispatchSystemAndFixedSelectionCallbacks",
+            "Default no-device gate must run the Android follow-system language callback regression.",
+        ),
+        (
+            "Android appearance system detail copy",
+            "Default no-device gate coverage summary must mention Android appearance system detail coverage.",
+        ),
+        (
+            "Android follow-system language callback dispatch",
+            "Default no-device gate coverage summary must mention Android follow-system language callback coverage.",
+        ),
+        (
+            "macOS Trusted Devices runtime requests empty-state copy",
+            "Default no-device gate coverage summary must mention macOS Trusted Devices runtime-request copy coverage.",
+        ),
+        (
+            "AppNavigationTest.settingsSystemLanguageOptionIsSeparateFromFixedLaunchLanguages",
+            "Default no-device gate must run the Android follow-system language preference regression.",
+        ),
+        (
             "RuntimeClientViewModelTest.viewModelReconcilesSystemAppLanguageUntilInAppLanguageIsSelected",
             "Default no-device gate must run the Android OS app-language handoff regression.",
         ),
@@ -7159,6 +7708,14 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate must run the Settings chat-history model metadata regression.",
         ),
         (
+            "ClientScreensNoDeviceComposeTest.settingsChatHistoryRowsExposeLocalizedAccessibilitySummaries",
+            "Default no-device gate must run the Settings chat-history active selected-state regression.",
+        ),
+        (
+            "Settings chat history selected active chat state",
+            "Default no-device gate coverage summary must mention Settings chat-history selected active-chat state.",
+        ),
+        (
             "ClientScreensNoDeviceComposeTest.settingsHistoryAndMemoryRenderRepresentativeNarrowPhoneAcrossSupportedLanguages",
             "Default no-device gate must run the populated Settings history and Memory narrow-phone render regression.",
         ),
@@ -7189,6 +7746,14 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         (
             "Android QR-first chat empty state",
             "Default no-device gate coverage summary must mention Android QR-first chat empty-state coverage.",
+        ),
+        (
+            "Android no-model empty chat header picker guidance",
+            "Default no-device gate coverage summary must mention Android no-model empty chat header picker guidance.",
+        ),
+        (
+            "Android uninstalled selected model install-or-choose guidance",
+            "Default no-device gate coverage summary must mention Android uninstalled selected model install-or-choose guidance.",
         ),
         (
             "Android Settings QR scan disabled reason",
@@ -7299,6 +7864,14 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate coverage summary must mention Android composer clear-draft localized state.",
         ),
         (
+            "RuntimeClientViewModelTest.clearChatDraftClearsActiveSessionTextAndPendingAttachments",
+            "Default no-device gate must run the Android clear-draft attachment cleanup regression.",
+        ),
+        (
+            "Android clear-draft attachment cleanup",
+            "Default no-device gate coverage summary must mention Android clear-draft attachment cleanup.",
+        ),
+        (
             "Android composer attach action accessibility state",
             "Default no-device gate coverage summary must mention Android composer attach action accessibility coverage.",
         ),
@@ -7345,6 +7918,14 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         (
             "Android message role accessibility summaries",
             "Default no-device gate coverage summary must mention Android message role accessibility summary coverage.",
+        ),
+        (
+            "ClientScreensNoDeviceComposeTest.chatScreenAttachmentOnlyMessageRowsExposeLocalizedRoleAccessibilitySummaries",
+            "Default no-device gate must run the Android attachment-only message role accessibility regression.",
+        ),
+        (
+            "Android attachment-only message role accessibility",
+            "Default no-device gate coverage summary must mention Android attachment-only message role accessibility.",
         ),
         (
             "Android assistant identity marker",
@@ -7531,12 +8112,20 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate coverage summary must mention Android reasoning accessibility summary.",
         ),
         (
+            "ClientScreensNoDeviceComposeTest.chatScreenShortReasoningIsReadAsStaticThinkingAcrossSupportedLanguages",
+            "Default no-device gate must run the short static reasoning accessibility regression.",
+        ),
+        (
             "Android open reasoning collapsed live-region accessibility",
             "Default no-device gate coverage summary must mention Android open reasoning collapsed live-region accessibility.",
         ),
         (
             "Android open reasoning live-region accessibility",
             "Default no-device gate coverage summary must mention Android open reasoning live-region accessibility.",
+        ),
+        (
+            "Android short reasoning static accessibility state",
+            "Default no-device gate coverage summary must mention Android short reasoning static accessibility coverage.",
         ),
         (
             "Android streaming assistant live-region accessibility",
@@ -7669,6 +8258,10 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         (
             "Settings memory add action accessibility labels",
             "Default no-device gate coverage summary must mention Settings memory add action accessibility labels.",
+        ),
+        (
+            "Settings memory add success live-region accessibility",
+            "Default no-device gate coverage summary must mention Settings memory add success live-region accessibility.",
         ),
         (
             "Settings memory empty-state live-region accessibility",
@@ -7877,6 +8470,14 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         (
             "macOS sidebar preference picker accessibility hints",
             "Default no-device gate coverage summary must mention macOS sidebar preference picker accessibility hints.",
+        ),
+        (
+            "macOS sidebar App Preferences group label",
+            "Default no-device gate coverage summary must mention macOS sidebar App Preferences group label.",
+        ),
+        (
+            "macOS sidebar preference detail copy",
+            "Default no-device gate coverage summary must mention macOS sidebar preference detail copy.",
         ),
         (
             "macOS nearby-only connection guidance copy",
@@ -8183,8 +8784,20 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate must run the expired bootstrap lease QR regeneration regression.",
         ),
         (
+            "LocalRuntimeMessageRouterTests/testCompanionAppModelRegeneratesGUIAllocatedQRCodeWithNearExpiredLease",
+            "Default no-device gate must run the near-expiry relay lease QR regeneration regression.",
+        ),
+        (
             "LocalRuntimeMessageRouterTests/testCompanionAppModelRequiresRemoteQRCodeForLoopbackSavedRelayHost",
             "Default no-device gate must run the loopback saved relay QR rejection regression.",
+        ),
+        (
+            "LocalRuntimeMessageRouterTests/testCompanionAppModelDefaultPairingRequiresRemoteQRCodeRoute",
+            "Default no-device gate must run the missing remote route QR setup regression.",
+        ),
+        (
+            "LocalRuntimeMessageRouterTests/testCompanionAppModelPublishesRemoteRoutePreparationIssueWhenBootstrapAllocationThrows",
+            "Default no-device gate must run the bootstrap allocation failure QR setup regression.",
         ),
         (
             "LocalRuntimeMessageRouterTests/testCompanionAppModelAllowsEnvironmentPrivateOverlayRelayButWaitsForLease",
@@ -8197,6 +8810,10 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         (
             "remote relay lease renewal and QR eligibility",
             "Default no-device gate coverage summary must mention remote relay lease renewal and QR eligibility coverage.",
+        ),
+        (
+            "near-expiry remote relay lease QR renewal",
+            "Default no-device gate coverage summary must mention near-expiry relay lease QR renewal.",
         ),
         (
             "macOS remote QR lease route binding",
@@ -8223,8 +8840,28 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate must run the Android stream-termination reasoning closure regression.",
         ),
         (
-            "RuntimeClientViewModelTest.routeRefreshQrDropsUnreachableRelayRouteAndRequiresFreshQrRecovery",
-            "Default no-device gate must run the Android unreachable route-refresh QR cleanup regression.",
+            "RuntimeClientViewModelTest.routeRefreshQrKeepsUnreachableRelayRouteForRetryOrFreshQrRecovery",
+            "Default no-device gate must run the Android unreachable route-refresh QR retention regression.",
+        ),
+        (
+            "RuntimeClientViewModelTest.relayQrPairingFailsBeforeConnectWhenDeviceCannotReachRelayRoute",
+            "Default no-device gate must run the Android relay route-level preflight failure regression.",
+        ),
+        (
+            "RuntimeClientViewModelTest.relayProbeResponseParserRequiresKnownRouteAndWaitingRuntime",
+            "Default no-device gate must run the Android relay probe response parser regression.",
+        ),
+        (
+            "RuntimeRelayTcpClientTest.relayConnectFailsWhenReadyLineRejectsRoute",
+            "Default no-device gate must run the Android relay TCP handshake rejection regression.",
+        ),
+        (
+            "RuntimeClientViewModelTest.trustedRelayConnectionFailureKeepsStoredRelayAndStopsAutoReconnectUntilUserRetries",
+            "Default no-device gate must run the trusted relay transient failure retention regression.",
+        ),
+        (
+            "RuntimeClientViewModelTest.trustedRelayHandshakeRejectionKeepsStoredRelayAndStopsAutoReconnectUntilUserRetries",
+            "Default no-device gate must run the trusted relay handshake rejection retention regression.",
         ),
         (
             "RuntimeClientViewModelTest.trustedRuntimeRestoreDoesNotStartDiscoveryWhenRelayRouteIsAvailable",
@@ -8241,6 +8878,10 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         (
             "Android QR route refresh public-key optional binding",
             "Default no-device gate coverage summary must mention Android QR route-refresh optional public-key coverage.",
+        ),
+        (
+            "Android product QR remote-route requirement",
+            "Default no-device gate coverage summary must mention Android product QR remote-route requirement coverage.",
         ),
         (
             "Android streaming chat input mutation guard",
@@ -8818,6 +9459,14 @@ def android_string_parity_guard_failures() -> list[str]:
             "Android string parity success output must mention the raw visible-string guard.",
         ),
         (
+            "language_follow_system_detail",
+            "Android string parity must require the system-following language detail resource.",
+        ),
+        (
+            "appearance_system_detail",
+            "Android string parity must require the system appearance detail resource.",
+        ),
+        (
             "Tap Connect",
             "Android string parity must reject touch-specific Connect guidance.",
         ),
@@ -8884,7 +9533,7 @@ def macos_localization_script_guard_failures() -> list[str]:
             "macOS localization guard must require the trusted-device row accessibility localization key.",
         ),
         (
-            "trustedDeviceRemoveAccessibilityLabel(name: name, keyFingerprint: keyFingerprint)",
+            "trustedDeviceRemoveAccessibilityLabel(name: displayName, keyFingerprint: keyFingerprint)",
             "macOS localization guard must require contextual trusted-device remove button accessibility labels.",
         ),
         (
@@ -8892,7 +9541,7 @@ def macos_localization_script_guard_failures() -> list[str]:
             "macOS localization guard must require the trusted-device remove accessibility localization key.",
         ),
         (
-            ".accessibilityHint(Text(trustedDeviceRemoveAccessibilityHint(name: name)))",
+            ".accessibilityHint(Text(trustedDeviceRemoveAccessibilityHint(name: displayName)))",
             "macOS localization guard must require the trusted-device remove button accessibility hint.",
         ),
         (

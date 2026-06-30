@@ -531,6 +531,18 @@ internal fun PersistedRuntimeData.withAppLanguageTag(languageTag: String): Persi
     ).sanitized()
 }
 
+internal fun PersistedRuntimeData.withFollowSystemAppLanguageTag(languageTag: String?): PersistedRuntimeData {
+    val normalizedLanguageTag = RuntimeAppLanguage.supportedLanguageTagOrNull(languageTag)
+    return copy(
+        appLanguageTag = normalizedLanguageTag ?: RuntimeAppLanguage.English.languageTag,
+        appLanguageSource = if (normalizedLanguageTag == null) {
+            APP_LANGUAGE_SOURCE_DEFAULT
+        } else {
+            APP_LANGUAGE_SOURCE_SYSTEM
+        },
+    ).sanitized()
+}
+
 internal fun PersistedRuntimeData.withSystemAppLanguageTag(languageTag: String?): PersistedRuntimeData {
     val cleanData = sanitized()
     if (cleanData.appLanguageSource == APP_LANGUAGE_SOURCE_IN_APP) return cleanData

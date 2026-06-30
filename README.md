@@ -315,7 +315,12 @@ vision-model attachment gating, chat/embedding model separation and persisted
 model-selection guardrails, runtime-generated chat title guardrails,
 runtime-generated next-question guardrails, Android reasoning/think state
 separation, and runtime reasoning/think streaming separation.
-It does not require a connected phone.
+It does not require a connected phone. Because it is a no-device gate, it has
+explicit caveats: it does not prove physical Android rendering on a real
+handset; TalkBack or VoiceOver traversal; optical/camera QR scan reliability;
+live provider-backed chat or cancel against Ollama, LM Studio, or another
+runtime backend; or real different-network runtime connectivity from a phone
+network without USB forwarding, loopback, or local relay shortcuts.
 
 Run these deeper smoke checks separately when their dependencies are available:
 

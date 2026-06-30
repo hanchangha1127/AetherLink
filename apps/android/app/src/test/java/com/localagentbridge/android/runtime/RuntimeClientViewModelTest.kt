@@ -1530,6 +1530,23 @@ class RuntimeClientViewModelTest {
         assertEquals(true, plan.shouldWaitForDiscoveryRoute)
     }
 
+    @Test
+    fun productPairingQrParserRejectsIdentityOnlyQrWhenRemoteRouteIsRequired() {
+        val parsed = parseRuntimePairingQrPayload(
+            rawValue = "aetherlink://pair?v=1&n=nonce-1&c=123456" +
+                "&rid=runtime-1&rn=AetherLink%20Runtime&rf=runtime-fingerprint" +
+                "&rk=runtime-public-key&rt=route-1",
+            allowDebugLoopbackRelay = false,
+            allowDiagnosticLocalDirectEndpoint = false,
+            requireRemoteRoute = true,
+        )
+
+        val rejected = parsed as RuntimePairingQrParseResult.Rejected
+        assertEquals("pairing_endpoint_unavailable", rejected.error.code)
+        assertEquals("route_diagnostic_remote_pending", rejected.error.diagnosticCode)
+        assertEquals(false, rejected.clearPendingPairing)
+    }
+
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
     fun identityOnlyPairingQrTimesOutWhenNoDiscoveryRouteAppears() = runTest {
@@ -1604,6 +1621,7 @@ class RuntimeClientViewModelTest {
             val channel = CapturingRuntimeProtocolChannel()
             var directConnectionAttempts = 0
             var capturedRelayRoute: PreparedRemoteRuntimeRoute.Relay? = null
+            var preflightRelayRoute: PreparedRemoteRuntimeRoute.Relay? = null
             val localStore = FakeRuntimeLocalDataStore(
                 initialData = PersistedRuntimeData(trustedRuntimeAutoReconnectEnabled = false),
             )
@@ -1620,6 +1638,10 @@ class RuntimeClientViewModelTest {
                         capturedRelayRoute = route
                         channel
                     },
+                    relayReachabilityChecker = RuntimeRelayReachabilityChecker { route, _ ->
+                        preflightRelayRoute = route
+                        true
+                    },
                     discovery = EmptyRuntimeDiscoverySource,
                     trustedRuntimeStore = FakeTrustedRuntimeStore(),
                     deviceIdentityProvider = FakeDeviceIdentityProvider(testDeviceIdentity()),
@@ -1633,6 +1655,7 @@ class RuntimeClientViewModelTest {
             advanceUntilIdle()
 
             val relayRoute = requireNotNull(capturedRelayRoute)
+            val checkedRelayRoute = requireNotNull(preflightRelayRoute)
             val pairingEnvelope = channel.sentEnvelopes.single { it.type == MessageType.PairingRequest }
             val pairingPayload = json.decodeFromJsonElement(
                 PairingRequestPayload.serializer(),
@@ -1644,6 +1667,11 @@ class RuntimeClientViewModelTest {
             assertEquals("relay-1", relayRoute.relayId)
             assertEquals("secret-1", relayRoute.relayFrameSecret)
             assertEquals("nonce-route-1", relayRoute.security.antiReplayNonce)
+            assertEquals(relayRoute.host, checkedRelayRoute.host)
+            assertEquals(relayRoute.port, checkedRelayRoute.port)
+            assertEquals(relayRoute.relayId, checkedRelayRoute.relayId)
+            assertEquals(relayRoute.relayFrameSecret, checkedRelayRoute.relayFrameSecret)
+            assertEquals(relayRoute.security.antiReplayNonce, checkedRelayRoute.security.antiReplayNonce)
             assertEquals("nonce-1", pairingPayload.pairingNonce)
             assertEquals("123456", pairingPayload.pairingCode)
             assertEquals("client-1", pairingPayload.deviceId)
@@ -1725,8 +1753,7 @@ class RuntimeClientViewModelTest {
             )
             var directConnectionAttempts = 0
             var relayConnectionAttempts = 0
-            var checkedHost: String? = null
-            var checkedPort: Int? = null
+            var checkedRoute: PreparedRemoteRuntimeRoute.Relay? = null
             var checkedTimeoutMillis: Int? = null
             val viewModel = RuntimeClientViewModel(
                 application = Application(),
@@ -1741,9 +1768,8 @@ class RuntimeClientViewModelTest {
                         relayConnectionAttempts += 1
                         error("Relay connection must not start when preflight fails")
                     },
-                    relayReachabilityChecker = RuntimeRelayReachabilityChecker { host, port, timeoutMillis ->
-                        checkedHost = host
-                        checkedPort = port
+                    relayReachabilityChecker = RuntimeRelayReachabilityChecker { route, timeoutMillis ->
+                        checkedRoute = route
                         checkedTimeoutMillis = timeoutMillis
                         false
                     },
@@ -1761,8 +1787,12 @@ class RuntimeClientViewModelTest {
 
             assertEquals(0, directConnectionAttempts)
             assertEquals(0, relayConnectionAttempts)
-            assertEquals("relay.example.test", checkedHost)
-            assertEquals(443, checkedPort)
+            val checkedRelayRoute = requireNotNull(checkedRoute)
+            assertEquals("relay.example.test", checkedRelayRoute.host)
+            assertEquals(443, checkedRelayRoute.port)
+            assertEquals("relay-1", checkedRelayRoute.relayId)
+            assertEquals("secret-1", checkedRelayRoute.relayFrameSecret)
+            assertEquals("nonce-route-1", checkedRelayRoute.security.antiReplayNonce)
             assertEquals(RELAY_REACHABILITY_PREFLIGHT_TIMEOUT_MS, checkedTimeoutMillis)
             assertFalse(viewModel.state.value.isPairingAwaitingRoute)
             assertNull(viewModel.state.value.pendingPairingRuntimeName)
@@ -2280,7 +2310,7 @@ class RuntimeClientViewModelTest {
 
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
-    fun routeRefreshQrDropsUnreachableRelayRouteAndRequiresFreshQrRecovery() = runTest {
+    fun routeRefreshQrKeepsUnreachableRelayRouteForRetryOrFreshQrRecovery() = runTest {
         val mainDispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(mainDispatcher)
         try {
@@ -2343,15 +2373,16 @@ class RuntimeClientViewModelTest {
             assertEquals("runtime-fingerprint", trusted.fingerprint)
             assertEquals("runtime-public-key", trusted.publicKeyBase64)
             assertEquals("route-1", trusted.routeToken)
-            assertNull(trusted.relayHost)
-            assertNull(trusted.relayPort)
-            assertNull(trusted.relayId)
-            assertNull(trusted.relaySecret)
-            assertNull(trusted.relayExpiresAtEpochMillis)
-            assertNull(trusted.relayNonce)
-            assertNull(trusted.relayScope)
+            assertEquals("relay-refresh.example.test", trusted.relayHost)
+            assertEquals(443, trusted.relayPort)
+            assertEquals("relay-refresh", trusted.relayId)
+            assertEquals("secret-refresh", trusted.relaySecret)
+            assertEquals(4102444800000L, trusted.relayExpiresAtEpochMillis)
+            assertEquals("nonce-refresh-route", trusted.relayNonce)
+            assertEquals("remote", trusted.relayScope)
             assertNull(localStore.data.pendingPairingRoute)
-            assertNull(viewModel.state.value.trustedRuntime?.relayHost)
+            assertEquals("relay-refresh.example.test", viewModel.state.value.trustedRuntime?.relayHost)
+            assertEquals("secret-refresh", viewModel.state.value.trustedRuntime?.relaySecret)
             assertEquals("runtime-1", viewModel.state.value.trustedRuntime?.deviceId)
             assertEquals("remote_route_unreachable", viewModel.state.value.error?.code)
             assertEquals("route_diagnostic_relay_failed", viewModel.state.value.error?.diagnosticCode)
@@ -2416,7 +2447,7 @@ class RuntimeClientViewModelTest {
                         assertEquals("nonce-fallback", route.security.antiReplayNonce)
                         error("Relay route unavailable")
                     },
-                    relayReachabilityChecker = RuntimeRelayReachabilityChecker { _, _, _ ->
+                    relayReachabilityChecker = RuntimeRelayReachabilityChecker { _, _ ->
                         error("Fresh discovery routes should not be blocked by relay preflight")
                     },
                     discovery = object : RuntimeDiscoverySource {
@@ -3433,6 +3464,16 @@ class RuntimeClientViewModelTest {
 
         assertEquals("pairing_endpoint_unavailable", error.code)
         assertNull(error.diagnosticCode)
+    }
+
+    @Test
+    fun relayProbeResponseParserRequiresKnownRouteAndWaitingRuntime() {
+        assertTrue("AETHERLINK_RELAY probe known=1 runtime_waiting=1\n".isRelayProbeReady())
+        assertTrue("AETHERLINK_RELAY probe allocated=true runtime_waiting=true\n".isRelayProbeReady())
+        assertFalse("AETHERLINK_RELAY probe known=1 runtime_waiting=0\n".isRelayProbeReady())
+        assertFalse("AETHERLINK_RELAY probe known=0 runtime_waiting=1\n".isRelayProbeReady())
+        assertFalse("AETHERLINK_RELAY ready\n".isRelayProbeReady())
+        assertFalse("AETHERLINK_RELAY probe unknown\n".isRelayProbeReady())
     }
 
     @Test
@@ -5453,8 +5494,8 @@ class RuntimeClientViewModelTest {
             advanceUntilIdle()
 
             val payload = fixture.channel.lastChatSendPayload()
-            assertEquals(listOf("system", "user", "assistant", "user"), payload.messages.map { it.role })
-            assertEquals(listOf("First prompt", "First answer", "Try again"), payload.messages.drop(1).map { it.content })
+            assertEquals(listOf("user", "assistant", "user"), payload.messages.map { it.role })
+            assertEquals(listOf("First prompt", "First answer", "Try again"), payload.messages.map { it.content })
             assertFalse(payload.messages.any { it.content == "Old latest answer" })
 
             val state = fixture.viewModel.state.value
@@ -5502,7 +5543,7 @@ class RuntimeClientViewModelTest {
             assertEquals("Do not clear this draft", state.chatInput)
             assertEquals(listOf(pendingAttachment), state.pendingAttachments)
             val payload = fixture.channel.lastChatSendPayload()
-            assertEquals(listOf("system", "user"), payload.messages.map { it.role })
+            assertEquals(listOf("user"), payload.messages.map { it.role })
             assertTrue(payload.messages.all { it.attachments.isEmpty() })
         } finally {
             Dispatchers.resetMain()
@@ -6535,6 +6576,20 @@ class RuntimeClientViewModelTest {
             assertEquals(RuntimeAppLanguage.French.languageTag, recreated.state.value.selectedLanguageTag)
             assertEquals(RuntimeAppLanguage.French.languageTag, localStore.data.appLanguageTag)
             assertEquals(APP_LANGUAGE_SOURCE_IN_APP, localStore.data.appLanguageSource)
+
+            recreated.followSystemAppLanguageTag("ja-JP")
+            advanceUntilIdle()
+
+            assertEquals(RuntimeAppLanguage.Japanese.languageTag, recreated.state.value.selectedLanguageTag)
+            assertEquals(RuntimeAppLanguage.Japanese.languageTag, localStore.data.appLanguageTag)
+            assertEquals(APP_LANGUAGE_SOURCE_SYSTEM, localStore.data.appLanguageSource)
+
+            recreated.reconcileSystemAppLanguageTag("ko-KR")
+            advanceUntilIdle()
+
+            assertEquals(RuntimeAppLanguage.Korean.languageTag, recreated.state.value.selectedLanguageTag)
+            assertEquals(RuntimeAppLanguage.Korean.languageTag, localStore.data.appLanguageTag)
+            assertEquals(APP_LANGUAGE_SOURCE_SYSTEM, localStore.data.appLanguageSource)
         } finally {
             Dispatchers.resetMain()
         }
@@ -7527,8 +7582,9 @@ class RuntimeClientViewModelTest {
 
             assertEquals("Draft A", fixture.viewModel.state.value.chatInput)
 
+            val sessionAAttachment = textAttachment().copy(name = "session-a-note.txt")
             fixture.viewModel.replaceStateForTest {
-                it.copy(pendingAttachments = listOf(textAttachment()))
+                it.copy(pendingAttachments = listOf(sessionAAttachment))
             }
 
             fixture.viewModel.openPreviousChat("session-b")
@@ -7553,11 +7609,63 @@ class RuntimeClientViewModelTest {
             advanceUntilIdle()
 
             assertEquals("Draft A", fixture.viewModel.state.value.chatInput)
+            assertEquals(listOf(sessionAAttachment), fixture.viewModel.state.value.pendingAttachments)
 
             fixture.viewModel.openPreviousChat("session-b")
             advanceUntilIdle()
 
             assertEquals("Edited B", fixture.viewModel.state.value.chatInput)
+            assertTrue(fixture.viewModel.state.value.pendingAttachments.isEmpty())
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun clearChatDraftClearsActiveSessionTextAndPendingAttachments() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val initialData = PersistedRuntimeData(
+                selectedModelId = "ollama:llama3.1:8b",
+                trustedRuntimeAutoReconnectEnabled = false,
+            )
+                .withPersistedMessages(
+                    sessionId = "session-a",
+                    messages = listOf(RuntimeChatMessage(role = "user", content = "Question A")),
+                    nowMillis = 100L,
+                )
+                .withComposerDraft("Draft A", sessionId = "session-a")
+                .withActiveSession("session-a")
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                initialData = initialData,
+            )
+            val pendingAttachment = textAttachment().copy(name = "draft-note.txt")
+            val pendingAttachmentsBySession =
+                fixture.viewModel.privateField<MutableMap<String?, List<RuntimePendingAttachment>>>(
+                    "pendingAttachmentsBySession",
+                )
+            pendingAttachmentsBySession?.put("session-a", listOf(pendingAttachment))
+            fixture.viewModel.replaceStateForTest {
+                it.copy(
+                    activeChatSessionId = "session-a",
+                    chatInput = "Draft A",
+                    pendingAttachments = listOf(pendingAttachment),
+                )
+            }
+
+            fixture.viewModel.clearChatDraft()
+            advanceUntilIdle()
+
+            assertEquals("", fixture.viewModel.state.value.chatInput)
+            assertTrue(fixture.viewModel.state.value.pendingAttachments.isEmpty())
+            assertEquals(
+                "",
+                fixture.localStore.data.sessions.single { it.id == "session-a" }.composerDraft,
+            )
+            assertFalse(pendingAttachmentsBySession?.containsKey("session-a") == true)
         } finally {
             Dispatchers.resetMain()
         }
@@ -9086,7 +9194,7 @@ class RuntimeClientViewModelTest {
 
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
-    fun trustedRelayConnectionFailureClearsStoredRelayAndStopsAutoReconnect() = runTest {
+    fun trustedRelayConnectionFailureKeepsStoredRelayAndStopsAutoReconnectUntilUserRetries() = runTest {
         val mainDispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(mainDispatcher)
         try {
@@ -9129,10 +9237,66 @@ class RuntimeClientViewModelTest {
                 "route_diagnostic_relay_failed",
                 viewModel.state.value.error?.diagnosticCode,
             )
-            assertNull(viewModel.state.value.trustedRuntime?.relayHost)
-            assertNull(viewModel.state.value.trustedRuntime?.relaySecret)
-            assertNull(trustedStore.trusted?.relayHost)
-            assertNull(trustedStore.trusted?.relaySecret)
+            assertEquals("relay.example.test", viewModel.state.value.trustedRuntime?.relayHost)
+            assertEquals("secret-1", viewModel.state.value.trustedRuntime?.relaySecret)
+            assertEquals("relay.example.test", trustedStore.trusted?.relayHost)
+            assertEquals("secret-1", trustedStore.trusted?.relaySecret)
+            advanceTimeBy(2_000L)
+            advanceUntilIdle()
+
+            assertEquals(1, relayConnectionAttempts)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun trustedRelayHandshakeRejectionKeepsStoredRelayAndStopsAutoReconnectUntilUserRetries() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val trustedStore = FakeEmittingTrustedRuntimeStore(trustedRuntimeForViewModelTests())
+            var relayConnectionAttempts = 0
+            val viewModel = RuntimeClientViewModel(
+                application = Application(),
+                dependencies = RuntimeClientViewModelDependencies(
+                    json = json,
+                    transportClient = RuntimeTransportClient(),
+                    transportConnector = RuntimeTransportConnector { _, _, _ ->
+                        error("Direct TCP should not be used for trusted relay handshake rejection")
+                    },
+                    relayConnector = RuntimeRelayConnector { _, _ ->
+                        relayConnectionAttempts += 1
+                        throw IllegalArgumentException("Relay did not accept route")
+                    },
+                    discovery = EmptyRuntimeDiscoverySource,
+                    trustedRuntimeStore = trustedStore,
+                    deviceIdentityProvider = FakeDeviceIdentityProvider(testDeviceIdentity()),
+                    localDataStore = FakeRuntimeLocalDataStore(
+                        initialData = PersistedRuntimeData(trustedRuntimeAutoReconnectEnabled = false),
+                    ),
+                    lifecycleCallbacksRegistrar = NoopRuntimeLifecycleCallbacksRegistrar,
+                    currentTimeMillis = { 1_000L },
+                ),
+            )
+            advanceUntilIdle()
+
+            viewModel.connectToTrustedRuntime()
+            runCurrent()
+            advanceUntilIdle()
+
+            assertEquals(1, relayConnectionAttempts)
+            assertEquals("remote_route_unreachable", viewModel.state.value.error?.code)
+            assertEquals(
+                "route_diagnostic_relay_failed",
+                viewModel.state.value.error?.diagnosticCode,
+            )
+            assertEquals("relay.example.test", viewModel.state.value.trustedRuntime?.relayHost)
+            assertEquals("secret-1", viewModel.state.value.trustedRuntime?.relaySecret)
+            assertEquals("relay.example.test", trustedStore.trusted?.relayHost)
+            assertEquals("secret-1", trustedStore.trusted?.relaySecret)
+
             advanceTimeBy(2_000L)
             advanceUntilIdle()
 
@@ -10288,17 +10452,23 @@ class RuntimeClientViewModelTest {
     fun systemAppLanguageHelperDoesNotOverrideInAppLanguageSelection() {
         val systemLanguage = PersistedRuntimeData().withSystemAppLanguageTag("ko-KR")
         val inAppLanguage = systemLanguage.withAppLanguageTag("fr-FR")
+        val followSystemLanguage = inAppLanguage.withFollowSystemAppLanguageTag("ja-JP")
         val ignoredSystemUpdate = inAppLanguage.withSystemAppLanguageTag("ja-JP")
         val unsupportedSystemUpdate = PersistedRuntimeData().withSystemAppLanguageTag("de-DE")
+        val unsupportedFollowSystem = inAppLanguage.withFollowSystemAppLanguageTag("de-DE")
 
         assertEquals(RuntimeAppLanguage.Korean.languageTag, systemLanguage.appLanguageTag)
         assertEquals(APP_LANGUAGE_SOURCE_SYSTEM, systemLanguage.appLanguageSource)
         assertEquals(RuntimeAppLanguage.French.languageTag, inAppLanguage.appLanguageTag)
         assertEquals(APP_LANGUAGE_SOURCE_IN_APP, inAppLanguage.appLanguageSource)
+        assertEquals(RuntimeAppLanguage.Japanese.languageTag, followSystemLanguage.appLanguageTag)
+        assertEquals(APP_LANGUAGE_SOURCE_SYSTEM, followSystemLanguage.appLanguageSource)
         assertEquals(RuntimeAppLanguage.French.languageTag, ignoredSystemUpdate.appLanguageTag)
         assertEquals(APP_LANGUAGE_SOURCE_IN_APP, ignoredSystemUpdate.appLanguageSource)
         assertEquals(RuntimeAppLanguage.English.languageTag, unsupportedSystemUpdate.appLanguageTag)
         assertEquals(APP_LANGUAGE_SOURCE_DEFAULT, unsupportedSystemUpdate.appLanguageSource)
+        assertEquals(RuntimeAppLanguage.English.languageTag, unsupportedFollowSystem.appLanguageTag)
+        assertEquals(APP_LANGUAGE_SOURCE_DEFAULT, unsupportedFollowSystem.appLanguageSource)
     }
 
     @Test
@@ -10566,7 +10736,7 @@ class RuntimeClientViewModelTest {
             advanceUntilIdle()
 
             val payload = fixture.channel.lastChatSendPayload()
-            assertEquals(listOf("system", "user", "assistant", "user"), payload.messages.map { it.role })
+            assertEquals(listOf("user", "assistant", "user"), payload.messages.map { it.role })
             assertTrue(payload.messages.dropLast(1).all { it.attachments.isEmpty() })
             val sentAttachments = payload.messages.last().attachments
             assertEquals(2, sentAttachments.size)

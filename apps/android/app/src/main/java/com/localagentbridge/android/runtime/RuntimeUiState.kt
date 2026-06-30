@@ -40,6 +40,7 @@ data class RuntimeUiState(
     val activeRequestId: String? = null,
     val memoryEntries: List<RuntimeMemoryEntry> = emptyList(),
     val selectedLanguageTag: String = RuntimeAppLanguage.English.languageTag,
+    val selectedLanguageSource: String = APP_LANGUAGE_SOURCE_DEFAULT,
     val selectedTheme: RuntimeAppTheme = RuntimeAppTheme.System,
     val trustedRuntimeAutoReconnectEnabled: Boolean = true,
     val pairingOnboardingCompleted: Boolean = false,

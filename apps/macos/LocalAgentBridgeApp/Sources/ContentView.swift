@@ -51,6 +51,10 @@ struct ContentView: View {
                     .padding(.horizontal, 12)
 
                 VStack(alignment: .leading, spacing: 8) {
+                    Text(appPreferencesAccessibilityLabel())
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .accessibilityAddTraits(.isHeader)
                     AetherLinkAppearancePicker(appearance: appearanceBinding)
                     AetherLinkLanguagePicker(languageTag: languageBinding)
                 }
@@ -223,18 +227,27 @@ private struct AetherLinkAppearancePicker: View {
     @Binding var appearance: String
 
     var body: some View {
-        Picker(selection: $appearance) {
-            ForEach(AetherLinkAppAppearance.pickerOptions) { option in
-                Text(option.title)
-                    .tag(option.rawValue)
+        VStack(alignment: .leading, spacing: 3) {
+            Picker(selection: $appearance) {
+                ForEach(AetherLinkAppAppearance.pickerOptions) { option in
+                    Text(option.title)
+                        .tag(option.rawValue)
+                }
+            } label: {
+                Label(NSLocalizedString("Appearance", comment: ""), systemImage: "circle.lefthalf.filled")
             }
-        } label: {
-            Label(NSLocalizedString("Appearance", comment: ""), systemImage: "circle.lefthalf.filled")
+            .pickerStyle(.menu)
+            .controlSize(.small)
+            .accessibilityValue(Text(AetherLinkAppAppearance.normalized(appearance).title))
+            .accessibilityHint(Text(appAppearancePickerAccessibilityHint()))
+
+            Text(appAppearancePickerDetailText())
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityHidden(true)
         }
-        .pickerStyle(.menu)
-        .controlSize(.small)
-        .accessibilityValue(Text(AetherLinkAppAppearance.normalized(appearance).title))
-        .accessibilityHint(Text(appAppearancePickerAccessibilityHint()))
     }
 }
 
@@ -242,18 +255,27 @@ private struct AetherLinkLanguagePicker: View {
     @Binding var languageTag: String
 
     var body: some View {
-        Picker(selection: $languageTag) {
-            ForEach(AetherLinkAppLanguage.pickerOptions) { language in
-                Text(language.title)
-                    .tag(language.rawValue)
+        VStack(alignment: .leading, spacing: 3) {
+            Picker(selection: $languageTag) {
+                ForEach(AetherLinkAppLanguage.pickerOptions) { language in
+                    Text(language.title)
+                        .tag(language.rawValue)
+                }
+            } label: {
+                Label(NSLocalizedString("Language", comment: ""), systemImage: "globe")
             }
-        } label: {
-            Label(NSLocalizedString("Language", comment: ""), systemImage: "globe")
+            .pickerStyle(.menu)
+            .controlSize(.small)
+            .accessibilityValue(Text(AetherLinkAppLanguage.normalized(languageTag).title))
+            .accessibilityHint(Text(appLanguagePickerAccessibilityHint()))
+
+            Text(appLanguagePickerDetailText())
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityHidden(true)
         }
-        .pickerStyle(.menu)
-        .controlSize(.small)
-        .accessibilityValue(Text(AetherLinkAppLanguage.normalized(languageTag).title))
-        .accessibilityHint(Text(appLanguagePickerAccessibilityHint()))
     }
 }
 
@@ -263,6 +285,18 @@ func appAppearancePickerAccessibilityHint() -> String {
 
 func appLanguagePickerAccessibilityHint() -> String {
     NSLocalizedString("Choose the app language. This setting is saved for future launches.", comment: "")
+}
+
+func appAppearancePickerDetailText() -> String {
+    NSLocalizedString("System follows this device's appearance. Saved for future launches.", comment: "")
+}
+
+func appLanguagePickerDetailText() -> String {
+    NSLocalizedString("Choose one of the supported app languages. Saved for future launches.", comment: "")
+}
+
+func appPreferencesAccessibilityLabel() -> String {
+    NSLocalizedString("App Preferences", comment: "")
 }
 
 enum CompanionSection: String, CaseIterable, Identifiable {
