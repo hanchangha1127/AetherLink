@@ -91,6 +91,14 @@
 "Runtime Memory" = "런타임 메모리";
 "Refresh Runtime Data" = "런타임 데이터 새로 고침";
 "Refresh runtime-owned chat history and memory counts." = "런타임에 저장된 채팅 기록과 메모리 개수를 새로 고칩니다.";
+"Refresh Model Residency" = "모델 상주 상태 새로 고침";
+"Refresh the runtime model residency status." = "런타임 모델 상주 상태를 새로 고칩니다.";
+"Unload Resident Model" = "상주 모델 언로드";
+"Generation in progress" = "생성 진행 중";
+"No resident model" = "상주 모델 없음";
+"Unload the active resident model now through AetherLink Runtime." = "AetherLink Runtime을 통해 활성 상주 모델을 지금 언로드합니다.";
+"Wait for the active generation to finish before unloading the resident model." = "상주 모델을 언로드하기 전에 활성 생성을 마칠 때까지 기다립니다.";
+"No resident model is active through AetherLink Runtime." = "AetherLink Runtime에 활성 상주 모델이 없습니다.";
 "Inspect Runtime Memory" = "런타임 메모리 점검";
 "Inspect runtime-owned memory notes stored on AetherLink Runtime." = "AetherLink Runtime에 저장된 런타임 소유 메모리 노트를 확인합니다.";
 "Runtime Memory Inspector" = "런타임 메모리 점검";
@@ -109,6 +117,18 @@
 "Unknown creation time" = "알 수 없는 생성 시간";
 "Unknown update time" = "알 수 없는 수정 시간";
 "Memory note %@. Status %@. Created %@. Updated %@." = "메모리 노트 %@. 상태 %@. 생성 %@. 수정 %@.";
+"Approved from older chat" = "이전 채팅에서 승인됨";
+"Source chat: %@" = "원본 채팅: %@";
+"Source coverage: %@" = "원본 범위: %@";
+"Source coverage unavailable" = "원본 범위 없음";
+"Show source excerpts" = "원본 발췌 보기";
+"Hide source excerpts" = "원본 발췌 숨기기";
+"Source review expanded" = "원본 검토 펼쳐짐";
+"Source review collapsed" = "원본 검토 접힘";
+"Source excerpt %@: %@" = "원본 발췌 %@: %@";
+"Source excerpt unavailable" = "원본 발췌 없음";
+"%d more source excerpts hidden" = "원본 발췌 %d개 더 숨김";
+"Memory source. %@. %@. %@." = "메모리 원본. %@. %@. %@.";
 "1 active chat" = "활성 채팅 1개";
 "%d active chats" = "활성 채팅 %d개";
 "1 archived chat" = "보관된 채팅 1개";
@@ -226,6 +246,8 @@
 "No active model is resident through the runtime policy." = "런타임 정책으로 상주 중인 활성 모델이 없습니다.";
 "Model unload requested by runtime policy." = "런타임 정책이 모델 언로드를 요청했습니다.";
 "Model unloaded by runtime policy." = "런타임 정책으로 모델을 언로드했습니다.";
+"Manual model unload requested." = "수동 모델 언로드를 요청했습니다.";
+"Manual model unloaded." = "수동으로 모델을 언로드했습니다.";
 "Open a model provider for AetherLink Runtime, then check again." = "AetherLink Runtime에서 사용할 모델 제공자를 연 다음 다시 확인하세요.";
 "1 trusted device" = "신뢰 기기 1대";
 "%d trusted devices" = "신뢰 기기 %d대";
@@ -326,6 +348,7 @@
 "Provider %@ status %@" = "%@ 상태 %@";
 "Provider %@. Status %@. %@" = "%@. 상태 %@. %@";
 "No provider details" = "제공자 세부 정보 없음";
+"Active model is ready for runtime requests." = "활성 모델이 런타임 요청을 처리할 준비가 되었습니다.";
 "Model residency updated." = "모델 상주 상태가 갱신되었습니다.";
 "Runtime event recorded." = "런타임 이벤트가 기록되었습니다.";
 
@@ -443,6 +466,7 @@
 "AetherLink Runtime needs attention. Check Activity or restart AetherLink Runtime." = "AetherLink Runtime 확인이 필요합니다. 활동을 확인하거나 AetherLink Runtime을 다시 시작하세요.";
 "Connection details need a secure connection secret before sharing sensitive content." = "민감한 내용을 공유하기 전에 연결 정보에 보안 연결 암호가 필요합니다.";
 "Model unload failed. Check Activity." = "모델 내리기에 실패했습니다. 활동을 확인하세요.";
+"Manual model unload failed. Check Activity." = "수동 모델 언로드에 실패했습니다. 활동을 확인하세요.";
 "Ready for paired devices." = "페어링된 기기 연결 준비됨.";
 "Start AetherLink Runtime." = "AetherLink Runtime을 시작하세요.";
 "Connection details not ready for QR" = "QR용 연결 정보가 준비되지 않음";

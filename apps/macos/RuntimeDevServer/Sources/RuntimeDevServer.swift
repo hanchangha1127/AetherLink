@@ -3,6 +3,7 @@ import CompanionCore
 import Darwin
 import Dispatch
 import Foundation
+import struct OllamaBackend.BackendError
 import class LMStudioBackend.LMStudioBackend
 import enum OllamaBackend.BackendStatus
 import struct OllamaBackend.ChatRequest
@@ -187,12 +188,26 @@ struct RuntimeDevServer {
                     provider: .ollama,
                     modelID: "dev-mock",
                     modelName: "Dev Mock Streaming Model",
+                    additionalModels: [
+                        (
+                            id: "dev-mock-unload-failure",
+                            name: "Dev Mock Unload Failure Model",
+                            capabilities: ["chat"]
+                        )
+                    ],
                     environment: environment
                 ),
                 DevMockBackend(
                     provider: .lmStudio,
                     modelID: "dev-mock-alt",
                     modelName: "Dev Mock Alternate Model",
+                    additionalModels: [
+                        (
+                            id: "dev-mock-vision",
+                            name: "Dev Mock Vision Model",
+                            capabilities: ["chat", "vision"]
+                        )
+                    ],
                     environment: environment
                 )
             ],
@@ -876,8 +891,11 @@ private final class DevMockBackend: LlmBackend, @unchecked Sendable {
     let provider: ModelProvider
     private let modelID: String
     private let modelName: String
+    private let capabilities: [String]
+    private let additionalModels: [(id: String, name: String, capabilities: [String])]
     private let chunkDelayNanoseconds: UInt64
     private let unloadEventFile: String?
+    private let unloadFailureTargets: Set<String>
     private let lock = NSLock()
     private var tasks: [String: Task<Void, Never>] = [:]
     private var pulledModels: [String] = []
@@ -886,14 +904,24 @@ private final class DevMockBackend: LlmBackend, @unchecked Sendable {
         provider: ModelProvider = .ollama,
         modelID: String = "dev-mock",
         modelName: String = "Dev Mock Streaming Model",
+        capabilities: [String] = ["chat"],
+        additionalModels: [(id: String, name: String, capabilities: [String])] = [],
         environment: [String: String] = ProcessInfo.processInfo.environment
     ) {
         self.provider = provider
         self.modelID = modelID
         self.modelName = modelName
+        self.capabilities = capabilities
+        self.additionalModels = additionalModels
         let delayMilliseconds = UInt64(environment["AETHERLINK_DEV_MOCK_CHUNK_DELAY_MS"] ?? "") ?? 350
         chunkDelayNanoseconds = max(1, delayMilliseconds) * 1_000_000
         unloadEventFile = environment["AETHERLINK_DEV_MOCK_UNLOAD_EVENT_FILE"]?.takeIfNotEmpty
+        unloadFailureTargets = Set(
+            (environment["AETHERLINK_DEV_MOCK_UNLOAD_FAILURES"] ?? "")
+                .split(separator: ",")
+                .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+        )
     }
 
     func healthCheck() async -> BackendStatus {
@@ -907,6 +935,7 @@ private final class DevMockBackend: LlmBackend, @unchecked Sendable {
                     id: modelID,
                     name: modelName,
                     provider: provider,
+                    capabilities: capabilities,
                     sizeBytes: 0,
                     modifiedAt: Date(),
                     installed: true,
@@ -914,11 +943,25 @@ private final class DevMockBackend: LlmBackend, @unchecked Sendable {
                     source: .local
                 )
             ]
+            models.append(contentsOf: additionalModels.map {
+                ModelInfo(
+                    id: $0.id,
+                    name: $0.name,
+                    provider: provider,
+                    capabilities: $0.capabilities,
+                    sizeBytes: 0,
+                    modifiedAt: Date(),
+                    installed: true,
+                    running: false,
+                    source: .local
+                )
+            })
             models.append(contentsOf: pulledModels.map {
                 ModelInfo(
                     id: $0,
                     name: $0,
                     provider: provider,
+                    capabilities: capabilities,
                     sizeBytes: 0,
                     modifiedAt: Date(),
                     installed: true,
@@ -940,6 +983,14 @@ private final class DevMockBackend: LlmBackend, @unchecked Sendable {
     }
 
     func unloadModel(providerModelID: String) async throws -> ModelUnloadResult {
+        if unloadFailureTargets.contains("\(provider.rawValue)|\(providerModelID)") {
+            throw BackendError(
+                provider: provider,
+                code: "mock_unload_failed",
+                message: "Mock unload failure from http://127.0.0.1:11434/api/chat?relay_secret=mock-secret",
+                retryable: true
+            )
+        }
         if let unloadEventFile {
             let line = "\(provider.rawValue)|\(providerModelID)\n"
             if let data = line.data(using: .utf8) {

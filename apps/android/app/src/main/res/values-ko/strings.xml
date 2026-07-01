@@ -284,6 +284,19 @@
     <string name="provider_hide_diagnostics">세부 정보 숨기기</string>
     <string name="provider_show_diagnostics_for">%1$s 세부 정보 보기</string>
     <string name="provider_hide_diagnostics_for">%1$s 세부 정보 숨기기</string>
+    <string name="model_residency">모델 상주 상태</string>
+    <string name="model_residency_unknown">런타임 상주 상태를 기다리는 중</string>
+    <string name="model_residency_unsupported">이 런타임에서 보고하지 않음</string>
+    <string name="model_residency_active">%1$s %2$s 상주 중. 진행 중: %3$d. 유휴 언로드: %4$s.</string>
+    <string name="model_residency_inactive">상주 모델 없음. 진행 중: %1$d. 유휴 언로드: %2$s.</string>
+    <string name="model_residency_idle_delay_seconds">%1$d초</string>
+    <string name="model_residency_idle_delay_minutes">%1$d분</string>
+    <string name="model_residency_idle_delay_unknown">보고되지 않음</string>
+    <string name="model_residency_with_last_unload_failure">%1$s %2$s</string>
+    <string name="model_residency_last_unload_failure">최근 언로드 실패: %1$s %2$s(%3$s).</string>
+    <string name="model_residency_unload_reason_model_switch">모델 전환</string>
+    <string name="model_residency_unload_reason_idle_timeout">유휴 시간 초과</string>
+    <string name="model_residency_unload_reason_manual">수동 언로드</string>
 
     <string name="models_title">모델</string>
     <string name="choose_model">모델 선택</string>

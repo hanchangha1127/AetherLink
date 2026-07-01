@@ -91,6 +91,14 @@
 "Runtime Memory" = "Runtime Memory";
 "Refresh Runtime Data" = "Refresh Runtime Data";
 "Refresh runtime-owned chat history and memory counts." = "Refresh runtime-owned chat history and memory counts.";
+"Refresh Model Residency" = "Refresh Model Residency";
+"Refresh the runtime model residency status." = "Refresh the runtime model residency status.";
+"Unload Resident Model" = "Unload Resident Model";
+"Generation in progress" = "Generation in progress";
+"No resident model" = "No resident model";
+"Unload the active resident model now through AetherLink Runtime." = "Unload the active resident model now through AetherLink Runtime.";
+"Wait for the active generation to finish before unloading the resident model." = "Wait for the active generation to finish before unloading the resident model.";
+"No resident model is active through AetherLink Runtime." = "No resident model is active through AetherLink Runtime.";
 "Inspect Runtime Memory" = "Inspect Runtime Memory";
 "Inspect runtime-owned memory notes stored on AetherLink Runtime." = "Inspect runtime-owned memory notes stored on AetherLink Runtime.";
 "Runtime Memory Inspector" = "Runtime Memory Inspector";
@@ -109,6 +117,18 @@
 "Unknown creation time" = "Unknown creation time";
 "Unknown update time" = "Unknown update time";
 "Memory note %@. Status %@. Created %@. Updated %@." = "Memory note %@. Status %@. Created %@. Updated %@.";
+"Approved from older chat" = "Approved from older chat";
+"Source chat: %@" = "Source chat: %@";
+"Source coverage: %@" = "Source coverage: %@";
+"Source coverage unavailable" = "Source coverage unavailable";
+"Show source excerpts" = "Show source excerpts";
+"Hide source excerpts" = "Hide source excerpts";
+"Source review expanded" = "Source review expanded";
+"Source review collapsed" = "Source review collapsed";
+"Source excerpt %@: %@" = "Source excerpt %@: %@";
+"Source excerpt unavailable" = "Source excerpt unavailable";
+"%d more source excerpts hidden" = "%d more source excerpts hidden";
+"Memory source. %@. %@. %@." = "Memory source. %@. %@. %@.";
 "1 active chat" = "1 active chat";
 "%d active chats" = "%d active chats";
 "1 archived chat" = "1 archived chat";
@@ -226,6 +246,8 @@
 "No active model is resident through the runtime policy." = "No active model is resident through the runtime policy.";
 "Model unload requested by runtime policy." = "Model unload requested by runtime policy.";
 "Model unloaded by runtime policy." = "Model unloaded by runtime policy.";
+"Manual model unload requested." = "Manual model unload requested.";
+"Manual model unloaded." = "Manual model unloaded.";
 "Open a model provider for AetherLink Runtime, then check again." = "Open a model provider for AetherLink Runtime, then check again.";
 "1 trusted device" = "1 trusted device";
 "%d trusted devices" = "%d trusted devices";
@@ -326,6 +348,7 @@
 "Provider %@ status %@" = "Provider %@ status %@";
 "Provider %@. Status %@. %@" = "Provider %@. Status %@. %@";
 "No provider details" = "No provider details";
+"Active model is ready for runtime requests." = "Active model is ready for runtime requests.";
 "Model residency updated." = "Model residency updated.";
 "Runtime event recorded." = "Runtime event recorded.";
 
@@ -443,6 +466,7 @@
 "AetherLink Runtime needs attention. Check Activity or restart AetherLink Runtime." = "AetherLink Runtime needs attention. Check Activity or restart AetherLink Runtime.";
 "Connection details need a secure connection secret before sharing sensitive content." = "Connection details need a secure connection secret before sharing sensitive content.";
 "Model unload failed. Check Activity." = "Model unload failed. Check Activity.";
+"Manual model unload failed. Check Activity." = "Manual model unload failed. Check Activity.";
 "Ready for paired devices." = "Ready for paired devices.";
 "Start AetherLink Runtime." = "Start AetherLink Runtime.";
 "Connection details not ready for QR" = "Connection details not ready for QR";

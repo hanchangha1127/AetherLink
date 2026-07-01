@@ -209,6 +209,8 @@ struct MenuBarCommandTitles: Equatable {
     let openAetherLink: String
     let refresh: String
     let loadModels: String
+    let refreshModelResidency: String
+    let unloadResidentModel: String
     let quit: String
 }
 
@@ -253,6 +255,8 @@ func menuBarCommandTitles() -> MenuBarCommandTitles {
         openAetherLink: NSLocalizedString("Open AetherLink", comment: ""),
         refresh: NSLocalizedString("Refresh", comment: ""),
         loadModels: NSLocalizedString("Load Models", comment: ""),
+        refreshModelResidency: NSLocalizedString("Refresh Model Residency", comment: ""),
+        unloadResidentModel: NSLocalizedString("Unload Resident Model", comment: ""),
         quit: NSLocalizedString("Quit", comment: "")
     )
 }
@@ -301,6 +305,38 @@ func refreshRuntimeDataActionAccessibilityValue() -> String {
 
 func refreshRuntimeDataActionAccessibilityHint() -> String {
     NSLocalizedString("Refresh runtime-owned chat history and memory counts.", comment: "")
+}
+
+func refreshModelResidencyActionAccessibilityValue() -> String {
+    NSLocalizedString("Ready", comment: "")
+}
+
+func refreshModelResidencyActionAccessibilityHint() -> String {
+    NSLocalizedString("Refresh the runtime model residency status.", comment: "")
+}
+
+func unloadResidentModelActionAccessibilityValue(
+    canUnload: Bool,
+    inFlightGenerations: Int
+) -> String {
+    if inFlightGenerations > 0 {
+        return NSLocalizedString("Generation in progress", comment: "")
+    }
+    return canUnload
+        ? NSLocalizedString("Ready", comment: "")
+        : NSLocalizedString("No resident model", comment: "")
+}
+
+func unloadResidentModelActionAccessibilityHint(
+    canUnload: Bool,
+    inFlightGenerations: Int
+) -> String {
+    if inFlightGenerations > 0 {
+        return NSLocalizedString("Wait for the active generation to finish before unloading the resident model.", comment: "")
+    }
+    return canUnload
+        ? NSLocalizedString("Unload the active resident model now through AetherLink Runtime.", comment: "")
+        : NSLocalizedString("No resident model is active through AetherLink Runtime.", comment: "")
 }
 
 func inspectRuntimeHistoryActionAccessibilityValue() -> String {

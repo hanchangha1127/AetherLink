@@ -319,7 +319,7 @@ struct StatusView: View {
             )
         }
         return model.modelResidency.lastEvent
-            .map(localizedModelResidencyEvent)
+            .map(modelResidencyEventSummary)
             ?? NSLocalizedString("No active model is resident through the runtime policy.", comment: "")
     }
 
@@ -390,20 +390,6 @@ struct StatusView: View {
         case .aggregate:
             return NSLocalizedString("AetherLink Runtime", comment: "")
         }
-    }
-
-    private func localizedModelResidencyEvent(_ event: String) -> String {
-        let normalized = event.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if normalized.hasPrefix("model unload failed:") {
-            return NSLocalizedString("Model unload failed. Check Activity.", comment: "")
-        }
-        if normalized.hasPrefix("model unload requested:") {
-            return NSLocalizedString("Model unload requested by runtime policy.", comment: "")
-        }
-        if normalized.hasPrefix("model unloaded:") {
-            return NSLocalizedString("Model unloaded by runtime policy.", comment: "")
-        }
-        return NSLocalizedString("Model residency updated.", comment: "")
     }
 
     private var readinessItems: [ReadinessItem] {
@@ -588,6 +574,13 @@ private struct StatusQuickActions: View {
                 isAvailable: canGeneratePairingQR,
                 hasAction: onGenerateRelayQRCode != nil
             )
+            let canUnloadResidentModel = model.modelResidency.supported &&
+                model.modelResidency.activeModelID != nil &&
+                model.modelResidency.inFlightGenerations == 0
+            let unloadResidentModelActionHint = unloadResidentModelActionAccessibilityHint(
+                canUnload: canUnloadResidentModel,
+                inFlightGenerations: model.modelResidency.inFlightGenerations
+            )
             Button {
                 onGenerateRelayQRCode?()
             } label: {
@@ -645,6 +638,36 @@ private struct StatusQuickActions: View {
             .frame(maxWidth: .infinity, alignment: .leading)
 
             Button {
+                model.refreshModelResidencyStatus()
+            } label: {
+                Label(NSLocalizedString("Refresh Model Residency", comment: ""), systemImage: "memorychip")
+            }
+            .buttonStyle(.bordered)
+            .help(refreshModelResidencyActionAccessibilityHint())
+            .accessibilityValue(Text(refreshModelResidencyActionAccessibilityValue()))
+            .accessibilityHint(Text(refreshModelResidencyActionAccessibilityHint()))
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Button {
+                Task { await model.unloadResidentModelNow() }
+            } label: {
+                Label(NSLocalizedString("Unload Resident Model", comment: ""), systemImage: "eject")
+            }
+            .buttonStyle(.bordered)
+            .disabled(!canUnloadResidentModel)
+            .help(unloadResidentModelActionHint)
+            .accessibilityValue(
+                Text(
+                    unloadResidentModelActionAccessibilityValue(
+                        canUnload: canUnloadResidentModel,
+                        inFlightGenerations: model.modelResidency.inFlightGenerations
+                    )
+                )
+            )
+            .accessibilityHint(Text(unloadResidentModelActionHint))
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Button {
                 onInspectRuntimeHistory()
             } label: {
                 Label(NSLocalizedString("Inspect Runtime History", comment: ""), systemImage: "text.bubble")
@@ -668,6 +691,30 @@ private struct StatusQuickActions: View {
         }
         .controlSize(.regular)
     }
+}
+
+func modelResidencyEventSummary(_ event: String) -> String {
+    let normalized = event.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    if normalized.hasPrefix("model unload failed:") {
+        return isManualModelResidencyEvent(normalized)
+            ? NSLocalizedString("Manual model unload failed. Check Activity.", comment: "")
+            : NSLocalizedString("Model unload failed. Check Activity.", comment: "")
+    }
+    if normalized.hasPrefix("model unload requested:") {
+        return isManualModelResidencyEvent(normalized)
+            ? NSLocalizedString("Manual model unload requested.", comment: "")
+            : NSLocalizedString("Model unload requested by runtime policy.", comment: "")
+    }
+    if normalized.hasPrefix("model unloaded:") {
+        return isManualModelResidencyEvent(normalized)
+            ? NSLocalizedString("Manual model unloaded.", comment: "")
+            : NSLocalizedString("Model unloaded by runtime policy.", comment: "")
+    }
+    return NSLocalizedString("Model residency updated.", comment: "")
+}
+
+private func isManualModelResidencyEvent(_ normalizedEvent: String) -> Bool {
+    normalizedEvent.hasSuffix("(manual)") || normalizedEvent.contains("(manual):")
 }
 
 enum StatusRuntimeOverviewFocus: Equatable {
@@ -1699,23 +1746,41 @@ private struct RuntimeMemoryInspectorRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline, spacing: 10) {
-                StatusPill(text: statusText, tone: tone)
-                Spacer(minLength: 0)
-            }
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    StatusPill(text: statusText, tone: tone)
+                    Spacer(minLength: 0)
+                }
 
-            Text(entry.content)
-                .font(.body)
-                .foregroundStyle(.primary)
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
+                Text(entry.content)
+                    .font(.body)
+                    .foregroundStyle(.primary)
+                    .textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
 
-            HStack(spacing: 12) {
-                Text(String(format: NSLocalizedString("Created %@", comment: ""), localizedCompanionDateString(from: entry.createdAt)))
-                Text(String(format: NSLocalizedString("Updated %@", comment: ""), localizedCompanionDateString(from: entry.updatedAt)))
+                HStack(spacing: 12) {
+                    Text(String(format: NSLocalizedString("Created %@", comment: ""), localizedCompanionDateString(from: entry.createdAt)))
+                    Text(String(format: NSLocalizedString("Updated %@", comment: ""), localizedCompanionDateString(from: entry.updatedAt)))
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
             }
-            .font(.caption)
-            .foregroundStyle(.secondary)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(
+                Text(
+                    runtimeMemoryEntryAccessibilityLabel(
+                        content: entry.content,
+                        status: statusText,
+                        createdAt: localizedCompanionDateString(from: entry.createdAt),
+                        updatedAt: localizedCompanionDateString(from: entry.updatedAt),
+                        sourceSummary: entry.source.map { runtimeMemorySourceReviewAccessibilityLabel(source: $0, isExpanded: false) }
+                    )
+                )
+            )
+
+            if let source = entry.source {
+                RuntimeMemoryInspectorSourceReview(source: source)
+            }
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1724,21 +1789,152 @@ private struct RuntimeMemoryInspectorRow: View {
             RoundedRectangle(cornerRadius: 8)
                 .strokeBorder(.separator.opacity(0.5), lineWidth: 1)
         }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(
-            Text(
-                runtimeMemoryEntryAccessibilityLabel(
-                    content: entry.content,
-                    status: statusText,
-                    createdAt: localizedCompanionDateString(from: entry.createdAt),
-                    updatedAt: localizedCompanionDateString(from: entry.updatedAt)
+    }
+}
+
+private struct RuntimeMemoryInspectorSourceReview: View {
+    let source: RuntimeMemoryEntrySource
+    @State private var isExpanded = false
+
+    private var visiblePointers: [RuntimeMemoryEntrySourcePointer] {
+        runtimeMemorySourceVisiblePointers(source)
+    }
+
+    private var hiddenPointerCount: Int {
+        max(0, source.sourcePointers.count - visiblePointers.count)
+    }
+
+    private var disclosureTitle: String {
+        if isExpanded {
+            return NSLocalizedString("Hide source excerpts", comment: "")
+        }
+        return NSLocalizedString("Show source excerpts", comment: "")
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label(NSLocalizedString("Approved from older chat", comment: ""), systemImage: "checkmark.seal")
+                .font(.subheadline.weight(.semibold))
+
+            Text(runtimeMemorySourceSessionText(source))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text(runtimeMemorySourceCoverageText(source))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if !visiblePointers.isEmpty {
+                DisclosureGroup(isExpanded: $isExpanded) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(Array(visiblePointers.enumerated()), id: \.offset) { _, pointer in
+                            Text(runtimeMemorySourcePointerText(pointer))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(2)
+                                .truncationMode(.tail)
+                                .textSelection(.enabled)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+
+                        if hiddenPointerCount > 0 {
+                            Text(runtimeMemorySourceHiddenExcerptText(hiddenPointerCount))
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                    .padding(.top, 4)
+                } label: {
+                    Text(disclosureTitle)
+                        .font(.caption.weight(.semibold))
+                }
+                .accessibilityValue(
+                    Text(
+                        isExpanded
+                            ? NSLocalizedString("Source review expanded", comment: "")
+                            : NSLocalizedString("Source review collapsed", comment: "")
+                    )
                 )
-            )
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(
+            Text(runtimeMemorySourceReviewAccessibilityLabel(source: source, isExpanded: isExpanded))
         )
     }
 }
 
-func runtimeMemoryEntryAccessibilityLabel(content: String, status: String, createdAt: String, updatedAt: String) -> String {
+private let runtimeMemorySourceVisibleExcerptLimit = 2
+
+func runtimeMemorySourceSessionTitle(_ source: RuntimeMemoryEntrySource) -> String {
+    trimmedNonEmpty(source.session.title)
+        ?? NSLocalizedString("Untitled chat", comment: "")
+}
+
+func runtimeMemorySourceSessionText(_ source: RuntimeMemoryEntrySource) -> String {
+    String(
+        format: NSLocalizedString("Source chat: %@", comment: ""),
+        runtimeMemorySourceSessionTitle(source)
+    )
+}
+
+func runtimeMemorySourceCoverageText(_ source: RuntimeMemoryEntrySource) -> String {
+    let sourceRange = trimmedNonEmpty(source.sourceRange)
+        ?? NSLocalizedString("Source coverage unavailable", comment: "")
+    return String(
+        format: NSLocalizedString("Source coverage: %@", comment: ""),
+        sourceRange
+    )
+}
+
+func runtimeMemorySourceVisiblePointers(_ source: RuntimeMemoryEntrySource) -> [RuntimeMemoryEntrySourcePointer] {
+    Array(source.sourcePointers.prefix(runtimeMemorySourceVisibleExcerptLimit))
+}
+
+func runtimeMemorySourcePointerText(_ pointer: RuntimeMemoryEntrySourcePointer) -> String {
+    let role = runtimeTranscriptRoleDisplayName(pointer.role)
+    let excerpt = trimmedNonEmpty(pointer.excerpt)
+        ?? NSLocalizedString("Source excerpt unavailable", comment: "")
+    return String(
+        format: NSLocalizedString("Source excerpt %@: %@", comment: ""),
+        role,
+        excerpt
+    )
+}
+
+func runtimeMemorySourceHiddenExcerptText(_ count: Int) -> String {
+    String(
+        format: NSLocalizedString("%d more source excerpts hidden", comment: ""),
+        max(0, count)
+    )
+}
+
+func runtimeMemorySourceReviewAccessibilityLabel(source: RuntimeMemoryEntrySource, isExpanded: Bool) -> String {
+    let state = isExpanded
+        ? NSLocalizedString("Source review expanded", comment: "")
+        : NSLocalizedString("Source review collapsed", comment: "")
+    return String(
+        format: NSLocalizedString("Memory source. %@. %@. %@.", comment: ""),
+        runtimeMemorySourceSessionText(source),
+        runtimeMemorySourceCoverageText(source),
+        state
+    )
+}
+
+func runtimeMemoryEntryAccessibilityLabel(
+    content: String,
+    status: String,
+    createdAt: String,
+    updatedAt: String,
+    sourceSummary: String? = nil
+) -> String {
     let normalizedContent = trimmedNonEmpty(content)
         ?? NSLocalizedString("Untitled memory note", comment: "")
     let normalizedStatus = trimmedNonEmpty(status)
@@ -1747,13 +1943,17 @@ func runtimeMemoryEntryAccessibilityLabel(content: String, status: String, creat
         ?? NSLocalizedString("Unknown creation time", comment: "")
     let normalizedUpdatedAt = trimmedNonEmpty(updatedAt)
         ?? NSLocalizedString("Unknown update time", comment: "")
-    return String(
+    let baseLabel = String(
         format: NSLocalizedString("Memory note %@. Status %@. Created %@. Updated %@.", comment: ""),
         normalizedContent,
         normalizedStatus,
         normalizedCreatedAt,
         normalizedUpdatedAt
     )
+    guard let normalizedSourceSummary = trimmedNonEmpty(sourceSummary ?? "") else {
+        return baseLabel
+    }
+    return "\(baseLabel) \(normalizedSourceSummary)"
 }
 
 private func trimmedNonEmpty(_ value: String) -> String? {

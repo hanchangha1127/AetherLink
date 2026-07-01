@@ -284,6 +284,19 @@
     <string name="provider_hide_diagnostics">Masquer les détails</string>
     <string name="provider_show_diagnostics_for">Afficher les détails pour %1$s</string>
     <string name="provider_hide_diagnostics_for">Masquer les détails pour %1$s</string>
+    <string name="model_residency">Résidence du modèle</string>
+    <string name="model_residency_unknown">En attente de l’état de résidence du runtime</string>
+    <string name="model_residency_unsupported">Non signalé par ce runtime</string>
+    <string name="model_residency_active">%1$s %2$s résident. En cours : %3$d. Déchargement inactif : %4$s.</string>
+    <string name="model_residency_inactive">Aucun modèle résident. En cours : %1$d. Déchargement inactif : %2$s.</string>
+    <string name="model_residency_idle_delay_seconds">%1$d s</string>
+    <string name="model_residency_idle_delay_minutes">%1$d min</string>
+    <string name="model_residency_idle_delay_unknown">non signalé</string>
+    <string name="model_residency_with_last_unload_failure">%1$s %2$s</string>
+    <string name="model_residency_last_unload_failure">Dernier déchargement échoué : %1$s %2$s (%3$s).</string>
+    <string name="model_residency_unload_reason_model_switch">changement de modèle</string>
+    <string name="model_residency_unload_reason_idle_timeout">expiration d’inactivité</string>
+    <string name="model_residency_unload_reason_manual">déchargement manuel</string>
 
     <string name="models_title">Modèles</string>
     <string name="choose_model">Choisir un modèle</string>

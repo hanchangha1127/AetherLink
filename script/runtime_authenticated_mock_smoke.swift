@@ -138,6 +138,10 @@ let smokeDocumentAttachmentText = "Smoke attachment body proves authenticated re
 let smokeImageAttachmentPrompt = "Describe this smoke image."
 let smokeImageAttachmentName = "smoke-vision-gate.png"
 let smokeImageAttachmentBase64 = "iVBORw0KGgo="
+let smokeVisionModelID = "dev-mock-vision"
+let smokeUnloadFailureModelID = "dev-mock-unload-failure"
+let smokePulledModelID = "dev-pulled"
+let smokePulledModelPrompt = "Say hello from the pulled smoke model."
 
 final class ServerOutput {
     private let lock = NSLock()
@@ -1431,7 +1435,10 @@ func runUnauthenticatedAndUntrustedRejectionChecks(
         ("chat.session.delete", "smoke-unauthenticated-delete", [:]),
         ("memory.list", "smoke-unauthenticated-memory", [:]),
         ("memory.upsert", "smoke-unauthenticated-memory-upsert", [:]),
-        ("memory.delete", "smoke-unauthenticated-memory-delete", [:])
+        ("memory.delete", "smoke-unauthenticated-memory-delete", [:]),
+        ("memory.summary.drafts.list", "smoke-unauthenticated-memory-summary-drafts", [:]),
+        ("memory.summary.draft.approve", "smoke-unauthenticated-memory-summary-approve", [:]),
+        ("memory.summary.draft.dismiss", "smoke-unauthenticated-memory-summary-dismiss", [:])
     ]
     for command in unauthenticatedCommands {
         let client = try connectWithRetry(host: host, port: port, relay: relay)
@@ -1610,11 +1617,13 @@ func startServer(
         environment["AETHERLINK_DEV_MOCK_AGGREGATE_RESIDENCY"] = "1"
         environment["AETHERLINK_DEV_MOCK_RESIDENCY_IDLE_MS"] = "3000"
         environment["AETHERLINK_DEV_MOCK_UNLOAD_EVENT_FILE"] = mockUnloadEventFile?.path
+        environment["AETHERLINK_DEV_MOCK_UNLOAD_FAILURES"] = "ollama|\(smokeUnloadFailureModelID)"
     case .realOllama:
         environment["LOCAL_AGENT_BRIDGE_MOCK_BACKEND"] = nil
         environment["AETHERLINK_DEV_MOCK_AGGREGATE_RESIDENCY"] = nil
         environment["AETHERLINK_DEV_MOCK_RESIDENCY_IDLE_MS"] = nil
         environment["AETHERLINK_DEV_MOCK_UNLOAD_EVENT_FILE"] = nil
+        environment["AETHERLINK_DEV_MOCK_UNLOAD_FAILURES"] = nil
     }
     environment["AETHERLINK_DEV_PAIRING"] = "1"
     environment["AETHERLINK_DEV_TRUSTED_DEVICES_FILE"] = trustedDevicesFile.path
@@ -1709,6 +1718,14 @@ func relayPlaintextBoundaryMarkers() -> [String] {
         "memory.upsert",
         "memory.list",
         "memory.delete",
+        "memory.summary.drafts.list",
+        "memory.summary.draft.approve",
+        "memory.summary.draft.dismiss",
+        "smoke-memory-summary-drafts",
+        "smoke-memory-summary-approve-unavailable",
+        "smoke-memory-summary-dismiss-unavailable",
+        "memory_summary_draft_unavailable",
+        "smoke-missing-memory-summary-draft",
         "smoke-auth-raw-nonce",
         "smoke-auth-replay",
         "smoke-auth-superseded",
@@ -1722,13 +1739,30 @@ func relayPlaintextBoundaryMarkers() -> [String] {
         "hello smoke test",
         "matched_fields",
         "Say hello from the smoke test.",
+        smokePulledModelPrompt,
+        "smoke-chat-pulled-model",
         "Summarize the attached smoke note.",
         smokeImageAttachmentPrompt,
         smokeImageAttachmentName,
         smokeImageAttachmentBase64,
         "smoke-chat-image-non-vision",
+        "smoke-chat-image-vision",
         "unsupported_attachment",
         "Image attachments require a vision-capable model.",
+        "smoke-chat-missing-model-residency",
+        "model_not_installed",
+        "dev-missing-residency",
+        "smoke-health-residency-repeat",
+        "smoke-health-residency-missing-model",
+        "smoke-health-residency-idle",
+        "smoke-health-residency-failure-source",
+        "smoke-chat-unload-failure-source",
+        "Activate a model that will fail unload.",
+        "smoke-chat-unload-failure-switch",
+        "Switch after a mock unload failure.",
+        "smoke-health-residency-unload-failure",
+        "last_unload_failure",
+        "model_switch",
         "Create a session for lifecycle smoke.",
         "Runtime smoke lifecycle",
         smokeDocumentAttachmentText,
@@ -1736,7 +1770,10 @@ func relayPlaintextBoundaryMarkers() -> [String] {
         "Prefers smoke-tested concise answers.",
         "Mock streaming response.",
         "Attachment received.",
-        "dev-mock"
+        "dev-mock",
+        smokeVisionModelID,
+        smokeUnloadFailureModelID,
+        smokePulledModelID
     ]
 }
 
@@ -1777,8 +1814,96 @@ func requireNoMockUnloadEvents(_ fileURL: URL, context: String) throws {
     }
 }
 
+func resetMockUnloadEvents(_ fileURL: URL, context: String) throws {
+    let fileManager = FileManager.default
+    guard fileManager.fileExists(atPath: fileURL.path) else { return }
+    do {
+        try fileManager.removeItem(at: fileURL)
+    } catch {
+        throw SmokeFailure.message("\(context) could not reset model unload event file: \(error.localizedDescription)")
+    }
+}
+
+func requireRuntimeHealthModelResidency(
+    client: TCPClient,
+    requestID: String,
+    expectedActiveProvider: String?,
+    expectedActiveModelID: String?,
+    context: String
+) throws -> [String: Any] {
+    let deadline = Date().addingTimeInterval(6)
+    var attempt = 0
+    while true {
+        let healthRequestID = attempt == 0 ? requestID : "\(requestID)-retry-\(attempt)"
+        do {
+            let health = try sendAndRead(client, type: "runtime.health", requestID: healthRequestID)
+            try requireType(health, "runtime.health", context: context)
+            try requireRequestID(health, healthRequestID, context: context)
+            let healthPayload = try payload(health, context: context)
+            guard let residency = healthPayload["model_residency"] as? [String: Any] else {
+                throw SmokeFailure.message("\(context) did not include model_residency: \(health)")
+            }
+            try requireBool(residency, "supported", true, context: context)
+            let inFlightGenerations = try requireInt64(residency, "in_flight_generations", context: context)
+            guard inFlightGenerations == 0 else {
+                throw SmokeFailure.message("\(context) expected no in-flight generations, got \(inFlightGenerations): \(health)")
+            }
+            let idleUnloadDelaySeconds = try requireInt64(residency, "idle_unload_delay_seconds", context: context)
+            guard idleUnloadDelaySeconds > 0 else {
+                throw SmokeFailure.message("\(context) expected positive idle_unload_delay_seconds, got \(idleUnloadDelaySeconds): \(health)")
+            }
+            if let expectedActiveProvider {
+                guard residency["active_provider"] as? String == expectedActiveProvider else {
+                    throw SmokeFailure.message("\(context) expected active_provider \(expectedActiveProvider): \(health)")
+                }
+            } else if residency["active_provider"] != nil {
+                throw SmokeFailure.message("\(context) expected no active_provider: \(health)")
+            }
+            if let expectedActiveModelID {
+                guard residency["active_model_id"] as? String == expectedActiveModelID else {
+                    throw SmokeFailure.message("\(context) expected active_model_id \(expectedActiveModelID): \(health)")
+                }
+            } else if residency["active_model_id"] != nil {
+                throw SmokeFailure.message("\(context) expected no active_model_id: \(health)")
+            }
+            return residency
+        } catch let failure as SmokeFailure {
+            guard Date() < deadline else {
+                throw failure
+            }
+            attempt += 1
+            usleep(100_000)
+        }
+    }
+}
+
+func requireModelResidencyUnloadFailure(
+    _ residency: [String: Any],
+    expectedProvider: String,
+    expectedModelID: String,
+    expectedReason: String,
+    context: String
+) throws {
+    guard let failure = residency["last_unload_failure"] as? [String: Any] else {
+        throw SmokeFailure.message("\(context) did not include last_unload_failure: \(residency)")
+    }
+    let keys = Set(failure.keys)
+    let expectedKeys: Set<String> = ["provider", "model_id", "reason"]
+    guard keys == expectedKeys else {
+        throw SmokeFailure.message("\(context) expected only provider/model_id/reason keys, got \(keys): \(failure)")
+    }
+    guard failure["provider"] as? String == expectedProvider,
+          failure["model_id"] as? String == expectedModelID,
+          failure["reason"] as? String == expectedReason else {
+        throw SmokeFailure.message(
+            "\(context) expected \(expectedProvider)/\(expectedModelID)/\(expectedReason), got \(failure)"
+        )
+    }
+}
+
 func runAuthenticatedModelResidencyChecks(client: TCPClient, unloadEventFile: URL) throws {
     print("Checking authenticated model residency unload policy...")
+    try resetMockUnloadEvents(unloadEventFile, context: "model residency setup")
     try requireNoMockUnloadEvents(unloadEventFile, context: "model residency before same-model repeat")
 
     try client.send(envelope(
@@ -1801,6 +1926,41 @@ func runAuthenticatedModelResidencyChecks(client: TCPClient, unloadEventFile: UR
         throw SmokeFailure.message("same-model repeat did not stream mock text: \(repeatText)")
     }
     try requireNoMockUnloadEvents(unloadEventFile, context: "model residency same-model repeat")
+    _ = try requireRuntimeHealthModelResidency(
+        client: client,
+        requestID: "smoke-health-residency-repeat",
+        expectedActiveProvider: "ollama",
+        expectedActiveModelID: "dev-mock",
+        context: "model residency repeat runtime.health"
+    )
+
+    try client.send(envelope(
+        "chat.send",
+        requestID: "smoke-chat-missing-model-residency",
+        payload: [
+            "session_id": smokeResidencySessionID,
+            "model": "dev-missing-residency",
+            "messages": [
+                ["role": "user", "content": "Rejected model selection must not disturb residency."]
+            ]
+        ]
+    ))
+    let missingModelError = try client.readEnvelope()
+    try assertNoBackendLeak(missingModelError, context: "smoke-chat-missing-model-residency")
+    try requireErrorCode(
+        missingModelError,
+        "model_not_installed",
+        requestID: "smoke-chat-missing-model-residency",
+        context: "smoke-chat-missing-model-residency"
+    )
+    try requireNoMockUnloadEvents(unloadEventFile, context: "model residency missing-model rejection")
+    _ = try requireRuntimeHealthModelResidency(
+        client: client,
+        requestID: "smoke-health-residency-missing-model",
+        expectedActiveProvider: "ollama",
+        expectedActiveModelID: "dev-mock",
+        context: "model residency missing-model runtime.health"
+    )
 
     try client.send(envelope(
         "chat.send",
@@ -1830,6 +1990,74 @@ func runAuthenticatedModelResidencyChecks(client: TCPClient, unloadEventFile: UR
         "lm_studio|dev-mock-alt",
         fileURL: unloadEventFile,
         context: "model residency idle unload"
+    )
+    _ = try requireRuntimeHealthModelResidency(
+        client: client,
+        requestID: "smoke-health-residency-idle",
+        expectedActiveProvider: nil,
+        expectedActiveModelID: nil,
+        context: "model residency idle runtime.health"
+    )
+
+    try client.send(envelope(
+        "chat.send",
+        requestID: "smoke-chat-unload-failure-source",
+        payload: [
+            "session_id": smokeResidencySessionID,
+            "model": smokeUnloadFailureModelID,
+            "messages": [
+                ["role": "user", "content": "Activate a model that will fail unload."]
+            ]
+        ]
+    ))
+    let unloadFailureSourceText = try readStoppedChatStream(
+        client: client,
+        requestID: "smoke-chat-unload-failure-source",
+        context: "smoke-chat-unload-failure-source"
+    )
+    guard unloadFailureSourceText.contains("Mock streaming response.") else {
+        throw SmokeFailure.message("unload-failure source chat did not stream mock text: \(unloadFailureSourceText)")
+    }
+    _ = try requireRuntimeHealthModelResidency(
+        client: client,
+        requestID: "smoke-health-residency-failure-source",
+        expectedActiveProvider: "ollama",
+        expectedActiveModelID: smokeUnloadFailureModelID,
+        context: "model residency unload-failure source runtime.health"
+    )
+
+    try client.send(envelope(
+        "chat.send",
+        requestID: "smoke-chat-unload-failure-switch",
+        payload: [
+            "session_id": smokeResidencySessionID,
+            "model": "lm_studio:dev-mock-alt",
+            "messages": [
+                ["role": "user", "content": "Switch after a mock unload failure."]
+            ]
+        ]
+    ))
+    let unloadFailureSwitchText = try readStoppedChatStream(
+        client: client,
+        requestID: "smoke-chat-unload-failure-switch",
+        context: "smoke-chat-unload-failure-switch"
+    )
+    guard unloadFailureSwitchText.contains("Mock streaming response.") else {
+        throw SmokeFailure.message("unload-failure switch chat did not stream mock text: \(unloadFailureSwitchText)")
+    }
+    let unloadFailureResidency = try requireRuntimeHealthModelResidency(
+        client: client,
+        requestID: "smoke-health-residency-unload-failure",
+        expectedActiveProvider: "lm_studio",
+        expectedActiveModelID: "dev-mock-alt",
+        context: "model residency unload-failure runtime.health"
+    )
+    try requireModelResidencyUnloadFailure(
+        unloadFailureResidency,
+        expectedProvider: "ollama",
+        expectedModelID: smokeUnloadFailureModelID,
+        expectedReason: "model_switch",
+        context: "model residency unload-failure runtime.health"
     )
 }
 
@@ -2069,6 +2297,34 @@ func runAuthenticatedTitleAndSessionLifecycleChecks(client: TCPClient) throws {
           archivedSession["archived_at"] is String
     else {
         throw SmokeFailure.message("chat.sessions.list did not report archived lifecycle state: \(archivedSession)")
+    }
+
+    let archivedSendPrompt = "Attempt to send into archived lifecycle smoke."
+    let archivedSendResponse = try sendAndRead(
+        client,
+        type: "chat.send",
+        requestID: "smoke-session-archived-send",
+        payload: [
+            "session_id": smokeLifecycleSessionID,
+            "model": "dev-mock",
+            "messages": [
+                ["role": "user", "content": archivedSendPrompt]
+            ]
+        ]
+    )
+    try requireErrorCode(
+        archivedSendResponse,
+        "chat_session_must_be_restored_before_send",
+        requestID: "smoke-session-archived-send",
+        context: "chat.send archived session"
+    )
+    let messagesAfterArchivedSend = try listChatMessages(
+        client: client,
+        requestID: "smoke-messages-after-archived-send",
+        sessionID: smokeLifecycleSessionID
+    )
+    guard !messagesAfterArchivedSend.contains(where: { $0["content"] as? String == archivedSendPrompt }) else {
+        throw SmokeFailure.message("archived chat.send mutated visible history: \(messagesAfterArchivedSend)")
     }
 
     let restoreResponse = try sendAndRead(
@@ -2314,6 +2570,63 @@ func runAuthenticatedHistoryAndMemoryChecks(client: TCPClient) throws {
     guard !memoryEntriesAfterDelete.contains(where: { $0["id"] as? String == memoryID }) else {
         throw SmokeFailure.message("memory.delete did not remove the smoke memory entry: \(memoryAfterDeleteResponse)")
     }
+
+    let summaryDraftsResponse = try sendAndRead(
+        client,
+        type: "memory.summary.drafts.list",
+        requestID: "smoke-memory-summary-drafts",
+        payload: ["limit": 5]
+    )
+    try requireType(summaryDraftsResponse, "memory.summary.drafts.list", context: "memory.summary.drafts.list")
+    try requireRequestID(
+        summaryDraftsResponse,
+        "smoke-memory-summary-drafts",
+        context: "memory.summary.drafts.list"
+    )
+    let summaryDraftsPayload = try payload(summaryDraftsResponse, context: "memory.summary.drafts.list")
+    let summaryDrafts = try requireDictionaryArray(
+        summaryDraftsPayload,
+        key: "drafts",
+        context: "memory.summary.drafts.list"
+    )
+    guard summaryDrafts.isEmpty else {
+        throw SmokeFailure.message("memory.summary.drafts.list should be empty in the fresh smoke store: \(summaryDraftsResponse)")
+    }
+
+    let missingDraftID = "smoke-missing-memory-summary-draft"
+    let summaryApproveUnavailableResponse = try sendAndRead(
+        client,
+        type: "memory.summary.draft.approve",
+        requestID: "smoke-memory-summary-approve-unavailable",
+        payload: [
+            "draft_id": missingDraftID,
+            "expected_session_id": "smoke-missing-session",
+            "expected_source_message_count": 2
+        ]
+    )
+    try requireErrorCode(
+        summaryApproveUnavailableResponse,
+        "memory_summary_draft_unavailable",
+        requestID: "smoke-memory-summary-approve-unavailable",
+        context: "memory.summary.draft.approve unavailable draft"
+    )
+
+    let summaryDismissUnavailableResponse = try sendAndRead(
+        client,
+        type: "memory.summary.draft.dismiss",
+        requestID: "smoke-memory-summary-dismiss-unavailable",
+        payload: [
+            "draft_id": missingDraftID,
+            "expected_session_id": "smoke-missing-session",
+            "expected_source_message_count": 2
+        ]
+    )
+    try requireErrorCode(
+        summaryDismissUnavailableResponse,
+        "memory_summary_draft_unavailable",
+        requestID: "smoke-memory-summary-dismiss-unavailable",
+        context: "memory.summary.draft.dismiss unavailable draft"
+    )
 }
 
 func runMultiDeviceOwnerIsolationChecks(
@@ -2582,6 +2895,14 @@ func runMockBackendChecks(client: TCPClient, port: UInt16, unloadEventFile: URL)
     }) else {
         throw SmokeFailure.message("models.list did not include the LM Studio aggregate mock model: \(models)")
     }
+    guard modelList.contains(where: {
+        $0["id"] as? String == smokeVisionModelID
+            && $0["provider"] as? String == "lm_studio"
+            && $0["qualified_id"] as? String == "lm_studio:\(smokeVisionModelID)"
+            && ($0["capabilities"] as? [String])?.contains("vision") == true
+    }) else {
+        throw SmokeFailure.message("models.list did not include the vision-capable mock model: \(models)")
+    }
     let mockCloudModels = try modelList.filter { model in
         model["source"] as? String == "cloud"
     }.map { model -> String in
@@ -2592,7 +2913,7 @@ func runMockBackendChecks(client: TCPClient, port: UInt16, unloadEventFile: URL)
     }
 
     print("Checking models.pull...")
-    let pulledModel = "dev-pulled"
+    let pulledModel = smokePulledModelID
     let pull = try sendAndRead(
         client,
         type: "models.pull",
@@ -2617,6 +2938,29 @@ func runMockBackendChecks(client: TCPClient, port: UInt16, unloadEventFile: URL)
             && $0["source"] as? String == "local"
     }) else {
         throw SmokeFailure.message("models.list did not include pulled model: \(modelsAfterPull)")
+    }
+
+    print("Checking chat.send with pulled model...")
+    try client.send(envelope(
+        "chat.send",
+        requestID: "smoke-chat-pulled-model",
+        payload: [
+            "session_id": smokeSessionID,
+            "model": smokePulledModelID,
+            "messages": [
+                ["role": "user", "content": smokePulledModelPrompt]
+            ]
+        ]
+    ))
+    let pulledModelStreamedText = try readStoppedChatStream(
+        client: client,
+        requestID: "smoke-chat-pulled-model",
+        context: "smoke-chat-pulled-model"
+    )
+    guard pulledModelStreamedText.contains("Mock streaming response.") else {
+        throw SmokeFailure.message(
+            "pulled model chat stream did not contain mock response: \(pulledModelStreamedText)"
+        )
     }
 
     print("Checking chat.send streaming...")
@@ -2713,6 +3057,42 @@ func runMockBackendChecks(client: TCPClient, port: UInt16, unloadEventFile: URL)
     guard imageAttachmentErrorMessage.contains("vision-capable model") else {
         throw SmokeFailure.message(
             "image attachment rejection did not explain the vision-capable model requirement: \(imageAttachmentError)"
+        )
+    }
+
+    print("Checking chat.send image attachment success for vision-capable model...")
+    try client.send(envelope(
+        "chat.send",
+        requestID: "smoke-chat-image-vision",
+        payload: [
+            "session_id": smokeSessionID,
+            "model": smokeVisionModelID,
+            "messages": [
+                [
+                    "role": "user",
+                    "content": smokeImageAttachmentPrompt,
+                    "attachments": [
+                        [
+                            "type": "image",
+                            "mime_type": "image/png",
+                            "name": smokeImageAttachmentName,
+                            "data_base64": smokeImageAttachmentBase64
+                        ]
+                    ]
+                ]
+            ]
+        ]
+    ))
+    let visionAttachmentStreamedText = try readStoppedChatStream(
+        client: client,
+        requestID: "smoke-chat-image-vision",
+        context: "smoke-chat-image-vision"
+    )
+    guard visionAttachmentStreamedText.contains("Mock streaming response."),
+          visionAttachmentStreamedText.contains("Attachment received.")
+    else {
+        throw SmokeFailure.message(
+            "vision image attachment chat stream did not confirm attachment handling: \(visionAttachmentStreamedText)"
         )
     }
 

@@ -105,6 +105,46 @@ class ProtocolCodecTest {
     }
 
     @Test
+    fun runtimeHealthPayloadCanCarryModelResidencySnapshot() {
+        val payload = RuntimeHealthPayload(
+            status = "ok",
+            modelResidency = RuntimeModelResidencyPayload(
+                supported = true,
+                activeProvider = "ollama",
+                activeModelId = "llama3.1:8b",
+                inFlightGenerations = 1,
+                idleUnloadDelaySeconds = 600,
+                lastUnloadFailure = RuntimeModelResidencyUnloadFailurePayload(
+                    provider = "ollama",
+                    modelId = "llama3.1:8b",
+                    reason = "manual",
+                ),
+            ),
+        )
+
+        val json = Json.parseToJsonElement(Json.encodeToString(payload)).jsonObject
+        val decoded = Json.decodeFromString<RuntimeHealthPayload>(Json.encodeToString(payload))
+
+        val residency = json["model_residency"]?.jsonObject
+        assertEquals("true", residency?.get("supported")?.jsonPrimitive?.content)
+        assertEquals("ollama", residency?.get("active_provider")?.jsonPrimitive?.content)
+        assertEquals("llama3.1:8b", residency?.get("active_model_id")?.jsonPrimitive?.content)
+        assertEquals("1", residency?.get("in_flight_generations")?.jsonPrimitive?.content)
+        assertEquals("600", residency?.get("idle_unload_delay_seconds")?.jsonPrimitive?.content)
+        val failure = residency?.get("last_unload_failure")?.jsonObject
+        assertEquals("ollama", failure?.get("provider")?.jsonPrimitive?.content)
+        assertEquals("llama3.1:8b", failure?.get("model_id")?.jsonPrimitive?.content)
+        assertEquals("manual", failure?.get("reason")?.jsonPrimitive?.content)
+        assertEquals("ollama", decoded.modelResidency?.activeProvider)
+        assertEquals("llama3.1:8b", decoded.modelResidency?.activeModelId)
+        assertEquals(1, decoded.modelResidency?.inFlightGenerations)
+        assertEquals(600, decoded.modelResidency?.idleUnloadDelaySeconds)
+        assertEquals("ollama", decoded.modelResidency?.lastUnloadFailure?.provider)
+        assertEquals("llama3.1:8b", decoded.modelResidency?.lastUnloadFailure?.modelId)
+        assertEquals("manual", decoded.modelResidency?.lastUnloadFailure?.reason)
+    }
+
+    @Test
     fun chatHistorySessionPayloadsUseProtocolFieldNames() {
         val request = ChatSessionsListRequestPayload(
             limit = 50,

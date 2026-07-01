@@ -52,6 +52,29 @@ struct LocalAgentBridgeApp: App {
                 menuBarPrimaryAction(action, commandTitles: commandTitles)
             }
             Divider()
+            Button(commandTitles.refreshModelResidency) {
+                model.refreshModelResidencyStatus()
+            }
+            .help(refreshModelResidencyActionAccessibilityHint())
+            .accessibilityValue(Text(refreshModelResidencyActionAccessibilityValue()))
+            .accessibilityHint(Text(refreshModelResidencyActionAccessibilityHint()))
+            Button(commandTitles.unloadResidentModel) {
+                Task { await model.unloadResidentModelNow() }
+            }
+            .disabled(!canUnloadResidentModel)
+            .help(unloadResidentModelActionAccessibilityHint(
+                canUnload: canUnloadResidentModel,
+                inFlightGenerations: model.modelResidency.inFlightGenerations
+            ))
+            .accessibilityValue(Text(unloadResidentModelActionAccessibilityValue(
+                canUnload: canUnloadResidentModel,
+                inFlightGenerations: model.modelResidency.inFlightGenerations
+            )))
+            .accessibilityHint(Text(unloadResidentModelActionAccessibilityHint(
+                canUnload: canUnloadResidentModel,
+                inFlightGenerations: model.modelResidency.inFlightGenerations
+            )))
+            Divider()
             Button(commandTitles.quit) {
                 NSApp.terminate(nil)
             }
@@ -73,6 +96,12 @@ struct LocalAgentBridgeApp: App {
             canPrepareAutomatically: model.canPrepareRemoteRelayRouteAutomatically,
             isRouteEligibleForQRCode: model.isDevelopmentRelayRouteEligibleForQRCode
         )
+    }
+
+    private var canUnloadResidentModel: Bool {
+        model.modelResidency.supported &&
+            model.modelResidency.activeModelID != nil &&
+            model.modelResidency.inFlightGenerations == 0
     }
 
     @ViewBuilder

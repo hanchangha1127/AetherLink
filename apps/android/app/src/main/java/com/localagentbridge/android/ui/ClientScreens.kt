@@ -154,6 +154,8 @@ import com.localagentbridge.android.runtime.RuntimeMemoryEntry
 import com.localagentbridge.android.runtime.RuntimeMemorySummaryDraft
 import com.localagentbridge.android.runtime.RuntimeMessageAttachment
 import com.localagentbridge.android.runtime.RuntimeModel
+import com.localagentbridge.android.runtime.RuntimeModelResidencyUnloadFailureStatus
+import com.localagentbridge.android.runtime.RuntimeModelResidencyStatus
 import com.localagentbridge.android.runtime.RuntimePendingAttachment
 import com.localagentbridge.android.runtime.RuntimeProviderStatus
 import com.localagentbridge.android.runtime.RuntimeTrustedRuntime
@@ -299,7 +301,7 @@ private fun QrPairingPanel(
 }
 
 @Composable
-private fun ManualPairingPayloadDialog(
+internal fun ManualPairingPayloadDialog(
     onDismiss: () -> Unit,
     onSubmit: (String) -> Unit,
 ) {
@@ -316,8 +318,14 @@ private fun ManualPairingPayloadDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
+        modifier = Modifier
+            .widthIn(max = 360.dp)
+            .testTag(MANUAL_QR_PAYLOAD_DIALOG_TEST_TAG),
         title = {
-            Text(stringResource(R.string.manual_qr_payload_title))
+            Text(
+                text = stringResource(R.string.manual_qr_payload_title),
+                modifier = Modifier.testTag(MANUAL_QR_PAYLOAD_TITLE_TEST_TAG),
+            )
         },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -325,6 +333,7 @@ private fun ManualPairingPayloadDialog(
                     text = stringResource(R.string.manual_qr_payload_detail),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.secondary,
+                    modifier = Modifier.testTag(MANUAL_QR_PAYLOAD_DETAIL_TEST_TAG),
                 )
                 OutlinedTextField(
                     value = payload,
@@ -334,10 +343,14 @@ private fun ManualPairingPayloadDialog(
                     maxLines = 6,
                     isError = payloadIsInvalid,
                     supportingText = {
-                        Text(payloadStateDescription)
+                        Text(
+                            text = payloadStateDescription,
+                            modifier = Modifier.testTag(MANUAL_QR_PAYLOAD_STATE_TEST_TAG),
+                        )
                     },
                     modifier = Modifier
                         .fillMaxWidth()
+                        .testTag(MANUAL_QR_PAYLOAD_INPUT_TEST_TAG)
                         .semantics {
                             contentDescription = payloadInputAccessibilityLabel
                             stateDescription = payloadStateDescription
@@ -352,13 +365,20 @@ private fun ManualPairingPayloadDialog(
                     sanitizedPayload?.let(onSubmit)
                 },
                 enabled = sanitizedPayload != null,
-                modifier = Modifier.semantics {
-                    contentDescription = payloadSubmitAccessibilityLabel
-                    stateDescription = payloadStateDescription
-                    onClick(label = payloadSubmitAccessibilityLabel, action = null)
-                },
+                modifier = Modifier
+                    .testTag(MANUAL_QR_PAYLOAD_SUBMIT_TEST_TAG)
+                    .semantics {
+                        contentDescription = payloadSubmitAccessibilityLabel
+                        stateDescription = payloadStateDescription
+                        onClick(label = payloadSubmitAccessibilityLabel, action = null)
+                    },
             ) {
-                Text(stringResource(R.string.manual_qr_payload_submit))
+                Text(
+                    text = stringResource(R.string.manual_qr_payload_submit),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
+                )
             }
         },
         dismissButton = {
@@ -367,16 +387,31 @@ private fun ManualPairingPayloadDialog(
                     hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Toggle)
                     onDismiss()
                 },
-                modifier = Modifier.semantics {
-                    contentDescription = payloadCancelAccessibilityLabel
-                    onClick(label = payloadCancelAccessibilityLabel, action = null)
-                },
+                modifier = Modifier
+                    .testTag(MANUAL_QR_PAYLOAD_CANCEL_TEST_TAG)
+                    .semantics {
+                        contentDescription = payloadCancelAccessibilityLabel
+                        onClick(label = payloadCancelAccessibilityLabel, action = null)
+                    },
             ) {
-                Text(stringResource(R.string.cancel))
+                Text(
+                    text = stringResource(R.string.cancel),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
+                )
             }
         },
     )
 }
+
+internal const val MANUAL_QR_PAYLOAD_DIALOG_TEST_TAG = "manual_qr_payload_dialog"
+internal const val MANUAL_QR_PAYLOAD_TITLE_TEST_TAG = "manual_qr_payload_title"
+internal const val MANUAL_QR_PAYLOAD_DETAIL_TEST_TAG = "manual_qr_payload_detail"
+internal const val MANUAL_QR_PAYLOAD_INPUT_TEST_TAG = "manual_qr_payload_input"
+internal const val MANUAL_QR_PAYLOAD_STATE_TEST_TAG = "manual_qr_payload_state"
+internal const val MANUAL_QR_PAYLOAD_SUBMIT_TEST_TAG = "manual_qr_payload_submit"
+internal const val MANUAL_QR_PAYLOAD_CANCEL_TEST_TAG = "manual_qr_payload_cancel"
 
 @StringRes
 private fun manualPairingPayloadStateDescriptionRes(
@@ -668,6 +703,11 @@ private fun ConnectionStatusPanel(
                 label = stringResource(R.string.providers),
                 value = providerStatusSummary(state),
                 tagKey = CONNECTION_STATUS_PROVIDERS_LINE_KEY,
+            )
+            StatusLine(
+                label = stringResource(R.string.model_residency),
+                value = modelResidencySummary(state.modelResidency),
+                tagKey = CONNECTION_STATUS_MODEL_RESIDENCY_LINE_KEY,
             )
             ProviderStatusRows(providers = state.providerStatuses)
             RuntimeRouteNotice(
@@ -1237,7 +1277,12 @@ private fun ConnectionStatusActions(
         connectedActionDisabledState
     }
 
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(CONNECTION_STATUS_ACTIONS_TEST_TAG),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
         Button(
             onClick = {
                 hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
@@ -1246,6 +1291,7 @@ private fun ConnectionStatusActions(
             enabled = actionsEnabled,
             modifier = Modifier
                 .fillMaxWidth()
+                .testTag(CONNECTION_STATUS_REFRESH_ACTION_TEST_TAG)
                 .semantics {
                     stateDescription = refreshHealthStateDescription
                     onClick(label = refreshHealthActionLabel, action = null)
@@ -1256,7 +1302,12 @@ private fun ConnectionStatusActions(
                 contentDescription = null,
             )
             Spacer(Modifier.width(8.dp))
-            Text(stringResource(R.string.refresh_health))
+            Text(
+                text = stringResource(R.string.refresh_health),
+                modifier = Modifier.testTag(CONNECTION_STATUS_REFRESH_ACTION_LABEL_TEST_TAG),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
         OutlinedButton(
             onClick = {
@@ -1266,6 +1317,7 @@ private fun ConnectionStatusActions(
             enabled = actionsEnabled,
             modifier = Modifier
                 .fillMaxWidth()
+                .testTag(CONNECTION_STATUS_DISCONNECT_ACTION_TEST_TAG)
                 .semantics {
                     stateDescription = disconnectStateDescription
                     onClick(label = disconnectActionLabel, action = null)
@@ -1276,7 +1328,12 @@ private fun ConnectionStatusActions(
                 contentDescription = null,
             )
             Spacer(Modifier.width(8.dp))
-            Text(stringResource(R.string.disconnect))
+            Text(
+                text = stringResource(R.string.disconnect),
+                modifier = Modifier.testTag(CONNECTION_STATUS_DISCONNECT_ACTION_LABEL_TEST_TAG),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }
@@ -1465,15 +1522,25 @@ private fun ProviderStatusRow(provider: RuntimeProviderStatus) {
                         diagnosticMessage?.let { message ->
                             Text(
                                 text = stringResource(R.string.provider_host_detail, message),
+                                modifier = Modifier.testTag(
+                                    providerStatusDiagnosticsMessageTestTag(provider.id),
+                                ),
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.secondary,
+                                maxLines = 4,
+                                overflow = TextOverflow.Ellipsis,
                             )
                         }
                         diagnosticCode?.let { code ->
                             Text(
                                 text = stringResource(R.string.provider_error_code, code),
+                                modifier = Modifier.testTag(
+                                    providerStatusDiagnosticsCodeTestTag(provider.id),
+                                ),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.secondary,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
                             )
                         }
                     }
@@ -1727,6 +1794,7 @@ private fun ChatMessagesLoadingState() {
     Column(
         modifier = Modifier
             .widthIn(max = 280.dp)
+            .testTag(CHAT_MESSAGES_LOADING_PANEL_TEST_TAG)
             .semantics {
                 contentDescription = loadingText
                 liveRegion = LiveRegionMode.Polite
@@ -1734,12 +1802,22 @@ private fun ChatMessagesLoadingState() {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag(CHAT_MESSAGES_LOADING_PROGRESS_TEST_TAG),
+            contentAlignment = Alignment.Center,
+        ) {
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        }
         Text(
             text = loadingText,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.testTag(CHAT_MESSAGES_LOADING_TEXT_TEST_TAG),
         )
     }
 }
@@ -2367,13 +2445,23 @@ private fun TrustedRuntimePanel(
         )
         AlertDialog(
             onDismissRequest = { showForgetConfirmation = false },
-            title = { Text(stringResource(R.string.forget_trusted_runtime_confirm_title)) },
+            modifier = Modifier
+                .widthIn(max = 360.dp)
+                .testTag(SETTINGS_TRUSTED_RUNTIME_FORGET_DIALOG_TEST_TAG),
+            title = {
+                Text(
+                    text = stringResource(R.string.forget_trusted_runtime_confirm_title),
+                    modifier = Modifier.testTag(SETTINGS_TRUSTED_RUNTIME_FORGET_TITLE_TEST_TAG),
+                )
+            },
             text = {
                 Text(
                     text = forgetTrustedRuntimeConfirmMessage,
-                    modifier = Modifier.semantics {
-                        contentDescription = forgetTrustedRuntimeConfirmMessage
-                    },
+                    modifier = Modifier
+                        .testTag(SETTINGS_TRUSTED_RUNTIME_FORGET_MESSAGE_TEST_TAG)
+                        .semantics {
+                            contentDescription = forgetTrustedRuntimeConfirmMessage
+                        },
                 )
             },
             confirmButton = {
@@ -2383,12 +2471,20 @@ private fun TrustedRuntimePanel(
                         showForgetConfirmation = false
                         onForgetTrustedRuntime()
                     },
-                    modifier = Modifier.semantics {
-                        contentDescription = confirmForgetActionContentDescription
-                        onClick(label = confirmForgetActionContentDescription, action = null)
-                    },
+                    modifier = Modifier
+                        .testTag(SETTINGS_TRUSTED_RUNTIME_FORGET_CONFIRM_TEST_TAG)
+                        .semantics {
+                            contentDescription = confirmForgetActionContentDescription
+                            onClick(label = confirmForgetActionContentDescription, action = null)
+                        },
                 ) {
-                    Text(stringResource(R.string.forget_trusted_runtime_confirm_action))
+                    Text(
+                        text = stringResource(R.string.forget_trusted_runtime_confirm_action),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.testTag(SETTINGS_TRUSTED_RUNTIME_FORGET_CONFIRM_LABEL_TEST_TAG),
+                    )
                 }
             },
             dismissButton = {
@@ -2397,12 +2493,20 @@ private fun TrustedRuntimePanel(
                         hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Toggle)
                         showForgetConfirmation = false
                     },
-                    modifier = Modifier.semantics {
-                        contentDescription = cancelForgetActionContentDescription
-                        onClick(label = cancelForgetActionContentDescription, action = null)
-                    },
+                    modifier = Modifier
+                        .testTag(SETTINGS_TRUSTED_RUNTIME_FORGET_CANCEL_TEST_TAG)
+                        .semantics {
+                            contentDescription = cancelForgetActionContentDescription
+                            onClick(label = cancelForgetActionContentDescription, action = null)
+                        },
                 ) {
-                    Text(stringResource(R.string.cancel))
+                    Text(
+                        text = stringResource(R.string.cancel),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.testTag(SETTINGS_TRUSTED_RUNTIME_FORGET_CANCEL_LABEL_TEST_TAG),
+                    )
                 }
             },
         )
@@ -4289,6 +4393,7 @@ private fun AssistantReasoning(
 
     Row(
         modifier = rowModifier
+            .testTag(ASSISTANT_REASONING_CONTAINER_TEST_TAG)
             .fillMaxWidth()
             .height(IntrinsicSize.Min)
             .padding(horizontal = 2.dp, vertical = 2.dp),
@@ -4310,7 +4415,9 @@ private fun AssistantReasoning(
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(ASSISTANT_REASONING_HEADER_TEST_TAG),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -4321,13 +4428,17 @@ private fun AssistantReasoning(
                     color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.56f),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag(ASSISTANT_REASONING_LABEL_TEST_TAG),
                 )
                 if (isExpandable) {
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(2.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.weight(1f, fill = false),
+                        modifier = Modifier
+                            .weight(1f, fill = false)
+                            .testTag(ASSISTANT_REASONING_TOGGLE_TEST_TAG),
                     ) {
                         Text(
                             text = toggleLabel,
@@ -4355,6 +4466,7 @@ private fun AssistantReasoning(
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = displayPolicy.contentAlpha),
                 maxLines = displayPolicy.maxLines,
                 overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.testTag(ASSISTANT_REASONING_BODY_TEST_TAG),
             )
         }
     }
@@ -4446,6 +4558,20 @@ internal const val SETTINGS_CHAT_HISTORY_BULK_DELETE_ACTION_TEST_TAG =
     "settings_chat_history_bulk_delete_action"
 internal const val SETTINGS_CHAT_HISTORY_BULK_DELETE_LABEL_TEST_TAG =
     "settings_chat_history_bulk_delete_label"
+internal const val CHAT_HISTORY_CONFIRMATION_DIALOG_TEST_TAG =
+    "aetherlink_chat_history_confirmation_dialog"
+internal const val CHAT_HISTORY_CONFIRMATION_TITLE_TEST_TAG =
+    "aetherlink_chat_history_confirmation_title"
+internal const val CHAT_HISTORY_CONFIRMATION_MESSAGE_TEST_TAG =
+    "aetherlink_chat_history_confirmation_message"
+internal const val CHAT_HISTORY_CONFIRMATION_CONFIRM_TEST_TAG =
+    "aetherlink_chat_history_confirmation_confirm"
+internal const val CHAT_HISTORY_CONFIRMATION_CONFIRM_LABEL_TEST_TAG =
+    "aetherlink_chat_history_confirmation_confirm_label"
+internal const val CHAT_HISTORY_CONFIRMATION_CANCEL_TEST_TAG =
+    "aetherlink_chat_history_confirmation_cancel"
+internal const val CHAT_HISTORY_CONFIRMATION_CANCEL_LABEL_TEST_TAG =
+    "aetherlink_chat_history_confirmation_cancel_label"
 
 private fun String.cappedReasoningPreview(maxCharacters: Int): String {
     val trimmed = trim()
@@ -6671,9 +6797,22 @@ private fun TwoStepConfirmationDialog(
     )
 
     AlertDialog(
+        modifier = Modifier
+            .widthIn(max = 360.dp)
+            .testTag(CHAT_HISTORY_CONFIRMATION_DIALOG_TEST_TAG),
         onDismissRequest = { onStepChange(0) },
-        title = { Text(stringResource(titleRes)) },
-        text = { Text(if (step == 1) firstMessage else secondMessage) },
+        title = {
+            Text(
+                text = stringResource(titleRes),
+                modifier = Modifier.testTag(CHAT_HISTORY_CONFIRMATION_TITLE_TEST_TAG),
+            )
+        },
+        text = {
+            Text(
+                text = if (step == 1) firstMessage else secondMessage,
+                modifier = Modifier.testTag(CHAT_HISTORY_CONFIRMATION_MESSAGE_TEST_TAG),
+            )
+        },
         confirmButton = {
             TextButton(
                 onClick = {
@@ -6692,10 +6831,12 @@ private fun TwoStepConfirmationDialog(
                     }
                 },
                 enabled = enabled,
-                modifier = Modifier.semantics {
-                    contentDescription = confirmActionContentDescription
-                    onClick(label = confirmActionContentDescription, action = null)
-                },
+                modifier = Modifier
+                    .testTag(CHAT_HISTORY_CONFIRMATION_CONFIRM_TEST_TAG)
+                    .semantics {
+                        contentDescription = confirmActionContentDescription
+                        onClick(label = confirmActionContentDescription, action = null)
+                    },
             ) {
                 Text(
                     text = if (step == 1) {
@@ -6703,6 +6844,10 @@ private fun TwoStepConfirmationDialog(
                     } else {
                         stringResource(confirmRes)
                     },
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.testTag(CHAT_HISTORY_CONFIRMATION_CONFIRM_LABEL_TEST_TAG),
                 )
             }
         },
@@ -6712,12 +6857,20 @@ private fun TwoStepConfirmationDialog(
                     hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Toggle)
                     onStepChange(0)
                 },
-                modifier = Modifier.semantics {
-                    contentDescription = cancelActionContentDescription
-                    onClick(label = cancelActionContentDescription, action = null)
-                },
+                modifier = Modifier
+                    .testTag(CHAT_HISTORY_CONFIRMATION_CANCEL_TEST_TAG)
+                    .semantics {
+                        contentDescription = cancelActionContentDescription
+                        onClick(label = cancelActionContentDescription, action = null)
+                    },
             ) {
-                Text(stringResource(R.string.cancel))
+                Text(
+                    text = stringResource(R.string.cancel),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.testTag(CHAT_HISTORY_CONFIRMATION_CANCEL_LABEL_TEST_TAG),
+                )
             }
         },
     )
@@ -7239,14 +7392,23 @@ internal fun MemoryEntryRow(
 
     if (showDeleteConfirmation.value) {
         AlertDialog(
+            modifier = Modifier
+                .widthIn(max = 360.dp)
+                .testTag(MEMORY_DELETE_CONFIRMATION_DIALOG_TEST_TAG),
             onDismissRequest = {
                 showDeleteConfirmation.value = false
             },
             title = {
-                Text(stringResource(R.string.memory_remove_confirm_title))
+                Text(
+                    text = stringResource(R.string.memory_remove_confirm_title),
+                    modifier = Modifier.testTag(MEMORY_DELETE_CONFIRMATION_TITLE_TEST_TAG),
+                )
             },
             text = {
-                Text(stringResource(R.string.memory_remove_confirm_message, memoryActionLabel))
+                Text(
+                    text = stringResource(R.string.memory_remove_confirm_message, memoryActionLabel),
+                    modifier = Modifier.testTag(MEMORY_DELETE_CONFIRMATION_MESSAGE_TEST_TAG),
+                )
             },
             confirmButton = {
                 TextButton(
@@ -7256,13 +7418,21 @@ internal fun MemoryEntryRow(
                         onRemoveMemoryEntry(entry.id)
                     },
                     enabled = actionsEnabled,
-                    modifier = Modifier.semantics {
-                        contentDescription = memoryRemoveContentDescription
-                        disabledActionStateDescription?.let { stateDescription = it }
-                        onClick(label = memoryRemoveContentDescription, action = null)
-                    },
+                    modifier = Modifier
+                        .testTag(MEMORY_DELETE_CONFIRMATION_CONFIRM_TEST_TAG)
+                        .semantics {
+                            contentDescription = memoryRemoveContentDescription
+                            disabledActionStateDescription?.let { stateDescription = it }
+                            onClick(label = memoryRemoveContentDescription, action = null)
+                        },
                 ) {
-                    Text(stringResource(R.string.delete))
+                    Text(
+                        text = stringResource(R.string.delete),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.testTag(MEMORY_DELETE_CONFIRMATION_CONFIRM_LABEL_TEST_TAG),
+                    )
                 }
             },
             dismissButton = {
@@ -7271,12 +7441,20 @@ internal fun MemoryEntryRow(
                         hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Toggle)
                         showDeleteConfirmation.value = false
                     },
-                    modifier = Modifier.semantics {
-                        contentDescription = memoryRemoveCancelContentDescription
-                        onClick(label = memoryRemoveCancelContentDescription, action = null)
-                    },
+                    modifier = Modifier
+                        .testTag(MEMORY_DELETE_CONFIRMATION_CANCEL_TEST_TAG)
+                        .semantics {
+                            contentDescription = memoryRemoveCancelContentDescription
+                            onClick(label = memoryRemoveCancelContentDescription, action = null)
+                        },
                 ) {
-                    Text(stringResource(R.string.cancel))
+                    Text(
+                        text = stringResource(R.string.cancel),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.testTag(MEMORY_DELETE_CONFIRMATION_CANCEL_LABEL_TEST_TAG),
+                    )
                 }
             },
         )
@@ -7510,12 +7688,23 @@ internal const val CONNECTION_STATUS_HERO_DETAIL_TEST_TAG = "connection_status_h
 internal const val CONNECTION_STATUS_LINE_TEST_TAG_PREFIX = "connection_status_line_"
 internal const val CONNECTION_STATUS_LINE_LABEL_TEST_TAG_PREFIX = "connection_status_line_label_"
 internal const val CONNECTION_STATUS_LINE_VALUE_TEST_TAG_PREFIX = "connection_status_line_value_"
+internal const val CONNECTION_STATUS_ACTIONS_TEST_TAG = "connection_status_actions"
+internal const val CONNECTION_STATUS_REFRESH_ACTION_TEST_TAG = "connection_status_refresh_action"
+internal const val CONNECTION_STATUS_REFRESH_ACTION_LABEL_TEST_TAG = "connection_status_refresh_action_label"
+internal const val CONNECTION_STATUS_DISCONNECT_ACTION_TEST_TAG = "connection_status_disconnect_action"
+internal const val CONNECTION_STATUS_DISCONNECT_ACTION_LABEL_TEST_TAG = "connection_status_disconnect_action_label"
 internal const val CONNECTION_STATUS_RUNTIME_LINE_KEY = "runtime"
 internal const val CONNECTION_STATUS_PAIRING_LINE_KEY = "pairing"
 internal const val CONNECTION_STATUS_BACKEND_LINE_KEY = "backend"
 internal const val CONNECTION_STATUS_PROVIDERS_LINE_KEY = "providers"
+internal const val CONNECTION_STATUS_MODEL_RESIDENCY_LINE_KEY = "model_residency"
 internal const val CONNECTION_STATUS_CONNECTED_LINE_KEY = "connected"
 internal const val CONNECTION_STATUS_AUTO_RECONNECT_LINE_KEY = "auto_reconnect"
+internal const val ASSISTANT_REASONING_CONTAINER_TEST_TAG = "assistant_reasoning_container"
+internal const val ASSISTANT_REASONING_HEADER_TEST_TAG = "assistant_reasoning_header"
+internal const val ASSISTANT_REASONING_LABEL_TEST_TAG = "assistant_reasoning_label"
+internal const val ASSISTANT_REASONING_TOGGLE_TEST_TAG = "assistant_reasoning_toggle"
+internal const val ASSISTANT_REASONING_BODY_TEST_TAG = "assistant_reasoning_body"
 internal const val SETTINGS_PREFERENCES_PANEL_TEST_TAG = "settings_preferences_panel"
 internal const val SETTINGS_APPEARANCE_GROUP_TEST_TAG = "settings_appearance_group"
 internal const val SETTINGS_APPEARANCE_GROUP_LABEL_TEST_TAG = "settings_appearance_group_label"
@@ -7539,6 +7728,20 @@ internal const val SAVED_EMBEDDING_MODEL_DETAIL_TEST_TAG = "saved_embedding_mode
 internal const val MEMORY_ENTRY_CONTENT_TEST_TAG = "memory_entry_content"
 internal const val MEMORY_ENTRY_ACTIONS_TEST_TAG = "memory_entry_actions"
 internal const val MEMORY_ENTRY_SOURCE_TEST_TAG = "memory_entry_source"
+internal const val MEMORY_DELETE_CONFIRMATION_DIALOG_TEST_TAG =
+    "memory_delete_confirmation_dialog"
+internal const val MEMORY_DELETE_CONFIRMATION_TITLE_TEST_TAG =
+    "memory_delete_confirmation_title"
+internal const val MEMORY_DELETE_CONFIRMATION_MESSAGE_TEST_TAG =
+    "memory_delete_confirmation_message"
+internal const val MEMORY_DELETE_CONFIRMATION_CONFIRM_TEST_TAG =
+    "memory_delete_confirmation_confirm"
+internal const val MEMORY_DELETE_CONFIRMATION_CONFIRM_LABEL_TEST_TAG =
+    "memory_delete_confirmation_confirm_label"
+internal const val MEMORY_DELETE_CONFIRMATION_CANCEL_TEST_TAG =
+    "memory_delete_confirmation_cancel"
+internal const val MEMORY_DELETE_CONFIRMATION_CANCEL_LABEL_TEST_TAG =
+    "memory_delete_confirmation_cancel_label"
 
 internal fun appearancePreferenceOptionRowTestTag(theme: RuntimeAppTheme): String =
     "$SETTINGS_APPEARANCE_OPTION_ROW_TEST_TAG_PREFIX${settingsPreferenceTagKey(theme.name)}"
@@ -8228,6 +8431,12 @@ internal fun providerStatusDiagnosticsButtonTestTag(providerId: String): String 
 internal fun providerStatusDiagnosticsPanelTestTag(providerId: String): String =
     "$PROVIDER_STATUS_DIAGNOSTICS_PANEL_TEST_TAG_PREFIX$providerId"
 
+internal fun providerStatusDiagnosticsMessageTestTag(providerId: String): String =
+    "$PROVIDER_STATUS_DIAGNOSTICS_MESSAGE_TEST_TAG_PREFIX$providerId"
+
+internal fun providerStatusDiagnosticsCodeTestTag(providerId: String): String =
+    "$PROVIDER_STATUS_DIAGNOSTICS_CODE_TEST_TAG_PREFIX$providerId"
+
 internal fun connectionStatusLineTestTag(key: String): String =
     "$CONNECTION_STATUS_LINE_TEST_TAG_PREFIX$key"
 
@@ -8240,6 +8449,9 @@ internal fun connectionStatusLineValueTestTag(key: String): String =
 internal const val CHAT_MESSAGE_LIST_TEST_TAG = "aetherlink_chat_message_list"
 internal const val CHAT_JUMP_TO_LATEST_TEST_TAG = "aetherlink_chat_jump_to_latest"
 internal const val CHAT_STREAMING_PROGRESS_TEST_TAG = "aetherlink_chat_streaming_progress"
+internal const val CHAT_MESSAGES_LOADING_PANEL_TEST_TAG = "aetherlink_chat_messages_loading_panel"
+internal const val CHAT_MESSAGES_LOADING_PROGRESS_TEST_TAG = "aetherlink_chat_messages_loading_progress"
+internal const val CHAT_MESSAGES_LOADING_TEXT_TEST_TAG = "aetherlink_chat_messages_loading_text"
 internal const val CHAT_BACKEND_READINESS_BANNER_TEST_TAG = "aetherlink_chat_backend_readiness_banner"
 internal const val CHAT_BACKEND_READINESS_TITLE_TEST_TAG = "aetherlink_chat_backend_readiness_title"
 internal const val CHAT_BACKEND_READINESS_DETAIL_TEST_TAG = "aetherlink_chat_backend_readiness_detail"
@@ -8288,6 +8500,20 @@ internal const val SETTINGS_TRUSTED_RUNTIME_LABEL_TEST_TAG = "aetherlink_setting
 internal const val SETTINGS_TRUSTED_RUNTIME_NAME_TEST_TAG = "aetherlink_settings_trusted_runtime_name"
 internal const val SETTINGS_TRUSTED_RUNTIME_FORGET_ACTION_TEST_TAG =
     "aetherlink_settings_trusted_runtime_forget_action"
+internal const val SETTINGS_TRUSTED_RUNTIME_FORGET_DIALOG_TEST_TAG =
+    "aetherlink_settings_trusted_runtime_forget_dialog"
+internal const val SETTINGS_TRUSTED_RUNTIME_FORGET_TITLE_TEST_TAG =
+    "aetherlink_settings_trusted_runtime_forget_title"
+internal const val SETTINGS_TRUSTED_RUNTIME_FORGET_MESSAGE_TEST_TAG =
+    "aetherlink_settings_trusted_runtime_forget_message"
+internal const val SETTINGS_TRUSTED_RUNTIME_FORGET_CONFIRM_TEST_TAG =
+    "aetherlink_settings_trusted_runtime_forget_confirm"
+internal const val SETTINGS_TRUSTED_RUNTIME_FORGET_CONFIRM_LABEL_TEST_TAG =
+    "aetherlink_settings_trusted_runtime_forget_confirm_label"
+internal const val SETTINGS_TRUSTED_RUNTIME_FORGET_CANCEL_TEST_TAG =
+    "aetherlink_settings_trusted_runtime_forget_cancel"
+internal const val SETTINGS_TRUSTED_RUNTIME_FORGET_CANCEL_LABEL_TEST_TAG =
+    "aetherlink_settings_trusted_runtime_forget_cancel_label"
 internal const val SETTINGS_TRUSTED_RUNTIME_EMPTY_DETAIL_TEST_TAG =
     "aetherlink_settings_trusted_runtime_empty_detail"
 internal const val SETTINGS_EXPANDABLE_SECTION_TEST_TAG_PREFIX = "aetherlink_settings_section_"
@@ -8314,6 +8540,10 @@ internal const val PROVIDER_STATUS_DIAGNOSTICS_BUTTON_TEST_TAG_PREFIX =
     "aetherlink_provider_status_diagnostics_button_"
 internal const val PROVIDER_STATUS_DIAGNOSTICS_PANEL_TEST_TAG_PREFIX =
     "aetherlink_provider_status_diagnostics_panel_"
+internal const val PROVIDER_STATUS_DIAGNOSTICS_MESSAGE_TEST_TAG_PREFIX =
+    "aetherlink_provider_status_diagnostics_message_"
+internal const val PROVIDER_STATUS_DIAGNOSTICS_CODE_TEST_TAG_PREFIX =
+    "aetherlink_provider_status_diagnostics_code_"
 internal const val ROUTE_AVAILABILITY_NOTICE_TEST_TAG = "aetherlink_route_availability_notice"
 internal const val ROUTE_AVAILABILITY_NOTICE_BODY_TEST_TAG = "aetherlink_route_availability_notice_body"
 internal const val ROUTE_AVAILABILITY_NOTICE_ACTION_TEST_TAG = "aetherlink_route_availability_notice_action"
@@ -8819,6 +9049,88 @@ private fun providerStatusSummary(state: RuntimeUiState): String {
             availableCount,
             totalCount,
         )
+    }
+}
+
+@Composable
+private fun modelResidencySummary(residency: RuntimeModelResidencyStatus?): String {
+    if (residency == null) {
+        return stringResource(R.string.model_residency_unknown)
+    }
+    if (!residency.supported) {
+        return stringResource(R.string.model_residency_unsupported)
+    }
+    val inFlightGenerations = residency.inFlightGenerations.coerceAtLeast(0)
+    val idleDelay = modelResidencyIdleDelayLabel(residency.idleUnloadDelaySeconds)
+    val activeProvider = residency.activeProvider
+        ?.takeIf { it.isNotBlank() }
+        ?.let { runtimeProviderDisplayName(it) }
+    val activeModel = residency.activeModelId
+        ?.takeIf { it.isNotBlank() }
+        ?.let(::savedRuntimeModelDisplayName)
+
+    val baseSummary = if (activeProvider != null && activeModel != null) {
+        stringResource(
+            R.string.model_residency_active,
+            activeProvider,
+            activeModel,
+            inFlightGenerations,
+            idleDelay,
+        )
+    } else {
+        stringResource(
+            R.string.model_residency_inactive,
+            inFlightGenerations,
+            idleDelay,
+        )
+    }
+    val unloadFailureSummary = modelResidencyUnloadFailureSummary(residency.lastUnloadFailure)
+    return if (unloadFailureSummary != null) {
+        stringResource(R.string.model_residency_with_last_unload_failure, baseSummary, unloadFailureSummary)
+    } else {
+        baseSummary
+    }
+}
+
+@Composable
+private fun modelResidencyIdleDelayLabel(idleUnloadDelaySeconds: Int?): String {
+    val seconds = idleUnloadDelaySeconds?.coerceAtLeast(0)
+        ?: return stringResource(R.string.model_residency_idle_delay_unknown)
+    if (seconds > 0 && seconds % 60 == 0) {
+        return stringResource(R.string.model_residency_idle_delay_minutes, seconds / 60)
+    }
+    return stringResource(R.string.model_residency_idle_delay_seconds, seconds)
+}
+
+@Composable
+private fun modelResidencyUnloadFailureSummary(
+    failure: RuntimeModelResidencyUnloadFailureStatus?,
+): String? {
+    failure ?: return null
+    val provider = failure.provider
+        .takeIf { it.isNotBlank() }
+        ?.let { runtimeProviderDisplayName(it) }
+        ?: return null
+    val model = failure.modelId
+        .takeIf { it.isNotBlank() }
+        ?.let(::savedRuntimeModelDisplayName)
+        ?: return null
+    val reason = modelResidencyUnloadFailureReasonLabel(failure.reason) ?: return null
+    return stringResource(
+        R.string.model_residency_last_unload_failure,
+        provider,
+        model,
+        reason,
+    )
+}
+
+@Composable
+private fun modelResidencyUnloadFailureReasonLabel(reason: String): String? {
+    return when (reason.trim().lowercase(Locale.US)) {
+        "model_switch" -> stringResource(R.string.model_residency_unload_reason_model_switch)
+        "idle_timeout" -> stringResource(R.string.model_residency_unload_reason_idle_timeout)
+        "manual" -> stringResource(R.string.model_residency_unload_reason_manual)
+        else -> null
     }
 }
 

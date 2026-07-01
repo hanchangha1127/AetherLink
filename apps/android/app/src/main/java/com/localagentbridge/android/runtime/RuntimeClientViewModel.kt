@@ -52,6 +52,7 @@ import com.localagentbridge.android.core.protocol.PairingResultPayload
 import com.localagentbridge.android.core.protocol.ProtocolEnvelope
 import com.localagentbridge.android.core.protocol.RouteRefreshPayload
 import com.localagentbridge.android.core.protocol.RuntimeHealthPayload
+import com.localagentbridge.android.core.protocol.RuntimeModelResidencyUnloadFailurePayload
 import com.localagentbridge.android.core.pairing.DeviceIdentity
 import com.localagentbridge.android.core.pairing.DeviceIdentityStore
 import com.localagentbridge.android.core.pairing.RuntimePairingPayload
@@ -2797,6 +2798,7 @@ class RuntimeClientViewModel internal constructor(
                     ?: payload.ollama?.available,
                 backendCode = payload.ollama?.code ?: payload.lmStudio?.code,
                 providerStatuses = providerStatuses,
+                modelResidency = runtimeModelResidencyStatus(payload),
                 error = null
             )
         }
@@ -3900,6 +3902,18 @@ internal fun runtimeProviderStatuses(payload: RuntimeHealthPayload): List<Runtim
     )
 }
 
+internal fun runtimeModelResidencyStatus(payload: RuntimeHealthPayload): RuntimeModelResidencyStatus? {
+    val residency = payload.modelResidency ?: return null
+    return RuntimeModelResidencyStatus(
+        supported = residency.supported,
+        activeProvider = runtimeResidencySafeProvider(residency.activeProvider),
+        activeModelId = runtimeResidencySafeModelId(residency.activeModelId),
+        inFlightGenerations = residency.inFlightGenerations.coerceAtLeast(0),
+        idleUnloadDelaySeconds = residency.idleUnloadDelaySeconds?.coerceAtLeast(0),
+        lastUnloadFailure = runtimeResidencyUnloadFailureStatus(residency.lastUnloadFailure),
+    )
+}
+
 internal fun runtimeProviderSafeMessage(message: String): String {
     return message
         .trim()
@@ -3912,6 +3926,41 @@ internal fun runtimeProviderSafeCode(code: String?): String? {
         ?.trim()
         ?.takeUnless { it.containsBackendEndpointMaterial() }
         ?.takeIf { it.matches(PROVIDER_DIAGNOSTIC_CODE_PATTERN) }
+}
+
+private fun runtimeResidencySafeProvider(provider: String?): String? {
+    return provider
+        ?.trim()
+        ?.takeUnless { it.containsBackendEndpointMaterial() }
+        ?.takeIf { it == "ollama" || it == "lm_studio" }
+}
+
+private fun runtimeResidencySafeModelId(modelID: String?): String? {
+    return modelID
+        ?.trim()
+        ?.takeUnless { it.containsBackendEndpointMaterial() }
+        ?.takeIf { it.isNotEmpty() && it.length <= 160 }
+}
+
+private fun runtimeResidencyUnloadFailureStatus(
+    failure: RuntimeModelResidencyUnloadFailurePayload?,
+): RuntimeModelResidencyUnloadFailureStatus? {
+    failure ?: return null
+    val provider = runtimeResidencySafeProvider(failure.provider) ?: return null
+    val modelId = runtimeResidencySafeModelId(failure.modelId) ?: return null
+    val reason = runtimeResidencySafeUnloadReason(failure.reason) ?: return null
+    return RuntimeModelResidencyUnloadFailureStatus(
+        provider = provider,
+        modelId = modelId,
+        reason = reason,
+    )
+}
+
+private fun runtimeResidencySafeUnloadReason(reason: String?): String? {
+    return reason
+        ?.trim()
+        ?.takeUnless { it.containsBackendEndpointMaterial() }
+        ?.takeIf { it == "model_switch" || it == "idle_timeout" || it == "manual" }
 }
 
 private fun String.containsBackendEndpointMaterial(): Boolean {
@@ -5223,6 +5272,7 @@ internal fun RuntimeUiState.withPairingRequiredRuntimeState(detail: String?): Ru
         backendAvailable = null,
         backendCode = null,
         providerStatuses = emptyList(),
+        modelResidency = null,
         error = runtimeUiError("pairing_required", detail),
     )
 }

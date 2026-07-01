@@ -284,6 +284,19 @@
     <string name="provider_hide_diagnostics">詳細を非表示</string>
     <string name="provider_show_diagnostics_for">%1$s の詳細を表示</string>
     <string name="provider_hide_diagnostics_for">%1$s の詳細を非表示</string>
+    <string name="model_residency">モデル常駐状態</string>
+    <string name="model_residency_unknown">ランタイムの常駐状態を待機中</string>
+    <string name="model_residency_unsupported">このランタイムでは報告されません</string>
+    <string name="model_residency_active">%1$s %2$s が常駐中。実行中: %3$d。アイドル解除: %4$s。</string>
+    <string name="model_residency_inactive">常駐モデルなし。実行中: %1$d。アイドル解除: %2$s。</string>
+    <string name="model_residency_idle_delay_seconds">%1$d 秒</string>
+    <string name="model_residency_idle_delay_minutes">%1$d 分</string>
+    <string name="model_residency_idle_delay_unknown">未報告</string>
+    <string name="model_residency_with_last_unload_failure">%1$s %2$s</string>
+    <string name="model_residency_last_unload_failure">前回の解除に失敗: %1$s %2$s（%3$s）。</string>
+    <string name="model_residency_unload_reason_model_switch">モデル切り替え</string>
+    <string name="model_residency_unload_reason_idle_timeout">アイドルタイムアウト</string>
+    <string name="model_residency_unload_reason_manual">手動アンロード</string>
 
     <string name="models_title">モデル</string>
     <string name="choose_model">モデルを選択</string>

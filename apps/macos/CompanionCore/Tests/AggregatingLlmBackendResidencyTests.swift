@@ -59,6 +59,139 @@ final class AggregatingLlmBackendResidencyTests: XCTestCase {
         }
     }
 
+    func testDoneEventClearsInFlightResidencyBeforeClientObservesCompletion() async throws {
+        let ollama = ResidencyTestBackend(
+            provider: .ollama,
+            models: [ModelInfo(id: "qwen-local", name: "qwen-local", provider: .ollama)]
+        )
+        let backend = AggregatingLlmBackend(
+            [ollama],
+            modelIdleUnloadDelayNanoseconds: 60_000_000_000
+        )
+
+        var iterator = backend.chat(request: chatRequest(model: "ollama:qwen-local")).makeAsyncIterator()
+        let event = try await iterator.next()
+
+        XCTAssertEqual(event, .done(inputTokens: 1, outputTokens: 1))
+        XCTAssertEqual(
+            backend.modelResidencySnapshot(),
+            RuntimeModelResidencySnapshot(
+                activeProvider: .ollama,
+                activeModelID: "qwen-local",
+                inFlightGenerations: 0,
+                idleUnloadDelaySeconds: 60
+            )
+        )
+    }
+
+    func testManualUnloadClearsActiveResidentModelAndEmitsManualEvent() async throws {
+        let ollama = ResidencyTestBackend(
+            provider: .ollama,
+            models: [ModelInfo(id: "qwen-local", name: "qwen-local", provider: .ollama)]
+        )
+        let backend = AggregatingLlmBackend(
+            [ollama],
+            modelIdleUnloadDelayNanoseconds: 60_000_000_000
+        )
+        let events = ResidencyEventRecorder()
+        backend.setResidencyEventHandler { event in
+            events.append(event)
+        }
+
+        _ = try await collect(backend.chat(request: chatRequest(model: "ollama:qwen-local")))
+        await eventually {
+            let snapshot = backend.modelResidencySnapshot()
+            return snapshot.activeModelID == "qwen-local" && snapshot.inFlightGenerations == 0
+        }
+
+        let result = await backend.unloadActiveResidencyModelNow()
+
+        XCTAssertEqual(result, .requested(provider: .ollama, modelID: "qwen-local"))
+        await eventually {
+            ollama.unloadedModels == ["qwen-local"] &&
+                events.containsUnloadSuccess(provider: .ollama, modelID: "qwen-local", reason: .manual)
+        }
+        XCTAssertEqual(
+            backend.modelResidencySnapshot(),
+            RuntimeModelResidencySnapshot(
+                activeProvider: nil,
+                activeModelID: nil,
+                inFlightGenerations: 0,
+                idleUnloadDelaySeconds: 60
+            )
+        )
+    }
+
+    func testManualUnloadFailureKeepsStructuredManualFailureReason() async throws {
+        let ollama = ResidencyTestBackend(
+            provider: .ollama,
+            models: [ModelInfo(id: "qwen-local", name: "qwen-local", provider: .ollama)],
+            unloadErrors: [
+                "qwen-local": NSError(
+                    domain: "AetherLinkResidencyTest",
+                    code: 43,
+                    userInfo: [NSLocalizedDescriptionKey: "manual unload denied"]
+                )
+            ]
+        )
+        let backend = AggregatingLlmBackend(
+            [ollama],
+            modelIdleUnloadDelayNanoseconds: 60_000_000_000
+        )
+        let events = ResidencyEventRecorder()
+        backend.setResidencyEventHandler { event in
+            events.append(event)
+        }
+
+        _ = try await collect(backend.chat(request: chatRequest(model: "ollama:qwen-local")))
+        await eventually {
+            let snapshot = backend.modelResidencySnapshot()
+            return snapshot.activeModelID == "qwen-local" && snapshot.inFlightGenerations == 0
+        }
+        let result = await backend.unloadActiveResidencyModelNow()
+
+        XCTAssertEqual(result, .requested(provider: .ollama, modelID: "qwen-local"))
+        await eventually {
+            events.containsUnloadFailure(
+                provider: .ollama,
+                modelID: "qwen-local",
+                reason: .manual,
+                message: "manual unload denied"
+            )
+        }
+        XCTAssertEqual(
+            backend.modelResidencySnapshot().lastUnloadFailure,
+            RuntimeModelResidencyUnloadFailure(provider: .ollama, modelID: "qwen-local", reason: .manual)
+        )
+    }
+
+    func testManualUnloadSkipsWhileGenerationIsInFlight() async throws {
+        let ollama = ResidencyTestBackend(
+            provider: .ollama,
+            models: [ModelInfo(id: "qwen-local", name: "qwen-local", provider: .ollama)],
+            holdsChatsOpen: true
+        )
+        let backend = AggregatingLlmBackend(
+            [ollama],
+            modelIdleUnloadDelayNanoseconds: 60_000_000_000
+        )
+
+        let chatTask = Task {
+            try await collect(backend.chat(request: chatRequest(model: "ollama:qwen-local")))
+        }
+        await eventually {
+            backend.modelResidencySnapshot().inFlightGenerations == 1
+        }
+
+        let result = await backend.unloadActiveResidencyModelNow()
+
+        XCTAssertEqual(result, .inFlightGenerations(1))
+        XCTAssertTrue(ollama.unloadedModels.isEmpty)
+        XCTAssertEqual(backend.modelResidencySnapshot().activeModelID, "qwen-local")
+        chatTask.cancel()
+        _ = await chatTask.result
+    }
+
     func testUnloadFailureEmitsProviderSpecificFailureEventWithoutBreakingNextChat() async throws {
         let ollama = ResidencyTestBackend(
             provider: .ollama,
@@ -103,7 +236,12 @@ final class AggregatingLlmBackendResidencyTests: XCTestCase {
                 activeProvider: .lmStudio,
                 activeModelID: "gemma-local",
                 inFlightGenerations: 0,
-                idleUnloadDelaySeconds: 60
+                idleUnloadDelaySeconds: 60,
+                lastUnloadFailure: RuntimeModelResidencyUnloadFailure(
+                    provider: .ollama,
+                    modelID: "qwen-local",
+                    reason: .modelSwitch
+                )
             )
         )
     }
@@ -269,6 +407,7 @@ private final class ResidencyTestBackend: LlmBackend, @unchecked Sendable {
     private let lock = NSLock()
     private let models: [ModelInfo]
     private let unloadErrors: [String: Error]
+    private let holdsChatsOpen: Bool
     private var unloaded: [String] = []
     private var routed: [String] = []
 
@@ -283,11 +422,13 @@ private final class ResidencyTestBackend: LlmBackend, @unchecked Sendable {
     init(
         provider: ModelProvider,
         models: [ModelInfo] = [],
-        unloadErrors: [String: Error] = [:]
+        unloadErrors: [String: Error] = [:],
+        holdsChatsOpen: Bool = false
     ) {
         self.provider = provider
         self.models = models
         self.unloadErrors = unloadErrors
+        self.holdsChatsOpen = holdsChatsOpen
     }
 
     func healthCheck() async -> BackendStatus {
@@ -302,6 +443,9 @@ private final class ResidencyTestBackend: LlmBackend, @unchecked Sendable {
         AsyncThrowingStream { continuation in
             lock.withLock {
                 routed.append(request.model)
+            }
+            guard !holdsChatsOpen else {
+                return
             }
             continuation.yield(.done(inputTokens: 1, outputTokens: 1))
             continuation.finish()
@@ -331,6 +475,23 @@ private final class ResidencyEventRecorder: @unchecked Sendable {
     func append(_ event: RuntimeModelResidencyEvent) {
         lock.withLock {
             events.append(event)
+        }
+    }
+
+    func containsUnloadSuccess(
+        provider: ModelProvider,
+        modelID: String,
+        reason: RuntimeModelResidencyUnloadReason
+    ) -> Bool {
+        lock.withLock {
+            events.contains { event in
+                if case let .unloadSucceeded(eventProvider, eventModelID, eventReason) = event {
+                    return eventProvider == provider &&
+                        eventModelID == modelID &&
+                        eventReason == reason
+                }
+                return false
+            }
         }
     }
 

@@ -215,6 +215,35 @@ final class OllamaBackendTests: XCTestCase {
         XCTAssertEqual(result, .unloaded(provider: .ollama, modelID: "llama3.1:8b"))
     }
 
+    func testUnloadModelHTTPStatusReturnsStructuredError() async {
+        let unsafeBody = "unload denied http://127.0.0.1:11434/api/chat route_token=secret"
+        let backend = makeBackend { request in
+            XCTAssertEqual(request.url?.path, "/api/chat")
+            XCTAssertEqual(request.httpMethod, "POST")
+            let body = try self.requestBodyData(from: request)
+            let postedRequest = try JSONDecoder().decode(PostedUnloadRequest.self, from: body)
+            XCTAssertEqual(postedRequest.model, "llama3.1:8b")
+            XCTAssertTrue(postedRequest.messages.isEmpty)
+            XCTAssertEqual(postedRequest.keepAlive, 0)
+            return self.response(statusCode: 503, body: unsafeBody)
+        }
+
+        do {
+            _ = try await backend.unloadModel(providerModelID: "llama3.1:8b")
+            XCTFail("Expected structured unload error")
+        } catch let error as OllamaBackendError {
+            XCTAssertEqual(error, .httpStatus(endpoint: "POST /api/chat", statusCode: 503, body: unsafeBody))
+            XCTAssertEqual(error.code, "ollama_http_status")
+            XCTAssertTrue(error.retryable)
+            XCTAssertEqual(error.backendError.provider, .ollama)
+            XCTAssertFalse(error.backendError.message.contains("127.0.0.1"))
+            XCTAssertFalse(error.backendError.message.contains("route_token"))
+            XCTAssertFalse(error.backendError.message.contains("/api/chat"))
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
     func testChatStreamsOllamaLineDelimitedJSON() async throws {
         let backend = makeBackend { request in
             XCTAssertEqual(request.url?.path, "/api/chat")

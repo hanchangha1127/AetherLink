@@ -91,6 +91,14 @@
 "Runtime Memory" = "ランタイムメモリ";
 "Refresh Runtime Data" = "ランタイムデータを更新";
 "Refresh runtime-owned chat history and memory counts." = "ランタイムが保持するチャット履歴とメモリ数を更新します。";
+"Refresh Model Residency" = "モデル常駐状態を更新";
+"Refresh the runtime model residency status." = "ランタイムのモデル常駐状態を更新します。";
+"Unload Resident Model" = "常駐モデルをアンロード";
+"Generation in progress" = "生成中";
+"No resident model" = "常駐モデルなし";
+"Unload the active resident model now through AetherLink Runtime." = "AetherLink Runtime 経由でアクティブな常駐モデルを今すぐアンロードします。";
+"Wait for the active generation to finish before unloading the resident model." = "常駐モデルをアンロードする前に、アクティブな生成が完了するまで待ちます。";
+"No resident model is active through AetherLink Runtime." = "AetherLink Runtime でアクティブな常駐モデルはありません。";
 "Inspect Runtime Memory" = "ランタイムメモリを確認";
 "Inspect runtime-owned memory notes stored on AetherLink Runtime." = "AetherLink Runtime に保存されたランタイム所有のメモリノートを確認します。";
 "Runtime Memory Inspector" = "ランタイムメモリインスペクタ";
@@ -109,6 +117,18 @@
 "Unknown creation time" = "不明な作成時刻";
 "Unknown update time" = "不明な更新時刻";
 "Memory note %@. Status %@. Created %@. Updated %@." = "メモリノート %@。状態 %@。作成 %@。更新 %@。";
+"Approved from older chat" = "以前のチャットから承認済み";
+"Source chat: %@" = "参照元チャット: %@";
+"Source coverage: %@" = "参照範囲: %@";
+"Source coverage unavailable" = "参照範囲なし";
+"Show source excerpts" = "参照抜粋を表示";
+"Hide source excerpts" = "参照抜粋を隠す";
+"Source review expanded" = "参照レビューを展開中";
+"Source review collapsed" = "参照レビューを折りたたみ中";
+"Source excerpt %@: %@" = "参照抜粋 %@: %@";
+"Source excerpt unavailable" = "参照抜粋なし";
+"%d more source excerpts hidden" = "さらに %d 件の参照抜粋を非表示";
+"Memory source. %@. %@. %@." = "メモリの参照元。%@。%@。%@。";
 "1 active chat" = "アクティブなチャット 1 件";
 "%d active chats" = "アクティブなチャット %d 件";
 "1 archived chat" = "アーカイブ済みチャット 1 件";
@@ -226,6 +246,8 @@
 "No active model is resident through the runtime policy." = "ランタイムポリシーで常駐しているアクティブなモデルはありません。";
 "Model unload requested by runtime policy." = "ランタイムポリシーがモデルのアンロードを要求しました。";
 "Model unloaded by runtime policy." = "ランタイムポリシーによりモデルをアンロードしました。";
+"Manual model unload requested." = "手動モデルアンロードを要求しました。";
+"Manual model unloaded." = "手動でモデルをアンロードしました。";
 "Open a model provider for AetherLink Runtime, then check again." = "AetherLink Runtime 用のモデルプロバイダーを開いてから、もう一度確認してください。";
 "1 trusted device" = "信頼済みデバイス 1 台";
 "%d trusted devices" = "信頼済みデバイス %d 台";
@@ -326,6 +348,7 @@
 "Provider %@ status %@" = "%@ の状態 %@";
 "Provider %@. Status %@. %@" = "%@。状態 %@。%@";
 "No provider details" = "プロバイダー詳細なし";
+"Active model is ready for runtime requests." = "アクティブなモデルはランタイムリクエストを処理できます。";
 "Model residency updated." = "モデル常駐状態を更新しました。";
 "Runtime event recorded." = "ランタイムイベントを記録しました。";
 
@@ -443,6 +466,7 @@
 "AetherLink Runtime needs attention. Check Activity or restart AetherLink Runtime." = "AetherLink Runtime の確認が必要です。アクティビティを確認するか、AetherLink Runtime を再起動してください。";
 "Connection details need a secure connection secret before sharing sensitive content." = "機密コンテンツを共有する前に、接続情報には安全な接続シークレットが必要です。";
 "Model unload failed. Check Activity." = "モデルのアンロードに失敗しました。アクティビティを確認してください。";
+"Manual model unload failed. Check Activity." = "手動モデルのアンロードに失敗しました。アクティビティを確認してください。";
 "Ready for paired devices." = "ペアリング済みデバイスの準備完了。";
 "Start AetherLink Runtime." = "AetherLink Runtime を開始してください。";
 "Connection details not ready for QR" = "QR 用の接続情報が未準備";

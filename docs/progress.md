@@ -18,7 +18,7 @@ The concrete remote 1:1 connection architecture is now tracked in [connection-ov
 - The connection manager should work across different networks with a QR-only user flow: the QR bootstraps paired identity plus private overlay/rendezvous/relay material, local direct is an opportunistic fast path when available, remote peer-to-peer NAT traversal uses STUN-like address discovery and authenticated hole punching, and an end-to-end encrypted blind relay/TURN-style path handles networks where direct peer-to-peer fails. The client user should not enter hostnames, ports, Ollama URLs, LM Studio URLs, or backend URLs.
 - Optional DHT/bootstrap-peer discovery can provide short-lived rendezvous records for paired devices where practical, but it must not become a public runtime directory, account system, backend URL registry, model-logic backend, or trust authority.
 - Relay/signaling infrastructure must not see AI protocol payloads, model lists, prompts, files, memory, backend credentials, or backend URLs in production.
-- Current code has local-direct route-candidate plumbing, development endpoint hints, Android opaque P2P rendezvous route preparation plus pending/trusted restore planning, an app-level connector seam that can try saved opaque P2P before falling back to relay, and a temporary outbound TCP relay path keyed by stable paired-route material for different-Wi-Fi development testing. Normal QR-provisioned relay routes require `relay_secret`, `relay_expires_at`, and `relay_nonce`; the client and runtime host encrypt relay frame bodies before the relay forwards them and reject stale QR route material. The allocation relay now issues route-token-based `relay_id` values and can reuse a runtime-supplied stable frame secret, so stored trusted routes are less brittle across app restarts than one-off random relay IDs. A QR that only contains runtime identity can establish trust and resolve local routes, but it cannot cross unrelated networks by itself. For QR-only remote linking, the QR must carry complete remote-route material such as relay or future P2P rendezvous tokens. Remote P2P NAT traversal, DHT/bootstrap rendezvous, production signaling, hardened relay allocation renewal, replay-resistant session setup, and complete production end-to-end transport encryption remain future milestones.
+- Current code has local-direct route-candidate plumbing, development endpoint hints, Android opaque P2P rendezvous route preparation plus pending/trusted restore planning, an app-level connector seam that can try saved opaque P2P before falling back to relay, and a temporary outbound TCP relay path keyed by stable paired-route material for different-Wi-Fi development testing. Normal QR-provisioned relay routes require `relay_secret`, `relay_expires_at`, and `relay_nonce`; the client and runtime host encrypt relay frame bodies before the relay forwards them and reject stale QR route material. The allocation relay now issues opaque stable `relay_id` values derived from route tokens and can reuse a runtime-supplied stable frame secret, so stored trusted routes are less brittle across app restarts than one-off random relay IDs without echoing the raw route token as the relay room id. A QR that only contains runtime identity can establish trust and resolve local routes, but it cannot cross unrelated networks by itself. For QR-only remote linking, the QR must carry complete remote-route material such as relay or future P2P rendezvous tokens. Remote P2P NAT traversal, DHT/bootstrap rendezvous, production signaling, hardened relay allocation renewal, replay-resistant session setup, and complete production end-to-end transport encryption remain future milestones.
 - The runtime app can display compact QR aliases for camera scanning while retaining canonical QR field names for docs/debugging. Clients accept both forms. Compact aliases reduce QR density for route-bearing relay QR payloads, but they do not remove the requirement for a mutually reachable relay/P2P route.
 - Next remote-connection increment: keep the normal user flow QR-only while making the QR production route bootstrap explicit. The QR should carry runtime identity, runtime public key or certificate fingerprint, a pairing/route token, and overlay/rendezvous/relay material for different-network routes; fixed host/port remains optional development diagnostics only.
 - Current first targets are the mobile client and desktop runtime host.
@@ -27,16 +27,763 @@ The concrete remote 1:1 connection architecture is now tracked in [connection-ov
 ## Current Workstream Coordination Notes
 
 - Do not use GPT-5.3-Codex-Spark for this workstream. Use GPT-5.5/inherited-model subagents only when delegation is useful.
-- During the latest no-device Android chat-composer, reasoning, and relay-readiness pass, GPT-5.5 read-only audit subagents were used for Android chat UI/state review. No GPT-5.3-Codex-Spark subagent was used.
+- During the latest no-device AetherLinkRelay allocation-token authorization guard pass, a GPT-5.5 read-only explorer was used for relay script/docs review. No GPT-5.3-Codex-Spark subagent was used.
 - The user will handle commits and pushes unless they explicitly ask otherwise.
 
 ## Implemented So Far
 
+### 2026-07-02 AetherLinkRelay Allocation Store Load Resilience Guard
+
+- Scope: continue Immediate Queue 5 and Queue 6 by hardening the temporary development relay allocation store load path while the Android phone is disconnected. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer confirmed duplicate persisted `relay_id` tickets could trap relay startup through `Dictionary(uniqueKeysWithValues:)`.
+- Result: persisted allocation store loading now folds tickets safely instead of building a dictionary from potentially duplicated keys. It deduplicates persisted relay tickets and skips malformed ticket entries on load.
+- Result: duplicate same-id persisted tickets follow the same advancing-renewal rule as runtime `store(_:)`: only a ticket with a later `relay_expires_at` and fresh `relay_nonce` can replace the current loaded ticket.
+- Guardrail: `RelayAllocationTests.testAllocationRegistryLoadsDuplicatePersistedRelayIDsWithAdvancingTicket` pins duplicate load behavior, and `testAllocationRegistrySkipsMalformedPersistedTicketsOnLoad` pins malformed-entry filtering. `script/check_no_device_quality.sh` now runs both focused tests, and `script/check_copy_hygiene.py` pins the source/test/script/docs contract.
+- Device state: the Android phone remains disconnected, so this pass is explicitly no-device.
+- Caveat: this hardens development relay startup resilience only. It is not production relay allocation, account-level abuse control, P2P NAT traversal, production session-key exchange, physical Android QR scan, real phone relay reachability, or live provider-backed chat/cancel proof.
+
+Verified after this change:
+
+- `swift test --filter 'RelayAllocationTests/testAllocationRegistryLoadsDuplicatePersistedRelayIDsWithAdvancingTicket|RelayAllocationTests/testAllocationRegistrySkipsMalformedPersistedTicketsOnLoad'`
+- `swift test --filter RelayAllocationTests`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh`
+- `git diff --check`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-02 AetherLinkRelay Allocation Renewal Monotonicity Guard
+
+- Scope: continue Immediate Queue 5 and Queue 6 by hardening the temporary development relay allocation registry while the Android phone is disconnected. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer identified relay allocation renewal monotonicity as the next no-device-verifiable relay hardening gap.
+- Result: for a stable opaque relay id, non-advancing relay renewals cannot overwrite a fresher allocation ticket. The registry ignores same-id replacements unless the new lease advances `relay_expires_at` and uses a fresh `relay_nonce`.
+- Guardrail: `RelayAllocationTests.testAllocationRegistryIgnoresNonAdvancingRenewalForStableRelayID` pins older, same-expiry, and reused-nonce renewal rejection. `RelayAllocationTests.testAllocationRegistryAcceptsAdvancingRenewalWithFreshNonce` pins the accepted renewal path. `script/check_no_device_quality.sh` now runs both focused tests, and `script/check_copy_hygiene.py` pins the source/test/script/docs contract.
+- Device state: the Android phone remains disconnected, so this pass is explicitly no-device.
+- Caveat: this hardens the development relay ticket registry only. It is still not production relay allocation, account-level abuse control, P2P NAT traversal, production session-key exchange, physical Android QR scan, real phone relay reachability, or live provider-backed chat/cancel proof.
+
+Verified after this change:
+
+- `swift test --filter 'RelayAllocationTests/testAllocationRegistryIgnoresNonAdvancingRenewalForStableRelayID|RelayAllocationTests/testAllocationRegistryAcceptsAdvancingRenewalWithFreshNonce'`
+- `swift test --filter RelayAllocationTests`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh`
+- `git diff --check`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-01 AetherLinkRelay Opaque Relay ID Allocation Guard
+
+- Scope: continue Immediate Queue 5 and Queue 6 by reducing raw route-token exposure in the temporary development relay while the Android phone is disconnected. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer identified raw `route_token` echoing as the next no-device-verifiable relay hardening gap.
+- Result: `AetherLinkRelay` allocations now derive stable opaque `rt1-` relay IDs from route tokens instead of returning the raw route token as the relay room id.
+- Result: relay allocation logs now report only allocation state and `relay_id`, not raw route tokens, allocation tokens, or relay frame secrets.
+- Guardrail: `RelayAllocationTests.testAllocationDerivesOpaqueStableRelayIDFromRouteTokenAndRequestedSecret` and `testAllocationRegistryPersistsOpaqueRelayIDWithoutRawRouteToken` pin the derivation and persistence boundary. `script/check_no_device_quality.sh` now verifies persisted allocations keep raw route tokens out of allocation stores and relay logs; `script/check_copy_hygiene.py` pins the source/test/script/docs contract.
+- Device state: the Android phone remains disconnected, so this pass is explicitly no-device.
+- Caveat: this hardens the development relay allocation surface. It is still not a production relay allocation service, keyed rendezvous token system, NAT traversal, production session-key exchange, physical Android QR scan, real phone relay reachability, or live provider-backed chat/cancel proof.
+
+Verified after this change:
+
+- `swift test --filter RelayAllocationTests`
+- `swift test --filter 'LocalRuntimeMessageRouterTests/testCompanionAppModelPersistsBootstrapAllocationLeaseForRestoredQRCode|LocalRuntimeMessageRouterTests/testCompanionAppModelRegeneratesBootstrapQRCodeWithExpiredSavedLease'`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 -m py_compile script/relay_allocation_preflight.py script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh`
+- `git diff --check`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-01 AetherLinkRelay Allocation Token Authorization Guard
+
+- Scope: continue Immediate Queue 5 and Queue 6 by hardening the temporary relay allocation endpoint while the Android phone is disconnected. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer identified the missing/wrong allocation-token authorization path as the next no-device-verifiable relay gap.
+- Result: the default no-device gate now starts a token-required `AetherLinkRelay` and verifies missing or wrong allocation tokens fail before route material is issued.
+- Result: authorized preflight allocation with the correct token still succeeds without persisting a route, while authorized persisted allocation stores only relay id, expiry, and nonce metadata. The guard verifies unauthorized route tokens, preflight route tokens, relay frame secrets, and allocation tokens are absent from the allocation store.
+- Guardrail: `RelayAllocationTests.testParsesAllocationRequestWithAuthAlias` now pins the supported `auth=<token>` alias. `script/check_no_device_quality.sh` now reports `token-required AetherLinkRelay allocation rejects missing or wrong tokens`; `script/check_copy_hygiene.py` pins the source/test/script/docs contract.
+- Device state: the Android phone remains disconnected, so this pass is explicitly no-device.
+- Caveat: this protects the development relay allocation endpoint and persisted lease boundary. It does not prove physical Android QR scan, real phone relay reachability, pairing on hardware, production relay allocation, production P2P traversal, or live provider-backed chat/cancel.
+
+Verified after this change:
+
+- `swift test --filter RelayAllocationTests`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 -m py_compile script/relay_allocation_preflight.py script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh`
+- `git diff --check`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-01 AetherLinkRelay Exposed Bind Allocation Token Guard
+
+- Scope: continue Immediate Queue 5 and Queue 6 by hardening the temporary development relay while the Android phone is disconnected. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer inspected the no-device relay scripts and docs.
+- Result: `AetherLinkRelay` now defaults to `127.0.0.1` and validates its configuration before binding. Tokenless AetherLinkRelay binds are loopback-only (`127.0.0.1`, `::1`, or `localhost`); wildcard, DNS, private, CGNAT, ULA, and public binds require `--allocation-token` or `AETHERLINK_RELAY_ALLOCATION_TOKEN`.
+- Result: `script/run_allocation_relay.sh` now defaults to loopback and fails dry-run/startup for non-loopback binds without an allocation token. The no-ADB QR and different-network runtime helpers keep tokenless `--start-local-relay` on loopback for artifact/preflight diagnostics, but require a token when a non-loopback advertised relay host forces a wildcard bind.
+- Guardrail: `RelayAllocationTests` covers loopback tokenless allowance, wildcard/non-loopback token requirement, wildcard/non-loopback token success, and invalid allocation-token rejection. `script/check_no_device_quality.sh` now behavior-tests tokenless wildcard failure plus wildcard-with-token startup and reports `tokenless AetherLinkRelay binds are loopback-only`.
+- Device state: the Android phone remains disconnected, so this pass is explicitly no-device.
+- Caveat: this hardens the temporary development relay allocation surface. It does not complete production private overlay, NAT traversal, production session-key exchange, real different-network phone reachability, camera QR scan, pairing, live provider-backed chat/cancel, or physical Android reconnect proof.
+
+Verified after this change:
+
+- `swift test --filter RelayAllocationTests`
+- `bash -n script/check_no_device_quality.sh script/no_adb_external_relay_pairing_smoke.sh script/run_different_network_dev_runtime.sh script/run_allocation_relay.sh` (syntax only)
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `script/run_allocation_relay.sh --host 0.0.0.0 --port 43171 --dry-run` returned exit 2 with the expected allocation-token requirement.
+- `./script/no_adb_external_relay_pairing_smoke.sh --relay-host 127.0.0.1 --relay-port <free-port> --start-local-relay --emit-only --timeout 30 --work-dir <temp-dir>`
+- `script/run_different_network_dev_runtime.sh --relay-host 127.0.0.1 --relay-port <free-port> --start-local-relay --preflight-only --summary-json <temp-file>`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh`
+
+### 2026-07-01 Android Representative Chat Surface Compact Layout
+
+- Scope: continue Immediate Queue 2 client UI polish while the Android phone is disconnected. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer recommended a representative populated chat-surface regression as the next no-device-verifiable slice.
+- Result: `ClientScreensNoDeviceComposeTest.chatSurfaceRepresentativePopulatedStateStaysBoundedAtLargeFontAcrossSupportedLanguages` now renders a 320dp x 470dp populated chat surface at `fontScale = 1.45` across English, Korean, Japanese, Simplified Chinese, and French.
+- Result: the regression verifies the top model picker, active chat title, transcript attachment chip, collapsed assistant reasoning, jump-to-latest affordance, latest user copy/reuse actions, latest assistant copy/regenerate actions, and docked composer controls stay bounded or separated from the composer on a compact phone surface.
+- Guardrail: `script/check_no_device_quality.sh` now runs the focused Compose regression by default and reports `Android representative populated chat surface compact layout`; `script/check_copy_hygiene.py` requires both the test filter and coverage summary phrase.
+- Device state: the Android phone remains disconnected, so this pass is explicitly no-device.
+- Caveat: this is no-device Android Compose/Robolectric evidence. It does not prove physical Android rendering, TalkBack traversal, physical haptics, optical/camera QR pairing, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatSurfaceRepresentativePopulatedStateStaysBoundedAtLargeFontAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh`
+
+### 2026-07-01 RuntimeDevServer Model Residency Unload-Failure Health Smoke
+
+- Scope: continue roadmap v0.2 Runtime Resource Policy smoke coverage while the Android phone is disconnected. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer recommended RuntimeDevServer unload-failure health coverage as the next no-device-verifiable slice.
+- Result: `RuntimeDevServer Authenticated Model Residency Smoke` now runs the aggregate mock backend with `AETHERLINK_DEV_MOCK_AGGREGATE_RESIDENCY` plus `AETHERLINK_DEV_MOCK_UNLOAD_FAILURES`, activates a dev-only `dev-mock-unload-failure` model, switches away from it, and verifies `runtime.health.model_residency.last_unload_failure` exposes only provider, model id, and reason.
+- Result: the smoke now proves same-model unload suppression, missing-model rejection without unload, idle unload, and unload-failure runtime.health redaction through RuntimeDevServer in one authenticated relay path.
+- Result: `AggregatingLlmBackend` now clears model-residency in-flight state before a client observes the terminal `.done` event, avoiding stale foreground-generation health state while still allowing runtime-owned title generation to appear as legitimate in-flight work.
+- Guardrail: the mock unload error intentionally includes backend URL and relay-secret-like text, so `script/runtime_authenticated_mock_smoke.swift` fails if raw provider error strings, backend routes, route tokens, or relay secrets leak through health responses. Android still does not send unload commands or call Ollama or LM Studio directly.
+- Guardrail: `script/check_copy_hygiene.py` and `script/check_no_device_quality.sh` now require the RuntimeDevServer model-residency unload-failure health smoke markers, including `AETHERLINK_DEV_MOCK_UNLOAD_FAILURES`, `last_unload_failure`, and the no-device coverage phrase `unload-failure runtime.health redaction`.
+- Device state: the Android phone remains disconnected, so this pass is explicitly no-device.
+- Caveat: this is no-device Swift/mock relay evidence. It does not prove live Ollama or LM Studio unload behavior, physical Android rendering, hardware TalkBack/VoiceOver traversal, haptics, physical Android QR scan, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `swift test --filter 'AggregatingLlmBackendResidencyTests/testDoneEventClearsInFlightResidencyBeforeClientObservesCompletion|AggregatingLlmBackendResidencyTests/testUnloadFailureEmitsProviderSpecificFailureEventWithoutBreakingNextChat'`
+- `swiftc -typecheck script/runtime_authenticated_mock_smoke.swift`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `./script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh`
+
+### 2026-07-01 macOS Model Residency Control Surface Polish
+
+- Scope: continue roadmap v0.2 Runtime Resource Policy user controls while the Android phone is disconnected. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer recommended menu-bar model-residency control parity as the next no-device-verifiable slice.
+- Result: macOS Activity and Status model-residency summaries now distinguish runtime-policy unload events from runtime-host-owned manual unload events. Manual requested, unloaded, and failed events no longer read as automatic runtime policy events.
+- Result: the macOS menu-bar extra now exposes `Refresh Model Residency` and `Unload Resident Model`, reusing the same runtime-host-owned model methods and disabled unload conditions as Status Quick Actions.
+- Guardrail: unload remains a runtime-host action. Android still does not send unload commands, and neither client path calls Ollama or LM Studio directly.
+- Guardrail: `AetherLinkLocalizationTests.testActivityModelResidencyLogSummariesUseSpecificLocalizedEvents`, `AetherLinkLocalizationTests.testMenuBarStatusAndCommandTitlesUseSelectedLanguage`, `script/check_macos_localization.py`, `script/check_copy_hygiene.py`, and `script/check_no_device_quality.sh` now require `macOS manual model-residency activity summaries` and `macOS menu-bar model-residency controls`.
+- Gate: focused Swift, static, and full no-device quality evidence passed. The full gate now reports `macOS manual model-residency activity summaries` and `macOS menu-bar model-residency controls`.
+- Device state: the Android phone remains disconnected, so this pass is explicitly no-device.
+- Caveat: this is no-device Swift/localization/static evidence. It does not prove live Ollama or LM Studio process behavior, physical Android rendering, hardware TalkBack/VoiceOver traversal, haptics, optical QR scan, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `swift test --filter 'AetherLinkLocalizationTests/testMenuBarStatusAndCommandTitlesUseSelectedLanguage|AetherLinkLocalizationTests/testQuickActionAccessibilityUsesSelectedLanguage|AetherLinkLocalizationTests/testActivityModelResidencyLogSummariesUseSpecificLocalizedEvents'`
+- `python3 script/check_macos_localization.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 -m py_compile script/check_macos_localization.py script/check_copy_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_docs_hygiene.py`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh`
+- `git diff --check`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-01 macOS Model Residency Manual Unload Quick Action
+
+- Scope: continue roadmap v0.2 Runtime Resource Policy user controls while the Android phone is disconnected. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer identified runtime-host-owned manual model unload as the next no-device-verifiable residency gap.
+- Result: the aggregate runtime now exposes a runtime-host-owned manual unload path for the current resident model. It uses the same provider unload adapters and residency event pipeline as model-switch and idle-timeout unloads, and it refuses to unload while a generation is in flight.
+- Result: macOS Status Quick Actions now includes `Unload Resident Model`, disabled when there is no active resident model or a generation is in flight. Android does not send unload commands or call Ollama/LM Studio; it only displays the safe `manual` reason if runtime.health reports a redacted unload failure.
+- Guardrail: manual unload failure exposes only provider/model/reason through runtime.health, not raw provider bodies, backend URLs, endpoint paths, route tokens, relay secrets, or exception text. The residency policy remains enforced by the runtime host.
+- Guardrail: `script/check_no_device_quality.sh` runs focused manual unload success, failure, and in-flight guard regressions; `script/check_copy_hygiene.py` requires `macOS model-residency manual unload quick action` and `runtime-host-owned manual model unload` coverage.
+- Gate: focused Swift, focused Android/protocol, static, and full no-device quality evidence passed for this slice. The full gate reports both `runtime-host-owned manual model unload` and `macOS model-residency manual unload quick action`.
+- Device state: the Android phone remains disconnected, so this pass is explicitly no-device.
+- Caveat: this is no-device Swift/JVM/Compose evidence. It does not prove live Ollama or LM Studio process behavior, physical Android rendering, hardware TalkBack/VoiceOver traversal, haptics, optical QR scan, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `swift test --filter 'AggregatingLlmBackendResidencyTests/testManualUnloadClearsActiveResidentModelAndEmitsManualEvent|AggregatingLlmBackendResidencyTests/testManualUnloadFailureKeepsStructuredManualFailureReason|AggregatingLlmBackendResidencyTests/testManualUnloadSkipsWhileGenerationIsInFlight|AetherLinkLocalizationTests/testQuickActionAccessibilityUsesSelectedLanguage|AetherLinkRenderSmokeTests/testStatusQuickActionsRenderAtCompactDetailSizeAcrossLanguagesAndAppearances'`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:protocol:testDebugUnitTest :app:testDebugUnitTest --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.runtimeHealthPayloadCanCarryModelResidencySnapshot --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeHealthStoresModelResidencySnapshotFromAggregateRuntime --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.connectionStatusModelResidencyLineLocalizesAndStaysBoundedAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_macos_localization.py script/check_protocol_schema.py script/check_docs_hygiene.py script/check_android_string_parity.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_android_string_parity.py`
+- `python3 script/check_macos_localization.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh`
+- `git diff --check`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-01 Provider Adapter Structured Unload-Failure Errors
+
+- Scope: continue roadmap v0.2 Runtime Resource Policy provider-specific failure reporting while the Android phone is disconnected. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer identified provider adapter unload failures as the next no-device-verifiable gap.
+- Result: Ollama and LM Studio unload adapter regressions now prove HTTP unload failures return structured provider-specific `httpStatus` errors from the real unload endpoints instead of collapsing into generic transport failures.
+- Guardrail: adapter-local errors may retain raw provider body text for macOS diagnostics, but `backendError` remains redacted and does not expose backend URLs, endpoint paths, route tokens, or raw unload bodies to client-facing status surfaces.
+- Guardrail: `script/check_no_device_quality.sh` now runs `OllamaBackendTests/testUnloadModelHTTPStatusReturnsStructuredError` and `LMStudioBackendTests/testUnloadModelHTTPStatusReturnsStructuredError`; `script/check_copy_hygiene.py` requires both tests and the provider adapter structured unload-failure coverage phrase.
+- Gate: the full no-device quality gate passed after this slice and now reports `provider adapter structured unload-failure errors` in the default coverage summary.
+- Device state: the Android phone remains disconnected, so this pass is explicitly no-device.
+- Caveat: this is no-device Swift URLSession-mock evidence. It does not prove live Ollama or LM Studio process behavior, physical Android rendering, hardware TalkBack/VoiceOver traversal, haptics, optical QR scan, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `swift test --filter 'OllamaBackendTests/testUnloadModelHTTPStatusReturnsStructuredError|LMStudioBackendTests/testUnloadModelHTTPStatusReturnsStructuredError'`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh`
+
+### 2026-07-01 Android Model Residency Unload-Failure Status UI
+
+- Scope: continue roadmap v0.2 Runtime Resource Policy polish while the Android phone is disconnected. GPT-5.3-Codex-Spark was not used; this slice surfaces the already-redacted `last_unload_failure` runtime health metadata in Android Connection Status without moving unload policy into the client.
+- Result: Android Connection Status model-residency copy now appends a localized last-unload-failure summary when the runtime reports safe provider/model/reason metadata. The UI displays provider, sanitized model name, and known reason labels only.
+- Guardrail: unknown unload reasons are ignored by the UI, and Android state still drops unsafe provider/model/reason material before it reaches `RuntimeUiState`. The client does not call Ollama, LM Studio, or any model backend directly.
+- Guardrail: `ClientScreensNoDeviceComposeTest.connectionStatusModelResidencyLineLocalizesAndStaysBoundedAcrossSupportedLanguages`, Android string parity, `script/check_copy_hygiene.py`, and `script/check_no_device_quality.sh` now require the Android Connection Status model-residency unload failure UI.
+- Gate: the full no-device quality gate passed after this slice and now reports `Android Connection Status model-residency unload failure UI` in the default coverage summary.
+- Device state: the Android phone remains disconnected, so this pass is explicitly no-device.
+- Caveat: this is no-device Compose/JVM evidence. It does not prove physical Android rendering, hardware TalkBack traversal, haptics, optical QR scan, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.connectionStatusModelResidencyLineLocalizesAndStaysBoundedAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_android_string_parity.py script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_android_string_parity.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh`
+
+### 2026-07-01 runtime.health Model Residency Unload-Failure Contract
+
+- Scope: continue roadmap v0.2 Runtime Resource Policy provider-specific failure reporting while the Android phone is disconnected. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer checked patch points and redaction risk before local implementation.
+- Result: aggregate runtime model-residency snapshots now retain an optional structured `last_unload_failure` summary when runtime-owned model unload fails. `runtime.health` exposes it under `model_residency.last_unload_failure` with `provider`, `model_id`, and `reason` only.
+- Result: Android protocol DTOs and in-memory runtime state decode the optional unload-failure summary, but preserve it only when provider/model/reason pass the existing provider/model endpoint-redaction checks and the reason is one of the known unload reasons.
+- Guardrail: raw provider error messages, backend URLs, endpoint paths, route tokens, relay secrets, and exception text are not included in the Android-facing health payload. The raw unload error remains confined to macOS residency events/technical diagnostics.
+- Guardrail: `packages/protocol-schema/protocol.schema.json`, `docs/protocol.md`, `script/check_protocol_schema.py`, `script/check_copy_hygiene.py`, and `script/check_no_device_quality.sh` now require the runtime.health model-residency unload-failure contract.
+- Gate: the full no-device quality gate passed after this slice and now reports `runtime.health model-residency unload-failure contract` in the default coverage summary.
+- Device state: the Android phone remains disconnected, so this pass is explicitly no-device.
+- Caveat: this is no-device Swift/JVM/schema evidence. It does not prove physical Android rendering, hardware TalkBack/VoiceOver traversal, haptics, optical QR scan, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `swift test --filter 'AggregatingLlmBackendResidencyTests/testUnloadFailureEmitsProviderSpecificFailureEventWithoutBreakingNextChat|LocalRuntimeMessageRouterTests/testRuntimeHealthIncludesModelResidencyLastUnloadFailureWithoutRawErrorMessage|LocalRuntimeMessageRouterTests/testRuntimeHealthIncludesAggregateProviderStatuses'`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:protocol:testDebugUnitTest --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.runtimeHealthPayloadCanCarryModelResidencySnapshot -Pkotlin.incremental=false --console=plain`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeHealthStoresModelResidencySnapshotFromAggregateRuntime --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeModelResidencyStatusRedactsUnsafeSnapshotDetails -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_protocol_schema.py script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh`
+
+### 2026-07-01 macOS Runtime Memory Approved Source Review UI
+
+- Scope: continue roadmap longer-inactivity memory summarization polish while the Android phone is disconnected. GPT-5.3-Codex-Spark was not used; macOS now matches the active protocol requirement that approved memory source metadata is visible as review aid metadata, not as chat context.
+- Result: Runtime Memory Inspector rows now show approved-memory source metadata when present: older-chat title and source coverage are visible, source excerpts stay collapsed by default, and expanded excerpts are bounded to two visible-transcript snippets with localized role labels.
+- Guardrail: the UI does not expose draft ids, session ids, message indexes, model ids, or full source transcripts. Source review accessibility labels summarize only the source title, coverage, and expanded/collapsed state.
+- Guardrail: `AetherLinkLocalizationTests.testRuntimeMemoryInspectorCopyLocalizesAcrossSupportedLanguages`, `AetherLinkRenderSmokeTests.testRuntimeMemoryInspectorRendersAcrossLanguagesAndAppearances`, `script/check_macos_localization.py`, `script/check_copy_hygiene.py`, and `script/check_no_device_quality.sh` now require the macOS Runtime Memory approved source review UI.
+- Gate: the full no-device quality gate passed after this slice and now reports `macOS Runtime Memory approved source review UI` in the default coverage summary.
+- Device state: the Android phone remains disconnected, so this pass is explicitly no-device.
+- Caveat: this is no-device Swift/localization/render evidence. It does not prove physical Android rendering, hardware TalkBack/VoiceOver traversal, haptics, optical QR scan, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `swift test --filter AetherLinkLocalizationTests/testRuntimeMemoryInspectorCopyLocalizesAcrossSupportedLanguages`
+- `swift test --filter AetherLinkRenderSmokeTests/testRuntimeMemoryInspectorRendersAcrossLanguagesAndAppearances`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_macos_localization.py script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_macos_localization.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh`
+
+### 2026-07-01 Model Residency User Surfaces
+
+- Scope: continue roadmap v0.2 Runtime Resource Policy polish while the Android phone is disconnected. GPT-5.3-Codex-Spark was not used; this slice surfaces the existing `runtime.health` model-residency snapshot without moving residency policy into the Android client.
+- Result: Android Connection Status now shows a localized model-residency status line from `RuntimeUiState.modelResidency`, including active provider/model, in-flight generation count, idle-unload delay, unsupported runtimes, and waiting-for-runtime states.
+- Result: macOS Status Quick Actions now include a localized `Refresh Model Residency` action wired to `CompanionAppModel.refreshModelResidencyStatus()` with selected-language accessibility value and hint coverage.
+- Guardrail: `ClientScreensNoDeviceComposeTest.connectionStatusModelResidencyLineLocalizesAndStaysBoundedAcrossSupportedLanguages`, `AetherLinkLocalizationTests.testQuickActionAccessibilityUsesSelectedLanguage`, `script/check_copy_hygiene.py`, `script/check_macos_localization.py`, and `script/check_no_device_quality.sh` now require the Android Connection Status model-residency status UI and macOS model-residency refresh quick action.
+- Gate: the full no-device quality gate passed after this slice and now reports both `Android Connection Status model-residency status UI` and `macOS model-residency refresh quick action` in the default coverage summary.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this is no-device Compose/JVM and Swift/localization evidence. It does not prove physical Android rendering, hardware TalkBack/VoiceOver traversal, haptics, optical QR scan, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `swift test --filter AetherLinkLocalizationTests/testQuickActionAccessibilityUsesSelectedLanguage`
+- `swift test --filter AetherLinkRenderSmokeTests/testStatusQuickActionsRenderAtCompactDetailSizeAcrossLanguagesAndAppearances`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.connectionStatusModelResidencyLineLocalizesAndStaysBoundedAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_macos_localization.py script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_android_string_parity.py`
+- `python3 script/check_macos_localization.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-01 runtime.health Model Residency Contract
+
+- Scope: continue roadmap v0.2 Runtime Resource Policy polish while the Android phone is disconnected. GPT-5.3-Codex-Spark was not used; the GPT-5.5 read-only explorer identified `runtime.health` model-residency status as the next no-device protocol slice.
+- Result: aggregate macOS runtime health responses now include optional `model_residency` metadata with `supported`, `active_provider`, `active_model_id`, `in_flight_generations`, and `idle_unload_delay_seconds` while keeping model residency policy enforcement in the runtime host.
+- Result: Android protocol DTOs decode the optional snapshot, `RuntimeClientViewModel` stores it in in-memory state, and unsafe endpoint or route-secret-like details are dropped before state exposure.
+- Guardrail: `packages/protocol-schema/protocol.schema.json`, `docs/protocol.md`, `script/check_protocol_schema.py`, `script/check_copy_hygiene.py`, and `script/check_no_device_quality.sh` now require the runtime.health model-residency contract across macOS router output, Android DTO/state parsing, and no-device coverage.
+- Gate: the full no-device quality gate passed after this slice, including the focused macOS runtime health regression, Android protocol DTO test, Android state/redaction tests, schema/docs checks, and the updated default coverage summary.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this is no-device Swift/JVM/schema evidence. It does not prove physical Android rendering, hardware TalkBack/VoiceOver traversal, haptics, optical QR scan, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `swift test --filter LocalRuntimeMessageRouterTests/testRuntimeHealthIncludesAggregateProviderStatuses`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:protocol:testDebugUnitTest --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.runtimeHealthPayloadCanCarryModelResidencySnapshot -Pkotlin.incremental=false --console=plain`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeHealthStoresModelResidencySnapshotFromAggregateRuntime --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeModelResidencyStatusRedactsUnsafeSnapshotDetails -Pkotlin.incremental=false --console=plain`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh`
+- `git diff --check -- apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift apps/macos/CompanionCore/Tests/LocalRuntimeMessageRouterTests.swift apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/ProtocolModels.kt apps/android/core/protocol/src/test/java/com/localagentbridge/android/core/protocol/ProtocolCodecTest.kt apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeUiState.kt apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt packages/protocol-schema/protocol.schema.json docs/protocol.md script/check_protocol_schema.py script/check_copy_hygiene.py script/check_no_device_quality.sh docs/progress.md docs/qa-evidence.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-01 Android Provider Diagnostics Detail Compact Redaction
+
+- Scope: continue roadmap v0.2 Runtime Resource Policy polish while the Android phone is disconnected. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer identified provider diagnostics as the next narrow no-device slice after macOS Activity model-residency summaries.
+- Result: Android provider diagnostics now expose stable test tags for the expanded diagnostic message and reference-code text, with bounded max-line/ellipsis behavior inside the diagnostics panel.
+- Result: `ClientScreensNoDeviceComposeTest.connectionStatusProviderDiagnosticsDetailsStayBoundedAndRedactedAcrossSupportedLanguages` expands safe provider diagnostics at 260 dp and 1.5 font scale across English, Korean, Japanese, Simplified Chinese, and French, verifies message/code bounds and non-overlap, and confirms endpoint/route-token diagnostic material does not create an unsafe expanded panel.
+- Guardrail: `script/check_copy_hygiene.py` requires the new provider diagnostics message/code tags, the focused multilingual compact-redaction regression, the default no-device gate entry, and the coverage phrase `Android provider diagnostics detail compact redaction`; `script/check_no_device_quality.sh` runs the focused regression in the default gate.
+- Gate: the full no-device quality gate passed after this slice, including the focused provider diagnostics detail compact-redaction regression and the updated default coverage summary.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this is no-device Compose/JVM evidence. It does not prove physical Android rendering, hardware TalkBack traversal, haptics, optical QR scan, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.connectionStatusProviderDiagnosticsDetailsStayBoundedAndRedactedAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/ui/ClientScreens.kt apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt script/check_copy_hygiene.py script/check_no_device_quality.sh docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-01 macOS Activity Model Residency Event Summaries
+
+- Scope: continue roadmap v0.2 Runtime Resource Policy polish while the Android phone is disconnected. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer verified this as the next small slice before local implementation.
+- Result: macOS Activity rows now map model-residency logs to specific localized summaries for active model, unload requested, unload succeeded, and unload failed events while preserving the raw residency line in Technical Details.
+- Result: active residency activity now uses the ready tone, unload-requested and unloaded events stay neutral, and unload failures keep the warning tone.
+- Guardrail: `AetherLinkLocalizationTests.testActivityModelResidencyLogSummariesUseSpecificLocalizedEvents` covers five-language summaries, diagnostics, tone, and accessibility labels; `script/check_macos_localization.py`, `script/check_copy_hygiene.py`, and `script/check_no_device_quality.sh` now require the coverage label `macOS Activity model-residency event summaries`.
+- Gate: the full no-device quality gate passed after this slice, including the focused Activity model-residency localization regression and the updated default coverage summary.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this is no-device Swift/localization evidence. It does not prove physical Android rendering, hardware TalkBack/VoiceOver traversal, haptics, optical QR scan, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `swift test --filter AetherLinkLocalizationTests/testActivityModelResidencyLogSummariesUseSpecificLocalizedEvents`
+- `swift test --filter AetherLinkLocalizationTests`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_macos_localization.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_macos_localization.py`
+- `python3 script/check_copy_hygiene.py`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-01 Android Memory Delete Compact Dialog Layout
+
+- Scope: continue roadmap item 2 Android Settings/Memory UI polish while the Android phone is disconnected. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer identified macOS Activity model-residency summaries as a next candidate while this Android memory dialog slice was completed locally.
+- Result: the Android Settings Memory delete confirmation dialog now exposes stable compact-layout tags for the dialog, title, message, destructive confirm action/label, and cancel action/label, keeps a compact max-width constraint, and bounds localized action labels to two lines before ellipsizing.
+- Result: `ClientScreensNoDeviceComposeTest.settingsMemoryDeleteConfirmationDialogStaysBoundedAtLargeFontAcrossSupportedLanguages` opens the dialog through the real memory remove action and verifies dialog/title/message/action/label bounds at 1.5 font scale across English, Korean, Japanese, Simplified Chinese, and French while preserving localized remove and cancel action semantics.
+- Guardrail: `script/check_copy_hygiene.py` requires the `MEMORY_DELETE_CONFIRMATION_*` tags, `.widthIn(max = 360.dp)`, the focused regression, the default no-device gate entry, and the coverage phrase `Android memory delete compact dialog layout`; `script/check_no_device_quality.sh` runs the focused regression in the default gate.
+- Gate: the full no-device quality gate passed after this slice, including the focused memory delete confirmation regression and the updated default coverage summary.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this is no-device Compose/JVM evidence. It does not prove physical Android rendering, hardware TalkBack traversal, haptics, optical QR scan, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:compileDebugKotlin :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsMemoryDeleteConfirmationDialogStaysBoundedAtLargeFontAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_copy_hygiene.py`
+- `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/ui/ClientScreens.kt apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt script/check_copy_hygiene.py script/check_no_device_quality.sh`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-01 Android Chat History Confirmation Compact Dialog Layout
+
+- Scope: continue roadmap item 2 Android Settings/chat-history UI polish while the Android phone is disconnected. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer identified the shared `TwoStepConfirmationDialog` insertion points before this local implementation.
+- Result: the shared Android chat-history two-step confirmation dialog now exposes stable compact-layout tags for the dialog, title, message, confirm action/label, and cancel action/label, keeps a compact max-width constraint, and bounds localized action labels to two lines before ellipsizing.
+- Result: `ClientScreensNoDeviceComposeTest.chatHistoryConfirmationDialogsStayBoundedAtLargeFontAcrossSupportedLanguages` opens archive-all, permanently-delete-archived, and single archived-chat delete confirmations through real chat-history actions, checks step 1 and step 2 localized action semantics, and verifies dialog/title/message/action/label bounds at 1.5 font scale across English, Korean, Japanese, Simplified Chinese, and French.
+- Guardrail: `script/check_copy_hygiene.py` requires the `CHAT_HISTORY_CONFIRMATION_*` tags, `.widthIn(max = 360.dp)`, the focused regression, the default no-device gate entry, and the coverage phrase `Android chat-history confirmation compact dialog layout`; `script/check_no_device_quality.sh` runs the focused regression in the default gate.
+- Caveat: this is no-device Compose/JVM evidence. It does not prove physical Android rendering, hardware TalkBack traversal, haptics, optical QR scan, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:compileDebugKotlin :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatHistoryConfirmationDialogsStayBoundedAtLargeFontAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:compileDebugKotlin :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsScreenKeepsBulkChatHistoryActionsHiddenAndTwoStepConfirmed --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatHistoryConfirmationActionLabelsLocalizeSubjectsAcrossSupportedLanguages --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsScreenPerChatHistoryActionsUseConfirmationHaptics --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatHistoryConfirmationDialogsStayBoundedAtLargeFontAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/ui/ClientScreens.kt apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt script/check_copy_hygiene.py script/check_no_device_quality.sh docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` (no attached devices)
+
+### 2026-07-01 Android Trusted Runtime Forget Compact Dialog Layout
+
+- Scope: continue roadmap item 2 Settings UI polish and roadmap item 4 trusted-device UX hardening while the Android phone is disconnected. GPT-5.3-Codex-Spark was not used; a GPT-5.5 explorer identified shared chat-history confirmations as a follow-up candidate while this trusted-runtime forget dialog slice was completed locally.
+- Result: the Android Settings trusted-runtime forget confirmation dialog now exposes stable compact-layout tags for the dialog, title, message, destructive confirm action/label, and cancel action/label, keeps a compact max-width constraint, and bounds localized action labels to two lines before ellipsizing.
+- Result: `ClientScreensNoDeviceComposeTest.settingsTrustedRuntimeForgetDialogStaysBoundedAtLargeFontAcrossSupportedLanguages` opens the dialog through the real Settings `Forget` action and verifies title, message, confirm action/label, and cancel action/label stay inside the dialog at 1.45 font scale across English, Korean, Japanese, Simplified Chinese, and French while preserving named runtime semantics.
+- Guardrail: `script/check_copy_hygiene.py` requires the `SETTINGS_TRUSTED_RUNTIME_FORGET_*` tags, `.widthIn(max = 360.dp)`, the focused regression, the default no-device gate entry, and the coverage phrase `Android trusted-runtime forget compact dialog layout`; `script/check_no_device_quality.sh` runs the focused regression in the default gate.
+- Caveat: this is no-device Compose/JVM evidence. It does not prove physical Android rendering, hardware TalkBack traversal, haptics, optical QR scan, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:compileDebugKotlin :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsTrustedRuntimeForgetRequiresConfirmation --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsTrustedRuntimeForgetActionNamesRuntimeAcrossSupportedLanguages --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsTrustedRuntimeForgetDialogStaysBoundedAtLargeFontAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/ui/ClientScreens.kt apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt script/check_copy_hygiene.py script/check_no_device_quality.sh docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` (no attached devices)
+
+### 2026-07-01 Android Rename Chat Compact Dialog Layout
+
+- Scope: continue roadmap item 2 Android chat/history UI polish while the Android phone is disconnected. GPT-5.3-Codex-Spark was not used; a GPT-5.5 explorer checked the guard/document insertion points read-only.
+- Result: the Android rename-chat dialog now exposes stable compact-layout tags for the dialog, title, input, Save action, Save label, Cancel action, and Cancel label, keeps a compact max-width constraint, and bounds the localized action labels to two lines before ellipsizing.
+- Result: `ClientScreensNoDeviceComposeTest.renameChatSessionDialogStaysBoundedAtLargeFontAcrossSupportedLanguages` verifies the rename dialog, title, input, Save action/label, and Cancel action/label stay inside the dialog at 1.45 font scale across English, Korean, Japanese, Simplified Chinese, and French while preserving localized ready-state and contextual action semantics.
+- Guardrail: `script/check_copy_hygiene.py` requires the `RENAME_CHAT_*` tags, `.widthIn(max = 360.dp)`, the focused regression, the default no-device gate entry, and the coverage phrase `Android rename chat compact dialog layout`; `script/check_no_device_quality.sh` runs the focused regression in the default gate.
+- Caveat: this is no-device Compose/JVM evidence. It does not prove physical Android rendering, hardware TalkBack traversal, haptics, optical QR scan, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:compileDebugKotlin :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.renameChatSessionDialogExposesTitleReadinessAndHaptics --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.renameChatSessionDialogStaysBoundedAtLargeFontAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/MainActivity.kt apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt script/check_copy_hygiene.py script/check_no_device_quality.sh docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` (no attached devices)
+
+### 2026-07-01 Android Model Picker Refresh Compact Row
+
+- Scope: continue roadmap item 2 chat top-bar model-picker polish while the Android phone is disconnected. GPT-5.3-Codex-Spark was not used; a GPT-5.5 explorer identified rename-chat dialog compact layout as a follow-up candidate while this model-picker refresh-row slice was completed locally.
+- Result: the Chat top-bar model picker refresh row now exposes stable test tags for the row, text column, label, and detail, and the visible refresh label wraps to two lines before ellipsizing on compact large-font surfaces.
+- Result: `ClientScreensNoDeviceComposeTest.chatTopBarModelPickerRefreshRowStaysBoundedAtLargeFontAcrossSupportedLanguages` verifies the refresh row, label, and provider/status detail stay inside the dropdown on a narrow 320 dp large-font surface across English, Korean, Japanese, Simplified Chinese, and French.
+- Guardrail: `script/check_copy_hygiene.py` now requires the refresh-row tags, the compact bounds regression, and the default no-device coverage phrase `Android model picker refresh compact row layout`; `script/check_no_device_quality.sh` runs the focused regression in the default gate.
+- Caveat: this is no-device Compose/JVM evidence. It does not prove physical Android rendering, hardware TalkBack traversal, haptics, optical QR scan, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatTopBarModelPickerRefreshRowStaysBoundedAtLargeFontAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatTopBarModelPickerRefreshRowLocalizesReadinessStates --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatTopBarModelPickerRefreshRowStaysBoundedAtLargeFontAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/MainActivity.kt apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt script/check_copy_hygiene.py script/check_no_device_quality.sh docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` (no attached devices)
+
+### 2026-07-01 Android Assistant Reasoning Compact Layout
+
+- Scope: continue roadmap item 2 screenshot-based Android chat-surface polish while the Android phone is disconnected. GPT-5.3-Codex-Spark was not used; a GPT-5.5 explorer was used for read-only next-slice scouting.
+- Result: Android assistant reasoning blocks now expose stable test tags for the reasoning container, header, label, toggle, and body so no-device Compose tests can verify compact transcript layout without depending on fragile localized text matching.
+- Result: `ClientScreensNoDeviceComposeTest.chatScreenAssistantReasoningStaysBoundedAtLargeFontAcrossSupportedLanguages` verifies collapsed and expanded reasoning at narrow width and large font scale across English, Korean, Japanese, Simplified Chinese, and French. The regression checks that the header, label, toggle, and body stay inside the reasoning container and that the label and toggle do not overlap.
+- Guardrail: `script/check_copy_hygiene.py` now requires the stable reasoning tags, the compact bounds regression, and the default no-device coverage phrase `Android assistant reasoning compact layout`; `script/check_no_device_quality.sh` runs the focused regression in the default gate.
+- Caveat: this is no-device Compose/JVM evidence. It does not prove physical Android rendering, hardware TalkBack traversal, haptics, optical QR scan, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenAssistantReasoningStaysBoundedAtLargeFontAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/ui/ClientScreens.kt apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt script/check_copy_hygiene.py script/check_no_device_quality.sh docs/progress.md docs/qa-evidence.md`
+
+### 2026-07-01 Memory Summary Draft Protocol Schema Guard
+
+- Scope: continue roadmap item 6 protocol/smoke hardening and v0.2 longer-inactivity memory summarization polish while the Android phone is disconnected. GPT-5.3-Codex-Spark was not used; a GPT-5.5 explorer was used for read-only next-slice scouting.
+- Result: `script/check_protocol_schema.py` now pins the active `memory.summary.drafts.list`, `memory.summary.draft.approve`, and `memory.summary.draft.dismiss` payload refs, request/response branches, stale-guard fields, source-pointer/session metadata, approved-entry source metadata, and active `memory_summary_draft_unavailable` / `memory_summary_draft_stale` error codes.
+- Result: the guard complements the RuntimeDevServer relay smoke: the smoke proves authenticated command wiring, while the schema check now proves the JSON protocol contract cannot silently drift away from the Android protocol DTO field names.
+- Guardrail: the default no-device gate already runs `python3 script/check_protocol_schema.py`, so this contract is part of the standard no-device quality path.
+- Caveat: this is static schema/codec evidence. It does not prove physical Android QR scan, hardware haptics, live provider-backed memory summarization, optical camera behavior, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `python3 -m py_compile script/check_protocol_schema.py`
+- `python3 script/check_protocol_schema.py`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew --no-daemon :core:protocol:testDebugUnitTest --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memorySummaryDraftsListPayloadUsesProtocolFieldNames --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memorySummaryDraftApprovePayloadUsesProtocolFieldNames --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memorySummaryDraftDismissPayloadUsesProtocolFieldNames -Pkotlin.incremental=false --console=plain`
+
+### 2026-07-01 RuntimeDevServer Memory Summary Draft Command Smoke
+
+- Scope: continue roadmap item 6 smoke expansion and v0.2 longer-inactivity memory summarization hardening while the Android phone is disconnected. GPT-5.3-Codex-Spark was not used; a GPT-5.5 explorer was used for read-only next-slice scouting.
+- Result: the authenticated RuntimeDevServer relay smoke now validates `memory.summary.drafts.list` over the dev-server path and requires a fresh smoke store to return an empty `drafts` array.
+- Result: the same smoke now sends `memory.summary.draft.approve` and `memory.summary.draft.dismiss` for a nonexistent draft id and requires the structured `memory_summary_draft_unavailable` error for both commands.
+- Guardrail: `script/runtime_authenticated_mock_smoke.swift` includes `smoke-memory-summary-drafts`, `smoke-memory-summary-approve-unavailable`, `smoke-memory-summary-dismiss-unavailable`, and `memory_summary_draft_unavailable`; `script/check_copy_hygiene.py` requires those markers plus the default no-device coverage phrase `memory.summary draft unavailable errors`.
+- Caveat: this is no-device RuntimeDevServer relay-smoke evidence. It proves authenticated command wiring and structured unavailable errors for memory-summary draft commands, but it does not prove physical Android QR scan, hardware haptics, live provider-backed chat/cancel, LLM-generated memory summaries, optical camera behavior, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `swiftc -typecheck script/runtime_authenticated_mock_smoke.swift`
+- `./script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- script/runtime_authenticated_mock_smoke.swift script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` (no attached devices)
+
+### 2026-07-01 macOS Model Residency Status Compact Render
+
+- Scope: continue roadmap item 8 runtime resource-policy UI polish and item 10 no-device smoke expansion while the Android phone is disconnected. GPT-5.3-Codex-Spark was not used; a GPT-5.5 explorer confirmed the aggregate-backed render path.
+- Result: `AetherLinkRenderSmokeTests` now drives `CompanionAppModel.modelResidency` through a real `AggregatingLlmBackend` fixture and renders the macOS Status `Model Residency` card at compact detail size across English, Korean, Japanese, Simplified Chinese, and French in System, Light, and Dark appearances.
+- Result: the new render smoke covers both a long active local model id and the localized `Model unload failed` event path without adding a test-only setter for `modelResidency`.
+- Guardrail: `script/check_copy_hygiene.py` requires `testStatusModelResidencyStatesRenderAtCompactDetailSizeAcrossLanguagesAndAppearances`, `RenderSmokeResidencyBackend`, the `AggregatingLlmBackend` render fixture, the unload-failure event prefix, and the default no-device coverage phrase `macOS compact model-residency status render smoke`.
+- Caveat: this is no-device macOS render coverage with aggregate test backends. It does not prove live Ollama or LM Studio unload behavior, physical Android QR scan, hardware haptics, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `swift test --filter AetherLinkRenderSmokeTests/testStatusModelResidencyStatesRenderAtCompactDetailSizeAcrossLanguagesAndAppearances`
+- `swift test --filter AetherLinkRenderSmokeTests`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- apps/macos/LocalAgentBridgeApp/Tests/AetherLinkRenderSmokeTests.swift script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` (no attached devices)
+
+### 2026-07-01 RuntimeDevServer Model Residency Missing-Model Rejection Smoke
+
+- Scope: continue roadmap item 8 runtime resource-policy polish and item 10 smoke expansion while the Android phone is disconnected. GPT-5.3-Codex-Spark was not used; a GPT-5.5 explorer was used for read-only next-slice scouting.
+- Result: the authenticated RuntimeDevServer relay smoke now proves a failed `chat.send` for an uninstalled model returns `model_not_installed` without causing an aggregate mock `unloadModel` event. This keeps model residency stable when the client selects an invalid or stale model id.
+- Guardrail: `script/runtime_authenticated_mock_smoke.swift` now runs `smoke-chat-missing-model-residency` between the same-model repeat and model-switch checks, requires `model_not_installed`, and then requires no unload events before the later provider switch and idle-unload checks. `script/check_copy_hygiene.py` requires the negative smoke markers, docs evidence, and the default no-device coverage phrase `missing-model rejection without unload`.
+- Caveat: this is no-device RuntimeDevServer relay-smoke evidence with the aggregate mock backend. It does not prove live Ollama or LM Studio unload behavior, physical Android QR scan, hardware haptics, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `swiftc -typecheck script/runtime_authenticated_mock_smoke.swift`
+- `./script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- script/runtime_authenticated_mock_smoke.swift script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` (no attached devices)
+
+### 2026-07-01 Android Diagnostic QR Text Compact Dialog Layout
+
+- Scope: continue the QR fallback/diagnostics roadmap while the Android phone is disconnected. GPT-5.3-Codex-Spark was not used; a GPT-5.5 explorer recommended separate attachment-chip and runtime model-residency slices, while this adjacent QR text fallback dialog slice was completed locally.
+- Result: `ManualPairingPayloadDialog` now has stable compact-layout test tags, a max-width constraint, and bounded submit/cancel labels while preserving localized empty, invalid, ready, submit, and cancel accessibility semantics.
+- Guardrail: `ClientScreensNoDeviceComposeTest.diagnosticQrTextDialogStaysBoundedAtLargeFontAcrossSupportedLanguages` renders the diagnostic QR text dialog at 1.45 font scale across English, Korean, Japanese, Simplified Chinese, and French, enters an invalid non-`aetherlink://pair` payload, and verifies the dialog title, detail, input, helper state, submit action, and cancel action stay inside the dialog without overlap. `script/check_copy_hygiene.py` requires the compact dialog tags, max-width constraint, focused regression, default no-device gate entry, and coverage phrase `Android diagnostic QR text compact dialog layout`.
+- Caveat: this is no-device Compose/JVM coverage. It does not prove physical Android rendering, hardware TalkBack traversal, optical QR scan, hardware haptics, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.diagnosticQrTextDialogStaysBoundedAtLargeFontAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.diagnosticQrTextDialogExplainsEmptyInvalidAndReadyStates --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.diagnosticQrTextAccessibilityLabelsLocalizeAcrossSupportedLanguages --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.diagnosticQrTextDialogStaysBoundedAtLargeFontAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/ui/ClientScreens.kt apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` (no attached devices)
+
+### 2026-07-01 macOS Trusted Devices Compact Row Render
+
+- Scope: continue the roadmap with a no-device macOS UI hardening slice for Trusted Devices populated rows. GPT-5.3-Codex-Spark was not used; the GPT-5.5 explorer identified this as the next compact-layout candidate.
+- Result: `TrustedDeviceRow` now lets long device names and pairing summaries wrap within the text column, keeps the destructive remove action as a compact fixed-width trash button with accessibility/help copy, and avoids compressing populated rows on the compact detail surface.
+- Result: `CompanionAppModel` now accepts an injected `TrustedDeviceStore` with the production default preserved. Render tests use an isolated temporary store, so macOS UI smoke coverage no longer depends on or reads the user's real trusted-device list.
+- Guardrail: `AetherLinkRenderSmokeTests.testTrustedDeviceRowsRenderLongDeviceNamesAtCompactDetailSizeAcrossLanguagesAndAppearances` renders the full `TrustedDevicesView` with long trusted-device names at compact detail size across English, Korean, Japanese, Simplified Chinese, and French in System, Light, and Dark appearances. `script/check_copy_hygiene.py` requires the isolated store helper, the focused render test, the full view render, and the default no-device coverage phrase `macOS compact trusted-device row render smoke`.
+- Caveat: this is no-device macOS render coverage. It does not prove physical Android rendering, hardware TalkBack traversal, optical QR scan, hardware haptics, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `swift test --filter AetherLinkRenderSmokeTests/testTrustedDeviceRowsRenderLongDeviceNamesAtCompactDetailSizeAcrossLanguagesAndAppearances`
+- `swift test --filter AetherLinkRenderSmokeTests`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_copy_hygiene.py`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` (no attached devices)
+
+### 2026-07-01 Android Drawer Empty-History Compact Layout
+
+- Scope: continue roadmap item 2 drawer polish without physical-device access. GPT-5.3-Codex-Spark was not used; a GPT-5.5 explorer recommended a separate macOS Trusted Devices compact-row slice while this already-started Android adjacent guard was finished locally.
+- Result: the Android navigation drawer empty-history state now has a stable `DRAWER_EMPTY_HISTORY_TEST_TAG`, while preserving the localized content description and polite live-region behavior.
+- Guardrail: `ClientScreensNoDeviceComposeTest.navigationDrawerEmptyHistoryStaysBoundedAtLargeFontAcrossSupportedLanguages` keeps the localized empty-history message bounded on a narrow 320 dp drawer surface at large font scale across English, Korean, Japanese, Simplified Chinese, and French. `script/check_copy_hygiene.py` requires the tag, bounds regression, default no-device gate entry, and coverage phrase `Android drawer empty-history compact layout`.
+- Caveat: this is no-device Compose/JVM coverage. It does not prove physical Android rendering, hardware TalkBack traversal, optical QR scan, hardware haptics, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.navigationDrawerEmptyHistoryStaysBoundedAtLargeFontAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.navigationDrawerEmptyHistoryAnnouncesLocalizedLiveRegionAcrossSupportedLanguages --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.navigationDrawerEmptyHistoryStaysBoundedAtLargeFontAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/MainActivity.kt apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` (no attached devices)
+
+### 2026-07-01 Android Drawer Chat Search No-Results Compact Layout
+
+- Scope: continue roadmap item 2 drawer polish without physical-device access. GPT-5.3-Codex-Spark was not used; the GPT-5.5 explorer from the prior audit identified this no-device Compose/Robolectric gap.
+- Result: the Android navigation drawer chat-search no-results state now has stable clear-action and no-results tags, and the no-results text keeps an explicit content description plus the existing polite live-region behavior.
+- Guardrail: `ClientScreensNoDeviceComposeTest.navigationDrawerChatSearchNoResultsStaysBoundedAtLargeFontAcrossSupportedLanguages` keeps the search field, localized clear action, and no-results row bounded on a narrow 320 dp surface at large font scale across English, Korean, Japanese, Simplified Chinese, and French. `script/check_copy_hygiene.py` requires the new tags, bounds assertions, default no-device gate entry, and coverage phrase `Android drawer chat-search no-results compact layout`.
+- Caveat: this is no-device Compose/JVM coverage. It does not prove physical Android rendering, hardware TalkBack traversal, optical QR scan, hardware haptics, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.navigationDrawerChatSearchNoResultsStaysBoundedAtLargeFontAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.navigationDrawerChatSearchFiltersClearsAndUsesHapticFeedback --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.navigationDrawerChatSearchLocalizesClearAndNoResultsAcrossSupportedLanguages --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatDrawerSearchMatchesModelAndRuntimeMetadata -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/MainActivity.kt apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` (no attached devices)
+
+### 2026-07-01 RuntimeDevServer Archived Chat Send Smoke
+
+- Scope: expand no-device RuntimeDevServer relay smoke coverage for roadmap item 6 without physical-device access. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer recommended a separate Android drawer-search compact-layout slice while this already-started runtime smoke hardening was completed locally.
+- Result: the authenticated relay smoke now sends `chat.send` to an archived runtime session and requires the structured `chat_session_must_be_restored_before_send` error. It then calls `chat.messages.list` with `smoke-messages-after-archived-send` to prove the rejected prompt did not mutate visible runtime history before the session is restored.
+- Guardrail: `script/runtime_authenticated_mock_smoke.swift` now includes `smoke-session-archived-send`, `chat_session_must_be_restored_before_send`, and `smoke-messages-after-archived-send`; `script/check_copy_hygiene.py` requires those markers and the default no-device gate coverage phrase `archived chat.send restore-required rejection`.
+- Caveat: this is no-device RuntimeDevServer relay-smoke evidence. It does not prove physical Android QR scan, hardware haptics, live provider-backed chat/cancel, optical camera behavior, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `swiftc -typecheck script/runtime_authenticated_mock_smoke.swift`
+- `./script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- script/runtime_authenticated_mock_smoke.swift script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` (no attached devices)
+
+### 2026-07-01 Runtime Compaction Backend Source Span
+
+- Scope: continue the roadmap context-window compaction work without physical-device access. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer confirmed the smallest safe slice is transient backend-only source-span metadata, not schema, storage, Android model, or durable memory-source changes.
+- Result: oversized active `chat.send` histories now annotate the backend-only `Runtime conversation summary:` system message with a deterministic `Source span:` line for the compacted client-visible conversation turn range. Runtime capability guard, runtime-owned memory context, stale client-supplied compaction summaries, archived sessions, and deleted sessions remain outside that source-span calculation.
+- Guardrail: `LocalRuntimeMessageRouterTests.testChatSendCompactionAnnotatesBackendOnlySourceSpanWithoutPersisting` proves the backend request receives `Source span: client-visible conversation turns 1-6 of 18.`, recent turns remain verbatim, stored request events keep all original client-visible messages, and neither `Runtime conversation summary:` nor `Source span:` is persisted to visible chat history. `script/check_copy_hygiene.py` and `script/check_no_device_quality.sh` require the regression and coverage phrase.
+- Caveat: this is no-device Swift/router evidence. It does not prove physical Android rendering, optical QR scanning, live provider-backed summarization quality, production P2P traversal, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `swift test --filter LocalRuntimeMessageRouterTests/testChatSendCompactionAnnotatesBackendOnlySourceSpanWithoutPersisting`
+- `swift test --filter 'LocalRuntimeMessageRouterTests/testChatSendDoesNotCompactShortConversation|LocalRuntimeMessageRouterTests/testChatSendCompactsOlderTurnsBeforeBackendRequestWhenContextIsLarge|LocalRuntimeMessageRouterTests/testChatSendCompactionAnnotatesBackendOnlySourceSpanWithoutPersisting|LocalRuntimeMessageRouterTests/testChatSendUsesModelContextWindowMetadataForCompactionBudget|LocalRuntimeMessageRouterTests/testChatSendCompactionKeepsRuntimeMemoryAndCapabilityGuardSeparate'`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift apps/macos/CompanionCore/Tests/LocalRuntimeMessageRouterTests.swift script/check_no_device_quality.sh script/check_copy_hygiene.py docs/protocol.md docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` (no attached devices)
+
+### 2026-07-01 Android Runtime Transcript Loading Compact Layout
+
+- Scope: no-device progress on roadmap item 2 while the Android phone is disconnected. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer completed and recommended a separate macOS context-compaction source-span slice for the next roadmap pass, while this already-started Android loading layout slice was finished locally.
+- Result: `ChatMessagesLoadingState` now exposes stable tags for the loading panel, progress wrapper, and loading text. The visible loading copy is capped to two lines with ellipsis, and the progress indicator is contained in a tagged wrapper so its Compose semantics bounds do not protrude outside the panel.
+- Guardrail: `ClientScreensNoDeviceComposeTest.chatScreenRuntimeTranscriptLoadingStateStaysBoundedAtLargeFontAcrossSupportedLanguages` renders a trusted connected runtime-owned chat while its transcript is loading on a 300 dp, 1.5 font-scale surface across English, Korean, Japanese, Simplified Chinese, and French. It verifies the loading panel, progress wrapper, text, and composer stay inside bounds without progress/text or panel/composer overlap while preserving the polite live-region loading announcement.
+- Caveat: this is no-device Compose/Robolectric evidence. It does not prove physical Android rendering, hardware TalkBack traversal, real device haptics, optical QR scanning, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenRuntimeTranscriptLoadingStateStaysBoundedAtLargeFontAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/ui/ClientScreens.kt apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` (no attached devices)
+
+### 2026-07-01 Android Connection Status Connected Actions Compact Layout
+
+- Scope: no-device progress on roadmap item 2 while the Android phone is disconnected. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer identified that the Connection Status connected-state actions had accessibility coverage but no narrow large-font bounds coverage for the action buttons below the status panel.
+- Result: `ConnectionStatusActions` now exposes stable tags for the actions container, `Refresh health`, `Disconnect`, and their visible labels. The visible button labels are capped to two lines with ellipsis so supported-language copy cannot expand the full-width controls outside the compact status surface.
+- Guardrail: `ClientScreensNoDeviceComposeTest.connectionStatusConnectedActionsStayBoundedAtLargeFontAcrossSupportedLanguages` renders a connected trusted-runtime status screen on a 260 dp, 1.5 font-scale surface across English, Korean, Japanese, Simplified Chinese, and French. It verifies the action container, both buttons, and both visible labels stay inside bounds and the stacked actions do not overlap while preserving localized click labels.
+- Caveat: this is no-device Compose/Robolectric evidence. It does not prove physical Android rendering, hardware TalkBack traversal, real device haptics, optical QR scanning, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.connectionStatusConnectedActionsStayBoundedAtLargeFontAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/ui/ClientScreens.kt apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` (no attached devices)
+
+### 2026-07-01 Android Model Picker Search No-Results Compact Layout
+
+- Scope: no-device progress on roadmap item 2 while the Android phone is disconnected. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer identified the chat top-bar model picker search/no-results popup as a high-frequency UI surface whose localized live-region behavior was covered but whose narrow large-font bounds were not.
+- Result: the Android chat top-bar model picker now exposes stable tags for the search clear action and no-results live-region text so compact popup bounds can be verified directly.
+- Guardrail: `ClientScreensNoDeviceComposeTest.chatTopBarModelPickerSearchNoResultsStaysBoundedAtLargeFontAcrossSupportedLanguages` opens the model picker on a 320dp narrow surface at 1.45 font scale across English, Korean, Japanese, Simplified Chinese, and French, searches to an empty result, and verifies the search field, clear action, and no-results row stay inside bounds without overlapping.
+- Caveat: this is no-device Compose/Robolectric evidence. It does not prove physical Android rendering, hardware TalkBack traversal, real device haptics, optical QR scanning, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatTopBarModelPickerSearchNoResultsStaysBoundedAtLargeFontAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/MainActivity.kt apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` (no attached devices)
+
+### 2026-07-01 RuntimeDevServer Memory-Summary Draft Auth-Gate Smoke
+
+- Scope: no-device progress on roadmap item 6 while the Android phone is disconnected. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer identified that router unit tests gated `memory.summary.drafts.list`, `memory.summary.draft.approve`, and `memory.summary.draft.dismiss`, but the RuntimeDevServer authenticated relay smoke matrix only covered memory list/upsert/delete before authentication.
+- Result: `script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh` now sends unauthenticated relay-routed `memory.summary.drafts.list`, `memory.summary.draft.approve`, and `memory.summary.draft.dismiss` requests and requires `authentication_required` before payload handling.
+- Guardrail: the relay ciphertext boundary marker list now includes the three memory-summary draft command names. `script/check_copy_hygiene.py` pins the new unauthenticated smoke request ids, command names, and default no-device coverage phrase.
+- Caveat: this is no-device relay/runtime auth-gate evidence. It does not prove physical Android install, optical QR scanning, hardware TalkBack traversal, real provider-backed memory-summary behavior, physical relay reachability, or real different-network connectivity.
+
+Verified after this change:
+
+- `swiftc -typecheck script/runtime_authenticated_mock_smoke.swift`
+- `python3 -m py_compile script/check_copy_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `./script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- script/runtime_authenticated_mock_smoke.swift apps/macos/RuntimeDevServer/Sources/RuntimeDevServer.swift script/check_copy_hygiene.py script/check_no_device_quality.sh docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` (no attached devices)
+
+### 2026-07-01 Authenticated Relay Pulled-Model Chat Smoke
+
+- Scope: no-device progress on roadmap item 6 while the Android phone is disconnected. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer identified that authenticated RuntimeDevServer relay smoke covered `models.pull` and `models.list` after pull, but did not prove the newly pulled model could actually handle `chat.send`.
+- Result: `script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh` now pulls `dev-pulled`, requires `models.list` to report it as an installed local model, then sends `smoke-chat-pulled-model` using that pulled model id and requires the deterministic mock streaming response.
+- Guardrail: the relay ciphertext boundary marker list now includes the pulled-model prompt, request id, and pulled model id so encrypted relay frames cannot expose those plaintext values. `script/check_copy_hygiene.py` pins the pulled-model constants, pulled-model chat smoke, and default no-device coverage phrase.
+- Caveat: this is no-device relay/runtime smoke evidence. It does not prove physical Android install, optical QR scanning, real provider-backed model pull/chat, live provider latency, physical relay reachability, or real different-network connectivity.
+
+Verified after this change:
+
+- `swiftc -typecheck script/runtime_authenticated_mock_smoke.swift`
+- `python3 -m py_compile script/check_copy_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `./script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- script/runtime_authenticated_mock_smoke.swift apps/macos/RuntimeDevServer/Sources/RuntimeDevServer.swift script/check_copy_hygiene.py script/check_no_device_quality.sh docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` (no attached devices)
+
 ### 2026-07-01 Authenticated Relay Image Attachment Vision-Gate Smoke
 
-- Scope: no-device progress on roadmap item 6 while the Android phone is disconnected. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer identified that authenticated RuntimeDevServer relay smoke covered document attachment success but not non-vision image attachment rejection.
-- Result: `script/runtime_authenticated_mock_smoke.swift --relay` now sends `smoke-chat-image-non-vision` through the paired/authenticated development relay route using the non-vision `dev-mock` chat model and requires an `unsupported_attachment` error explaining that image attachments need a vision-capable model.
-- Guardrail: the relay ciphertext boundary marker list now includes the image prompt, file name, base64 marker, request id, error code, and vision-gate message so encrypted relay frames cannot expose those plaintext values. `script/check_copy_hygiene.py` pins the image rejection smoke and the default no-device coverage phrase, and `script/check_no_device_quality.sh` reports document attachment plus non-vision image rejection coverage.
+- Scope: no-device progress on roadmap item 6 while the Android phone is disconnected. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer identified that authenticated RuntimeDevServer relay smoke covered document attachment success and non-vision image rejection, but not the positive vision-capable image path.
+- Result: RuntimeDevServer aggregate mock mode now exposes `dev-mock-vision` with `chat` plus `vision` capabilities. `script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh` requires `models.list` to include that vision-capable mock model, then sends `smoke-chat-image-non-vision` through non-vision `dev-mock` and `smoke-chat-image-vision` through `dev-mock-vision`.
+- Result: the non-vision path must return `unsupported_attachment` before backend deltas, while the vision-capable path must stream `chat.delta` / `chat.done` and include the deterministic attachment marker from the mock backend.
+- Guardrail: the relay ciphertext boundary marker list now includes the image prompt, file name, base64 marker, request ids, error code, vision-gate message, and vision model id so encrypted relay frames cannot expose those plaintext values. `script/check_copy_hygiene.py` pins the RuntimeDevServer vision mock model, image rejection smoke, image success smoke, and default no-device coverage phrase.
 - Caveat: this is no-device relay/runtime smoke evidence. It does not prove Android picker behavior on hardware, real device content-provider reads, optical QR scanning, physical relay reachability, live provider-backed vision inference, or real different-network connectivity.
 
 Verified after this change:
@@ -44,10 +791,10 @@ Verified after this change:
 - `swiftc -typecheck script/runtime_authenticated_mock_smoke.swift`
 - `python3 -m py_compile script/check_copy_hygiene.py`
 - `bash -n script/check_no_device_quality.sh` (syntax only)
-- `./script/runtime_authenticated_mock_smoke.swift --relay`
+- `./script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh`
 - `python3 script/check_copy_hygiene.py`
 - `python3 script/check_docs_hygiene.py`
-- `git diff --check -- script/runtime_authenticated_mock_smoke.swift script/check_copy_hygiene.py script/check_no_device_quality.sh docs/progress.md docs/qa-evidence.md`
+- `git diff --check -- script/runtime_authenticated_mock_smoke.swift apps/macos/RuntimeDevServer/Sources/RuntimeDevServer.swift script/check_copy_hygiene.py script/check_no_device_quality.sh docs/progress.md docs/qa-evidence.md`
 - `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh`
 - `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` (no attached devices)
 
@@ -14105,7 +14852,7 @@ Verified after this change:
 
 - Scope: no-device macOS Connection Recovery trust-boundary polish for bootstrap relay route preparation; GPT-5.3-Codex-Spark was not used.
 - Result: the Bootstrap allocation token field now warns when a non-local bootstrap relay endpoint is configured without an allocation token. The warning is visible in the panel and exposed through the token field and Save Bootstrap Relay accessibility values.
-- Result: local diagnostic endpoints remain lightweight. `localhost`, `127.x`, `::1`, `.local`, and link-local endpoints do not require the token warning, while remote hostnames, private remote addresses, and public IPv6 relay candidates do.
+- Result: local diagnostic endpoint copy remains lightweight in the Connection Recovery UI. `localhost`, `127.x`, `::1`, `.local`, and link-local endpoints do not require that UI warning, while remote hostnames, private remote addresses, and public IPv6 relay candidates do. The relay process bind policy is stricter: tokenless `AetherLinkRelay` binds are loopback-only.
 - Guardrail: `AetherLinkLocalizationTests.testConnectionRecoveryBootstrapAllocationTokenWarningUsesSelectedLanguage` covers the warning and missing-token accessibility value across English, Korean, Japanese, Simplified Chinese, and French. `AetherLinkLocalizationTests.testBootstrapRelayAllocationTokenWarningClassifiesNonLocalEndpoints` covers local versus non-local endpoint classification. `script/check_macos_localization.py`, `script/check_copy_hygiene.py`, and `script/check_no_device_quality.sh` require the source/test/no-device coverage label `macOS Connection Recovery bootstrap allocation token warning`.
 - Caveat: the Android phone was disconnected for this pass, so this is no-device SwiftUI/source/XCTest/script evidence only. It does not prove rendered click behavior, live VoiceOver traversal, optical QR scanning, physical install, live different-network routing, physical reconnect after pairing, or live streamed chat/cancel.
 

@@ -97,14 +97,87 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         let message = try await sink.waitForMessages(count: 1).first
         XCTAssertEqual(message?.payload["status"], .string("ok"))
         guard case .object(let ollama)? = message?.payload["ollama"],
-              case .object(let lmStudio)? = message?.payload["lm_studio"] else {
-            XCTFail("Expected provider health objects")
+              case .object(let lmStudio)? = message?.payload["lm_studio"],
+              case .object(let modelResidency)? = message?.payload["model_residency"] else {
+            XCTFail("Expected provider health and model residency objects")
             return
         }
         XCTAssertEqual(ollama["available"], .bool(true))
         XCTAssertEqual(lmStudio["available"], .bool(false))
         XCTAssertEqual(lmStudio["code"], .string("backend_unavailable"))
+        XCTAssertEqual(modelResidency["supported"], .bool(true))
+        XCTAssertEqual(modelResidency["in_flight_generations"], .number(0))
+        XCTAssertEqual(modelResidency["idle_unload_delay_seconds"], .number(600))
+        XCTAssertNil(modelResidency["active_provider"])
+        XCTAssertNil(modelResidency["active_model_id"])
         XCTAssertFalse(String(describing: message?.payload).contains("1234"))
+    }
+
+    func testRuntimeHealthIncludesModelResidencyLastUnloadFailureWithoutRawErrorMessage() async throws {
+        let sink = RecordingSink()
+        let backend = AggregatingLlmBackend([
+            MockBackend(
+                provider: .ollama,
+                models: [
+                    ModelInfo(id: "qwen-local", name: "qwen-local", provider: .ollama)
+                ],
+                unloadError: NSError(
+                    domain: "AetherLinkResidencyTest",
+                    code: 42,
+                    userInfo: [
+                        NSLocalizedDescriptionKey: "unload denied http://127.0.0.1:11434/api/chat route_token=secret"
+                    ]
+                )
+            ),
+            MockBackend(
+                provider: .lmStudio,
+                models: [
+                    ModelInfo(id: "gemma-local", name: "gemma-local", provider: .lmStudio)
+                ]
+            )
+        ])
+        try await drain(backend.chat(request: chatRequest(model: "ollama:qwen-local", sessionID: "health-a")))
+        try await drain(backend.chat(request: chatRequest(model: "lm_studio:gemma-local", sessionID: "health-b")))
+        try await waitForResidencyFailure(on: backend)
+
+        let router = makeRouter(backend: backend)
+        router.handle(ProtocolEnvelope(type: MessageType.runtimeHealth, requestID: "health-residency-failure"), sink: sink)
+
+        let message = try await sink.waitForMessages(count: 1).first
+        guard case .object(let modelResidency)? = message?.payload["model_residency"],
+              case .object(let failure)? = modelResidency["last_unload_failure"] else {
+            XCTFail("Expected model residency last_unload_failure object")
+            return
+        }
+        XCTAssertEqual(failure["provider"], .string("ollama"))
+        XCTAssertEqual(failure["model_id"], .string("qwen-local"))
+        XCTAssertEqual(failure["reason"], .string("model_switch"))
+        XCTAssertNil(failure["message"])
+        XCTAssertFalse(String(describing: failure).contains("127.0.0.1"))
+        XCTAssertFalse(String(describing: failure).contains("route_token"))
+        XCTAssertFalse(String(describing: failure).contains("unload denied"))
+    }
+
+    private func chatRequest(model: String, sessionID: String) -> ChatRequest {
+        ChatRequest(
+            sessionID: sessionID,
+            model: model,
+            messages: [ChatMessage(role: "user", content: "hello")]
+        )
+    }
+
+    private func drain(_ stream: AsyncThrowingStream<ChatStreamEvent, Error>) async throws {
+        for try await _ in stream {}
+    }
+
+    private func waitForResidencyFailure(on backend: AggregatingLlmBackend) async throws {
+        for _ in 0..<50 {
+            if backend.modelResidencySnapshot().lastUnloadFailure != nil {
+                return
+            }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTFail("Timed out waiting for model residency unload failure")
     }
 
     func testModelsListReturnsModelsWithoutExposingOllamaURL() async throws {
@@ -3165,6 +3238,56 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(requestEvent.messages?.count, messagePayloads.count)
         XCTAssertTrue(requestEvent.messages?.contains { $0.content == olderUserContent } == true)
         XCTAssertFalse(requestEvent.messages?.contains { $0.content.hasPrefix("Runtime conversation summary:") } == true)
+    }
+
+    func testChatSendCompactionAnnotatesBackendOnlySourceSpanWithoutPersisting() async throws {
+        let sink = RecordingSink()
+        let capturedRequest = LockedBox<ChatRequest?>(nil)
+        let chatEventStore = RecordingRuntimeChatEventStore()
+        var messagePayloads: [JSONValue] = []
+        for index in 1...18 {
+            messagePayloads.append(.object([
+                "role": .string(index.isMultiple(of: 2) ? "assistant" : "user"),
+                "content": .string("source span turn \(index) " + String(repeating: "S", count: 1_600))
+            ]))
+        }
+        let router = makeRouter(
+            backend: MockBackend(
+                models: [ModelInfo(id: "llama3.1:8b", name: "llama3.1:8b", installed: true)],
+                chatEvents: [.done(inputTokens: 1, outputTokens: 1)],
+                onChatRequest: { request in
+                    capturedRequest.value = request
+                }
+            ),
+            chatEventStore: chatEventStore
+        )
+        let envelope = ProtocolEnvelope(
+            type: MessageType.chatSend,
+            requestID: "chat-compaction-source-span",
+            payload: [
+                "session_id": .string("session-source-span"),
+                "model": .string("llama3.1:8b"),
+                "messages": .array(messagePayloads)
+            ]
+        )
+
+        router.handle(envelope, sink: sink)
+
+        let message = try await sink.waitForMessages(count: 1).first
+        XCTAssertEqual(message?.type, MessageType.chatDone)
+        let request = try XCTUnwrap(capturedRequest.value)
+        let summaryMessage = try XCTUnwrap(request.messages.first { $0.content.hasPrefix("Runtime conversation summary:") })
+        XCTAssertTrue(summaryMessage.content.contains("Source span: client-visible conversation turns 1-6 of 18."))
+        let retainedConversationTurns = request.messages.filter(\.isConversationTurnForTests)
+        XCTAssertFalse(retainedConversationTurns.contains { $0.content.contains("source span turn 1 ") })
+        XCTAssertTrue(retainedConversationTurns.contains { $0.content.contains("source span turn 7 ") })
+        XCTAssertEqual(request.messages.filter(\.isConversationTurnForTests).count, 12)
+
+        let requestEvent = try XCTUnwrap(chatEventStore.events.first { $0.kind == .request })
+        XCTAssertEqual(requestEvent.messages?.count, messagePayloads.count)
+        XCTAssertTrue(requestEvent.messages?.contains { $0.content.contains("source span turn 1 ") } == true)
+        XCTAssertFalse(requestEvent.messages?.contains { $0.content.hasPrefix("Runtime conversation summary:") } == true)
+        XCTAssertFalse(requestEvent.messages?.contains { $0.content.contains("Source span: client-visible conversation turns") } == true)
     }
 
     func testChatSendUsesModelContextWindowMetadataForCompactionBudget() async throws {
@@ -7558,7 +7681,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
             configuration: RelayPeerConfiguration(
                 host: "relay.example.test",
                 port: 443,
-                relayID: "route-token-bootstrap",
+                relayID: "relay-opaque-bootstrap",
                 relaySecret: "allocated-secret-1"
             ),
             lease: CompanionRemoteRouteLease(
@@ -7592,7 +7715,8 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(relayClient.startedConfiguration?.relayNonce, "allocated-nonce-1")
         XCTAssertEqual(qrItems["relay_host"], "relay.example.test")
         XCTAssertEqual(qrItems["relay_port"], "443")
-        XCTAssertEqual(qrItems["relay_id"], qrItems["route_token"])
+        XCTAssertEqual(qrItems["relay_id"], "relay-opaque-bootstrap")
+        XCTAssertNotEqual(qrItems["relay_id"], qrItems["route_token"])
         XCTAssertEqual(qrItems["relay_secret"], "allocated-secret-1")
         XCTAssertEqual(qrItems["relay_expires_at"], "4102444800000")
         XCTAssertEqual(qrItems["relay_nonce"], "allocated-nonce-1")
@@ -7604,7 +7728,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(defaults.string(forKey: "aetherlink.relay.lease_nonce"), "allocated-nonce-1")
         XCTAssertEqual(defaults.string(forKey: "aetherlink.relay.lease_host"), "relay.example.test")
         XCTAssertEqual(defaults.integer(forKey: "aetherlink.relay.lease_port"), 443)
-        XCTAssertEqual(defaults.string(forKey: "aetherlink.relay.lease_id"), "route-token-bootstrap")
+        XCTAssertEqual(defaults.string(forKey: "aetherlink.relay.lease_id"), "relay-opaque-bootstrap")
 
         let restoredRelayClient = FakeRelayPeerClient()
         let restoredModel = CompanionAppModel(
@@ -7689,7 +7813,7 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
                 configuration: RelayPeerConfiguration(
                     host: "relay.example.test",
                     port: 443,
-                    relayID: "route-token-bootstrap",
+                    relayID: "relay-opaque-bootstrap-fresh",
                     relaySecret: "allocated-secret-2"
                 ),
                 lease: CompanionRemoteRouteLease(
@@ -7720,7 +7844,8 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         let qrItems = try queryItems(from: try XCTUnwrap(model.pairingSession).qrPayload)
         XCTAssertEqual(qrItems["relay_host"], "relay.example.test")
         XCTAssertEqual(qrItems["relay_port"], "443")
-        XCTAssertEqual(qrItems["relay_id"], "route-token-bootstrap")
+        XCTAssertEqual(qrItems["relay_id"], "relay-opaque-bootstrap-fresh")
+        XCTAssertNotEqual(qrItems["relay_id"], qrItems["route_token"])
         XCTAssertEqual(qrItems["relay_secret"], "allocated-secret-2")
         XCTAssertEqual(qrItems["relay_expires_at"], "4102444800000")
         XCTAssertEqual(qrItems["relay_nonce"], "allocated-nonce-2")
@@ -8755,6 +8880,7 @@ private final class MockBackend: LlmBackend, @unchecked Sendable {
     private let modelListError: Error?
     private let pullResult: ModelPullResult
     private let pullError: Error?
+    private let unloadError: Error?
     private let chatEvents: [ChatStreamEvent]
     private let chatEventBatchesLock = NSLock()
     private var chatEventBatches: [[ChatStreamEvent]]
@@ -8774,6 +8900,7 @@ private final class MockBackend: LlmBackend, @unchecked Sendable {
         modelListError: Error? = nil,
         pullResult: ModelPullResult = ModelPullResult(model: "mock", status: "success", installed: true),
         pullError: Error? = nil,
+        unloadError: Error? = nil,
         chatEvents: [ChatStreamEvent] = [],
         chatEventBatches: [[ChatStreamEvent]] = [],
         finishChatStream: Bool = true,
@@ -8787,6 +8914,7 @@ private final class MockBackend: LlmBackend, @unchecked Sendable {
         self.modelListError = modelListError
         self.pullResult = pullResult
         self.pullError = pullError
+        self.unloadError = unloadError
         self.chatEvents = chatEvents
         self.chatEventBatches = chatEventBatches
         self.finishChatStream = finishChatStream
@@ -8829,6 +8957,13 @@ private final class MockBackend: LlmBackend, @unchecked Sendable {
                 }
             }
         }
+    }
+
+    func unloadModel(providerModelID: String) async throws -> ModelUnloadResult {
+        if let unloadError {
+            throw unloadError
+        }
+        return .unsupported(provider: provider, modelID: providerModelID)
     }
 
     func cancel(generationID: String) -> GenerationCancellationResult {

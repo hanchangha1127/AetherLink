@@ -138,6 +138,57 @@ final class LMStudioBackendTests: XCTestCase {
         XCTAssertEqual(result, .unloaded(provider: .lmStudio, modelID: "google/gemma-4-26b-a4b"))
     }
 
+    func testUnloadModelHTTPStatusReturnsStructuredError() async {
+        var paths: [String] = []
+        let unsafeBody = "unload denied http://127.0.0.1:1234/api/v1/models/unload route_token=secret"
+        let backend = makeBackend { request in
+            paths.append(request.url?.path ?? "")
+            switch request.url?.path {
+            case "/api/v1/models":
+                return self.response(
+                    statusCode: 200,
+                    body: """
+                    {
+                      "models": [
+                        {
+                          "type": "llm",
+                          "key": "google/gemma-4-26b-a4b",
+                          "display_name": "Gemma 4 26B A4B",
+                          "loaded_instances": [{"id": "instance-gemma"}]
+                        }
+                      ]
+                    }
+                    """
+                )
+            case "/api/v1/models/unload":
+                XCTAssertEqual(request.httpMethod, "POST")
+                let body = try self.requestBodyData(from: request)
+                let posted = try JSONDecoder().decode(PostedUnloadRequest.self, from: body)
+                XCTAssertEqual(posted.instanceID, "instance-gemma")
+                return self.response(statusCode: 503, body: unsafeBody)
+            default:
+                XCTFail("Unexpected path: \(request.url?.path ?? "nil")")
+                return self.response(statusCode: 500, body: "{}")
+            }
+        }
+
+        do {
+            _ = try await backend.unloadModel(providerModelID: "google/gemma-4-26b-a4b")
+            XCTFail("Expected structured unload error")
+        } catch let error as LMStudioBackendError {
+            XCTAssertEqual(paths, ["/api/v1/models", "/api/v1/models/unload"])
+            XCTAssertEqual(error, .httpStatus(endpoint: "POST /api/v1/models/unload", statusCode: 503, body: unsafeBody))
+            XCTAssertEqual(error.code, "lm_studio_http_status")
+            XCTAssertTrue(error.retryable)
+            XCTAssertEqual(error.backendError.provider, .lmStudio)
+            XCTAssertFalse(error.backendError.message.contains("127.0.0.1"))
+            XCTAssertFalse(error.backendError.message.contains("route_token"))
+            XCTAssertFalse(error.backendError.message.contains("/api/v1/models/unload"))
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
+    }
+
     func testChatStreamsNativeServerSentEvents() async throws {
         let backend = makeBackend { request in
             switch request.url?.path {

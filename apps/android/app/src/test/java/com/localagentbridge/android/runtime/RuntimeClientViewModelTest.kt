@@ -36,6 +36,8 @@ import com.localagentbridge.android.core.protocol.ProtocolEnvelope
 import com.localagentbridge.android.core.protocol.RouteRefreshPayload
 import com.localagentbridge.android.core.protocol.RuntimeBackendStatusPayload
 import com.localagentbridge.android.core.protocol.RuntimeHealthPayload
+import com.localagentbridge.android.core.protocol.RuntimeModelResidencyPayload
+import com.localagentbridge.android.core.protocol.RuntimeModelResidencyUnloadFailurePayload
 import com.localagentbridge.android.core.pairing.DeviceIdentity
 import com.localagentbridge.android.core.pairing.RelaySecretStore
 import com.localagentbridge.android.core.pairing.RuntimePairingPayload
@@ -6928,6 +6930,84 @@ class RuntimeClientViewModelTest {
         assertEquals("", statuses[1].message)
         assertNull(statuses[0].code)
         assertNull(statuses[1].code)
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun runtimeHealthStoresModelResidencySnapshotFromAggregateRuntime() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val selectedModel = textChatModel()
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(selectedModel),
+                selectedModelId = selectedModel.id,
+            )
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.RuntimeHealth,
+                    serializer = RuntimeHealthPayload.serializer(),
+                    payload = RuntimeHealthPayload(
+                        status = "ok",
+                        modelResidency = RuntimeModelResidencyPayload(
+                            supported = true,
+                            activeProvider = "ollama",
+                            activeModelId = "llama3.1:8b",
+                            inFlightGenerations = 2,
+                            idleUnloadDelaySeconds = 600,
+                            lastUnloadFailure = RuntimeModelResidencyUnloadFailurePayload(
+                                provider = "ollama",
+                                modelId = "llama3.1:8b",
+                                reason = "manual",
+                            ),
+                        ),
+                    ),
+                    requestId = "runtime-health-residency",
+                ),
+            )
+            advanceUntilIdle()
+
+            val residency = requireNotNull(fixture.viewModel.state.value.modelResidency)
+            assertTrue(residency.supported)
+            assertEquals("ollama", residency.activeProvider)
+            assertEquals("llama3.1:8b", residency.activeModelId)
+            assertEquals(2, residency.inFlightGenerations)
+            assertEquals(600, residency.idleUnloadDelaySeconds)
+            assertEquals("ollama", residency.lastUnloadFailure?.provider)
+            assertEquals("llama3.1:8b", residency.lastUnloadFailure?.modelId)
+            assertEquals("manual", residency.lastUnloadFailure?.reason)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun runtimeModelResidencyStatusRedactsUnsafeSnapshotDetails() {
+        val payload = RuntimeHealthPayload(
+            status = "ok",
+            modelResidency = RuntimeModelResidencyPayload(
+                supported = true,
+                activeProvider = "http://127.0.0.1:11434",
+                activeModelId = "llama3.1:8b route_token=secret",
+                inFlightGenerations = -2,
+                idleUnloadDelaySeconds = -1,
+                lastUnloadFailure = RuntimeModelResidencyUnloadFailurePayload(
+                    provider = "http://127.0.0.1:11434",
+                    modelId = "qwen-local relay_secret=secret",
+                    reason = "idle_timeout route_token=secret",
+                ),
+            ),
+        )
+
+        val residency = requireNotNull(runtimeModelResidencyStatus(payload))
+
+        assertTrue(residency.supported)
+        assertNull(residency.activeProvider)
+        assertNull(residency.activeModelId)
+        assertEquals(0, residency.inFlightGenerations)
+        assertEquals(0, residency.idleUnloadDelaySeconds)
+        assertNull(residency.lastUnloadFailure)
     }
 
     @Test

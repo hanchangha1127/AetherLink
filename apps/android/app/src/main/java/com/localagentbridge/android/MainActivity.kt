@@ -1205,17 +1205,22 @@ private fun ChatModelTopBarMenu(
         ) {
             CompositionLocalProvider(LocalContext provides menuContext) {
                 DropdownMenuItem(
-                    modifier = Modifier.semantics(mergeDescendants = true) {
-                        contentDescription = modelRefreshLabel
-                        stateDescription = modelRefreshStateDescription
-                        if (modelRefreshEnabled) {
-                            onClick(label = modelRefreshLabel, action = null)
-                        }
-                    },
+                    modifier = Modifier
+                        .testTag(CHAT_MODEL_REFRESH_ROW_TEST_TAG)
+                        .semantics(mergeDescendants = true) {
+                            contentDescription = modelRefreshLabel
+                            stateDescription = modelRefreshStateDescription
+                            if (modelRefreshEnabled) {
+                                onClick(label = modelRefreshLabel, action = null)
+                            }
+                        },
                     text = {
-                        Column {
+                        Column(modifier = Modifier.testTag(CHAT_MODEL_REFRESH_TEXT_TEST_TAG)) {
                             Text(
                                 text = modelRefreshLabel,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.testTag(CHAT_MODEL_REFRESH_LABEL_TEST_TAG),
                             )
                             Text(
                                 text = selectedModel?.let { model ->
@@ -1232,6 +1237,7 @@ private fun ChatModelTopBarMenu(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.testTag(CHAT_MODEL_REFRESH_DETAIL_TEST_TAG),
                             )
                         }
                     },
@@ -1306,10 +1312,12 @@ private fun ChatModelTopBarMenu(
                                         hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
                                         modelSearchQuery = ""
                                     },
-                                    modifier = Modifier.semantics {
-                                        contentDescription = clearModelSearchContentDescription
-                                        onClick(label = clearModelSearchContentDescription, action = null)
-                                    },
+                                    modifier = Modifier
+                                        .testTag(CHAT_MODEL_SEARCH_CLEAR_TEST_TAG)
+                                        .semantics {
+                                            contentDescription = clearModelSearchContentDescription
+                                            onClick(label = clearModelSearchContentDescription, action = null)
+                                        },
                                 ) {
                                     Icon(
                                         imageVector = Icons.Filled.Close,
@@ -1375,10 +1383,12 @@ private fun ChatModelTopBarMenu(
                                 text = noModelSearchResultsText,
                                 maxLines = 2,
                                 overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.semantics {
-                                    contentDescription = noModelSearchResultsText
-                                    liveRegion = LiveRegionMode.Polite
-                                },
+                                modifier = Modifier
+                                    .testTag(CHAT_MODEL_SEARCH_NO_RESULTS_TEST_TAG)
+                                    .semantics {
+                                        contentDescription = noModelSearchResultsText
+                                        liveRegion = LiveRegionMode.Polite
+                                    },
                             )
                         }
                     }
@@ -1759,7 +1769,10 @@ private val modelDisplayProviderPrefixes = setOf(
 )
 
 internal const val DRAWER_HISTORY_TEST_TAG = "aetherlink_drawer_history"
+internal const val DRAWER_EMPTY_HISTORY_TEST_TAG = "aetherlink_drawer_empty_history"
 internal const val DRAWER_CHAT_SEARCH_TEST_TAG = "aetherlink_drawer_chat_search"
+internal const val DRAWER_CHAT_SEARCH_CLEAR_TEST_TAG = "aetherlink_drawer_chat_search_clear"
+internal const val DRAWER_CHAT_SEARCH_NO_RESULTS_TEST_TAG = "aetherlink_drawer_chat_search_no_results"
 internal const val DRAWER_SETTINGS_FOOTER_TEST_TAG = "aetherlink_drawer_settings_footer"
 internal const val DRAWER_RUNTIME_SUMMARY_TEST_TAG = "aetherlink_drawer_runtime_summary"
 internal const val DRAWER_RUNTIME_SUMMARY_HEADER_TEST_TAG = "aetherlink_drawer_runtime_summary_header"
@@ -1779,6 +1792,12 @@ internal const val DRAWER_CHAT_ROW_SUBTITLE_TEST_TAG_PREFIX = "aetherlink_drawer
 internal const val DRAWER_CHAT_ROW_MODEL_TEST_TAG_PREFIX = "aetherlink_drawer_chat_row_model_"
 internal const val DRAWER_CHAT_ROW_OPTIONS_TEST_TAG_PREFIX = "aetherlink_drawer_chat_row_options_"
 internal const val CHAT_MODEL_SEARCH_TEST_TAG = "aetherlink_chat_model_search"
+internal const val CHAT_MODEL_SEARCH_CLEAR_TEST_TAG = "aetherlink_chat_model_search_clear"
+internal const val CHAT_MODEL_SEARCH_NO_RESULTS_TEST_TAG = "aetherlink_chat_model_search_no_results"
+internal const val CHAT_MODEL_REFRESH_ROW_TEST_TAG = "aetherlink_chat_model_refresh_row"
+internal const val CHAT_MODEL_REFRESH_TEXT_TEST_TAG = "aetherlink_chat_model_refresh_text"
+internal const val CHAT_MODEL_REFRESH_LABEL_TEST_TAG = "aetherlink_chat_model_refresh_label"
+internal const val CHAT_MODEL_REFRESH_DETAIL_TEST_TAG = "aetherlink_chat_model_refresh_detail"
 
 internal fun drawerChatRowTestTag(sessionId: String): String = "$DRAWER_CHAT_ROW_TEST_TAG_PREFIX$sessionId"
 
@@ -1884,7 +1903,9 @@ internal fun AetherLinkNavigationDrawerContent(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier
                             .padding(horizontal = 28.dp, vertical = 8.dp)
+                            .testTag(DRAWER_CHAT_SEARCH_NO_RESULTS_TEST_TAG)
                             .semantics {
+                                contentDescription = noSearchResultsText
                                 liveRegion = LiveRegionMode.Polite
                             },
                     )
@@ -1896,6 +1917,7 @@ internal fun AetherLinkNavigationDrawerContent(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier
                             .padding(horizontal = 28.dp, vertical = 8.dp)
+                            .testTag(DRAWER_EMPTY_HISTORY_TEST_TAG)
                             .semantics {
                                 contentDescription = noPreviousChatsText
                                 liveRegion = LiveRegionMode.Polite
@@ -2110,10 +2132,12 @@ private fun ChatHistorySearchField(
                     onClick = {
                         onClear()
                     },
-                    modifier = Modifier.semantics {
-                        contentDescription = clearChatSearchContentDescription
-                        onClick(label = clearChatSearchContentDescription, action = null)
-                    },
+                    modifier = Modifier
+                        .testTag(DRAWER_CHAT_SEARCH_CLEAR_TEST_TAG)
+                        .semantics {
+                            contentDescription = clearChatSearchContentDescription
+                            onClick(label = clearChatSearchContentDescription, action = null)
+                        },
                 ) {
                     Icon(
                         imageVector = Icons.Filled.Close,
@@ -2475,7 +2499,15 @@ internal fun RenameChatSessionDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(renameSubject) },
+        modifier = Modifier
+            .widthIn(max = 360.dp)
+            .testTag(RENAME_CHAT_DIALOG_TEST_TAG),
+        title = {
+            Text(
+                text = renameSubject,
+                modifier = Modifier.testTag(RENAME_CHAT_TITLE_TEST_TAG),
+            )
+        },
         text = {
             OutlinedTextField(
                 value = title,
@@ -2484,6 +2516,7 @@ internal fun RenameChatSessionDialog(
                 singleLine = true,
                 modifier = Modifier
                     .fillMaxWidth()
+                    .testTag(RENAME_CHAT_INPUT_TEST_TAG)
                     .semantics {
                         contentDescription = titleContentDescription
                         stateDescription = titleStateDescription
@@ -2497,13 +2530,21 @@ internal fun RenameChatSessionDialog(
                     onConfirm()
                 },
                 enabled = trimmedTitle.isNotBlank(),
-                modifier = Modifier.semantics {
-                    contentDescription = confirmRenameActionLabel
-                    stateDescription = titleStateDescription
-                    onClick(label = confirmRenameActionLabel, action = null)
-                },
+                modifier = Modifier
+                    .testTag(RENAME_CHAT_CONFIRM_TEST_TAG)
+                    .semantics {
+                        contentDescription = confirmRenameActionLabel
+                        stateDescription = titleStateDescription
+                        onClick(label = confirmRenameActionLabel, action = null)
+                    },
             ) {
-                Text(stringResource(R.string.save))
+                Text(
+                    text = stringResource(R.string.save),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.testTag(RENAME_CHAT_CONFIRM_LABEL_TEST_TAG),
+                )
             }
         },
         dismissButton = {
@@ -2512,16 +2553,32 @@ internal fun RenameChatSessionDialog(
                     hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Toggle)
                     onDismiss()
                 },
-                modifier = Modifier.semantics {
-                    contentDescription = cancelRenameActionLabel
-                    onClick(label = cancelRenameActionLabel, action = null)
-                },
+                modifier = Modifier
+                    .testTag(RENAME_CHAT_CANCEL_TEST_TAG)
+                    .semantics {
+                        contentDescription = cancelRenameActionLabel
+                        onClick(label = cancelRenameActionLabel, action = null)
+                    },
             ) {
-                Text(stringResource(R.string.cancel))
+                Text(
+                    text = stringResource(R.string.cancel),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.testTag(RENAME_CHAT_CANCEL_LABEL_TEST_TAG),
+                )
             }
         },
     )
 }
+
+internal const val RENAME_CHAT_DIALOG_TEST_TAG = "rename_chat_dialog"
+internal const val RENAME_CHAT_TITLE_TEST_TAG = "rename_chat_title"
+internal const val RENAME_CHAT_INPUT_TEST_TAG = "rename_chat_input"
+internal const val RENAME_CHAT_CONFIRM_TEST_TAG = "rename_chat_confirm"
+internal const val RENAME_CHAT_CONFIRM_LABEL_TEST_TAG = "rename_chat_confirm_label"
+internal const val RENAME_CHAT_CANCEL_TEST_TAG = "rename_chat_cancel"
+internal const val RENAME_CHAT_CANCEL_LABEL_TEST_TAG = "rename_chat_cancel_label"
 
 
 @Composable

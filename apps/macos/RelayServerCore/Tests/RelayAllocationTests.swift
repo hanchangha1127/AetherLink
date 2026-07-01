@@ -15,6 +15,59 @@ final class RelayAllocationTests: XCTestCase {
         XCTAssertFalse(configuration.requiresAllocation)
     }
 
+    func testRelayBindExposureAllowsOnlyLoopbackWithoutAllocationToken() throws {
+        let hosts = ["127.0.0.1", "127.0.0.2", "::1", "[::1]", "localhost", "LOCALHOST"]
+
+        for host in hosts {
+            XCTAssertFalse(RelayBindExposure.requiresAllocationToken(host: host), host)
+            XCTAssertNoThrow(try RelayServerConfiguration(host: host).validate(), host)
+        }
+    }
+
+    func testRelayBindExposureRequiresTokenForWildcardAndNonLoopbackBinds() {
+        let hosts = [
+            "",
+            "0.0.0.0",
+            "::",
+            "192.168.1.10",
+            "100.64.1.10",
+            "8.8.8.8",
+            "relay.example.test"
+        ]
+
+        for host in hosts {
+            XCTAssertTrue(RelayBindExposure.requiresAllocationToken(host: host), host)
+            XCTAssertThrowsError(try RelayServerConfiguration(host: host).validate(), host) { error in
+                XCTAssertEqual(
+                    error as? RelayServerError,
+                    .allocationTokenRequiredForExposedBind(RelayBindExposure.normalizedHost(host))
+                )
+            }
+        }
+    }
+
+    func testRelayBindExposureAllowsWildcardAndNonLoopbackBindsWithAllocationToken() {
+        let hosts = ["0.0.0.0", "::", "192.168.1.10", "relay.example.test"]
+
+        for host in hosts {
+            XCTAssertNoThrow(
+                try RelayServerConfiguration(host: host, allocationToken: "allocation-token-1").validate(),
+                host
+            )
+        }
+    }
+
+    func testRelayConfigurationRejectsInvalidAllocationTokens() {
+        for token in ["", " ", "token value", "token\nvalue"] {
+            XCTAssertThrowsError(
+                try RelayServerConfiguration(host: "127.0.0.1", allocationToken: token).validate(),
+                token
+            ) { error in
+                XCTAssertEqual(error as? RelayServerError, .invalidAllocationToken)
+            }
+        }
+    }
+
     func testParsesAllocationRequest() throws {
         let request = try RelayAllocationRequest.parse("AETHERLINK_RELAY allocate route-token-1\n")
 
@@ -52,6 +105,18 @@ final class RelayAllocationTests: XCTestCase {
         XCTAssertEqual(request.allocationToken, "allocation-token-1")
         XCTAssertFalse(request.isPreflight)
         XCTAssertTrue(request.shouldPersistAllocation)
+    }
+
+    func testParsesAllocationRequestWithAuthAlias() throws {
+        let request = try RelayAllocationRequest.parse(
+            "AETHERLINK_RELAY allocate route-token-1 auth=allocation-token-1 preflight=1\n"
+        )
+
+        XCTAssertEqual(request.routeToken, "route-token-1")
+        XCTAssertNil(request.requestedRelaySecret)
+        XCTAssertEqual(request.allocationToken, "allocation-token-1")
+        XCTAssertTrue(request.isPreflight)
+        XCTAssertFalse(request.shouldPersistAllocation)
     }
 
     func testParsesPreflightAllocationRequest() throws {
@@ -100,18 +165,190 @@ final class RelayAllocationTests: XCTestCase {
         XCTAssertEqual(parsed, allocation)
     }
 
-    func testAllocationCanUseStableRouteTokenAndRequestedSecret() throws {
+    func testAllocationDerivesOpaqueStableRelayIDFromRouteTokenAndRequestedSecret() throws {
         let allocation = try RelayAllocation.make(
             routeToken: "route-token-1",
             requestedRelaySecret: "secret-1",
             now: Date(timeIntervalSince1970: 1),
             validFor: 60
         )
+        let second = try RelayAllocation.make(
+            routeToken: "route-token-1",
+            requestedRelaySecret: "secret-2",
+            now: Date(timeIntervalSince1970: 2),
+            validFor: 60
+        )
+        let differentRoute = try RelayAllocation.make(
+            routeToken: "route-token-2",
+            requestedRelaySecret: "secret-1",
+            now: Date(timeIntervalSince1970: 1),
+            validFor: 60
+        )
 
-        XCTAssertEqual(allocation.relayID, "route-token-1")
+        XCTAssertEqual(allocation.relayID, try RelayAllocation.relayID(forRouteToken: "route-token-1"))
+        XCTAssertEqual(second.relayID, allocation.relayID)
+        XCTAssertNotEqual(differentRoute.relayID, allocation.relayID)
+        XCTAssertTrue(allocation.relayID.hasPrefix("rt1-"))
+        XCTAssertFalse(allocation.relayID.contains("route-token-1"))
         XCTAssertEqual(allocation.relaySecret, "secret-1")
         XCTAssertEqual(allocation.relayExpiresAtEpochMillis, 61_000)
         XCTAssertFalse(allocation.relayNonce.isEmpty)
+    }
+
+    func testAllocationRegistryPersistsOpaqueRelayIDWithoutRawRouteToken() throws {
+        let storeURL = try temporaryAllocationStoreURL()
+        let allocation = try RelayAllocation.make(
+            routeToken: "route-token-that-must-not-persist",
+            requestedRelaySecret: "secret-that-must-not-persist",
+            now: Date(timeIntervalSince1970: 1_700_000_000),
+            validFor: 60
+        )
+
+        RelayAllocationRegistry(persistenceURL: storeURL).store(allocation)
+        let persisted = try String(contentsOf: storeURL, encoding: .utf8)
+
+        XCTAssertTrue(persisted.contains(allocation.relayID))
+        XCTAssertFalse(persisted.contains("route-token-that-must-not-persist"))
+        XCTAssertFalse(persisted.contains("secret-that-must-not-persist"))
+        XCTAssertTrue(RelayAllocationRegistry(persistenceURL: storeURL).isValid(
+            relayID: allocation.relayID,
+            now: Date(timeIntervalSince1970: 1_700_000_001)
+        ))
+    }
+
+    func testAllocationRegistryIgnoresNonAdvancingRenewalForStableRelayID() throws {
+        let registry = RelayAllocationRegistry()
+        let relayID = try RelayAllocation.relayID(forRouteToken: "route-token-renewal")
+        let current = try RelayAllocation(
+            relayID: relayID,
+            relaySecret: "secret-1",
+            relayExpiresAtEpochMillis: 10_000,
+            relayNonce: "nonce-current"
+        )
+        let older = try RelayAllocation(
+            relayID: relayID,
+            relaySecret: "secret-2",
+            relayExpiresAtEpochMillis: 9_000,
+            relayNonce: "nonce-older"
+        )
+        let sameExpiry = try RelayAllocation(
+            relayID: relayID,
+            relaySecret: "secret-3",
+            relayExpiresAtEpochMillis: 10_000,
+            relayNonce: "nonce-same-expiry"
+        )
+        let reusedNonce = try RelayAllocation(
+            relayID: relayID,
+            relaySecret: "secret-4",
+            relayExpiresAtEpochMillis: 12_000,
+            relayNonce: "nonce-current"
+        )
+
+        XCTAssertTrue(registry.store(current))
+        XCTAssertFalse(registry.store(older))
+        XCTAssertFalse(registry.store(sameExpiry))
+        XCTAssertFalse(registry.store(reusedNonce))
+
+        XCTAssertTrue(registry.isValid(relayID: relayID, now: Date(timeIntervalSince1970: 9)))
+        XCTAssertFalse(registry.isValid(relayID: relayID, now: Date(timeIntervalSince1970: 11)))
+    }
+
+    func testAllocationRegistryAcceptsAdvancingRenewalWithFreshNonce() throws {
+        let storeURL = try temporaryAllocationStoreURL()
+        let relayID = try RelayAllocation.relayID(forRouteToken: "route-token-renewal")
+        let current = try RelayAllocation(
+            relayID: relayID,
+            relaySecret: "secret-1",
+            relayExpiresAtEpochMillis: 10_000,
+            relayNonce: "nonce-current"
+        )
+        let renewed = try RelayAllocation(
+            relayID: relayID,
+            relaySecret: "secret-2",
+            relayExpiresAtEpochMillis: 12_000,
+            relayNonce: "nonce-renewed"
+        )
+
+        let registry = RelayAllocationRegistry(persistenceURL: storeURL)
+
+        XCTAssertTrue(registry.store(current))
+        XCTAssertTrue(registry.store(renewed))
+        XCTAssertTrue(registry.isValid(relayID: relayID, now: Date(timeIntervalSince1970: 11)))
+        let persisted = try String(contentsOf: storeURL, encoding: .utf8)
+        XCTAssertTrue(persisted.contains("nonce-renewed"))
+        XCTAssertFalse(persisted.contains("nonce-current"))
+    }
+
+    func testAllocationRegistryLoadsDuplicatePersistedRelayIDsWithAdvancingTicket() throws {
+        let storeURL = try temporaryAllocationStoreURL()
+        let relayID = try RelayAllocation.relayID(forRouteToken: "route-token-reload")
+        try writeAllocationTicketsJSON(
+            [
+                [
+                    "relay_id": relayID,
+                    "relay_expires_at": 10_000,
+                    "relay_nonce": "nonce-current"
+                ],
+                [
+                    "relay_id": relayID,
+                    "relay_expires_at": 12_000,
+                    "relay_nonce": "nonce-renewed"
+                ],
+                [
+                    "relay_id": relayID,
+                    "relay_expires_at": 13_000,
+                    "relay_nonce": "nonce-renewed"
+                ]
+            ],
+            to: storeURL
+        )
+
+        let registry = RelayAllocationRegistry(persistenceURL: storeURL)
+
+        XCTAssertEqual(registry.count(now: Date(timeIntervalSince1970: 11)), 1)
+        XCTAssertTrue(registry.isValid(relayID: relayID, now: Date(timeIntervalSince1970: 11)))
+        XCTAssertFalse(registry.isValid(relayID: relayID, now: Date(timeIntervalSince1970: 13)))
+    }
+
+    func testAllocationRegistrySkipsMalformedPersistedTicketsOnLoad() throws {
+        let storeURL = try temporaryAllocationStoreURL()
+        try writeAllocationTicketsJSON(
+            [
+                [
+                    "relay_id": "",
+                    "relay_expires_at": 20_000,
+                    "relay_nonce": "nonce-blank-relay"
+                ],
+                [
+                    "relay_id": "relay whitespace",
+                    "relay_expires_at": 20_000,
+                    "relay_nonce": "nonce-whitespace-relay"
+                ],
+                [
+                    "relay_id": "relay-bad-expiration",
+                    "relay_expires_at": 0,
+                    "relay_nonce": "nonce-bad-expiration"
+                ],
+                [
+                    "relay_id": "relay-bad-nonce",
+                    "relay_expires_at": 20_000,
+                    "relay_nonce": "nonce bad"
+                ],
+                [
+                    "relay_id": "relay-loadable",
+                    "relay_expires_at": 20_000,
+                    "relay_nonce": "nonce-loadable"
+                ]
+            ],
+            to: storeURL
+        )
+
+        let registry = RelayAllocationRegistry(persistenceURL: storeURL)
+
+        XCTAssertEqual(registry.count(now: Date(timeIntervalSince1970: 10)), 1)
+        XCTAssertTrue(registry.isValid(relayID: "relay-loadable", now: Date(timeIntervalSince1970: 10)))
+        XCTAssertFalse(registry.isValid(relayID: "relay-bad-expiration", now: Date(timeIntervalSince1970: 10)))
+        XCTAssertFalse(registry.isValid(relayID: "relay-bad-nonce", now: Date(timeIntervalSince1970: 10)))
     }
 
     func testAllocationRegistryExpiresAndRemovesRelayIDs() throws {
@@ -182,5 +419,14 @@ final class RelayAllocationTests: XCTestCase {
             try? FileManager.default.removeItem(at: directory)
         }
         return directory.appendingPathComponent("allocations.json")
+    }
+
+    private func writeAllocationTicketsJSON(_ tickets: [[String: Any]], to url: URL) throws {
+        let data = try JSONSerialization.data(withJSONObject: tickets, options: [.prettyPrinted, .sortedKeys])
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try data.write(to: url)
     }
 }

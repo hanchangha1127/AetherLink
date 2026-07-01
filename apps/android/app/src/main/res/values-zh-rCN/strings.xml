@@ -284,6 +284,19 @@
     <string name="provider_hide_diagnostics">隐藏详情</string>
     <string name="provider_show_diagnostics_for">显示 %1$s 的详情</string>
     <string name="provider_hide_diagnostics_for">隐藏 %1$s 的详情</string>
+    <string name="model_residency">模型驻留状态</string>
+    <string name="model_residency_unknown">正在等待运行时驻留状态</string>
+    <string name="model_residency_unsupported">此运行时未报告</string>
+    <string name="model_residency_active">%1$s %2$s 已驻留。进行中：%3$d。空闲卸载：%4$s。</string>
+    <string name="model_residency_inactive">没有驻留模型。进行中：%1$d。空闲卸载：%2$s。</string>
+    <string name="model_residency_idle_delay_seconds">%1$d 秒</string>
+    <string name="model_residency_idle_delay_minutes">%1$d 分钟</string>
+    <string name="model_residency_idle_delay_unknown">未报告</string>
+    <string name="model_residency_with_last_unload_failure">%1$s %2$s</string>
+    <string name="model_residency_last_unload_failure">上次卸载失败：%1$s %2$s（%3$s）。</string>
+    <string name="model_residency_unload_reason_model_switch">模型切换</string>
+    <string name="model_residency_unload_reason_idle_timeout">空闲超时</string>
+    <string name="model_residency_unload_reason_manual">手动卸载</string>
 
     <string name="models_title">模型</string>
     <string name="choose_model">选择模型</string>

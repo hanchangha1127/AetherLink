@@ -1433,15 +1433,27 @@ def android_runtime_boundary_guard_failures() -> list[str]:
         "CONNECTION_STATUS_HERO_TITLE_TEST_TAG",
         "CONNECTION_STATUS_HERO_DETAIL_TEST_TAG",
         "CONNECTION_STATUS_LINE_TEST_TAG_PREFIX",
+        "CONNECTION_STATUS_ACTIONS_TEST_TAG",
+        "CONNECTION_STATUS_REFRESH_ACTION_TEST_TAG",
+        "CONNECTION_STATUS_REFRESH_ACTION_LABEL_TEST_TAG",
+        "CONNECTION_STATUS_DISCONNECT_ACTION_TEST_TAG",
+        "CONNECTION_STATUS_DISCONNECT_ACTION_LABEL_TEST_TAG",
         "connectionStatusLineTestTag(key: String)",
         "tagKey = CONNECTION_STATUS_RUNTIME_LINE_KEY",
         "tagKey = CONNECTION_STATUS_PROVIDERS_LINE_KEY",
         "tagKey = CONNECTION_STATUS_AUTO_RECONNECT_LINE_KEY",
+        ".testTag(CONNECTION_STATUS_ACTIONS_TEST_TAG)",
         ".testTag(providerStatusRowTestTag(provider.id))",
         ".testTag(providerStatusHeaderTestTag(provider.id))",
         ".testTag(providerStatusStatusTestTag(provider.id))",
         ".testTag(providerStatusDiagnosticsButtonTestTag(provider.id))",
         ".testTag(providerStatusDiagnosticsPanelTestTag(provider.id))",
+        ".testTag(\n                                    providerStatusDiagnosticsMessageTestTag(provider.id),",
+        ".testTag(\n                                    providerStatusDiagnosticsCodeTestTag(provider.id),",
+        "providerStatusDiagnosticsMessageTestTag(providerId: String)",
+        "providerStatusDiagnosticsCodeTestTag(providerId: String)",
+        "PROVIDER_STATUS_DIAGNOSTICS_MESSAGE_TEST_TAG_PREFIX",
+        "PROVIDER_STATUS_DIAGNOSTICS_CODE_TEST_TAG_PREFIX",
         "maxLines = 2",
     ):
         if snippet not in ui_text:
@@ -1457,6 +1469,14 @@ def android_runtime_boundary_guard_failures() -> list[str]:
         "connectionStatusLineTestTag(key)",
         'assertBoundsInside("$languageTag $scenarioName connection hero icon", iconBounds, heroRowBounds)',
         'assertBoundsInside("$languageTag $scenarioName connection status value $key", valueBounds, lineBounds)',
+        "connectionStatusConnectedActionsStayBoundedAtLargeFontAcrossSupportedLanguages",
+        "connectionStatusConnectedActionsNarrowRootTestTag",
+        "connectionStatusConnectedActionsListTestTag",
+        "CONNECTION_STATUS_REFRESH_ACTION_LABEL_TEST_TAG",
+        "CONNECTION_STATUS_DISCONNECT_ACTION_LABEL_TEST_TAG",
+        'assertBoundsInside("$nextLanguageTag connection refresh action label", refreshLabelBounds, refreshBounds)',
+        'assertFalse(',
+        '"$nextLanguageTag connected actions should not overlap."',
         "connectionStatusProviderRowsStayBoundedAtLargeFontAcrossSupportedLanguages",
         "connectionStatusProviderRowsNarrowRootTestTag",
         "providerStatusRowTestTag(providerId)",
@@ -1464,8 +1484,15 @@ def android_runtime_boundary_guard_failures() -> list[str]:
         "providerStatusStatusTestTag(providerId)",
         "providerStatusDiagnosticsButtonTestTag(providerId)",
         "providerStatusDiagnosticsPanelTestTag(providerId)",
+        "connectionStatusProviderDiagnosticsDetailsStayBoundedAndRedactedAcrossSupportedLanguages",
+        "providerStatusDiagnosticsMessageTestTag(safeProviderId)",
+        "providerStatusDiagnosticsCodeTestTag(safeProviderId)",
+        "unsafeDiagnosticMessage",
+        "unsafeDiagnosticCode",
         'assertBoundsInside("$languageTag provider row", rowBounds, rootBounds)',
         'assertBoundsInside("$languageTag provider diagnostics panel", diagnosticsPanelBounds, rootBounds)',
+        'assertBoundsInside(\n                "$languageTag provider diagnostic message",',
+        'assertBoundsInside(\n                "$languageTag provider diagnostic code",',
     ):
         if snippet not in client_screens_test_text:
             failures.append(
@@ -2233,6 +2260,38 @@ def android_chat_history_danger_guard_failures() -> list[str]:
             "Two-step confirmation cancel buttons must expose the contextual subject as click label.",
         ),
         (
+            "CHAT_HISTORY_CONFIRMATION_DIALOG_TEST_TAG",
+            "Chat-history confirmations must expose a stable dialog tag for compact layout regressions.",
+        ),
+        (
+            ".widthIn(max = 360.dp)\n            .testTag(CHAT_HISTORY_CONFIRMATION_DIALOG_TEST_TAG)",
+            "Chat-history confirmations must keep the shared dialog width bounded for compact large-font layouts.",
+        ),
+        (
+            "CHAT_HISTORY_CONFIRMATION_TITLE_TEST_TAG",
+            "Chat-history confirmations must expose a stable title tag for compact layout regressions.",
+        ),
+        (
+            "CHAT_HISTORY_CONFIRMATION_MESSAGE_TEST_TAG",
+            "Chat-history confirmations must expose a stable message tag for compact layout regressions.",
+        ),
+        (
+            ".testTag(CHAT_HISTORY_CONFIRMATION_CONFIRM_TEST_TAG)",
+            "Chat-history confirmations must expose a stable confirm action tag for compact layout regressions.",
+        ),
+        (
+            "maxLines = 2,\n                    overflow = TextOverflow.Ellipsis,\n                    textAlign = TextAlign.Center,\n                    modifier = Modifier.testTag(CHAT_HISTORY_CONFIRMATION_CONFIRM_LABEL_TEST_TAG)",
+            "Chat-history confirmation confirm labels must remain bounded and tagged.",
+        ),
+        (
+            ".testTag(CHAT_HISTORY_CONFIRMATION_CANCEL_TEST_TAG)",
+            "Chat-history confirmations must expose a stable cancel action tag for compact layout regressions.",
+        ),
+        (
+            "maxLines = 2,\n                    overflow = TextOverflow.Ellipsis,\n                    textAlign = TextAlign.Center,\n                    modifier = Modifier.testTag(CHAT_HISTORY_CONFIRMATION_CANCEL_LABEL_TEST_TAG)",
+            "Chat-history confirmation cancel labels must remain bounded and tagged.",
+        ),
+        (
             "R.string.chat_session_row_summary_with_model",
             "Settings chat-history rows must expose localized title, status, and model metadata in accessibility summaries when model data exists.",
         ),
@@ -2322,7 +2381,7 @@ def android_chat_history_danger_guard_failures() -> list[str]:
             failures.append(f"{ui_relative}: {guidance}")
 
     qr_panel_start = ui_text.find("private fun QrPairingPanel(")
-    qr_panel_end = ui_text.find("private fun ManualPairingPayloadDialog(", qr_panel_start)
+    qr_panel_end = ui_text.find("fun ManualPairingPayloadDialog(", qr_panel_start)
     if qr_panel_start == -1 or qr_panel_end == -1:
         failures.append(f"{ui_relative}: Missing directly auditable QR pairing panel block.")
     else:
@@ -2450,6 +2509,13 @@ def android_chat_history_danger_guard_failures() -> list[str]:
         'assertBoundsInside("$nextLanguageTag bulk delete label", deleteLabelBounds, deleteActionBounds)',
         "settingsScreenPerChatHistoryActionsUseConfirmationHaptics",
         "chatHistoryConfirmationActionLabelsLocalizeSubjectsAcrossSupportedLanguages",
+        "chatHistoryConfirmationDialogsStayBoundedAtLargeFontAcrossSupportedLanguages",
+        "CHAT_HISTORY_CONFIRMATION_DIALOG_TEST_TAG",
+        "CHAT_HISTORY_CONFIRMATION_CONFIRM_LABEL_TEST_TAG",
+        "CHAT_HISTORY_CONFIRMATION_CANCEL_LABEL_TEST_TAG",
+        '"$languageTag chat-history confirmation confirm label",',
+        '"$languageTag chat-history confirmation cancel label",',
+        "boundsOverlap(confirmBounds, cancelBounds)",
         'hasContentDescription("Continue: Archive all chats")',
         'hasContentDescription("Cancel: Permanently delete chat Archived project chat")',
         'hasClickActionLabel("Confirm: Permanently delete chat Archived project chat")',
@@ -2558,6 +2624,30 @@ def android_chat_model_menu_guard_failures() -> list[str]:
         (
             "contentDescription = clearModelSearchContentDescription",
             "Model search clear button must expose its contextual accessibility label on the actionable button.",
+        ),
+        (
+            "CHAT_MODEL_SEARCH_CLEAR_TEST_TAG",
+            "Model search clear button must keep a stable tag for compact bounds regressions.",
+        ),
+        (
+            "CHAT_MODEL_SEARCH_NO_RESULTS_TEST_TAG",
+            "Model search no-results state must keep a stable tag for compact bounds regressions.",
+        ),
+        (
+            "CHAT_MODEL_REFRESH_ROW_TEST_TAG",
+            "Model refresh row must keep a stable tag for compact bounds regressions.",
+        ),
+        (
+            "CHAT_MODEL_REFRESH_LABEL_TEST_TAG",
+            "Model refresh label must keep a stable tag for compact bounds regressions.",
+        ),
+        (
+            "CHAT_MODEL_REFRESH_DETAIL_TEST_TAG",
+            "Model refresh detail must keep a stable tag for compact bounds regressions.",
+        ),
+        (
+            "maxLines = 2,\n                                overflow = TextOverflow.Ellipsis,\n                                modifier = Modifier.testTag(CHAT_MODEL_REFRESH_LABEL_TEST_TAG)",
+            "Model refresh label must wrap before ellipsizing on compact large-font surfaces.",
         ),
         (
             "onClick(label = clearModelSearchContentDescription, action = null)",
@@ -2939,6 +3029,20 @@ def android_chat_model_menu_guard_failures() -> list[str]:
         "assertBoundsInside(\"${expected.languageTag} compact vision warning icon\", warningIconBounds, textRowBounds)",
         "chatTopBarModelPickerSearchClearsWithContextAndHapticFeedback",
         "chatTopBarModelPickerSearchLocalizesClearAndNoResultsAcrossSupportedLanguages",
+        "chatTopBarModelPickerSearchNoResultsStaysBoundedAtLargeFontAcrossSupportedLanguages",
+        "chatModelSearchNoResultsNarrowRootTestTag",
+        "CHAT_MODEL_SEARCH_CLEAR_TEST_TAG",
+        "CHAT_MODEL_SEARCH_NO_RESULTS_TEST_TAG",
+        "assertBoundsInside(\"${expected.languageTag} model search clear action\", clearBounds, searchBounds)",
+        "assertFalse(\n                \"${expected.languageTag} model search field should not overlap no-results row.\"",
+        "chatTopBarModelPickerRefreshRowStaysBoundedAtLargeFontAcrossSupportedLanguages",
+        "chatModelRefreshRowNarrowRootTestTag",
+        "CHAT_MODEL_REFRESH_ROW_TEST_TAG",
+        "CHAT_MODEL_REFRESH_LABEL_TEST_TAG",
+        "CHAT_MODEL_REFRESH_DETAIL_TEST_TAG",
+        "assertBoundsInside(\"$languageTag model refresh row\", rowBounds, rootBounds)",
+        "assertBoundsInside(\"$languageTag model refresh label\", labelBounds, textBounds)",
+        "model refresh label should not overlap detail copy",
         'hasContentDescription("Try another model name, provider, service, or source.") and',
         "hasPoliteLiveRegion()",
         "hasContentDescription(summary) and hasPoliteLiveRegion()",
@@ -3327,21 +3431,27 @@ def android_composer_draft_persistence_guard_failures() -> list[str]:
     failures: list[str] = []
     store_path = ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeLocalStore.kt"
     runtime_path = ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt"
+    ui_path = ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/ui/ClientScreens.kt"
     runtime_test_path = ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt"
+    compose_test_path = ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt"
     no_device_path = ROOT / "script/check_no_device_quality.sh"
 
-    for path in (store_path, runtime_path, runtime_test_path, no_device_path):
+    for path in (store_path, runtime_path, ui_path, runtime_test_path, compose_test_path, no_device_path):
         if not path.exists():
             failures.append(f"{path.relative_to(ROOT)}: missing Android composer-draft persistence guard file.")
             return failures
 
     store_text = store_path.read_text(encoding="utf-8", errors="replace")
     runtime_text = runtime_path.read_text(encoding="utf-8", errors="replace")
+    ui_text = ui_path.read_text(encoding="utf-8", errors="replace")
     runtime_test_text = runtime_test_path.read_text(encoding="utf-8", errors="replace")
+    compose_test_text = compose_test_path.read_text(encoding="utf-8", errors="replace")
     no_device_text = no_device_path.read_text(encoding="utf-8", errors="replace")
     store_relative = store_path.relative_to(ROOT)
     runtime_relative = runtime_path.relative_to(ROOT)
+    ui_relative = ui_path.relative_to(ROOT)
     runtime_test_relative = runtime_test_path.relative_to(ROOT)
+    compose_test_relative = compose_test_path.relative_to(ROOT)
     no_device_relative = no_device_path.relative_to(ROOT)
 
     required_store_snippets = (
@@ -3393,6 +3503,35 @@ def android_composer_draft_persistence_guard_failures() -> list[str]:
         if snippet not in runtime_test_text:
             failures.append(f"{runtime_test_relative}: Missing persisted composer draft regression {snippet}.")
 
+    required_ui_snippets = (
+        "CHAT_MESSAGES_LOADING_PANEL_TEST_TAG",
+        "CHAT_MESSAGES_LOADING_PROGRESS_TEST_TAG",
+        "CHAT_MESSAGES_LOADING_TEXT_TEST_TAG",
+        ".testTag(CHAT_MESSAGES_LOADING_PANEL_TEST_TAG)",
+        ".testTag(CHAT_MESSAGES_LOADING_PROGRESS_TEST_TAG)",
+        ".testTag(CHAT_MESSAGES_LOADING_TEXT_TEST_TAG)",
+        "maxLines = 2",
+        "overflow = TextOverflow.Ellipsis",
+    )
+    for snippet in required_ui_snippets:
+        if snippet not in ui_text:
+            failures.append(f"{ui_relative}: Missing runtime transcript loading compact layout guard {snippet}.")
+
+    required_compose_test_snippets = (
+        "chatScreenRuntimeTranscriptLoadingStateStaysBoundedAtLargeFontAcrossSupportedLanguages",
+        "chatRuntimeTranscriptLoadingNarrowRootTestTag",
+        "CHAT_MESSAGES_LOADING_PANEL_TEST_TAG",
+        "CHAT_MESSAGES_LOADING_PROGRESS_TEST_TAG",
+        "CHAT_MESSAGES_LOADING_TEXT_TEST_TAG",
+        'assertBoundsInside("$nextLanguageTag runtime transcript loading panel", loadingPanelBounds, rootBounds)',
+        'assertBoundsInside("$nextLanguageTag runtime transcript loading progress", progressBounds, loadingPanelBounds)',
+        'assertBoundsInside("$nextLanguageTag runtime transcript loading text", loadingTextBounds, loadingPanelBounds)',
+        '"$nextLanguageTag runtime transcript loading panel should not overlap composer."',
+    )
+    for snippet in required_compose_test_snippets:
+        if snippet not in compose_test_text:
+            failures.append(f"{compose_test_relative}: Missing runtime transcript loading compact layout regression {snippet}.")
+
     required_no_device_snippets = (
         "RuntimeClientViewModelTest.persistedComposerDraftRestoresOnViewModelCreationAndUpdatesWithTyping",
         "RuntimeClientViewModelTest.openPreviousChatRestoresSessionScopedComposerDrafts",
@@ -3405,11 +3544,13 @@ def android_composer_draft_persistence_guard_failures() -> list[str]:
         "RuntimeClientViewModelTest.sanitizedDropsArchivedSessionComposerDrafts",
         "RuntimeClientViewModelTest.sendChatMessageClearsPersistedComposerDraft",
         "ClientScreensNoDeviceComposeTest.chatScreenShowsLocalizedLoadingStateWhileRuntimeTranscriptLoads",
+        "ClientScreensNoDeviceComposeTest.chatScreenRuntimeTranscriptLoadingStateStaysBoundedAtLargeFontAcrossSupportedLanguages",
         "ClientScreensNoDeviceComposeTest.chatScreenTrustedRuntimeWithoutConnectableRouteShowsLatestQrEmptyState",
         "Android composer draft persistence",
         "Android session-scoped composer draft switching",
         "Android transient attachment cleanup on chat lifecycle exits",
         "Android runtime transcript loading state",
+        "Android runtime transcript loading compact layout",
         "Android runtime transcript lifecycle mutation lockout",
     )
     for snippet in required_no_device_snippets:
@@ -3445,6 +3586,11 @@ def android_reasoning_accessibility_guard_failures() -> list[str]:
         "announceUpdates = isStreaming && message.isReasoningOpen",
         "if (announceUpdates) {",
         "liveRegion = LiveRegionMode.Polite",
+        "ASSISTANT_REASONING_CONTAINER_TEST_TAG = \"assistant_reasoning_container\"",
+        "ASSISTANT_REASONING_HEADER_TEST_TAG = \"assistant_reasoning_header\"",
+        "ASSISTANT_REASONING_LABEL_TEST_TAG = \"assistant_reasoning_label\"",
+        "ASSISTANT_REASONING_TOGGLE_TEST_TAG = \"assistant_reasoning_toggle\"",
+        "ASSISTANT_REASONING_BODY_TEST_TAG = \"assistant_reasoning_body\"",
     )
     for snippet in required_ui_snippets:
         if snippet not in ui_text:
@@ -3455,6 +3601,14 @@ def android_reasoning_accessibility_guard_failures() -> list[str]:
         "chatScreenReasoningSummaryLocalizesAcrossSupportedLanguages",
         "chatScreenKeepsOpenStreamingReasoningCollapsedUntilExpanded",
         "chatScreenShortReasoningIsReadAsStaticThinkingAcrossSupportedLanguages",
+        "chatScreenAssistantReasoningStaysBoundedAtLargeFontAcrossSupportedLanguages",
+        "chatReasoningNarrowRootTestTag",
+        "ASSISTANT_REASONING_CONTAINER_TEST_TAG",
+        "ASSISTANT_REASONING_HEADER_TEST_TAG",
+        "ASSISTANT_REASONING_LABEL_TEST_TAG",
+        "ASSISTANT_REASONING_TOGGLE_TEST_TAG",
+        "ASSISTANT_REASONING_BODY_TEST_TAG",
+        "boundsOverlap(labelBounds, toggleBounds)",
         "isReasoningOpen = true",
         "SemanticsMatcher.expectValue(SemanticsProperties.LiveRegion, LiveRegionMode.Polite)",
         "Thinking. Collapsed. first step second step third step",
@@ -3564,7 +3718,14 @@ def android_chat_search_no_results_live_region_guard_failures() -> list[str]:
 
     required_drawer_snippets = (
         "if (hasChatSearchQuery && !hasChatSearchResults) {\n                    val noSearchResultsText = stringResource(R.string.no_chat_search_results)",
+        "DRAWER_CHAT_SEARCH_CLEAR_TEST_TAG",
+        "DRAWER_CHAT_SEARCH_NO_RESULTS_TEST_TAG",
+        ".testTag(DRAWER_CHAT_SEARCH_CLEAR_TEST_TAG)",
+        ".testTag(DRAWER_CHAT_SEARCH_NO_RESULTS_TEST_TAG)",
+        "contentDescription = noSearchResultsText",
         "liveRegion = LiveRegionMode.Polite",
+        "DRAWER_EMPTY_HISTORY_TEST_TAG",
+        ".testTag(DRAWER_EMPTY_HISTORY_TEST_TAG)",
         "val noPreviousChatsText = stringResource(R.string.no_previous_chats)",
         "contentDescription = noPreviousChatsText\n                                liveRegion = LiveRegionMode.Polite",
     )
@@ -3635,6 +3796,12 @@ def android_chat_search_no_results_live_region_guard_failures() -> list[str]:
 
     required_compose_snippets = (
         "navigationDrawerChatSearchLocalizesClearAndNoResultsAcrossSupportedLanguages",
+        "navigationDrawerChatSearchNoResultsStaysBoundedAtLargeFontAcrossSupportedLanguages",
+        "DRAWER_CHAT_SEARCH_CLEAR_TEST_TAG",
+        "DRAWER_CHAT_SEARCH_NO_RESULTS_TEST_TAG",
+        "drawerChatSearchNoResultsNarrowRootTestTag",
+        "assertBoundsInside(\"${expected.languageTag} drawer chat search clear action\", clearBounds, searchBounds)",
+        "assertBoundsInside(\n                \"${expected.languageTag} drawer chat search no-results row\"",
         "settingsChatHistorySearchLocalizesClearAndNoResultsAcrossSupportedLanguages",
         "settingsChatHistoryShowsRuntimeSearchSnippetForQueryResults",
         "settingsChatHistoryRuntimeSearchMetadataStaysBoundedAtLargeFontAcrossSupportedLanguages",
@@ -3650,6 +3817,10 @@ def android_chat_search_no_results_live_region_guard_failures() -> list[str]:
         "Results for \\\"relay\\\": 1 active chat. 1 archived chat.",
         "searchMatchedFields = listOf(\"reasoning\", \"transcript\", \"model\", \"unknown\", \"transcript\")",
         "navigationDrawerEmptyHistoryAnnouncesLocalizedLiveRegionAcrossSupportedLanguages",
+        "navigationDrawerEmptyHistoryStaysBoundedAtLargeFontAcrossSupportedLanguages",
+        "DRAWER_EMPTY_HISTORY_TEST_TAG",
+        "drawerEmptyHistoryNarrowRootTestTag",
+        "assertBoundsInside(\"$languageTag drawer empty-history message\", emptyBounds, rootBounds)",
         "hasContentDescription(emptyText) and hasPoliteLiveRegion()",
     )
     for snippet in required_compose_snippets:
@@ -3790,7 +3961,7 @@ def android_trusted_runtime_forget_guard_failures() -> list[str]:
             "Trusted runtime forget confirmation must only show for an existing trusted runtime.",
         ),
         (
-            "title = { Text(stringResource(R.string.forget_trusted_runtime_confirm_title)) }",
+            "R.string.forget_trusted_runtime_confirm_title",
             "Trusted runtime forget dialog title must use localized copy.",
         ),
         (
@@ -3857,6 +4028,38 @@ def android_trusted_runtime_forget_guard_failures() -> list[str]:
             "onClick(label = it, action = null)",
             "Trusted runtime forget button must expose a named click action label.",
         ),
+        (
+            "SETTINGS_TRUSTED_RUNTIME_FORGET_DIALOG_TEST_TAG",
+            "Trusted runtime forget dialog must keep a stable compact-layout dialog tag.",
+        ),
+        (
+            "SETTINGS_TRUSTED_RUNTIME_FORGET_TITLE_TEST_TAG",
+            "Trusted runtime forget dialog must keep a stable compact-layout title tag.",
+        ),
+        (
+            "SETTINGS_TRUSTED_RUNTIME_FORGET_MESSAGE_TEST_TAG",
+            "Trusted runtime forget dialog must keep a stable compact-layout message tag.",
+        ),
+        (
+            "SETTINGS_TRUSTED_RUNTIME_FORGET_CONFIRM_TEST_TAG",
+            "Trusted runtime forget dialog must keep a stable compact-layout confirm tag.",
+        ),
+        (
+            "SETTINGS_TRUSTED_RUNTIME_FORGET_CONFIRM_LABEL_TEST_TAG",
+            "Trusted runtime forget confirm label must stay separately testable.",
+        ),
+        (
+            "SETTINGS_TRUSTED_RUNTIME_FORGET_CANCEL_TEST_TAG",
+            "Trusted runtime forget dialog must keep a stable compact-layout cancel tag.",
+        ),
+        (
+            "SETTINGS_TRUSTED_RUNTIME_FORGET_CANCEL_LABEL_TEST_TAG",
+            "Trusted runtime forget cancel label must stay separately testable.",
+        ),
+        (
+            ".widthIn(max = 360.dp)",
+            "Trusted runtime forget dialog must keep a compact max-width constraint.",
+        ),
     )
     for snippet, guidance in required_ui_snippets:
         if snippet not in ui_text:
@@ -3869,6 +4072,7 @@ def android_trusted_runtime_forget_guard_failures() -> list[str]:
     required_test_snippets = (
         "settingsTrustedRuntimeForgetRequiresConfirmation",
         "settingsTrustedRuntimeForgetActionNamesRuntimeAcrossSupportedLanguages",
+        "settingsTrustedRuntimeForgetDialogStaysBoundedAtLargeFontAcrossSupportedLanguages",
         'compose.onNodeWithText("Forget trusted runtime?").assertIsDisplayed()',
         "Remove AetherLink Runtime? Pair again for model access.",
         "R.string.forget_trusted_runtime_confirm_message",
@@ -3888,6 +4092,15 @@ def android_trusted_runtime_forget_guard_failures() -> list[str]:
         "assertEquals(1, forgetClicks)",
         "assertEquals(listOf(HapticFeedbackType.TextHandleMove), hapticFeedback.events)",
         "assertEquals(listOf(HapticFeedbackType.LongPress), hapticFeedback.events)",
+        "SETTINGS_TRUSTED_RUNTIME_FORGET_DIALOG_TEST_TAG",
+        "SETTINGS_TRUSTED_RUNTIME_FORGET_TITLE_TEST_TAG",
+        "SETTINGS_TRUSTED_RUNTIME_FORGET_MESSAGE_TEST_TAG",
+        "SETTINGS_TRUSTED_RUNTIME_FORGET_CONFIRM_TEST_TAG",
+        "SETTINGS_TRUSTED_RUNTIME_FORGET_CONFIRM_LABEL_TEST_TAG",
+        "SETTINGS_TRUSTED_RUNTIME_FORGET_CANCEL_TEST_TAG",
+        "SETTINGS_TRUSTED_RUNTIME_FORGET_CANCEL_LABEL_TEST_TAG",
+        '"${expected.languageTag} trusted-runtime forget confirm label",',
+        "boundsOverlap(confirmBounds, cancelBounds)",
     )
     for snippet in required_test_snippets:
         if snippet not in compose_test_text:
@@ -4129,6 +4342,38 @@ def android_haptic_guard_failures() -> list[str]:
             "Rename chat title field and Save action must expose readiness state to accessibility.",
         ),
         (
+            "RENAME_CHAT_DIALOG_TEST_TAG",
+            "Rename chat dialog must keep a stable compact-layout dialog tag.",
+        ),
+        (
+            "RENAME_CHAT_TITLE_TEST_TAG",
+            "Rename chat dialog must keep a stable compact-layout title tag.",
+        ),
+        (
+            "RENAME_CHAT_INPUT_TEST_TAG",
+            "Rename chat dialog must keep a stable compact-layout input tag.",
+        ),
+        (
+            "RENAME_CHAT_CONFIRM_TEST_TAG",
+            "Rename chat dialog must keep a stable compact-layout confirm tag.",
+        ),
+        (
+            "RENAME_CHAT_CONFIRM_LABEL_TEST_TAG",
+            "Rename chat dialog confirm label must stay separately testable.",
+        ),
+        (
+            "RENAME_CHAT_CANCEL_TEST_TAG",
+            "Rename chat dialog must keep a stable compact-layout cancel tag.",
+        ),
+        (
+            "RENAME_CHAT_CANCEL_LABEL_TEST_TAG",
+            "Rename chat dialog cancel label must stay separately testable.",
+        ),
+        (
+            ".widthIn(max = 360.dp)",
+            "Rename chat dialog must keep a compact max-width constraint.",
+        ),
+        (
             "hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.SelectionChange)\n"
             "                                    onArchiveChatSession(session)",
             "Chat archive action must use lightweight feedback because archive is reversible.",
@@ -4246,6 +4491,30 @@ def android_haptic_guard_failures() -> list[str]:
         (
             "manualPairingPayloadStateDescriptionRes(payload, sanitizedPayload)",
             "Diagnostic QR text dialog must derive empty, invalid, and ready accessibility states.",
+        ),
+        (
+            "MANUAL_QR_PAYLOAD_DIALOG_TEST_TAG",
+            "Diagnostic QR text dialog must keep a stable compact-layout dialog tag.",
+        ),
+        (
+            "MANUAL_QR_PAYLOAD_INPUT_TEST_TAG",
+            "Diagnostic QR text dialog must keep a stable compact-layout input tag.",
+        ),
+        (
+            "MANUAL_QR_PAYLOAD_STATE_TEST_TAG",
+            "Diagnostic QR text dialog must keep a stable compact-layout state tag.",
+        ),
+        (
+            "MANUAL_QR_PAYLOAD_SUBMIT_TEST_TAG",
+            "Diagnostic QR text dialog must keep a stable compact-layout submit tag.",
+        ),
+        (
+            "MANUAL_QR_PAYLOAD_CANCEL_TEST_TAG",
+            "Diagnostic QR text dialog must keep a stable compact-layout cancel tag.",
+        ),
+        (
+            ".widthIn(max = 360.dp)",
+            "Diagnostic QR text dialog must keep a compact max-width constraint.",
         ),
         (
             "val manualQrPayloadOpenAccessibilityLabel =\n"
@@ -5094,6 +5363,38 @@ def android_haptic_guard_failures() -> list[str]:
             "Memory remove confirmation body must name the exact memory being deleted.",
         ),
         (
+            "MEMORY_DELETE_CONFIRMATION_DIALOG_TEST_TAG",
+            "Memory delete confirmation must expose a stable dialog tag for compact layout regressions.",
+        ),
+        (
+            ".widthIn(max = 360.dp)\n                .testTag(MEMORY_DELETE_CONFIRMATION_DIALOG_TEST_TAG)",
+            "Memory delete confirmation must keep the dialog width bounded for compact large-font layouts.",
+        ),
+        (
+            "MEMORY_DELETE_CONFIRMATION_TITLE_TEST_TAG",
+            "Memory delete confirmation must expose a stable title tag for compact layout regressions.",
+        ),
+        (
+            "MEMORY_DELETE_CONFIRMATION_MESSAGE_TEST_TAG",
+            "Memory delete confirmation must expose a stable message tag for compact layout regressions.",
+        ),
+        (
+            ".testTag(MEMORY_DELETE_CONFIRMATION_CONFIRM_TEST_TAG)",
+            "Memory delete confirmation must expose a stable confirm action tag for compact layout regressions.",
+        ),
+        (
+            "maxLines = 2,\n                        overflow = TextOverflow.Ellipsis,\n                        textAlign = TextAlign.Center,\n                        modifier = Modifier.testTag(MEMORY_DELETE_CONFIRMATION_CONFIRM_LABEL_TEST_TAG)",
+            "Memory delete confirmation confirm labels must remain bounded and tagged.",
+        ),
+        (
+            ".testTag(MEMORY_DELETE_CONFIRMATION_CANCEL_TEST_TAG)",
+            "Memory delete confirmation must expose a stable cancel action tag for compact layout regressions.",
+        ),
+        (
+            "maxLines = 2,\n                        overflow = TextOverflow.Ellipsis,\n                        textAlign = TextAlign.Center,\n                        modifier = Modifier.testTag(MEMORY_DELETE_CONFIRMATION_CANCEL_LABEL_TEST_TAG)",
+            "Memory delete confirmation cancel labels must remain bounded and tagged.",
+        ),
+        (
             "val composerStateDescription = when {",
             "Chat composer input must derive the same localized readiness state as send/attach controls.",
         ),
@@ -5526,8 +5827,10 @@ def android_haptic_guard_failures() -> list[str]:
         "model_picker_empty_state_summary",
         "hasContentDescription(summary) and hasPoliteLiveRegion()",
         "chatTopBarModelPickerRefreshRowLocalizesReadinessStates",
+        "chatTopBarModelPickerRefreshRowStaysBoundedAtLargeFontAcrossSupportedLanguages",
         "hasContentDescription(refreshLabel) and",
         "hasStateDescription(refreshStateDescription)",
+        "CHAT_MODEL_REFRESH_ROW_TEST_TAG",
         "chatScreenSendButtonLocalizesReadinessStateAcrossSupportedLanguages",
         "currentAttachmentCount",
         "R.string.chat_hint_ready_with_attachments",
@@ -5599,6 +5902,8 @@ def android_haptic_guard_failures() -> list[str]:
         "hasStateDescription(\"Wait for the current connection attempt before scanning again.\") and",
         'hasClickActionLabel("Scan QR")',
         "diagnosticQrTextDialogExplainsEmptyInvalidAndReadyStates",
+        "diagnosticQrTextDialogStaysBoundedAtLargeFontAcrossSupportedLanguages",
+        '"${expected.languageTag} diagnostic QR text state helper"',
         "Paste AetherLink Runtime QR text before continuing.",
         "Use AetherLink Runtime QR text that starts with aetherlink://pair.",
         "Ready to use QR text.",
@@ -5698,6 +6003,13 @@ def android_haptic_guard_failures() -> list[str]:
         "MEMORY_ENTRY_CONTENT_TEST_TAG",
         "MEMORY_ENTRY_ACTIONS_TEST_TAG",
         "actionBounds.top >= contentBounds.bottom",
+        "settingsMemoryDeleteConfirmationDialogStaysBoundedAtLargeFontAcrossSupportedLanguages",
+        "MEMORY_DELETE_CONFIRMATION_DIALOG_TEST_TAG",
+        "MEMORY_DELETE_CONFIRMATION_CONFIRM_LABEL_TEST_TAG",
+        "MEMORY_DELETE_CONFIRMATION_CANCEL_LABEL_TEST_TAG",
+        '"$languageTag memory delete confirmation confirm label",',
+        '"$languageTag memory delete confirmation cancel label",',
+        "boundsOverlap(confirmBounds, cancelBounds)",
         "settingsMemorySummaryLocalizesSavedAndPausedCountsAcrossSupportedLanguages",
         "2 saved memories, 1 paused.",
         "저장된 메모리 2개, 일시 중지 1개.",
@@ -5724,6 +6036,19 @@ def android_haptic_guard_failures() -> list[str]:
         'hasContentDescription("Cancel: Rename chat")',
         'hasClickActionLabel("Cancel: Rename chat")',
         "hasSetTextAction()",
+        "renameChatSessionDialogStaysBoundedAtLargeFontAcrossSupportedLanguages",
+        "RENAME_CHAT_DIALOG_TEST_TAG",
+        "RENAME_CHAT_TITLE_TEST_TAG",
+        "RENAME_CHAT_INPUT_TEST_TAG",
+        "RENAME_CHAT_CONFIRM_TEST_TAG",
+        "RENAME_CHAT_CONFIRM_LABEL_TEST_TAG",
+        "RENAME_CHAT_CANCEL_TEST_TAG",
+        "RENAME_CHAT_CANCEL_LABEL_TEST_TAG",
+        '"${expected.languageTag} rename chat confirm label",',
+        "confirmLabelBounds,",
+        '"${expected.languageTag} rename chat cancel label",',
+        "cancelLabelBounds,",
+        "boundsOverlap(confirmBounds, cancelBounds)",
         'hasClickActionLabel("Expand section")',
         'hasClickActionLabel("Collapse section")',
         'hasClickActionLabel("Show troubleshooting")',
@@ -8432,6 +8757,10 @@ def macos_quick_action_accessibility_guard_failures() -> list[str]:
         "func modelProviderCheckActionAccessibilityHint() -> String",
         "func modelListLoadActionAccessibilityValue() -> String",
         "func modelListLoadActionAccessibilityHint() -> String",
+        "func refreshModelResidencyActionAccessibilityValue() -> String",
+        "func refreshModelResidencyActionAccessibilityHint() -> String",
+        "func unloadResidentModelActionAccessibilityValue(",
+        "func unloadResidentModelActionAccessibilityHint(",
         "func menuBarRuntimeStatusAccessibilityLabel(_ status: CompanionTransportStatus) -> String",
         "func menuBarModelServiceStatusAccessibilityLabel(_ statuses: [CompanionProviderStatus]) -> String",
         "func menuBarOpenAetherLinkAccessibilityHint() -> String",
@@ -8443,6 +8772,10 @@ def macos_quick_action_accessibility_guard_failures() -> list[str]:
         "return [.refreshProviders, .loadModels, .pairingQR]",
         "Check model provider availability through AetherLink Runtime.",
         "Load the installed local model list through AetherLink Runtime.",
+        "Refresh the runtime model residency status.",
+        "Unload the active resident model now through AetherLink Runtime.",
+        "Wait for the active generation to finish before unloading the resident model.",
+        "No resident model is active through AetherLink Runtime.",
         "Runtime status: %@",
         "Model service status: %@",
         "Open the AetherLink window and bring it to the front.",
@@ -8480,6 +8813,24 @@ def macos_quick_action_accessibility_guard_failures() -> list[str]:
                     f"{path.relative_to(ROOT)}: Missing macOS quick action accessibility wiring {snippet}."
                 )
 
+    required_status_action_snippets = (
+        "Button {\n                model.refreshModelResidencyStatus()\n            }",
+        "Label(NSLocalizedString(\"Refresh Model Residency\", comment: \"\"), systemImage: \"memorychip\")",
+        ".help(refreshModelResidencyActionAccessibilityHint())",
+        ".accessibilityValue(Text(refreshModelResidencyActionAccessibilityValue()))",
+        ".accessibilityHint(Text(refreshModelResidencyActionAccessibilityHint()))",
+        "Task { await model.unloadResidentModelNow() }",
+        "Label(NSLocalizedString(\"Unload Resident Model\", comment: \"\"), systemImage: \"eject\")",
+        ".disabled(!canUnloadResidentModel)",
+        ".help(unloadResidentModelActionHint)",
+        "unloadResidentModelActionAccessibilityValue(",
+    )
+    for snippet in required_status_action_snippets:
+        if snippet not in status_text:
+            failures.append(
+                f"{status_path.relative_to(ROOT)}: Missing macOS model-residency refresh quick action {snippet}."
+            )
+
     for snippet in (
         "Button(NSLocalizedString(\"Check Model Providers\", comment: \"\"))",
         ".keyboardShortcut(\"r\", modifiers: [.command])",
@@ -8513,15 +8864,29 @@ def macos_quick_action_accessibility_guard_failures() -> list[str]:
         "modelProviderCheckActionAccessibilityHint()",
         "modelListLoadActionAccessibilityValue()",
         "modelListLoadActionAccessibilityHint()",
+        "refreshModelResidencyActionAccessibilityValue()",
+        "refreshModelResidencyActionAccessibilityHint()",
+        "unloadResidentModelActionAccessibilityValue(canUnload: true, inFlightGenerations: 0)",
+        "unloadResidentModelActionAccessibilityHint(canUnload: true, inFlightGenerations: 0)",
+        "unloadResidentModelActionAccessibilityValue(canUnload: false, inFlightGenerations: 1)",
+        "unloadResidentModelActionAccessibilityHint(canUnload: false, inFlightGenerations: 1)",
         "menuBarRuntimeStatusAccessibilityLabel(.advertising(serviceName: \"AetherLink\", port: 43170))",
         "menuBarModelServiceStatusAccessibilityLabel([])",
         "menuBarOpenAetherLinkAccessibilityHint()",
         "menuBarQuitAccessibilityHint()",
         "pairingQRGenerationCommandTitle(hasActiveSession: true)",
         "AetherLink Runtime을 통해 모델 제공자 사용 가능 여부를 확인합니다.",
+        "런타임 모델 상주 상태를 새로 고칩니다.",
+        "AetherLink Runtime을 통해 활성 상주 모델을 지금 언로드합니다.",
         "AetherLink Runtime 経由でインストール済みローカルモデルの一覧を読み込みます。",
+        "ランタイムのモデル常駐状態を更新します。",
+        "AetherLink Runtime 経由でアクティブな常駐モデルを今すぐアンロードします。",
         "通过 AetherLink Runtime 检查模型提供方可用性。",
+        "刷新运行时模型驻留状态。",
+        "通过 AetherLink Runtime 立即卸载活动驻留模型。",
         "Charge la liste des modèles locaux installés via AetherLink Runtime.",
+        "Actualise l’état de résidence du modèle du runtime.",
+        "Décharge immédiatement le modèle résident actif via AetherLink Runtime.",
     )
     for snippet in required_test_snippets:
         if snippet not in test_text:
@@ -9262,8 +9627,8 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate coverage summary must mention authenticated relay E2E coverage.",
         ),
         (
-            "authenticated relay chat.send document attachment and non-vision image rejection smoke",
-            "Default no-device gate coverage summary must mention authenticated relay attachment and image vision-gate smoke coverage.",
+            "authenticated relay chat.send document attachment, non-vision image rejection, vision image success, and pulled model chat smoke",
+            "Default no-device gate coverage summary must mention authenticated relay attachment, image vision-gate success, and pulled model chat smoke coverage.",
         ),
         (
             "non-consuming relay readiness probe",
@@ -9382,7 +9747,7 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device quality gate must run the broad unauthenticated runtime-command rejection regression.",
         ),
         (
-            "unauthenticated models.list, models.pull, chat.send, chat.cancel, route.refresh, chat history/title/session mutation, and memory list/upsert/delete command rejection",
+            "unauthenticated models.list, models.pull, chat.send, chat.cancel, route.refresh, chat history/title/session mutation, memory list/upsert/delete, and memory-summary draft command rejection",
             "Default no-device quality summary must mention broad unauthenticated runtime-command rejection coverage.",
         ),
         (
@@ -9390,8 +9755,16 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device quality gate must run the Ollama unload wire-format regression.",
         ),
         (
+            "OllamaBackendTests/testUnloadModelHTTPStatusReturnsStructuredError",
+            "Default no-device quality gate must run the Ollama structured unload-failure regression.",
+        ),
+        (
             "LMStudioBackendTests/testUnloadModelPostsLoadedInstanceID",
             "Default no-device quality gate must run the LM Studio unload wire-format regression.",
+        ),
+        (
+            "LMStudioBackendTests/testUnloadModelHTTPStatusReturnsStructuredError",
+            "Default no-device quality gate must run the LM Studio structured unload-failure regression.",
         ),
         (
             "AggregatingLlmBackendResidencyTests/testSwitchingModelsUnloadsPreviousInactiveModel",
@@ -9406,11 +9779,23 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device quality gate must run the macOS idle-timeout unload regression.",
         ),
         (
+            "AggregatingLlmBackendResidencyTests/testManualUnloadClearsActiveResidentModelAndEmitsManualEvent",
+            "Default no-device quality gate must run the macOS manual unload success regression.",
+        ),
+        (
+            "AggregatingLlmBackendResidencyTests/testManualUnloadFailureKeepsStructuredManualFailureReason",
+            "Default no-device quality gate must run the macOS manual unload failure regression.",
+        ),
+        (
+            "AggregatingLlmBackendResidencyTests/testManualUnloadSkipsWhileGenerationIsInFlight",
+            "Default no-device quality gate must run the macOS manual unload in-flight guard regression.",
+        ),
+        (
             "AggregatingLlmBackendResidencyTests/testUnloadFailureEmitsProviderSpecificFailureEventWithoutBreakingNextChat",
             "Default no-device quality gate must run the macOS unload-failure reporting regression.",
         ),
         (
-            "macOS model-switch unload, same-model unload suppression, idle-timeout unload, provider-specific unload-failure reporting, Ollama unload wire format, and LM Studio unload wire format",
+            "macOS model-switch unload, same-model unload suppression, idle-timeout unload, runtime-host-owned manual model unload, provider-specific unload-failure reporting, Ollama unload wire format, LM Studio unload wire format, and provider adapter structured unload-failure errors",
             "Default no-device quality summary must mention model-residency unload smoke coverage.",
         ),
         (
@@ -9678,8 +10063,16 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate must run the Android Settings trusted-runtime panel compact layout regression.",
         ),
         (
+            "ClientScreensNoDeviceComposeTest.settingsTrustedRuntimeForgetDialogStaysBoundedAtLargeFontAcrossSupportedLanguages",
+            "Default no-device gate must run the Android trusted-runtime forget compact dialog layout regression.",
+        ),
+        (
             "Android Settings trusted-runtime panel compact layout",
             "Default no-device gate coverage summary must mention Android Settings trusted-runtime panel compact layout.",
+        ),
+        (
+            "Android trusted-runtime forget compact dialog layout",
+            "Default no-device gate coverage summary must mention Android trusted-runtime forget compact dialog layout.",
         ),
         (
             "ClientScreensNoDeviceComposeTest.settingsPreferenceRowsExposeSelectedStateToAccessibility",
@@ -9830,6 +10223,14 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate coverage summary must mention Android drawer chat row compact layout.",
         ),
         (
+            "ClientScreensNoDeviceComposeTest.navigationDrawerChatSearchNoResultsStaysBoundedAtLargeFontAcrossSupportedLanguages",
+            "Default no-device gate must run the Android drawer chat-search no-results compact layout regression.",
+        ),
+        (
+            "Android drawer chat-search no-results compact layout",
+            "Default no-device gate coverage summary must mention Android drawer chat-search no-results compact layout.",
+        ),
+        (
             "Android drawer chat search interaction",
             "Default no-device gate coverage summary must mention drawer chat search interaction coverage.",
         ),
@@ -9852,6 +10253,10 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         (
             "ClientScreensNoDeviceComposeTest.chatSurfaceRendersRepresentativeNarrowPhoneWithoutComposerOverlap",
             "Default no-device gate must run the Android narrow-phone chat surface layout regression.",
+        ),
+        (
+            "ClientScreensNoDeviceComposeTest.chatSurfaceRepresentativePopulatedStateStaysBoundedAtLargeFontAcrossSupportedLanguages",
+            "Default no-device gate must run the Android representative populated chat surface compact regression.",
         ),
         (
             "ClientScreensNoDeviceComposeTest.chatScreenCoreControlsRemainReachableAtLargeFontScaleAcrossSupportedLanguages",
@@ -9884,6 +10289,10 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         (
             "Android ChatGPT-like chat surface narrow-phone layout regression",
             "Default no-device gate coverage summary must mention Android narrow-phone chat surface layout coverage.",
+        ),
+        (
+            "Android representative populated chat surface compact layout",
+            "Default no-device gate coverage summary must mention Android representative populated chat surface coverage.",
         ),
         (
             "Android large-font multilingual Chat render",
@@ -9978,6 +10387,10 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate must run the Android Settings memory compact long-content actions layout regression.",
         ),
         (
+            "ClientScreensNoDeviceComposeTest.settingsMemoryDeleteConfirmationDialogStaysBoundedAtLargeFontAcrossSupportedLanguages",
+            "Default no-device gate must run the Android memory delete compact dialog layout regression.",
+        ),
+        (
             "ClientScreensNoDeviceComposeTest.settingsAutoReconnectRowStaysBoundedAtLargeFontAcrossSupportedLanguages",
             "Default no-device gate must run the Android Settings auto-reconnect compact row layout regression.",
         ),
@@ -9992,6 +10405,10 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         (
             "ClientScreensNoDeviceComposeTest.settingsChatHistoryBulkActionsStayBoundedAtLargeFontAcrossSupportedLanguages",
             "Default no-device gate must run the Android Settings chat-history bulk action compact layout regression.",
+        ),
+        (
+            "ClientScreensNoDeviceComposeTest.chatHistoryConfirmationDialogsStayBoundedAtLargeFontAcrossSupportedLanguages",
+            "Default no-device gate must run the Android chat-history confirmation compact dialog layout regression.",
         ),
         (
             "ClientScreensNoDeviceComposeTest.settingsDiscoveredRuntimeRowsStayInsideNarrowLargeFontRowsAcrossSupportedLanguages",
@@ -10118,8 +10535,20 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate must run the Android provider status compact diagnostic layout regression.",
         ),
         (
+            "ClientScreensNoDeviceComposeTest.connectionStatusProviderDiagnosticsDetailsStayBoundedAndRedactedAcrossSupportedLanguages",
+            "Default no-device gate must run the Android provider diagnostics detail compact redaction regression.",
+        ),
+        (
             "ClientScreensNoDeviceComposeTest.connectionStatusPanelStaysBoundedAtLargeFontAcrossSupportedLanguages",
             "Default no-device gate must run the Android connection status panel compact layout regression.",
+        ),
+        (
+            "ClientScreensNoDeviceComposeTest.connectionStatusModelResidencyLineLocalizesAndStaysBoundedAcrossSupportedLanguages",
+            "Default no-device gate must run the Android Connection Status model-residency status regression.",
+        ),
+        (
+            "ClientScreensNoDeviceComposeTest.connectionStatusConnectedActionsStayBoundedAtLargeFontAcrossSupportedLanguages",
+            "Default no-device gate must run the Android connected action compact layout regression.",
         ),
         (
             "Android Settings QR pairing panel compact first-run layout",
@@ -10132,6 +10561,14 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         (
             "Android connection status panel compact layout",
             "Default no-device gate coverage summary must mention Android connection status panel compact layout.",
+        ),
+        (
+            "Android Connection Status model-residency status UI",
+            "Default no-device gate coverage summary must mention Android Connection Status model-residency status UI.",
+        ),
+        (
+            "Android connected action compact layout",
+            "Default no-device gate coverage summary must mention Android connected action compact layout.",
         ),
         (
             "approved memory source review UI addendum",
@@ -10168,6 +10605,14 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         (
             "Android diagnostic QR text contextual action labels",
             "Default no-device gate coverage summary must mention Android diagnostic QR text contextual action labels.",
+        ),
+        (
+            "ClientScreensNoDeviceComposeTest.diagnosticQrTextDialogStaysBoundedAtLargeFontAcrossSupportedLanguages",
+            "Default no-device gate must run the Android diagnostic QR text compact dialog layout regression.",
+        ),
+        (
+            "Android diagnostic QR text compact dialog layout",
+            "Default no-device gate coverage summary must mention Android diagnostic QR text compact dialog layout.",
         ),
         (
             "Android connect action disabled reason",
@@ -10462,6 +10907,10 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate coverage summary must mention Android provider diagnostics action labels.",
         ),
         (
+            "Android provider diagnostics detail compact redaction",
+            "Default no-device gate coverage summary must mention Android provider diagnostics detail compact redaction.",
+        ),
+        (
             "Android provider row accessibility summaries",
             "Default no-device gate coverage summary must mention Android provider row accessibility summaries.",
         ),
@@ -10482,6 +10931,10 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate must run the short static reasoning accessibility regression.",
         ),
         (
+            "ClientScreensNoDeviceComposeTest.chatScreenAssistantReasoningStaysBoundedAtLargeFontAcrossSupportedLanguages",
+            "Default no-device gate must run the Android assistant reasoning compact-layout regression.",
+        ),
+        (
             "Android open reasoning collapsed live-region accessibility",
             "Default no-device gate coverage summary must mention Android open reasoning collapsed live-region accessibility.",
         ),
@@ -10492,6 +10945,10 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         (
             "Android short reasoning static accessibility state",
             "Default no-device gate coverage summary must mention Android short reasoning static accessibility coverage.",
+        ),
+        (
+            "Android assistant reasoning compact layout",
+            "Default no-device gate coverage summary must mention Android assistant reasoning compact layout coverage.",
         ),
         (
             "Android streaming assistant live-region accessibility",
@@ -10564,6 +11021,14 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         (
             "Android drawer empty-history live-region accessibility",
             "Default no-device gate coverage summary must mention Android drawer empty-history live-region accessibility.",
+        ),
+        (
+            "ClientScreensNoDeviceComposeTest.navigationDrawerEmptyHistoryStaysBoundedAtLargeFontAcrossSupportedLanguages",
+            "Default no-device gate must run the Android drawer empty-history compact layout regression.",
+        ),
+        (
+            "Android drawer empty-history compact layout",
+            "Default no-device gate coverage summary must mention Android drawer empty-history compact layout.",
         ),
         (
             "Android drawer Settings footer action semantics",
@@ -10742,6 +11207,18 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate coverage summary must mention Android rename-chat action labels.",
         ),
         (
+            "ClientScreensNoDeviceComposeTest.renameChatSessionDialogStaysBoundedAtLargeFontAcrossSupportedLanguages",
+            "Default no-device gate must run the Android rename chat compact dialog layout regression.",
+        ),
+        (
+            "Android rename chat compact dialog layout",
+            "Default no-device gate coverage summary must mention Android rename chat compact dialog layout.",
+        ),
+        (
+            "Android chat-history confirmation compact dialog layout",
+            "Default no-device gate coverage summary must mention Android chat-history confirmation compact dialog layout.",
+        ),
+        (
             "chat history bulk expander accessibility state",
             "Default no-device gate coverage summary must mention chat-history bulk expander accessibility state.",
         ),
@@ -10752,6 +11229,10 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         (
             "chat history bulk action accessibility labels",
             "Default no-device gate coverage summary must mention chat-history bulk action accessibility labels.",
+        ),
+        (
+            "Android memory delete compact dialog layout",
+            "Default no-device gate coverage summary must mention Android memory delete compact dialog layout.",
         ),
         (
             "Android platform-neutral connect guidance copy",
@@ -10776,6 +11257,14 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         (
             "macOS compact long model row render smoke",
             "Default no-device gate coverage summary must mention macOS compact long model row render-smoke coverage.",
+        ),
+        (
+            "macOS compact model-residency status render smoke",
+            "Default no-device gate coverage summary must mention macOS compact model-residency status render-smoke coverage.",
+        ),
+        (
+            "macOS compact trusted-device row render smoke",
+            "Default no-device gate coverage summary must mention macOS compact trusted-device row render-smoke coverage.",
         ),
         (
             "Android runtime history message-count clamp",
@@ -10904,6 +11393,14 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         (
             "macOS Activity trusted-device audit copy",
             "Default no-device gate coverage summary must mention macOS Activity trusted-device audit copy.",
+        ),
+        (
+            "macOS Activity model-residency event summaries",
+            "Default no-device gate coverage summary must mention macOS Activity model-residency event summaries.",
+        ),
+        (
+            "macOS manual model-residency activity summaries",
+            "Default no-device gate coverage summary must mention macOS manual model-residency activity summaries.",
         ),
         (
             "macOS Activity row tone accessibility labels",
@@ -11038,8 +11535,16 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate coverage summary must mention macOS quick action accessibility hints.",
         ),
         (
+            "macOS model-residency refresh quick action",
+            "Default no-device gate coverage summary must mention macOS model-residency refresh quick action.",
+        ),
+        (
             "macOS menu-bar quick action accessibility parity",
             "Default no-device gate coverage summary must mention macOS menu-bar quick action accessibility parity.",
+        ),
+        (
+            "macOS menu-bar model-residency controls",
+            "Default no-device gate coverage summary must mention macOS menu-bar model-residency controls.",
         ),
         (
             "macOS menu-bar window and quit accessibility hints",
@@ -11110,6 +11615,14 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate must run the Android model picker vision recovery compact row layout regression.",
         ),
         (
+            "ClientScreensNoDeviceComposeTest.chatTopBarModelPickerSearchNoResultsStaysBoundedAtLargeFontAcrossSupportedLanguages",
+            "Default no-device gate must run the Android model picker search no-results compact layout regression.",
+        ),
+        (
+            "ClientScreensNoDeviceComposeTest.chatTopBarModelPickerRefreshRowStaysBoundedAtLargeFontAcrossSupportedLanguages",
+            "Default no-device gate must run the Android model picker refresh compact row layout regression.",
+        ),
+        (
             "Android chat top-bar saved missing model recovery",
             "Default no-device gate coverage summary must mention Android chat top-bar saved missing model recovery.",
         ),
@@ -11120,6 +11633,14 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         (
             "Android model picker vision recovery compact row layout",
             "Default no-device gate coverage summary must mention Android model picker vision recovery compact row layout.",
+        ),
+        (
+            "Android model picker search no-results compact layout",
+            "Default no-device gate coverage summary must mention Android model picker search no-results compact layout.",
+        ),
+        (
+            "Android model picker refresh compact row layout",
+            "Default no-device gate coverage summary must mention Android model picker refresh compact row layout.",
         ),
         (
             "Android chat top-bar model refresh action accessibility state",
@@ -11662,6 +12183,12 @@ def runtime_auth_domain_separation_guard_failures() -> list[str]:
     for snippet in (
         "smoke-chat-attachment",
         "smoke-chat-image-non-vision",
+        "smoke-chat-image-vision",
+        "smokeVisionModelID",
+        "dev-mock-vision",
+        "smokePulledModelID",
+        "smokePulledModelPrompt",
+        "smoke-chat-pulled-model",
         '"attachments": [',
         '"mime_type": "text/plain"',
         '"mime_type": "image/png"',
@@ -11674,7 +12201,20 @@ def runtime_auth_domain_separation_guard_failures() -> list[str]:
         if snippet not in path_texts[runtime_mock_smoke_path]:
             failures.append(
                 f"{runtime_mock_smoke_path.relative_to(ROOT)}: authenticated mock smoke must cover "
-                f"document attachment success and non-vision image rejection over the runtime route; missing {snippet}."
+                f"document attachment success, non-vision image rejection, vision image success, and pulled model chat over the runtime route; missing {snippet}."
+            )
+    for snippet in (
+        "additionalModels: [",
+        'id: "dev-mock-vision"',
+        'capabilities: ["chat", "vision"]',
+        "private let capabilities: [String]",
+        "private let additionalModels:",
+        "capabilities: capabilities",
+    ):
+        if snippet not in path_texts[runtime_dev_server_path]:
+            failures.append(
+                f"{runtime_dev_server_path.relative_to(ROOT)}: RuntimeDevServer mock backend must expose "
+                f"a vision-capable model for authenticated relay image success smoke; missing {snippet}."
             )
     for snippet in (
         "smoke-pair-invalid-code",
@@ -11765,6 +12305,12 @@ def runtime_auth_domain_separation_guard_failures() -> list[str]:
         "smoke-unauthenticated-memory",
         "smoke-unauthenticated-memory-upsert",
         "smoke-unauthenticated-memory-delete",
+        "smoke-unauthenticated-memory-summary-drafts",
+        "smoke-unauthenticated-memory-summary-approve",
+        "smoke-unauthenticated-memory-summary-dismiss",
+        "memory.summary.drafts.list",
+        "memory.summary.draft.approve",
+        "memory.summary.draft.dismiss",
         "smoke-untrusted-hello",
         '"authentication_required"',
         '"pairing_required"',
@@ -11965,6 +12511,7 @@ def macos_runtime_compaction_guard_failures() -> list[str]:
     android_view_model_test_path = ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt"
     schema_path = ROOT / "packages/protocol-schema/protocol.schema.json"
     no_device_path = ROOT / "script/check_no_device_quality.sh"
+    protocol_doc_path = ROOT / "docs/protocol.md"
 
     required_paths = (
         router_path,
@@ -11979,6 +12526,7 @@ def macos_runtime_compaction_guard_failures() -> list[str]:
         android_view_model_test_path,
         schema_path,
         no_device_path,
+        protocol_doc_path,
     )
     if any(not path.exists() for path in required_paths):
         return ["macOS runtime compaction guard files are missing."]
@@ -11995,6 +12543,7 @@ def macos_runtime_compaction_guard_failures() -> list[str]:
     android_view_model_test_text = android_view_model_test_path.read_text(encoding="utf-8", errors="replace")
     schema_text = schema_path.read_text(encoding="utf-8", errors="replace")
     no_device_text = no_device_path.read_text(encoding="utf-8", errors="replace")
+    protocol_doc_text = protocol_doc_path.read_text(encoding="utf-8", errors="replace")
     router_snippets = (
         (
             "chatRequestWithRuntimeConversationCompaction(\n                request,\n                contextWindowTokens: model.contextWindowTokens",
@@ -12003,6 +12552,14 @@ def macos_runtime_compaction_guard_failures() -> list[str]:
         (
             "runtimeConversationCompactionPrefix = \"Runtime conversation summary:\"",
             "Runtime compaction must keep a recognizable backend-only summary prefix.",
+        ),
+        (
+            "runtimeConversationCompactionSourceSpanPrefix = \"Source span:\"",
+            "Runtime compaction must keep deterministic source-span metadata backend-only.",
+        ),
+        (
+            "client-visible conversation turns",
+            "Runtime compaction source-span metadata must describe the active visible turn span.",
         ),
         (
             "messages.filter { !$0.isRuntimeConversationCompactionContext }",
@@ -12032,6 +12589,9 @@ def macos_runtime_compaction_guard_failures() -> list[str]:
     test_snippets = (
         "testChatSendDoesNotCompactShortConversation",
         "testChatSendCompactsOlderTurnsBeforeBackendRequestWhenContextIsLarge",
+        "testChatSendCompactionAnnotatesBackendOnlySourceSpanWithoutPersisting",
+        "Source span: client-visible conversation turns 1-6 of 18.",
+        'XCTAssertFalse(requestEvent.messages?.contains { $0.content.contains("Source span: client-visible conversation turns") } == true)',
         "testChatSendUsesModelContextWindowMetadataForCompactionBudget",
         "testChatSendCompactionKeepsRuntimeMemoryAndCapabilityGuardSeparate",
     )
@@ -12111,7 +12671,17 @@ def macos_runtime_compaction_guard_failures() -> list[str]:
             no_device_text,
             (
                 "LocalRuntimeMessageRouterTests/testChatSendUsesModelContextWindowMetadataForCompactionBudget",
+                "LocalRuntimeMessageRouterTests/testChatSendCompactionAnnotatesBackendOnlySourceSpanWithoutPersisting",
                 "context-window compaction addendum",
+                "backend-only source-span metadata",
+            ),
+        ),
+        (
+            protocol_doc_path,
+            protocol_doc_text,
+            (
+                "may include deterministic transient source-span metadata",
+                "transient source-span is not a durable transcript source pointer",
             ),
         ),
     ):
@@ -12315,6 +12885,34 @@ def macos_render_smoke_guard_failures() -> list[str]:
         (
             "testStatusModelRowsRenderLongLocalModelNamesAtCompactDetailSizeAcrossLanguagesAndAppearances",
             "macOS render smoke must cover long local model rows at compact detail size.",
+        ),
+        (
+            "testStatusModelResidencyStatesRenderAtCompactDetailSizeAcrossLanguagesAndAppearances",
+            "macOS render smoke must cover model-residency active and unload-failure states at compact detail size.",
+        ),
+        (
+            "RenderSmokeResidencyBackend",
+            "macOS model-residency render smoke must drive residency through an aggregate test backend.",
+        ),
+        (
+            "AggregatingLlmBackend(",
+            "macOS model-residency render smoke must use the production aggregate residency path.",
+        ),
+        (
+            "Model unload failed:",
+            "macOS model-residency render smoke must cover the localized unload-failure event path.",
+        ),
+        (
+            "testTrustedDeviceRowsRenderLongDeviceNamesAtCompactDetailSizeAcrossLanguagesAndAppearances",
+            "macOS render smoke must cover trusted-device rows with long names at compact detail size.",
+        ),
+        (
+            "TrustedDevicesView(model: model)",
+            "macOS trusted-device render smoke must exercise the full TrustedDevicesView.",
+        ),
+        (
+            "isolatedTrustedDeviceStore",
+            "macOS render smoke must isolate trusted-device state from the user's real store.",
         ),
         (
             "Qwen3.6 Coder Super Long Local Runtime Model Name With Vision Tools 35B",
@@ -12611,6 +13209,62 @@ def macos_localization_script_guard_failures() -> list[str]:
         (
             "func activityLogTone(for line: String) -> StatusTone",
             "macOS localization guard must require a testable Activity tone helper.",
+        ),
+        (
+            "localizedModelResidencyLogDisplay",
+            "macOS localization guard must require specific Activity summaries for model-residency events.",
+        ),
+        (
+            "Active model is ready for runtime requests.",
+            "macOS localization guard must require the active model-residency Activity summary localization key.",
+        ),
+        (
+            "Model unload requested by runtime policy.",
+            "macOS localization guard must require the requested model-residency Activity summary localization key.",
+        ),
+        (
+            "Model unloaded by runtime policy.",
+            "macOS localization guard must require the unloaded model-residency Activity summary localization key.",
+        ),
+        (
+            "Model unload failed. Check Activity.",
+            "macOS localization guard must require the failed model-residency Activity summary localization key.",
+        ),
+        (
+            "Manual model unload requested.",
+            "macOS localization guard must require the manual model-residency Activity requested summary localization key.",
+        ),
+        (
+            "Manual model unloaded.",
+            "macOS localization guard must require the manual model-residency Activity unloaded summary localization key.",
+        ),
+        (
+            "Manual model unload failed. Check Activity.",
+            "macOS localization guard must require the manual model-residency Activity failed summary localization key.",
+        ),
+        (
+            "modelResidencyEventSummary",
+            "macOS localization guard must require the shared model-residency event summary helper.",
+        ),
+        (
+            "testActivityModelResidencyLogSummariesUseSpecificLocalizedEvents",
+            "macOS localization guard must require five-language Activity model-residency summary tests.",
+        ),
+        (
+            "Model residency active:",
+            "macOS localization guard must require Activity model-residency active prefix coverage.",
+        ),
+        (
+            "Model unload requested:",
+            "macOS localization guard must require Activity model-residency requested prefix coverage.",
+        ),
+        (
+            "Model unloaded:",
+            "macOS localization guard must require Activity model-residency unloaded prefix coverage.",
+        ),
+        (
+            "Model unload failed:",
+            "macOS localization guard must require Activity model-residency failed prefix coverage.",
         ),
         (
             "Remote route ready:",
@@ -13320,6 +13974,9 @@ def runtime_mock_history_memory_smoke_guard_failures() -> list[str]:
         '"smoke-session-rename"',
         '"chat.session.archive"',
         '"smoke-session-archive"',
+        '"smoke-session-archived-send"',
+        '"chat_session_must_be_restored_before_send"',
+        '"smoke-messages-after-archived-send"',
         '"chat.session.restore"',
         '"smoke-session-restore"',
         '"chat.session.delete"',
@@ -13334,6 +13991,14 @@ def runtime_mock_history_memory_smoke_guard_failures() -> list[str]:
         '"smoke-memory-list-after-delete"',
         '"memory.delete"',
         '"smoke-memory-delete"',
+        '"memory.summary.drafts.list"',
+        '"smoke-memory-summary-drafts"',
+        '"memory.summary.draft.approve"',
+        '"smoke-memory-summary-approve-unavailable"',
+        '"memory.summary.draft.dismiss"',
+        '"smoke-memory-summary-dismiss-unavailable"',
+        '"memory_summary_draft_unavailable"',
+        '"smoke-missing-memory-summary-draft"',
         "try runAuthenticatedHistoryAndMemoryChecks(client: client)",
         "seedTrustedDevicesFile",
         "runMultiDeviceOwnerIsolationChecks",
@@ -13371,8 +14036,9 @@ def runtime_mock_history_memory_smoke_guard_failures() -> list[str]:
 
     for snippet in (
         "RuntimeDevServer history/title/session lifecycle/memory smoke addendum",
-        "authenticated relay smoke positively validates chat.sessions.list, chat.messages.list, chat.title.request, chat.session rename/archive/restore/delete, memory.upsert, memory.list, and memory.delete over RuntimeDevServer",
+        "authenticated relay smoke positively validates chat.sessions.list, chat.messages.list, chat.title.request, chat.session rename/archive/restore/delete, archived chat.send restore-required rejection, memory.upsert, memory.list, memory.delete, memory.summary.drafts.list, and memory.summary draft unavailable errors over RuntimeDevServer",
         "RuntimeDevServer chat.sessions.list query search metadata smoke",
+        "archived chat.send restore-required rejection",
         "RuntimeDevServer multi-device owner isolation smoke addendum",
         "authenticated relay smoke validates memory, chat session, message, and session mutation owner-device boundaries across two trusted devices",
     ):
@@ -13396,10 +14062,17 @@ def runtime_mock_history_memory_smoke_guard_failures() -> list[str]:
             "chat.title.request",
             "chat.session.rename",
             "chat.session.archive",
+            "smoke-session-archived-send",
+            "chat_session_must_be_restored_before_send",
+            "smoke-messages-after-archived-send",
             "chat.session.restore",
             "chat.session.delete",
             "memory.upsert",
             "memory.delete",
+            "memory.summary.drafts.list",
+            "memory.summary draft unavailable errors",
+            "smoke-memory-summary-drafts",
+            "memory_summary_draft_unavailable",
             "RuntimeDevServer Multi-Device Owner Isolation Smoke",
             "multi-device owner isolation",
             "two trusted devices",
@@ -13447,8 +14120,12 @@ def runtime_mock_model_residency_smoke_guard_failures() -> list[str]:
         "provider: .lmStudio",
         "AETHERLINK_DEV_MOCK_RESIDENCY_IDLE_MS",
         "AETHERLINK_DEV_MOCK_UNLOAD_EVENT_FILE",
+        "AETHERLINK_DEV_MOCK_UNLOAD_FAILURES",
         "AggregatingLlmBackend(",
         "func unloadModel(providerModelID: String) async throws -> ModelUnloadResult",
+        "unloadFailureTargets",
+        "mock_unload_failed",
+        "relay_secret=mock-secret",
         'let line = "\\(provider.rawValue)|\\(providerModelID)\\n"',
     ):
         if snippet not in runtime_dev_server_text:
@@ -13461,15 +14138,28 @@ def runtime_mock_model_residency_smoke_guard_failures() -> list[str]:
         "AETHERLINK_DEV_MOCK_AGGREGATE_RESIDENCY",
         "AETHERLINK_DEV_MOCK_RESIDENCY_IDLE_MS",
         "AETHERLINK_DEV_MOCK_UNLOAD_EVENT_FILE",
+        "AETHERLINK_DEV_MOCK_UNLOAD_FAILURES",
         "smokeResidencySessionID",
+        "smokeUnloadFailureModelID",
         "func runAuthenticatedModelResidencyChecks",
         "requireNoMockUnloadEvents",
         "waitForMockUnloadEvent",
+        "requireRuntimeHealthModelResidency",
+        "requireModelResidencyUnloadFailure",
         '"smoke-chat-repeat"',
+        '"smoke-chat-missing-model-residency"',
+        '"dev-missing-residency"',
+        '"model_not_installed"',
+        '"model residency missing-model rejection"',
         '"smoke-chat-model-switch"',
         '"lm_studio:dev-mock-alt"',
         '"ollama|dev-mock"',
         '"lm_studio|dev-mock-alt"',
+        '"smoke-chat-unload-failure-source"',
+        '"smoke-chat-unload-failure-switch"',
+        '"smoke-health-residency-unload-failure"',
+        '"last_unload_failure"',
+        '"model_switch"',
         "try runAuthenticatedModelResidencyChecks(client: client, unloadEventFile: unloadEventFile)",
     ):
         if snippet not in runtime_mock_smoke_text:
@@ -13480,7 +14170,7 @@ def runtime_mock_model_residency_smoke_guard_failures() -> list[str]:
 
     for snippet in (
         "RuntimeDevServer model-residency smoke addendum",
-        "authenticated relay smoke validates aggregate mock model-switch unload, same-model unload suppression, and idle unload through RuntimeDevServer",
+        "authenticated relay smoke validates aggregate mock model-switch unload, same-model unload suppression, missing-model rejection without unload, idle unload, and unload-failure runtime.health redaction through RuntimeDevServer",
     ):
         if snippet not in no_device_text:
             failures.append(
@@ -13494,12 +14184,17 @@ def runtime_mock_model_residency_smoke_guard_failures() -> list[str]:
     ):
         for snippet in (
             "RuntimeDevServer Authenticated Model Residency Smoke",
+            "RuntimeDevServer Model Residency Unload-Failure Health Smoke",
             "./script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh",
             "AETHERLINK_DEV_MOCK_AGGREGATE_RESIDENCY",
+            "AETHERLINK_DEV_MOCK_UNLOAD_FAILURES",
             "AggregatingLlmBackend",
             "unloadModel",
             "same-model unload suppression",
+            "missing-model rejection without unload",
             "idle unload",
+            "unload-failure runtime.health redaction",
+            "last_unload_failure",
             "live Ollama or LM Studio unload behavior",
             "physical Android QR scan",
         ):
@@ -13508,6 +14203,462 @@ def runtime_mock_model_residency_smoke_guard_failures() -> list[str]:
                     f"{path.relative_to(ROOT)}: Docs must record RuntimeDevServer model-residency "
                     f"smoke evidence and provider/physical-device caveats; missing {snippet}."
                 )
+
+    return failures
+
+
+def runtime_health_model_residency_contract_guard_failures() -> list[str]:
+    failures: list[str] = []
+    protocol_schema_path = ROOT / "packages/protocol-schema/protocol.schema.json"
+    protocol_docs_path = ROOT / "docs/protocol.md"
+    android_protocol_path = ROOT / (
+        "apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/"
+        "ProtocolModels.kt"
+    )
+    android_protocol_test_path = ROOT / (
+        "apps/android/core/protocol/src/test/java/com/localagentbridge/android/core/protocol/"
+        "ProtocolCodecTest.kt"
+    )
+    android_runtime_path = ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt"
+    android_state_path = ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeUiState.kt"
+    android_test_path = ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt"
+    macos_router_path = ROOT / "apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift"
+    macos_test_path = ROOT / "apps/macos/CompanionCore/Tests/LocalRuntimeMessageRouterTests.swift"
+    protocol_check_path = ROOT / "script/check_protocol_schema.py"
+    no_device_path = ROOT / "script/check_no_device_quality.sh"
+    progress_path = ROOT / "docs/progress.md"
+    qa_evidence_path = ROOT / "docs/qa-evidence.md"
+
+    paths = (
+        protocol_schema_path,
+        protocol_docs_path,
+        android_protocol_path,
+        android_protocol_test_path,
+        android_runtime_path,
+        android_state_path,
+        android_test_path,
+        macos_router_path,
+        macos_test_path,
+        protocol_check_path,
+        no_device_path,
+        progress_path,
+        qa_evidence_path,
+    )
+    for path in paths:
+        if not path.exists():
+            failures.append(f"{path.relative_to(ROOT)} is missing for runtime.health model-residency contract guard.")
+            return failures
+
+    texts = {path: path.read_text(encoding="utf-8", errors="replace") for path in paths}
+    required_snippets_by_path = {
+        protocol_schema_path: (
+            '"modelResidencyHealth"',
+            '"modelResidencyUnloadFailure"',
+            '"model_residency": { "$ref": "#/$defs/modelResidencyHealth" }',
+            '"active_provider": { "enum": ["ollama", "lm_studio"] }',
+            '"idle_unload_delay_seconds": { "type": "integer", "minimum": 0 }',
+            '"last_unload_failure": { "$ref": "#/$defs/modelResidencyUnloadFailure" }',
+            '"reason": { "enum": ["model_switch", "idle_timeout", "manual"] }',
+        ),
+        android_protocol_path: (
+            '@SerialName("model_residency") val modelResidency: RuntimeModelResidencyPayload? = null',
+            "data class RuntimeModelResidencyPayload",
+            '@SerialName("idle_unload_delay_seconds") val idleUnloadDelaySeconds: Int? = null',
+            '@SerialName("last_unload_failure") val lastUnloadFailure: RuntimeModelResidencyUnloadFailurePayload? = null',
+            "data class RuntimeModelResidencyUnloadFailurePayload",
+            '@SerialName("model_id") val modelId: String',
+        ),
+        android_protocol_test_path: (
+            "runtimeHealthPayloadCanCarryModelResidencySnapshot",
+            '"model_residency"',
+            '"idle_unload_delay_seconds"',
+            '"last_unload_failure"',
+            '"manual"',
+        ),
+        android_runtime_path: (
+            "modelResidency = runtimeModelResidencyStatus(payload)",
+            "internal fun runtimeModelResidencyStatus(payload: RuntimeHealthPayload): RuntimeModelResidencyStatus?",
+            "lastUnloadFailure = runtimeResidencyUnloadFailureStatus(residency.lastUnloadFailure)",
+            "private fun runtimeResidencyUnloadFailureStatus(",
+            "private fun runtimeResidencySafeUnloadReason",
+            "private fun runtimeResidencySafeModelId",
+            '"manual"',
+        ),
+        android_state_path: (
+            "val modelResidency: RuntimeModelResidencyStatus? = null",
+            "data class RuntimeModelResidencyStatus",
+            "val idleUnloadDelaySeconds: Int? = null",
+            "val lastUnloadFailure: RuntimeModelResidencyUnloadFailureStatus? = null",
+            "data class RuntimeModelResidencyUnloadFailureStatus",
+        ),
+        android_test_path: (
+            "runtimeHealthStoresModelResidencySnapshotFromAggregateRuntime",
+            "runtimeModelResidencyStatusRedactsUnsafeSnapshotDetails",
+            "RuntimeModelResidencyPayload(",
+            "RuntimeModelResidencyUnloadFailurePayload(",
+            'reason = "manual"',
+            "assertNull(residency.lastUnloadFailure)",
+        ),
+        macos_router_path: (
+            'payload["model_residency"] = modelResidencyPayload(for: aggregate.modelResidencySnapshot())',
+            "private func modelResidencyPayload(for snapshot: RuntimeModelResidencySnapshot) -> JSONValue",
+            '"idle_unload_delay_seconds"',
+            '"last_unload_failure"',
+            '"reason": .string(failure.reason.rawValue)',
+        ),
+        macos_test_path: (
+            'case .object(let modelResidency)? = message?.payload["model_residency"]',
+            'modelResidency["idle_unload_delay_seconds"]',
+            "Expected provider health and model residency objects",
+            "testRuntimeHealthIncludesModelResidencyLastUnloadFailureWithoutRawErrorMessage",
+            "last_unload_failure",
+            "XCTAssertNil(failure[\"message\"])",
+            "unload denied http://127.0.0.1:11434/api/chat route_token=secret",
+        ),
+        protocol_check_path: (
+            "check_runtime_health_model_residency_schema",
+            "runtime.health payload schema must allow optional model_residency snapshot",
+            "modelResidencyHealth must allow optional last_unload_failure details",
+            "modelResidencyUnloadFailure must not expose raw provider error messages",
+        ),
+        protocol_docs_path: (
+            "model_residency",
+            "idle_unload_delay_seconds",
+            "last_unload_failure",
+            "must not contain raw provider error strings",
+            "the residency policy remains enforced by the runtime host",
+        ),
+        no_device_path: (
+            "runtime.health model-residency contract",
+            "LocalRuntimeMessageRouterTests/testRuntimeHealthIncludesAggregateProviderStatuses",
+            "LocalRuntimeMessageRouterTests/testRuntimeHealthIncludesModelResidencyLastUnloadFailureWithoutRawErrorMessage",
+            "RuntimeClientViewModelTest.runtimeHealthStoresModelResidencySnapshotFromAggregateRuntime",
+            "runtime.health model-residency unload-failure contract",
+        ),
+        progress_path: (
+            "runtime.health Model Residency Contract",
+            "runtime.health model-residency contract",
+            "runtime.health Model Residency Unload-Failure Contract",
+        ),
+        qa_evidence_path: (
+            "runtime.health Model Residency Contract",
+            "runtime.health model-residency contract",
+            "runtime.health Model Residency Unload-Failure Contract",
+        ),
+    }
+    for path, snippets in required_snippets_by_path.items():
+        text = texts[path]
+        for snippet in snippets:
+            if snippet not in text:
+                failures.append(
+                    f"{path.relative_to(ROOT)}: runtime.health model-residency contract guard "
+                    f"missing {snippet}."
+                )
+    return failures
+
+
+def model_residency_user_surfaces_guard_failures() -> list[str]:
+    failures: list[str] = []
+    android_ui_path = ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/ui/ClientScreens.kt"
+    android_test_path = ROOT / (
+        "apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt"
+    )
+    android_string_paths = (
+        ROOT / "apps/android/app/src/main/res/values/strings.xml",
+        ROOT / "apps/android/app/src/main/res/values-en/strings.xml",
+        ROOT / "apps/android/app/src/main/res/values-ko/strings.xml",
+        ROOT / "apps/android/app/src/main/res/values-ja/strings.xml",
+        ROOT / "apps/android/app/src/main/res/values-zh-rCN/strings.xml",
+        ROOT / "apps/android/app/src/main/res/values-fr/strings.xml",
+    )
+    macos_status_path = ROOT / "apps/macos/LocalAgentBridgeApp/Sources/StatusView.swift"
+    macos_chrome_path = ROOT / "apps/macos/LocalAgentBridgeApp/Sources/CompanionChrome.swift"
+    macos_test_path = ROOT / "apps/macos/LocalAgentBridgeApp/Tests/AetherLinkLocalizationTests.swift"
+    macos_string_paths = (
+        ROOT / "apps/macos/LocalAgentBridgeApp/Sources/Resources/en.lproj/Localizable.strings",
+        ROOT / "apps/macos/LocalAgentBridgeApp/Sources/Resources/ko.lproj/Localizable.strings",
+        ROOT / "apps/macos/LocalAgentBridgeApp/Sources/Resources/ja.lproj/Localizable.strings",
+        ROOT / "apps/macos/LocalAgentBridgeApp/Sources/Resources/zh-Hans.lproj/Localizable.strings",
+        ROOT / "apps/macos/LocalAgentBridgeApp/Sources/Resources/fr.lproj/Localizable.strings",
+    )
+    no_device_path = ROOT / "script/check_no_device_quality.sh"
+    progress_path = ROOT / "docs/progress.md"
+    qa_evidence_path = ROOT / "docs/qa-evidence.md"
+
+    paths = (
+        android_ui_path,
+        android_test_path,
+        *android_string_paths,
+        macos_status_path,
+        macos_chrome_path,
+        macos_test_path,
+        *macos_string_paths,
+        no_device_path,
+        progress_path,
+        qa_evidence_path,
+    )
+    for path in paths:
+        if not path.exists():
+            failures.append(f"{path.relative_to(ROOT)} is missing for model-residency user-surface guard.")
+            return failures
+
+    texts = {path: path.read_text(encoding="utf-8", errors="replace") for path in paths}
+    required_snippets_by_path = {
+        android_ui_path: (
+            "import com.localagentbridge.android.runtime.RuntimeModelResidencyStatus",
+            "import com.localagentbridge.android.runtime.RuntimeModelResidencyUnloadFailureStatus",
+            "label = stringResource(R.string.model_residency)",
+            "value = modelResidencySummary(state.modelResidency)",
+            "tagKey = CONNECTION_STATUS_MODEL_RESIDENCY_LINE_KEY",
+            'internal const val CONNECTION_STATUS_MODEL_RESIDENCY_LINE_KEY = "model_residency"',
+            "private fun modelResidencySummary(residency: RuntimeModelResidencyStatus?): String",
+            "private fun modelResidencyIdleDelayLabel(idleUnloadDelaySeconds: Int?): String",
+            "private fun modelResidencyUnloadFailureSummary(",
+            "private fun modelResidencyUnloadFailureReasonLabel(reason: String): String?",
+            "R.string.model_residency_unknown",
+            "R.string.model_residency_unsupported",
+            "R.string.model_residency_active",
+            "R.string.model_residency_inactive",
+            "R.string.model_residency_last_unload_failure",
+            "R.string.model_residency_unload_reason_manual",
+            "runtimeProviderDisplayName(it)",
+            "savedRuntimeModelDisplayName",
+        ),
+        android_test_path: (
+            "connectionStatusModelResidencyLineLocalizesAndStaysBoundedAcrossSupportedLanguages",
+            "RuntimeModelResidencyStatus(",
+            "RuntimeModelResidencyUnloadFailureStatus(",
+            'activeProvider = "ollama"',
+            'activeModelId = "ollama:qwen3.6:35b-mlx"',
+            'name = "last_unload_failure"',
+            "R.string.model_residency_active",
+            "R.string.model_residency_unsupported",
+            "R.string.model_residency_unknown",
+            "R.string.model_residency_last_unload_failure",
+            "R.string.model_residency_unload_reason_model_switch",
+            "R.string.model_residency_unload_reason_manual",
+            "CONNECTION_STATUS_MODEL_RESIDENCY_LINE_KEY",
+            'assertBoundsInside("$languageTag ${scenario.name} model residency value", valueBounds, lineBounds)',
+        ),
+        macos_status_path: (
+            "model.refreshModelResidencyStatus()",
+            'Label(NSLocalizedString("Refresh Model Residency", comment: ""), systemImage: "memorychip")',
+            ".help(refreshModelResidencyActionAccessibilityHint())",
+            ".accessibilityValue(Text(refreshModelResidencyActionAccessibilityValue()))",
+            ".accessibilityHint(Text(refreshModelResidencyActionAccessibilityHint()))",
+            "model.unloadResidentModelNow()",
+            'Label(NSLocalizedString("Unload Resident Model", comment: ""), systemImage: "eject")',
+            ".disabled(!canUnloadResidentModel)",
+            "unloadResidentModelActionAccessibilityValue(",
+        ),
+        macos_chrome_path: (
+            "func refreshModelResidencyActionAccessibilityValue() -> String",
+            "func refreshModelResidencyActionAccessibilityHint() -> String",
+            "func unloadResidentModelActionAccessibilityValue(",
+            "func unloadResidentModelActionAccessibilityHint(",
+            "Refresh the runtime model residency status.",
+            "Unload the active resident model now through AetherLink Runtime.",
+        ),
+        macos_test_path: (
+            "testQuickActionAccessibilityUsesSelectedLanguage",
+            "refreshModelResidencyActionAccessibilityValue()",
+            "refreshModelResidencyActionAccessibilityHint()",
+            "unloadResidentModelActionAccessibilityValue(canUnload: true, inFlightGenerations: 0)",
+            "unloadResidentModelActionAccessibilityHint(canUnload: false, inFlightGenerations: 1)",
+            "런타임 모델 상주 상태를 새로 고칩니다.",
+            "AetherLink Runtime을 통해 활성 상주 모델을 지금 언로드합니다.",
+            "ランタイムのモデル常駐状態を更新します。",
+            "AetherLink Runtime 経由でアクティブな常駐モデルを今すぐアンロードします。",
+            "刷新运行时模型驻留状态。",
+            "通过 AetherLink Runtime 立即卸载活动驻留模型。",
+            "Actualise l’état de résidence du modèle du runtime.",
+            "Décharge immédiatement le modèle résident actif via AetherLink Runtime.",
+        ),
+        no_device_path: (
+            "ClientScreensNoDeviceComposeTest.connectionStatusModelResidencyLineLocalizesAndStaysBoundedAcrossSupportedLanguages",
+            "Android Connection Status model-residency status UI",
+            "Android Connection Status model-residency unload failure UI",
+            "macOS model-residency refresh quick action",
+            "macOS model-residency manual unload quick action",
+        ),
+        progress_path: (
+            "Model Residency User Surfaces",
+            "Android Connection Status model-residency status UI",
+            "Android Model Residency Unload-Failure Status UI",
+            "Android Connection Status model-residency unload failure UI",
+            "macOS model-residency refresh quick action",
+            "macOS Model Residency Manual Unload Quick Action",
+            "macOS model-residency manual unload quick action",
+        ),
+        qa_evidence_path: (
+            "Model Residency User Surfaces",
+            "connectionStatusModelResidencyLineLocalizesAndStaysBoundedAcrossSupportedLanguages",
+            "Android Model Residency Unload-Failure Status UI",
+            "Android Connection Status model-residency unload failure UI",
+            "macOS model-residency refresh quick action",
+            "macOS Model Residency Manual Unload Quick Action",
+            "macOS model-residency manual unload quick action",
+        ),
+    }
+    for path, snippets in required_snippets_by_path.items():
+        text = texts[path]
+        for snippet in snippets:
+            if snippet not in text:
+                failures.append(
+                    f"{path.relative_to(ROOT)}: model-residency user-surface guard missing {snippet}."
+                )
+
+    for path in android_string_paths:
+        text = texts[path]
+        for name in (
+            "model_residency",
+            "model_residency_unknown",
+            "model_residency_unsupported",
+            "model_residency_active",
+            "model_residency_inactive",
+            "model_residency_idle_delay_seconds",
+            "model_residency_idle_delay_minutes",
+            "model_residency_idle_delay_unknown",
+            "model_residency_with_last_unload_failure",
+            "model_residency_last_unload_failure",
+            "model_residency_unload_reason_model_switch",
+            "model_residency_unload_reason_idle_timeout",
+            "model_residency_unload_reason_manual",
+        ):
+            if f'name="{name}"' not in text:
+                failures.append(
+                    f"{path.relative_to(ROOT)}: Android model-residency string resource missing {name}."
+                )
+
+    for path in macos_string_paths:
+        text = texts[path]
+        for key in (
+            '"Refresh Model Residency"',
+            '"Refresh the runtime model residency status."',
+            '"Unload Resident Model"',
+            '"Unload the active resident model now through AetherLink Runtime."',
+        ):
+            if key not in text:
+                failures.append(
+                    f"{path.relative_to(ROOT)}: macOS model-residency refresh string missing {key}."
+                )
+
+    return failures
+
+
+def macos_runtime_memory_source_review_guard_failures() -> list[str]:
+    failures: list[str] = []
+    status_path = ROOT / "apps/macos/LocalAgentBridgeApp/Sources/StatusView.swift"
+    localization_test_path = ROOT / "apps/macos/LocalAgentBridgeApp/Tests/AetherLinkLocalizationTests.swift"
+    render_test_path = ROOT / "apps/macos/LocalAgentBridgeApp/Tests/AetherLinkRenderSmokeTests.swift"
+    localization_guard_path = ROOT / "script/check_macos_localization.py"
+    no_device_path = ROOT / "script/check_no_device_quality.sh"
+    progress_path = ROOT / "docs/progress.md"
+    qa_path = ROOT / "docs/qa-evidence.md"
+
+    paths = (
+        status_path,
+        localization_test_path,
+        render_test_path,
+        localization_guard_path,
+        no_device_path,
+        progress_path,
+        qa_path,
+    )
+    for path in paths:
+        if not path.exists():
+            failures.append(f"{path.relative_to(ROOT)} is missing for macOS runtime-memory source review guard.")
+            return failures
+
+    texts = {path: path.read_text(encoding="utf-8", errors="replace") for path in paths}
+    status_text = texts[status_path]
+    localization_test_text = texts[localization_test_path]
+    render_test_text = texts[render_test_path]
+    localization_guard_text = texts[localization_guard_path]
+    no_device_text = texts[no_device_path]
+
+    required_status_snippets = (
+        "RuntimeMemoryInspectorSourceReview(source: source)",
+        "sourceSummary: entry.source.map { runtimeMemorySourceReviewAccessibilityLabel(source: $0, isExpanded: false) }",
+        "private struct RuntimeMemoryInspectorSourceReview: View",
+        "runtimeMemorySourceVisiblePointers(source)",
+        "source.sourcePointers.prefix(runtimeMemorySourceVisibleExcerptLimit)",
+        "runtimeTranscriptRoleDisplayName(pointer.role)",
+        "NSLocalizedString(\"Approved from older chat\", comment: \"\")",
+        "NSLocalizedString(\"Show source excerpts\", comment: \"\")",
+        "NSLocalizedString(\"Hide source excerpts\", comment: \"\")",
+        "NSLocalizedString(\"Memory source. %@. %@. %@.\", comment: \"\")",
+    )
+    for snippet in required_status_snippets:
+        if snippet not in status_text:
+            failures.append(
+                f"{status_path.relative_to(ROOT)}: Missing macOS runtime-memory source review snippet {snippet!r}."
+            )
+
+    for forbidden in (
+        "source.draftID",
+        "source.session.sessionID",
+        "pointer.sessionID",
+        "pointer.messageIndex",
+    ):
+        if forbidden in status_text:
+            failures.append(
+                f"{status_path.relative_to(ROOT)}: macOS runtime-memory source review must not expose internal id/index field {forbidden!r}."
+            )
+
+    required_localization_test_snippets = (
+        "runtimeMemorySourceVisiblePointers(source).count, 2",
+        "runtimeMemorySourcePointerText(source.sourcePointers[0])",
+        "Memory source. Source chat: Release planning. Source coverage: Messages 1-4. Source review collapsed.",
+        "Memory note Prefer concise answers. Status Enabled. Created Jun 29, 2026 at 12:50 AM. Updated Jun 29, 2026 at 1:00 AM. Memory source.",
+        "runtimeMemorySourceSessionTitle(blankSource), \"Untitled chat\"",
+        "Source excerpt Assistant: Source excerpt unavailable",
+        "이전 채팅에서 승인됨",
+        "参照抜粋を表示",
+        "显示来源摘录",
+        "Afficher les extraits source",
+    )
+    for snippet in required_localization_test_snippets:
+        if snippet not in localization_test_text:
+            failures.append(
+                f"{localization_test_path.relative_to(ROOT)}: Missing macOS runtime-memory source review localization regression {snippet!r}."
+            )
+
+    required_render_test_snippets = (
+        "testRuntimeMemoryInspectorRendersAcrossLanguagesAndAppearances",
+        "RuntimeMemoryEntrySource(",
+        "sourceMessageCount: 7",
+        "This third excerpt should stay collapsed by default.",
+        "source: source",
+    )
+    for snippet in required_render_test_snippets:
+        if snippet not in render_test_text:
+            failures.append(
+                f"{render_test_path.relative_to(ROOT)}: Missing macOS runtime-memory source review render-smoke snippet {snippet!r}."
+            )
+
+    required_localization_guard_snippets = (
+        '"Approved from older chat": "Approved from older chat"',
+        '"Approved from older chat": "이전 채팅에서 승인됨"',
+        '"Show source excerpts": "参照抜粋を表示"',
+        '"Hide source excerpts": "Masquer les extraits source"',
+        "RuntimeMemoryInspectorSourceReview(source: source)",
+    )
+    for snippet in required_localization_guard_snippets:
+        if snippet not in localization_guard_text:
+            failures.append(
+                f"{localization_guard_path.relative_to(ROOT)}: Missing macOS runtime-memory source review localization guard {snippet!r}."
+            )
+
+    if "macOS Runtime Memory approved source review UI" not in no_device_text:
+        failures.append(
+            f"{no_device_path.relative_to(ROOT)}: Default no-device gate coverage summary must mention macOS Runtime Memory approved source review UI."
+        )
+    for path in (progress_path, qa_path):
+        if "macOS Runtime Memory approved source review UI" not in texts[path]:
+            failures.append(
+                f"{path.relative_to(ROOT)}: Docs must record macOS Runtime Memory approved source review UI coverage."
+            )
 
     return failures
 
@@ -13585,6 +14736,247 @@ def suggested_questions_removed_guard_failures() -> list[str]:
                     f"guard while preserving historical QA notes; missing {snippet!r}."
                 )
 
+    return failures
+
+
+def relay_exposed_bind_token_guard_failures() -> list[str]:
+    failures: list[str] = []
+    required_files = {
+        "apps/macos/RelayServerCore/Sources/RelayServer.swift": (
+            "defaultHost = \"127.0.0.1\"",
+            "RelayBindExposure.requiresAllocationToken(host: host)",
+            "allocationTokenRequiredForExposedBind",
+            "allocation token required for non-loopback relay bind",
+        ),
+        "apps/macos/AetherLinkRelay/Sources/main.swift": (
+            "var host = RelayServerConfiguration.defaultHost",
+            "Tokenless relay binds are allowed only for loopback diagnostics",
+            "AETHERLINK_RELAY_ALLOCATION_TOKEN",
+        ),
+        "apps/macos/RelayServerCore/Tests/RelayAllocationTests.swift": (
+            "testRelayBindExposureAllowsOnlyLoopbackWithoutAllocationToken",
+            "testRelayBindExposureRequiresTokenForWildcardAndNonLoopbackBinds",
+            "testRelayBindExposureAllowsWildcardAndNonLoopbackBindsWithAllocationToken",
+            "testRelayConfigurationRejectsInvalidAllocationTokens",
+        ),
+        "script/check_no_device_quality.sh": (
+            "check_relay_exposed_bind_token_guard",
+            "Wildcard relay bind without allocation token should fail",
+            "tokenless AetherLinkRelay binds are loopback-only",
+        ),
+        "script/no_adb_external_relay_pairing_smoke.sh": (
+            "local_relay_bind_host",
+            "--start-local-relay with a non-loopback advertised relay host must pass --allocation-token",
+            "--host \"$LOCAL_RELAY_BIND_HOST\"",
+        ),
+        "script/run_different_network_dev_runtime.sh": (
+            "local_relay_bind_host",
+            "--start-local-relay with a non-loopback advertised relay host must pass --allocation-token",
+            "--host \"$LOCAL_RELAY_BIND_HOST\"",
+        ),
+        "script/run_allocation_relay.sh": (
+            'HOST="${AETHERLINK_RELAY_BIND_HOST:-127.0.0.1}"',
+            "Allocation token required for non-loopback relay bind",
+            "Allocation token: not required for loopback bind",
+        ),
+        "docs/connection-overlay.md": (
+            "Tokenless relay binds are allowed only for loopback hosts",
+            "Wildcard, DNS, private, CGNAT, ULA, and public binds require",
+        ),
+        "docs/roadmap.md": (
+            "Tokenless development-relay binds are loopback-only",
+        ),
+        "docs/progress.md": (
+            "AetherLinkRelay Exposed Bind Allocation Token Guard",
+            "tokenless AetherLinkRelay binds are loopback-only",
+        ),
+        "docs/qa-evidence.md": (
+            "AetherLinkRelay Exposed Bind Allocation Token Guard",
+            "tokenless AetherLinkRelay binds are loopback-only",
+        ),
+    }
+    for relative, snippets in required_files.items():
+        path = ROOT / relative
+        if not path.exists():
+            failures.append(f"{relative} is missing for relay exposed-bind allocation-token guard.")
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace")
+        for snippet in snippets:
+            if snippet not in text:
+                failures.append(
+                    f"{relative}: Missing relay exposed-bind allocation-token guard snippet {snippet!r}."
+                )
+    return failures
+
+
+def relay_allocation_token_authorization_guard_failures() -> list[str]:
+    failures: list[str] = []
+    required_files = {
+        "apps/macos/RelayServerCore/Tests/RelayAllocationTests.swift": (
+            "testParsesAllocationRequestWithAuthAlias",
+            "auth=allocation-token-1",
+        ),
+        "script/relay_allocation_preflight.py": (
+            "--allocation-token",
+            "allocation_token=",
+            "--persist",
+        ),
+        "script/check_no_device_quality.sh": (
+            "check_relay_allocation_token_authorization_guard",
+            "Missing allocation token should fail against a token-required relay.",
+            "Wrong allocation token should fail against a token-required relay.",
+            "token-required AetherLinkRelay allocation rejects missing or wrong tokens",
+            "token-relay-secret-should-not-persist",
+        ),
+        "docs/connection-overlay.md": (
+            "Token-required allocation rejects missing or wrong `allocation_token` values",
+            "authorized preflight probes do not persist route leases",
+        ),
+        "docs/progress.md": (
+            "AetherLinkRelay Allocation Token Authorization Guard",
+            "token-required AetherLinkRelay allocation rejects missing or wrong tokens",
+        ),
+        "docs/qa-evidence.md": (
+            "AetherLinkRelay Allocation Token Authorization Guard",
+            "token-required AetherLinkRelay allocation rejects missing or wrong tokens",
+        ),
+    }
+    for relative, snippets in required_files.items():
+        path = ROOT / relative
+        if not path.exists():
+            failures.append(f"{relative} is missing for relay allocation-token authorization guard.")
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace")
+        for snippet in snippets:
+            if snippet not in text:
+                failures.append(
+                    f"{relative}: Missing relay allocation-token authorization guard snippet {snippet!r}."
+                )
+    return failures
+
+
+def relay_opaque_id_guard_failures() -> list[str]:
+    failures: list[str] = []
+    required_files = {
+        "apps/macos/RelayServerCore/Sources/RelayAllocation.swift": (
+            "relayID(forRouteToken",
+            "AetherLink relay allocation id v1",
+            "SHA256.hash",
+            "rt1-",
+        ),
+        "apps/macos/RelayServerCore/Sources/RelayServer.swift": (
+            "log(\"rejected allocation request\")",
+            "log(\"preflight allocation relay_id=",
+            "log(\"allocated relay_id=",
+        ),
+        "apps/macos/RelayServerCore/Tests/RelayAllocationTests.swift": (
+            "testAllocationDerivesOpaqueStableRelayIDFromRouteTokenAndRequestedSecret",
+            "XCTAssertNotEqual(differentRoute.relayID, allocation.relayID)",
+            "XCTAssertFalse(allocation.relayID.contains(\"route-token-1\"))",
+            "testAllocationRegistryPersistsOpaqueRelayIDWithoutRawRouteToken",
+        ),
+        "script/check_no_device_quality.sh": (
+            "payload[\"relay_id\"] != payload[\"requested_route_token\"]",
+            "payload[\"relay_id\"].startswith(\"rt1-\")",
+            "raw route tokens out of allocation stores and relay logs",
+        ),
+        "docs/connection-overlay.md": (
+            "opaque stable relay id derived from the route token",
+            "raw route token is not returned as the relay room id",
+        ),
+        "docs/roadmap.md": (
+            "allocation path now issues opaque relay ids derived from route tokens",
+        ),
+        "docs/security.md": (
+            "allocation responses now return opaque relay ids instead of raw route tokens",
+        ),
+        "docs/progress.md": (
+            "AetherLinkRelay Opaque Relay ID Allocation Guard",
+            "raw route tokens out of allocation stores and relay logs",
+        ),
+        "docs/qa-evidence.md": (
+            "AetherLinkRelay Opaque Relay ID Allocation Guard",
+            "raw route tokens out of allocation stores and relay logs",
+        ),
+    }
+    for relative, snippets in required_files.items():
+        path = ROOT / relative
+        if not path.exists():
+            failures.append(f"{relative} is missing for relay opaque-id allocation guard.")
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace")
+        for snippet in snippets:
+            if snippet not in text:
+                failures.append(
+                    f"{relative}: Missing relay opaque-id allocation guard snippet {snippet!r}."
+                )
+    return failures
+
+
+def relay_allocation_renewal_guard_failures() -> list[str]:
+    failures: list[str] = []
+    required_files = {
+        "apps/macos/RelayServerCore/Sources/RelayAllocation.swift": (
+            "@discardableResult",
+            "isAdvancingReplacement(of:",
+            "for ticket in tickets where ticket.isLoadable",
+            "relayExpiresAtEpochMillis > existing.relayExpiresAtEpochMillis",
+            "relayNonce != existing.relayNonce",
+            "var isLoadable: Bool",
+        ),
+        "apps/macos/RelayServerCore/Tests/RelayAllocationTests.swift": (
+            "testAllocationRegistryIgnoresNonAdvancingRenewalForStableRelayID",
+            "testAllocationRegistryAcceptsAdvancingRenewalWithFreshNonce",
+            "testAllocationRegistryLoadsDuplicatePersistedRelayIDsWithAdvancingTicket",
+            "testAllocationRegistrySkipsMalformedPersistedTicketsOnLoad",
+            "XCTAssertFalse(registry.store(reusedNonce))",
+            "XCTAssertTrue(registry.store(renewed))",
+            "writeAllocationTicketsJSON",
+        ),
+        "script/check_no_device_quality.sh": (
+            "RelayAllocationTests/testAllocationRegistryIgnoresNonAdvancingRenewalForStableRelayID",
+            "RelayAllocationTests/testAllocationRegistryAcceptsAdvancingRenewalWithFreshNonce",
+            "RelayAllocationTests/testAllocationRegistryLoadsDuplicatePersistedRelayIDsWithAdvancingTicket",
+            "RelayAllocationTests/testAllocationRegistrySkipsMalformedPersistedTicketsOnLoad",
+            "ignores non-advancing renewals for stable relay IDs",
+            "deduplicates persisted relay tickets and skips malformed ticket entries on load",
+        ),
+        "docs/connection-overlay.md": (
+            "A renewal for an existing relay id must advance the lease expiry and use a fresh relay nonce",
+            "When loading a persisted allocation store, duplicate relay-id tickets are deduplicated with the same advancing-renewal rule",
+        ),
+        "docs/roadmap.md": (
+            "allocation registry ignores non-advancing relay renewals",
+            "deduplicates persisted relay tickets on load",
+        ),
+        "docs/security.md": (
+            "non-advancing renewal attempts for the same relay id are ignored unless the lease expiry advances and the relay nonce changes",
+            "persisted allocation-store loading also skips malformed ticket entries and deduplicates duplicate relay ids",
+        ),
+        "docs/progress.md": (
+            "AetherLinkRelay Allocation Renewal Monotonicity Guard",
+            "non-advancing relay renewals cannot overwrite a fresher allocation ticket",
+            "AetherLinkRelay Allocation Store Load Resilience Guard",
+            "deduplicates persisted relay tickets and skips malformed ticket entries on load",
+        ),
+        "docs/qa-evidence.md": (
+            "AetherLinkRelay Allocation Renewal Monotonicity Guard",
+            "non-advancing relay renewals cannot overwrite a fresher allocation ticket",
+            "AetherLinkRelay Allocation Store Load Resilience Guard",
+            "deduplicates persisted relay tickets and skips malformed ticket entries on load",
+        ),
+    }
+    for relative, snippets in required_files.items():
+        path = ROOT / relative
+        if not path.exists():
+            failures.append(f"{relative} is missing for relay allocation renewal guard.")
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace")
+        for snippet in snippets:
+            if snippet not in text:
+                failures.append(
+                    f"{relative}: Missing relay allocation renewal guard snippet {snippet!r}."
+                )
     return failures
 
 
@@ -13679,6 +15071,34 @@ def main() -> int:
             print(f" - {failure}", file=sys.stderr)
         return 1
 
+    relay_exposed_bind_token_failures = relay_exposed_bind_token_guard_failures()
+    if relay_exposed_bind_token_failures:
+        print("Relay exposed-bind allocation-token guard failed:", file=sys.stderr)
+        for failure in relay_exposed_bind_token_failures:
+            print(f" - {failure}", file=sys.stderr)
+        return 1
+
+    relay_allocation_token_authorization_failures = relay_allocation_token_authorization_guard_failures()
+    if relay_allocation_token_authorization_failures:
+        print("Relay allocation-token authorization guard failed:", file=sys.stderr)
+        for failure in relay_allocation_token_authorization_failures:
+            print(f" - {failure}", file=sys.stderr)
+        return 1
+
+    relay_opaque_id_failures = relay_opaque_id_guard_failures()
+    if relay_opaque_id_failures:
+        print("Relay opaque-id allocation guard failed:", file=sys.stderr)
+        for failure in relay_opaque_id_failures:
+            print(f" - {failure}", file=sys.stderr)
+        return 1
+
+    relay_allocation_renewal_failures = relay_allocation_renewal_guard_failures()
+    if relay_allocation_renewal_failures:
+        print("Relay allocation renewal guard failed:", file=sys.stderr)
+        for failure in relay_allocation_renewal_failures:
+            print(f" - {failure}", file=sys.stderr)
+        return 1
+
     route_refresh_relay_scope_failures = route_refresh_relay_scope_guard_failures()
     if route_refresh_relay_scope_failures:
         print("route.refresh relay-scope guard failed:", file=sys.stderr)
@@ -13697,6 +15117,27 @@ def main() -> int:
     if runtime_mock_model_residency_smoke_failures:
         print("RuntimeDevServer model-residency smoke guard failed:", file=sys.stderr)
         for failure in runtime_mock_model_residency_smoke_failures:
+            print(f" - {failure}", file=sys.stderr)
+        return 1
+
+    runtime_health_model_residency_contract_failures = runtime_health_model_residency_contract_guard_failures()
+    if runtime_health_model_residency_contract_failures:
+        print("runtime.health model-residency contract guard failed:", file=sys.stderr)
+        for failure in runtime_health_model_residency_contract_failures:
+            print(f" - {failure}", file=sys.stderr)
+        return 1
+
+    model_residency_user_surfaces_failures = model_residency_user_surfaces_guard_failures()
+    if model_residency_user_surfaces_failures:
+        print("model-residency user-surface guard failed:", file=sys.stderr)
+        for failure in model_residency_user_surfaces_failures:
+            print(f" - {failure}", file=sys.stderr)
+        return 1
+
+    macos_runtime_memory_source_review_failures = macos_runtime_memory_source_review_guard_failures()
+    if macos_runtime_memory_source_review_failures:
+        print("macOS runtime-memory source review guard failed:", file=sys.stderr)
+        for failure in macos_runtime_memory_source_review_failures:
             print(f" - {failure}", file=sys.stderr)
         return 1
 

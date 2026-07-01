@@ -10,6 +10,7 @@ public final class AggregatingLlmBackend: LlmBackend, @unchecked Sendable {
     private var generationProviders: [String: ModelProvider] = [:]
     private var activeResidencyModel: RuntimeModelResidencyKey?
     private var inFlightResidencyCounts: [RuntimeModelResidencyKey: Int] = [:]
+    private var lastUnloadFailure: RuntimeModelResidencyUnloadFailure?
     private var idleUnloadTask: Task<Void, Never>?
     private let modelIdleUnloadDelayNanoseconds: UInt64
     private var residencyEventHandler: (@Sendable (RuntimeModelResidencyEvent) -> Void)?
@@ -40,7 +41,8 @@ public final class AggregatingLlmBackend: LlmBackend, @unchecked Sendable {
                 activeProvider: activeResidencyModel?.provider,
                 activeModelID: activeResidencyModel?.modelID,
                 inFlightGenerations: inFlightResidencyCounts.values.reduce(0, +),
-                idleUnloadDelaySeconds: Int(modelIdleUnloadDelayNanoseconds / 1_000_000_000)
+                idleUnloadDelaySeconds: Int(modelIdleUnloadDelayNanoseconds / 1_000_000_000),
+                lastUnloadFailure: lastUnloadFailure
             )
         }
     }
@@ -101,19 +103,17 @@ public final class AggregatingLlmBackend: LlmBackend, @unchecked Sendable {
     public func chat(request: ChatRequest) -> AsyncThrowingStream<ChatStreamEvent, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
+                var residencyModel: RuntimeModelResidencyKey?
+                var residencyFinished = false
                 do {
                     let resolved = try await resolveChatRoute(for: request.model)
                     let backend = try backend(for: resolved.provider)
-                    let residencyModel = RuntimeModelResidencyKey(
+                    let currentResidencyModel = RuntimeModelResidencyKey(
                         provider: resolved.provider,
                         modelID: resolved.modelID
                     )
-                    await prepareResidency(for: residencyModel)
-                    defer {
-                        Task { [weak self] in
-                            await self?.finishResidency(for: residencyModel)
-                        }
-                    }
+                    residencyModel = currentResidencyModel
+                    await prepareResidency(for: currentResidencyModel)
                     let routedRequest = ChatRequest(
                         generationID: request.generationID,
                         sessionID: request.sessionID,
@@ -122,11 +122,23 @@ public final class AggregatingLlmBackend: LlmBackend, @unchecked Sendable {
                     )
                     remember(generationID: request.generationID, provider: resolved.provider)
                     for try await event in backend.chat(request: routedRequest) {
+                        if case .done = event, !residencyFinished {
+                            residencyFinished = true
+                            await finishResidency(for: currentResidencyModel)
+                        }
                         continuation.yield(event)
+                    }
+                    if !residencyFinished {
+                        residencyFinished = true
+                        await finishResidency(for: currentResidencyModel)
                     }
                     forget(generationID: request.generationID)
                     continuation.finish()
                 } catch {
+                    if let residencyModel, !residencyFinished {
+                        residencyFinished = true
+                        await finishResidency(for: residencyModel)
+                    }
                     forget(generationID: request.generationID)
                     continuation.finish(throwing: error)
                 }
@@ -159,6 +171,31 @@ public final class AggregatingLlmBackend: LlmBackend, @unchecked Sendable {
             }
         }
         return .notFound(generationID: generationID)
+    }
+
+    @discardableResult
+    public func unloadActiveResidencyModelNow() async -> RuntimeModelResidencyManualUnloadResult {
+        let result: RuntimeModelResidencyManualUnloadResult = lock.withLock {
+            guard let model = activeResidencyModel else {
+                return .noActiveModel
+            }
+            let inFlightGenerations = inFlightResidencyCounts[model, default: 0]
+            guard inFlightGenerations == 0 else {
+                return .inFlightGenerations(inFlightGenerations)
+            }
+            activeResidencyModel = nil
+            idleUnloadTask?.cancel()
+            idleUnloadTask = nil
+            return .requested(provider: model.provider, modelID: model.modelID)
+        }
+
+        if case .requested(let provider, let modelID) = result {
+            await unloadResidencyModel(
+                RuntimeModelResidencyKey(provider: provider, modelID: modelID),
+                reason: .manual
+            )
+        }
+        return result
     }
 
     private func resolveChatRoute(for model: String) async throws -> (provider: ModelProvider, modelID: String) {
@@ -311,8 +348,21 @@ public final class AggregatingLlmBackend: LlmBackend, @unchecked Sendable {
         emit(.unloadRequested(provider: model.provider, modelID: model.modelID, reason: reason))
         do {
             _ = try await backend.unloadModel(providerModelID: model.modelID)
+            lock.withLock {
+                if lastUnloadFailure?.provider == model.provider,
+                   lastUnloadFailure?.modelID == model.modelID {
+                    lastUnloadFailure = nil
+                }
+            }
             emit(.unloadSucceeded(provider: model.provider, modelID: model.modelID, reason: reason))
         } catch {
+            lock.withLock {
+                lastUnloadFailure = RuntimeModelResidencyUnloadFailure(
+                    provider: model.provider,
+                    modelID: model.modelID,
+                    reason: reason
+                )
+            }
             emit(.unloadFailed(
                 provider: model.provider,
                 modelID: model.modelID,
@@ -378,23 +428,49 @@ public struct RuntimeModelResidencySnapshot: Equatable, Sendable {
     public var activeModelID: String?
     public var inFlightGenerations: Int
     public var idleUnloadDelaySeconds: Int
+    public var lastUnloadFailure: RuntimeModelResidencyUnloadFailure?
 
     public init(
         activeProvider: ModelProvider?,
         activeModelID: String?,
         inFlightGenerations: Int,
-        idleUnloadDelaySeconds: Int
+        idleUnloadDelaySeconds: Int,
+        lastUnloadFailure: RuntimeModelResidencyUnloadFailure? = nil
     ) {
         self.activeProvider = activeProvider
         self.activeModelID = activeModelID
         self.inFlightGenerations = inFlightGenerations
         self.idleUnloadDelaySeconds = idleUnloadDelaySeconds
+        self.lastUnloadFailure = lastUnloadFailure
     }
 }
 
 public enum RuntimeModelResidencyUnloadReason: String, Equatable, Sendable {
     case modelSwitch = "model_switch"
     case idleTimeout = "idle_timeout"
+    case manual = "manual"
+}
+
+public enum RuntimeModelResidencyManualUnloadResult: Equatable, Sendable {
+    case noActiveModel
+    case inFlightGenerations(Int)
+    case requested(provider: ModelProvider, modelID: String)
+}
+
+public struct RuntimeModelResidencyUnloadFailure: Equatable, Sendable {
+    public var provider: ModelProvider
+    public var modelID: String
+    public var reason: RuntimeModelResidencyUnloadReason
+
+    public init(
+        provider: ModelProvider,
+        modelID: String,
+        reason: RuntimeModelResidencyUnloadReason
+    ) {
+        self.provider = provider
+        self.modelID = modelID
+        self.reason = reason
+    }
 }
 
 public enum RuntimeModelResidencyEvent: Equatable, Sendable {

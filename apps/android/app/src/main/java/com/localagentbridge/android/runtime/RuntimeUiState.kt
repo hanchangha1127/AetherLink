@@ -23,6 +23,7 @@ data class RuntimeUiState(
     val backendAvailable: Boolean? = null,
     val backendCode: String? = null,
     val providerStatuses: List<RuntimeProviderStatus> = emptyList(),
+    val modelResidency: RuntimeModelResidencyStatus? = null,
     val models: List<RuntimeModel> = emptyList(),
     val isLoadingModels: Boolean = false,
     val installingModelId: String? = null,
@@ -176,6 +177,21 @@ data class RuntimeProviderStatus(
     val message: String = "",
     val code: String? = null,
     val retryable: Boolean? = null,
+)
+
+data class RuntimeModelResidencyStatus(
+    val supported: Boolean,
+    val activeProvider: String? = null,
+    val activeModelId: String? = null,
+    val inFlightGenerations: Int = 0,
+    val idleUnloadDelaySeconds: Int? = null,
+    val lastUnloadFailure: RuntimeModelResidencyUnloadFailureStatus? = null,
+)
+
+data class RuntimeModelResidencyUnloadFailureStatus(
+    val provider: String,
+    val modelId: String,
+    val reason: String,
 )
 
 data class RuntimeChatMessage(

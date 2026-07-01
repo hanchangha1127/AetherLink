@@ -1,7 +1,9 @@
 import AppKit
 import CompanionCore
+import CryptoKit
 import OllamaBackend
 import SwiftUI
+import TrustedDevices
 import XCTest
 @testable import LocalAgentBridge
 
@@ -180,14 +182,186 @@ final class AetherLinkRenderSmokeTests: XCTestCase {
         }
     }
 
+    func testStatusModelResidencyStatesRenderAtCompactDetailSizeAcrossLanguagesAndAppearances() async throws {
+        let activeModelID = "qwen3.6-coder-super-long-local-runtime-model-name-with-vision-tools-35b-q8_0"
+        let activeModel = ModelInfo(
+            id: activeModelID,
+            name: "Qwen3.6 Coder Super Long Local Runtime Model Name With Vision Tools 35B",
+            provider: .ollama,
+            kind: .chat,
+            sizeBytes: 23_400_000_000,
+            installed: true,
+            running: true,
+            source: .local
+        )
+        let failureModelID = "runtime-residency-unload-failure-compact-render-q4_k_m"
+        let failureModel = ModelInfo(
+            id: failureModelID,
+            name: "Runtime Residency Unload Failure Compact Render Q4_K_M",
+            provider: .ollama,
+            kind: .chat,
+            installed: true,
+            running: true,
+            source: .local
+        )
+
+        for language in AetherLinkAppLanguage.allCases {
+            for appearance in AetherLinkAppAppearance.pickerOptions {
+                try await withStoredPreferences(language: language, appearance: appearance) {
+                    let activeAggregate = AggregatingLlmBackend(
+                        [RenderSmokeResidencyBackend(provider: .ollama, models: [activeModel])],
+                        modelIdleUnloadDelayNanoseconds: 60_000_000_000
+                    )
+                    let activeModelState = renderSmokeModel(backend: activeAggregate)
+                    _ = try await collectRenderSmokeChat(
+                        activeAggregate.chat(request: renderSmokeChatRequest(model: "ollama:\(activeModelID)"))
+                    )
+                    activeModelState.refreshModelResidencyStatus()
+                    XCTAssertEqual(activeModelState.modelResidency.activeModelID, activeModelID)
+
+                    let activeBitmap = try render(
+                        StatusView(model: activeModelState)
+                            .environment(\.locale, Locale(identifier: language.localeIdentifier))
+                            .preferredColorScheme(appearance.preferredColorScheme),
+                        size: compactDetailSize
+                    )
+
+                    assertMeaningfulRender(
+                        activeBitmap,
+                        label: "Compact StatusView active model residency \(language.rawValue) \(appearance.rawValue)"
+                    )
+
+                    let failingAggregate = AggregatingLlmBackend(
+                        [
+                            RenderSmokeResidencyBackend(
+                                provider: .ollama,
+                                models: [failureModel],
+                                unloadErrorMessage: "compact render unload denied"
+                            ),
+                        ],
+                        modelIdleUnloadDelayNanoseconds: 0
+                    )
+                    let failedUnloadModelState = renderSmokeModel(backend: failingAggregate)
+                    _ = try await collectRenderSmokeChat(
+                        failingAggregate.chat(request: renderSmokeChatRequest(model: "ollama:\(failureModelID)"))
+                    )
+                    await waitForModelResidencyEventPrefix(
+                        "Model unload failed:",
+                        in: failedUnloadModelState,
+                        label: "unload failure \(language.rawValue) \(appearance.rawValue)"
+                    )
+
+                    let failureBitmap = try render(
+                        StatusView(model: failedUnloadModelState)
+                            .environment(\.locale, Locale(identifier: language.localeIdentifier))
+                            .preferredColorScheme(appearance.preferredColorScheme),
+                        size: compactDetailSize
+                    )
+
+                    assertMeaningfulRender(
+                        failureBitmap,
+                        label: "Compact StatusView unload-failure model residency \(language.rawValue) \(appearance.rawValue)"
+                    )
+                }
+            }
+        }
+    }
+
+    func testTrustedDeviceRowsRenderLongDeviceNamesAtCompactDetailSizeAcrossLanguagesAndAppearances() async throws {
+        let devices = [
+            TrustedDevice(
+                id: "android-client-foldable-runtime-owner-device-with-long-suffix-001",
+                name: "Hanchangha Foldable Android Runtime Client With Very Long Owner Label",
+                publicKeyBase64: renderSmokePublicKeyBase64(),
+                pairedAt: Date(timeIntervalSince1970: 1_720_000_000)
+            ),
+            TrustedDevice(
+                id: "android-tablet-field-test-client-with-long-route-identifier-002",
+                name: "Shared Family Tablet Android Client For Cross Network Relay Testing",
+                publicKeyBase64: renderSmokePublicKeyBase64(),
+                pairedAt: Date(timeIntervalSince1970: 1_720_086_400)
+            ),
+        ]
+
+        for language in AetherLinkAppLanguage.allCases {
+            for appearance in AetherLinkAppAppearance.pickerOptions {
+                try await withStoredPreferences(language: language, appearance: appearance) {
+                    let trustedDeviceStore = isolatedTrustedDeviceStore()
+                    for device in devices {
+                        try await trustedDeviceStore.trust(device)
+                    }
+                    let model = renderSmokeModel(trustedDeviceStore: trustedDeviceStore)
+                    await model.refreshTrustedDevices()
+
+                    XCTAssertEqual(
+                        model.trustedDevices.count,
+                        devices.count,
+                        "Expected trusted-device rows for \(language.rawValue) \(appearance.rawValue)"
+                    )
+
+                    let bitmap = try render(
+                        TrustedDevicesView(model: model)
+                            .environment(\.locale, Locale(identifier: language.localeIdentifier))
+                            .preferredColorScheme(appearance.preferredColorScheme),
+                        size: compactDetailSize
+                    )
+
+                    assertMeaningfulRender(
+                        bitmap,
+                        label: "Compact TrustedDevicesView long device rows \(language.rawValue) \(appearance.rawValue)"
+                    )
+                }
+            }
+        }
+    }
+
     func testRuntimeMemoryInspectorRendersAcrossLanguagesAndAppearances() throws {
+        let source = RuntimeMemoryEntrySource(
+            kind: "long_inactivity_summary",
+            draftID: "render-draft-id",
+            summaryMethod: "extractive",
+            session: RuntimeMemoryEntrySourceSession(
+                sessionID: "render-session-id",
+                title: "Roadmap planning with source metadata",
+                model: "qwen-local",
+                lastActivityAt: Date(timeIntervalSince1970: 100),
+                messageCount: 7,
+                inactiveSeconds: 7200
+            ),
+            sourceMessageCount: 7,
+            sourceRange: "Messages 1-7",
+            sourcePointers: [
+                RuntimeMemoryEntrySourcePointer(
+                    sessionID: "render-session-id",
+                    messageIndex: 0,
+                    role: "user",
+                    createdAt: Date(timeIntervalSince1970: 100),
+                    excerpt: "Prefer concise roadmap updates with concrete validation."
+                ),
+                RuntimeMemoryEntrySourcePointer(
+                    sessionID: "render-session-id",
+                    messageIndex: 1,
+                    role: "assistant",
+                    createdAt: Date(timeIntervalSince1970: 110),
+                    excerpt: "Keep no-device evidence separate from live-device proof."
+                ),
+                RuntimeMemoryEntrySourcePointer(
+                    sessionID: "render-session-id",
+                    messageIndex: 2,
+                    role: "user",
+                    createdAt: Date(timeIntervalSince1970: 120),
+                    excerpt: "This third excerpt should stay collapsed by default."
+                ),
+            ]
+        )
         let entries = [
             RuntimeMemoryEntry(
                 id: "memory-enabled",
                 content: "Prefer concise technical explanations.",
                 enabled: true,
                 createdAt: Date(timeIntervalSince1970: 100),
-                updatedAt: Date(timeIntervalSince1970: 120)
+                updatedAt: Date(timeIntervalSince1970: 120),
+                source: source
             ),
             RuntimeMemoryEntry(
                 id: "memory-paused",
@@ -398,19 +572,72 @@ final class AetherLinkRenderSmokeTests: XCTestCase {
         return defaults
     }
 
-    private func renderSmokeModel(backend: (any LlmBackend)? = nil) -> CompanionAppModel {
+    private func renderSmokeModel(
+        backend: (any LlmBackend)? = nil,
+        trustedDeviceStore: TrustedDeviceStore? = nil
+    ) -> CompanionAppModel {
         CompanionAppModel(
             backend: backend ?? RenderSmokeBackend(models: []),
             environment: isolatedRuntimeIdentityEnvironment(),
             userDefaults: isolatedDefaults(),
+            trustedDeviceStore: trustedDeviceStore ?? isolatedTrustedDeviceStore(),
             runtimeRouteHostProvider: { "127.0.0.1" }
         )
+    }
+
+    private func isolatedTrustedDeviceStore() -> TrustedDeviceStore {
+        let directoryURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("aetherlink-render-trusted-devices-\(UUID().uuidString)", isDirectory: true)
+        return TrustedDeviceStore(fileURL: directoryURL.appendingPathComponent("trusted-devices.json"))
     }
 
     private func isolatedRuntimeIdentityEnvironment() -> [String: String] {
         let fileURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("aetherlink-render-runtime-identity-\(UUID().uuidString).json")
         return ["AETHERLINK_RUNTIME_IDENTITY_FILE": fileURL.path]
+    }
+
+    private func renderSmokePublicKeyBase64() -> String {
+        P256.Signing.PrivateKey().publicKey.derRepresentation.base64EncodedString()
+    }
+
+    private func renderSmokeChatRequest(model: String) -> ChatRequest {
+        ChatRequest(
+            generationID: UUID().uuidString,
+            sessionID: "render-smoke-residency",
+            model: model,
+            messages: [ChatMessage(role: "user", content: "Render the residency card.")]
+        )
+    }
+
+    private func collectRenderSmokeChat(
+        _ stream: AsyncThrowingStream<ChatStreamEvent, Error>
+    ) async throws -> [ChatStreamEvent] {
+        var events: [ChatStreamEvent] = []
+        for try await event in stream {
+            events.append(event)
+        }
+        return events
+    }
+
+    private func waitForModelResidencyEventPrefix(
+        _ prefix: String,
+        in model: CompanionAppModel,
+        label: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) async {
+        for _ in 0..<50 {
+            if model.modelResidency.lastEvent?.hasPrefix(prefix) == true {
+                return
+            }
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTFail(
+            "Timed out waiting for model residency event \(prefix) in \(label); last event: \(model.modelResidency.lastEvent ?? "nil")",
+            file: file,
+            line: line
+        )
     }
 }
 
@@ -438,6 +665,48 @@ private final class RenderSmokeBackend: LlmBackend, @unchecked Sendable {
         AsyncThrowingStream { continuation in
             continuation.finish()
         }
+    }
+
+    func cancel(generationID: String) -> GenerationCancellationResult {
+        .notFound(generationID: generationID)
+    }
+}
+
+private final class RenderSmokeResidencyBackend: LlmBackend, @unchecked Sendable {
+    let provider: ModelProvider
+    private let models: [ModelInfo]
+    private let unloadErrorMessage: String?
+
+    init(provider: ModelProvider, models: [ModelInfo], unloadErrorMessage: String? = nil) {
+        self.provider = provider
+        self.models = models
+        self.unloadErrorMessage = unloadErrorMessage
+    }
+
+    func healthCheck() async -> BackendStatus {
+        .available
+    }
+
+    func listModels() async throws -> [ModelInfo] {
+        models
+    }
+
+    func chat(request: ChatRequest) -> AsyncThrowingStream<ChatStreamEvent, Error> {
+        AsyncThrowingStream { continuation in
+            continuation.yield(.done(inputTokens: 1, outputTokens: 1))
+            continuation.finish()
+        }
+    }
+
+    func unloadModel(providerModelID: String) async throws -> ModelUnloadResult {
+        if let unloadErrorMessage {
+            throw NSError(
+                domain: "AetherLinkRenderSmokeResidency",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: unloadErrorMessage]
+            )
+        }
+        return .unloaded(provider: provider, modelID: providerModelID)
     }
 
     func cancel(generationID: String) -> GenerationCancellationResult {

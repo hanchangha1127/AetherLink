@@ -423,6 +423,7 @@ data class RuntimeHealthPayload(
     val status: String,
     val ollama: RuntimeBackendStatusPayload? = null,
     @SerialName("lm_studio") val lmStudio: RuntimeBackendStatusPayload? = null,
+    @SerialName("model_residency") val modelResidency: RuntimeModelResidencyPayload? = null,
 )
 
 @Serializable
@@ -431,4 +432,21 @@ data class RuntimeBackendStatusPayload(
     val message: String,
     val code: String? = null,
     val retryable: Boolean? = null,
+)
+
+@Serializable
+data class RuntimeModelResidencyPayload(
+    val supported: Boolean,
+    @SerialName("active_provider") val activeProvider: String? = null,
+    @SerialName("active_model_id") val activeModelId: String? = null,
+    @SerialName("in_flight_generations") val inFlightGenerations: Int = 0,
+    @SerialName("idle_unload_delay_seconds") val idleUnloadDelaySeconds: Int? = null,
+    @SerialName("last_unload_failure") val lastUnloadFailure: RuntimeModelResidencyUnloadFailurePayload? = null,
+)
+
+@Serializable
+data class RuntimeModelResidencyUnloadFailurePayload(
+    val provider: String,
+    @SerialName("model_id") val modelId: String,
+    val reason: String,
 )

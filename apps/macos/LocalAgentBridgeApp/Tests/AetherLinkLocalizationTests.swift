@@ -1312,14 +1312,100 @@ final class AetherLinkLocalizationTests: XCTestCase {
             XCTAssertEqual(NSLocalizedString("Refresh Runtime Memory Inspector", comment: ""), "Refresh Runtime Memory Inspector")
             XCTAssertEqual(NSLocalizedString("No runtime memory notes", comment: ""), "No runtime memory notes")
             XCTAssertEqual(NSLocalizedString("Paused", comment: ""), "Paused")
+            XCTAssertEqual(NSLocalizedString("Approved from older chat", comment: ""), "Approved from older chat")
+            XCTAssertEqual(NSLocalizedString("Show source excerpts", comment: ""), "Show source excerpts")
+            XCTAssertEqual(NSLocalizedString("Hide source excerpts", comment: ""), "Hide source excerpts")
+
+            let source = RuntimeMemoryEntrySource(
+                kind: "long_inactivity_summary",
+                draftID: "draft-debug-id",
+                summaryMethod: "extractive",
+                session: RuntimeMemoryEntrySourceSession(
+                    sessionID: "session-debug-id",
+                    title: "Release planning",
+                    model: "qwen-local",
+                    lastActivityAt: Date(timeIntervalSince1970: 100),
+                    messageCount: 4,
+                    inactiveSeconds: 7200
+                ),
+                sourceMessageCount: 4,
+                sourceRange: "Messages 1-4",
+                sourcePointers: [
+                    RuntimeMemoryEntrySourcePointer(
+                        sessionID: "session-debug-id",
+                        messageIndex: 0,
+                        role: "user",
+                        createdAt: Date(timeIntervalSince1970: 100),
+                        excerpt: "Prefer concise release notes."
+                    ),
+                    RuntimeMemoryEntrySourcePointer(
+                        sessionID: "session-debug-id",
+                        messageIndex: 1,
+                        role: "assistant",
+                        createdAt: Date(timeIntervalSince1970: 110),
+                        excerpt: "Use short sections."
+                    ),
+                    RuntimeMemoryEntrySourcePointer(
+                        sessionID: "session-debug-id",
+                        messageIndex: 2,
+                        role: "system",
+                        createdAt: Date(timeIntervalSince1970: 120),
+                        excerpt: "Never expose this third item by default."
+                    ),
+                ]
+            )
+            let collapsedSourceLabel = runtimeMemorySourceReviewAccessibilityLabel(source: source, isExpanded: false)
+
+            XCTAssertEqual(runtimeMemorySourceSessionTitle(source), "Release planning")
+            XCTAssertEqual(runtimeMemorySourceSessionText(source), "Source chat: Release planning")
+            XCTAssertEqual(runtimeMemorySourceCoverageText(source), "Source coverage: Messages 1-4")
+            XCTAssertEqual(runtimeMemorySourceVisiblePointers(source).count, 2)
+            XCTAssertEqual(runtimeMemorySourcePointerText(source.sourcePointers[0]), "Source excerpt User: Prefer concise release notes.")
+            XCTAssertEqual(runtimeMemorySourceHiddenExcerptText(1), "1 more source excerpts hidden")
+            XCTAssertEqual(
+                collapsedSourceLabel,
+                "Memory source. Source chat: Release planning. Source coverage: Messages 1-4. Source review collapsed."
+            )
             XCTAssertEqual(
                 runtimeMemoryEntryAccessibilityLabel(
                     content: " Prefer concise answers ",
                     status: NSLocalizedString("Enabled", comment: ""),
                     createdAt: "Jun 29, 2026 at 12:50 AM",
-                    updatedAt: "Jun 29, 2026 at 1:00 AM"
+                    updatedAt: "Jun 29, 2026 at 1:00 AM",
+                    sourceSummary: collapsedSourceLabel
                 ),
-                "Memory note Prefer concise answers. Status Enabled. Created Jun 29, 2026 at 12:50 AM. Updated Jun 29, 2026 at 1:00 AM."
+                "Memory note Prefer concise answers. Status Enabled. Created Jun 29, 2026 at 12:50 AM. Updated Jun 29, 2026 at 1:00 AM. Memory source. Source chat: Release planning. Source coverage: Messages 1-4. Source review collapsed."
+            )
+
+            let blankSource = RuntimeMemoryEntrySource(
+                kind: "long_inactivity_summary",
+                draftID: "blank-debug-id",
+                summaryMethod: "extractive",
+                session: RuntimeMemoryEntrySourceSession(
+                    sessionID: "blank-session-debug-id",
+                    title: " ",
+                    model: "qwen-local",
+                    lastActivityAt: Date(timeIntervalSince1970: 100),
+                    messageCount: 1,
+                    inactiveSeconds: 7200
+                ),
+                sourceMessageCount: 1,
+                sourceRange: " ",
+                sourcePointers: [
+                    RuntimeMemoryEntrySourcePointer(
+                        sessionID: "blank-session-debug-id",
+                        messageIndex: 0,
+                        role: "assistant",
+                        createdAt: nil,
+                        excerpt: " "
+                    ),
+                ]
+            )
+            XCTAssertEqual(runtimeMemorySourceSessionTitle(blankSource), "Untitled chat")
+            XCTAssertEqual(runtimeMemorySourceCoverageText(blankSource), "Source coverage: Source coverage unavailable")
+            XCTAssertEqual(
+                runtimeMemorySourcePointerText(blankSource.sourcePointers[0]),
+                "Source excerpt Assistant: Source excerpt unavailable"
             )
         }
 
@@ -1330,6 +1416,9 @@ final class AetherLinkLocalizationTests: XCTestCase {
             XCTAssertEqual(NSLocalizedString("Refresh Runtime Memory Inspector", comment: ""), "런타임 메모리 점검 새로 고침")
             XCTAssertEqual(NSLocalizedString("No runtime memory notes", comment: ""), "런타임 메모리 노트 없음")
             XCTAssertEqual(NSLocalizedString("Paused", comment: ""), "일시 중지됨")
+            XCTAssertEqual(NSLocalizedString("Approved from older chat", comment: ""), "이전 채팅에서 승인됨")
+            XCTAssertEqual(NSLocalizedString("Show source excerpts", comment: ""), "원본 발췌 보기")
+            XCTAssertEqual(NSLocalizedString("Hide source excerpts", comment: ""), "원본 발췌 숨기기")
         }
 
         withStoredAppLanguage("ja") {
@@ -1339,6 +1428,9 @@ final class AetherLinkLocalizationTests: XCTestCase {
             XCTAssertEqual(NSLocalizedString("Refresh Runtime Memory Inspector", comment: ""), "ランタイムメモリインスペクタを更新")
             XCTAssertEqual(NSLocalizedString("No runtime memory notes", comment: ""), "ランタイムメモリノートはありません")
             XCTAssertEqual(NSLocalizedString("Paused", comment: ""), "一時停止")
+            XCTAssertEqual(NSLocalizedString("Approved from older chat", comment: ""), "以前のチャットから承認済み")
+            XCTAssertEqual(NSLocalizedString("Show source excerpts", comment: ""), "参照抜粋を表示")
+            XCTAssertEqual(NSLocalizedString("Hide source excerpts", comment: ""), "参照抜粋を隠す")
         }
 
         withStoredAppLanguage("zh-Hans") {
@@ -1348,6 +1440,9 @@ final class AetherLinkLocalizationTests: XCTestCase {
             XCTAssertEqual(NSLocalizedString("Refresh Runtime Memory Inspector", comment: ""), "刷新运行时记忆检查器")
             XCTAssertEqual(NSLocalizedString("No runtime memory notes", comment: ""), "没有运行时记忆笔记")
             XCTAssertEqual(NSLocalizedString("Paused", comment: ""), "已暂停")
+            XCTAssertEqual(NSLocalizedString("Approved from older chat", comment: ""), "来自旧聊天的已批准内容")
+            XCTAssertEqual(NSLocalizedString("Show source excerpts", comment: ""), "显示来源摘录")
+            XCTAssertEqual(NSLocalizedString("Hide source excerpts", comment: ""), "隐藏来源摘录")
         }
 
         withStoredAppLanguage("fr") {
@@ -1357,6 +1452,9 @@ final class AetherLinkLocalizationTests: XCTestCase {
             XCTAssertEqual(NSLocalizedString("Refresh Runtime Memory Inspector", comment: ""), "Actualiser l’inspecteur de mémoire du runtime")
             XCTAssertEqual(NSLocalizedString("No runtime memory notes", comment: ""), "Aucune note de mémoire du runtime")
             XCTAssertEqual(NSLocalizedString("Paused", comment: ""), "Suspendu")
+            XCTAssertEqual(NSLocalizedString("Approved from older chat", comment: ""), "Approuvé depuis un ancien chat")
+            XCTAssertEqual(NSLocalizedString("Show source excerpts", comment: ""), "Afficher les extraits source")
+            XCTAssertEqual(NSLocalizedString("Hide source excerpts", comment: ""), "Masquer les extraits source")
         }
     }
 
@@ -1674,6 +1772,160 @@ final class AetherLinkLocalizationTests: XCTestCase {
         }
     }
 
+    func testActivityModelResidencyLogSummariesUseSpecificLocalizedEvents() {
+        let expectations: [
+            (
+                languageTag: String,
+                active: String,
+                requested: String,
+                unloaded: String,
+                failed: String,
+                manualRequested: String,
+                manualUnloaded: String,
+                manualFailed: String,
+                activeAccessibility: String,
+                failedAccessibility: String,
+                manualFailedAccessibility: String
+            )
+        ] = [
+            (
+                "en",
+                "Active model is ready for runtime requests.",
+                "Model unload requested by runtime policy.",
+                "Model unloaded by runtime policy.",
+                "Model unload failed. Check Activity.",
+                "Manual model unload requested.",
+                "Manual model unloaded.",
+                "Manual model unload failed. Check Activity.",
+                "Activity item Active model is ready for runtime requests. Status Ready.",
+                "Activity item Model unload failed. Check Activity. Status Needs attention.",
+                "Activity item Manual model unload failed. Check Activity. Status Needs attention."
+            ),
+            (
+                "ko",
+                "활성 모델이 런타임 요청을 처리할 준비가 되었습니다.",
+                "런타임 정책이 모델 언로드를 요청했습니다.",
+                "런타임 정책으로 모델을 언로드했습니다.",
+                "모델 내리기에 실패했습니다. 활동을 확인하세요.",
+                "수동 모델 언로드를 요청했습니다.",
+                "수동으로 모델을 언로드했습니다.",
+                "수동 모델 언로드에 실패했습니다. 활동을 확인하세요.",
+                "활동 항목 활성 모델이 런타임 요청을 처리할 준비가 되었습니다. 상태 준비됨.",
+                "활동 항목 모델 내리기에 실패했습니다. 활동을 확인하세요. 상태 확인 필요.",
+                "활동 항목 수동 모델 언로드에 실패했습니다. 활동을 확인하세요. 상태 확인 필요."
+            ),
+            (
+                "ja",
+                "アクティブなモデルはランタイムリクエストを処理できます。",
+                "ランタイムポリシーがモデルのアンロードを要求しました。",
+                "ランタイムポリシーによりモデルをアンロードしました。",
+                "モデルのアンロードに失敗しました。アクティビティを確認してください。",
+                "手動モデルアンロードを要求しました。",
+                "手動でモデルをアンロードしました。",
+                "手動モデルのアンロードに失敗しました。アクティビティを確認してください。",
+                "アクティビティ項目 アクティブなモデルはランタイムリクエストを処理できます。ステータス 準備完了。",
+                "アクティビティ項目 モデルのアンロードに失敗しました。アクティビティを確認してください。ステータス 確認が必要。",
+                "アクティビティ項目 手動モデルのアンロードに失敗しました。アクティビティを確認してください。ステータス 確認が必要。"
+            ),
+            (
+                "zh-Hans",
+                "活动模型已准备好处理运行时请求。",
+                "运行时策略已请求卸载模型。",
+                "已通过运行时策略卸载模型。",
+                "模型卸载失败。请查看活动。",
+                "已请求手动卸载模型。",
+                "已手动卸载模型。",
+                "手动卸载模型失败。请查看活动。",
+                "活动项 活动模型已准备好处理运行时请求。状态 就绪。",
+                "活动项 模型卸载失败。请查看活动。状态 需要注意。",
+                "活动项 手动卸载模型失败。请查看活动。状态 需要注意。"
+            ),
+            (
+                "fr",
+                "Le modèle actif est prêt pour les requêtes du runtime.",
+                "La stratégie du runtime a demandé le déchargement du modèle.",
+                "Le modèle a été déchargé par la stratégie du runtime.",
+                "Échec du déchargement du modèle. Consultez Activité.",
+                "Déchargement manuel du modèle demandé.",
+                "Modèle déchargé manuellement.",
+                "Échec du déchargement manuel du modèle. Consultez Activité.",
+                "Élément d’activité Le modèle actif est prêt pour les requêtes du runtime. État Prêt.",
+                "Élément d’activité Échec du déchargement du modèle. Consultez Activité. État Attention requise.",
+                "Élément d’activité Échec du déchargement manuel du modèle. Consultez Activité. État Attention requise."
+            ),
+        ]
+
+        XCTAssertEqual(expectations.map(\.languageTag), AetherLinkAppLanguage.allCases.map(\.rawValue))
+
+        let activeLine = "Model residency active: Ollama llama3.1"
+        let requestedLine = "Model unload requested: Ollama llama3.1 (model switch)"
+        let unloadedLine = "Model unloaded: Ollama llama3.1 (idle timeout)"
+        let failedLine = "Model unload failed: LM Studio qwen3 (idle timeout): provider refused unload"
+        let manualRequestedLine = "Model unload requested: Ollama llama3.1 (manual)"
+        let manualUnloadedLine = "Model unloaded: Ollama llama3.1 (manual)"
+        let manualFailedLine = "Model unload failed: LM Studio qwen3 (manual): provider refused unload"
+
+        for expectation in expectations {
+            withStoredAppLanguage(expectation.languageTag) {
+                let activeDisplay = localizedLogDisplay(activeLine)
+                let requestedDisplay = localizedLogDisplay(requestedLine)
+                let unloadedDisplay = localizedLogDisplay(unloadedLine)
+                let failedDisplay = localizedLogDisplay(failedLine)
+                let manualRequestedDisplay = localizedLogDisplay(manualRequestedLine)
+                let manualUnloadedDisplay = localizedLogDisplay(manualUnloadedLine)
+                let manualFailedDisplay = localizedLogDisplay(manualFailedLine)
+
+                XCTAssertEqual(activeDisplay.summary, expectation.active, expectation.languageTag)
+                XCTAssertEqual(requestedDisplay.summary, expectation.requested, expectation.languageTag)
+                XCTAssertEqual(unloadedDisplay.summary, expectation.unloaded, expectation.languageTag)
+                XCTAssertEqual(failedDisplay.summary, expectation.failed, expectation.languageTag)
+                XCTAssertEqual(manualRequestedDisplay.summary, expectation.manualRequested, expectation.languageTag)
+                XCTAssertEqual(manualUnloadedDisplay.summary, expectation.manualUnloaded, expectation.languageTag)
+                XCTAssertEqual(manualFailedDisplay.summary, expectation.manualFailed, expectation.languageTag)
+                XCTAssertEqual(modelResidencyEventSummary(manualRequestedLine), expectation.manualRequested, expectation.languageTag)
+                XCTAssertEqual(modelResidencyEventSummary(manualUnloadedLine), expectation.manualUnloaded, expectation.languageTag)
+                XCTAssertEqual(modelResidencyEventSummary(manualFailedLine), expectation.manualFailed, expectation.languageTag)
+                XCTAssertEqual(activeDisplay.diagnostic, activeLine, expectation.languageTag)
+                XCTAssertEqual(requestedDisplay.diagnostic, requestedLine, expectation.languageTag)
+                XCTAssertEqual(unloadedDisplay.diagnostic, unloadedLine, expectation.languageTag)
+                XCTAssertEqual(failedDisplay.diagnostic, failedLine, expectation.languageTag)
+                XCTAssertEqual(manualRequestedDisplay.diagnostic, manualRequestedLine, expectation.languageTag)
+                XCTAssertEqual(manualUnloadedDisplay.diagnostic, manualUnloadedLine, expectation.languageTag)
+                XCTAssertEqual(manualFailedDisplay.diagnostic, manualFailedLine, expectation.languageTag)
+                XCTAssertFalse(activeDisplay.summary.contains("Model residency updated"), expectation.languageTag)
+                XCTAssertFalse(requestedDisplay.summary.contains("Model residency updated"), expectation.languageTag)
+                XCTAssertFalse(unloadedDisplay.summary.contains("Model residency updated"), expectation.languageTag)
+                XCTAssertFalse(failedDisplay.summary.contains("Model residency updated"), expectation.languageTag)
+                XCTAssertFalse(manualRequestedDisplay.summary.contains("runtime policy"), expectation.languageTag)
+                XCTAssertFalse(manualUnloadedDisplay.summary.contains("runtime policy"), expectation.languageTag)
+                XCTAssertFalse(manualFailedDisplay.summary.contains("runtime policy"), expectation.languageTag)
+
+                XCTAssertEqual(activityLogTone(for: activeLine), .ready, expectation.languageTag)
+                XCTAssertEqual(activityLogTone(for: requestedLine), .neutral, expectation.languageTag)
+                XCTAssertEqual(activityLogTone(for: unloadedLine), .neutral, expectation.languageTag)
+                XCTAssertEqual(activityLogTone(for: failedLine), .warning, expectation.languageTag)
+                XCTAssertEqual(activityLogTone(for: manualRequestedLine), .neutral, expectation.languageTag)
+                XCTAssertEqual(activityLogTone(for: manualUnloadedLine), .neutral, expectation.languageTag)
+                XCTAssertEqual(activityLogTone(for: manualFailedLine), .warning, expectation.languageTag)
+                XCTAssertEqual(
+                    logRowAccessibilityLabel(summary: activeDisplay.summary, tone: activityLogTone(for: activeLine)),
+                    expectation.activeAccessibility,
+                    expectation.languageTag
+                )
+                XCTAssertEqual(
+                    logRowAccessibilityLabel(summary: failedDisplay.summary, tone: activityLogTone(for: failedLine)),
+                    expectation.failedAccessibility,
+                    expectation.languageTag
+                )
+                XCTAssertEqual(
+                    logRowAccessibilityLabel(summary: manualFailedDisplay.summary, tone: activityLogTone(for: manualFailedLine)),
+                    expectation.manualFailedAccessibility,
+                    expectation.languageTag
+                )
+            }
+        }
+    }
+
     func testActivityTrustedDeviceLogSummariesUseDeviceContextAcrossLanguages() {
         let expectations: [(languageTag: String, trusted: String, removed: String, fallbackTrusted: String)] = [
             (
@@ -1919,6 +2171,8 @@ final class AetherLinkLocalizationTests: XCTestCase {
                     openAetherLink: "Open AetherLink",
                     refresh: "Refresh",
                     loadModels: "Load Models",
+                    refreshModelResidency: "Refresh Model Residency",
+                    unloadResidentModel: "Unload Resident Model",
                     quit: "Quit"
                 )
             ),
@@ -1932,6 +2186,8 @@ final class AetherLinkLocalizationTests: XCTestCase {
                     openAetherLink: "AetherLink 열기",
                     refresh: "새로고침",
                     loadModels: "모델 불러오기",
+                    refreshModelResidency: "모델 상주 상태 새로 고침",
+                    unloadResidentModel: "상주 모델 언로드",
                     quit: "종료"
                 )
             ),
@@ -1945,6 +2201,8 @@ final class AetherLinkLocalizationTests: XCTestCase {
                     openAetherLink: "AetherLink を開く",
                     refresh: "更新",
                     loadModels: "モデルを読み込む",
+                    refreshModelResidency: "モデル常駐状態を更新",
+                    unloadResidentModel: "常駐モデルをアンロード",
                     quit: "終了"
                 )
             ),
@@ -1958,6 +2216,8 @@ final class AetherLinkLocalizationTests: XCTestCase {
                     openAetherLink: "打开 AetherLink",
                     refresh: "刷新",
                     loadModels: "加载模型",
+                    refreshModelResidency: "刷新模型驻留状态",
+                    unloadResidentModel: "卸载驻留模型",
                     quit: "退出"
                 )
             ),
@@ -1971,6 +2231,8 @@ final class AetherLinkLocalizationTests: XCTestCase {
                     openAetherLink: "Ouvrir AetherLink",
                     refresh: "Actualiser",
                     loadModels: "Charger les modèles",
+                    refreshModelResidency: "Actualiser la résidence du modèle",
+                    unloadResidentModel: "Décharger le modèle résident",
                     quit: "Quitter"
                 )
             ),
@@ -2094,6 +2356,12 @@ final class AetherLinkLocalizationTests: XCTestCase {
             checkProvidersHint: String,
             loadModelsHint: String,
             refreshRuntimeDataHint: String,
+            refreshModelResidencyHint: String,
+            unloadResidentModelHint: String,
+            unloadResidentModelNoModelValue: String,
+            unloadResidentModelNoModelHint: String,
+            unloadResidentModelBusyValue: String,
+            unloadResidentModelBusyHint: String,
             inspectHistoryHint: String,
             inspectMemoryHint: String
         )] = [
@@ -2103,6 +2371,12 @@ final class AetherLinkLocalizationTests: XCTestCase {
                 "Check model provider availability through AetherLink Runtime.",
                 "Load the installed local model list through AetherLink Runtime.",
                 "Refresh runtime-owned chat history and memory counts.",
+                "Refresh the runtime model residency status.",
+                "Unload the active resident model now through AetherLink Runtime.",
+                "No resident model",
+                "No resident model is active through AetherLink Runtime.",
+                "Generation in progress",
+                "Wait for the active generation to finish before unloading the resident model.",
                 "Inspect runtime-owned chat sessions stored on AetherLink Runtime.",
                 "Inspect runtime-owned memory notes stored on AetherLink Runtime."
             ),
@@ -2112,6 +2386,12 @@ final class AetherLinkLocalizationTests: XCTestCase {
                 "AetherLink Runtime을 통해 모델 제공자 사용 가능 여부를 확인합니다.",
                 "AetherLink Runtime을 통해 설치된 로컬 모델 목록을 불러옵니다.",
                 "런타임에 저장된 채팅 기록과 메모리 개수를 새로 고칩니다.",
+                "런타임 모델 상주 상태를 새로 고칩니다.",
+                "AetherLink Runtime을 통해 활성 상주 모델을 지금 언로드합니다.",
+                "상주 모델 없음",
+                "AetherLink Runtime에 활성 상주 모델이 없습니다.",
+                "생성 진행 중",
+                "상주 모델을 언로드하기 전에 활성 생성을 마칠 때까지 기다립니다.",
                 "AetherLink Runtime에 저장된 런타임 소유 채팅 세션을 확인합니다.",
                 "AetherLink Runtime에 저장된 런타임 소유 메모리 노트를 확인합니다."
             ),
@@ -2121,6 +2401,12 @@ final class AetherLinkLocalizationTests: XCTestCase {
                 "AetherLink Runtime 経由でモデルプロバイダーの利用可否を確認します。",
                 "AetherLink Runtime 経由でインストール済みローカルモデルの一覧を読み込みます。",
                 "ランタイムが保持するチャット履歴とメモリ数を更新します。",
+                "ランタイムのモデル常駐状態を更新します。",
+                "AetherLink Runtime 経由でアクティブな常駐モデルを今すぐアンロードします。",
+                "常駐モデルなし",
+                "AetherLink Runtime でアクティブな常駐モデルはありません。",
+                "生成中",
+                "常駐モデルをアンロードする前に、アクティブな生成が完了するまで待ちます。",
                 "AetherLink Runtime に保存されたランタイム所有のチャットセッションを確認します。",
                 "AetherLink Runtime に保存されたランタイム所有のメモリノートを確認します。"
             ),
@@ -2130,6 +2416,12 @@ final class AetherLinkLocalizationTests: XCTestCase {
                 "通过 AetherLink Runtime 检查模型提供方可用性。",
                 "通过 AetherLink Runtime 加载已安装的本地模型列表。",
                 "刷新运行时保存的聊天历史和记忆数量。",
+                "刷新运行时模型驻留状态。",
+                "通过 AetherLink Runtime 立即卸载活动驻留模型。",
+                "无驻留模型",
+                "AetherLink Runtime 中没有活动驻留模型。",
+                "正在生成",
+                "等待活动生成完成后再卸载驻留模型。",
                 "检查 AetherLink Runtime 中存储的运行时拥有的聊天会话。",
                 "检查 AetherLink Runtime 中存储的运行时拥有的记忆笔记。"
             ),
@@ -2139,6 +2431,12 @@ final class AetherLinkLocalizationTests: XCTestCase {
                 "Vérifie la disponibilité des fournisseurs de modèles via AetherLink Runtime.",
                 "Charge la liste des modèles locaux installés via AetherLink Runtime.",
                 "Actualise l’historique de chat et les compteurs de mémoire conservés par le runtime.",
+                "Actualise l’état de résidence du modèle du runtime.",
+                "Décharge immédiatement le modèle résident actif via AetherLink Runtime.",
+                "Aucun modèle résident",
+                "Aucun modèle résident n’est actif via AetherLink Runtime.",
+                "Génération en cours",
+                "Attendez la fin de la génération active avant de décharger le modèle résident.",
                 "Inspecter les sessions de chat détenues par le runtime et stockées dans AetherLink Runtime.",
                 "Inspecter les notes de mémoire détenues par le runtime et stockées dans AetherLink Runtime."
             ),
@@ -2176,6 +2474,46 @@ final class AetherLinkLocalizationTests: XCTestCase {
                 XCTAssertEqual(
                     refreshRuntimeDataActionAccessibilityHint(),
                     expectation.refreshRuntimeDataHint,
+                    expectation.languageTag
+                )
+                XCTAssertEqual(
+                    refreshModelResidencyActionAccessibilityValue(),
+                    expectation.ready,
+                    expectation.languageTag
+                )
+                XCTAssertEqual(
+                    refreshModelResidencyActionAccessibilityHint(),
+                    expectation.refreshModelResidencyHint,
+                    expectation.languageTag
+                )
+                XCTAssertEqual(
+                    unloadResidentModelActionAccessibilityValue(canUnload: true, inFlightGenerations: 0),
+                    expectation.ready,
+                    expectation.languageTag
+                )
+                XCTAssertEqual(
+                    unloadResidentModelActionAccessibilityHint(canUnload: true, inFlightGenerations: 0),
+                    expectation.unloadResidentModelHint,
+                    expectation.languageTag
+                )
+                XCTAssertEqual(
+                    unloadResidentModelActionAccessibilityValue(canUnload: false, inFlightGenerations: 0),
+                    expectation.unloadResidentModelNoModelValue,
+                    expectation.languageTag
+                )
+                XCTAssertEqual(
+                    unloadResidentModelActionAccessibilityHint(canUnload: false, inFlightGenerations: 0),
+                    expectation.unloadResidentModelNoModelHint,
+                    expectation.languageTag
+                )
+                XCTAssertEqual(
+                    unloadResidentModelActionAccessibilityValue(canUnload: false, inFlightGenerations: 1),
+                    expectation.unloadResidentModelBusyValue,
+                    expectation.languageTag
+                )
+                XCTAssertEqual(
+                    unloadResidentModelActionAccessibilityHint(canUnload: false, inFlightGenerations: 1),
+                    expectation.unloadResidentModelBusyHint,
                     expectation.languageTag
                 )
                 XCTAssertEqual(

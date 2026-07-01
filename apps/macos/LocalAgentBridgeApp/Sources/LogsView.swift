@@ -122,6 +122,9 @@ private func logTone(_ line: String) -> StatusTone {
     if line.contains("failed") || line.contains("not reachable") || line.contains("not generated") || line.contains("error") {
         return .warning
     }
+    if line.hasPrefix("Model residency active: ") {
+        return .ready
+    }
     if line.contains("stopped") || line == "Companion stopped" {
         return .inactive
     }
@@ -397,20 +400,42 @@ func localizedLogDisplay(_ line: String) -> LogDisplay {
                 diagnostic: detail
             )
         }
-        if line.hasPrefix("Model residency active: ") ||
-            line.hasPrefix("Model unload requested: ") ||
-            line.hasPrefix("Model unloaded: ") ||
-            line.hasPrefix("Model unload failed: ") {
-            return LogDisplay(
-                summary: NSLocalizedString("Model residency updated.", comment: ""),
-                diagnostic: line
-            )
+        if let modelResidencyDisplay = localizedModelResidencyLogDisplay(line) {
+            return modelResidencyDisplay
         }
         return LogDisplay(
             summary: NSLocalizedString("Runtime event recorded.", comment: ""),
             diagnostic: line
         )
     }
+}
+
+private func localizedModelResidencyLogDisplay(_ line: String) -> LogDisplay? {
+    if line.hasPrefix("Model residency active: ") {
+        return LogDisplay(
+            summary: NSLocalizedString("Active model is ready for runtime requests.", comment: ""),
+            diagnostic: line
+        )
+    }
+    if line.hasPrefix("Model unload requested: ") {
+        return LogDisplay(
+            summary: modelResidencyEventSummary(line),
+            diagnostic: line
+        )
+    }
+    if line.hasPrefix("Model unloaded: ") {
+        return LogDisplay(
+            summary: modelResidencyEventSummary(line),
+            diagnostic: line
+        )
+    }
+    if line.hasPrefix("Model unload failed: ") {
+        return LogDisplay(
+            summary: modelResidencyEventSummary(line),
+            diagnostic: line
+        )
+    }
+    return nil
 }
 
 private func trustedDeviceAuditLogName(_ rawName: String) -> String {

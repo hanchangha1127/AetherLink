@@ -55,7 +55,9 @@ Options:
   --allocation-token <token>
                         Send an allocation token to the development relay.
                         Required when the relay was started with
-                        --allocation-token or AETHERLINK_RELAY_ALLOCATION_TOKEN.
+                        --allocation-token or AETHERLINK_RELAY_ALLOCATION_TOKEN,
+                        and when --start-local-relay advertises a non-loopback
+                        relay host that requires a wildcard bind.
   --pairing-ttl <sec>   Override the development pairing TTL.
   --qr-png <path>       Write the QR PNG to a specific path.
   --open-qr             Open the QR PNG after generation.
@@ -304,6 +306,30 @@ sock = socket.socket()
 sock.bind(("127.0.0.1", 0))
 print(sock.getsockname()[1])
 sock.close()
+PY
+}
+
+local_relay_bind_host() {
+  python3 - "$1" <<'PY'
+import ipaddress
+import sys
+
+raw = sys.argv[1].strip()
+host = raw.lower()
+if host.startswith("[") and host.endswith("]"):
+    host = host[1:-1]
+if host in {"localhost", "localhost.", "::1"}:
+    print(raw or "127.0.0.1")
+    raise SystemExit(0)
+try:
+    address = ipaddress.ip_address(host)
+except ValueError:
+    print("0.0.0.0")
+    raise SystemExit(0)
+if address.is_loopback:
+    print(host)
+else:
+    print("0.0.0.0")
 PY
 }
 
@@ -603,10 +629,15 @@ trap cleanup EXIT
 echo "Working directory: $WORK_DIR"
 
 if [[ "$START_LOCAL_RELAY" == "1" ]]; then
-  echo "Starting allocation-required relay on 0.0.0.0:$RELAY_PORT"
+  LOCAL_RELAY_BIND_HOST="$(local_relay_bind_host "$RELAY_HOST")"
+  if [[ "$LOCAL_RELAY_BIND_HOST" == "0.0.0.0" && -z "$ALLOCATION_TOKEN" ]]; then
+    echo "--start-local-relay with a non-loopback advertised relay host must pass --allocation-token or AETHERLINK_RELAY_ALLOCATION_TOKEN." >&2
+    exit 2
+  fi
+  echo "Starting allocation-required relay on $LOCAL_RELAY_BIND_HOST:$RELAY_PORT"
   swift build --product AetherLinkRelay >/dev/null
   RELAY_BIN="$(swift build --show-bin-path)/AetherLinkRelay"
-  RELAY_ARGS=("$RELAY_BIN" --host 0.0.0.0 --port "$RELAY_PORT" --require-allocation)
+  RELAY_ARGS=("$RELAY_BIN" --host "$LOCAL_RELAY_BIND_HOST" --port "$RELAY_PORT" --require-allocation)
   if [[ -n "$ALLOCATION_TOKEN" ]]; then
     RELAY_ARGS+=(--allocation-token "$ALLOCATION_TOKEN")
   fi

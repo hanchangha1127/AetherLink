@@ -437,6 +437,11 @@ public struct CompanionRemoteRouteLease: Equatable, Sendable {
         let thresholdMillis = Int64((date.addingTimeInterval(renewalMarginSeconds).timeIntervalSince1970 * 1000).rounded())
         return expiresAtEpochMillis <= thresholdMillis
     }
+
+    public func isAdvancingReplacement(of existing: CompanionRemoteRouteLease) -> Bool {
+        expiresAtEpochMillis > existing.expiresAtEpochMillis &&
+            nonce != existing.nonce
+    }
 }
 
 public protocol CompanionRemoteRelayRouteAllocating: Sendable {
@@ -635,7 +640,7 @@ public final class CompanionAppModel: ObservableObject {
     private let runtimeChatEventStore: any RuntimeChatEventStore
     private let runtimeMemoryStore: any RuntimeMemoryStore
     private let pairingCoordinator = PairingCoordinator()
-    private let trustedDeviceStore = TrustedDeviceStore()
+    private let trustedDeviceStore: TrustedDeviceStore
     private let userDefaults: UserDefaults
     private let peerServer: any RuntimeTransport
     private let advertiser: any RuntimeAdvertiser
@@ -715,6 +720,7 @@ public final class CompanionAppModel: ObservableObject {
         environment: [String: String] = ProcessInfo.processInfo.environment,
         userDefaults: UserDefaults = .standard,
         relaySecretStore: any CompanionRelaySecretStoring = KeychainCompanionRelaySecretStore(),
+        trustedDeviceStore: TrustedDeviceStore = TrustedDeviceStore(),
         runtimeChatEventStore: any RuntimeChatEventStore = RuntimeChatEventStoreDefaults.productionStore(),
         runtimeMemoryStore: any RuntimeMemoryStore = JSONLRuntimeMemoryStore(),
         runtimeRouteHostProvider: (() -> String?)? = nil
@@ -733,6 +739,7 @@ public final class CompanionAppModel: ObservableObject {
         self.bootstrapRelaySettings = loadedBootstrapRelaySettings
         self.relayClient = relayClient
         self.relaySecretStore = relaySecretStore
+        self.trustedDeviceStore = trustedDeviceStore
         self.runtimeChatEventStore = runtimeChatEventStore
         self.runtimeMemoryStore = runtimeMemoryStore
         self.remoteRelayRouteAllocator = remoteRelayRouteAllocator ?? Self.makeRemoteRelayRouteAllocator(
@@ -1052,6 +1059,18 @@ public final class CompanionAppModel: ObservableObject {
         )
     }
 
+    public func unloadResidentModelNow() async {
+        guard let aggregate = backend as? AggregatingLlmBackend else {
+            modelResidency = .unsupported
+            return
+        }
+        _ = await aggregate.unloadActiveResidencyModelNow()
+        modelResidency = CompanionModelResidencyStatus(
+            snapshot: aggregate.modelResidencySnapshot(),
+            lastEvent: modelResidency.lastEvent
+        )
+    }
+
     public func beginPairing(routePolicy: CompanionPairingRoutePolicy = .remoteRequired) {
         if !isRuntimeStarted {
             start(port: runtimePort)
@@ -1145,6 +1164,17 @@ public final class CompanionAppModel: ObservableObject {
                     timeout: 5
                 )
                 let configuration = allocation.configuration
+                guard acceptsRemoteRouteAllocation(allocation) else {
+                    let endpoint = "\(configuration.host):\(configuration.port)"
+                    let message = "Remote route lease did not advance."
+                    remoteRoutePreparationIssue = CompanionRemoteRoutePreparationIssue(
+                        kind: .automaticPreparationRejected,
+                        endpoint: endpoint,
+                        message: message
+                    )
+                    log("Remote route allocation rejected: non-advancing lease for \(endpoint)")
+                    return .allocationFailed(endpoint: endpoint, message: message)
+                }
                 let settings = CompanionDevelopmentRelaySettings(
                     isEnabled: true,
                     host: configuration.host,
@@ -1337,6 +1367,16 @@ public final class CompanionAppModel: ObservableObject {
                 log("Remote route bootstrap rejected unreachable connection address \(allocation.configuration.host)")
                 return
             }
+            guard acceptsRemoteRouteAllocation(allocation) else {
+                let endpoint = "\(allocation.configuration.host):\(allocation.configuration.port)"
+                remoteRoutePreparationIssue = CompanionRemoteRoutePreparationIssue(
+                    kind: .automaticPreparationRejected,
+                    endpoint: endpoint,
+                    message: "Remote route lease did not advance."
+                )
+                log("Remote route bootstrap rejected non-advancing lease for \(endpoint)")
+                return
+            }
 
             let configuration = allocation.configuration
             let settings = CompanionDevelopmentRelaySettings(
@@ -1385,7 +1425,9 @@ public final class CompanionAppModel: ObservableObject {
 
     private func prepareRemoteRelayRouteForPairing() {
         if canAttemptAutomaticRemoteRouteAllocation {
-            allocateRemoteRelayRouteIfAvailable()
+            if !hasFreshCurrentRemoteRouteLease {
+                allocateRemoteRelayRouteIfAvailable()
+            }
             return
         }
         guard relayConfiguration != nil else {
@@ -1455,6 +1497,16 @@ public final class CompanionAppModel: ObservableObject {
                 log("Remote route lease refresh rejected unreachable connection address \(allocation.configuration.host)")
                 return
             }
+            guard acceptsRemoteRouteAllocation(allocation) else {
+                let endpoint = "\(allocation.configuration.host):\(allocation.configuration.port)"
+                remoteRoutePreparationIssue = CompanionRemoteRoutePreparationIssue(
+                    kind: .routeLeaseRefreshRejected,
+                    endpoint: endpoint,
+                    message: "Remote route lease did not advance."
+                )
+                log("Remote route lease refresh rejected non-advancing lease for \(endpoint)")
+                return
+            }
             let configuration = allocation.configuration
             let settings = CompanionDevelopmentRelaySettings(
                 isEnabled: true,
@@ -1481,7 +1533,27 @@ public final class CompanionAppModel: ObservableObject {
         guard developmentRelaySettings.isEnabled else { return }
         guard relayConfiguration != nil else { return }
         guard canAttemptAutomaticRemoteRouteAllocation else { return }
+        guard !hasFreshCurrentRemoteRouteLease else { return }
         allocateRemoteRelayRouteIfAvailable(restartRelayClientIfRunning: false)
+    }
+
+    private var hasFreshCurrentRemoteRouteLease: Bool {
+        guard relayConfiguration != nil,
+              let allocatedRemoteRouteLease
+        else {
+            return false
+        }
+        return isRelayRouteLeaseFreshForPairingQRCode(allocatedRemoteRouteLease)
+    }
+
+    private func acceptsRemoteRouteAllocation(_ allocation: CompanionRemoteRelayRouteAllocation) -> Bool {
+        guard let incomingLease = allocation.lease,
+              let currentLease = allocatedRemoteRouteLease,
+              allocation.configuration.relayID == developmentRelaySettings.relayID
+        else {
+            return true
+        }
+        return incomingLease.isAdvancingReplacement(of: currentLease)
     }
 
     private func isEligibleAutomaticRelayHost(_ host: String) -> Bool {
@@ -1777,7 +1849,16 @@ public final class CompanionAppModel: ObservableObject {
         }
         if let host = environment["AETHERLINK_BOOTSTRAP_RELAY_HOST"]?.takeIfNotEmpty() {
             let port = UInt16(environment["AETHERLINK_BOOTSTRAP_RELAY_PORT"] ?? "") ?? 43171
-            let relayID = environment["AETHERLINK_BOOTSTRAP_RELAY_ID"]?.takeIfNotEmpty() ?? routeToken
+            let savedLeaseRelayID: String?
+            if defaults.string(forKey: RelayDefaults.leaseHost) == host,
+               UInt16(exactly: defaults.integer(forKey: RelayDefaults.leasePort)) == port {
+                savedLeaseRelayID = defaults.string(forKey: RelayDefaults.leaseRelayID)?.takeIfNotEmpty()
+            } else {
+                savedLeaseRelayID = nil
+            }
+            let relayID = environment["AETHERLINK_BOOTSTRAP_RELAY_ID"]?.takeIfNotEmpty()
+                ?? savedLeaseRelayID
+                ?? routeToken
             let relaySecret = environment["AETHERLINK_BOOTSTRAP_RELAY_SECRET"]?.takeIfNotEmpty()
                 ?? environment["AETHERLINK_BOOTSTRAP_RELAY_FRAME_SECRET"]?.takeIfNotEmpty()
                 ?? loadSavedRelaySecret(
@@ -2369,6 +2450,8 @@ private extension RuntimeModelResidencyUnloadReason {
             return "model switch"
         case .idleTimeout:
             return "idle timeout"
+        case .manual:
+            return "manual"
         }
     }
 }

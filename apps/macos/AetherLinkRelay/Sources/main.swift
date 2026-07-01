@@ -1,7 +1,7 @@
 import Foundation
 import RelayServerCore
 
-var host = "0.0.0.0"
+var host = RelayServerConfiguration.defaultHost
 var port: UInt16 = 43171
 var requiresAllocation = true
 var allocationStorePath = ProcessInfo.processInfo.environment["AETHERLINK_RELAY_ALLOCATION_STORE"]
@@ -25,9 +25,10 @@ func usage(exitCode: Int32) -> Never {
     Runtime/client handshakes for unknown or expired relay IDs are rejected by
     default. Use --allow-legacy only for old local diagnostics that intentionally
     accept arbitrary relay IDs.
-    With --allocation-token, allocation requests must include the same token;
-    this keeps a public development relay from issuing route material to
-    unrelated callers.
+    Tokenless relay binds are allowed only for loopback diagnostics on
+    127.0.0.1, ::1, or localhost. Binding a wildcard, DNS, private, or public
+    host requires --allocation-token or AETHERLINK_RELAY_ALLOCATION_TOKEN, and
+    allocation requests must include the same token.
     Allocation tickets are short-lived by default. Use --allocation-ttl-seconds
     only for explicit development diagnostics that need a longer route lease.
     Allocation tickets persist to ~/.aetherlink-relay/allocations.json by

@@ -344,24 +344,26 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                 healthPayload(for: status)
             }
             let anyAvailable = statuses.values.contains(.available)
+            var payload: [String: JSONValue] = [
+                "status": .string(anyAvailable ? "ok" : "unavailable"),
+                "ollama": providerPayloads[.ollama] ?? .object([
+                    "available": .bool(false),
+                    "code": .string("backend_unavailable"),
+                    "message": .string("Ollama is not enabled in AetherLink Runtime."),
+                    "retryable": .bool(false)
+                ]),
+                "lm_studio": providerPayloads[.lmStudio] ?? .object([
+                    "available": .bool(false),
+                    "code": .string("backend_unavailable"),
+                    "message": .string("LM Studio is not enabled in AetherLink Runtime."),
+                    "retryable": .bool(false)
+                ])
+            ]
+            payload["model_residency"] = modelResidencyPayload(for: aggregate.modelResidencySnapshot())
             sink.send(ProtocolEnvelope(
                 type: MessageType.runtimeHealth,
                 requestID: envelope.requestID,
-                payload: [
-                    "status": .string(anyAvailable ? "ok" : "unavailable"),
-                    "ollama": providerPayloads[.ollama] ?? .object([
-                        "available": .bool(false),
-                        "code": .string("backend_unavailable"),
-                        "message": .string("Ollama is not enabled in AetherLink Runtime."),
-                        "retryable": .bool(false)
-                    ]),
-                    "lm_studio": providerPayloads[.lmStudio] ?? .object([
-                        "available": .bool(false),
-                        "code": .string("backend_unavailable"),
-                        "message": .string("LM Studio is not enabled in AetherLink Runtime."),
-                        "retryable": .bool(false)
-                    ])
-                ]
+                payload: payload
             ))
             return
         }
@@ -1610,6 +1612,28 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         }
     }
 
+    private func modelResidencyPayload(for snapshot: RuntimeModelResidencySnapshot) -> JSONValue {
+        var payload: [String: JSONValue] = [
+            "supported": .bool(true),
+            "in_flight_generations": .number(Double(snapshot.inFlightGenerations)),
+            "idle_unload_delay_seconds": .number(Double(snapshot.idleUnloadDelaySeconds))
+        ]
+        if let activeProvider = snapshot.activeProvider {
+            payload["active_provider"] = .string(activeProvider.rawValue)
+        }
+        if let activeModelID = snapshot.activeModelID, !activeModelID.isEmpty {
+            payload["active_model_id"] = .string(activeModelID)
+        }
+        if let failure = snapshot.lastUnloadFailure {
+            payload["last_unload_failure"] = .object([
+                "provider": .string(failure.provider.rawValue),
+                "model_id": .string(failure.modelID),
+                "reason": .string(failure.reason.rawValue)
+            ])
+        }
+        return .object(payload)
+    }
+
     private func trustedDevice(deviceID: String) async throws -> TrustedDevice? {
         try await trustedDeviceStore.load().first { $0.id == deviceID }
     }
@@ -1864,8 +1888,11 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
             )
         }
 
-        let conversationMessages = messages.enumerated().filter { $0.element.isConversationTurn }
-        guard conversationMessages.count > runtimeConversationCompactionRecentTurnCount else {
+        var conversationTurns: [(messageIndex: Int, turnNumber: Int, message: ChatMessage)] = []
+        for (index, message) in messages.enumerated() where message.isConversationTurn {
+            conversationTurns.append((messageIndex: index, turnNumber: conversationTurns.count + 1, message: message))
+        }
+        guard conversationTurns.count > runtimeConversationCompactionRecentTurnCount else {
             return ChatRequest(
                 generationID: request.generationID,
                 sessionID: request.sessionID,
@@ -1874,9 +1901,14 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
             )
         }
 
-        let compactedMessages = Array(conversationMessages.dropLast(runtimeConversationCompactionRecentTurnCount))
+        let compactedTurns = Array(conversationTurns.dropLast(runtimeConversationCompactionRecentTurnCount))
         guard let summaryMessage = runtimeConversationCompactionMessage(
-            from: compactedMessages.map(\.element)
+            from: compactedTurns.map { $0.message },
+            sourceSpan: (
+                startTurn: compactedTurns.first?.turnNumber ?? 1,
+                endTurn: compactedTurns.last?.turnNumber ?? compactedTurns.count,
+                totalTurns: conversationTurns.count
+            )
         ) else {
             return ChatRequest(
                 generationID: request.generationID,
@@ -1886,7 +1918,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
             )
         }
 
-        let compactedIndices = Set(compactedMessages.map(\.offset))
+        let compactedIndices = Set(compactedTurns.map(\.messageIndex))
         var compactedRequestMessages: [ChatMessage] = []
         var insertedSummary = false
         for (index, message) in messages.enumerated() {
@@ -1924,11 +1956,15 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         return message.role.count + message.content.count + attachmentCharacters
     }
 
-    private static func runtimeConversationCompactionMessage(from messages: [ChatMessage]) -> ChatMessage? {
+    private static func runtimeConversationCompactionMessage(
+        from messages: [ChatMessage],
+        sourceSpan: (startTurn: Int, endTurn: Int, totalTurns: Int)
+    ) -> ChatMessage? {
         var remainingCharacters = runtimeConversationCompactionMaxSummaryCharacters
         var lines: [String] = [
             runtimeConversationCompactionPrefix,
-            "Backend-only summary of older turns from this active session. The user-visible transcript is preserved separately; archived or deleted chats are not included."
+            "Backend-only summary of older turns from this active session. The user-visible transcript is preserved separately; archived or deleted chats are not included.",
+            "\(runtimeConversationCompactionSourceSpanPrefix) client-visible conversation turns \(sourceSpan.startTurn)-\(sourceSpan.endTurn) of \(sourceSpan.totalTurns)."
         ]
 
         for message in messages {
@@ -1942,7 +1978,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
             }
         }
 
-        guard lines.count > 2 else { return nil }
+        guard lines.count > 3 else { return nil }
         return ChatMessage(
             role: "system",
             content: lines.joined(separator: "\n")
@@ -2042,6 +2078,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
     private static let runtimeUserMemoryMaxEntries = 8
     private static let runtimeUserMemoryMaxCharacters = 1_500
     private static let runtimeConversationCompactionPrefix = "Runtime conversation summary:"
+    private static let runtimeConversationCompactionSourceSpanPrefix = "Source span:"
     private static let runtimeConversationCompactionDefaultMaxContextCharacters = 24_000
     private static let runtimeConversationCompactionCharactersPerTokenBudget = 3
     private static let runtimeConversationCompactionMinModelContextCharacters = 4_000

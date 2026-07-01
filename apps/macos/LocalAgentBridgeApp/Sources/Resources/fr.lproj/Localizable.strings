@@ -91,6 +91,14 @@
 "Runtime Memory" = "Mémoire du runtime";
 "Refresh Runtime Data" = "Actualiser les données du runtime";
 "Refresh runtime-owned chat history and memory counts." = "Actualise l’historique de chat et les compteurs de mémoire conservés par le runtime.";
+"Refresh Model Residency" = "Actualiser la résidence du modèle";
+"Refresh the runtime model residency status." = "Actualise l’état de résidence du modèle du runtime.";
+"Unload Resident Model" = "Décharger le modèle résident";
+"Generation in progress" = "Génération en cours";
+"No resident model" = "Aucun modèle résident";
+"Unload the active resident model now through AetherLink Runtime." = "Décharge immédiatement le modèle résident actif via AetherLink Runtime.";
+"Wait for the active generation to finish before unloading the resident model." = "Attendez la fin de la génération active avant de décharger le modèle résident.";
+"No resident model is active through AetherLink Runtime." = "Aucun modèle résident n’est actif via AetherLink Runtime.";
 "Inspect Runtime Memory" = "Inspecter la mémoire du runtime";
 "Inspect runtime-owned memory notes stored on AetherLink Runtime." = "Inspecter les notes de mémoire détenues par le runtime et stockées dans AetherLink Runtime.";
 "Runtime Memory Inspector" = "Inspecteur de mémoire du runtime";
@@ -109,6 +117,18 @@
 "Unknown creation time" = "Heure de création inconnue";
 "Unknown update time" = "Heure de mise à jour inconnue";
 "Memory note %@. Status %@. Created %@. Updated %@." = "Note de mémoire %@. État %@. Créée %@. Mise à jour %@.";
+"Approved from older chat" = "Approuvé depuis un ancien chat";
+"Source chat: %@" = "Chat source : %@";
+"Source coverage: %@" = "Portée source : %@";
+"Source coverage unavailable" = "Portée source indisponible";
+"Show source excerpts" = "Afficher les extraits source";
+"Hide source excerpts" = "Masquer les extraits source";
+"Source review expanded" = "Revue de la source développée";
+"Source review collapsed" = "Revue de la source réduite";
+"Source excerpt %@: %@" = "Extrait source %@ : %@";
+"Source excerpt unavailable" = "Extrait source indisponible";
+"%d more source excerpts hidden" = "%d autres extraits source masqués";
+"Memory source. %@. %@. %@." = "Source de la mémoire. %@. %@. %@.";
 "1 active chat" = "1 chat actif";
 "%d active chats" = "%d chats actifs";
 "1 archived chat" = "1 chat archivé";
@@ -226,6 +246,8 @@
 "No active model is resident through the runtime policy." = "Aucun modèle actif n’est résident via la stratégie du runtime.";
 "Model unload requested by runtime policy." = "La stratégie du runtime a demandé le déchargement du modèle.";
 "Model unloaded by runtime policy." = "Le modèle a été déchargé par la stratégie du runtime.";
+"Manual model unload requested." = "Déchargement manuel du modèle demandé.";
+"Manual model unloaded." = "Modèle déchargé manuellement.";
 "Open a model provider for AetherLink Runtime, then check again." = "Ouvrez un fournisseur de modèles pour AetherLink Runtime, puis vérifiez à nouveau.";
 "1 trusted device" = "1 appareil approuvé";
 "%d trusted devices" = "%d appareils approuvés";
@@ -326,6 +348,7 @@
 "Provider %@ status %@" = "État de %@ : %@";
 "Provider %@. Status %@. %@" = "Fournisseur %@. État %@. %@";
 "No provider details" = "Aucun détail sur le fournisseur";
+"Active model is ready for runtime requests." = "Le modèle actif est prêt pour les requêtes du runtime.";
 "Model residency updated." = "Résidence du modèle mise à jour.";
 "Runtime event recorded." = "Événement du runtime enregistré.";
 
@@ -443,6 +466,7 @@
 "AetherLink Runtime needs attention. Check Activity or restart AetherLink Runtime." = "AetherLink Runtime demande une vérification. Consultez Activité ou redémarrez AetherLink Runtime.";
 "Connection details need a secure connection secret before sharing sensitive content." = "Les informations de connexion nécessitent un secret de connexion sécurisé avant de partager du contenu sensible.";
 "Model unload failed. Check Activity." = "Échec du déchargement du modèle. Consultez Activité.";
+"Manual model unload failed. Check Activity." = "Échec du déchargement manuel du modèle. Consultez Activité.";
 "Ready for paired devices." = "Prêt pour les appareils jumelés.";
 "Start AetherLink Runtime." = "Démarrez AetherLink Runtime.";
 "Connection details not ready for QR" = "Informations de connexion non prêtes pour le QR";

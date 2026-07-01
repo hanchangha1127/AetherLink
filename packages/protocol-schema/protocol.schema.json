@@ -261,6 +261,29 @@
       },
       "additionalProperties": false
     },
+    "modelResidencyHealth": {
+      "type": "object",
+      "required": ["supported", "in_flight_generations"],
+      "properties": {
+        "supported": { "type": "boolean" },
+        "active_provider": { "enum": ["ollama", "lm_studio"] },
+        "active_model_id": { "$ref": "#/$defs/nonEmptyString" },
+        "in_flight_generations": { "type": "integer", "minimum": 0 },
+        "idle_unload_delay_seconds": { "type": "integer", "minimum": 0 },
+        "last_unload_failure": { "$ref": "#/$defs/modelResidencyUnloadFailure" }
+      },
+      "additionalProperties": false
+    },
+    "modelResidencyUnloadFailure": {
+      "type": "object",
+      "required": ["provider", "model_id", "reason"],
+      "properties": {
+        "provider": { "enum": ["ollama", "lm_studio"] },
+        "model_id": { "$ref": "#/$defs/nonEmptyString" },
+        "reason": { "enum": ["model_switch", "idle_timeout", "manual"] }
+      },
+      "additionalProperties": false
+    },
     "runtimeHealthPayload": {
       "oneOf": [
         { "$ref": "#/$defs/emptyPayload" },
@@ -270,7 +293,8 @@
           "properties": {
             "status": { "enum": ["ok", "degraded", "unavailable"] },
             "ollama": { "$ref": "#/$defs/backendHealth" },
-            "lm_studio": { "$ref": "#/$defs/backendHealth" }
+            "lm_studio": { "$ref": "#/$defs/backendHealth" },
+            "model_residency": { "$ref": "#/$defs/modelResidencyHealth" }
           },
           "additionalProperties": false
         }

@@ -91,6 +91,14 @@
 "Runtime Memory" = "运行时记忆";
 "Refresh Runtime Data" = "刷新运行时数据";
 "Refresh runtime-owned chat history and memory counts." = "刷新运行时保存的聊天历史和记忆数量。";
+"Refresh Model Residency" = "刷新模型驻留状态";
+"Refresh the runtime model residency status." = "刷新运行时模型驻留状态。";
+"Unload Resident Model" = "卸载驻留模型";
+"Generation in progress" = "正在生成";
+"No resident model" = "无驻留模型";
+"Unload the active resident model now through AetherLink Runtime." = "通过 AetherLink Runtime 立即卸载活动驻留模型。";
+"Wait for the active generation to finish before unloading the resident model." = "等待活动生成完成后再卸载驻留模型。";
+"No resident model is active through AetherLink Runtime." = "AetherLink Runtime 中没有活动驻留模型。";
 "Inspect Runtime Memory" = "检查运行时记忆";
 "Inspect runtime-owned memory notes stored on AetherLink Runtime." = "检查 AetherLink Runtime 中存储的运行时拥有的记忆笔记。";
 "Runtime Memory Inspector" = "运行时记忆检查器";
@@ -109,6 +117,18 @@
 "Unknown creation time" = "未知创建时间";
 "Unknown update time" = "未知更新时间";
 "Memory note %@. Status %@. Created %@. Updated %@." = "记忆笔记 %@。状态 %@。创建 %@。更新 %@。";
+"Approved from older chat" = "来自旧聊天的已批准内容";
+"Source chat: %@" = "来源聊天：%@";
+"Source coverage: %@" = "来源范围：%@";
+"Source coverage unavailable" = "来源范围不可用";
+"Show source excerpts" = "显示来源摘录";
+"Hide source excerpts" = "隐藏来源摘录";
+"Source review expanded" = "来源审核已展开";
+"Source review collapsed" = "来源审核已折叠";
+"Source excerpt %@: %@" = "来源摘录 %@：%@";
+"Source excerpt unavailable" = "来源摘录不可用";
+"%d more source excerpts hidden" = "另外 %d 条来源摘录已隐藏";
+"Memory source. %@. %@. %@." = "记忆来源。%@。%@。%@。";
 "1 active chat" = "1 个活跃聊天";
 "%d active chats" = "%d 个活跃聊天";
 "1 archived chat" = "1 个已归档聊天";
@@ -226,6 +246,8 @@
 "No active model is resident through the runtime policy." = "当前没有通过运行时策略驻留的活动模型。";
 "Model unload requested by runtime policy." = "运行时策略已请求卸载模型。";
 "Model unloaded by runtime policy." = "已通过运行时策略卸载模型。";
+"Manual model unload requested." = "已请求手动卸载模型。";
+"Manual model unloaded." = "已手动卸载模型。";
 "Open a model provider for AetherLink Runtime, then check again." = "打开供 AetherLink Runtime 使用的模型提供方，然后再次检查。";
 "1 trusted device" = "1 台受信任设备";
 "%d trusted devices" = "%d 台受信任设备";
@@ -326,6 +348,7 @@
 "Provider %@ status %@" = "%@ 状态 %@";
 "Provider %@. Status %@. %@" = "%@。状态 %@。%@";
 "No provider details" = "没有提供方详情";
+"Active model is ready for runtime requests." = "活动模型已准备好处理运行时请求。";
 "Model residency updated." = "模型驻留状态已更新。";
 "Runtime event recorded." = "已记录运行时事件。";
 
@@ -443,6 +466,7 @@
 "AetherLink Runtime needs attention. Check Activity or restart AetherLink Runtime." = "AetherLink Runtime 需要检查。请查看活动或重启 AetherLink Runtime。";
 "Connection details need a secure connection secret before sharing sensitive content." = "共享敏感内容前，连接信息需要安全连接密钥。";
 "Model unload failed. Check Activity." = "模型卸载失败。请查看活动。";
+"Manual model unload failed. Check Activity." = "手动卸载模型失败。请查看活动。";
 "Ready for paired devices." = "已准备好连接已配对设备。";
 "Start AetherLink Runtime." = "启动 AetherLink Runtime。";
 "Connection details not ready for QR" = "二维码连接信息尚未就绪";

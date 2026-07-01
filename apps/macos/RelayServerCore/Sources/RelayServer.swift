@@ -2,6 +2,7 @@ import Darwin
 import Foundation
 
 public struct RelayServerConfiguration: Equatable, Sendable {
+    public static let defaultHost = "127.0.0.1"
     public static let defaultAllocationTTLSeconds: TimeInterval = 15 * 60
 
     public var host: String
@@ -12,7 +13,7 @@ public struct RelayServerConfiguration: Equatable, Sendable {
     public var allocationToken: String?
 
     public init(
-        host: String = "0.0.0.0",
+        host: String = Self.defaultHost,
         port: UInt16 = 43171,
         allocationTTLSeconds: TimeInterval = Self.defaultAllocationTTLSeconds,
         requiresAllocation: Bool = true,
@@ -25,6 +26,53 @@ public struct RelayServerConfiguration: Equatable, Sendable {
         self.requiresAllocation = requiresAllocation
         self.allocationStoreURL = allocationStoreURL
         self.allocationToken = allocationToken
+    }
+
+    public func validate() throws {
+        if let allocationToken {
+            guard !allocationToken.isEmpty,
+                  allocationToken.rangeOfCharacter(from: .whitespacesAndNewlines) == nil
+            else {
+                throw RelayServerError.invalidAllocationToken
+            }
+        }
+        guard RelayBindExposure.requiresAllocationToken(host: host) else { return }
+        guard allocationToken != nil else {
+            throw RelayServerError.allocationTokenRequiredForExposedBind(
+                RelayBindExposure.normalizedHost(host)
+            )
+        }
+    }
+}
+
+public enum RelayBindExposure: Sendable {
+    public static func requiresAllocationToken(host: String) -> Bool {
+        let normalized = normalizedHost(host)
+        guard !normalized.isEmpty else { return true }
+        if normalized == "localhost" || normalized == "localhost." {
+            return false
+        }
+        if normalized == "::1" {
+            return false
+        }
+        return !isIPv4Loopback(normalized)
+    }
+
+    public static func normalizedHost(_ host: String) -> String {
+        var value = host.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if value.hasPrefix("[") && value.hasSuffix("]") {
+            value.removeFirst()
+            value.removeLast()
+        }
+        return value.isEmpty ? "<empty>" : value
+    }
+
+    private static func isIPv4Loopback(_ host: String) -> Bool {
+        let pieces = host.split(separator: ".", omittingEmptySubsequences: false)
+        guard pieces.count == 4 else { return false }
+        let octets = pieces.compactMap { UInt8($0) }
+        guard octets.count == 4 else { return false }
+        return octets[0] == 127
     }
 }
 
@@ -39,6 +87,7 @@ public final class RelayServer: @unchecked Sendable {
     }
 
     public func run() throws -> Never {
+        try configuration.validate()
         let listenSocket = try makeListenSocket(host: configuration.host, port: configuration.port)
         log("AetherLink Swift development relay listening on \(configuration.host):\(configuration.port)")
 
@@ -124,7 +173,7 @@ public final class RelayServer: @unchecked Sendable {
     private func handleAllocationRequest(line: String, socket: Int32) throws {
         let request = try RelayAllocationRequest.parse(line)
         guard isAllocationAuthorized(request) else {
-            log("rejected allocation route_token=\(shortID(request.routeToken))")
+            log("rejected allocation request")
             throw RelayAllocationError.unauthorizedAllocation
         }
         let allocation = try RelayAllocation.make(
@@ -139,9 +188,9 @@ public final class RelayServer: @unchecked Sendable {
             throw RelayServerError.allocationWriteFailed
         }
         if request.isPreflight {
-            log("preflight allocation route_token=\(shortID(request.routeToken))")
+            log("preflight allocation relay_id=\(shortID(allocation.relayID))")
         } else {
-            log("allocated relay_id=\(shortID(allocation.relayID)) route_token=\(shortID(request.routeToken))")
+            log("allocated relay_id=\(shortID(allocation.relayID))")
         }
     }
 
@@ -318,11 +367,30 @@ private func log(_ message: String) {
     fflush(stdout)
 }
 
-public enum RelayServerError: Error, Equatable, Sendable {
+public enum RelayServerError: Error, Equatable, Sendable, CustomStringConvertible {
     case bindFailed(String)
     case handshakeReadFailed
     case allocationWriteFailed
     case probeWriteFailed
+    case invalidAllocationToken
+    case allocationTokenRequiredForExposedBind(String)
+
+    public var description: String {
+        switch self {
+        case .bindFailed(let message):
+            return "bind failed: \(message)"
+        case .handshakeReadFailed:
+            return "handshake read failed"
+        case .allocationWriteFailed:
+            return "allocation response write failed"
+        case .probeWriteFailed:
+            return "probe response write failed"
+        case .invalidAllocationToken:
+            return "allocation token must be non-empty and contain no whitespace"
+        case .allocationTokenRequiredForExposedBind(let host):
+            return "allocation token required for non-loopback relay bind \(host); bind tokenless diagnostics to 127.0.0.1, ::1, or localhost, or set --allocation-token / AETHERLINK_RELAY_ALLOCATION_TOKEN"
+        }
+    }
 }
 
 private extension NSLock {

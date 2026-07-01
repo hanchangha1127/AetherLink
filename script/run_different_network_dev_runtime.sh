@@ -48,7 +48,9 @@ Options:
   --allocation-token <token>
                          Send an allocation token to the development relay.
                          Required when the relay was started with
-                         --allocation-token or AETHERLINK_RELAY_ALLOCATION_TOKEN.
+                         --allocation-token or AETHERLINK_RELAY_ALLOCATION_TOKEN,
+                         and when --start-local-relay advertises a non-loopback
+                         relay host that requires a wildcard bind.
   --allow-private-relay  Allow private/link-local relay hosts for an explicit
                          VPN, tunnel, or private overlay you control.
 USAGE
@@ -425,6 +427,30 @@ trap cleanup EXIT
 
 cd "$ROOT_DIR"
 
+local_relay_bind_host() {
+  python3 - "$1" <<'PY'
+import ipaddress
+import sys
+
+raw = sys.argv[1].strip()
+host = raw.lower()
+if host.startswith("[") and host.endswith("]"):
+    host = host[1:-1]
+if host in {"localhost", "localhost.", "::1"}:
+    print(raw or "127.0.0.1")
+    raise SystemExit(0)
+try:
+    address = ipaddress.ip_address(host)
+except ValueError:
+    print("0.0.0.0")
+    raise SystemExit(0)
+if address.is_loopback:
+    print(host)
+else:
+    print("0.0.0.0")
+PY
+}
+
 check_relay_allocation() {
   local host="$1"
   local port="$2"
@@ -444,11 +470,16 @@ check_relay_allocation() {
 }
 
 if [[ "$START_LOCAL_RELAY" == "1" ]]; then
-  echo "Starting local development relay on 0.0.0.0:$FIRST_RELAY_PORT"
+  LOCAL_RELAY_BIND_HOST="$(local_relay_bind_host "$FIRST_RELAY_HOST")"
+  if [[ "$LOCAL_RELAY_BIND_HOST" == "0.0.0.0" && -z "$ALLOCATION_TOKEN" ]]; then
+    echo "--start-local-relay with a non-loopback advertised relay host must pass --allocation-token or AETHERLINK_RELAY_ALLOCATION_TOKEN." >&2
+    exit 2
+  fi
+  echo "Starting local development relay on $LOCAL_RELAY_BIND_HOST:$FIRST_RELAY_PORT"
   echo "This is only cross-network reachable if $FIRST_RELAY_HOST:$FIRST_RELAY_PORT reaches the runtime host."
   swift build --product AetherLinkRelay >/dev/null
   RELAY_BIN="$(swift build --show-bin-path)/AetherLinkRelay"
-  RELAY_ARGS=("$RELAY_BIN" --host 0.0.0.0 --port "$FIRST_RELAY_PORT")
+  RELAY_ARGS=("$RELAY_BIN" --host "$LOCAL_RELAY_BIND_HOST" --port "$FIRST_RELAY_PORT")
   if [[ "$USE_LEGACY_RELAY" != "1" ]]; then
     RELAY_ARGS+=(--require-allocation)
   fi

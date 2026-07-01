@@ -120,7 +120,7 @@ private struct TrustedDeviceRow: View {
             localizedCompanionDateString(from: pairedAt),
             shortIdentifier(id)
         )
-        HStack(alignment: .center, spacing: 12) {
+        HStack(alignment: .top, spacing: 12) {
             let displayName = trustedDeviceDisplayName(name)
             Image(systemName: "person.crop.circle.badge.checkmark")
                 .font(.title3)
@@ -131,12 +131,14 @@ private struct TrustedDeviceRow: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(displayName)
                     .font(.headline)
-                    .lineLimit(1)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
                 Text(pairedSummary)
                     .foregroundStyle(.secondary)
                     .font(.caption)
-                    .lineLimit(1)
+                    .lineLimit(2)
                     .truncationMode(.middle)
+                    .fixedSize(horizontal: false, vertical: true)
                 Text(
                     String(
                         format: NSLocalizedString("Key fingerprint %@", comment: ""),
@@ -159,15 +161,17 @@ private struct TrustedDeviceRow: View {
                     )
                 )
             )
-
-            Spacer(minLength: 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .layoutPriority(1)
 
             Button(role: .destructive, action: onRemove) {
                 Label(NSLocalizedString("Remove Trust", comment: ""), systemImage: "trash")
             }
-            .labelStyle(.titleAndIcon)
+            .labelStyle(.iconOnly)
             .buttonStyle(.bordered)
             .controlSize(.small)
+            .frame(width: 34)
+            .help(trustedDeviceRemoveAccessibilityLabel(name: displayName, keyFingerprint: keyFingerprint))
             .accessibilityLabel(Text(trustedDeviceRemoveAccessibilityLabel(name: displayName, keyFingerprint: keyFingerprint)))
             .accessibilityHint(Text(trustedDeviceRemoveAccessibilityHint(name: displayName)))
         }

@@ -246,6 +246,8 @@ def main() -> int:
 
     failures.extend(check_chat_delta_schema(schema))
     failures.extend(check_locale_payload_schemas(schema))
+    failures.extend(check_runtime_health_model_residency_schema(schema))
+    failures.extend(check_memory_summary_draft_schema(schema))
     if failures:
         print("Protocol schema check failed:", file=sys.stderr)
         for failure in failures:
@@ -298,6 +300,494 @@ def check_locale_payload_schemas(schema: dict) -> list[str]:
                 f"{message_type} payload schema must allow optional string locale"
             )
     return failures
+
+
+def check_runtime_health_model_residency_schema(schema: dict) -> list[str]:
+    failures: list[str] = []
+    defs = schema.get("$defs", {})
+    runtime_health = defs.get("runtimeHealthPayload", {})
+    model_residency = defs.get("modelResidencyHealth", {})
+    unload_failure = defs.get("modelResidencyUnloadFailure", {})
+    runtime_options = runtime_health.get("oneOf", [])
+    runtime_object = next(
+        (
+            option
+            for option in runtime_options
+            if isinstance(option, dict)
+            and isinstance(option.get("properties"), dict)
+            and "status" in option.get("properties", {})
+        ),
+        {},
+    )
+    runtime_properties = runtime_object.get("properties", {})
+    if runtime_properties.get("model_residency", {}).get("$ref") != "#/$defs/modelResidencyHealth":
+        failures.append("runtime.health payload schema must allow optional model_residency snapshot")
+
+    residency_properties = model_residency.get("properties", {})
+    for field in ["supported", "in_flight_generations"]:
+        if field not in model_residency.get("required", []):
+            failures.append(f"modelResidencyHealth schema must require {field}")
+    if residency_properties.get("active_provider", {}).get("enum") != ["ollama", "lm_studio"]:
+        failures.append("modelResidencyHealth active_provider must be limited to runtime provider ids")
+    if residency_properties.get("in_flight_generations", {}).get("minimum") != 0:
+        failures.append("modelResidencyHealth in_flight_generations must be non-negative")
+    if residency_properties.get("idle_unload_delay_seconds", {}).get("minimum") != 0:
+        failures.append("modelResidencyHealth idle_unload_delay_seconds must be non-negative")
+    if residency_properties.get("last_unload_failure", {}).get("$ref") != "#/$defs/modelResidencyUnloadFailure":
+        failures.append("modelResidencyHealth must allow optional last_unload_failure details")
+    if model_residency.get("additionalProperties") is not False:
+        failures.append("modelResidencyHealth must reject unspecified fields")
+
+    unload_properties = unload_failure.get("properties", {})
+    for field in ["provider", "model_id", "reason"]:
+        if field not in unload_failure.get("required", []):
+            failures.append(f"modelResidencyUnloadFailure schema must require {field}")
+    if unload_properties.get("provider", {}).get("enum") != ["ollama", "lm_studio"]:
+        failures.append("modelResidencyUnloadFailure provider must be limited to runtime provider ids")
+    if unload_properties.get("model_id", {}).get("$ref") != "#/$defs/nonEmptyString":
+        failures.append("modelResidencyUnloadFailure model_id must use nonEmptyString")
+    if unload_properties.get("reason", {}).get("enum") != ["model_switch", "idle_timeout", "manual"]:
+        failures.append("modelResidencyUnloadFailure reason must be limited to known unload reasons")
+    if "message" in unload_properties:
+        failures.append("modelResidencyUnloadFailure must not expose raw provider error messages")
+    if unload_failure.get("additionalProperties") is not False:
+        failures.append("modelResidencyUnloadFailure must reject unspecified fields")
+    return failures
+
+
+def check_memory_summary_draft_schema(schema: dict) -> list[str]:
+    failures: list[str] = []
+    defs = schema.get("$defs", {})
+    payload_refs = conditional_payload_refs(schema)
+
+    expected_payload_refs = {
+        "memory.summary.drafts.list": "#/$defs/memorySummaryDraftsListPayload",
+        "memory.summary.draft.approve": "#/$defs/memorySummaryDraftApprovePayload",
+        "memory.summary.draft.dismiss": "#/$defs/memorySummaryDraftDismissPayload",
+    }
+    for message_type, expected_ref in expected_payload_refs.items():
+        actual_ref = payload_refs.get(message_type)
+        if actual_ref != expected_ref:
+            failures.append(
+                f"{message_type} must route payload schema to {expected_ref}, got {actual_ref!r}"
+            )
+
+    list_payload = defs.get("memorySummaryDraftsListPayload", {})
+    list_request = find_one_of_branch(
+        list_payload,
+        lambda branch: "limit" in branch.get("properties", {}),
+    )
+    if list_request is None:
+        failures.append("memorySummaryDraftsListPayload missing limit request branch")
+    else:
+        require_additional_properties_false(
+            failures,
+            "memorySummaryDraftsListPayload request",
+            list_request,
+        )
+        expect_schema_equal(
+            failures,
+            "memorySummaryDraftsListPayload request limit",
+            list_request.get("properties", {}).get("limit"),
+            {"type": "integer", "minimum": 0, "maximum": 50},
+        )
+
+    list_response = find_one_of_branch(
+        list_payload,
+        lambda branch: "drafts" in set(branch.get("required", [])),
+    )
+    if list_response is None:
+        failures.append("memorySummaryDraftsListPayload missing drafts response branch")
+    else:
+        require_additional_properties_false(
+            failures,
+            "memorySummaryDraftsListPayload response",
+            list_response,
+        )
+        expect_required_fields(
+            failures,
+            "memorySummaryDraftsListPayload response",
+            list_response,
+            {"drafts"},
+        )
+        expect_schema_equal(
+            failures,
+            "memorySummaryDraftsListPayload response drafts",
+            list_response.get("properties", {}).get("drafts"),
+            {
+                "type": "array",
+                "items": {"$ref": "#/$defs/memorySummaryDraft"},
+            },
+        )
+
+    approve_payload = defs.get("memorySummaryDraftApprovePayload", {})
+    approve_request = find_one_of_branch(
+        approve_payload,
+        lambda branch: (
+            "draft_id" in set(branch.get("required", []))
+            and "entry" not in branch.get("properties", {})
+        ),
+    )
+    if approve_request is None:
+        failures.append("memorySummaryDraftApprovePayload missing draft approval request branch")
+    else:
+        require_memory_summary_decision_request_fields(
+            failures,
+            "memorySummaryDraftApprovePayload request",
+            approve_request,
+            allow_content=True,
+        )
+
+    approve_response = find_one_of_branch(
+        approve_payload,
+        lambda branch: "entry" in branch.get("properties", {}),
+    )
+    if approve_response is None:
+        failures.append("memorySummaryDraftApprovePayload missing approved response branch")
+    else:
+        require_additional_properties_false(
+            failures,
+            "memorySummaryDraftApprovePayload response",
+            approve_response,
+        )
+        expect_required_fields(
+            failures,
+            "memorySummaryDraftApprovePayload response",
+            approve_response,
+            {"draft_id", "status", "entry"},
+        )
+        properties = approve_response.get("properties", {})
+        expect_schema_equal(
+            failures,
+            "memorySummaryDraftApprovePayload response status",
+            properties.get("status"),
+            {"const": "approved"},
+        )
+        expect_schema_equal(
+            failures,
+            "memorySummaryDraftApprovePayload response entry",
+            properties.get("entry"),
+            {"$ref": "#/$defs/memoryEntry"},
+        )
+
+    dismiss_payload = defs.get("memorySummaryDraftDismissPayload", {})
+    dismiss_request = find_one_of_branch(
+        dismiss_payload,
+        lambda branch: (
+            "draft_id" in set(branch.get("required", []))
+            and "dismissed_at" not in branch.get("properties", {})
+        ),
+    )
+    if dismiss_request is None:
+        failures.append("memorySummaryDraftDismissPayload missing draft dismiss request branch")
+    else:
+        require_memory_summary_decision_request_fields(
+            failures,
+            "memorySummaryDraftDismissPayload request",
+            dismiss_request,
+            allow_content=False,
+        )
+
+    dismiss_response = find_one_of_branch(
+        dismiss_payload,
+        lambda branch: "dismissed_at" in branch.get("properties", {}),
+    )
+    if dismiss_response is None:
+        failures.append("memorySummaryDraftDismissPayload missing dismissed response branch")
+    else:
+        require_additional_properties_false(
+            failures,
+            "memorySummaryDraftDismissPayload response",
+            dismiss_response,
+        )
+        expect_required_fields(
+            failures,
+            "memorySummaryDraftDismissPayload response",
+            dismiss_response,
+            {"draft_id", "status", "dismissed_at"},
+        )
+        properties = dismiss_response.get("properties", {})
+        expect_schema_equal(
+            failures,
+            "memorySummaryDraftDismissPayload response status",
+            properties.get("status"),
+            {"const": "dismissed"},
+        )
+        expect_schema_equal(
+            failures,
+            "memorySummaryDraftDismissPayload response dismissed_at",
+            properties.get("dismissed_at"),
+            {"type": "string", "format": "date-time"},
+        )
+
+    memory_draft = defs.get("memorySummaryDraft", {})
+    require_additional_properties_false(failures, "memorySummaryDraft", memory_draft)
+    expect_required_fields(
+        failures,
+        "memorySummaryDraft",
+        memory_draft,
+        {
+            "id",
+            "session",
+            "source_message_count",
+            "source_range",
+            "source_pointers",
+            "summary_preview",
+        },
+    )
+    draft_properties = memory_draft.get("properties", {})
+    expect_schema_equal(
+        failures,
+        "memorySummaryDraft session",
+        draft_properties.get("session"),
+        {"$ref": "#/$defs/memorySummaryDraftSession"},
+    )
+    expect_schema_equal(
+        failures,
+        "memorySummaryDraft source_message_count",
+        draft_properties.get("source_message_count"),
+        {"type": "integer", "minimum": 1},
+    )
+    expect_schema_equal(
+        failures,
+        "memorySummaryDraft source_pointers",
+        draft_properties.get("source_pointers"),
+        {
+            "type": "array",
+            "items": {"$ref": "#/$defs/memorySummaryDraftSourcePointer"},
+            "minItems": 1,
+        },
+    )
+
+    source = defs.get("memoryEntrySource", {})
+    require_additional_properties_false(failures, "memoryEntrySource", source)
+    expect_required_fields(
+        failures,
+        "memoryEntrySource",
+        source,
+        {
+            "kind",
+            "draft_id",
+            "summary_method",
+            "session",
+            "source_message_count",
+            "source_range",
+            "source_pointers",
+        },
+    )
+    source_properties = source.get("properties", {})
+    expect_schema_equal(
+        failures,
+        "memoryEntrySource kind",
+        source_properties.get("kind"),
+        {"const": "long_inactivity_summary_draft"},
+    )
+    expect_schema_equal(
+        failures,
+        "memoryEntrySource summary_method",
+        source_properties.get("summary_method"),
+        {"const": "deterministic_preview"},
+    )
+    expect_schema_equal(
+        failures,
+        "memoryEntrySource source_pointers",
+        source_properties.get("source_pointers"),
+        {
+            "type": "array",
+            "items": {"$ref": "#/$defs/memorySummaryDraftSourcePointer"},
+            "minItems": 1,
+        },
+    )
+
+    session = defs.get("memorySummaryDraftSession", {})
+    require_additional_properties_false(failures, "memorySummaryDraftSession", session)
+    expect_required_fields(
+        failures,
+        "memorySummaryDraftSession",
+        session,
+        {
+            "session_id",
+            "title",
+            "model",
+            "last_activity_at",
+            "message_count",
+            "inactive_seconds",
+        },
+    )
+    session_properties = session.get("properties", {})
+    expect_schema_equal(
+        failures,
+        "memorySummaryDraftSession last_activity_at",
+        session_properties.get("last_activity_at"),
+        {"type": "string", "format": "date-time"},
+    )
+    expect_schema_equal(
+        failures,
+        "memorySummaryDraftSession message_count",
+        session_properties.get("message_count"),
+        {"type": "integer", "minimum": 0},
+    )
+    expect_schema_equal(
+        failures,
+        "memorySummaryDraftSession inactive_seconds",
+        session_properties.get("inactive_seconds"),
+        {"type": "integer", "minimum": 0},
+    )
+
+    source_pointer = defs.get("memorySummaryDraftSourcePointer", {})
+    require_additional_properties_false(
+        failures,
+        "memorySummaryDraftSourcePointer",
+        source_pointer,
+    )
+    expect_required_fields(
+        failures,
+        "memorySummaryDraftSourcePointer",
+        source_pointer,
+        {"session_id", "message_index", "role", "excerpt"},
+    )
+    pointer_properties = source_pointer.get("properties", {})
+    expect_schema_equal(
+        failures,
+        "memorySummaryDraftSourcePointer message_index",
+        pointer_properties.get("message_index"),
+        {"type": "integer", "minimum": 1},
+    )
+    expect_schema_equal(
+        failures,
+        "memorySummaryDraftSourcePointer role",
+        pointer_properties.get("role"),
+        {"enum": ["user", "assistant"]},
+    )
+
+    error_codes = (
+        defs.get("errorPayload", {})
+        .get("properties", {})
+        .get("code", {})
+        .get("enum", [])
+    )
+    for error_code in [
+        "memory_summary_draft_unavailable",
+        "memory_summary_draft_stale",
+    ]:
+        if error_code not in error_codes:
+            failures.append(f"errorPayload code enum missing {error_code}")
+
+    return failures
+
+
+def conditional_payload_refs(schema: dict) -> dict[str, str]:
+    refs: dict[str, str] = {}
+    for rule in schema.get("allOf", []):
+        if not isinstance(rule, dict):
+            continue
+        message_type = (
+            rule.get("if", {})
+            .get("properties", {})
+            .get("type", {})
+            .get("const")
+        )
+        payload_ref = (
+            rule.get("then", {})
+            .get("properties", {})
+            .get("payload", {})
+            .get("$ref")
+        )
+        if isinstance(message_type, str) and isinstance(payload_ref, str):
+            refs[message_type] = payload_ref
+    return refs
+
+
+def find_one_of_branch(definition: object, predicate) -> dict | None:
+    if not isinstance(definition, dict):
+        return None
+    for branch in definition.get("oneOf", []):
+        if isinstance(branch, dict) and predicate(branch):
+            return branch
+    return None
+
+
+def require_memory_summary_decision_request_fields(
+    failures: list[str],
+    label: str,
+    schema: dict,
+    *,
+    allow_content: bool,
+) -> None:
+    require_additional_properties_false(failures, label, schema)
+    expect_required_fields(failures, label, schema, {"draft_id"})
+    properties = schema.get("properties", {})
+    expect_schema_equal(
+        failures,
+        f"{label} draft_id",
+        properties.get("draft_id"),
+        {"$ref": "#/$defs/nonEmptyString"},
+    )
+    expect_schema_equal(
+        failures,
+        f"{label} expected_session_id",
+        properties.get("expected_session_id"),
+        {"$ref": "#/$defs/nonEmptyString"},
+    )
+    expect_schema_equal(
+        failures,
+        f"{label} expected_source_message_count",
+        properties.get("expected_source_message_count"),
+        {"type": "integer", "minimum": 1},
+    )
+    if allow_content:
+        expect_schema_equal(
+            failures,
+            f"{label} content",
+            properties.get("content"),
+            {"$ref": "#/$defs/nonEmptyString"},
+        )
+        expect_schema_equal(
+            failures,
+            f"{label} enabled",
+            properties.get("enabled"),
+            {"type": "boolean"},
+        )
+
+
+def require_additional_properties_false(
+    failures: list[str],
+    label: str,
+    schema: object,
+) -> None:
+    if not isinstance(schema, dict):
+        failures.append(f"{label} must be an object schema")
+        return
+    if schema.get("additionalProperties") is not False:
+        failures.append(f"{label} must reject additional properties")
+
+
+def expect_required_fields(
+    failures: list[str],
+    label: str,
+    schema: object,
+    expected_fields: set[str],
+) -> None:
+    if not isinstance(schema, dict):
+        failures.append(f"{label} must be an object schema")
+        return
+    required = schema.get("required", [])
+    if not isinstance(required, list):
+        failures.append(f"{label} required must be a list")
+        return
+    missing = sorted(expected_fields - set(required))
+    if missing:
+        failures.append(f"{label} missing required fields {missing}")
+
+
+def expect_schema_equal(
+    failures: list[str],
+    label: str,
+    actual: object,
+    expected: object,
+) -> None:
+    if actual != expected:
+        failures.append(f"{label} schema must be {expected!r}, got {actual!r}")
 
 
 def check_platform_message_constants(schema_message_types: set[str]) -> list[str]:

@@ -364,12 +364,26 @@ Response:
     "ollama": {
       "available": true,
       "message": "Ollama is reachable from the AetherLink Runtime"
+    },
+    "model_residency": {
+      "supported": true,
+      "active_provider": "ollama",
+      "active_model_id": "llama3.1:8b",
+      "in_flight_generations": 1,
+      "idle_unload_delay_seconds": 600,
+      "last_unload_failure": {
+        "provider": "ollama",
+        "model_id": "qwen-local",
+        "reason": "model_switch"
+      }
     }
   }
 }
 ```
 
 When both local backends are enabled, the response includes `ollama` and `lm_studio` objects. `status` is `ok` if at least one local backend is reachable, otherwise `unavailable`. Each backend object includes `available`; unavailable backends include `code`, `message`, and `retryable`.
+
+Aggregate runtime hosts may include `model_residency` to report the runtime-owned model residency policy snapshot. `supported` indicates whether the runtime host can report model residency, `active_provider` and `active_model_id` identify the currently resident model when one exists, `in_flight_generations` counts active generations protected from idle unload, and `idle_unload_delay_seconds` reports the current idle-unload policy delay. `last_unload_failure`, when present, is a structured runtime-owned summary of the most recent failed unload attempt for a provider/model/reason. Known reasons are `model_switch`, `idle_timeout`, and runtime-host-owned `manual` unload. It must not contain raw provider error strings, backend URLs, route material, relay secrets, or endpoint paths. Clients must treat this as runtime status metadata; the residency policy remains enforced by the runtime host.
 
 ## `models.list`
 
@@ -538,7 +552,7 @@ The AetherLink Runtime is the authoritative source for runtime-owned user memory
 
 The AetherLink Runtime is the authoritative processing boundary for chat. After a syntactically valid `chat.send` is parsed, the runtime host refuses to append to an existing archived session unless the client restores it first. Archived-session sends return `error` with `code = "chat_session_must_be_restored_before_send"` before backend dispatch or chat-event mutation. For active or new sessions, the runtime host stores request metadata and client-visible messages before model resolution, attachment capability checks, or generation starts, then stores streamed answer deltas, reasoning deltas, completion usage, cancellation, and errors as processing events. Runtime-only system context, including the AetherLink capability guard and `Runtime user memory:` prompt context, is backend-call context only and must not be stored or returned as user-visible chat history. Inline attachment bytes are not kept in the event log. Client-side history can exist as UI cache, but it is not the only source of processing state. Authenticated clients can read runtime-owned summaries and transcripts through `chat.sessions.list` and `chat.messages.list`.
 
-The first runtime-side context compaction slice is also backend-call context only. When the runtime's heuristic character budget says the active `chat.send` history is too large, the runtime keeps the most recent client-visible messages verbatim, summarizes older active-session turns into a backend-only `system` message, and sends that compacted input to the selected backend. The client-visible transcript, `chat.messages.list`, `chat.sessions.list`, archive state, and delete state are not rewritten by compaction. Archived sessions and deleted sessions must not be used as compaction inputs. The capability guard, runtime-owned memory prompt context, and compaction summary remain separate runtime-only system context so memory/capability guard separation is preserved.
+The first runtime-side context compaction slice is also backend-call context only. When the runtime's heuristic character budget says the active `chat.send` history is too large, the runtime keeps the most recent client-visible messages verbatim, summarizes older active-session turns into a backend-only `system` message, and sends that compacted input to the selected backend. The backend-only summary may include deterministic transient source-span metadata, such as the client-visible conversation turn range that was compacted, so the model can reason about which active-session slice the summary covers. The client-visible transcript, `chat.messages.list`, `chat.sessions.list`, archive state, and delete state are not rewritten by compaction, and the transient source-span metadata is not persisted as visible chat history. Archived sessions and deleted sessions must not be used as compaction inputs. The capability guard, runtime-owned memory prompt context, and compaction summary remain separate runtime-only system context so memory/capability guard separation is preserved.
 
 If the requested model is not installed on the AetherLink Runtime, the AetherLink Runtime returns `error` with `code = "model_not_installed"`. Clients should call `models.pull` through the AetherLink Runtime first.
 
@@ -1296,7 +1310,7 @@ Response:
 Runtime-side chat history and basic memory CRUD are active. The broader namespaces below remain reserved until their product, privacy, and permission models are designed.
 
 - Advanced memory: `memory.search`, automatic memory extraction, memory reflection, embedding-backed recall, memory compaction, LLM-generated long-inactivity memory summaries, richer dismiss/review policy, and project-scoped memory. Archived sessions are retained but excluded from memory, reflection, research, and compaction inputs unless restored or explicitly selected by the user.
-- Session compaction: the first runtime-side heuristic slice can compact oversized active `chat.send` history before backend dispatch without changing client-visible history. Future messages may expose tokenizer-aware budgets, durable compacted session summaries, transcript source pointers, LLM-generated summaries, and longer-inactivity compact memory summaries. This is separate from model lifecycle messages such as unload-after-10-minutes-inactive.
+- Session compaction: the first runtime-side heuristic slice can compact oversized active `chat.send` history before backend dispatch without changing client-visible history. Its transient source-span is not a durable transcript source pointer; it exists only inside the backend-only summary for the current model call. Future messages may expose tokenizer-aware budgets, durable compacted session summaries, transcript source pointers, LLM-generated summaries, and longer-inactivity compact memory summaries. This is separate from model lifecycle messages such as unload-after-10-minutes-inactive.
 - Embeddings/research: future runtime-side semantic search, clustering, research notebook, source citation, and deep-research-like brief messages are reserved but not named yet. Embedding models must be listed and selected separately from chat/text-generation models, and retrieval/ranking/knowledge indexing must use the selected embedding model.
 - Projects/workspaces: reserve the `projects.` namespace for future project-scoped chats, files, instructions, memory, indexes, model/backend preferences, trusted-source controls, and project-level search/research. Do not add active message names until the product shape is ready.
 - Scheduling/automation: reserve the `automation.` namespace for future scheduled tasks, reminders, monitors, recurring automations, runtime-triggered jobs, permission prompts, audit logs, and mobile approval/status surfaces. Do not add active message names until the scheduler and permission model are designed.

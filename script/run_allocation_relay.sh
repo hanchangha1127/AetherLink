@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-HOST="${AETHERLINK_RELAY_BIND_HOST:-0.0.0.0}"
+HOST="${AETHERLINK_RELAY_BIND_HOST:-127.0.0.1}"
 PORT="${AETHERLINK_RELAY_PORT:-43171}"
 ALLOCATION_STORE="${AETHERLINK_RELAY_ALLOCATION_STORE:-}"
 ALLOCATION_TOKEN="${AETHERLINK_RELAY_ALLOCATION_TOKEN:-}"
@@ -25,9 +25,11 @@ development diagnostics that need a longer route lease.
 
 This relay forwards encrypted AetherLink runtime frames only. It is not an AI
 backend and does not expose Ollama, LM Studio, prompts, chat history, or files.
-Use --allocation-token, or AETHERLINK_RELAY_ALLOCATION_TOKEN, when the relay is
-reachable outside the runtime host. Runtime bootstrap scripts can send the same
-value with AETHERLINK_BOOTSTRAP_RELAY_ALLOCATION_TOKEN.
+Tokenless relay binds are allowed only on loopback hosts such as 127.0.0.1,
+::1, or localhost. Use --host 0.0.0.0 plus --allocation-token, or
+AETHERLINK_RELAY_ALLOCATION_TOKEN, when the relay must be reachable outside the
+runtime host. Runtime bootstrap scripts can send the same value with
+AETHERLINK_BOOTSTRAP_RELAY_ALLOCATION_TOKEN.
 
 For a no-USB different-network smoke, run this on a host/port reachable by both
 the runtime machine and the Android device, then run:
@@ -112,6 +114,27 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+bind_requires_token() {
+  python3 - "$1" <<'PY'
+import ipaddress
+import sys
+
+raw = sys.argv[1].strip()
+host = raw.lower()
+if host.startswith("[") and host.endswith("]"):
+    host = host[1:-1]
+if host in {"localhost", "localhost.", "::1"}:
+    print("0")
+    raise SystemExit(0)
+try:
+    address = ipaddress.ip_address(host)
+except ValueError:
+    print("1")
+    raise SystemExit(0)
+print("0" if address.is_loopback else "1")
+PY
+}
+
 if ! [[ "$PORT" =~ ^[0-9]+$ ]] || (( PORT < 1 || PORT > 65535 )); then
   echo "Invalid relay port: $PORT" >&2
   exit 2
@@ -122,6 +145,11 @@ if [[ -n "$ALLOCATION_TTL_SECONDS" ]] && (
     ! python3 -c 'import sys; raise SystemExit(0 if float(sys.argv[1]) > 0 else 1)' "$ALLOCATION_TTL_SECONDS"
 ); then
   echo "Invalid allocation TTL seconds: $ALLOCATION_TTL_SECONDS" >&2
+  exit 2
+fi
+
+if [[ -z "$ALLOCATION_TOKEN" && "$(bind_requires_token "$HOST")" == "1" ]]; then
+  echo "Allocation token required for non-loopback relay bind $HOST. Use --allocation-token or AETHERLINK_RELAY_ALLOCATION_TOKEN, or bind tokenless diagnostics to 127.0.0.1, ::1, or localhost." >&2
   exit 2
 fi
 
@@ -146,7 +174,7 @@ if [[ "$DRY_RUN" == "1" ]]; then
   if [[ -n "$ALLOCATION_TOKEN" ]]; then
     echo "Allocation token: required"
   else
-    echo "Allocation token: not required"
+    echo "Allocation token: not required for loopback bind"
   fi
   if [[ -n "$ALLOCATION_TTL_SECONDS" ]]; then
     echo "Allocation TTL: ${ALLOCATION_TTL_SECONDS}s"
@@ -195,7 +223,7 @@ fi
 if [[ -n "$ALLOCATION_TOKEN" ]]; then
   echo "Allocation token is required for route allocation."
 else
-  echo "WARNING: no allocation token is required. Use this only on a private development relay."
+  echo "Allocation token is not required because the relay is bound to a loopback host."
 fi
 if [[ -n "$ALLOCATION_TTL_SECONDS" ]]; then
   echo "Allocation leases expire after ${ALLOCATION_TTL_SECONDS}s."

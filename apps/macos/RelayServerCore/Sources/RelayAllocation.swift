@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 public struct RelayAllocationRequest: Equatable, Sendable {
@@ -145,7 +146,7 @@ public struct RelayAllocation: Codable, Equatable, Sendable {
         now: Date = Date(),
         validFor seconds: TimeInterval = 15 * 60
     ) throws -> RelayAllocation {
-        let relayID = try routeToken.map { try RelayAllocationRequest(routeToken: $0).routeToken }
+        let relayID = try routeToken.map { try Self.relayID(forRouteToken: $0) }
             ?? "relay-\(UUID().uuidString)"
         return try RelayAllocation(
             relayID: relayID,
@@ -153,6 +154,14 @@ public struct RelayAllocation: Codable, Equatable, Sendable {
             relayExpiresAtEpochMillis: Int64((now.addingTimeInterval(seconds).timeIntervalSince1970 * 1000).rounded()),
             relayNonce: "nonce-\(UUID().uuidString)"
         )
+    }
+
+    public static func relayID(forRouteToken routeToken: String) throws -> String {
+        let canonicalRouteToken = try RelayAllocationRequest(routeToken: routeToken).routeToken
+        let digestInput = "AetherLink relay allocation id v1\n\(canonicalRouteToken)"
+        let digest = SHA256.hash(data: Data(digestInput.utf8))
+        let hexDigest = digest.map { String(format: "%02x", $0) }.joined()
+        return "rt1-\(hexDigest)"
     }
 
     public func responseLine() throws -> Data {
@@ -203,10 +212,17 @@ public final class RelayAllocationRegistry: @unchecked Sendable {
         self.allocations = Self.loadAllocations(from: persistenceURL)
     }
 
-    public func store(_ allocation: RelayAllocation) {
+    @discardableResult
+    public func store(_ allocation: RelayAllocation) -> Bool {
         lock.withLock {
-            allocations[allocation.relayID] = RelayAllocationTicket(allocation)
+            let ticket = RelayAllocationTicket(allocation)
+            if let existing = allocations[allocation.relayID],
+               !ticket.isAdvancingReplacement(of: existing) {
+                return false
+            }
+            allocations[allocation.relayID] = ticket
             persistLocked()
+            return true
         }
     }
 
@@ -265,7 +281,17 @@ public final class RelayAllocationRegistry: @unchecked Sendable {
         do {
             let data = try Data(contentsOf: persistenceURL)
             let tickets = try JSONDecoder().decode([RelayAllocationTicket].self, from: data)
-            return Dictionary(uniqueKeysWithValues: tickets.map { ($0.relayID, $0) })
+            var loaded: [String: RelayAllocationTicket] = [:]
+            for ticket in tickets where ticket.isLoadable {
+                if let existing = loaded[ticket.relayID] {
+                    if ticket.isAdvancingReplacement(of: existing) {
+                        loaded[ticket.relayID] = ticket
+                    }
+                } else {
+                    loaded[ticket.relayID] = ticket
+                }
+            }
+            return loaded
         } catch {
             return [:]
         }
@@ -281,6 +307,19 @@ private struct RelayAllocationTicket: Codable, Equatable, Sendable {
         self.relayID = allocation.relayID
         self.relayExpiresAtEpochMillis = allocation.relayExpiresAtEpochMillis
         self.relayNonce = allocation.relayNonce
+    }
+
+    func isAdvancingReplacement(of existing: RelayAllocationTicket) -> Bool {
+        relayExpiresAtEpochMillis > existing.relayExpiresAtEpochMillis &&
+            relayNonce != existing.relayNonce
+    }
+
+    var isLoadable: Bool {
+        !relayID.isEmpty &&
+            relayID.rangeOfCharacter(from: .whitespacesAndNewlines) == nil &&
+            relayExpiresAtEpochMillis > 0 &&
+            !relayNonce.isEmpty &&
+            relayNonce.rangeOfCharacter(from: .whitespacesAndNewlines) == nil
     }
 
     private enum CodingKeys: String, CodingKey {
