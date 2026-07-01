@@ -5,6 +5,12 @@ import android.text.format.Formatter
 import android.widget.Toast
 import androidx.annotation.StringRes
 import com.localagentbridge.android.isAetherLinkPairingQrCandidateValue
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -93,6 +99,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
@@ -622,16 +631,21 @@ private fun ConnectionStatusPanel(
     onScanLatestQr: (() -> Unit)? = null,
 ) {
     OutlinedCard(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(CONNECTION_STATUS_PANEL_TEST_TAG),
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             ConnectionStatusHero(state = state)
             StatusLine(
                 label = stringResource(R.string.runtime),
                 value = runtimeStatusLabel(state.runtimeStatus),
+                tagKey = CONNECTION_STATUS_RUNTIME_LINE_KEY,
             )
             if (state.isPairingAwaitingRoute) {
                 StatusLine(
@@ -642,15 +656,18 @@ private fun ConnectionStatusPanel(
                             ?.takeIf { it.isNotBlank() }
                             ?: stringResource(R.string.trusted_runtime),
                     ),
+                    tagKey = CONNECTION_STATUS_PAIRING_LINE_KEY,
                 )
             }
             StatusLine(
                 label = stringResource(R.string.backend),
                 value = backendStatusLabel(state.backendAvailable),
+                tagKey = CONNECTION_STATUS_BACKEND_LINE_KEY,
             )
             StatusLine(
                 label = stringResource(R.string.providers),
                 value = providerStatusSummary(state),
+                tagKey = CONNECTION_STATUS_PROVIDERS_LINE_KEY,
             )
             ProviderStatusRows(providers = state.providerStatuses)
             RuntimeRouteNotice(
@@ -661,6 +678,7 @@ private fun ConnectionStatusPanel(
             StatusLine(
                 label = stringResource(R.string.connected),
                 value = if (state.isConnected) stringResource(R.string.yes) else stringResource(R.string.no),
+                tagKey = CONNECTION_STATUS_CONNECTED_LINE_KEY,
             )
             StatusLine(
                 label = stringResource(R.string.auto_reconnect),
@@ -669,6 +687,7 @@ private fun ConnectionStatusPanel(
                 } else {
                     stringResource(R.string.no)
                 },
+                tagKey = CONNECTION_STATUS_AUTO_RECONNECT_LINE_KEY,
             )
             if (state.trustedRuntime != null && !state.trustedRuntimeAutoReconnectEnabled && !state.isConnected) {
                 Text(
@@ -718,6 +737,7 @@ private fun ConnectionStatusHero(state: RuntimeUiState) {
     Surface(
         modifier = Modifier
             .fillMaxWidth()
+            .testTag(CONNECTION_STATUS_HERO_TEST_TAG)
             .semantics(mergeDescendants = true) {
                 contentDescription = accessibilitySummary
             },
@@ -725,7 +745,10 @@ private fun ConnectionStatusHero(state: RuntimeUiState) {
         color = containerColor,
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag(CONNECTION_STATUS_HERO_ROW_TEST_TAG)
+                .padding(horizontal = 14.dp, vertical = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.Top,
         ) {
@@ -733,7 +756,9 @@ private fun ConnectionStatusHero(state: RuntimeUiState) {
                 imageVector = icon,
                 contentDescription = null,
                 tint = contentColor,
-                modifier = Modifier.size(22.dp),
+                modifier = Modifier
+                    .size(22.dp)
+                    .testTag(CONNECTION_STATUS_HERO_ICON_TEST_TAG),
             )
             Column(
                 modifier = Modifier.weight(1f),
@@ -744,11 +769,15 @@ private fun ConnectionStatusHero(state: RuntimeUiState) {
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
                     color = contentColor,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.testTag(CONNECTION_STATUS_HERO_TITLE_TEST_TAG),
                 )
                 Text(
                     text = detail,
                     style = MaterialTheme.typography.bodySmall,
                     color = contentColor,
+                    modifier = Modifier.testTag(CONNECTION_STATUS_HERO_DETAIL_TEST_TAG),
                 )
             }
         }
@@ -1633,6 +1662,7 @@ fun ChatScreen(
                     .align(Alignment.BottomCenter)
                     .padding(bottom = composerDockSpace + keyboardDockPadding + 18.dp)
                     .size(40.dp)
+                    .testTag(CHAT_JUMP_TO_LATEST_TEST_TAG)
                     .semantics {
                         stateDescription = jumpToLatestStateDescription
                         onClick(label = jumpToLatestActionLabel, action = null)
@@ -1751,6 +1781,7 @@ private fun BackendReadinessBanner(
     Surface(
         modifier = Modifier
             .fillMaxWidth()
+            .testTag(CHAT_BACKEND_READINESS_BANNER_TEST_TAG)
             .semantics {
                 contentDescription = accessibilitySummary
                 liveRegion = LiveRegionMode.Polite
@@ -1780,11 +1811,13 @@ private fun BackendReadinessBanner(
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onErrorContainer,
+                        modifier = Modifier.testTag(CHAT_BACKEND_READINESS_TITLE_TEST_TAG),
                     )
                     Text(
                         text = detail,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onErrorContainer,
+                        modifier = Modifier.testTag(CHAT_BACKEND_READINESS_DETAIL_TEST_TAG),
                     )
                 }
             }
@@ -1793,17 +1826,23 @@ private fun BackendReadinessBanner(
                     hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
                     onRefreshHealth()
                 },
-                modifier = Modifier.semantics {
-                    stateDescription = refreshHealthStateDescription
-                    onClick(label = refreshHealthActionLabel, action = null)
-                },
+                modifier = Modifier
+                    .testTag(CHAT_BACKEND_READINESS_REFRESH_TEST_TAG)
+                    .semantics {
+                        stateDescription = refreshHealthStateDescription
+                        onClick(label = refreshHealthActionLabel, action = null)
+                    },
             ) {
                 Icon(
                     imageVector = Icons.Filled.Refresh,
                     contentDescription = null,
                 )
                 Spacer(Modifier.width(8.dp))
-                Text(stringResource(R.string.refresh_health))
+                Text(
+                    text = stringResource(R.string.refresh_health),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
         }
     }
@@ -2226,13 +2265,16 @@ private fun SettingsExpandableSection(
     )
 
     Column(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(settingsExpandableSectionTestTag(title)),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         HorizontalDivider()
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .testTag(settingsExpandableSectionHeaderTestTag(title))
                 .clickable(
                     role = Role.Button,
                     onClickLabel = toggleActionLabel,
@@ -2254,11 +2296,17 @@ private fun SettingsExpandableSection(
                     text = stringResource(title),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.testTag(settingsExpandableSectionTitleTestTag(title)),
                 )
                 Text(
                     text = stringResource(subtitle),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.secondary,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.testTag(settingsExpandableSectionSubtitleTestTag(title)),
                 )
             }
             Spacer(Modifier.width(12.dp))
@@ -2273,6 +2321,7 @@ private fun SettingsExpandableSection(
                         Icons.Filled.KeyboardArrowDown
                     },
                     contentDescription = null,
+                    modifier = Modifier.testTag(settingsExpandableSectionActionTestTag(title)),
                 )
             }
         }
@@ -2359,12 +2408,21 @@ private fun TrustedRuntimePanel(
         )
     }
 
-    OutlinedCard(modifier = Modifier.fillMaxWidth()) {
+    OutlinedCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(SETTINGS_TRUSTED_RUNTIME_PANEL_TEST_TAG),
+    ) {
         Column(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(SETTINGS_TRUSTED_RUNTIME_HEADER_TEST_TAG),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 Icon(
                     imageVector = if (state.trustedRuntime != null) Icons.Filled.CheckCircle else Icons.Filled.Link,
                     contentDescription = if (state.trustedRuntime != null) {
@@ -2377,6 +2435,7 @@ private fun TrustedRuntimePanel(
                     } else {
                         MaterialTheme.colorScheme.secondary
                     },
+                    modifier = Modifier.testTag(SETTINGS_TRUSTED_RUNTIME_ICON_TEST_TAG),
                 )
                 Spacer(Modifier.width(8.dp))
                 Column(modifier = Modifier.weight(1f)) {
@@ -2384,6 +2443,9 @@ private fun TrustedRuntimePanel(
                         text = stringResource(R.string.trusted_runtime),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.secondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.testTag(SETTINGS_TRUSTED_RUNTIME_LABEL_TEST_TAG),
                     )
                     Text(
                         text = state.trustedRuntime?.name ?: stringResource(R.string.no_trusted_runtime),
@@ -2391,6 +2453,7 @@ private fun TrustedRuntimePanel(
                         fontWeight = FontWeight.Medium,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.testTag(SETTINGS_TRUSTED_RUNTIME_NAME_TEST_TAG),
                     )
                 }
             }
@@ -2402,6 +2465,7 @@ private fun TrustedRuntimePanel(
                     },
                     modifier = Modifier
                         .fillMaxWidth()
+                        .testTag(SETTINGS_TRUSTED_RUNTIME_FORGET_ACTION_TEST_TAG)
                         .semantics {
                             forgetTrustedRuntimeContentDescription?.let {
                                 contentDescription = it
@@ -2411,12 +2475,17 @@ private fun TrustedRuntimePanel(
                 ) {
                     Icon(Icons.Filled.Close, contentDescription = null)
                     Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.forget))
+                    Text(
+                        text = stringResource(R.string.forget),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
             } ?: Text(
                 text = stringResource(R.string.trusted_runtime_detail),
                 color = MaterialTheme.colorScheme.secondary,
                 style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.testTag(SETTINGS_TRUSTED_RUNTIME_EMPTY_DETAIL_TEST_TAG),
             )
         }
     }
@@ -3357,8 +3426,53 @@ private fun AssistantMessage(
             horizontalAlignment = Alignment.Start,
         )
         if (showTyping) {
-            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(CHAT_STREAMING_PROGRESS_TEST_TAG),
+            ) {
+                StreamingProgressIndicator(
+                    modifier = Modifier
+                        .fillMaxWidth(),
+                )
+            }
         }
+    }
+}
+
+@Composable
+private fun StreamingProgressIndicator(modifier: Modifier = Modifier) {
+    val transition = rememberInfiniteTransition()
+    val offsetFraction by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1200, easing = LinearEasing),
+        ),
+    )
+    val activeColor = MaterialTheme.colorScheme.primary
+    val trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+
+    Canvas(
+        modifier = modifier
+            .height(4.dp)
+            .clearAndSetSemantics {},
+    ) {
+        val radius = CornerRadius(size.height / 2f, size.height / 2f)
+        drawRoundRect(
+            color = trackColor,
+            topLeft = Offset.Zero,
+            size = size,
+            cornerRadius = radius,
+        )
+        val segmentWidth = size.width * 0.36f
+        val segmentStart = (size.width + segmentWidth) * offsetFraction - segmentWidth
+        drawRoundRect(
+            color = activeColor,
+            topLeft = Offset(segmentStart, 0f),
+            size = Size(segmentWidth, size.height),
+            cornerRadius = radius,
+        )
     }
 }
 
@@ -3565,12 +3679,14 @@ private fun MarkdownTable(
     Box(
         modifier = Modifier
             .fillMaxWidth()
+            .testTag(CHAT_MARKDOWN_TABLE_TEST_TAG)
             .semantics {
                 contentDescription = tableAccessibilitySummary
             }
             .horizontalScroll(scrollState),
     ) {
         Surface(
+            modifier = Modifier.testTag(CHAT_MARKDOWN_TABLE_SURFACE_TEST_TAG),
             shape = RoundedCornerShape(10.dp),
             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.36f),
             contentColor = textColor,
@@ -3705,6 +3821,7 @@ private fun CodeBlock(
     Surface(
         modifier = Modifier
             .fillMaxWidth()
+            .testTag(CHAT_CODE_BLOCK_TEST_TAG)
             .semantics {
                 contentDescription = codeBlockAccessibilitySummary
             },
@@ -3717,7 +3834,9 @@ private fun CodeBlock(
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(CHAT_CODE_BLOCK_HEADER_TEST_TAG),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -3728,7 +3847,9 @@ private fun CodeBlock(
                         color = MaterialTheme.colorScheme.secondary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag(CHAT_CODE_BLOCK_LANGUAGE_TEST_TAG),
                     )
                 } else {
                     Spacer(modifier = Modifier.weight(1f))
@@ -3737,6 +3858,7 @@ private fun CodeBlock(
                     MessageCopyButton(
                         textToCopy = code,
                         copyActionLabel = copyCodeBlockLabel,
+                        modifier = Modifier.testTag(CHAT_CODE_BLOCK_COPY_ACTION_TEST_TAG),
                     )
                 }
             }
@@ -3748,6 +3870,7 @@ private fun CodeBlock(
                 softWrap = false,
                 modifier = Modifier
                     .fillMaxWidth()
+                    .testTag(CHAT_CODE_BLOCK_TEXT_TEST_TAG)
                     .horizontalScroll(rememberScrollState()),
             )
         }
@@ -3758,6 +3881,7 @@ private fun CodeBlock(
 private fun MessageCopyButton(
     textToCopy: String,
     copyActionLabel: String,
+    modifier: Modifier = Modifier,
 ) {
     val clipboard = LocalClipboard.current
     val context = LocalContext.current
@@ -3777,7 +3901,7 @@ private fun MessageCopyButton(
         },
         enabled = textToCopy.isNotBlank(),
         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-        modifier = Modifier.semantics {
+        modifier = modifier.semantics {
             contentDescription = copyActionLabel
             onClick(label = copyActionLabel, action = null)
         },
@@ -4609,6 +4733,7 @@ private fun ComposerStatus(
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .testTag(CHAT_COMPOSER_STATUS_TEST_TAG)
             .semantics(mergeDescendants = true) {
                 liveRegion = LiveRegionMode.Polite
                 contentDescription = text
@@ -4618,7 +4743,9 @@ private fun ComposerStatus(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Surface(
-            modifier = Modifier.size(6.dp),
+            modifier = Modifier
+                .size(6.dp)
+                .testTag(CHAT_COMPOSER_STATUS_DOT_TEST_TAG),
             shape = RoundedCornerShape(999.dp),
             color = statusColor,
             content = {},
@@ -4629,7 +4756,9 @@ private fun ComposerStatus(
             color = statusColor,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
+            modifier = Modifier
+                .weight(1f)
+                .testTag(CHAT_COMPOSER_STATUS_TEXT_TEST_TAG),
         )
     }
 }
@@ -4908,7 +5037,11 @@ private fun AppPreferencesPanel(
     selectedTheme: RuntimeAppTheme,
     onSetTheme: (RuntimeAppTheme) -> Unit,
 ) {
-    OutlinedCard(modifier = Modifier.fillMaxWidth()) {
+    OutlinedCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(SETTINGS_PREFERENCES_PANEL_TEST_TAG),
+    ) {
         Column(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -4946,16 +5079,20 @@ private fun AppearancePreferenceSelector(
     val groupLabel = stringResource(R.string.appearance_title)
 
     Column(
-        modifier = Modifier.selectableGroup(),
+        modifier = Modifier
+            .testTag(SETTINGS_APPEARANCE_GROUP_TEST_TAG)
+            .selectableGroup(),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Text(
             text = groupLabel,
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.secondary,
-            modifier = Modifier.semantics {
-                heading()
-            },
+            modifier = Modifier
+                .semantics {
+                    heading()
+                }
+                .testTag(SETTINGS_APPEARANCE_GROUP_LABEL_TEST_TAG),
         )
         options.forEach { (theme, labelRes) ->
             val selected = theme == selectedTheme
@@ -4992,6 +5129,7 @@ private fun AppearancePreferenceSelector(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .testTag(appearancePreferenceOptionRowTestTag(theme))
                     .selectable(
                         selected = selected,
                         role = Role.RadioButton,
@@ -5015,6 +5153,7 @@ private fun AppearancePreferenceSelector(
                 RadioButton(
                     selected = selected,
                     onClick = null,
+                    modifier = Modifier.testTag(appearancePreferenceOptionRadioTestTag(theme)),
                 )
                 Column(
                     modifier = Modifier.weight(1f),
@@ -5025,6 +5164,7 @@ private fun AppearancePreferenceSelector(
                         style = MaterialTheme.typography.bodyMedium,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.testTag(appearancePreferenceOptionLabelTestTag(theme)),
                     )
                     if (optionDetail != null) {
                         Text(
@@ -5033,6 +5173,7 @@ private fun AppearancePreferenceSelector(
                             color = MaterialTheme.colorScheme.secondary,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.testTag(appearancePreferenceOptionDetailTestTag(theme)),
                         )
                     }
                 }
@@ -5446,20 +5587,25 @@ private fun LanguagePreferenceSelector(
     }
 
     Column(
-        modifier = Modifier.selectableGroup(),
+        modifier = Modifier
+            .testTag(SETTINGS_LANGUAGE_GROUP_TEST_TAG)
+            .selectableGroup(),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Text(
             text = groupLabel,
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.secondary,
-            modifier = Modifier.semantics {
-                heading()
-            },
+            modifier = Modifier
+                .semantics {
+                    heading()
+                }
+                .testTag(SETTINGS_LANGUAGE_GROUP_LABEL_TEST_TAG),
         )
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .testTag(languagePreferenceOptionRowTestTag(APP_LANGUAGE_SOURCE_SYSTEM))
                 .selectable(
                     selected = systemSelected,
                     role = Role.RadioButton,
@@ -5483,6 +5629,7 @@ private fun LanguagePreferenceSelector(
             RadioButton(
                 selected = systemSelected,
                 onClick = null,
+                modifier = Modifier.testTag(languagePreferenceOptionRadioTestTag(APP_LANGUAGE_SOURCE_SYSTEM)),
             )
             Column(
                 modifier = Modifier.weight(1f),
@@ -5493,6 +5640,7 @@ private fun LanguagePreferenceSelector(
                     style = MaterialTheme.typography.bodyMedium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.testTag(languagePreferenceOptionLabelTestTag(APP_LANGUAGE_SOURCE_SYSTEM)),
                 )
                 Text(
                     text = systemOptionDetail,
@@ -5500,6 +5648,7 @@ private fun LanguagePreferenceSelector(
                     color = MaterialTheme.colorScheme.secondary,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.testTag(languagePreferenceOptionDetailTestTag(APP_LANGUAGE_SOURCE_SYSTEM)),
                 )
             }
         }
@@ -5528,6 +5677,7 @@ private fun LanguagePreferenceSelector(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .testTag(languagePreferenceOptionRowTestTag(language.languageTag))
                     .selectable(
                         selected = selected,
                         role = Role.RadioButton,
@@ -5551,12 +5701,16 @@ private fun LanguagePreferenceSelector(
                 RadioButton(
                     selected = selected,
                     onClick = null,
+                    modifier = Modifier.testTag(languagePreferenceOptionRadioTestTag(language.languageTag)),
                 )
                 Text(
                     text = optionLabel,
                     style = MaterialTheme.typography.bodyMedium,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag(languagePreferenceOptionLabelTestTag(language.languageTag)),
                 )
             }
         }
@@ -6197,6 +6351,7 @@ private fun ChatHistorySettingsRow(
                 Column(
                     modifier = Modifier
                         .weight(1f)
+                        .testTag(settingsChatHistoryRowContentTestTag(session.id))
                         .semantics {
                             contentDescription = rowAccessibilitySummary
                         },
@@ -6243,6 +6398,7 @@ private fun ChatHistorySettingsRow(
                     if (searchMetadata != null) {
                         Text(
                             text = searchMetadata,
+                            modifier = Modifier.testTag(settingsChatHistorySearchMetadataTestTag(session.id)),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.primary,
                             maxLines = 1,
@@ -6252,6 +6408,7 @@ private fun ChatHistorySettingsRow(
                     if (searchSnippet != null) {
                         Text(
                             text = searchSnippet,
+                            modifier = Modifier.testTag(settingsChatHistorySearchSnippetTestTag(session.id)),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 2,
@@ -7344,6 +7501,34 @@ internal const val AUTO_RECONNECT_ROW_TEST_TAG = "auto_reconnect_row"
 internal const val AUTO_RECONNECT_TITLE_TEST_TAG = "auto_reconnect_title"
 internal const val AUTO_RECONNECT_DETAIL_TEST_TAG = "auto_reconnect_detail"
 internal const val AUTO_RECONNECT_SWITCH_TEST_TAG = "auto_reconnect_switch"
+internal const val CONNECTION_STATUS_PANEL_TEST_TAG = "connection_status_panel"
+internal const val CONNECTION_STATUS_HERO_TEST_TAG = "connection_status_hero"
+internal const val CONNECTION_STATUS_HERO_ROW_TEST_TAG = "connection_status_hero_row"
+internal const val CONNECTION_STATUS_HERO_ICON_TEST_TAG = "connection_status_hero_icon"
+internal const val CONNECTION_STATUS_HERO_TITLE_TEST_TAG = "connection_status_hero_title"
+internal const val CONNECTION_STATUS_HERO_DETAIL_TEST_TAG = "connection_status_hero_detail"
+internal const val CONNECTION_STATUS_LINE_TEST_TAG_PREFIX = "connection_status_line_"
+internal const val CONNECTION_STATUS_LINE_LABEL_TEST_TAG_PREFIX = "connection_status_line_label_"
+internal const val CONNECTION_STATUS_LINE_VALUE_TEST_TAG_PREFIX = "connection_status_line_value_"
+internal const val CONNECTION_STATUS_RUNTIME_LINE_KEY = "runtime"
+internal const val CONNECTION_STATUS_PAIRING_LINE_KEY = "pairing"
+internal const val CONNECTION_STATUS_BACKEND_LINE_KEY = "backend"
+internal const val CONNECTION_STATUS_PROVIDERS_LINE_KEY = "providers"
+internal const val CONNECTION_STATUS_CONNECTED_LINE_KEY = "connected"
+internal const val CONNECTION_STATUS_AUTO_RECONNECT_LINE_KEY = "auto_reconnect"
+internal const val SETTINGS_PREFERENCES_PANEL_TEST_TAG = "settings_preferences_panel"
+internal const val SETTINGS_APPEARANCE_GROUP_TEST_TAG = "settings_appearance_group"
+internal const val SETTINGS_APPEARANCE_GROUP_LABEL_TEST_TAG = "settings_appearance_group_label"
+internal const val SETTINGS_LANGUAGE_GROUP_TEST_TAG = "settings_language_group"
+internal const val SETTINGS_LANGUAGE_GROUP_LABEL_TEST_TAG = "settings_language_group_label"
+internal const val SETTINGS_APPEARANCE_OPTION_ROW_TEST_TAG_PREFIX = "settings_appearance_option_row_"
+internal const val SETTINGS_APPEARANCE_OPTION_RADIO_TEST_TAG_PREFIX = "settings_appearance_option_radio_"
+internal const val SETTINGS_APPEARANCE_OPTION_LABEL_TEST_TAG_PREFIX = "settings_appearance_option_label_"
+internal const val SETTINGS_APPEARANCE_OPTION_DETAIL_TEST_TAG_PREFIX = "settings_appearance_option_detail_"
+internal const val SETTINGS_LANGUAGE_OPTION_ROW_TEST_TAG_PREFIX = "settings_language_option_row_"
+internal const val SETTINGS_LANGUAGE_OPTION_RADIO_TEST_TAG_PREFIX = "settings_language_option_radio_"
+internal const val SETTINGS_LANGUAGE_OPTION_LABEL_TEST_TAG_PREFIX = "settings_language_option_label_"
+internal const val SETTINGS_LANGUAGE_OPTION_DETAIL_TEST_TAG_PREFIX = "settings_language_option_detail_"
 internal const val EMBEDDING_MODEL_PANEL_TEST_TAG = "embedding_model_panel"
 internal const val EMBEDDING_MODEL_NONE_ROW_TEST_TAG = "embedding_model_none_row"
 internal const val EMBEDDING_MODEL_NONE_LABEL_TEST_TAG = "embedding_model_none_label"
@@ -7354,6 +7539,33 @@ internal const val SAVED_EMBEDDING_MODEL_DETAIL_TEST_TAG = "saved_embedding_mode
 internal const val MEMORY_ENTRY_CONTENT_TEST_TAG = "memory_entry_content"
 internal const val MEMORY_ENTRY_ACTIONS_TEST_TAG = "memory_entry_actions"
 internal const val MEMORY_ENTRY_SOURCE_TEST_TAG = "memory_entry_source"
+
+internal fun appearancePreferenceOptionRowTestTag(theme: RuntimeAppTheme): String =
+    "$SETTINGS_APPEARANCE_OPTION_ROW_TEST_TAG_PREFIX${settingsPreferenceTagKey(theme.name)}"
+
+internal fun appearancePreferenceOptionRadioTestTag(theme: RuntimeAppTheme): String =
+    "$SETTINGS_APPEARANCE_OPTION_RADIO_TEST_TAG_PREFIX${settingsPreferenceTagKey(theme.name)}"
+
+internal fun appearancePreferenceOptionLabelTestTag(theme: RuntimeAppTheme): String =
+    "$SETTINGS_APPEARANCE_OPTION_LABEL_TEST_TAG_PREFIX${settingsPreferenceTagKey(theme.name)}"
+
+internal fun appearancePreferenceOptionDetailTestTag(theme: RuntimeAppTheme): String =
+    "$SETTINGS_APPEARANCE_OPTION_DETAIL_TEST_TAG_PREFIX${settingsPreferenceTagKey(theme.name)}"
+
+internal fun languagePreferenceOptionRowTestTag(languageTag: String): String =
+    "$SETTINGS_LANGUAGE_OPTION_ROW_TEST_TAG_PREFIX${settingsPreferenceTagKey(languageTag)}"
+
+internal fun languagePreferenceOptionRadioTestTag(languageTag: String): String =
+    "$SETTINGS_LANGUAGE_OPTION_RADIO_TEST_TAG_PREFIX${settingsPreferenceTagKey(languageTag)}"
+
+internal fun languagePreferenceOptionLabelTestTag(languageTag: String): String =
+    "$SETTINGS_LANGUAGE_OPTION_LABEL_TEST_TAG_PREFIX${settingsPreferenceTagKey(languageTag)}"
+
+internal fun languagePreferenceOptionDetailTestTag(languageTag: String): String =
+    "$SETTINGS_LANGUAGE_OPTION_DETAIL_TEST_TAG_PREFIX${settingsPreferenceTagKey(languageTag)}"
+
+private fun settingsPreferenceTagKey(value: String): String =
+    value.lowercase(Locale.ROOT).replace("-", "_")
 
 internal fun embeddingModelRowTestTag(modelId: String): String =
     "embedding_model_row_$modelId"
@@ -7384,12 +7596,26 @@ private fun memoryAccessibilityActionLabel(
 }
 
 @Composable
-private fun StatusLine(label: String, value: String) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+private fun StatusLine(
+    label: String,
+    value: String,
+    tagKey: String? = null,
+) {
+    val lineModifier = tagKey?.let { Modifier.testTag(connectionStatusLineTestTag(it)) } ?: Modifier
+    val labelModifier = tagKey?.let { Modifier.testTag(connectionStatusLineLabelTestTag(it)) } ?: Modifier
+    val valueModifier = tagKey?.let { Modifier.testTag(connectionStatusLineValueTestTag(it)) } ?: Modifier
+
+    Column(
+        modifier = lineModifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
         Text(
             text = label,
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.secondary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = labelModifier,
         )
         Text(
             text = value,
@@ -7397,6 +7623,7 @@ private fun StatusLine(label: String, value: String) {
             fontWeight = FontWeight.Medium,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
+            modifier = valueModifier,
         )
         HorizontalDivider()
     }
@@ -7431,10 +7658,12 @@ private fun ChatHistorySearchResultSummary(
         text = resultText,
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.secondary,
-        modifier = Modifier.semantics {
-            contentDescription = resultText
-            liveRegion = LiveRegionMode.Polite
-        },
+        modifier = Modifier
+            .testTag(SETTINGS_CHAT_HISTORY_SEARCH_RESULT_SUMMARY_TEST_TAG)
+            .semantics {
+                contentDescription = resultText
+                liveRegion = LiveRegionMode.Polite
+            },
     )
 }
 
@@ -7572,6 +7801,7 @@ private fun ErrorText(
     Surface(
         modifier = Modifier
             .fillMaxWidth()
+            .testTag(CHAT_RUNTIME_ERROR_BANNER_TEST_TAG)
             .semantics {
                 contentDescription = accessibilitySummary
                 liveRegion = LiveRegionMode.Polite
@@ -7580,33 +7810,53 @@ private fun ErrorText(
         color = MaterialTheme.colorScheme.errorContainer,
     ) {
         Column(
-            modifier = Modifier.padding(12.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(CHAT_RUNTIME_ERROR_ROW_TEST_TAG),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(
                     Icons.Filled.Error,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.onErrorContainer,
+                    modifier = Modifier.testTag(CHAT_RUNTIME_ERROR_ICON_TEST_TAG),
                 )
                 Spacer(Modifier.width(8.dp))
-                Column {
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag(CHAT_RUNTIME_ERROR_TEXT_COLUMN_TEST_TAG),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
                     Text(
                         text = errorTitle,
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onErrorContainer,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.testTag(CHAT_RUNTIME_ERROR_TITLE_TEST_TAG),
                     )
                     Text(
                         text = errorLabel,
                         color = MaterialTheme.colorScheme.onErrorContainer,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.testTag(CHAT_RUNTIME_ERROR_MESSAGE_TEST_TAG),
                     )
                     detailLabel?.let { detail ->
                         Text(
                             text = detail,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onErrorContainer,
+                            maxLines = 3,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.testTag(CHAT_RUNTIME_ERROR_DETAIL_TEST_TAG),
                         )
                     }
                     diagnosticLabel?.let { diagnostic ->
@@ -7614,6 +7864,9 @@ private fun ErrorText(
                             text = diagnostic,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onErrorContainer,
+                            maxLines = 3,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.testTag(CHAT_RUNTIME_ERROR_DIAGNOSTIC_TEST_TAG),
                         )
                     }
                 }
@@ -7651,7 +7904,9 @@ private fun ErrorTechnicalDiagnostics(report: String) {
     )
 
     Column(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(CHAT_RUNTIME_ERROR_TECHNICAL_TEST_TAG),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         TextButton(
@@ -7660,17 +7915,23 @@ private fun ErrorTechnicalDiagnostics(report: String) {
                 expanded = !expanded
             },
             contentPadding = PaddingValues(horizontal = 0.dp, vertical = 0.dp),
-            modifier = Modifier.semantics {
-                contentDescription = title
-                stateDescription = stateDescriptionText
-                onClick(label = toggleLabel, action = null)
-            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag(CHAT_RUNTIME_ERROR_TECHNICAL_TOGGLE_TEST_TAG)
+                .semantics {
+                    contentDescription = title
+                    stateDescription = stateDescriptionText
+                    onClick(label = toggleLabel, action = null)
+                },
         ) {
             Text(
                 text = title,
                 color = MaterialTheme.colorScheme.onErrorContainer,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .weight(1f)
+                    .testTag(CHAT_RUNTIME_ERROR_TECHNICAL_TOGGLE_LABEL_TEST_TAG),
             )
             Icon(
                 imageVector = if (expanded) {
@@ -7680,22 +7941,30 @@ private fun ErrorTechnicalDiagnostics(report: String) {
                 },
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onErrorContainer,
-                modifier = Modifier.size(18.dp),
+                modifier = Modifier
+                    .size(18.dp)
+                    .testTag(CHAT_RUNTIME_ERROR_TECHNICAL_TOGGLE_ICON_TEST_TAG),
             )
         }
         if (expanded) {
             Surface(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(CHAT_RUNTIME_ERROR_TECHNICAL_PANEL_TEST_TAG),
                 shape = RoundedCornerShape(8.dp),
                 color = MaterialTheme.colorScheme.surface.copy(alpha = 0.38f),
                 contentColor = MaterialTheme.colorScheme.onErrorContainer,
             ) {
                 Column(
-                    modifier = Modifier.padding(10.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(10.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag(CHAT_RUNTIME_ERROR_TECHNICAL_ACTIONS_TEST_TAG),
                         horizontalArrangement = Arrangement.End,
                     ) {
                         MessageCopyButton(
@@ -7708,6 +7977,11 @@ private fun ErrorTechnicalDiagnostics(report: String) {
                         style = MaterialTheme.typography.bodySmall,
                         fontFamily = FontFamily.Monospace,
                         color = MaterialTheme.colorScheme.onErrorContainer,
+                        maxLines = 8,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag(CHAT_RUNTIME_ERROR_TECHNICAL_REPORT_TEST_TAG),
                     )
                 }
             }
@@ -7739,59 +8013,74 @@ private fun RouteAvailabilityNotice(
     }
     val actionLabel = action?.let { stringResource(routeNoticeActionLabelRes(it)) }
 
-    Surface(
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .semantics(mergeDescendants = true) {
-                contentDescription = accessibilitySummary
-                stateDescription = statusDescription
-                liveRegion = LiveRegionMode.Polite
-            }
-            .let { base ->
-                if (actionHandler == null) {
-                    base
-                } else {
-                    base.clickable(
-                        role = Role.Button,
-                        onClickLabel = actionLabel,
-                    ) {
-                        hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
-                        actionHandler()
-                    }
-                }
-            },
-        shape = RoundedCornerShape(24.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.56f),
+            .testTag(ROUTE_AVAILABILITY_NOTICE_TEST_TAG),
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .semantics(mergeDescendants = true) {
+                    contentDescription = accessibilitySummary
+                    stateDescription = statusDescription
+                    liveRegion = LiveRegionMode.Polite
+                }
+                .let { base ->
+                    if (actionHandler == null) {
+                        base
+                    } else {
+                        base.clickable(
+                            role = Role.Button,
+                            onClickLabel = actionLabel,
+                        ) {
+                            hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
+                            actionHandler()
+                        }
+                    }
+                },
+            shape = RoundedCornerShape(24.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.56f),
         ) {
-            Icon(
-                Icons.Filled.Link,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.secondary,
-                modifier = Modifier.size(16.dp),
-            )
-            Text(
-                text = body,
-                modifier = Modifier.weight(1f),
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.86f),
-                style = MaterialTheme.typography.bodySmall,
-                fontWeight = FontWeight.Medium,
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (actionLabel != null && actionHandler != null) {
-                Text(
-                    text = actionLabel,
-                    color = MaterialTheme.colorScheme.primary,
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+            Column(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                verticalArrangement = Arrangement.spacedBy(5.dp),
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(
+                        Icons.Filled.Link,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.secondary,
+                        modifier = Modifier.size(16.dp),
+                    )
+                    Text(
+                        text = body,
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag(ROUTE_AVAILABILITY_NOTICE_BODY_TEST_TAG),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.86f),
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                if (actionLabel != null && actionHandler != null) {
+                    Text(
+                        text = actionLabel,
+                        modifier = Modifier
+                            .align(Alignment.End)
+                            .testTag(ROUTE_AVAILABILITY_NOTICE_ACTION_TEST_TAG),
+                        color = MaterialTheme.colorScheme.primary,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
         }
     }
@@ -7906,6 +8195,15 @@ internal fun pendingAttachmentChipTestTag(attachmentId: String): String =
 internal fun settingsChatHistoryActionsTestTag(sessionId: String): String =
     "$SETTINGS_CHAT_HISTORY_ACTIONS_TEST_TAG_PREFIX$sessionId"
 
+internal fun settingsChatHistoryRowContentTestTag(sessionId: String): String =
+    "$SETTINGS_CHAT_HISTORY_ROW_CONTENT_TEST_TAG_PREFIX$sessionId"
+
+internal fun settingsChatHistorySearchMetadataTestTag(sessionId: String): String =
+    "$SETTINGS_CHAT_HISTORY_SEARCH_METADATA_TEST_TAG_PREFIX$sessionId"
+
+internal fun settingsChatHistorySearchSnippetTestTag(sessionId: String): String =
+    "$SETTINGS_CHAT_HISTORY_SEARCH_SNIPPET_TEST_TAG_PREFIX$sessionId"
+
 internal fun discoveredRuntimeRowTestTag(serviceName: String): String =
     "$DISCOVERED_RUNTIME_ROW_TEST_TAG_PREFIX$serviceName"
 
@@ -7930,7 +8228,50 @@ internal fun providerStatusDiagnosticsButtonTestTag(providerId: String): String 
 internal fun providerStatusDiagnosticsPanelTestTag(providerId: String): String =
     "$PROVIDER_STATUS_DIAGNOSTICS_PANEL_TEST_TAG_PREFIX$providerId"
 
+internal fun connectionStatusLineTestTag(key: String): String =
+    "$CONNECTION_STATUS_LINE_TEST_TAG_PREFIX$key"
+
+internal fun connectionStatusLineLabelTestTag(key: String): String =
+    "$CONNECTION_STATUS_LINE_LABEL_TEST_TAG_PREFIX$key"
+
+internal fun connectionStatusLineValueTestTag(key: String): String =
+    "$CONNECTION_STATUS_LINE_VALUE_TEST_TAG_PREFIX$key"
+
 internal const val CHAT_MESSAGE_LIST_TEST_TAG = "aetherlink_chat_message_list"
+internal const val CHAT_JUMP_TO_LATEST_TEST_TAG = "aetherlink_chat_jump_to_latest"
+internal const val CHAT_STREAMING_PROGRESS_TEST_TAG = "aetherlink_chat_streaming_progress"
+internal const val CHAT_BACKEND_READINESS_BANNER_TEST_TAG = "aetherlink_chat_backend_readiness_banner"
+internal const val CHAT_BACKEND_READINESS_TITLE_TEST_TAG = "aetherlink_chat_backend_readiness_title"
+internal const val CHAT_BACKEND_READINESS_DETAIL_TEST_TAG = "aetherlink_chat_backend_readiness_detail"
+internal const val CHAT_BACKEND_READINESS_REFRESH_TEST_TAG = "aetherlink_chat_backend_readiness_refresh"
+internal const val CHAT_RUNTIME_ERROR_BANNER_TEST_TAG = "aetherlink_chat_runtime_error_banner"
+internal const val CHAT_RUNTIME_ERROR_ROW_TEST_TAG = "aetherlink_chat_runtime_error_row"
+internal const val CHAT_RUNTIME_ERROR_ICON_TEST_TAG = "aetherlink_chat_runtime_error_icon"
+internal const val CHAT_RUNTIME_ERROR_TEXT_COLUMN_TEST_TAG = "aetherlink_chat_runtime_error_text_column"
+internal const val CHAT_RUNTIME_ERROR_TITLE_TEST_TAG = "aetherlink_chat_runtime_error_title"
+internal const val CHAT_RUNTIME_ERROR_MESSAGE_TEST_TAG = "aetherlink_chat_runtime_error_message"
+internal const val CHAT_RUNTIME_ERROR_DETAIL_TEST_TAG = "aetherlink_chat_runtime_error_detail"
+internal const val CHAT_RUNTIME_ERROR_DIAGNOSTIC_TEST_TAG = "aetherlink_chat_runtime_error_diagnostic"
+internal const val CHAT_RUNTIME_ERROR_TECHNICAL_TEST_TAG = "aetherlink_chat_runtime_error_technical"
+internal const val CHAT_RUNTIME_ERROR_TECHNICAL_TOGGLE_TEST_TAG =
+    "aetherlink_chat_runtime_error_technical_toggle"
+internal const val CHAT_RUNTIME_ERROR_TECHNICAL_TOGGLE_LABEL_TEST_TAG =
+    "aetherlink_chat_runtime_error_technical_toggle_label"
+internal const val CHAT_RUNTIME_ERROR_TECHNICAL_TOGGLE_ICON_TEST_TAG =
+    "aetherlink_chat_runtime_error_technical_toggle_icon"
+internal const val CHAT_RUNTIME_ERROR_TECHNICAL_PANEL_TEST_TAG =
+    "aetherlink_chat_runtime_error_technical_panel"
+internal const val CHAT_RUNTIME_ERROR_TECHNICAL_ACTIONS_TEST_TAG =
+    "aetherlink_chat_runtime_error_technical_actions"
+internal const val CHAT_RUNTIME_ERROR_TECHNICAL_REPORT_TEST_TAG =
+    "aetherlink_chat_runtime_error_technical_report"
+internal const val CHAT_MARKDOWN_TABLE_TEST_TAG = "aetherlink_chat_markdown_table"
+internal const val CHAT_MARKDOWN_TABLE_SURFACE_TEST_TAG = "aetherlink_chat_markdown_table_surface"
+internal const val CHAT_CODE_BLOCK_TEST_TAG = "aetherlink_chat_code_block"
+internal const val CHAT_CODE_BLOCK_HEADER_TEST_TAG = "aetherlink_chat_code_block_header"
+internal const val CHAT_CODE_BLOCK_LANGUAGE_TEST_TAG = "aetherlink_chat_code_block_language"
+internal const val CHAT_CODE_BLOCK_COPY_ACTION_TEST_TAG = "aetherlink_chat_code_block_copy_action"
+internal const val CHAT_CODE_BLOCK_TEXT_TEST_TAG = "aetherlink_chat_code_block_text"
 internal const val CHAT_MESSAGE_ROW_TEST_TAG_PREFIX = "aetherlink_chat_message_row_"
 internal const val CHAT_MESSAGE_ACTIONS_TEST_TAG_PREFIX = "aetherlink_chat_message_actions_"
 internal const val READ_ONLY_ATTACHMENT_CHIP_MAX_WIDTH_DP = 210
@@ -7940,7 +8281,29 @@ internal const val PENDING_ATTACHMENT_CHIPS_TEST_TAG = "aetherlink_pending_attac
 internal const val PENDING_ATTACHMENT_CHIP_TEST_TAG_PREFIX = "aetherlink_pending_attachment_chip_"
 internal const val SETTINGS_QR_PAIRING_PANEL_TEST_TAG = "aetherlink_settings_qr_pairing_panel"
 internal const val SETTINGS_QR_PAIRING_SCAN_BUTTON_TEST_TAG = "aetherlink_settings_qr_pairing_scan_button"
+internal const val SETTINGS_TRUSTED_RUNTIME_PANEL_TEST_TAG = "aetherlink_settings_trusted_runtime_panel"
+internal const val SETTINGS_TRUSTED_RUNTIME_HEADER_TEST_TAG = "aetherlink_settings_trusted_runtime_header"
+internal const val SETTINGS_TRUSTED_RUNTIME_ICON_TEST_TAG = "aetherlink_settings_trusted_runtime_icon"
+internal const val SETTINGS_TRUSTED_RUNTIME_LABEL_TEST_TAG = "aetherlink_settings_trusted_runtime_label"
+internal const val SETTINGS_TRUSTED_RUNTIME_NAME_TEST_TAG = "aetherlink_settings_trusted_runtime_name"
+internal const val SETTINGS_TRUSTED_RUNTIME_FORGET_ACTION_TEST_TAG =
+    "aetherlink_settings_trusted_runtime_forget_action"
+internal const val SETTINGS_TRUSTED_RUNTIME_EMPTY_DETAIL_TEST_TAG =
+    "aetherlink_settings_trusted_runtime_empty_detail"
+internal const val SETTINGS_EXPANDABLE_SECTION_TEST_TAG_PREFIX = "aetherlink_settings_section_"
+internal const val SETTINGS_EXPANDABLE_SECTION_HEADER_TEST_TAG_PREFIX = "aetherlink_settings_section_header_"
+internal const val SETTINGS_EXPANDABLE_SECTION_TITLE_TEST_TAG_PREFIX = "aetherlink_settings_section_title_"
+internal const val SETTINGS_EXPANDABLE_SECTION_SUBTITLE_TEST_TAG_PREFIX = "aetherlink_settings_section_subtitle_"
+internal const val SETTINGS_EXPANDABLE_SECTION_ACTION_TEST_TAG_PREFIX = "aetherlink_settings_section_action_"
 internal const val SETTINGS_CHAT_HISTORY_ACTIONS_TEST_TAG_PREFIX = "aetherlink_settings_chat_history_actions_"
+internal const val SETTINGS_CHAT_HISTORY_SEARCH_RESULT_SUMMARY_TEST_TAG =
+    "aetherlink_settings_chat_history_search_result_summary"
+internal const val SETTINGS_CHAT_HISTORY_ROW_CONTENT_TEST_TAG_PREFIX =
+    "aetherlink_settings_chat_history_row_content_"
+internal const val SETTINGS_CHAT_HISTORY_SEARCH_METADATA_TEST_TAG_PREFIX =
+    "aetherlink_settings_chat_history_search_metadata_"
+internal const val SETTINGS_CHAT_HISTORY_SEARCH_SNIPPET_TEST_TAG_PREFIX =
+    "aetherlink_settings_chat_history_search_snippet_"
 internal const val DISCOVERED_RUNTIME_ROW_TEST_TAG_PREFIX = "aetherlink_discovered_runtime_row_"
 internal const val DISCOVERED_RUNTIME_ACTION_TEST_TAG_PREFIX = "aetherlink_discovered_runtime_action_"
 internal const val DISCOVERED_RUNTIME_STATUS_TEST_TAG_PREFIX = "aetherlink_discovered_runtime_status_"
@@ -7951,6 +8314,9 @@ internal const val PROVIDER_STATUS_DIAGNOSTICS_BUTTON_TEST_TAG_PREFIX =
     "aetherlink_provider_status_diagnostics_button_"
 internal const val PROVIDER_STATUS_DIAGNOSTICS_PANEL_TEST_TAG_PREFIX =
     "aetherlink_provider_status_diagnostics_panel_"
+internal const val ROUTE_AVAILABILITY_NOTICE_TEST_TAG = "aetherlink_route_availability_notice"
+internal const val ROUTE_AVAILABILITY_NOTICE_BODY_TEST_TAG = "aetherlink_route_availability_notice_body"
+internal const val ROUTE_AVAILABILITY_NOTICE_ACTION_TEST_TAG = "aetherlink_route_availability_notice_action"
 internal const val ASSISTANT_IDENTITY_MARKER_TEST_TAG = "aetherlink_assistant_identity_marker"
 internal const val CHAT_COMPOSER_CONTAINER_TEST_TAG = "aetherlink_chat_composer_container"
 internal const val CHAT_COMPOSER_CONTROLS_ROW_TEST_TAG = "aetherlink_chat_composer_controls_row"
@@ -7959,6 +8325,36 @@ internal const val CHAT_COMPOSER_INPUT_TEST_TAG = "aetherlink_chat_composer_inpu
 internal const val CHAT_COMPOSER_CLEAR_DRAFT_ACTION_TEST_TAG = "aetherlink_chat_composer_clear_draft_action"
 internal const val CHAT_COMPOSER_SEND_ACTION_TEST_TAG = "aetherlink_chat_composer_send_action"
 internal const val CHAT_COMPOSER_CANCEL_ACTION_TEST_TAG = "aetherlink_chat_composer_cancel_action"
+internal const val CHAT_COMPOSER_STATUS_TEST_TAG = "aetherlink_chat_composer_status"
+internal const val CHAT_COMPOSER_STATUS_DOT_TEST_TAG = "aetherlink_chat_composer_status_dot"
+internal const val CHAT_COMPOSER_STATUS_TEXT_TEST_TAG = "aetherlink_chat_composer_status_text"
+
+internal fun settingsExpandableSectionTestTag(@StringRes title: Int): String =
+    "$SETTINGS_EXPANDABLE_SECTION_TEST_TAG_PREFIX${settingsExpandableSectionTagKey(title)}"
+
+internal fun settingsExpandableSectionHeaderTestTag(@StringRes title: Int): String =
+    "$SETTINGS_EXPANDABLE_SECTION_HEADER_TEST_TAG_PREFIX${settingsExpandableSectionTagKey(title)}"
+
+internal fun settingsExpandableSectionTitleTestTag(@StringRes title: Int): String =
+    "$SETTINGS_EXPANDABLE_SECTION_TITLE_TEST_TAG_PREFIX${settingsExpandableSectionTagKey(title)}"
+
+internal fun settingsExpandableSectionSubtitleTestTag(@StringRes title: Int): String =
+    "$SETTINGS_EXPANDABLE_SECTION_SUBTITLE_TEST_TAG_PREFIX${settingsExpandableSectionTagKey(title)}"
+
+internal fun settingsExpandableSectionActionTestTag(@StringRes title: Int): String =
+    "$SETTINGS_EXPANDABLE_SECTION_ACTION_TEST_TAG_PREFIX${settingsExpandableSectionTagKey(title)}"
+
+private fun settingsExpandableSectionTagKey(@StringRes title: Int): String {
+    return when (title) {
+        R.string.pairing_title -> "pairing"
+        R.string.status_title -> "status"
+        R.string.advanced_connection -> "advanced_connection"
+        R.string.embedding_model_title -> "embedding_model"
+        R.string.memory_title -> "memory"
+        R.string.chat_history_settings_title -> "chat_history"
+        else -> "unknown_$title"
+    }
+}
 
 private fun selectedModelIsUsable(state: RuntimeUiState): Boolean {
     val selectedId = state.selectedModelId ?: return false

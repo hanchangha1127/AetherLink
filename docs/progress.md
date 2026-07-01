@@ -32,6 +32,328 @@ The concrete remote 1:1 connection architecture is now tracked in [connection-ov
 
 ## Implemented So Far
 
+### 2026-07-01 Authenticated Relay Image Attachment Vision-Gate Smoke
+
+- Scope: no-device progress on roadmap item 6 while the Android phone is disconnected. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer identified that authenticated RuntimeDevServer relay smoke covered document attachment success but not non-vision image attachment rejection.
+- Result: `script/runtime_authenticated_mock_smoke.swift --relay` now sends `smoke-chat-image-non-vision` through the paired/authenticated development relay route using the non-vision `dev-mock` chat model and requires an `unsupported_attachment` error explaining that image attachments need a vision-capable model.
+- Guardrail: the relay ciphertext boundary marker list now includes the image prompt, file name, base64 marker, request id, error code, and vision-gate message so encrypted relay frames cannot expose those plaintext values. `script/check_copy_hygiene.py` pins the image rejection smoke and the default no-device coverage phrase, and `script/check_no_device_quality.sh` reports document attachment plus non-vision image rejection coverage.
+- Caveat: this is no-device relay/runtime smoke evidence. It does not prove Android picker behavior on hardware, real device content-provider reads, optical QR scanning, physical relay reachability, live provider-backed vision inference, or real different-network connectivity.
+
+Verified after this change:
+
+- `swiftc -typecheck script/runtime_authenticated_mock_smoke.swift`
+- `python3 -m py_compile script/check_copy_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `./script/runtime_authenticated_mock_smoke.swift --relay`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- script/runtime_authenticated_mock_smoke.swift script/check_copy_hygiene.py script/check_no_device_quality.sh docs/progress.md docs/qa-evidence.md`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` (no attached devices)
+
+### 2026-07-01 App Icon Small-Size Readability Guard
+
+- Scope: no-device progress on roadmap item 3 while the Android phone is disconnected. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer identified that `script/check_app_icons.py` verified the launcher asset chain and dimensions but did not inspect pixels for small-size readability.
+- Result: `script/check_app_icons.py` now decodes the source, preview, Android density launcher PNGs, round launcher PNGs, adaptive foreground PNG, and PNG-backed macOS `AppIcon.icns` chunks with a stdlib PNG reader. It rejects blank, mostly transparent, mostly white, low-contrast, off-center, or edge-less icons before a launcher/Dock screenshot pass.
+- Guardrail: the app icon check now requires visible pixel coverage, non-white foreground coverage, dark foreground coverage, center-mark coverage, luminance contrast, and a strong-edge ratio for Android launcher assets and macOS Dock icon chunks. `script/check_copy_hygiene.py` pins the readability functions and default no-device gate coverage phrase, and `script/check_no_device_quality.sh` reports the app-icon readability addendum.
+- Caveat: this is source/script/resource-processing evidence. It does not prove Android launcher rendering on a physical device, OEM icon masks, macOS Dock rendering, human small-screen perception, app-store metadata, or screenshot aesthetics.
+
+Verified after this change:
+
+- `python3 -m py_compile script/check_app_icons.py script/check_copy_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_app_icons.py`
+- `python3 script/check_copy_hygiene.py`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew --no-daemon :app:processDebugResources -Pkotlin.incremental=false --console=plain`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` (no attached devices)
+
+### 2026-07-01 Android Relay Probe Strict Readiness Contract
+
+- Scope: no-device progress on QR-only route repair and relay-readiness hardening while the Android phone is disconnected. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer identified that Android still accepted a legacy `AETHERLINK_RELAY probe ready` shortcut even though the Swift relay only documents keyed readiness fields.
+- Result: Android relay reachability parsing now treats a relay route as ready only when the non-consuming probe response reports a known or allocated route and `runtime_waiting`; the legacy `probe ready` token no longer bypasses the route-known plus runtime-waiting contract.
+- Guardrail: `RuntimeClientViewModelTest.relayProbeResponseParserRequiresKnownRouteAndWaitingRuntime` now asserts that `AETHERLINK_RELAY probe ready` is rejected, while preserving accepted `known=1 runtime_waiting=1` and `allocated=true runtime_waiting=true` responses.
+- Guardrail: `script/check_copy_hygiene.py` pins the negative legacy probe-ready regression alongside the existing relay preflight parser and QR pre-connect failure coverage.
+- Caveat: this is no-device JVM/source/script evidence. It does not prove physical Android relay reachability from a phone network, optical QR scanning, live pairing, live provider-backed chat/cancel, or real production arbitrary-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.relayProbeResponseParserRequiresKnownRouteAndWaitingRuntime --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.relayQrPairingFailsBeforeConnectWhenDeviceCannotReachRelayRoute --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `python3 script/check_copy_hygiene.py`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` (no attached devices)
+
+### 2026-07-01 Pairing QR Schema Whitespace Contract
+
+- Scope: no-device progress on the QR-only remote-route roadmap and trust-material hardening while the Android phone is disconnected. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer identified that the decoded pairing QR schema still allowed whitespace-mutated trust/bootstrap tokens even though parser/verifier/docs reject them.
+- Result: `packages/protocol-schema/pairing-qr.schema.json` now defines `noWhitespaceString` and uses it for QR trust/bootstrap identifiers and aliases including `pairing_nonce`, runtime id aliases, `runtime_public_key` aliases, `runtime_key_fingerprint` aliases, `route_token` aliases, and relay nonce aliases.
+- Guardrail: `script/check_protocol_schema.py` now requires the `noWhitespaceString` definition and verifies that QR trust/routing identifiers reject whitespace either through that shared ref or an equivalent `^\S+$` field pattern.
+- Guardrail: `script/check_docs_hygiene.py` now pins the product QR bootstrap docs: normal product scans require `runtime_public_key`, `route_token`, remote route material, and the QR verifier command includes `--require-production-bootstrap` plus relay/no-direct checks.
+- Caveat: this is no-device schema/script evidence. It does not prove physical Android install, camera/optical QR scan reliability, hardware haptics, live provider-backed chat/cancel, or real production arbitrary-network reachability.
+
+Verified after this change:
+
+- `python3 script/check_protocol_schema.py`
+- `python3 -m py_compile script/check_protocol_schema.py script/check_docs_hygiene.py script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh`
+- `git diff --check -- packages/protocol-schema/pairing-qr.schema.json script/check_protocol_schema.py docs/connection-overlay.md docs/protocol.md script/check_docs_hygiene.py docs/progress.md docs/qa-evidence.md`
+
+### 2026-07-01 Android Product QR Bootstrap Enforcement
+
+- Scope: no-device progress on the QR-only remote-route roadmap while the Android phone is disconnected. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer identified that the normal QR scan path still accepted identity-only QR payloads in debug builds.
+- Result: Android normal QR scan and pairing deeplink handling now require product bootstrap material regardless of build type. `trustRuntimeFromPairingQr` defaults to requiring a runtime public key, route token, and complete non-expired relay/P2P route material; identity-only QR can still exercise the old USB reverse fallback only when diagnostic/test code explicitly opts out with `requireRemoteRoute = false`.
+- Result: strict QR parsing now disables local direct diagnostic endpoints while product route material is required, so fixed host/port QR data remains diagnostic-only instead of becoming the normal scan path.
+- Result: `script/verify_pairing_qr.swift` now has `--require-production-bootstrap`, and `script/check_no_device_quality.sh` uses it with `--require-relay-route` to prove generated QR PNGs contain runtime public key, route token, complete relay route material, and no direct host/port fallback.
+- Guardrail: `RuntimeClientViewModelTest.productPairingQrParserRequiresRuntimePublicKeyAndRouteTokenWhenRemoteRouteIsRequired`, `RuntimeClientViewModelTest.trustRuntimeFromPairingQrRejectsIdentityOnlyQrInNormalScanPath`, and scanner raw-value tests cover the stricter normal path. `RuntimeClientViewModelTest.diagnosticIdentityOnlyPairingQrCanUseUsbReverseFallbackWhenRemoteRouteIsNotRequired` keeps the old debug fallback explicitly diagnostic.
+- Guardrail: `script/check_copy_hygiene.py` pins the strict app wiring, ViewModel default, production bootstrap parser guard, QR verifier source, no-device gate entries, and coverage phrases.
+- Caveat: this is no-device JVM/script evidence. It does not prove physical Android install, camera/optical QR scanning, hardware haptics, live provider-backed chat/cancel, or real production arbitrary-network reachability.
+
+Verified after this change:
+
+- `swiftc -typecheck script/verify_pairing_qr.swift`
+- temporary QR PNG render/decode smoke: complete production relay bootstrap QR passed; missing `runtime_public_key` and missing `route_token` QR PNGs failed under `--require-production-bootstrap`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.productPairingQrParserRejectsIdentityOnlyQrWhenRemoteRouteIsRequired --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.productPairingQrParserRequiresRuntimePublicKeyAndRouteTokenWhenRemoteRouteIsRequired --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustRuntimeFromPairingQrRejectsIdentityOnlyQrInNormalScanPath --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.diagnosticIdentityOnlyPairingQrCanUseUsbReverseFallbackWhenRemoteRouteIsNotRequired --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustRuntimeFromPairingQrWithCompactRelayUriConnectsRelayAndSendsPairingRequest --console=plain`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.AppNavigationTest.pairingQrRawValueAcceptsCompactRelayPayloadsFromScanner --tests com.localagentbridge.android.AppNavigationTest.pairingQrCandidateAllowsInvalidAetherLinkPairUrisToReachStructuredErrors --tests com.localagentbridge.android.AppNavigationTest.pairingQrScannerClassifiesRawValuesBeforeConsumingCameraResult --console=plain`
+- `python3 script/check_copy_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_protocol_schema.py`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh`
+
+### 2026-07-01 Android Generic Runtime Error Banner Bounded Layout
+
+- Scope: no-device progress on roadmap items 2 and 4 while no Android phone is attached. GPT-5.3-Codex-Spark was not used; a GPT-5.5 explorer checked the no-device gate, copy-hygiene, and documentation anchors before integration.
+- Result: Android Chat generic runtime error banners now expose stable banner, row, icon, text-column, title, message, detail, diagnostic, technical-toggle, technical-panel, actions, and report tags. The visible title/message/detail and collapsed/expanded technical diagnostics stay width-bounded on compact large-font surfaces while preserving the safe accessibility summary, polite live region, localized technical labels, copy action, and endpoint/route-secret redaction.
+- Guardrail: `ClientScreensNoDeviceComposeTest.chatScreenGenericErrorBannerStaysBoundedAtLargeFontAcrossSupportedLanguages` renders an attachment-size generic runtime error with safe visible detail and unsafe technical detail on a 260 dp, 1.5 font-scale Chat surface across English, Korean, Japanese, Simplified Chinese, and French. It verifies banner row/icon/text bounds, title/message/detail bounds, collapsed technical toggle bounds, expanded diagnostics panel/actions/report bounds, copy action placement, and absence of raw endpoint/token/relay-id text.
+- Guardrail: `script/check_copy_hygiene.py` pins the stable generic runtime error banner tags, focused multilingual compact-bounds regression, default no-device gate entry, and coverage phrase `Android generic runtime error banner bounded layout`.
+- Caveat: this is no-device Compose/JVM evidence. It does not prove physical Android rendering, hardware TalkBack traversal, screenshot aesthetics on a real phone, optical QR scan, launcher icon readability, live provider-backed chat/cancel latency, or real different-network reachability.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenGenericErrorBannerStaysBoundedAtLargeFontAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` (no attached devices)
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh`
+- `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/ui/ClientScreens.kt apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md`
+
+### 2026-07-01 Android Connection Status Panel Compact Layout
+
+- Scope: no-device progress on roadmap items 2 and 4 while no Android phone is attached. GPT-5.3-Codex-Spark was not used; a GPT-5.5 explorer identified the generic error banner as a later compact-layout candidate, while this slice closed the adjacent connection status panel bounds gap in the QR-first route/status surface already under local edit.
+- Result: Android Connection Status now exposes stable panel, hero, hero row, icon, title, detail, and status-line tags. Status lines can be tagged by stable keys for runtime, pairing, backend, providers, connected, and auto-reconnect state without changing other `StatusLine` call sites.
+- Guardrail: `ClientScreensNoDeviceComposeTest.connectionStatusPanelStaysBoundedAtLargeFontAcrossSupportedLanguages` renders pairing-needed, pending-route, and connected trusted-runtime states on a 260 dp, 1.5 font-scale Status surface across English, Korean, Japanese, Simplified Chinese, and French. It verifies the hero icon/title/detail and tagged status line label/value bounds stay inside the visible narrow root after scrolling and avoid icon/text and label/value overlap.
+- Guardrail: `script/check_copy_hygiene.py` pins the stable connection status panel tags, focused multilingual compact-bounds regression, default no-device gate entry, and coverage phrase `Android connection status panel compact layout`.
+- Caveat: this is no-device Compose/JVM evidence. It does not prove physical Android rendering, hardware TalkBack traversal, screenshot aesthetics on a real phone, optical QR scan, launcher icon readability, live provider-backed chat/cancel latency, or real different-network reachability.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.connectionStatusPanelStaysBoundedAtLargeFontAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` (no attached devices)
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh`
+- `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/ui/ClientScreens.kt apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md`
+
+### 2026-07-01 Android Settings Trusted-Runtime Panel Compact Layout
+
+- Scope: no-device progress on roadmap items 2 and 4 while no Android phone is attached. GPT-5.3-Codex-Spark was not used; a GPT-5.5 explorer reviewed the existing Settings compact-layout and trusted-runtime forget guardrails, while this slice closed the adjacent trusted-runtime panel compact-layout gap.
+- Result: Android Settings trusted-runtime panel now exposes stable panel, header, icon, label, runtime-name, forget-action, and empty-detail tags. The label and runtime name remain bounded with ellipsis handling, and the forget action keeps bounded large-font text while preserving the existing named forget confirmation path.
+- Guardrail: `ClientScreensNoDeviceComposeTest.settingsTrustedRuntimePanelStaysBoundedAtLargeFontAcrossSupportedLanguages` renders trusted and unpaired Settings states on a 260 dp, 1.5 font-scale Settings surface across English, Korean, Japanese, Simplified Chinese, and French. It verifies the trusted-runtime card, header, icon, label, runtime name, forget action, and no-runtime detail stay inside the narrow root/panel/header and avoid icon/text and header/action/detail overlap.
+- Guardrail: `script/check_copy_hygiene.py` pins the stable trusted-runtime panel tags, focused multilingual compact-bounds regression, default no-device gate entry, and coverage phrase `Android Settings trusted-runtime panel compact layout`.
+- Caveat: this is no-device Compose/JVM evidence. It does not prove physical Android rendering, hardware TalkBack traversal, screenshot aesthetics on a real phone, optical QR scan, launcher icon readability, live provider-backed chat/cancel latency, or real different-network reachability.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsTrustedRuntimePanelStaysBoundedAtLargeFontAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` (no attached devices)
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh`
+- `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/ui/ClientScreens.kt apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md`
+
+### 2026-07-01 Android Settings Section Header Compact Layout
+
+- Scope: no-device progress on roadmap item 2 while no Android phone is attached. GPT-5.3-Codex-Spark was not used; a GPT-5.5 explorer reviewed the remaining no-device QR/trust UX gaps and flagged the trusted-runtime panel as a strong next candidate, while this slice closed the adjacent Settings section-header compact-layout gap already under edit.
+- Result: Android Settings expandable sections now expose stable section, header, title, subtitle, and visual toggle-action tags. Section titles are single-line ellipsized and subtitles are capped at two lines so large-font localized headings keep room for the visual expand/collapse icon.
+- Guardrail: `ClientScreensNoDeviceComposeTest.settingsExpandableSectionHeadersStayBoundedAtLargeFontAcrossSupportedLanguages` renders unpaired and trusted Settings states on a 260 dp, 1.5 font-scale Settings surface across English, Korean, Japanese, Simplified Chinese, and French. It verifies Pair AetherLink, Pairing & Connection, Troubleshooting, Memory indexing model, Memory, and Chat history section headers stay inside the narrow root, keep title/subtitle/action bounds inside each header, and avoid title/action, subtitle/action, and title/subtitle overlap.
+- Guardrail: `script/check_copy_hygiene.py` pins the stable section-header tags, focused multilingual compact-bounds regression, default no-device gate entry, and coverage phrase `Android Settings section header compact layout`.
+- Caveat: this is no-device Compose/JVM evidence. It does not prove physical Android rendering, hardware TalkBack traversal, screenshot aesthetics on a real phone, optical QR scan, launcher icon readability, live provider-backed chat/cancel latency, or real different-network reachability.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsExpandableSectionHeadersStayBoundedAtLargeFontAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` (no attached devices)
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh`
+- `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/ui/ClientScreens.kt apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md`
+
+### 2026-07-01 Android Settings Preference Compact Row Layout
+
+- Scope: no-device progress on roadmap item 2 while no Android phone is attached. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer identified Appearance/Language preference rows as the remaining small Settings compact-layout gap.
+- Result: Android Settings preferences now expose stable panel, Appearance group, Language group, option-row, radio, label, and detail tags. Fixed language option labels now take weighted row space, so long native language labels stay measurable and bounded beside their radio controls on narrow large-font surfaces.
+- Guardrail: `ClientScreensNoDeviceComposeTest.settingsAppearanceAndLanguagePreferenceRowsStayBoundedAtLargeFontAcrossSupportedLanguages` renders the Appearance and Language preferences on a 260 dp, 1.5 font-scale Settings surface across English, Korean, Japanese, Simplified Chinese, and French. It verifies group label bounds, system/dark appearance row bounds, system/fixed language row bounds, radio/label separation, and radio/detail separation.
+- Guardrail: `script/check_copy_hygiene.py` pins the stable preference row tags, weighted fixed-language label, focused multilingual compact-bounds regression, default no-device gate entry, and coverage phrase `Android Settings preference compact row layout`.
+- Caveat: this is no-device Compose/JVM evidence. It does not prove physical Android rendering, hardware TalkBack traversal, screenshot aesthetics on a real phone, optical QR scan, launcher icon readability, live provider-backed chat/cancel latency, or real different-network reachability.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsAppearanceAndLanguagePreferenceRowsStayBoundedAtLargeFontAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` (no attached devices)
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh`
+- `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/ui/ClientScreens.kt apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md`
+
+### 2026-07-01 Android QR Scanner Compact Large-Font Bounds
+
+- Scope: no-device progress on roadmap items 2 and 4 while no Android phone is attached. GPT-5.3-Codex-Spark was not used; a GPT-5.5 explorer identified the QR scanner chrome as a high-signal QR-first UX surface whose compact render smoke did not yet prove bounds or overlap behavior.
+- Result: Android QR scanner chrome now exposes stable scanner, title, close, camera surface, instructions, detail, feedback, cancel, permission-panel, permission-title/detail/action/cancel tags. Compact-height scanner targets use a smaller upper scan frame so invalid/unsupported QR feedback panels do not cover the target area, while normal-height scanner targets keep the larger frame.
+- Result: permission and Settings recovery actions now use bounded, centered large-font text handling while keeping existing localized copy, close action semantics, torch state semantics, and haptic paths.
+- Guardrail: `PairingQrScannerChromeNoDeviceComposeTest.scannerChromeCompactLargeFontBoundsAcrossSupportedLanguages` renders active camera, invalid QR feedback, unsupported QR feedback, camera-permission prompt, and Settings recovery states on a 320 dp, 1.45 font-scale scanner surface across English, Korean, Japanese, Simplified Chinese, and French. It verifies scanner chrome/title/action bounds, title/action separation, scan-target/instruction-panel separation, feedback/detail/cancel separation, and permission-panel title/detail/action/cancel separation.
+- Guardrail: `script/check_copy_hygiene.py` pins the stable scanner tags, focused multilingual compact-bounds regression, default no-device gate entry, and coverage phrase `Android QR scanner compact large-font bounds`.
+- Caveat: this is no-device Compose/JVM and local gate evidence. It does not prove physical Android rendering, hardware permission-dialog behavior, real camera preview framing, hardware torch behavior, optical QR scan reliability, TalkBack traversal, launcher icon readability, live provider-backed chat/cancel latency, or real different-network reachability.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.PairingQrScannerChromeNoDeviceComposeTest -Pkotlin.incremental=false --console=plain`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` (no attached devices)
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh`
+- `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/MainActivity.kt apps/android/app/src/test/java/com/localagentbridge/android/PairingQrScannerChromeNoDeviceComposeTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md`
+
+### 2026-07-01 Android Markdown Table And Code Block Compact Layout
+
+- Scope: no-device progress on roadmap item 2 while no Android phone is attached. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer identified rendered markdown table/code-block layout as the next compact chat-surface gap.
+- Result: Android Chat now exposes stable markdown table, table surface, code block, code-block header, language, copy-action, and code-text tags. Code-block copy buttons can receive a local modifier tag without changing the localized visible or accessibility copy.
+- Guardrail: `ClientScreensNoDeviceComposeTest.chatScreenMarkdownTablesAndCodeBlocksStayBoundedAtLargeFontAcrossSupportedLanguages` renders a markdown table plus a fenced code block on a 320 dp, 1.45 font-scale chat surface across English, Korean, Japanese, Simplified Chinese, and French. It verifies localized table and code-block accessibility summaries, table/code block bounds, code header/language/copy/text bounds, language/copy separation, and table/code-block separation from the composer.
+- Guardrail: `script/check_copy_hygiene.py` pins the stable markdown/code-block tags, focused multilingual bounds regression, default no-device gate entry, and coverage phrase `Android markdown table and code block compact layout`.
+- Caveat: this is no-device Compose/JVM and local gate evidence. It does not prove physical Android rendering, hardware TalkBack traversal, real haptics, screenshot aesthetics on a real phone, optical QR scan, launcher icon readability, live provider-backed chat/cancel latency, or real different-network reachability.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenMarkdownTablesAndCodeBlocksStayBoundedAtLargeFontAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` (no attached devices)
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh`
+- `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/ui/ClientScreens.kt apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md`
+
+### 2026-07-01 Android Backend Readiness Banner Bounded Layout
+
+- Scope: no-device progress on roadmap item 2 while no Android phone is attached. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer identified the Chat backend-readiness banner as the next high-visibility compact-layout gap.
+- Result: Android Chat now exposes stable backend-readiness banner, title, detail, and refresh-action tags. The refresh action keeps its localized accessibility state and click label while allowing the visible label to wrap within compact large-font surfaces.
+- Guardrail: `ClientScreensNoDeviceComposeTest.chatScreenBackendUnavailableBannerStaysBoundedAtLargeFontAcrossSupportedLanguages` renders a connected trusted runtime with an unavailable retryable provider on a 300 dp, 1.45 font-scale chat surface across English, Korean, Japanese, Simplified Chinese, and French. It verifies localized title/detail text, refresh state and click labels, banner/title/detail/action bounds, and detail/action separation.
+- Guardrail: `script/check_copy_hygiene.py` pins the stable backend-readiness tags, focused multilingual bounds regression, default no-device gate entry, and coverage phrase `Android backend readiness banner bounded layout`.
+- Caveat: this is no-device Compose/JVM and local gate evidence. It does not prove physical Android rendering, hardware TalkBack traversal, real haptics, screenshot aesthetics on a real phone, optical QR scan, launcher icon readability, live provider-backed chat/cancel latency, or real different-network reachability.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenBackendUnavailableBannerStaysBoundedAtLargeFontAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` (no attached devices)
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh`
+- `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/ui/ClientScreens.kt apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md`
+
+### 2026-07-01 Android Streaming Assistant Progress Decorative Compact Layout
+
+- Scope: no-device progress on roadmap item 2 while no Android phone is attached. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer identified the Chat transcript streaming progress indicator as the next focused accessibility/layout gap.
+- Result: Android Chat now tags the assistant typing progress line with `CHAT_STREAMING_PROGRESS_TEST_TAG` and renders that specific streaming indicator as a decorative Canvas line instead of a Material progress semantics node. The localized `assistant_typing` live region remains the single accessibility announcement for the typing state.
+- Guardrail: `ClientScreensNoDeviceComposeTest.chatScreenStreamingProgressIndicatorStaysDecorativeAndBoundedAcrossSupportedLanguages` renders a streaming blank assistant placeholder on a 300 dp, 1.5 font-scale chat surface across English, Korean, Japanese, Simplified Chinese, and French. It verifies the localized polite live region, confirms the tagged progress indicator has no `ProgressBarRangeInfo`, and checks the progress line remains bounded without overlapping the composer.
+- Guardrail: `script/check_copy_hygiene.py` pins the stable progress tag, decorative Canvas implementation, focused multilingual regression, default no-device gate entry, and coverage phrase `Android streaming assistant progress decorative compact layout`.
+- Caveat: this is no-device Compose/JVM and local gate evidence. It does not prove physical Android rendering, hardware TalkBack traversal, real haptics, screenshot aesthetics on a real phone, optical QR scan, launcher icon readability, live provider-backed chat/cancel latency, or real different-network reachability.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenStreamingProgressIndicatorStaysDecorativeAndBoundedAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` (no attached devices)
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh`
+
+### 2026-07-01 Android Chat History Search Metadata And Jump-To-Latest Compact Layout
+
+- Scope: no-device progress on roadmap item 2 while no Android phone is attached. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer identified Settings Chat history runtime search metadata/snippet bounds as the highest-signal remaining compact-layout gap, and the local pass also covered the adjacent Chat jump-to-latest floating action bounds gap.
+- Result: Android Settings Chat history now exposes stable runtime search result summary, row content, metadata, and snippet tags. Search result metadata/snippets are guarded against overlapping row actions on 260 dp, 1.5 font-scale screens across English, Korean, Japanese, Simplified Chinese, and French while preserving the row accessibility summary that includes search metadata and snippet text.
+- Result: Android Chat now exposes a stable jump-to-latest floating action tag. The jump action is guarded to stay inside a 300 dp narrow chat surface and above the docked composer at 1.5 font scale across the same five app languages.
+- Guardrail: `ClientScreensNoDeviceComposeTest.settingsChatHistoryRuntimeSearchMetadataStaysBoundedAtLargeFontAcrossSupportedLanguages` renders active and archived runtime search results with metadata/snippets, verifies result summary live-region copy, row accessibility summaries, row metadata/snippet bounds, and metadata/snippet/action separation.
+- Guardrail: `ClientScreensNoDeviceComposeTest.chatScreenJumpToLatestButtonStaysAboveComposerAtLargeFontAcrossSupportedLanguages` scrolls away from the latest message and verifies the floating jump action remains bounded without overlapping the composer.
+- Guardrail: `script/check_copy_hygiene.py` pins the new stable tags, focused multilingual bounds regressions, default no-device gate entries, and coverage phrases `Android Settings chat-history runtime search metadata compact layout` and `Android jump-to-latest compact layout`.
+- Caveat: this is no-device Compose/JVM and local gate evidence. It does not prove physical Android rendering, hardware TalkBack traversal, real haptics, screenshot aesthetics on a real phone, optical QR scan, launcher icon readability, live provider-backed chat/cancel latency, or real different-network reachability.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsChatHistoryRuntimeSearchMetadataStaysBoundedAtLargeFontAcrossSupportedLanguages --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenJumpToLatestButtonStaysAboveComposerAtLargeFontAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` (no attached devices)
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh`
+
+### 2026-07-01 Android Composer Status And Route Notice Compact Layout
+
+- Scope: no-device progress on roadmap item 2 while no Android phone is attached. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer identified the chat route availability notice as the next high-signal compact-layout gap, and the local pass also finished the adjacent composer readiness-status bounds gap.
+- Result: Android Chat now exposes stable composer readiness-status row/dot/text tags and route availability notice/body/action tags. Route availability actions now sit below the long recovery body instead of competing in the same narrow row, so `Scan latest QR` recovery remains bounded on compact large-font screens.
+- Guardrail: `ClientScreensNoDeviceComposeTest.chatScreenComposerReadinessStatusStaysBoundedAtLargeFontAcrossSupportedLanguages` renders a trusted runtime with a missing selected model at 300 dp and 1.5 font scale across English, Korean, Japanese, Simplified Chinese, and French, then verifies the status row, dot, and text stay inside the composer without overlapping controls.
+- Guardrail: `ClientScreensNoDeviceComposeTest.chatScreenRouteAvailabilityNoticeStaysBoundedAtLargeFontAcrossSupportedLanguages` renders a failed trusted relay route at 260 dp and 1.5 font scale across English, Korean, Japanese, Simplified Chinese, and French, then verifies the route notice, body, and latest-QR action stay bounded without body/action overlap while preserving merged accessibility summary and click label.
+- Guardrail: `script/check_copy_hygiene.py` pins the composer status and route availability compact-layout tags, focused multilingual bounds regressions, default no-device gate entries, and coverage phrases `Android composer readiness status compact layout` and `Android chat route availability notice compact layout`.
+- Caveat: this is no-device Compose/JVM evidence. It does not prove physical Android rendering, hardware TalkBack traversal, real haptics, live provider-backed reconnect/cancel latency, screenshot aesthetics on a real phone, optical QR scan, launcher icon readability, or real different-network reachability.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenComposerReadinessStatusStaysBoundedAtLargeFontAcrossSupportedLanguages --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenRouteAvailabilityNoticeStaysBoundedAtLargeFontAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/ui/ClientScreens.kt apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` (no attached devices)
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh`
+
+### 2026-07-01 Android Streaming Cancel Composer Controls Compact Layout
+
+- Scope: no-device progress on roadmap item 2 while no Android phone is attached. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer confirmed the streaming cancel composer controls as the next focused compact-layout gap.
+- Result: Android Chat streaming composer layout is now covered separately from text-only draft send layout. The test verifies the streaming state keeps the composer container, controls row, disabled attach action, disabled input, and cancel action bounded while send and clear-draft controls remain hidden.
+- Guardrail: `ClientScreensNoDeviceComposeTest.chatScreenStreamingCancelControlsStayBoundedAtLargeFontAcrossSupportedLanguages` renders a connected trusted runtime while streaming at 300 dp and 1.5 font scale across English, Korean, Japanese, Simplified Chinese, and French, then verifies the streaming composer controls stay bounded without adjacent attach/input/cancel overlap.
+- Guardrail: `script/check_copy_hygiene.py` pins the streaming cancel composer compact-layout regression, absent send/clear-draft checks, default no-device gate entry, and coverage phrase `Android streaming cancel composer controls compact layout`.
+- Caveat: this is no-device Compose/JVM evidence. It does not prove physical Android rendering, hardware TalkBack traversal, real haptics, live provider-backed cancel latency, screenshot aesthetics on a real phone, optical QR scan, launcher icon readability, or real different-network reachability.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenStreamingCancelControlsStayBoundedAtLargeFontAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` (no attached devices)
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh`
+
 ### 2026-07-01 Android Text-Only Draft Composer Controls Compact Layout
 
 - Scope: no-device progress on roadmap item 2 while no Android phone is attached. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer confirmed the text-only chat composer draft controls as the next focused compact-layout gap.

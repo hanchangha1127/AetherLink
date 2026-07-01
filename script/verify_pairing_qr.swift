@@ -14,6 +14,7 @@ enum QRVerifyFailure: Error, CustomStringConvertible {
     case relayPortMismatch(actual: String, expected: String)
     case invalidRelayExpiration(String)
     case invalidRelayToken(String)
+    case invalidBootstrapToken(String)
     case directEndpointForbidden
     case invalidDirectEndpoint(String)
     case imageLoadFailed(String)
@@ -25,7 +26,7 @@ enum QRVerifyFailure: Error, CustomStringConvertible {
         switch self {
         case .usage:
             return """
-            Usage: script/verify_pairing_qr.swift --image <png-path> [--expected <text-or-file>] [--require-relay-route] [--expected-relay-host <host>] [--expected-relay-port <port>] [--forbid-direct-endpoint] [--allow-local-relay]
+            Usage: script/verify_pairing_qr.swift --image <png-path> [--expected <text-or-file>] [--require-relay-route] [--require-production-bootstrap] [--expected-relay-host <host>] [--expected-relay-port <port>] [--forbid-direct-endpoint] [--allow-local-relay]
             """
         case .missingImage(let path):
             return "QR image does not exist at \(path)"
@@ -47,6 +48,8 @@ enum QRVerifyFailure: Error, CustomStringConvertible {
             return "Decoded pairing URI contains invalid relay_expires_at: \(value)"
         case .invalidRelayToken(let field):
             return "Decoded pairing URI contains invalid \(field)."
+        case .invalidBootstrapToken(let field):
+            return "Decoded pairing URI contains invalid production bootstrap field \(field)."
         case .directEndpointForbidden:
             return "Decoded pairing URI must not include direct host/port fields for remote relay pairing."
         case .invalidDirectEndpoint(let field):
@@ -67,6 +70,7 @@ struct Options {
     var imagePath: String?
     var expected: String?
     var requireRelayRoute = false
+    var requireProductionBootstrap = false
     var expectedRelayHost: String?
     var expectedRelayPort: String?
     var forbidDirectEndpoint = false
@@ -89,6 +93,9 @@ func parseOptions(_ arguments: [String]) throws -> Options {
             index += 2
         case "--require-relay-route":
             options.requireRelayRoute = true
+            index += 1
+        case "--require-production-bootstrap":
+            options.requireProductionBootstrap = true
             index += 1
         case "--expected-relay-host":
             guard index + 1 < arguments.count else { throw QRVerifyFailure.usage }
@@ -196,6 +203,10 @@ func validatePairingURI(_ value: String, options: Options) throws {
         throw QRVerifyFailure.missingQueryField(field.canonical)
     }
 
+    if options.requireProductionBootstrap {
+        try validateProductionBootstrap(query: query)
+    }
+
     if options.forbidDirectEndpoint,
        query.value(for: QRField(canonical: "host", aliases: ["runtime_host", "h"])) != nil ||
         query.value(for: QRField(canonical: "port", aliases: ["runtime_port", "p"])) != nil {
@@ -213,6 +224,21 @@ func validatePairingURI(_ value: String, options: Options) throws {
 
     if options.requireRelayRoute {
         try validateRelayRoute(query: query, options: options)
+    }
+}
+
+func validateProductionBootstrap(query: [String: String]) throws {
+    let requiredBootstrapFields = [
+        QRField(canonical: "runtime_public_key", aliases: ["mac_public_key", "public_key", "rk"]),
+        QRField(canonical: "route_token", aliases: ["discovery_token", "rt"])
+    ]
+    for field in requiredBootstrapFields {
+        guard let value = query.value(for: field) else {
+            throw QRVerifyFailure.missingQueryField(field.canonical)
+        }
+        guard value.rangeOfCharacter(from: .whitespacesAndNewlines) == nil else {
+            throw QRVerifyFailure.invalidBootstrapToken(field.canonical)
+        }
     }
 }
 
@@ -404,6 +430,7 @@ do {
         QRVerifyFailure.relayPortMismatch,
         QRVerifyFailure.invalidRelayExpiration,
         QRVerifyFailure.invalidRelayToken,
+        QRVerifyFailure.invalidBootstrapToken,
         QRVerifyFailure.directEndpointForbidden,
         QRVerifyFailure.invalidDirectEndpoint:
         exit(2)

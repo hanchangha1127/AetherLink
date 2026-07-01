@@ -32,6 +32,7 @@ import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasAnyAncestor
@@ -43,6 +44,7 @@ import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onLast
@@ -600,6 +602,187 @@ class ClientScreensNoDeviceComposeTest {
     }
 
     @Test
+    fun connectionStatusPanelStaysBoundedAtLargeFontAcrossSupportedLanguages() {
+        data class PanelScenario(
+            val name: String,
+            val state: RuntimeUiState,
+            val expectedLineKeys: List<String>,
+        )
+
+        val languageTags = listOf("en", "ko", "ja", "zh-CN", "fr")
+        val currentLanguageTag = mutableStateOf(languageTags.first())
+        val currentScenario = mutableStateOf<PanelScenario?>(null)
+        val fontScale = 1.5f
+        val longRuntimeName = "AetherLink Runtime With A Very Long Nearby Desktop Name For Layout"
+        val defaultLineKeys = listOf(
+            CONNECTION_STATUS_RUNTIME_LINE_KEY,
+            CONNECTION_STATUS_BACKEND_LINE_KEY,
+            CONNECTION_STATUS_PROVIDERS_LINE_KEY,
+            CONNECTION_STATUS_CONNECTED_LINE_KEY,
+            CONNECTION_STATUS_AUTO_RECONNECT_LINE_KEY,
+        )
+        val scenarios = listOf(
+            PanelScenario(
+                name = "pairing-needed",
+                state = RuntimeUiState(),
+                expectedLineKeys = defaultLineKeys,
+            ),
+            PanelScenario(
+                name = "pending-route",
+                state = RuntimeUiState(
+                    isPairingAwaitingRoute = true,
+                    pendingPairingRuntimeName = longRuntimeName,
+                ),
+                expectedLineKeys = listOf(
+                    CONNECTION_STATUS_RUNTIME_LINE_KEY,
+                    CONNECTION_STATUS_PAIRING_LINE_KEY,
+                    CONNECTION_STATUS_BACKEND_LINE_KEY,
+                    CONNECTION_STATUS_PROVIDERS_LINE_KEY,
+                    CONNECTION_STATUS_CONNECTED_LINE_KEY,
+                    CONNECTION_STATUS_AUTO_RECONNECT_LINE_KEY,
+                ),
+            ),
+            PanelScenario(
+                name = "connected-trusted",
+                state = RuntimeUiState(
+                    isConnected = true,
+                    runtimeStatus = "authenticated",
+                    trustedRuntime = RuntimeTrustedRuntime(
+                        deviceId = "runtime-1",
+                        name = longRuntimeName,
+                    ),
+                    backendAvailable = true,
+                    trustedRuntimeAutoReconnectEnabled = true,
+                ),
+                expectedLineKeys = defaultLineKeys,
+            ),
+        )
+        currentScenario.value = scenarios.first()
+
+        compose.setContent {
+            MaterialTheme {
+                val scenario = currentScenario.value ?: scenarios.first()
+                LocalizedTestContent(languageTag = currentLanguageTag.value, fontScale = fontScale) {
+                    key(currentLanguageTag.value, scenario.name) {
+                        Surface(
+                            modifier = Modifier
+                                .width(260.dp)
+                                .height(760.dp)
+                                .testTag(connectionStatusPanelNarrowRootTestTag),
+                        ) {
+                            ConnectionStatusScreen(
+                                state = scenario.state.copy(selectedLanguageTag = currentLanguageTag.value),
+                                onConnect = {},
+                                onRefreshHealth = {},
+                                onDisconnect = {},
+                                onScanLatestQr = {},
+                                modifier = Modifier.testTag(connectionStatusPanelListTestTag),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        fun rootBounds(): DpRect {
+            return compose.onNodeWithTag(connectionStatusPanelNarrowRootTestTag)
+                .getUnclippedBoundsInRoot()
+        }
+
+        fun assertVisibleTagInsideRoot(
+            label: String,
+            tag: String,
+        ): DpRect {
+            val bounds = compose.onNodeWithTag(tag, useUnmergedTree = true)
+                .performScrollTo()
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+            assertBoundsInside(label, bounds, rootBounds())
+            return bounds
+        }
+
+        fun assertHeroBounds(languageTag: String, scenarioName: String) {
+            compose.onNodeWithTag(connectionStatusPanelListTestTag)
+                .performScrollToNode(hasTestTag(CONNECTION_STATUS_HERO_TEST_TAG))
+            compose.waitForIdle()
+
+            val heroBounds = assertVisibleTagInsideRoot(
+                "$languageTag $scenarioName connection hero",
+                CONNECTION_STATUS_HERO_TEST_TAG,
+            )
+            val heroRowBounds = compose.onNodeWithTag(CONNECTION_STATUS_HERO_ROW_TEST_TAG, useUnmergedTree = true)
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+            val iconBounds = compose.onNodeWithTag(CONNECTION_STATUS_HERO_ICON_TEST_TAG, useUnmergedTree = true)
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+            val titleBounds = compose.onNodeWithTag(CONNECTION_STATUS_HERO_TITLE_TEST_TAG, useUnmergedTree = true)
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+            val detailBounds = compose.onNodeWithTag(CONNECTION_STATUS_HERO_DETAIL_TEST_TAG, useUnmergedTree = true)
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+
+            assertBoundsInside("$languageTag $scenarioName connection hero row", heroRowBounds, heroBounds)
+            assertBoundsInside("$languageTag $scenarioName connection hero icon", iconBounds, heroRowBounds)
+            assertBoundsInside("$languageTag $scenarioName connection hero title", titleBounds, heroRowBounds)
+            assertBoundsInside("$languageTag $scenarioName connection hero detail", detailBounds, heroRowBounds)
+            assertFalse(
+                "$languageTag $scenarioName connection hero icon should not overlap title.",
+                boundsOverlap(iconBounds, titleBounds),
+            )
+            assertFalse(
+                "$languageTag $scenarioName connection hero icon should not overlap detail.",
+                boundsOverlap(iconBounds, detailBounds),
+            )
+            assertFalse(
+                "$languageTag $scenarioName connection hero title should not overlap detail.",
+                boundsOverlap(titleBounds, detailBounds),
+            )
+        }
+
+        fun assertStatusLineBounds(languageTag: String, scenarioName: String, key: String) {
+            val lineTag = connectionStatusLineTestTag(key)
+            compose.onNodeWithTag(connectionStatusPanelListTestTag)
+                .performScrollToNode(hasTestTag(lineTag))
+            compose.waitForIdle()
+
+            val lineBounds = assertVisibleTagInsideRoot(
+                "$languageTag $scenarioName connection status line $key",
+                lineTag,
+            )
+            val labelBounds = compose.onNodeWithTag(connectionStatusLineLabelTestTag(key), useUnmergedTree = true)
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+            val valueBounds = compose.onNodeWithTag(connectionStatusLineValueTestTag(key), useUnmergedTree = true)
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+
+            assertBoundsInside("$languageTag $scenarioName connection status label $key", labelBounds, lineBounds)
+            assertBoundsInside("$languageTag $scenarioName connection status value $key", valueBounds, lineBounds)
+            assertFalse(
+                "$languageTag $scenarioName connection status label should not overlap value for $key.",
+                boundsOverlap(labelBounds, valueBounds),
+            )
+        }
+
+        languageTags.forEach { languageTag ->
+            scenarios.forEach { scenario ->
+                compose.runOnUiThread {
+                    currentLanguageTag.value = languageTag
+                    currentScenario.value = scenario
+                }
+                compose.waitForIdle()
+
+                assertHeroBounds(languageTag, scenario.name)
+                scenario.expectedLineKeys.forEach { key ->
+                    assertStatusLineBounds(languageTag, scenario.name, key)
+                }
+            }
+        }
+    }
+
+    @Test
     fun settingsPairingScanQrActionExplainsDisabledConnectingState() {
         var scanClicks = 0
 
@@ -781,6 +964,351 @@ class ClientScreensNoDeviceComposeTest {
             "Collapse section",
             useUnmergedTree = true,
         ).assertCountEquals(0)
+    }
+
+    @Test
+    fun settingsExpandableSectionHeadersStayBoundedAtLargeFontAcrossSupportedLanguages() {
+        data class SectionHeaderCase(
+            val languageTag: String,
+            val trustedRuntime: Boolean,
+        )
+
+        val languageTags = listOf("en", "ko", "ja", "zh-CN", "fr")
+        val currentCase = mutableStateOf(
+            SectionHeaderCase(
+                languageTag = languageTags.first(),
+                trustedRuntime = false,
+            ),
+        )
+        val fontScale = 1.5f
+
+        compose.setContent {
+            MaterialTheme {
+                val layoutCase = currentCase.value
+                LocalizedTestContent(languageTag = layoutCase.languageTag, fontScale = fontScale) {
+                    key(layoutCase.languageTag, layoutCase.trustedRuntime) {
+                        Surface(
+                            modifier = Modifier
+                                .width(260.dp)
+                                .height(760.dp)
+                                .testTag(settingsExpandableSectionHeadersNarrowRootTestTag),
+                        ) {
+                            SettingsScreen(
+                                modifier = Modifier.testTag(settingsExpandableSectionHeadersListTestTag),
+                                state = RuntimeUiState(
+                                    isConnected = layoutCase.trustedRuntime,
+                                    runtimeStatus = if (layoutCase.trustedRuntime) {
+                                        "authenticated"
+                                    } else {
+                                        "disconnected"
+                                    },
+                                    trustedRuntime = if (layoutCase.trustedRuntime) {
+                                        RuntimeTrustedRuntime(
+                                            deviceId = "runtime-1",
+                                            name = "AetherLink Runtime With A Longer Nearby Desktop Name",
+                                        )
+                                    } else {
+                                        null
+                                    },
+                                    backendAvailable = layoutCase.trustedRuntime,
+                                    selectedLanguageTag = layoutCase.languageTag,
+                                    selectedTheme = RuntimeAppTheme.System,
+                                ),
+                                onHostChange = {},
+                                onPortChange = {},
+                                onUseUsbReverse = {},
+                                onUseEmulator = {},
+                                onStartDiscovery = {},
+                                onStopDiscovery = {},
+                                onUseDiscoveredRuntime = {},
+                                onForgetTrustedRuntime = {},
+                                onScanPairingQr = {},
+                                onSubmitPairingPayload = {},
+                                onConnect = {},
+                                onRefreshHealth = {},
+                                onRequestModels = {},
+                                onDisconnect = {},
+                                onSetAutoReconnectEnabled = {},
+                                onSetLanguageTag = {},
+                                onSetTheme = {},
+                                onSelectEmbeddingModel = {},
+                                onAddMemoryEntry = {},
+                                onRemoveMemoryEntry = {},
+                                onSetMemoryEntryEnabled = { _, _ -> },
+                                onArchiveChatSession = {},
+                                onRestoreChatSession = {},
+                                onPermanentlyDeleteChatSession = {},
+                                onArchiveAllChatSessions = {},
+                                onPermanentlyDeleteArchivedChatSessions = {},
+                                showDeveloperDiagnostics = true,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        fun assertHeaderBounds(languageTag: String, titleRes: Int) {
+            val headerTag = settingsExpandableSectionHeaderTestTag(titleRes)
+            compose.onNodeWithTag(settingsExpandableSectionHeadersListTestTag)
+                .performScrollToNode(hasTestTag(headerTag))
+            compose.waitForIdle()
+
+            val rootBounds = compose.onNodeWithTag(settingsExpandableSectionHeadersNarrowRootTestTag)
+                .getUnclippedBoundsInRoot()
+            val headerBounds = compose
+                .onNodeWithTag(headerTag, useUnmergedTree = true)
+                .performScrollTo()
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+            val titleBounds = compose
+                .onNodeWithTag(settingsExpandableSectionTitleTestTag(titleRes), useUnmergedTree = true)
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+            val subtitleBounds = compose
+                .onNodeWithTag(settingsExpandableSectionSubtitleTestTag(titleRes), useUnmergedTree = true)
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+            val actionBounds = compose
+                .onNodeWithTag(settingsExpandableSectionActionTestTag(titleRes), useUnmergedTree = true)
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+
+            assertBoundsInside("$languageTag section header $titleRes", headerBounds, rootBounds)
+            assertBoundsInside("$languageTag section title $titleRes", titleBounds, headerBounds)
+            assertBoundsInside("$languageTag section subtitle $titleRes", subtitleBounds, headerBounds)
+            assertBoundsInside("$languageTag section action $titleRes", actionBounds, headerBounds)
+            assertFalse(
+                "$languageTag section title should not overlap action for $titleRes.",
+                boundsOverlap(titleBounds, actionBounds),
+            )
+            assertFalse(
+                "$languageTag section subtitle should not overlap action for $titleRes.",
+                boundsOverlap(subtitleBounds, actionBounds),
+            )
+            assertFalse(
+                "$languageTag section title should not overlap subtitle for $titleRes.",
+                boundsOverlap(titleBounds, subtitleBounds),
+            )
+        }
+
+        languageTags.forEach { languageTag ->
+            compose.runOnUiThread {
+                currentCase.value = SectionHeaderCase(
+                    languageTag = languageTag,
+                    trustedRuntime = false,
+                )
+            }
+            compose.waitForIdle()
+            assertHeaderBounds(languageTag, R.string.pairing_title)
+
+            compose.runOnUiThread {
+                currentCase.value = SectionHeaderCase(
+                    languageTag = languageTag,
+                    trustedRuntime = true,
+                )
+            }
+            compose.waitForIdle()
+            listOf(
+                R.string.status_title,
+                R.string.advanced_connection,
+                R.string.embedding_model_title,
+                R.string.memory_title,
+                R.string.chat_history_settings_title,
+            ).forEach { titleRes ->
+                assertHeaderBounds(languageTag, titleRes)
+            }
+        }
+    }
+
+    @Test
+    fun settingsTrustedRuntimePanelStaysBoundedAtLargeFontAcrossSupportedLanguages() {
+        data class TrustedRuntimePanelCase(
+            val languageTag: String,
+            val trustedRuntime: Boolean,
+        )
+
+        val languageTags = listOf("en", "ko", "ja", "zh-CN", "fr")
+        val currentCase = mutableStateOf(
+            TrustedRuntimePanelCase(
+                languageTag = languageTags.first(),
+                trustedRuntime = true,
+            ),
+        )
+        val fontScale = 1.5f
+        val runtimeName = "AetherLink Runtime With A Very Long Nearby Desktop Name For Layout"
+
+        compose.setContent {
+            MaterialTheme {
+                val layoutCase = currentCase.value
+                LocalizedTestContent(languageTag = layoutCase.languageTag, fontScale = fontScale) {
+                    key(layoutCase.languageTag, layoutCase.trustedRuntime) {
+                        Surface(
+                            modifier = Modifier
+                                .width(260.dp)
+                                .height(760.dp)
+                                .testTag(settingsTrustedRuntimePanelNarrowRootTestTag),
+                        ) {
+                            SettingsScreen(
+                                modifier = Modifier.testTag(settingsTrustedRuntimePanelListTestTag),
+                                state = RuntimeUiState(
+                                    isConnected = layoutCase.trustedRuntime,
+                                    runtimeStatus = if (layoutCase.trustedRuntime) {
+                                        "authenticated"
+                                    } else {
+                                        "disconnected"
+                                    },
+                                    trustedRuntime = if (layoutCase.trustedRuntime) {
+                                        RuntimeTrustedRuntime(
+                                            deviceId = "runtime-1",
+                                            name = runtimeName,
+                                        )
+                                    } else {
+                                        null
+                                    },
+                                    backendAvailable = layoutCase.trustedRuntime,
+                                    selectedLanguageTag = layoutCase.languageTag,
+                                    selectedTheme = RuntimeAppTheme.System,
+                                ),
+                                onHostChange = {},
+                                onPortChange = {},
+                                onUseUsbReverse = {},
+                                onUseEmulator = {},
+                                onStartDiscovery = {},
+                                onStopDiscovery = {},
+                                onUseDiscoveredRuntime = {},
+                                onForgetTrustedRuntime = {},
+                                onScanPairingQr = {},
+                                onSubmitPairingPayload = {},
+                                onConnect = {},
+                                onRefreshHealth = {},
+                                onRequestModels = {},
+                                onDisconnect = {},
+                                onSetAutoReconnectEnabled = {},
+                                onSetLanguageTag = {},
+                                onSetTheme = {},
+                                onSelectEmbeddingModel = {},
+                                onAddMemoryEntry = {},
+                                onRemoveMemoryEntry = {},
+                                onSetMemoryEntryEnabled = { _, _ -> },
+                                onArchiveChatSession = {},
+                                onRestoreChatSession = {},
+                                onPermanentlyDeleteChatSession = {},
+                                onArchiveAllChatSessions = {},
+                                onPermanentlyDeleteArchivedChatSessions = {},
+                                showDeveloperDiagnostics = false,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        fun revealTrustedRuntimePanel(titleRes: Int, initiallyCollapsed: Boolean) {
+            val headerTag = settingsExpandableSectionHeaderTestTag(titleRes)
+            compose.onNodeWithTag(settingsTrustedRuntimePanelListTestTag)
+                .performScrollToNode(hasTestTag(headerTag))
+            compose.waitForIdle()
+            if (initiallyCollapsed) {
+                compose.onNodeWithTag(headerTag, useUnmergedTree = true)
+                    .assertIsDisplayed()
+                    .performClick()
+                compose.waitForIdle()
+            }
+            compose.onNodeWithTag(settingsTrustedRuntimePanelListTestTag)
+                .performScrollToNode(hasTestTag(SETTINGS_TRUSTED_RUNTIME_PANEL_TEST_TAG))
+            compose.waitForIdle()
+        }
+
+        fun assertTrustedRuntimePanelBounds(
+            languageTag: String,
+            trustedRuntime: Boolean,
+        ) {
+            val rootBounds = compose.onNodeWithTag(settingsTrustedRuntimePanelNarrowRootTestTag)
+                .getUnclippedBoundsInRoot()
+            val panelBounds = compose
+                .onNodeWithTag(SETTINGS_TRUSTED_RUNTIME_PANEL_TEST_TAG, useUnmergedTree = true)
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+            val headerBounds = compose
+                .onNodeWithTag(SETTINGS_TRUSTED_RUNTIME_HEADER_TEST_TAG, useUnmergedTree = true)
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+            val iconBounds = compose
+                .onNodeWithTag(SETTINGS_TRUSTED_RUNTIME_ICON_TEST_TAG, useUnmergedTree = true)
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+            val labelBounds = compose
+                .onNodeWithTag(SETTINGS_TRUSTED_RUNTIME_LABEL_TEST_TAG, useUnmergedTree = true)
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+            val nameBounds = compose
+                .onNodeWithTag(SETTINGS_TRUSTED_RUNTIME_NAME_TEST_TAG, useUnmergedTree = true)
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+
+            assertBoundsInside("$languageTag trusted-runtime panel", panelBounds, rootBounds)
+            assertBoundsInside("$languageTag trusted-runtime header", headerBounds, panelBounds)
+            assertBoundsInside("$languageTag trusted-runtime icon", iconBounds, headerBounds)
+            assertBoundsInside("$languageTag trusted-runtime label", labelBounds, headerBounds)
+            assertBoundsInside("$languageTag trusted-runtime name", nameBounds, headerBounds)
+            assertFalse(
+                "$languageTag trusted-runtime icon should not overlap label.",
+                boundsOverlap(iconBounds, labelBounds),
+            )
+            assertFalse(
+                "$languageTag trusted-runtime icon should not overlap runtime name.",
+                boundsOverlap(iconBounds, nameBounds),
+            )
+            assertFalse(
+                "$languageTag trusted-runtime label should not overlap runtime name.",
+                boundsOverlap(labelBounds, nameBounds),
+            )
+
+            if (trustedRuntime) {
+                val forgetBounds = compose
+                    .onNodeWithTag(SETTINGS_TRUSTED_RUNTIME_FORGET_ACTION_TEST_TAG, useUnmergedTree = true)
+                    .assertIsDisplayed()
+                    .getUnclippedBoundsInRoot()
+                assertBoundsInside("$languageTag trusted-runtime forget action", forgetBounds, panelBounds)
+                assertFalse(
+                    "$languageTag trusted-runtime forget action should not overlap header.",
+                    boundsOverlap(forgetBounds, headerBounds),
+                )
+            } else {
+                val detailBounds = compose
+                    .onNodeWithTag(SETTINGS_TRUSTED_RUNTIME_EMPTY_DETAIL_TEST_TAG, useUnmergedTree = true)
+                    .assertIsDisplayed()
+                    .getUnclippedBoundsInRoot()
+                assertBoundsInside("$languageTag trusted-runtime empty detail", detailBounds, panelBounds)
+                assertFalse(
+                    "$languageTag trusted-runtime empty detail should not overlap header.",
+                    boundsOverlap(detailBounds, headerBounds),
+                )
+            }
+        }
+
+        languageTags.forEach { languageTag ->
+            compose.runOnUiThread {
+                currentCase.value = TrustedRuntimePanelCase(
+                    languageTag = languageTag,
+                    trustedRuntime = true,
+                )
+            }
+            compose.waitForIdle()
+            revealTrustedRuntimePanel(R.string.status_title, initiallyCollapsed = true)
+            assertTrustedRuntimePanelBounds(languageTag, trustedRuntime = true)
+
+            compose.runOnUiThread {
+                currentCase.value = TrustedRuntimePanelCase(
+                    languageTag = languageTag,
+                    trustedRuntime = false,
+                )
+            }
+            compose.waitForIdle()
+            revealTrustedRuntimePanel(R.string.pairing_title, initiallyCollapsed = false)
+            assertTrustedRuntimePanelBounds(languageTag, trustedRuntime = false)
+        }
     }
 
     @Test
@@ -6886,6 +7414,118 @@ class ClientScreensNoDeviceComposeTest {
     }
 
     @Test
+    fun chatScreenStreamingCancelControlsStayBoundedAtLargeFontAcrossSupportedLanguages() {
+        val languageTags = listOf("en", "ko", "ja", "zh-CN", "fr")
+        val languageTag = mutableStateOf(languageTags.first())
+        val fontScale = 1.5f
+        val chatModel = RuntimeModel(
+            id = "ollama:qwen3:8b",
+            name = "Qwen3 8B",
+            modelKind = MODEL_KIND_CHAT,
+            capabilities = listOf("chat"),
+            installed = true,
+            source = "local",
+        )
+        val lockedDraft = listOf(
+            "Keep this draft visible while the runtime streams",
+            "so the disabled composer input and cancel action",
+            "remain stable on compact screens.",
+        ).joinToString(" ")
+        val state = RuntimeUiState(
+            isConnected = true,
+            runtimeStatus = "authenticated",
+            trustedRuntime = RuntimeTrustedRuntime(
+                deviceId = "runtime-streaming-composer-bounds",
+                name = "AetherLink Runtime",
+            ),
+            backendAvailable = true,
+            selectedModelId = chatModel.id,
+            models = listOf(chatModel),
+            chatInput = lockedDraft,
+            isStreaming = true,
+            activeRequestId = "streaming-request",
+            messages = listOf(
+                RuntimeChatMessage(
+                    id = "assistant-streaming-bounds",
+                    role = "assistant",
+                    content = "Streaming response",
+                ),
+            ),
+        )
+
+        compose.setContent {
+            MaterialTheme {
+                LocalizedTestContent(languageTag = languageTag.value, fontScale = fontScale) {
+                    Surface(
+                        modifier = Modifier
+                            .width(300.dp)
+                            .height(340.dp)
+                            .testTag(chatComposerStreamingControlsNarrowRootTestTag),
+                    ) {
+                        ChatScreen(
+                            state = state.copy(selectedLanguageTag = languageTag.value),
+                            onInputChange = {},
+                            onSend = {},
+                            onCancel = {},
+                            onConnect = {},
+                            onScanPairingQr = {},
+                            onRefreshHealth = {},
+                            onAttachFiles = {},
+                            onRemoveAttachment = {},
+                            onScanLatestQr = {},
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
+                }
+            }
+        }
+
+        languageTags.forEach { nextLanguageTag ->
+            compose.runOnUiThread { languageTag.value = nextLanguageTag }
+            compose.waitForIdle()
+
+            val rootBounds = compose
+                .onNodeWithTag(chatComposerStreamingControlsNarrowRootTestTag)
+                .getUnclippedBoundsInRoot()
+            val containerBounds = compose
+                .onNodeWithTag(CHAT_COMPOSER_CONTAINER_TEST_TAG, useUnmergedTree = true)
+                .getUnclippedBoundsInRoot()
+            val rowBounds = compose
+                .onNodeWithTag(CHAT_COMPOSER_CONTROLS_ROW_TEST_TAG, useUnmergedTree = true)
+                .getUnclippedBoundsInRoot()
+            val attachBounds = compose
+                .onNodeWithTag(CHAT_COMPOSER_ATTACH_ACTION_TEST_TAG, useUnmergedTree = true)
+                .getUnclippedBoundsInRoot()
+            val inputBounds = compose
+                .onNodeWithTag(CHAT_COMPOSER_INPUT_TEST_TAG, useUnmergedTree = true)
+                .getUnclippedBoundsInRoot()
+            val cancelBounds = compose
+                .onNodeWithTag(CHAT_COMPOSER_CANCEL_ACTION_TEST_TAG, useUnmergedTree = true)
+                .getUnclippedBoundsInRoot()
+
+            compose
+                .onAllNodesWithTag(CHAT_COMPOSER_CLEAR_DRAFT_ACTION_TEST_TAG, useUnmergedTree = true)
+                .assertCountEquals(0)
+            compose
+                .onAllNodesWithTag(CHAT_COMPOSER_SEND_ACTION_TEST_TAG, useUnmergedTree = true)
+                .assertCountEquals(0)
+            assertBoundsInside("$nextLanguageTag streaming composer container", containerBounds, rootBounds)
+            assertBoundsInside("$nextLanguageTag streaming composer controls row", rowBounds, containerBounds)
+            assertBoundsInside("$nextLanguageTag streaming composer attach action", attachBounds, rowBounds)
+            assertBoundsInside("$nextLanguageTag streaming composer input", inputBounds, rowBounds)
+            assertBoundsInside("$nextLanguageTag streaming composer cancel action", cancelBounds, rowBounds)
+            assertFalse(
+                "$nextLanguageTag streaming attach/input should not overlap.",
+                boundsOverlap(attachBounds, inputBounds),
+            )
+            assertFalse(
+                "$nextLanguageTag streaming input/cancel should not overlap.",
+                boundsOverlap(inputBounds, cancelBounds),
+            )
+        }
+    }
+
+    @Test
     fun chatScreenBackendUnavailableBannerExposesAccessibilitySummaryAndRefreshCallback() {
         var refreshClicks = 0
         val unsafeProviderDetail = "http://127.0.0.1:11434 refused route-token-secret"
@@ -7037,6 +7677,327 @@ class ClientScreensNoDeviceComposeTest {
             )
                 .assertIsDisplayed()
                 .assertIsEnabled()
+        }
+    }
+
+    @Test
+    fun chatScreenBackendUnavailableBannerStaysBoundedAtLargeFontAcrossSupportedLanguages() {
+        val languageTags = listOf("en", "ko", "ja", "zh-CN", "fr")
+        val currentLanguage = mutableStateOf(languageTags.first())
+        val fontScale = 1.45f
+        val providerName = "Studio Provider With Extended Diagnostic Name"
+        val chatModel = RuntimeModel(
+            id = "ollama:qwen3:8b",
+            name = "Qwen3 8B",
+            modelKind = MODEL_KIND_CHAT,
+            capabilities = listOf("chat"),
+            installed = true,
+            source = "local",
+        )
+        val state = RuntimeUiState(
+            isConnected = true,
+            runtimeStatus = "authenticated",
+            trustedRuntime = RuntimeTrustedRuntime(
+                deviceId = "runtime-backend-banner-bounds",
+                name = "AetherLink Runtime",
+            ),
+            backendAvailable = false,
+            selectedModelId = chatModel.id,
+            models = listOf(chatModel),
+            providerStatuses = listOf(
+                RuntimeProviderStatus(
+                    id = "custom-local-provider",
+                    name = providerName,
+                    available = false,
+                    code = "provider_unavailable",
+                    retryable = true,
+                ),
+            ),
+            chatInput = "Keep the backend readiness banner clear on a narrow surface.",
+        )
+
+        compose.setContent {
+            MaterialTheme {
+                LocalizedTestContent(languageTag = currentLanguage.value, fontScale = fontScale) {
+                    key(currentLanguage.value) {
+                        Surface(
+                            modifier = Modifier
+                                .width(300.dp)
+                                .height(540.dp)
+                                .testTag(chatBackendReadinessBannerNarrowRootTestTag),
+                        ) {
+                            ChatScreen(
+                                state = state.copy(selectedLanguageTag = currentLanguage.value),
+                                onInputChange = {},
+                                onSend = {},
+                                onCancel = {},
+                                onConnect = {},
+                                onScanPairingQr = {},
+                                onRefreshHealth = {},
+                                onAttachFiles = {},
+                                onRemoveAttachment = {},
+                                onScanLatestQr = {},
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        languageTags.forEach { nextLanguageTag ->
+            compose.runOnUiThread {
+                currentLanguage.value = nextLanguageTag
+            }
+            compose.waitForIdle()
+
+            val localizedContext = ApplicationProvider
+                .getApplicationContext<Context>()
+                .localizedContext(nextLanguageTag, fontScale = fontScale)
+            val expectedTitle = localizedContext.getString(R.string.chat_backend_unavailable_title)
+            val expectedDetail = localizedContext.getString(R.string.provider_unavailable_hint, providerName)
+            val expectedRefreshAction = localizedContext.getString(R.string.refresh_health)
+            val expectedRefreshState = localizedContext.getString(R.string.refresh_health_state_ready)
+
+            val rootBounds = compose.onNodeWithTag(chatBackendReadinessBannerNarrowRootTestTag)
+                .getUnclippedBoundsInRoot()
+            val bannerBounds = compose
+                .onNodeWithTag(CHAT_BACKEND_READINESS_BANNER_TEST_TAG, useUnmergedTree = true)
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+            val titleBounds = compose
+                .onNodeWithTag(CHAT_BACKEND_READINESS_TITLE_TEST_TAG, useUnmergedTree = true)
+                .assertIsDisplayed()
+                .assertTextContains(expectedTitle)
+                .getUnclippedBoundsInRoot()
+            val detailBounds = compose
+                .onNodeWithTag(CHAT_BACKEND_READINESS_DETAIL_TEST_TAG, useUnmergedTree = true)
+                .assertIsDisplayed()
+                .assertTextContains(expectedDetail)
+                .getUnclippedBoundsInRoot()
+            val refreshBounds = compose
+                .onNodeWithTag(CHAT_BACKEND_READINESS_REFRESH_TEST_TAG, useUnmergedTree = true)
+                .assertIsDisplayed()
+                .assert(hasStateDescription(expectedRefreshState))
+                .assert(hasClickActionLabel(expectedRefreshAction))
+                .getUnclippedBoundsInRoot()
+
+            assertBoundsInside("$nextLanguageTag backend readiness banner", bannerBounds, rootBounds)
+            assertBoundsInside("$nextLanguageTag backend readiness title", titleBounds, bannerBounds)
+            assertBoundsInside("$nextLanguageTag backend readiness detail", detailBounds, bannerBounds)
+            assertBoundsInside("$nextLanguageTag backend readiness refresh action", refreshBounds, bannerBounds)
+            assertFalse(
+                "$nextLanguageTag backend readiness detail should not overlap refresh action.",
+                boundsOverlap(detailBounds, refreshBounds),
+            )
+        }
+    }
+
+    @Test
+    fun chatScreenGenericErrorBannerStaysBoundedAtLargeFontAcrossSupportedLanguages() {
+        val languageTags = listOf("en", "ko", "ja", "zh-CN", "fr")
+        val currentLanguage = mutableStateOf(languageTags.first())
+        val fontScale = 1.5f
+        val visibleDetail =
+            "Attachment package is 28 MB and exceeds the current 10 MB local processing limit."
+        val unsafeTechnicalDetail =
+            "attachment rejected near http://127.0.0.1:11434/api/tags route_token=secret relay_id=relay-1"
+        val chatModel = RuntimeModel(
+            id = "ollama:llama3.1:8b",
+            name = "Llama 3.1 8B",
+            modelKind = MODEL_KIND_CHAT,
+            capabilities = listOf("chat"),
+            installed = true,
+            source = "local",
+        )
+        val state = RuntimeUiState(
+            isConnected = true,
+            runtimeStatus = "authenticated",
+            trustedRuntime = RuntimeTrustedRuntime(
+                deviceId = "runtime-1",
+                name = "AetherLink Runtime",
+            ),
+            backendAvailable = true,
+            selectedModelId = chatModel.id,
+            models = listOf(chatModel),
+            error = RuntimeUiError(
+                code = "attachment_too_large",
+                detail = visibleDetail,
+                technicalDetail = unsafeTechnicalDetail,
+            ),
+            chatInput = "Keep the generic runtime error banner clear on a narrow surface.",
+        )
+
+        compose.setContent {
+            MaterialTheme {
+                LocalizedTestContent(languageTag = currentLanguage.value, fontScale = fontScale) {
+                    key(currentLanguage.value) {
+                        Surface(
+                            modifier = Modifier
+                                .width(260.dp)
+                                .height(760.dp)
+                                .testTag(chatGenericErrorBannerNarrowRootTestTag),
+                        ) {
+                            ChatScreen(
+                                state = state.copy(selectedLanguageTag = currentLanguage.value),
+                                onInputChange = {},
+                                onSend = {},
+                                onCancel = {},
+                                onConnect = {},
+                                onScanPairingQr = {},
+                                onRefreshHealth = {},
+                                onAttachFiles = {},
+                                onRemoveAttachment = {},
+                                onScanLatestQr = {},
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        languageTags.forEach { nextLanguageTag ->
+            compose.runOnUiThread {
+                currentLanguage.value = nextLanguageTag
+            }
+            compose.waitForIdle()
+
+            val localizedContext = ApplicationProvider
+                .getApplicationContext<Context>()
+                .localizedContext(nextLanguageTag, fontScale = fontScale)
+            val errorTitle = localizedContext.getString(R.string.error_title)
+            val errorMessage = localizedContext.getString(R.string.error_attachment_too_large)
+            val detailLabel = localizedContext.getString(R.string.error_detail, visibleDetail)
+            val technicalDetails = localizedContext.getString(R.string.runtime_error_technical_details)
+            val collapsed = localizedContext.getString(R.string.section_state_collapsed)
+            val expanded = localizedContext.getString(R.string.section_state_expanded)
+            val showTechnicalDetails = localizedContext.getString(R.string.runtime_error_show_technical_details)
+            val hideTechnicalDetails = localizedContext.getString(R.string.runtime_error_hide_technical_details)
+            val copyDiagnostics = localizedContext.getString(R.string.runtime_error_copy_diagnostics)
+            val expectedReport = localizedContext.getString(R.string.runtime_error_diagnostics_code) +
+                ": attachment_too_large\n" +
+                localizedContext.getString(R.string.runtime_error_diagnostics_technical_detail) +
+                ": attachment rejected near [redacted] [redacted] [redacted]"
+
+            val rootBounds = compose
+                .onNodeWithTag(chatGenericErrorBannerNarrowRootTestTag)
+                .getUnclippedBoundsInRoot()
+            val bannerBounds = compose
+                .onNodeWithTag(CHAT_RUNTIME_ERROR_BANNER_TEST_TAG, useUnmergedTree = true)
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+            val rowBounds = compose
+                .onNodeWithTag(CHAT_RUNTIME_ERROR_ROW_TEST_TAG, useUnmergedTree = true)
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+            val iconBounds = compose
+                .onNodeWithTag(CHAT_RUNTIME_ERROR_ICON_TEST_TAG, useUnmergedTree = true)
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+            val textColumnBounds = compose
+                .onNodeWithTag(CHAT_RUNTIME_ERROR_TEXT_COLUMN_TEST_TAG, useUnmergedTree = true)
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+            val titleBounds = compose
+                .onNodeWithTag(CHAT_RUNTIME_ERROR_TITLE_TEST_TAG, useUnmergedTree = true)
+                .assertTextContains(errorTitle)
+                .getUnclippedBoundsInRoot()
+            val messageBounds = compose
+                .onNodeWithTag(CHAT_RUNTIME_ERROR_MESSAGE_TEST_TAG, useUnmergedTree = true)
+                .assertTextContains(errorMessage)
+                .getUnclippedBoundsInRoot()
+            val detailBounds = compose
+                .onNodeWithTag(CHAT_RUNTIME_ERROR_DETAIL_TEST_TAG, useUnmergedTree = true)
+                .assertTextContains(detailLabel)
+                .getUnclippedBoundsInRoot()
+            val technicalBounds = compose
+                .onNodeWithTag(CHAT_RUNTIME_ERROR_TECHNICAL_TEST_TAG, useUnmergedTree = true)
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+            val toggleBounds = compose
+                .onNodeWithTag(CHAT_RUNTIME_ERROR_TECHNICAL_TOGGLE_TEST_TAG, useUnmergedTree = true)
+                .assert(hasStateDescription(collapsed))
+                .assert(hasClickActionLabel(showTechnicalDetails))
+                .getUnclippedBoundsInRoot()
+            val toggleLabelBounds = compose
+                .onNodeWithTag(CHAT_RUNTIME_ERROR_TECHNICAL_TOGGLE_LABEL_TEST_TAG, useUnmergedTree = true)
+                .assertTextContains(technicalDetails)
+                .getUnclippedBoundsInRoot()
+            val toggleIconBounds = compose
+                .onNodeWithTag(CHAT_RUNTIME_ERROR_TECHNICAL_TOGGLE_ICON_TEST_TAG, useUnmergedTree = true)
+                .getUnclippedBoundsInRoot()
+
+            assertBoundsInside("$nextLanguageTag generic error banner", bannerBounds, rootBounds)
+            assertBoundsInside("$nextLanguageTag generic error row", rowBounds, bannerBounds)
+            assertBoundsInside("$nextLanguageTag generic error icon", iconBounds, rowBounds)
+            assertBoundsInside("$nextLanguageTag generic error text column", textColumnBounds, rowBounds)
+            assertBoundsInside("$nextLanguageTag generic error title", titleBounds, textColumnBounds)
+            assertBoundsInside("$nextLanguageTag generic error message", messageBounds, textColumnBounds)
+            assertBoundsInside("$nextLanguageTag generic error detail", detailBounds, textColumnBounds)
+            assertBoundsInside("$nextLanguageTag generic error technical", technicalBounds, bannerBounds)
+            assertBoundsInside("$nextLanguageTag generic error technical toggle", toggleBounds, technicalBounds)
+            assertBoundsInside(
+                "$nextLanguageTag generic error technical toggle label",
+                toggleLabelBounds,
+                toggleBounds,
+            )
+            assertBoundsInside(
+                "$nextLanguageTag generic error technical toggle icon",
+                toggleIconBounds,
+                toggleBounds,
+            )
+            assertFalse(
+                "$nextLanguageTag generic error icon should not overlap text.",
+                boundsOverlap(iconBounds, textColumnBounds),
+            )
+            assertFalse(
+                "$nextLanguageTag generic error technical label should not overlap icon.",
+                boundsOverlap(toggleLabelBounds, toggleIconBounds),
+            )
+
+            compose.onNodeWithTag(CHAT_RUNTIME_ERROR_TECHNICAL_TOGGLE_TEST_TAG, useUnmergedTree = true)
+                .performClick()
+            compose.waitForIdle()
+
+            compose.onNodeWithTag(CHAT_RUNTIME_ERROR_TECHNICAL_TOGGLE_TEST_TAG, useUnmergedTree = true)
+                .assert(hasStateDescription(expanded))
+                .assert(hasClickActionLabel(hideTechnicalDetails))
+            val expandedTechnicalBounds = compose
+                .onNodeWithTag(CHAT_RUNTIME_ERROR_TECHNICAL_TEST_TAG, useUnmergedTree = true)
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+            val panelBounds = compose
+                .onNodeWithTag(CHAT_RUNTIME_ERROR_TECHNICAL_PANEL_TEST_TAG, useUnmergedTree = true)
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+            val actionsBounds = compose
+                .onNodeWithTag(CHAT_RUNTIME_ERROR_TECHNICAL_ACTIONS_TEST_TAG, useUnmergedTree = true)
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+            val copyBounds = compose
+                .onNodeWithContentDescription(copyDiagnostics, useUnmergedTree = true)
+                .assert(hasClickActionLabel(copyDiagnostics))
+                .getUnclippedBoundsInRoot()
+            val reportBounds = compose
+                .onNodeWithTag(CHAT_RUNTIME_ERROR_TECHNICAL_REPORT_TEST_TAG, useUnmergedTree = true)
+                .assertTextContains(expectedReport)
+                .getUnclippedBoundsInRoot()
+
+            assertBoundsInside("$nextLanguageTag generic error expanded technical", expandedTechnicalBounds, bannerBounds)
+            assertBoundsInside("$nextLanguageTag generic error technical panel", panelBounds, expandedTechnicalBounds)
+            assertBoundsInside("$nextLanguageTag generic error technical actions", actionsBounds, panelBounds)
+            assertBoundsInside("$nextLanguageTag generic error copy action", copyBounds, actionsBounds)
+            assertBoundsInside("$nextLanguageTag generic error technical report", reportBounds, panelBounds)
+            assertFalse(
+                "$nextLanguageTag generic error copy action should not overlap report.",
+                boundsOverlap(copyBounds, reportBounds),
+            )
+            compose.onAllNodesWithText(unsafeTechnicalDetail, useUnmergedTree = true).assertCountEquals(0)
+            compose.onAllNodesWithText("http://127.0.0.1:11434/api/tags", useUnmergedTree = true)
+                .assertCountEquals(0)
+            compose.onAllNodesWithText("route_token=secret", useUnmergedTree = true).assertCountEquals(0)
+            compose.onAllNodesWithText("relay_id=relay-1", useUnmergedTree = true).assertCountEquals(0)
         }
     }
 
@@ -7703,6 +8664,117 @@ class ClientScreensNoDeviceComposeTest {
         assertEquals(1, scanQrClicks)
         assertEquals(0, connectClicks)
         assertEquals(listOf(HapticFeedbackType.TextHandleMove), hapticFeedback.events)
+    }
+
+    @Test
+    fun chatScreenRouteAvailabilityNoticeStaysBoundedAtLargeFontAcrossSupportedLanguages() {
+        val languageTags = listOf("en", "ko", "ja", "zh-CN", "fr")
+        val languageTag = mutableStateOf(languageTags.first())
+        val fontScale = 1.5f
+        val state = RuntimeUiState(
+            isConnected = false,
+            trustedRuntime = RuntimeTrustedRuntime(
+                deviceId = "runtime-route-notice-bounds",
+                name = "AetherLink Runtime",
+                relayHost = "relay.example.test",
+                relayPort = 443,
+                relayId = "relay-compact-bounds",
+                relaySecret = "secret-compact-bounds",
+                relayExpiresAtEpochMillis = Long.MAX_VALUE,
+                relayNonce = "nonce-compact-bounds",
+                relayScope = "remote",
+            ),
+            messages = listOf(
+                RuntimeChatMessage(
+                    id = "user-route-notice-bounds",
+                    role = "user",
+                    content = "Keep the previous route troubleshooting prompt visible.",
+                ),
+                RuntimeChatMessage(
+                    id = "assistant-route-notice-bounds",
+                    role = "assistant",
+                    content = "The saved relay route needs a fresh QR before chat resumes.",
+                ),
+            ),
+            error = RuntimeUiError(
+                code = "remote_route_unreachable",
+                diagnosticCode = "route_diagnostic_relay_failed",
+            ),
+        )
+
+        compose.setContent {
+            MaterialTheme {
+                LocalizedTestContent(languageTag = languageTag.value, fontScale = fontScale) {
+                    Surface(
+                        modifier = Modifier
+                            .width(260.dp)
+                            .height(520.dp)
+                            .testTag(routeAvailabilityNoticeNarrowRootTestTag),
+                    ) {
+                        ChatScreen(
+                            state = state.copy(selectedLanguageTag = languageTag.value),
+                            onInputChange = {},
+                            onSend = {},
+                            onCancel = {},
+                            onConnect = {},
+                            onScanPairingQr = {},
+                            onRefreshHealth = {},
+                            onAttachFiles = {},
+                            onRemoveAttachment = {},
+                            onScanLatestQr = {},
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
+                }
+            }
+        }
+
+        languageTags.forEach { nextLanguageTag ->
+            compose.runOnUiThread { languageTag.value = nextLanguageTag }
+            compose.waitForIdle()
+
+            val localizedContext = ApplicationProvider
+                .getApplicationContext<Context>()
+                .localizedContext(nextLanguageTag, fontScale = fontScale)
+            val title = localizedContext.getString(R.string.route_notice_title)
+            val stateDescription = localizedContext.getString(R.string.route_notice_status_refresh_needed)
+            val body = localizedContext.getString(R.string.route_diagnostic_relay_failed)
+            val action = localizedContext.getString(R.string.route_notice_action_scan_qr)
+            val summary = localizedContext.getString(
+                R.string.route_notice_accessibility_summary,
+                title,
+                stateDescription,
+                body,
+            )
+            val rootBounds = compose
+                .onNodeWithTag(routeAvailabilityNoticeNarrowRootTestTag)
+                .getUnclippedBoundsInRoot()
+            compose.onNode(
+                hasContentDescription(summary) and
+                    hasStateDescription(stateDescription) and
+                    hasClickActionLabel(action) and
+                    hasPoliteLiveRegion(),
+            ).assertIsDisplayed()
+            val noticeBounds = compose
+                .onNodeWithTag(ROUTE_AVAILABILITY_NOTICE_TEST_TAG)
+                .getUnclippedBoundsInRoot()
+            val bodyBounds = compose
+                .onNodeWithTag(ROUTE_AVAILABILITY_NOTICE_BODY_TEST_TAG, useUnmergedTree = true)
+                .assertTextContains(body)
+                .getUnclippedBoundsInRoot()
+            val actionBounds = compose
+                .onNodeWithTag(ROUTE_AVAILABILITY_NOTICE_ACTION_TEST_TAG, useUnmergedTree = true)
+                .assertTextContains(action)
+                .getUnclippedBoundsInRoot()
+
+            assertBoundsInside("$nextLanguageTag route availability notice", noticeBounds, rootBounds)
+            assertBoundsInside("$nextLanguageTag route availability body", bodyBounds, noticeBounds)
+            assertBoundsInside("$nextLanguageTag route availability action", actionBounds, noticeBounds)
+            assertFalse(
+                "$nextLanguageTag route availability body/action should not overlap.",
+                boundsOverlap(bodyBounds, actionBounds),
+            )
+        }
     }
 
     @Test
@@ -8410,6 +9482,111 @@ class ClientScreensNoDeviceComposeTest {
             compose.onNodeWithContentDescription(expectedStatus, useUnmergedTree = true)
                 .assertIsDisplayed()
                 .assert(hasPoliteLiveRegion())
+        }
+    }
+
+    @Test
+    fun chatScreenComposerReadinessStatusStaysBoundedAtLargeFontAcrossSupportedLanguages() {
+        val languageTags = listOf("en", "ko", "ja", "zh-CN", "fr")
+        val languageTag = mutableStateOf(languageTags.first())
+        val fontScale = 1.5f
+        val chatModel = RuntimeModel(
+            id = "ollama:qwen3:8b",
+            name = "Qwen3 8B",
+            modelKind = MODEL_KIND_CHAT,
+            capabilities = listOf("chat"),
+            installed = true,
+            source = "local",
+        )
+        val state = RuntimeUiState(
+            isConnected = true,
+            runtimeStatus = "authenticated",
+            trustedRuntime = RuntimeTrustedRuntime(
+                deviceId = "runtime-composer-status-bounds",
+                name = "AetherLink Runtime",
+            ),
+            backendAvailable = true,
+            selectedModelId = "ollama:missing-runtime-model-with-long-status",
+            models = listOf(chatModel),
+            chatInput = "Keep the blocked composer status visible in the bottom dock.",
+            messages = listOf(
+                RuntimeChatMessage(
+                    id = "assistant-status-context",
+                    role = "assistant",
+                    content = "Choose another local runtime model before continuing.",
+                ),
+            ),
+        )
+
+        compose.setContent {
+            MaterialTheme {
+                LocalizedTestContent(languageTag = languageTag.value, fontScale = fontScale) {
+                    Surface(
+                        modifier = Modifier
+                            .width(300.dp)
+                            .height(340.dp)
+                            .testTag(chatComposerStatusNarrowRootTestTag),
+                    ) {
+                        ChatScreen(
+                            state = state.copy(selectedLanguageTag = languageTag.value),
+                            onInputChange = {},
+                            onSend = {},
+                            onCancel = {},
+                            onConnect = {},
+                            onScanPairingQr = {},
+                            onRefreshHealth = {},
+                            onAttachFiles = {},
+                            onRemoveAttachment = {},
+                            onScanLatestQr = {},
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
+                }
+            }
+        }
+
+        languageTags.forEach { nextLanguageTag ->
+            compose.runOnUiThread { languageTag.value = nextLanguageTag }
+            compose.waitForIdle()
+
+            val localizedContext = ApplicationProvider
+                .getApplicationContext<Context>()
+                .localizedContext(nextLanguageTag, fontScale = fontScale)
+            val expectedStatus = localizedContext.getString(R.string.chat_hint_model_unavailable)
+            val rootBounds = compose
+                .onNodeWithTag(chatComposerStatusNarrowRootTestTag)
+                .getUnclippedBoundsInRoot()
+            val containerBounds = compose
+                .onNodeWithTag(CHAT_COMPOSER_CONTAINER_TEST_TAG, useUnmergedTree = true)
+                .getUnclippedBoundsInRoot()
+            val rowBounds = compose
+                .onNodeWithTag(CHAT_COMPOSER_CONTROLS_ROW_TEST_TAG, useUnmergedTree = true)
+                .getUnclippedBoundsInRoot()
+            val statusBounds = compose
+                .onNodeWithTag(CHAT_COMPOSER_STATUS_TEST_TAG, useUnmergedTree = true)
+                .assert(hasContentDescription(expectedStatus))
+                .assert(hasPoliteLiveRegion())
+                .getUnclippedBoundsInRoot()
+            val statusDotBounds = compose
+                .onNodeWithTag(CHAT_COMPOSER_STATUS_DOT_TEST_TAG, useUnmergedTree = true)
+                .getUnclippedBoundsInRoot()
+            val statusTextBounds = compose
+                .onNodeWithTag(CHAT_COMPOSER_STATUS_TEXT_TEST_TAG, useUnmergedTree = true)
+                .assertTextContains(expectedStatus)
+                .getUnclippedBoundsInRoot()
+
+            assertBoundsInside("$nextLanguageTag composer container", containerBounds, rootBounds)
+            assertBoundsInside("$nextLanguageTag composer status row", statusBounds, containerBounds)
+            assertBoundsInside("$nextLanguageTag composer status dot", statusDotBounds, statusBounds)
+            assertBoundsInside("$nextLanguageTag composer status text", statusTextBounds, statusBounds)
+            assertFalse(
+                "$nextLanguageTag composer controls/status should not overlap.",
+                boundsOverlap(rowBounds, statusBounds),
+            )
+            assertFalse(
+                "$nextLanguageTag composer status dot/text should not overlap.",
+                boundsOverlap(statusDotBounds, statusTextBounds),
+            )
         }
     }
 
@@ -10124,6 +11301,109 @@ class ClientScreensNoDeviceComposeTest {
     }
 
     @Test
+    fun chatScreenStreamingProgressIndicatorStaysDecorativeAndBoundedAcrossSupportedLanguages() {
+        val languageTags = listOf("en", "ko", "ja", "zh-CN", "fr")
+        val language = mutableStateOf(languageTags.first())
+        val fontScale = 1.5f
+        val chatModel = RuntimeModel(
+            id = "ollama:qwen3:8b",
+            name = "Qwen3 8B",
+            modelKind = MODEL_KIND_CHAT,
+            capabilities = listOf("chat"),
+            installed = true,
+            source = "local",
+        )
+        val state = RuntimeUiState(
+            isConnected = true,
+            runtimeStatus = "authenticated",
+            trustedRuntime = RuntimeTrustedRuntime(
+                deviceId = "runtime-streaming-progress",
+                name = "AetherLink Runtime",
+            ),
+            backendAvailable = true,
+            selectedModelId = chatModel.id,
+            models = listOf(chatModel),
+            messages = listOf(
+                RuntimeChatMessage(
+                    id = "assistant-streaming-progress",
+                    role = "assistant",
+                    content = "",
+                ),
+            ),
+            isStreaming = true,
+            activeRequestId = "request-streaming-progress",
+            chatInput = "Keep composer visible while the assistant streams.",
+        )
+
+        compose.setContent {
+            MaterialTheme {
+                LocalizedTestContent(languageTag = language.value, fontScale = fontScale) {
+                    key(language.value) {
+                        Surface(
+                            modifier = Modifier
+                                .width(300.dp)
+                                .height(420.dp)
+                                .testTag(chatStreamingProgressNarrowRootTestTag),
+                        ) {
+                            ChatScreen(
+                                state = state.copy(selectedLanguageTag = language.value),
+                                onInputChange = {},
+                                onSend = {},
+                                onCancel = {},
+                                onConnect = {},
+                                onScanPairingQr = {},
+                                onRefreshHealth = {},
+                                onAttachFiles = {},
+                                onRemoveAttachment = {},
+                                onScanLatestQr = {},
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        languageTags.forEach { nextLanguageTag ->
+            compose.runOnUiThread { language.value = nextLanguageTag }
+            compose.waitForIdle()
+
+            val localizedContext = ApplicationProvider
+                .getApplicationContext<Context>()
+                .localizedContext(nextLanguageTag, fontScale = fontScale)
+            val expectedTyping = localizedContext.getString(R.string.assistant_typing)
+
+            compose.onNode(
+                hasContentDescription(expectedTyping) and hasPoliteLiveRegion(),
+                useUnmergedTree = true,
+            ).assertIsDisplayed()
+
+            val rootBounds = compose.onNodeWithTag(chatStreamingProgressNarrowRootTestTag)
+                .getUnclippedBoundsInRoot()
+            val listBounds = compose.onNodeWithTag(CHAT_MESSAGE_LIST_TEST_TAG)
+                .getUnclippedBoundsInRoot()
+            val composerBounds = compose.onNodeWithTag(CHAT_COMPOSER_CONTAINER_TEST_TAG, useUnmergedTree = true)
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+            val progressNode = compose.onNodeWithTag(CHAT_STREAMING_PROGRESS_TEST_TAG, useUnmergedTree = true)
+                .assertIsDisplayed()
+            val progressSemantics = progressNode.fetchSemanticsNode()
+            val progressBounds = progressNode.getUnclippedBoundsInRoot()
+
+            assertFalse(
+                "$nextLanguageTag streaming progress indicator should stay decorative.",
+                progressSemantics.config.contains(SemanticsProperties.ProgressBarRangeInfo),
+            )
+            assertBoundsInside("$nextLanguageTag message list", listBounds, rootBounds)
+            assertBoundsInside("$nextLanguageTag streaming progress indicator", progressBounds, rootBounds)
+            assertFalse(
+                "$nextLanguageTag streaming progress indicator should not overlap the composer.",
+                boundsOverlap(progressBounds, composerBounds),
+            )
+        }
+    }
+
+    @Test
     fun chatScreenStreamingAssistantContentAnnouncesLatestReplyAcrossSupportedLanguages() {
         val languageTags = listOf("en", "ko", "ja", "zh-CN", "fr")
         val language = mutableStateOf(languageTags.first())
@@ -10740,6 +12020,176 @@ class ClientScreensNoDeviceComposeTest {
     }
 
     @Test
+    fun chatScreenMarkdownTablesAndCodeBlocksStayBoundedAtLargeFontAcrossSupportedLanguages() {
+        val languageTags = listOf("en", "ko", "ja", "zh-CN", "fr")
+        val currentLanguage = mutableStateOf(languageTags.first())
+        val fontScale = 1.45f
+        val codeLanguage = "kotlin-super-long-language-label-for-compact-layout"
+        val chatModel = RuntimeModel(
+            id = "ollama:qwen3:8b",
+            name = "Qwen3 8B",
+            modelKind = MODEL_KIND_CHAT,
+            capabilities = listOf("chat"),
+            installed = true,
+            source = "local",
+        )
+        val markdownContent = """
+            | Route | Purpose |
+            | --- | --- |
+            | relay | Different-network QR refresh |
+            | local | Nearby diagnostics |
+
+            ```$codeLanguage
+            val route = "runtime"
+            val compactLayoutCheck = "keep this very long code line horizontally scrollable without pushing the composer"
+            ```
+        """.trimIndent()
+
+        compose.setContent {
+            MaterialTheme {
+                LocalizedTestContent(languageTag = currentLanguage.value, fontScale = fontScale) {
+                    key(currentLanguage.value) {
+                        Surface(
+                            modifier = Modifier
+                                .width(320.dp)
+                                .height(620.dp)
+                                .testTag(chatMarkdownBlocksNarrowRootTestTag),
+                        ) {
+                            ChatScreen(
+                                state = RuntimeUiState(
+                                    isConnected = true,
+                                    runtimeStatus = "authenticated",
+                                    trustedRuntime = RuntimeTrustedRuntime(
+                                        deviceId = "runtime-markdown-bounds",
+                                        name = "AetherLink Runtime",
+                                    ),
+                                    backendAvailable = true,
+                                    selectedLanguageTag = currentLanguage.value,
+                                    selectedModelId = chatModel.id,
+                                    models = listOf(chatModel),
+                                    messages = listOf(
+                                        RuntimeChatMessage(
+                                            id = "assistant-markdown-bounds",
+                                            role = "assistant",
+                                            content = markdownContent,
+                                        ),
+                                    ),
+                                    chatInput = "Keep markdown blocks clear on a compact screen.",
+                                    selectedTheme = RuntimeAppTheme.System,
+                                ),
+                                onInputChange = {},
+                                onSend = {},
+                                onCancel = {},
+                                onConnect = {},
+                                onScanPairingQr = {},
+                                onRefreshHealth = {},
+                                onAttachFiles = {},
+                                onRemoveAttachment = {},
+                                onScanLatestQr = {},
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        languageTags.forEach { nextLanguageTag ->
+            compose.runOnUiThread {
+                currentLanguage.value = nextLanguageTag
+            }
+            compose.waitForIdle()
+
+            val localizedContext = ApplicationProvider
+                .getApplicationContext<Context>()
+                .localizedContext(nextLanguageTag, fontScale = fontScale)
+            val tableSummary = localizedContext.getString(
+                R.string.markdown_table_accessibility_summary,
+                localizedContext.resources.getQuantityString(
+                    R.plurals.markdown_table_column_count,
+                    2,
+                    2,
+                ),
+                localizedContext.resources.getQuantityString(
+                    R.plurals.markdown_table_row_count,
+                    2,
+                    2,
+                ),
+            )
+            val codeSummary = localizedContext.getString(
+                R.string.code_block_accessibility_summary,
+                codeLanguage,
+                localizedContext.resources.getQuantityString(
+                    R.plurals.code_block_line_count,
+                    2,
+                    2,
+                ),
+            )
+
+            val rootBounds = compose.onNodeWithTag(chatMarkdownBlocksNarrowRootTestTag)
+                .getUnclippedBoundsInRoot()
+            val tableBounds = compose
+                .onNodeWithTag(CHAT_MARKDOWN_TABLE_TEST_TAG, useUnmergedTree = true)
+                .assertIsDisplayed()
+                .assert(hasContentDescription(tableSummary))
+                .getUnclippedBoundsInRoot()
+            val tableSurfaceBounds = compose
+                .onNodeWithTag(CHAT_MARKDOWN_TABLE_SURFACE_TEST_TAG, useUnmergedTree = true)
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+            val codeBlockBounds = compose
+                .onNodeWithTag(CHAT_CODE_BLOCK_TEST_TAG, useUnmergedTree = true)
+                .assertIsDisplayed()
+                .assert(hasContentDescription(codeSummary))
+                .getUnclippedBoundsInRoot()
+            val codeHeaderBounds = compose
+                .onNodeWithTag(CHAT_CODE_BLOCK_HEADER_TEST_TAG, useUnmergedTree = true)
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+            val codeLanguageBounds = compose
+                .onNodeWithTag(CHAT_CODE_BLOCK_LANGUAGE_TEST_TAG, useUnmergedTree = true)
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+            val codeCopyBounds = compose
+                .onNodeWithTag(CHAT_CODE_BLOCK_COPY_ACTION_TEST_TAG, useUnmergedTree = true)
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+            val codeTextBounds = compose
+                .onNodeWithTag(CHAT_CODE_BLOCK_TEXT_TEST_TAG, useUnmergedTree = true)
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+            val composerBounds = compose
+                .onNodeWithTag(CHAT_COMPOSER_CONTAINER_TEST_TAG, useUnmergedTree = true)
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+
+            assertBoundsInside("$nextLanguageTag markdown table", tableBounds, rootBounds)
+            assertTrue(
+                "$nextLanguageTag markdown table surface should stay vertically clipped by the table. " +
+                    "surface=$tableSurfaceBounds table=$tableBounds",
+                tableSurfaceBounds.top >= tableBounds.top && tableSurfaceBounds.bottom <= tableBounds.bottom,
+            )
+            assertBoundsInside("$nextLanguageTag code block", codeBlockBounds, rootBounds)
+            assertBoundsInside("$nextLanguageTag code block header", codeHeaderBounds, codeBlockBounds)
+            assertBoundsInside("$nextLanguageTag code block language", codeLanguageBounds, codeHeaderBounds)
+            assertBoundsInside("$nextLanguageTag code block copy action", codeCopyBounds, codeHeaderBounds)
+            assertBoundsInside("$nextLanguageTag code block text", codeTextBounds, codeBlockBounds)
+            assertFalse(
+                "$nextLanguageTag code block language should not overlap copy action.",
+                boundsOverlap(codeLanguageBounds, codeCopyBounds),
+            )
+            assertFalse(
+                "$nextLanguageTag markdown table should not overlap composer.",
+                boundsOverlap(tableBounds, composerBounds),
+            )
+            assertFalse(
+                "$nextLanguageTag code block should not overlap composer.",
+                boundsOverlap(codeBlockBounds, composerBounds),
+            )
+        }
+    }
+
+    @Test
     fun chatScreenMultipleCodeBlockCopyActionsLocalizeDistinctContextAcrossSupportedLanguages() {
         data class ExpectedCodeCopy(
             val languageTag: String,
@@ -11011,6 +12461,101 @@ class ClientScreensNoDeviceComposeTest {
             )
                 .assertIsDisplayed()
                 .assertIsEnabled()
+        }
+    }
+
+    @Test
+    fun chatScreenJumpToLatestButtonStaysAboveComposerAtLargeFontAcrossSupportedLanguages() {
+        val languageTags = listOf("en", "ko", "ja", "zh-CN", "fr")
+        val currentLanguage = mutableStateOf(languageTags.first())
+        val fontScale = 1.5f
+        val chatModel = RuntimeModel(
+            id = "ollama:qwen3:8b",
+            name = "Qwen3 8B",
+            modelKind = MODEL_KIND_CHAT,
+            capabilities = listOf("chat"),
+            installed = true,
+            source = "local",
+        )
+        val messages = (1..28).map { index ->
+            RuntimeChatMessage(
+                id = "message-$index",
+                role = if (index % 2 == 0) "assistant" else "user",
+                content = "Scroll regression message $index. This row keeps enough height for the chat list.",
+            )
+        }
+
+        compose.setContent {
+            MaterialTheme {
+                LocalizedTestContent(languageTag = currentLanguage.value, fontScale = fontScale) {
+                    key(currentLanguage.value) {
+                        Surface(
+                            modifier = Modifier
+                                .width(300.dp)
+                                .height(540.dp)
+                                .testTag(chatJumpToLatestNarrowRootTestTag),
+                        ) {
+                            ChatScreen(
+                                state = RuntimeUiState(
+                                    isConnected = true,
+                                    runtimeStatus = "authenticated",
+                                    trustedRuntime = RuntimeTrustedRuntime(
+                                        deviceId = "runtime-1",
+                                        name = "AetherLink Runtime",
+                                    ),
+                                    backendAvailable = true,
+                                    selectedLanguageTag = currentLanguage.value,
+                                    selectedModelId = chatModel.id,
+                                    models = listOf(chatModel),
+                                    chatInput = "Keep the jump control clear of the composer",
+                                    messages = messages,
+                                ),
+                                onInputChange = {},
+                                onSend = {},
+                                onCancel = {},
+                                onConnect = {},
+                                onScanPairingQr = {},
+                                onRefreshHealth = {},
+                                onAttachFiles = {},
+                                onRemoveAttachment = {},
+                                onScanLatestQr = {},
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        languageTags.forEach { nextLanguageTag ->
+            compose.runOnUiThread {
+                currentLanguage.value = nextLanguageTag
+            }
+            compose.waitForIdle()
+            compose.onNodeWithTag(CHAT_MESSAGE_LIST_TEST_TAG)
+                .performScrollToIndex(0)
+            compose.waitForIdle()
+
+            val rootBounds = compose.onNodeWithTag(chatJumpToLatestNarrowRootTestTag)
+                .getUnclippedBoundsInRoot()
+            val listBounds = compose.onNodeWithTag(CHAT_MESSAGE_LIST_TEST_TAG)
+                .getUnclippedBoundsInRoot()
+            val composerBounds = compose.onNodeWithTag(CHAT_COMPOSER_CONTAINER_TEST_TAG, useUnmergedTree = true)
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+            val jumpBounds = compose.onNodeWithTag(CHAT_JUMP_TO_LATEST_TEST_TAG, useUnmergedTree = true)
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+
+            assertBoundsInside("$nextLanguageTag jump-to-latest action", jumpBounds, rootBounds)
+            assertBoundsInside("$nextLanguageTag message list", listBounds, rootBounds)
+            assertTrue(
+                "$nextLanguageTag jump-to-latest action should stay below the visible message list top.",
+                jumpBounds.top >= listBounds.top,
+            )
+            assertFalse(
+                "$nextLanguageTag jump-to-latest action should not overlap the composer.",
+                boundsOverlap(jumpBounds, composerBounds),
+            )
         }
     }
 
@@ -11517,6 +13062,176 @@ class ClientScreensNoDeviceComposeTest {
             )
                 .performScrollTo()
                 .assertIsDisplayed()
+        }
+    }
+
+    @Test
+    fun settingsAppearanceAndLanguagePreferenceRowsStayBoundedAtLargeFontAcrossSupportedLanguages() {
+        val languageTags = listOf("en", "ko", "ja", "zh-CN", "fr")
+        val currentLanguageTag = mutableStateOf(languageTags.first())
+        val fontScale = 1.5f
+
+        compose.setContent {
+            MaterialTheme {
+                LocalizedTestContent(languageTag = currentLanguageTag.value, fontScale = fontScale) {
+                    key(currentLanguageTag.value) {
+                        Surface(
+                            modifier = Modifier
+                                .width(260.dp)
+                                .height(760.dp)
+                                .testTag(settingsPreferenceRowsNarrowRootTestTag),
+                        ) {
+                            SettingsScreen(
+                                state = RuntimeUiState(
+                                    isConnected = true,
+                                    runtimeStatus = "authenticated",
+                                    trustedRuntime = RuntimeTrustedRuntime(
+                                        deviceId = "runtime-1",
+                                        name = "AetherLink Runtime",
+                                    ),
+                                    backendAvailable = true,
+                                    selectedLanguageTag = currentLanguageTag.value,
+                                    selectedLanguageSource = APP_LANGUAGE_SOURCE_SYSTEM,
+                                    selectedTheme = RuntimeAppTheme.System,
+                                ),
+                                onHostChange = {},
+                                onPortChange = {},
+                                onUseUsbReverse = {},
+                                onUseEmulator = {},
+                                onStartDiscovery = {},
+                                onStopDiscovery = {},
+                                onUseDiscoveredRuntime = {},
+                                onForgetTrustedRuntime = {},
+                                onScanPairingQr = {},
+                                onSubmitPairingPayload = {},
+                                onConnect = {},
+                                onRefreshHealth = {},
+                                onRequestModels = {},
+                                onDisconnect = {},
+                                onSetAutoReconnectEnabled = {},
+                                onSetLanguageTag = {},
+                                onFollowSystemLanguage = {},
+                                onSetTheme = {},
+                                onSelectEmbeddingModel = {},
+                                onAddMemoryEntry = {},
+                                onRemoveMemoryEntry = {},
+                                onSetMemoryEntryEnabled = { _, _ -> },
+                                onArchiveChatSession = {},
+                                onRestoreChatSession = {},
+                                onPermanentlyDeleteChatSession = {},
+                                onArchiveAllChatSessions = {},
+                                onPermanentlyDeleteArchivedChatSessions = {},
+                                showDeveloperDiagnostics = false,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        fun rootBounds(): DpRect {
+            return compose.onNodeWithTag(settingsPreferenceRowsNarrowRootTestTag)
+                .getUnclippedBoundsInRoot()
+        }
+
+        fun assertTaggedBoundsInside(
+            label: String,
+            tag: String,
+            containerBounds: DpRect,
+        ): DpRect {
+            val interaction = compose.onNodeWithTag(tag, useUnmergedTree = true)
+                .performScrollTo()
+                .assertIsDisplayed()
+            val bounds = interaction.getUnclippedBoundsInRoot()
+            assertBoundsInside(label, bounds, containerBounds)
+            return bounds
+        }
+
+        fun assertPreferenceRowBounds(
+            languageTag: String,
+            label: String,
+            rowTag: String,
+            radioTag: String,
+            labelTag: String,
+            detailTag: String?,
+        ) {
+            val rowBounds = assertTaggedBoundsInside(
+                "$languageTag $label row",
+                rowTag,
+                rootBounds(),
+            )
+            val radioBounds = compose.onNodeWithTag(radioTag, useUnmergedTree = true)
+                .getUnclippedBoundsInRoot()
+            val labelBounds = compose.onNodeWithTag(labelTag, useUnmergedTree = true)
+                .getUnclippedBoundsInRoot()
+
+            assertBoundsInside("$languageTag $label radio", radioBounds, rowBounds)
+            assertBoundsInside("$languageTag $label label", labelBounds, rowBounds)
+            assertFalse(
+                "$languageTag $label radio should not overlap label.",
+                boundsOverlap(radioBounds, labelBounds),
+            )
+
+            detailTag?.let {
+                val detailBounds = compose.onNodeWithTag(it, useUnmergedTree = true)
+                    .getUnclippedBoundsInRoot()
+                assertBoundsInside("$languageTag $label detail", detailBounds, rowBounds)
+                assertFalse(
+                    "$languageTag $label radio should not overlap detail.",
+                    boundsOverlap(radioBounds, detailBounds),
+                )
+            }
+        }
+
+        languageTags.forEach { languageTag ->
+            compose.runOnUiThread {
+                currentLanguageTag.value = languageTag
+            }
+            compose.waitForIdle()
+            compose.onNodeWithTag(SETTINGS_PREFERENCES_PANEL_TEST_TAG, useUnmergedTree = true)
+                .assertExists()
+            assertTaggedBoundsInside(
+                "$languageTag appearance group label",
+                SETTINGS_APPEARANCE_GROUP_LABEL_TEST_TAG,
+                rootBounds(),
+            )
+            assertPreferenceRowBounds(
+                languageTag = languageTag,
+                label = "appearance system",
+                rowTag = appearancePreferenceOptionRowTestTag(RuntimeAppTheme.System),
+                radioTag = appearancePreferenceOptionRadioTestTag(RuntimeAppTheme.System),
+                labelTag = appearancePreferenceOptionLabelTestTag(RuntimeAppTheme.System),
+                detailTag = appearancePreferenceOptionDetailTestTag(RuntimeAppTheme.System),
+            )
+            assertPreferenceRowBounds(
+                languageTag = languageTag,
+                label = "appearance dark",
+                rowTag = appearancePreferenceOptionRowTestTag(RuntimeAppTheme.Dark),
+                radioTag = appearancePreferenceOptionRadioTestTag(RuntimeAppTheme.Dark),
+                labelTag = appearancePreferenceOptionLabelTestTag(RuntimeAppTheme.Dark),
+                detailTag = null,
+            )
+            assertTaggedBoundsInside(
+                "$languageTag language group label",
+                SETTINGS_LANGUAGE_GROUP_LABEL_TEST_TAG,
+                rootBounds(),
+            )
+            assertPreferenceRowBounds(
+                languageTag = languageTag,
+                label = "language system",
+                rowTag = languagePreferenceOptionRowTestTag(APP_LANGUAGE_SOURCE_SYSTEM),
+                radioTag = languagePreferenceOptionRadioTestTag(APP_LANGUAGE_SOURCE_SYSTEM),
+                labelTag = languagePreferenceOptionLabelTestTag(APP_LANGUAGE_SOURCE_SYSTEM),
+                detailTag = languagePreferenceOptionDetailTestTag(APP_LANGUAGE_SOURCE_SYSTEM),
+            )
+            assertPreferenceRowBounds(
+                languageTag = languageTag,
+                label = "fixed language",
+                rowTag = languagePreferenceOptionRowTestTag(languageTag),
+                radioTag = languagePreferenceOptionRadioTestTag(languageTag),
+                labelTag = languagePreferenceOptionLabelTestTag(languageTag),
+                detailTag = null,
+            )
         }
     }
 
@@ -14443,6 +16158,252 @@ class ClientScreensNoDeviceComposeTest {
             "Chat Runtime notes. 4 messages. Match 1 · Reasoning, Transcript, Model $runtimeSnippet",
             useUnmergedTree = true,
         ).assertExists()
+    }
+
+    @Test
+    fun settingsChatHistoryRuntimeSearchMetadataStaysBoundedAtLargeFontAcrossSupportedLanguages() {
+        val languageTags = listOf("en", "ko", "ja", "zh-CN", "fr")
+        val currentLanguage = mutableStateOf(languageTags.first())
+        val fontScale = 1.5f
+        val searchQuery = "fresh qr"
+        val activeSnippet =
+            "Fresh QR route matched a long runtime transcript with remote relay preparation notes."
+        val archivedSnippet =
+            "Fresh QR attachment notes matched archived runtime recovery details before route refresh."
+        val chatModel = RuntimeModel(
+            id = "ollama:qwen3:8b",
+            name = "Qwen3 8B",
+            modelKind = MODEL_KIND_CHAT,
+            capabilities = listOf("chat"),
+            installed = true,
+            source = "local",
+        )
+        val activeSession = RuntimeChatSession(
+            id = "runtime-search-active",
+            title = "Runtime relay QR route transcript with a very long visible title",
+            messageCount = 4,
+            updatedAtMillis = 2_000L,
+            modelId = chatModel.id,
+            searchRank = 1,
+            searchSnippet = activeSnippet,
+            searchMatchedFields = listOf("reasoning", "transcript", "model", "unknown", "transcript"),
+        )
+        val archivedSession = RuntimeChatSession(
+            id = "runtime-search-archived",
+            title = "Archived runtime route recovery with a very long visible title",
+            messageCount = 3,
+            archivedAtMillis = 3_000L,
+            updatedAtMillis = 3_000L,
+            modelId = chatModel.id,
+            searchRank = 2,
+            searchSnippet = archivedSnippet,
+            searchMatchedFields = listOf("transcript", "attachment", "last_error_code", "model"),
+        )
+
+        compose.setContent {
+            MaterialTheme {
+                LocalizedTestContent(languageTag = currentLanguage.value, fontScale = fontScale) {
+                    key(currentLanguage.value) {
+                        Surface(
+                            modifier = Modifier
+                                .width(260.dp)
+                                .height(900.dp)
+                                .testTag(settingsChatHistoryRuntimeSearchNarrowRootTestTag),
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .verticalScroll(rememberScrollState()),
+                            ) {
+                                ChatHistorySettingsPanel(
+                                    activeSessions = listOf(activeSession),
+                                    archivedSessions = listOf(archivedSession),
+                                    activeChatSessionId = null,
+                                    models = listOf(chatModel),
+                                    isActionEnabled = true,
+                                    canRefreshChatHistory = true,
+                                    refreshStateDescriptionRes = R.string.chat_history_refresh_state_ready,
+                                    onRefreshChatHistory = {},
+                                    onOpenChatSession = {},
+                                    onRenameChatSession = {},
+                                    onArchiveChatSession = {},
+                                    onRestoreChatSession = {},
+                                    onPermanentlyDeleteChatSession = {},
+                                    onArchiveAllChatSessions = {},
+                                    onPermanentlyDeleteArchivedChatSessions = {},
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        fun searchMetadata(context: Context, rank: Int, fieldResIds: List<Int>): String {
+            val rankText = context.getString(R.string.chat_search_match_rank, rank)
+            val fieldText = fieldResIds
+                .map(context::getString)
+                .joinToString(", ")
+            return context.getString(R.string.chat_search_match_metadata, rankText, fieldText)
+        }
+
+        fun assertSearchResultRowLayout(
+            languageTag: String,
+            session: RuntimeChatSession,
+            statusText: String,
+            metadataText: String,
+            snippetText: String,
+            rowAccessibilitySummary: String,
+        ) {
+            val rootBounds = compose.onNodeWithTag(settingsChatHistoryRuntimeSearchNarrowRootTestTag)
+                .getUnclippedBoundsInRoot()
+            val contentTag = settingsChatHistoryRowContentTestTag(session.id)
+            val metadataTag = settingsChatHistorySearchMetadataTestTag(session.id)
+            val snippetTag = settingsChatHistorySearchSnippetTestTag(session.id)
+            val actionsTag = settingsChatHistoryActionsTestTag(session.id)
+
+            compose.onNodeWithTag(actionsTag, useUnmergedTree = true)
+                .performScrollTo()
+                .assertIsDisplayed()
+            compose.onNodeWithTag(contentTag, useUnmergedTree = true)
+                .assert(hasContentDescription(rowAccessibilitySummary))
+            compose.onNode(
+                hasText(statusText) and hasAnyAncestor(hasTestTag(contentTag)),
+                useUnmergedTree = true,
+            )
+                .assertIsDisplayed()
+            compose.onNode(
+                hasText(metadataText) and hasAnyAncestor(hasTestTag(contentTag)),
+                useUnmergedTree = true,
+            )
+                .assertIsDisplayed()
+            compose.onNode(
+                hasText(snippetText) and hasAnyAncestor(hasTestTag(contentTag)),
+                useUnmergedTree = true,
+            )
+                .assertIsDisplayed()
+
+            val contentBounds = compose.onNodeWithTag(contentTag, useUnmergedTree = true)
+                .getUnclippedBoundsInRoot()
+            val metadataBounds = compose.onNodeWithTag(metadataTag, useUnmergedTree = true)
+                .getUnclippedBoundsInRoot()
+            val snippetBounds = compose.onNodeWithTag(snippetTag, useUnmergedTree = true)
+                .getUnclippedBoundsInRoot()
+            val actionsBounds = compose.onNodeWithTag(actionsTag, useUnmergedTree = true)
+                .getUnclippedBoundsInRoot()
+
+            assertBoundsInside("$languageTag chat-history runtime search content ${session.id}", contentBounds, rootBounds)
+            assertBoundsInside("$languageTag chat-history runtime search metadata ${session.id}", metadataBounds, contentBounds)
+            assertBoundsInside("$languageTag chat-history runtime search snippet ${session.id}", snippetBounds, contentBounds)
+            assertBoundsInside("$languageTag chat-history runtime search actions ${session.id}", actionsBounds, rootBounds)
+            assertFalse(
+                "$languageTag chat-history runtime search metadata should not overlap actions for ${session.id}.",
+                boundsOverlap(metadataBounds, actionsBounds),
+            )
+            assertFalse(
+                "$languageTag chat-history runtime search snippet should not overlap actions for ${session.id}.",
+                boundsOverlap(snippetBounds, actionsBounds),
+            )
+        }
+
+        languageTags.forEach { languageTag ->
+            val localizedContext = ApplicationProvider
+                .getApplicationContext<Context>()
+                .localizedContext(languageTag, fontScale = fontScale)
+            val chatHistoryTitle = localizedContext.getString(R.string.chat_history_settings_title)
+            val activeCount = localizedContext.resources.getQuantityString(
+                R.plurals.chat_history_active_count,
+                1,
+                1,
+            )
+            val archivedCount = localizedContext.resources.getQuantityString(
+                R.plurals.chat_history_archived_count,
+                1,
+                1,
+            )
+            val resultSummary = localizedContext.getString(
+                R.string.chat_history_search_result_summary,
+                searchQuery,
+                activeCount,
+                archivedCount,
+            )
+            val activeStatus = localizedContext.resources.getQuantityString(
+                R.plurals.chat_message_count,
+                activeSession.messageCount,
+                activeSession.messageCount,
+            )
+            val archivedStatus = localizedContext.getString(R.string.archived_chat)
+            val modelText = localizedContext.getString(R.string.chat_session_model_value, chatModel.name)
+            val activeMetadata = searchMetadata(
+                localizedContext,
+                1,
+                listOf(
+                    R.string.chat_search_field_reasoning,
+                    R.string.chat_search_field_transcript,
+                    R.string.chat_search_field_model,
+                ),
+            )
+            val archivedMetadata = searchMetadata(
+                localizedContext,
+                2,
+                listOf(
+                    R.string.chat_search_field_transcript,
+                    R.string.chat_search_field_attachment,
+                    R.string.chat_search_field_error,
+                ),
+            )
+            val activeBaseSummary = localizedContext.getString(
+                R.string.chat_session_row_summary_with_model,
+                activeSession.title,
+                activeStatus,
+                modelText,
+            )
+            val archivedBaseSummary = localizedContext.getString(
+                R.string.chat_session_row_summary_with_model,
+                archivedSession.title,
+                archivedStatus,
+                modelText,
+            )
+
+            compose.runOnUiThread {
+                currentLanguage.value = languageTag
+            }
+            compose.waitForIdle()
+            compose.onNodeWithText(chatHistoryTitle, useUnmergedTree = true)
+                .assertIsDisplayed()
+            compose.onNodeWithTag(SETTINGS_CHAT_HISTORY_SEARCH_TEST_TAG)
+                .performScrollTo()
+                .assertIsDisplayed()
+                .performTextInput(searchQuery)
+            compose.waitForIdle()
+
+            val rootBounds = compose.onNodeWithTag(settingsChatHistoryRuntimeSearchNarrowRootTestTag)
+                .getUnclippedBoundsInRoot()
+            val resultSummaryBounds = compose
+                .onNodeWithTag(SETTINGS_CHAT_HISTORY_SEARCH_RESULT_SUMMARY_TEST_TAG, useUnmergedTree = true)
+                .performScrollTo()
+                .assert(hasContentDescription(resultSummary))
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+            assertBoundsInside("$languageTag chat-history runtime search result summary", resultSummaryBounds, rootBounds)
+
+            assertSearchResultRowLayout(
+                languageTag = languageTag,
+                session = activeSession,
+                statusText = activeStatus,
+                metadataText = activeMetadata,
+                snippetText = activeSnippet,
+                rowAccessibilitySummary = "$activeBaseSummary $activeMetadata $activeSnippet",
+            )
+            assertSearchResultRowLayout(
+                languageTag = languageTag,
+                session = archivedSession,
+                statusText = archivedStatus,
+                metadataText = archivedMetadata,
+                snippetText = archivedSnippet,
+                rowAccessibilitySummary = "$archivedBaseSummary $archivedMetadata $archivedSnippet",
+            )
+        }
     }
 
     @Test
@@ -17815,6 +19776,14 @@ class ClientScreensNoDeviceComposeTest {
     }
 
     private val settingsHeadersListTestTag = "settings_headers_list"
+    private val settingsExpandableSectionHeadersNarrowRootTestTag =
+        "settings_expandable_section_headers_narrow_root"
+    private val settingsExpandableSectionHeadersListTestTag =
+        "settings_expandable_section_headers_list"
+    private val settingsTrustedRuntimePanelNarrowRootTestTag =
+        "settings_trusted_runtime_panel_narrow_root"
+    private val settingsTrustedRuntimePanelListTestTag =
+        "settings_trusted_runtime_panel_list"
     private val chatSurfaceNarrowPhoneRootTestTag = "chat_surface_narrow_phone_root"
     private val settingsHistoryActionsNarrowRootTestTag = "settings_history_actions_narrow_root"
     private val settingsChatHistoryBulkActionsNarrowRootTestTag =
@@ -17822,12 +19791,29 @@ class ClientScreensNoDeviceComposeTest {
     private val drawerRuntimeSummaryNarrowRootTestTag = "drawer_runtime_summary_narrow_root"
     private val chatDrawerRowsNarrowRootTestTag = "chat_drawer_rows_narrow_root"
     private val chatComposerDraftControlsNarrowRootTestTag = "chat_composer_draft_controls_narrow_root"
+    private val chatComposerStreamingControlsNarrowRootTestTag =
+        "chat_composer_streaming_controls_narrow_root"
+    private val chatComposerStatusNarrowRootTestTag = "chat_composer_status_narrow_root"
+    private val routeAvailabilityNoticeNarrowRootTestTag = "route_availability_notice_narrow_root"
+    private val chatJumpToLatestNarrowRootTestTag = "chat_jump_to_latest_narrow_root"
+    private val chatStreamingProgressNarrowRootTestTag = "chat_streaming_progress_narrow_root"
+    private val chatBackendReadinessBannerNarrowRootTestTag =
+        "chat_backend_readiness_banner_narrow_root"
+    private val chatGenericErrorBannerNarrowRootTestTag =
+        "chat_generic_error_banner_narrow_root"
+    private val chatMarkdownBlocksNarrowRootTestTag = "chat_markdown_blocks_narrow_root"
+    private val connectionStatusPanelNarrowRootTestTag =
+        "connection_status_panel_narrow_root"
+    private val connectionStatusPanelListTestTag =
+        "connection_status_panel_list"
     private val connectionStatusProviderRowsNarrowRootTestTag =
         "connection_status_provider_rows_narrow_root"
     private val settingsDiscoveredRuntimeRowsNarrowRootTestTag =
         "settings_discovered_runtime_rows_narrow_root"
     private val settingsAutoReconnectRowNarrowRootTestTag =
         "settings_auto_reconnect_row_narrow_root"
+    private val settingsPreferenceRowsNarrowRootTestTag =
+        "settings_preference_rows_narrow_root"
     private val settingsMemorySummaryDraftsNarrowRootTestTag =
         "settings_memory_summary_drafts_narrow_root"
     private val settingsEmbeddingModelRowsNarrowRootTestTag =
@@ -17838,6 +19824,8 @@ class ClientScreensNoDeviceComposeTest {
         "chat_pending_attachment_chips_narrow_root"
     private val settingsQrPairingPanelNarrowRootTestTag =
         "settings_qr_pairing_panel_narrow_root"
+    private val settingsChatHistoryRuntimeSearchNarrowRootTestTag =
+        "settings_chat_history_runtime_search_narrow_root"
 
     private fun hasPoliteLiveRegion(): SemanticsMatcher {
         return SemanticsMatcher.expectValue(

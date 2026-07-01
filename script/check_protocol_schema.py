@@ -90,6 +90,37 @@ P2P_RENDEZVOUS_QR_FIELDS = {
     "p2p_protocol_version",
 }
 COMPACT_P2P_RENDEZVOUS_QR_FIELDS = {"pc", "prid", "peb", "px", "pn", "pv"}
+PAIRING_QR_NO_WHITESPACE_FIELDS = {
+    "pairing_nonce",
+    "nonce",
+    "n",
+    "runtime_device_id",
+    "mac_device_id",
+    "device_id",
+    "rid",
+    "runtime_public_key",
+    "mac_public_key",
+    "public_key",
+    "rk",
+    "runtime_key_fingerprint",
+    "fingerprint",
+    "cert_fingerprint",
+    "rf",
+    "route_token",
+    "discovery_token",
+    "rt",
+    "relay_id",
+    "remote_id",
+    "route_id",
+    "rendezvous_id",
+    "network_id",
+    "ri",
+    "relay_nonce",
+    "remote_nonce",
+    "route_nonce",
+    "rendezvous_nonce",
+    "rrn",
+}
 
 
 def main() -> int:
@@ -383,6 +414,16 @@ def check_pairing_qr_schema(schema: dict) -> list[str]:
         if "private_overlay" not in scope_enum:
             failures.append(f"pairing QR schema {scope_field} must allow private_overlay route scope")
 
+    defs = schema.get("$defs", {})
+    no_whitespace_def = defs.get("noWhitespaceString", {})
+    if no_whitespace_def.get("type") != "string" or no_whitespace_def.get("minLength") != 1:
+        failures.append("pairing QR schema noWhitespaceString must be a non-empty string")
+    if no_whitespace_def.get("pattern") != "^\\S+$":
+        failures.append("pairing QR schema noWhitespaceString must reject whitespace")
+    for field in PAIRING_QR_NO_WHITESPACE_FIELDS:
+        if not pairing_qr_schema_disallows_whitespace(properties.get(field, {})):
+            failures.append(f"pairing QR schema {field} must reject whitespace")
+
     dependent_required = schema.get("dependentRequired", {})
     for field in REQUIRED_RELAY_QR_FIELDS:
         dependencies = set(dependent_required.get(field, []))
@@ -470,6 +511,14 @@ def check_pairing_qr_schema(schema: dict) -> list[str]:
         label="shared compact P2P rendezvous QR fixture",
     ))
     return failures
+
+
+def pairing_qr_schema_disallows_whitespace(field_schema: object) -> bool:
+    if not isinstance(field_schema, dict):
+        return False
+    if field_schema.get("$ref") == "#/$defs/noWhitespaceString":
+        return True
+    return field_schema.get("pattern") == "^\\S+$" and field_schema.get("minLength") == 1
 
 
 def check_private_overlay_qr_scope_contract(schema: dict) -> list[str]:

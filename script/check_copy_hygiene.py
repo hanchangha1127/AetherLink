@@ -405,6 +405,7 @@ def android_client_ui_resource_copy_guard_failures() -> list[str]:
     compose_test_path = ROOT / (
         "apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt"
     )
+    qr_verifier_path = ROOT / "script/verify_pairing_qr.swift"
     os_product_noun_re = re.compile(r"\b(?:Android|Mac|macOS|Windows|iPhone|iOS)\b")
     direct_provider_access_re = re.compile(
         r"\b(?:"
@@ -559,6 +560,7 @@ def android_client_ui_resource_copy_guard_failures() -> list[str]:
     app_navigation_test_text = app_navigation_test_path.read_text(encoding="utf-8", errors="replace")
     runtime_view_model_test_text = runtime_view_model_test_path.read_text(encoding="utf-8", errors="replace")
     compose_test_text = compose_test_path.read_text(encoding="utf-8", errors="replace")
+    qr_verifier_text = qr_verifier_path.read_text(encoding="utf-8", errors="replace")
     required_follow_system_snippets = (
         (
             main_activity_path,
@@ -746,6 +748,7 @@ def android_runtime_boundary_guard_failures() -> list[str]:
     runtime_store_path = ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeLocalStore.kt"
     main_activity_path = ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/MainActivity.kt"
     no_device_path = ROOT / "script/check_no_device_quality.sh"
+    qr_verifier_path = ROOT / "script/verify_pairing_qr.swift"
     test_path = ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/AppNavigationTest.kt"
     client_screens_test_path = (
         ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/ui/"
@@ -788,6 +791,7 @@ def android_runtime_boundary_guard_failures() -> list[str]:
     ui_text = ui_path.read_text(encoding="utf-8", errors="replace")
     main_activity_text = main_activity_path.read_text(encoding="utf-8", errors="replace")
     no_device_text = no_device_path.read_text(encoding="utf-8", errors="replace")
+    qr_verifier_text = qr_verifier_path.read_text(encoding="utf-8", errors="replace")
     runtime_text = runtime_path.read_text(encoding="utf-8", errors="replace")
     runtime_remote_route_planner_text = runtime_remote_route_planner_path.read_text(
         encoding="utf-8",
@@ -888,7 +892,7 @@ def android_runtime_boundary_guard_failures() -> list[str]:
         "parseRuntimePairingQrPayload(",
         "allowDebugLoopbackRelay = BuildConfig.DEBUG",
         "allowDiagnosticLocalDirectEndpoint = BuildConfig.DEBUG",
-        "val requireRemoteRouteForPairingQr = !BuildConfig.DEBUG",
+        "val requireRemoteRouteForPairingQr = true",
         "requireRemoteRoute = requireRemoteRoute",
         "internal data class SharedChatDraft(",
         "internal fun Intent?.sharedChatDraftOrNull(): SharedChatDraft?",
@@ -1423,6 +1427,16 @@ def android_runtime_boundary_guard_failures() -> list[str]:
             "accessibility summary coverage across supported languages."
         )
     for snippet in (
+        "CONNECTION_STATUS_PANEL_TEST_TAG",
+        "CONNECTION_STATUS_HERO_TEST_TAG",
+        "CONNECTION_STATUS_HERO_ICON_TEST_TAG",
+        "CONNECTION_STATUS_HERO_TITLE_TEST_TAG",
+        "CONNECTION_STATUS_HERO_DETAIL_TEST_TAG",
+        "CONNECTION_STATUS_LINE_TEST_TAG_PREFIX",
+        "connectionStatusLineTestTag(key: String)",
+        "tagKey = CONNECTION_STATUS_RUNTIME_LINE_KEY",
+        "tagKey = CONNECTION_STATUS_PROVIDERS_LINE_KEY",
+        "tagKey = CONNECTION_STATUS_AUTO_RECONNECT_LINE_KEY",
         ".testTag(providerStatusRowTestTag(provider.id))",
         ".testTag(providerStatusHeaderTestTag(provider.id))",
         ".testTag(providerStatusStatusTestTag(provider.id))",
@@ -1432,9 +1446,17 @@ def android_runtime_boundary_guard_failures() -> list[str]:
     ):
         if snippet not in ui_text:
             failures.append(
-                f"{ui_relative}: Missing Android provider status compact layout guard {snippet}."
+                f"{ui_path.relative_to(ROOT)}: Missing Android connection/provider status compact "
+                f"layout guard {snippet}."
             )
     for snippet in (
+        "connectionStatusPanelStaysBoundedAtLargeFontAcrossSupportedLanguages",
+        "connectionStatusPanelNarrowRootTestTag",
+        "connectionStatusPanelListTestTag",
+        "CONNECTION_STATUS_HERO_TEST_TAG",
+        "connectionStatusLineTestTag(key)",
+        'assertBoundsInside("$languageTag $scenarioName connection hero icon", iconBounds, heroRowBounds)',
+        'assertBoundsInside("$languageTag $scenarioName connection status value $key", valueBounds, lineBounds)',
         "connectionStatusProviderRowsStayBoundedAtLargeFontAcrossSupportedLanguages",
         "connectionStatusProviderRowsNarrowRootTestTag",
         "providerStatusRowTestTag(providerId)",
@@ -1730,6 +1752,7 @@ def android_runtime_boundary_guard_failures() -> list[str]:
         "isRelayProbeReady()",
         "runtime_waiting",
         "relayProbeResponseParserRequiresKnownRouteAndWaitingRuntime",
+        "AETHERLINK_RELAY probe ready",
         "relayQrPairingFailsBeforeConnectWhenDeviceCannotReachRelayRoute",
     )
     for snippet in required_relay_probe_snippets:
@@ -1883,6 +1906,53 @@ def android_runtime_boundary_guard_failures() -> list[str]:
             f"{runtime_test_path.relative_to(ROOT)}: Missing Android parser regression that UI QR "
             "entry requires a complete remote route for different-network pairing."
         )
+    required_product_qr_bootstrap_snippets = (
+        (
+            "productPairingQrParserRequiresRuntimePublicKeyAndRouteTokenWhenRemoteRouteIsRequired",
+            runtime_test_text,
+            runtime_test_path,
+            "Missing Android parser regression that product QR scans require runtime public key and route token.",
+        ),
+        (
+            "trustRuntimeFromPairingQrRejectsIdentityOnlyQrInNormalScanPath",
+            runtime_test_text,
+            runtime_test_path,
+            "Missing Android ViewModel regression that normal QR scans reject identity-only bootstrap data.",
+        ),
+        (
+            "hasProductionQrBootstrap()",
+            runtime_text,
+            runtime_path,
+            "Android product QR parsing must require runtime public key, route token, and remote route material together.",
+        ),
+        (
+            "var requireProductionBootstrap = false",
+            qr_verifier_text,
+            qr_verifier_path,
+            "QR verifier must expose a production bootstrap requirement flag.",
+        ),
+        (
+            "func validateProductionBootstrap(query: [String: String]) throws",
+            qr_verifier_text,
+            qr_verifier_path,
+            "QR verifier must validate production bootstrap identity material.",
+        ),
+        (
+            'QRField(canonical: "runtime_public_key", aliases: ["mac_public_key", "public_key", "rk"])',
+            qr_verifier_text,
+            qr_verifier_path,
+            "QR verifier must require runtime_public_key aliases for production bootstrap.",
+        ),
+        (
+            'QRField(canonical: "route_token", aliases: ["discovery_token", "rt"])',
+            qr_verifier_text,
+            qr_verifier_path,
+            "QR verifier must require route_token aliases for production bootstrap.",
+        ),
+    )
+    for snippet, haystack, path, guidance in required_product_qr_bootstrap_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
     if "http://192.168.1.23:11434/api/tags" not in test_text or (
         "model-provider.example.test:1234/v1/models" not in test_text
     ):
@@ -2284,6 +2354,49 @@ def android_chat_history_danger_guard_failures() -> list[str]:
             if snippet not in qr_panel_text:
                 failures.append(f"{ui_relative}: {guidance}")
 
+    trusted_panel_start = ui_text.find("private fun TrustedRuntimePanel(")
+    trusted_panel_end = ui_text.find("private fun DeveloperDiagnosticsPanel(", trusted_panel_start)
+    if trusted_panel_start == -1 or trusted_panel_end == -1:
+        failures.append(f"{ui_relative}: Missing directly auditable trusted runtime panel block.")
+    else:
+        trusted_panel_text = ui_text[trusted_panel_start:trusted_panel_end]
+        for snippet, guidance in (
+            (
+                ".testTag(SETTINGS_TRUSTED_RUNTIME_PANEL_TEST_TAG)",
+                "Trusted runtime panel must expose a stable container tag for compact layout regressions.",
+            ),
+            (
+                ".testTag(SETTINGS_TRUSTED_RUNTIME_HEADER_TEST_TAG)",
+                "Trusted runtime panel header must expose a stable tag for compact layout regressions.",
+            ),
+            (
+                ".testTag(SETTINGS_TRUSTED_RUNTIME_ICON_TEST_TAG)",
+                "Trusted runtime panel icon must expose a stable tag for overlap regressions.",
+            ),
+            (
+                ".testTag(SETTINGS_TRUSTED_RUNTIME_LABEL_TEST_TAG)",
+                "Trusted runtime panel label must expose a stable tag for compact layout regressions.",
+            ),
+            (
+                ".testTag(SETTINGS_TRUSTED_RUNTIME_NAME_TEST_TAG)",
+                "Trusted runtime name must expose a stable tag for compact layout regressions.",
+            ),
+            (
+                ".testTag(SETTINGS_TRUSTED_RUNTIME_FORGET_ACTION_TEST_TAG)",
+                "Trusted runtime forget action must expose a stable tag for compact layout regressions.",
+            ),
+            (
+                ".testTag(SETTINGS_TRUSTED_RUNTIME_EMPTY_DETAIL_TEST_TAG)",
+                "Trusted runtime empty detail must expose a stable tag for compact layout regressions.",
+            ),
+            (
+                "maxLines = 2,\n                        overflow = TextOverflow.Ellipsis,\n                        modifier = Modifier.testTag(SETTINGS_TRUSTED_RUNTIME_NAME_TEST_TAG)",
+                "Trusted runtime name must remain bounded and tagged on compact Settings layouts.",
+            ),
+        ):
+            if snippet not in trusted_panel_text:
+                failures.append(f"{ui_relative}: {guidance}")
+
     required_confirmation_invocations = (
         (
             "onConfirm = onArchiveAllChatSessions,",
@@ -2609,15 +2722,30 @@ def android_chat_model_menu_guard_failures() -> list[str]:
         failures.append(
             f"{ui_relative}: Settings language and appearance rows must keep selected-state and row-summary accessibility semantics."
         )
-    preference_heading_snippet = """Text(
-            text = groupLabel,
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.secondary,
-            modifier = Modifier.semantics {
-                heading()
-            },
-        )"""
-    if ui_text.count(preference_heading_snippet) < 2:
+    preference_layout_snippets = (
+        "SETTINGS_PREFERENCES_PANEL_TEST_TAG",
+        "SETTINGS_APPEARANCE_GROUP_LABEL_TEST_TAG",
+        "SETTINGS_LANGUAGE_GROUP_LABEL_TEST_TAG",
+        "appearancePreferenceOptionRowTestTag(theme)",
+        "appearancePreferenceOptionRadioTestTag(theme)",
+        "appearancePreferenceOptionLabelTestTag(theme)",
+        "appearancePreferenceOptionDetailTestTag(theme)",
+        "languagePreferenceOptionRowTestTag(APP_LANGUAGE_SOURCE_SYSTEM)",
+        "languagePreferenceOptionRadioTestTag(language.languageTag)",
+        "languagePreferenceOptionLabelTestTag(language.languageTag)",
+        ".weight(1f)\n                        .testTag(languagePreferenceOptionLabelTestTag(language.languageTag))",
+    )
+    if any(snippet not in ui_text for snippet in preference_layout_snippets):
+        failures.append(
+            f"{ui_relative}: Settings Appearance and Language preference rows must keep stable compact-layout tags and weighted labels."
+        )
+    preference_heading_snippets = (
+        ".testTag(SETTINGS_APPEARANCE_GROUP_TEST_TAG)\n            .selectableGroup()",
+        ".testTag(SETTINGS_LANGUAGE_GROUP_TEST_TAG)\n            .selectableGroup()",
+        ".testTag(SETTINGS_APPEARANCE_GROUP_LABEL_TEST_TAG)",
+        ".testTag(SETTINGS_LANGUAGE_GROUP_LABEL_TEST_TAG)",
+    )
+    if any(snippet not in ui_text for snippet in preference_heading_snippets):
         failures.append(
             f"{ui_relative}: Settings Appearance and Language group labels must keep heading semantics."
         )
@@ -2668,7 +2796,7 @@ def android_chat_model_menu_guard_failures() -> list[str]:
             "User-triggered route, trust, connection, and refresh mutations must share one streaming lockout helper.",
         ),
         (
-            "fun trustRuntimeFromPairingQr(\n        rawValue: String,\n        requireRemoteRoute: Boolean = false,\n    ) {\n        if (rejectUserMutationWhileStreaming()) return",
+            "fun trustRuntimeFromPairingQr(\n        rawValue: String,\n        requireRemoteRoute: Boolean = true,\n    ) {\n        if (rejectUserMutationWhileStreaming()) return",
             "QR pairing and route refresh must not preempt an active generation.",
         ),
         (
@@ -2820,7 +2948,27 @@ def android_chat_model_menu_guard_failures() -> list[str]:
         "missing 검색어로 된 모델 검색 지우기",
         "Effacer la recherche de modèles pour missing",
         'hasStateDescription("Install model")',
+        "settingsExpandableSectionHeadersStayBoundedAtLargeFontAcrossSupportedLanguages",
+        "settingsExpandableSectionHeadersNarrowRootTestTag",
+        "settingsExpandableSectionHeaderTestTag(titleRes)",
+        "settingsExpandableSectionTitleTestTag(titleRes)",
+        "settingsExpandableSectionSubtitleTestTag(titleRes)",
+        "settingsExpandableSectionActionTestTag(titleRes)",
+        "assertFalse(\n                \"$languageTag section title should not overlap action for $titleRes.\"",
+        "settingsTrustedRuntimePanelStaysBoundedAtLargeFontAcrossSupportedLanguages",
+        "settingsTrustedRuntimePanelNarrowRootTestTag",
+        "settingsTrustedRuntimePanelListTestTag",
+        "SETTINGS_TRUSTED_RUNTIME_PANEL_TEST_TAG",
+        "SETTINGS_TRUSTED_RUNTIME_FORGET_ACTION_TEST_TAG",
+        "SETTINGS_TRUSTED_RUNTIME_EMPTY_DETAIL_TEST_TAG",
+        "assertFalse(\n                \"$languageTag trusted-runtime icon should not overlap runtime name.\"",
         "settingsPreferenceRowsExposeSelectedStateToAccessibility",
+        "settingsAppearanceAndLanguagePreferenceRowsStayBoundedAtLargeFontAcrossSupportedLanguages",
+        "settingsPreferenceRowsNarrowRootTestTag",
+        "appearancePreferenceOptionRowTestTag(RuntimeAppTheme.System)",
+        "languagePreferenceOptionRowTestTag(APP_LANGUAGE_SOURCE_SYSTEM)",
+        "languagePreferenceOptionLabelTestTag(languageTag)",
+        "assertFalse(\n                \"$languageTag $label radio should not overlap label.\"",
         "settingsPreferenceGroupLabelsExposeHeadingSemanticsAcrossSupportedLanguages",
         "settingsEmbeddingModelRowsExposeSelectedStateToAccessibility",
         "settingsEmbeddingModelControlsAreDisabledWhileStreaming",
@@ -2875,6 +3023,8 @@ def android_chat_navigation_guard_failures() -> list[str]:
 
     if "CHAT_MESSAGE_LIST_TEST_TAG" not in ui_text:
         failures.append(f"{ui_relative}: Missing stable chat list test tag for jump-to-latest coverage.")
+    if "CHAT_JUMP_TO_LATEST_TEST_TAG" not in ui_text:
+        failures.append(f"{ui_relative}: Missing stable jump-to-latest compact layout test tag.")
     if "jumpToLatestStateDescription" not in ui_text or "stateDescription = jumpToLatestStateDescription" not in ui_text:
         failures.append(f"{ui_relative}: Jump-to-latest action must expose localized readiness state to accessibility.")
     if "jumpToLatestActionLabel" not in ui_text or "onClick(label = jumpToLatestActionLabel, action = null)" not in ui_text:
@@ -2885,16 +3035,24 @@ def android_chat_navigation_guard_failures() -> list[str]:
     required_jump_to_latest_snippets = (
         "chatScreenJumpToLatestAppearsAfterScrollingAwayAndReturnsToLatestMessage",
         "chatScreenJumpToLatestActionExplainsStateAcrossSupportedLanguages",
+        "chatScreenJumpToLatestButtonStaysAboveComposerAtLargeFontAcrossSupportedLanguages",
+        "chatJumpToLatestNarrowRootTestTag",
         "CHAT_MESSAGE_LIST_TEST_TAG",
+        "CHAT_JUMP_TO_LATEST_TEST_TAG",
+        "CHAT_COMPOSER_CONTAINER_TEST_TAG",
         "performScrollToIndex(messages.lastIndex)",
         'onNodeWithContentDescription("Jump to latest message")',
         'hasStateDescription("Ready to return to the latest message.")',
         "hasContentDescription(expected.jumpAction) and\n"
         "                    hasStateDescription(expected.jumpState) and",
         "hasClickActionLabel(expected.jumpAction)",
+        'boundsOverlap(jumpBounds, composerBounds)',
+        "ClientScreensNoDeviceComposeTest.chatScreenJumpToLatestButtonStaysAboveComposerAtLargeFontAcrossSupportedLanguages",
+        "Android jump-to-latest compact layout",
     )
     for snippet in required_jump_to_latest_snippets:
-        if snippet not in compose_test_text:
+        haystack = no_device_text if snippet.startswith("ClientScreensNoDeviceComposeTest.") or snippet.startswith("Android ") else compose_test_text
+        if snippet not in haystack:
             failures.append(f"{compose_test_relative}: Missing chat jump-to-latest Compose regression {snippet}.")
 
     required_transcript_spacing_snippets = (
@@ -3350,6 +3508,10 @@ def android_streaming_assistant_live_region_guard_failures() -> list[str]:
         "contentDescription = assistantTypingText",
         "if (isStreaming) {\n                        liveRegion = LiveRegionMode.Polite",
         "contentDescription = messageAccessibilitySummary",
+        "CHAT_STREAMING_PROGRESS_TEST_TAG",
+        "StreamingProgressIndicator(",
+        "Canvas(",
+        ".clearAndSetSemantics {}",
     )
     for snippet in required_ui_snippets:
         if snippet not in ui_text:
@@ -3358,9 +3520,13 @@ def android_streaming_assistant_live_region_guard_failures() -> list[str]:
     required_compose_snippets = (
         "chatScreenStreamingAssistantPlaceholderAnnouncesLiveStatusAcrossSupportedLanguages",
         "chatScreenStreamingAssistantContentAnnouncesLatestReplyAcrossSupportedLanguages",
+        "chatScreenStreamingProgressIndicatorStaysDecorativeAndBoundedAcrossSupportedLanguages",
         "compose.onNodeWithText(expectedTyping).assertIsDisplayed()",
         "hasContentDescription(expectedTyping) and hasPoliteLiveRegion()",
         "hasContentDescription(expectedSummary) and\n                    hasPoliteLiveRegion()",
+        "CHAT_STREAMING_PROGRESS_TEST_TAG",
+        "chatStreamingProgressNarrowRootTestTag",
+        "SemanticsProperties.ProgressBarRangeInfo",
         "listOf(\"en\", \"ko\", \"ja\", \"zh-CN\", \"fr\")",
     )
     for snippet in required_compose_snippets:
@@ -3452,6 +3618,10 @@ def android_chat_search_no_results_live_region_guard_failures() -> list[str]:
         "showSearchMetadata = hasSearchQuery",
         "session.searchSnippet?.trim()?.takeIf(String::isNotBlank)",
         "val searchMetadata = runtimeSearchMetadataText(",
+        "SETTINGS_CHAT_HISTORY_SEARCH_RESULT_SUMMARY_TEST_TAG",
+        "settingsChatHistoryRowContentTestTag(session.id)",
+        "settingsChatHistorySearchMetadataTestTag(session.id)",
+        "settingsChatHistorySearchSnippetTestTag(session.id)",
         "session.searchMatchedFields\n        .mapNotNull { runtimeSearchFieldLabel(it) }",
         "R.string.chat_search_match_metadata",
         "ChatHistorySearchResultSummary(",
@@ -3467,8 +3637,16 @@ def android_chat_search_no_results_live_region_guard_failures() -> list[str]:
         "navigationDrawerChatSearchLocalizesClearAndNoResultsAcrossSupportedLanguages",
         "settingsChatHistorySearchLocalizesClearAndNoResultsAcrossSupportedLanguages",
         "settingsChatHistoryShowsRuntimeSearchSnippetForQueryResults",
+        "settingsChatHistoryRuntimeSearchMetadataStaysBoundedAtLargeFontAcrossSupportedLanguages",
+        "settingsChatHistoryRuntimeSearchNarrowRootTestTag",
+        "SETTINGS_CHAT_HISTORY_SEARCH_RESULT_SUMMARY_TEST_TAG",
+        "settingsChatHistoryRowContentTestTag(session.id)",
+        "settingsChatHistorySearchMetadataTestTag(session.id)",
+        "settingsChatHistorySearchSnippetTestTag(session.id)",
         "settingsChatHistorySearchResultActionsKeepFilteredContext",
         "Match 1 · Reasoning, Transcript, Model",
+        "assertBoundsInside(\"$languageTag chat-history runtime search metadata ${session.id}\", metadataBounds, contentBounds)",
+        "boundsOverlap(snippetBounds, actionsBounds)",
         "Results for \\\"relay\\\": 1 active chat. 1 archived chat.",
         "searchMatchedFields = listOf(\"reasoning\", \"transcript\", \"model\", \"unknown\", \"transcript\")",
         "navigationDrawerEmptyHistoryAnnouncesLocalizedLiveRegionAcrossSupportedLanguages",
@@ -4367,8 +4545,52 @@ def android_haptic_guard_failures() -> list[str]:
             "Backend readiness banner must build a localized accessibility summary.",
         ),
         (
+            "CHAT_BACKEND_READINESS_BANNER_TEST_TAG",
+            "Backend readiness banner must keep a stable tag for compact layout regressions.",
+        ),
+        (
+            "CHAT_BACKEND_READINESS_TITLE_TEST_TAG",
+            "Backend readiness banner title must keep a stable tag for compact layout regressions.",
+        ),
+        (
+            "CHAT_BACKEND_READINESS_DETAIL_TEST_TAG",
+            "Backend readiness banner detail must keep a stable tag for compact layout regressions.",
+        ),
+        (
+            "CHAT_BACKEND_READINESS_REFRESH_TEST_TAG",
+            "Backend readiness banner refresh action must keep a stable tag for compact layout regressions.",
+        ),
+        (
+            "maxLines = 2,\n                    overflow = TextOverflow.Ellipsis",
+            "Backend readiness refresh action label must stay bounded on compact large-font surfaces.",
+        ),
+        (
             "R.string.error_accessibility_summary",
             "Generic error banner must build a localized accessibility summary.",
+        ),
+        (
+            "CHAT_RUNTIME_ERROR_BANNER_TEST_TAG",
+            "Generic runtime error banner must keep a stable tag for compact layout regressions.",
+        ),
+        (
+            "CHAT_RUNTIME_ERROR_TEXT_COLUMN_TEST_TAG",
+            "Generic runtime error banner text column must keep a stable tag for compact layout regressions.",
+        ),
+        (
+            "CHAT_RUNTIME_ERROR_DETAIL_TEST_TAG",
+            "Generic runtime error detail must keep a stable tag for compact layout regressions.",
+        ),
+        (
+            "CHAT_RUNTIME_ERROR_TECHNICAL_TOGGLE_TEST_TAG",
+            "Generic runtime error technical toggle must keep a stable tag for compact layout regressions.",
+        ),
+        (
+            "CHAT_RUNTIME_ERROR_TECHNICAL_PANEL_TEST_TAG",
+            "Generic runtime error technical panel must keep a stable tag for compact layout regressions.",
+        ),
+        (
+            "CHAT_RUNTIME_ERROR_TECHNICAL_REPORT_TEST_TAG",
+            "Generic runtime error technical report must keep a stable tag for compact layout regressions.",
         ),
         (
             "contentDescription = accessibilitySummary",
@@ -4526,6 +4748,34 @@ def android_haptic_guard_failures() -> list[str]:
         (
             "R.string.code_block_accessibility_summary",
             "Code blocks must expose a localized language-plus-line-count accessibility summary.",
+        ),
+        (
+            "CHAT_MARKDOWN_TABLE_TEST_TAG",
+            "Markdown table blocks must keep a stable outer tag for compact layout regressions.",
+        ),
+        (
+            "CHAT_MARKDOWN_TABLE_SURFACE_TEST_TAG",
+            "Markdown table surfaces must keep a stable inner tag for compact layout regressions.",
+        ),
+        (
+            "CHAT_CODE_BLOCK_TEST_TAG",
+            "Code block containers must keep a stable tag for compact layout regressions.",
+        ),
+        (
+            "CHAT_CODE_BLOCK_HEADER_TEST_TAG",
+            "Code block headers must keep a stable tag for compact layout regressions.",
+        ),
+        (
+            "CHAT_CODE_BLOCK_LANGUAGE_TEST_TAG",
+            "Code block language labels must keep a stable tag for compact layout regressions.",
+        ),
+        (
+            "CHAT_CODE_BLOCK_COPY_ACTION_TEST_TAG",
+            "Code block copy actions must keep a stable tag for compact layout regressions.",
+        ),
+        (
+            "CHAT_CODE_BLOCK_TEXT_TEST_TAG",
+            "Code block text must keep a stable tag for compact layout regressions.",
         ),
         (
             "contentDescription = codeBlockAccessibilitySummary",
@@ -4920,6 +5170,30 @@ def android_haptic_guard_failures() -> list[str]:
             "Chat composer send action must expose a stable compact-layout test tag.",
         ),
         (
+            "CHAT_COMPOSER_STATUS_TEST_TAG",
+            "Chat composer visible readiness status must expose a stable compact-layout test tag.",
+        ),
+        (
+            "CHAT_COMPOSER_STATUS_DOT_TEST_TAG",
+            "Chat composer visible readiness status dot must expose a stable compact-layout test tag.",
+        ),
+        (
+            "CHAT_COMPOSER_STATUS_TEXT_TEST_TAG",
+            "Chat composer visible readiness status text must expose a stable compact-layout test tag.",
+        ),
+        (
+            "ROUTE_AVAILABILITY_NOTICE_TEST_TAG",
+            "Chat route availability notice must expose a stable compact-layout test tag.",
+        ),
+        (
+            "ROUTE_AVAILABILITY_NOTICE_BODY_TEST_TAG",
+            "Chat route availability notice body must expose a stable compact-layout test tag.",
+        ),
+        (
+            "ROUTE_AVAILABILITY_NOTICE_ACTION_TEST_TAG",
+            "Chat route availability notice action must expose a stable compact-layout test tag.",
+        ),
+        (
             "LocalCopySuccessAnnouncer",
             "Chat copy actions must route successful copies into an accessibility announcement channel.",
         ),
@@ -5042,7 +5316,26 @@ def android_haptic_guard_failures() -> list[str]:
         "connectionStatusProviderDiagnosticsToggleExposesExpandedState",
         "chatScreenBackendUnavailableBannerExposesAccessibilitySummaryAndRefreshCallback",
         "chatScreenBackendUnavailableRefreshActionExplainsStateAcrossSupportedLanguages",
+        "chatScreenBackendUnavailableBannerStaysBoundedAtLargeFontAcrossSupportedLanguages",
         "chatScreenBackendUnavailableSummaryResourceFormatsAcrossSupportedLanguages",
+        "chatBackendReadinessBannerNarrowRootTestTag",
+        "CHAT_BACKEND_READINESS_BANNER_TEST_TAG",
+        "CHAT_BACKEND_READINESS_TITLE_TEST_TAG",
+        "CHAT_BACKEND_READINESS_DETAIL_TEST_TAG",
+        "CHAT_BACKEND_READINESS_REFRESH_TEST_TAG",
+        "assertBoundsInside(\"$nextLanguageTag backend readiness refresh action\", refreshBounds, bannerBounds)",
+        "boundsOverlap(detailBounds, refreshBounds)",
+        "chatScreenGenericErrorBannerStaysBoundedAtLargeFontAcrossSupportedLanguages",
+        "chatGenericErrorBannerNarrowRootTestTag",
+        "CHAT_RUNTIME_ERROR_BANNER_TEST_TAG",
+        "CHAT_RUNTIME_ERROR_ROW_TEST_TAG",
+        "CHAT_RUNTIME_ERROR_TEXT_COLUMN_TEST_TAG",
+        "CHAT_RUNTIME_ERROR_TECHNICAL_TOGGLE_TEST_TAG",
+        "CHAT_RUNTIME_ERROR_TECHNICAL_PANEL_TEST_TAG",
+        "CHAT_RUNTIME_ERROR_TECHNICAL_REPORT_TEST_TAG",
+        "assertBoundsInside(\"$nextLanguageTag generic error banner\", bannerBounds, rootBounds)",
+        "assertBoundsInside(\"$nextLanguageTag generic error technical report\", reportBounds, panelBounds)",
+        "boundsOverlap(toggleLabelBounds, toggleIconBounds)",
         "chatScreenGenericErrorBannerExposesAccessibilitySummaryAndRedactsUnsafeDetail",
         "chatScreenTechnicalDiagnosticsAreCollapsedAndRedactUnsafeRuntimeDetails",
         "technical_detail: relay timed out near [redacted] [redacted] [redacted]",
@@ -5134,6 +5427,19 @@ def android_haptic_guard_failures() -> list[str]:
         "表。2 列。2 行。",
         "表格。2 列。2 行。",
         "Tableau. 2 colonnes. 2 lignes.",
+        "chatScreenMarkdownTablesAndCodeBlocksStayBoundedAtLargeFontAcrossSupportedLanguages",
+        "chatMarkdownBlocksNarrowRootTestTag",
+        "CHAT_MARKDOWN_TABLE_TEST_TAG",
+        "CHAT_MARKDOWN_TABLE_SURFACE_TEST_TAG",
+        "CHAT_CODE_BLOCK_TEST_TAG",
+        "CHAT_CODE_BLOCK_HEADER_TEST_TAG",
+        "CHAT_CODE_BLOCK_LANGUAGE_TEST_TAG",
+        "CHAT_CODE_BLOCK_COPY_ACTION_TEST_TAG",
+        "CHAT_CODE_BLOCK_TEXT_TEST_TAG",
+        "kotlin-super-long-language-label-for-compact-layout",
+        'assertBoundsInside("$nextLanguageTag markdown table", tableBounds, rootBounds)',
+        'assertBoundsInside("$nextLanguageTag code block text", codeTextBounds, codeBlockBounds)',
+        "boundsOverlap(codeLanguageBounds, codeCopyBounds)",
         "chatScreenMessageRowsExposeLocalizedRoleAccessibilitySummaries",
         "chatScreenAttachmentOnlyMessageRowsExposeLocalizedRoleAccessibilitySummaries",
         "R.string.chat_message_accessibility_summary",
@@ -5440,15 +5746,36 @@ def android_haptic_guard_failures() -> list[str]:
         "chatScreenClearDraftActionClearsComposerAndHidesWhileStreaming",
         "chatScreenClearDraftActionStateUsesSelectedLanguage",
         "chatScreenTextOnlyDraftControlsStayBoundedAtLargeFontAcrossSupportedLanguages",
+        "chatScreenStreamingCancelControlsStayBoundedAtLargeFontAcrossSupportedLanguages",
+        "chatScreenComposerReadinessStatusStaysBoundedAtLargeFontAcrossSupportedLanguages",
+        "chatScreenRouteAvailabilityNoticeStaysBoundedAtLargeFontAcrossSupportedLanguages",
         "chatComposerDraftControlsNarrowRootTestTag",
+        "chatComposerStreamingControlsNarrowRootTestTag",
+        "chatComposerStatusNarrowRootTestTag",
+        "routeAvailabilityNoticeNarrowRootTestTag",
         "CHAT_COMPOSER_CONTAINER_TEST_TAG",
         "CHAT_COMPOSER_CONTROLS_ROW_TEST_TAG",
         "CHAT_COMPOSER_ATTACH_ACTION_TEST_TAG",
         "CHAT_COMPOSER_INPUT_TEST_TAG",
         "CHAT_COMPOSER_CLEAR_DRAFT_ACTION_TEST_TAG",
         "CHAT_COMPOSER_SEND_ACTION_TEST_TAG",
+        "CHAT_COMPOSER_CANCEL_ACTION_TEST_TAG",
+        "CHAT_COMPOSER_STATUS_TEST_TAG",
+        "CHAT_COMPOSER_STATUS_DOT_TEST_TAG",
+        "CHAT_COMPOSER_STATUS_TEXT_TEST_TAG",
+        "ROUTE_AVAILABILITY_NOTICE_TEST_TAG",
+        "ROUTE_AVAILABILITY_NOTICE_BODY_TEST_TAG",
+        "ROUTE_AVAILABILITY_NOTICE_ACTION_TEST_TAG",
         'assertBoundsInside("$nextLanguageTag composer controls row", rowBounds, containerBounds)',
         'boundsOverlap(inputBounds, clearBounds)',
+        'assertBoundsInside("$nextLanguageTag streaming composer cancel action", cancelBounds, rowBounds)',
+        'boundsOverlap(inputBounds, cancelBounds)',
+        'assertBoundsInside("$nextLanguageTag composer status row", statusBounds, containerBounds)',
+        'boundsOverlap(rowBounds, statusBounds)',
+        'assertBoundsInside("$nextLanguageTag route availability action", actionBounds, noticeBounds)',
+        'boundsOverlap(bodyBounds, actionBounds)',
+        ".onAllNodesWithTag(CHAT_COMPOSER_CLEAR_DRAFT_ACTION_TEST_TAG, useUnmergedTree = true)",
+        ".onAllNodesWithTag(CHAT_COMPOSER_SEND_ACTION_TEST_TAG, useUnmergedTree = true)",
         'hasContentDescription("Clear draft")',
         'hasClickActionLabel("Clear draft")',
         "R.string.clear_draft_state_ready",
@@ -5648,8 +5975,10 @@ def android_haptic_guard_failures() -> list[str]:
         "scannerChromeShowsSettingsRecoveryWhenCameraPermissionIsBlocked",
         "scannerChromeShowsCameraStateWithTorchAndCancelActions",
         "scannerChromeRendersCompactPairingStatesAcrossSupportedLanguages",
+        "scannerChromeCompactLargeFontBoundsAcrossSupportedLanguages",
         ".width(320.dp)",
         ".height(520.dp)",
+        ".height(560.dp)",
         "listOf(\"en\", \"ko\", \"ja\", \"zh-CN\", \"fr\")",
         "ScannerLocaleExpectation(",
         "R.string.qr_scanner_permission_blocked_detail",
@@ -5664,6 +5993,21 @@ def android_haptic_guard_failures() -> list[str]:
         "HapticFeedbackType.TextHandleMove, HapticFeedbackType.TextHandleMove",
         "hasStateDescription(expected.flashlightStateOff)",
         "hasStateDescription(expected.flashlightStateOn)",
+        "PAIRING_QR_SCANNER_CHROME_TEST_TAG",
+        "PAIRING_QR_SCANNER_TITLE_TEST_TAG",
+        "PAIRING_QR_SCANNER_CLOSE_BUTTON_TEST_TAG",
+        "PAIRING_QR_SCANNER_CAMERA_SURFACE_TEST_TAG",
+        "PAIRING_QR_SCANNER_INSTRUCTIONS_TEST_TAG",
+        "PAIRING_QR_SCANNER_DETAIL_TEST_TAG",
+        "PAIRING_QR_SCANNER_FEEDBACK_TEST_TAG",
+        "PAIRING_QR_SCANNER_CANCEL_BUTTON_TEST_TAG",
+        "PAIRING_QR_SCANNER_PERMISSION_PANEL_TEST_TAG",
+        "PAIRING_QR_SCANNER_PERMISSION_ACTION_TEST_TAG",
+        "scannerCompactBoundsRootTestTag",
+        "CompactScannerBoundsState.InvalidFeedback",
+        "CompactScannerBoundsState.SettingsRecovery",
+        'assertBoundsInside("$stateLabel ${expected.languageTag} scanner title", titleBounds, rootBounds)',
+        'assertFalse(\n            "$stateLabel ${expected.languageTag} scan target should not overlap instruction panel. " +',
     )
     for snippet in required_scanner_test_snippets:
         if snippet not in scanner_test_text:
@@ -5697,11 +6041,11 @@ def android_heading_accessibility_guard_failures() -> list[str]:
         "import androidx.compose.ui.semantics.heading",
         "Text(\n                        text = destinationTitle,\n                        modifier = Modifier.semantics {\n                            heading()\n                        },\n                    )",
         "contentDescription = activeChatTitleSummary ?: activeChatTitle\n                        heading()",
-        "text = stringResource(R.string.qr_scanner_title),\n                        modifier = Modifier.semantics {\n                            heading()",
+        "text = stringResource(R.string.qr_scanner_title),\n                        maxLines = 1,\n                        overflow = TextOverflow.Ellipsis,\n                        modifier = Modifier\n                            .testTag(PAIRING_QR_SCANNER_TITLE_TEST_TAG)\n                            .semantics {\n                                heading()",
         "val scanTargetDescription = stringResource(R.string.qr_scanner_scan_target_accessibility)",
-        ".testTag(PAIRING_QR_SCANNER_TARGET_TEST_TAG)\n                        .semantics {\n                            contentDescription = scanTargetDescription",
+        ".testTag(PAIRING_QR_SCANNER_TARGET_TEST_TAG)\n                            .semantics {\n                                contentDescription = scanTargetDescription",
         "internal const val PAIRING_QR_SCANNER_TARGET_TEST_TAG = \"pairing_qr_scanner_target\"",
-        "text = permissionTitle,\n                    style = MaterialTheme.typography.titleLarge,\n                    color = MaterialTheme.colorScheme.onSurface,\n                    modifier = Modifier.semantics {\n                        heading()",
+        "text = permissionTitle,\n                    style = MaterialTheme.typography.titleLarge,\n                    color = MaterialTheme.colorScheme.onSurface,\n                    textAlign = TextAlign.Center,\n                    modifier = Modifier\n                        .testTag(PAIRING_QR_SCANNER_PERMISSION_TITLE_TEST_TAG)\n                        .semantics {\n                            heading()",
         "private fun DrawerSectionLabel(text: String)",
         ".padding(horizontal = 28.dp, vertical = 8.dp)\n            .semantics {\n                heading()\n            }",
     )
@@ -5715,6 +6059,12 @@ def android_heading_accessibility_guard_failures() -> list[str]:
         "modifier = Modifier.semantics {\n                        heading()\n                    },",
         "text = stringResource(title),\n            style = MaterialTheme.typography.headlineSmall",
         ".semantics(mergeDescendants = true) {\n                    heading()\n                    stateDescription = toggleStateDescription",
+        "SETTINGS_EXPANDABLE_SECTION_HEADER_TEST_TAG_PREFIX",
+        "settingsExpandableSectionHeaderTestTag(title)",
+        "settingsExpandableSectionTitleTestTag(title)",
+        "settingsExpandableSectionSubtitleTestTag(title)",
+        "settingsExpandableSectionActionTestTag(title)",
+        "maxLines = 1,\n                    overflow = TextOverflow.Ellipsis,\n                    modifier = Modifier.testTag(settingsExpandableSectionTitleTestTag(title))",
         "text = stringResource(R.string.preferences_title)",
         "text = stringResource(R.string.embedding_model_title),\n                        style = MaterialTheme.typography.titleMedium,\n                        fontWeight = FontWeight.SemiBold,\n                        modifier = Modifier.semantics {\n                            heading()\n                        }",
         "text = stringResource(R.string.memory_title),\n                style = MaterialTheme.typography.titleMedium,\n                fontWeight = FontWeight.SemiBold,\n                modifier = Modifier.semantics {\n                    heading()\n                }",
@@ -8912,8 +9262,8 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate coverage summary must mention authenticated relay E2E coverage.",
         ),
         (
-            "authenticated relay chat.send document attachment smoke",
-            "Default no-device gate coverage summary must mention authenticated relay attachment chat smoke coverage.",
+            "authenticated relay chat.send document attachment and non-vision image rejection smoke",
+            "Default no-device gate coverage summary must mention authenticated relay attachment and image vision-gate smoke coverage.",
         ),
         (
             "non-consuming relay readiness probe",
@@ -9284,8 +9634,8 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate coverage summary must mention platform-neutral app copy coverage.",
         ),
         (
-            "RuntimeClientViewModelTest.identityOnlyPairingQrUsesUsbReverseFallbackInDebugBuild",
-            "Default no-device quality gate must run the identity-only QR USB reverse fallback regression.",
+            "RuntimeClientViewModelTest.diagnosticIdentityOnlyPairingQrCanUseUsbReverseFallbackWhenRemoteRouteIsNotRequired",
+            "Default no-device quality gate must keep the identity-only QR USB reverse fallback diagnostic-only.",
         ),
         (
             "identity-only QR USB reverse fallback",
@@ -9316,12 +9666,36 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate coverage summary must mention Android follow-system language preference coverage.",
         ),
         (
+            "ClientScreensNoDeviceComposeTest.settingsExpandableSectionHeadersStayBoundedAtLargeFontAcrossSupportedLanguages",
+            "Default no-device gate must run the Android Settings section header compact layout regression.",
+        ),
+        (
+            "Android Settings section header compact layout",
+            "Default no-device gate coverage summary must mention Android Settings section header compact layout.",
+        ),
+        (
+            "ClientScreensNoDeviceComposeTest.settingsTrustedRuntimePanelStaysBoundedAtLargeFontAcrossSupportedLanguages",
+            "Default no-device gate must run the Android Settings trusted-runtime panel compact layout regression.",
+        ),
+        (
+            "Android Settings trusted-runtime panel compact layout",
+            "Default no-device gate coverage summary must mention Android Settings trusted-runtime panel compact layout.",
+        ),
+        (
             "ClientScreensNoDeviceComposeTest.settingsPreferenceRowsExposeSelectedStateToAccessibility",
             "Default no-device gate must run the Android selected preference row semantics regression.",
         ),
         (
+            "ClientScreensNoDeviceComposeTest.settingsAppearanceAndLanguagePreferenceRowsStayBoundedAtLargeFontAcrossSupportedLanguages",
+            "Default no-device gate must run the Android Settings preference compact row layout regression.",
+        ),
+        (
             "ClientScreensNoDeviceComposeTest.settingsLanguagePreferenceRowsDispatchSystemAndFixedSelectionCallbacks",
             "Default no-device gate must run the Android follow-system language callback regression.",
+        ),
+        (
+            "Android Settings preference compact row layout",
+            "Default no-device gate coverage summary must mention Android Settings preference compact row layout.",
         ),
         (
             "Android appearance system detail copy",
@@ -9374,6 +9748,10 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         (
             "Android QR scanner compact pairing-state render smoke",
             "Default no-device gate coverage summary must mention Android QR scanner compact pairing-state render smoke.",
+        ),
+        (
+            "Android QR scanner compact large-font bounds",
+            "Default no-device gate coverage summary must mention Android QR scanner compact large-font bounds.",
         ),
         (
             "Android QR scanner scan-target accessibility label",
@@ -9492,6 +9870,10 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate must run the Android markdown table accessibility regression.",
         ),
         (
+            "ClientScreensNoDeviceComposeTest.chatScreenMarkdownTablesAndCodeBlocksStayBoundedAtLargeFontAcrossSupportedLanguages",
+            "Default no-device gate must run the Android markdown table and code block compact layout regression.",
+        ),
+        (
             "ClientScreensNoDeviceComposeTest.settingsChatHistorySummaryLocalizesSavedActiveAndArchivedCounts",
             "Default no-device gate must run the Settings chat-history summary localization regression.",
         ),
@@ -9518,6 +9900,10 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         (
             "Android markdown table accessibility",
             "Default no-device gate coverage summary must mention Android markdown table accessibility.",
+        ),
+        (
+            "Android markdown table and code block compact layout",
+            "Default no-device gate coverage summary must mention Android markdown table and code block compact layout.",
         ),
         (
             "Android Settings chat-history saved/archived summary localization",
@@ -9558,6 +9944,14 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         (
             "Settings chat-history runtime search match metadata",
             "Default no-device gate coverage summary must mention Settings chat-history runtime search match metadata.",
+        ),
+        (
+            "ClientScreensNoDeviceComposeTest.settingsChatHistoryRuntimeSearchMetadataStaysBoundedAtLargeFontAcrossSupportedLanguages",
+            "Default no-device gate must run the Settings chat-history runtime search metadata compact layout regression.",
+        ),
+        (
+            "Android Settings chat-history runtime search metadata compact layout",
+            "Default no-device gate coverage summary must mention Android Settings chat-history runtime search metadata compact layout.",
         ),
         (
             "Android chat search no-results live-region accessibility",
@@ -9676,6 +10070,46 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate coverage summary must mention Android text-only draft composer controls compact layout.",
         ),
         (
+            "ClientScreensNoDeviceComposeTest.chatScreenStreamingCancelControlsStayBoundedAtLargeFontAcrossSupportedLanguages",
+            "Default no-device gate must run the Android streaming cancel composer controls compact layout regression.",
+        ),
+        (
+            "Android streaming cancel composer controls compact layout",
+            "Default no-device gate coverage summary must mention Android streaming cancel composer controls compact layout.",
+        ),
+        (
+            "ClientScreensNoDeviceComposeTest.chatScreenComposerReadinessStatusStaysBoundedAtLargeFontAcrossSupportedLanguages",
+            "Default no-device gate must run the Android composer readiness status compact layout regression.",
+        ),
+        (
+            "Android composer readiness status compact layout",
+            "Default no-device gate coverage summary must mention Android composer readiness status compact layout.",
+        ),
+        (
+            "ClientScreensNoDeviceComposeTest.chatScreenRouteAvailabilityNoticeStaysBoundedAtLargeFontAcrossSupportedLanguages",
+            "Default no-device gate must run the Android chat route availability notice compact layout regression.",
+        ),
+        (
+            "Android chat route availability notice compact layout",
+            "Default no-device gate coverage summary must mention Android chat route availability notice compact layout.",
+        ),
+        (
+            "ClientScreensNoDeviceComposeTest.chatScreenBackendUnavailableBannerStaysBoundedAtLargeFontAcrossSupportedLanguages",
+            "Default no-device gate must run the Android backend readiness banner bounded layout regression.",
+        ),
+        (
+            "Android backend readiness banner bounded layout",
+            "Default no-device gate coverage summary must mention Android backend readiness banner bounded layout.",
+        ),
+        (
+            "ClientScreensNoDeviceComposeTest.chatScreenGenericErrorBannerStaysBoundedAtLargeFontAcrossSupportedLanguages",
+            "Default no-device gate must run the Android generic runtime error banner bounded layout regression.",
+        ),
+        (
+            "Android generic runtime error banner bounded layout",
+            "Default no-device gate coverage summary must mention Android generic runtime error banner bounded layout.",
+        ),
+        (
             "ClientScreensNoDeviceComposeTest.settingsQrPairingPanelStaysBoundedAtLargeFontAcrossSupportedLanguages",
             "Default no-device gate must run the Android Settings QR pairing panel compact first-run layout regression.",
         ),
@@ -9684,12 +10118,20 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate must run the Android provider status compact diagnostic layout regression.",
         ),
         (
+            "ClientScreensNoDeviceComposeTest.connectionStatusPanelStaysBoundedAtLargeFontAcrossSupportedLanguages",
+            "Default no-device gate must run the Android connection status panel compact layout regression.",
+        ),
+        (
             "Android Settings QR pairing panel compact first-run layout",
             "Default no-device gate coverage summary must mention Android Settings QR pairing panel compact first-run layout.",
         ),
         (
             "Android provider status compact diagnostic layout",
             "Default no-device gate coverage summary must mention Android provider status compact diagnostic layout.",
+        ),
+        (
+            "Android connection status panel compact layout",
+            "Default no-device gate coverage summary must mention Android connection status panel compact layout.",
         ),
         (
             "approved memory source review UI addendum",
@@ -10056,6 +10498,14 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate coverage summary must mention Android streaming assistant live-region accessibility.",
         ),
         (
+            "ClientScreensNoDeviceComposeTest.chatScreenStreamingProgressIndicatorStaysDecorativeAndBoundedAcrossSupportedLanguages",
+            "Default no-device gate must run the Android streaming assistant progress decorative compact-layout regression.",
+        ),
+        (
+            "Android streaming assistant progress decorative compact layout",
+            "Default no-device gate coverage summary must mention Android streaming assistant progress decorative compact layout.",
+        ),
+        (
             "Android jump-to-latest Compose interaction",
             "Default no-device gate coverage summary must mention Android jump-to-latest Compose interaction coverage.",
         ),
@@ -10066,6 +10516,14 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         (
             "Android jump-to-latest action labels",
             "Default no-device gate coverage summary must mention Android jump-to-latest action labels.",
+        ),
+        (
+            "ClientScreensNoDeviceComposeTest.chatScreenJumpToLatestButtonStaysAboveComposerAtLargeFontAcrossSupportedLanguages",
+            "Default no-device gate must run the Android jump-to-latest compact layout regression.",
+        ),
+        (
+            "Android jump-to-latest compact layout",
+            "Default no-device gate coverage summary must mention Android jump-to-latest compact layout.",
         ),
         (
             "Settings expandable section accessibility state",
@@ -10760,6 +11218,22 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate must run the Android QR route-refresh optional public-key regression.",
         ),
         (
+            "RuntimeClientViewModelTest.trustRuntimeFromPairingQrRejectsIdentityOnlyQrInNormalScanPath",
+            "Default no-device gate must run the Android normal QR identity-only rejection regression.",
+        ),
+        (
+            "RuntimeClientViewModelTest.diagnosticIdentityOnlyPairingQrCanUseUsbReverseFallbackWhenRemoteRouteIsNotRequired",
+            "Default no-device gate must keep identity-only QR fallback diagnostic-only.",
+        ),
+        (
+            "RuntimeClientViewModelTest.productPairingQrParserRequiresRuntimePublicKeyAndRouteTokenWhenRemoteRouteIsRequired",
+            "Default no-device gate must run the Android product QR bootstrap identity regression.",
+        ),
+        (
+            "--require-production-bootstrap",
+            "Default no-device gate must verify QR PNG bootstrap identity material.",
+        ),
+        (
             "RuntimeClientViewModelTest.updateChatInputRejectsWhileStreamingAndPreservesDraft",
             "Default no-device gate must run the Android streaming chat input mutation regression.",
         ),
@@ -10826,6 +11300,14 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         (
             "Android product QR remote-route requirement",
             "Default no-device gate coverage summary must mention Android product QR remote-route requirement coverage.",
+        ),
+        (
+            "QR production relay bootstrap verifier",
+            "Default no-device gate coverage summary must mention QR production relay bootstrap verification.",
+        ),
+        (
+            "Android product QR bootstrap addendum",
+            "Default no-device gate coverage summary must mention Android product QR bootstrap verification.",
         ),
         (
             "Android streaming chat input mutation guard",
@@ -11179,14 +11661,20 @@ def runtime_auth_domain_separation_guard_failures() -> list[str]:
         )
     for snippet in (
         "smoke-chat-attachment",
+        "smoke-chat-image-non-vision",
         '"attachments": [',
         '"mime_type": "text/plain"',
+        '"mime_type": "image/png"',
+        "smokeImageAttachmentName",
+        "smokeImageAttachmentBase64",
+        '"unsupported_attachment"',
+        "vision-capable model",
         "Attachment received.",
     ):
         if snippet not in path_texts[runtime_mock_smoke_path]:
             failures.append(
                 f"{runtime_mock_smoke_path.relative_to(ROOT)}: authenticated mock smoke must cover "
-                f"document attachment chat.send over the runtime route; missing {snippet}."
+                f"document attachment success and non-vision image rejection over the runtime route; missing {snippet}."
             )
     for snippet in (
         "smoke-pair-invalid-code",
@@ -13100,6 +13588,53 @@ def suggested_questions_removed_guard_failures() -> list[str]:
     return failures
 
 
+def app_icon_readability_guard_failures() -> list[str]:
+    failures: list[str] = []
+    icon_check_path = ROOT / "script/check_app_icons.py"
+    no_device_path = ROOT / "script/check_no_device_quality.sh"
+    required_files = (icon_check_path, no_device_path)
+    for path in required_files:
+        if not path.exists():
+            failures.append(f"{path.relative_to(ROOT)}: missing app icon readability guard file.")
+            return failures
+
+    icon_check_text = icon_check_path.read_text(encoding="utf-8", errors="replace")
+    no_device_text = no_device_path.read_text(encoding="utf-8", errors="replace")
+    required_icon_check_snippets = (
+        "def decode_png_rgba(",
+        "def decode_png_rgba_data(",
+        "ICNS_PNG_CHUNK_SIZES",
+        "def icns_chunk_bodies(",
+        "require_icon_data_readability(",
+        "AppIcon.icns",
+        "def require_icon_readability(",
+        "min_center_foreground_coverage",
+        "min_strong_edge_ratio",
+        "strong edge ratio too low",
+        "no-device small-size readability",
+    )
+    for snippet in required_icon_check_snippets:
+        if snippet not in icon_check_text:
+            failures.append(
+                f"{icon_check_path.relative_to(ROOT)}: Missing no-device icon readability "
+                f"guard snippet {snippet!r}."
+            )
+
+    required_no_device_snippets = (
+        "python3 script/check_app_icons.py",
+        "Covered app icon addendum: no-device Android launcher and macOS Dock small-size readability plus asset-chain validation.",
+        "launcher/Dock screenshots",
+    )
+    for snippet in required_no_device_snippets:
+        if snippet not in no_device_text:
+            failures.append(
+                f"{no_device_path.relative_to(ROOT)}: Missing app icon no-device gate "
+                f"coverage snippet {snippet!r}."
+            )
+
+    return failures
+
+
 def main() -> int:
     failures: list[str] = []
 
@@ -13127,6 +13662,13 @@ def main() -> int:
     if no_device_gate_failures:
         print("No-device quality gate guard failed:", file=sys.stderr)
         for failure in no_device_gate_failures:
+            print(f" - {failure}", file=sys.stderr)
+        return 1
+
+    app_icon_readability_failures = app_icon_readability_guard_failures()
+    if app_icon_readability_failures:
+        print("App icon readability guard failed:", file=sys.stderr)
+        for failure in app_icon_readability_failures:
             print(f" - {failure}", file=sys.stderr)
         return 1
 

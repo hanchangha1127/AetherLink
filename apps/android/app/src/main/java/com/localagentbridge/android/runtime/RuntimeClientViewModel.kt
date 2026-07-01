@@ -236,7 +236,6 @@ internal fun String.isRelayProbeReady(): Boolean {
     if (tokens.size < 3 || tokens[0] != "AETHERLINK_RELAY" || tokens[1] != "probe") {
         return false
     }
-    if (tokens[2] == "ready") return true
     val values = tokens.drop(2).associate { token ->
         val separator = token.indexOf('=')
         if (separator <= 0) {
@@ -1192,7 +1191,7 @@ class RuntimeClientViewModel internal constructor(
 
     fun trustRuntimeFromPairingQr(
         rawValue: String,
-        requireRemoteRoute: Boolean = false,
+        requireRemoteRoute: Boolean = true,
     ) {
         if (rejectUserMutationWhileStreaming()) return
         viewModelScope.launch {
@@ -4742,7 +4741,7 @@ internal fun parseRuntimePairingQrPayload(
         RuntimePairingPayloadParser.parse(
             rawValue = rawValue,
             allowDebugLoopbackRelay = allowDebugLoopbackRelay,
-            allowDiagnosticLocalDirectEndpoint = allowDiagnosticLocalDirectEndpoint,
+            allowDiagnosticLocalDirectEndpoint = allowDiagnosticLocalDirectEndpoint && !requireRemoteRoute,
         )
     }.getOrElse { error ->
         return RuntimePairingQrParseResult.Rejected(pairingQrParseUiError(error))
@@ -4756,7 +4755,7 @@ internal fun parseRuntimePairingQrPayload(
             clearPendingPairing = true,
         )
     }
-    if (requireRemoteRoute && !payload.hasRemoteRoute()) {
+    if (requireRemoteRoute && !payload.hasProductionQrBootstrap()) {
         return RuntimePairingQrParseResult.Rejected(
             error = RuntimeUiError(
                 code = "pairing_endpoint_unavailable",
@@ -4765,6 +4764,12 @@ internal fun parseRuntimePairingQrPayload(
         )
     }
     return RuntimePairingQrParseResult.Accepted(payload)
+}
+
+internal fun RuntimePairingPayload.hasProductionQrBootstrap(): Boolean {
+    return !runtimePublicKeyBase64.isNullOrBlank() &&
+        !routeToken.isNullOrBlank() &&
+        hasRemoteRoute()
 }
 
 internal data class PendingPairingConnectionPlan(

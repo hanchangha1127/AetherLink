@@ -1864,7 +1864,7 @@ class RuntimeClientViewModelTest {
     }
 
     @Test
-    fun identityOnlyQrPlanStartsDiscoveryAndWaitsForRoute() {
+    fun diagnosticIdentityOnlyQrPlanStartsDiscoveryAndWaitsForRouteWhenRemoteRouteIsNotRequired() {
         val parsed = parseRuntimePairingQrPayload(
             rawValue = "aetherlink://pair?v=1&n=nonce-1&c=123456" +
                 "&rid=runtime-1&rn=AetherLink%20Runtime&rf=runtime-fingerprint" +
@@ -1900,6 +1900,32 @@ class RuntimeClientViewModelTest {
     }
 
     @Test
+    fun productPairingQrParserRequiresRuntimePublicKeyAndRouteTokenWhenRemoteRouteIsRequired() {
+        val baseUri = "aetherlink://pair?v=1&n=nonce-1&c=123456" +
+            "&rid=runtime-1&rn=AetherLink%20Runtime&rf=runtime-fingerprint"
+        val relayRoute = "&rh=relay.example.test&rp=443&ri=relay-1&rs=secret-1" +
+            "&rx=4102444800000&rrn=nonce-route-1&rsc=remote"
+
+        val missingRuntimePublicKey = parseRuntimePairingQrPayload(
+            rawValue = baseUri + "&rt=route-1" + relayRoute,
+            allowDebugLoopbackRelay = false,
+            allowDiagnosticLocalDirectEndpoint = false,
+            requireRemoteRoute = true,
+        ) as RuntimePairingQrParseResult.Rejected
+        val missingRouteToken = parseRuntimePairingQrPayload(
+            rawValue = baseUri + "&rk=runtime-public-key" + relayRoute,
+            allowDebugLoopbackRelay = false,
+            allowDiagnosticLocalDirectEndpoint = false,
+            requireRemoteRoute = true,
+        ) as RuntimePairingQrParseResult.Rejected
+
+        assertEquals("pairing_endpoint_unavailable", missingRuntimePublicKey.error.code)
+        assertEquals("route_diagnostic_remote_pending", missingRuntimePublicKey.error.diagnosticCode)
+        assertEquals("pairing_endpoint_unavailable", missingRouteToken.error.code)
+        assertEquals("route_diagnostic_remote_pending", missingRouteToken.error.diagnosticCode)
+    }
+
+    @Test
     fun productPairingQrParserAcceptsP2pRendezvousQrWhenRemoteRouteIsRequired() {
         val parsed = parseRuntimePairingQrPayload(
             rawValue = "aetherlink://pair?v=1&n=nonce-1&c=123456" +
@@ -1931,7 +1957,63 @@ class RuntimeClientViewModelTest {
 
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
-    fun identityOnlyPairingQrUsesUsbReverseFallbackInDebugBuild() = runTest {
+    fun trustRuntimeFromPairingQrRejectsIdentityOnlyQrInNormalScanPath() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        var viewModel: RuntimeClientViewModel? = null
+        try {
+            val rawUri = "aetherlink://pair?v=1&n=nonce-timeout&c=123456" +
+                "&rid=runtime-timeout&rn=AetherLink%20Runtime&rf=runtime-fingerprint" +
+                "&rk=runtime-public-key&rt=route-timeout"
+            val localStore = FakeRuntimeLocalDataStore()
+            var directConnectionAttempts = 0
+            var relayConnectionAttempts = 0
+            viewModel = RuntimeClientViewModel(
+                application = Application(),
+                dependencies = RuntimeClientViewModelDependencies(
+                    json = json,
+                    transportClient = RuntimeTransportClient(),
+                    transportConnector = RuntimeTransportConnector { _, _, _ ->
+                        directConnectionAttempts += 1
+                        error("Identity-only product QR must not use direct transport")
+                    },
+                    relayConnector = RuntimeRelayConnector { _, _ ->
+                        relayConnectionAttempts += 1
+                        error("Identity-only product QR must not use relay transport")
+                    },
+                    discovery = EmptyRuntimeDiscoverySource,
+                    trustedRuntimeStore = FakeTrustedRuntimeStore(),
+                    deviceIdentityProvider = FakeDeviceIdentityProvider(testDeviceIdentity()),
+                    localDataStore = localStore,
+                    lifecycleCallbacksRegistrar = NoopRuntimeLifecycleCallbacksRegistrar,
+                    currentTimeMillis = { 1_000L },
+                ),
+            )
+
+            viewModel.trustRuntimeFromPairingQr(rawUri)
+            runCurrent()
+
+            assertEquals(0, directConnectionAttempts)
+            assertEquals(0, relayConnectionAttempts)
+            assertFalse(viewModel.state.value.isPairingAwaitingRoute)
+            assertEquals("", viewModel.state.value.pairingCode)
+            assertNull(viewModel.state.value.pendingPairingRuntimeName)
+            assertNull(localStore.data.pendingPairingRoute)
+            assertEquals("pairing_endpoint_unavailable", viewModel.state.value.error?.code)
+            assertEquals("route_diagnostic_remote_pending", viewModel.state.value.error?.diagnosticCode)
+            viewModel.clearForTest()
+            viewModel = null
+            advanceUntilIdle()
+        } finally {
+            viewModel?.clearForTest()
+            advanceUntilIdle()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun diagnosticIdentityOnlyPairingQrCanUseUsbReverseFallbackWhenRemoteRouteIsNotRequired() = runTest {
         val mainDispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(mainDispatcher)
         var viewModel: RuntimeClientViewModel? = null
@@ -1965,7 +2047,10 @@ class RuntimeClientViewModelTest {
                 ),
             )
 
-            viewModel.trustRuntimeFromPairingQr(rawUri)
+            viewModel.trustRuntimeFromPairingQr(
+                rawValue = rawUri,
+                requireRemoteRoute = false,
+            )
             runCurrent()
 
             assertEquals("127.0.0.1", directHost)
@@ -4609,6 +4694,7 @@ class RuntimeClientViewModelTest {
         assertFalse("AETHERLINK_RELAY probe known=1 runtime_waiting=0\n".isRelayProbeReady())
         assertFalse("AETHERLINK_RELAY probe known=0 runtime_waiting=1\n".isRelayProbeReady())
         assertFalse("AETHERLINK_RELAY ready\n".isRelayProbeReady())
+        assertFalse("AETHERLINK_RELAY probe ready\n".isRelayProbeReady())
         assertFalse("AETHERLINK_RELAY probe unknown\n".isRelayProbeReady())
     }
 

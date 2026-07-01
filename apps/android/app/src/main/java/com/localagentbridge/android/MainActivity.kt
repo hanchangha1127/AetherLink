@@ -35,6 +35,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -467,7 +468,7 @@ private fun LocalAgentBridgeApp(
             ) { uris ->
                 handlePickedAttachments(uris, viewModel::addAttachments)
             }
-            val requireRemoteRouteForPairingQr = !BuildConfig.DEBUG
+            val requireRemoteRouteForPairingQr = true
             val handlePairingQr: (String) -> Unit = { rawValue ->
                 val treatAsOnboarding = shouldTreatPairingQrAsOnboarding(
                     destination = destination,
@@ -2775,15 +2776,19 @@ internal fun PairingQrScannerChrome(
     val hapticFeedback = LocalHapticFeedback.current
 
     Scaffold(
-        modifier = modifier,
+        modifier = modifier.testTag(PAIRING_QR_SCANNER_CHROME_TEST_TAG),
         topBar = {
             TopAppBar(
                 title = {
                     Text(
                         text = stringResource(R.string.qr_scanner_title),
-                        modifier = Modifier.semantics {
-                            heading()
-                        },
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .testTag(PAIRING_QR_SCANNER_TITLE_TEST_TAG)
+                            .semantics {
+                                heading()
+                            },
                     )
                 },
                 navigationIcon = {
@@ -2793,9 +2798,11 @@ internal fun PairingQrScannerChrome(
                             hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Toggle)
                             onCancel()
                         },
-                        modifier = Modifier.semantics {
-                            onClick(label = closeScannerActionLabel, action = null)
-                        },
+                        modifier = Modifier
+                            .testTag(PAIRING_QR_SCANNER_CLOSE_BUTTON_TEST_TAG)
+                            .semantics {
+                                onClick(label = closeScannerActionLabel, action = null)
+                            },
                     ) {
                         Icon(
                             imageVector = Icons.Filled.Close,
@@ -2852,29 +2859,37 @@ internal fun PairingQrScannerChrome(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(padding),
+                    .padding(padding)
+                    .testTag(PAIRING_QR_SCANNER_CAMERA_SURFACE_TEST_TAG),
             ) {
                 cameraContent()
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.Center)
-                        .size(260.dp)
-                        .testTag(PAIRING_QR_SCANNER_TARGET_TEST_TAG)
-                        .semantics {
-                            contentDescription = scanTargetDescription
-                        }
-                        .border(
-                            border = BorderStroke(
-                                width = 3.dp,
-                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.92f),
+                BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                    val compactScanner = maxHeight < 620.dp
+                    val scannerTargetSize = if (compactScanner) 160.dp else 260.dp
+                    val scannerTargetTopPadding = if (compactScanner) 16.dp else 64.dp
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .padding(top = scannerTargetTopPadding)
+                            .size(scannerTargetSize)
+                            .testTag(PAIRING_QR_SCANNER_TARGET_TEST_TAG)
+                            .semantics {
+                                contentDescription = scanTargetDescription
+                            }
+                            .border(
+                                border = BorderStroke(
+                                    width = 3.dp,
+                                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.92f),
+                                ),
+                                shape = RoundedCornerShape(28.dp),
                             ),
-                            shape = RoundedCornerShape(28.dp),
-                        ),
-                )
+                    )
+                }
                 Surface(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .padding(16.dp)
+                        .testTag(PAIRING_QR_SCANNER_INSTRUCTIONS_TEST_TAG)
                         .widthIn(max = 520.dp),
                     shape = RoundedCornerShape(8.dp),
                     color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
@@ -2888,6 +2903,7 @@ internal fun PairingQrScannerChrome(
                             text = stringResource(R.string.qr_scanner_detail),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.testTag(PAIRING_QR_SCANNER_DETAIL_TEST_TAG),
                         )
                         scannerFeedback?.let { feedback ->
                             val feedbackText = stringResource(feedback.messageRes)
@@ -2895,10 +2911,12 @@ internal fun PairingQrScannerChrome(
                                 text = feedbackText,
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.error,
-                                modifier = Modifier.semantics {
-                                    contentDescription = feedbackText
-                                    liveRegion = LiveRegionMode.Polite
-                                },
+                                modifier = Modifier
+                                    .testTag(PAIRING_QR_SCANNER_FEEDBACK_TEST_TAG)
+                                    .semantics {
+                                        contentDescription = feedbackText
+                                        liveRegion = LiveRegionMode.Polite
+                                    },
                             )
                         }
                         TextButton(
@@ -2906,6 +2924,7 @@ internal fun PairingQrScannerChrome(
                                 hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Toggle)
                                 onCancel()
                             },
+                            modifier = Modifier.testTag(PAIRING_QR_SCANNER_CANCEL_BUTTON_TEST_TAG),
                         ) {
                             Text(stringResource(R.string.cancel))
                         }
@@ -2938,7 +2957,8 @@ internal fun PairingQrScannerChrome(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding)
-                    .padding(24.dp),
+                    .padding(24.dp)
+                    .testTag(PAIRING_QR_SCANNER_PERMISSION_PANEL_TEST_TAG),
                 verticalArrangement = Arrangement.Center,
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
@@ -2946,16 +2966,20 @@ internal fun PairingQrScannerChrome(
                     text = permissionTitle,
                     style = MaterialTheme.typography.titleLarge,
                     color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.semantics {
-                        heading()
-                    },
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .testTag(PAIRING_QR_SCANNER_PERMISSION_TITLE_TEST_TAG)
+                        .semantics {
+                            heading()
+                        },
                 )
                 Spacer(Modifier.size(12.dp))
                 Text(
                     text = permissionDetail,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.testTag(PAIRING_QR_SCANNER_PERMISSION_DETAIL_TEST_TAG),
                 )
                 Spacer(Modifier.size(18.dp))
                 Button(
@@ -2967,8 +2991,16 @@ internal fun PairingQrScannerChrome(
                             onRequestCameraPermission()
                         }
                     },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag(PAIRING_QR_SCANNER_PERMISSION_ACTION_TEST_TAG),
                 ) {
-                    Text(permissionAction)
+                    Text(
+                        text = permissionAction,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.Center,
+                    )
                 }
                 Spacer(Modifier.size(8.dp))
                 TextButton(
@@ -2976,6 +3008,7 @@ internal fun PairingQrScannerChrome(
                         hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Toggle)
                         onCancel()
                     },
+                    modifier = Modifier.testTag(PAIRING_QR_SCANNER_PERMISSION_CANCEL_BUTTON_TEST_TAG),
                 ) {
                     Text(stringResource(R.string.cancel))
                 }
@@ -2984,8 +3017,22 @@ internal fun PairingQrScannerChrome(
     }
 }
 
+internal const val PAIRING_QR_SCANNER_CHROME_TEST_TAG = "pairing_qr_scanner_chrome"
+internal const val PAIRING_QR_SCANNER_TITLE_TEST_TAG = "pairing_qr_scanner_title"
+internal const val PAIRING_QR_SCANNER_CLOSE_BUTTON_TEST_TAG = "pairing_qr_scanner_close_button"
+internal const val PAIRING_QR_SCANNER_CAMERA_SURFACE_TEST_TAG = "pairing_qr_scanner_camera_surface"
 internal const val PAIRING_QR_FLASHLIGHT_BUTTON_TEST_TAG = "pairing_qr_flashlight_button"
 internal const val PAIRING_QR_SCANNER_TARGET_TEST_TAG = "pairing_qr_scanner_target"
+internal const val PAIRING_QR_SCANNER_INSTRUCTIONS_TEST_TAG = "pairing_qr_scanner_instructions"
+internal const val PAIRING_QR_SCANNER_DETAIL_TEST_TAG = "pairing_qr_scanner_detail"
+internal const val PAIRING_QR_SCANNER_FEEDBACK_TEST_TAG = "pairing_qr_scanner_feedback"
+internal const val PAIRING_QR_SCANNER_CANCEL_BUTTON_TEST_TAG = "pairing_qr_scanner_cancel_button"
+internal const val PAIRING_QR_SCANNER_PERMISSION_PANEL_TEST_TAG = "pairing_qr_scanner_permission_panel"
+internal const val PAIRING_QR_SCANNER_PERMISSION_TITLE_TEST_TAG = "pairing_qr_scanner_permission_title"
+internal const val PAIRING_QR_SCANNER_PERMISSION_DETAIL_TEST_TAG = "pairing_qr_scanner_permission_detail"
+internal const val PAIRING_QR_SCANNER_PERMISSION_ACTION_TEST_TAG = "pairing_qr_scanner_permission_action"
+internal const val PAIRING_QR_SCANNER_PERMISSION_CANCEL_BUTTON_TEST_TAG =
+    "pairing_qr_scanner_permission_cancel_button"
 
 @Composable
 private fun PairingQrCameraPreview(

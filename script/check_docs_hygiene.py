@@ -344,6 +344,28 @@ FILE_CONTRACTS = (
         ),
         "docs/qa-evidence.md must keep Android short Thinking static accessibility proof visible.",
     ),
+    DocsFileContract(
+        "connection-overlay-production-bootstrap-verifier",
+        "docs/connection-overlay.md",
+        (
+            re.compile(r"\bscript/verify_pairing_qr\.swift\b", re.IGNORECASE),
+            re.compile(r"--require-production-bootstrap\b", re.IGNORECASE),
+            re.compile(r"\bruntime_public_key\b.*\broute_token\b", re.IGNORECASE | re.DOTALL),
+            re.compile(r"--require-relay-route\b", re.IGNORECASE),
+            re.compile(r"--forbid-direct-endpoint\b", re.IGNORECASE),
+        ),
+        "docs/connection-overlay.md must document the QR verifier flags that prove production bootstrap fields, relay route material, and no direct endpoint fallback.",
+    ),
+    DocsFileContract(
+        "protocol-product-qr-bootstrap-contract",
+        "docs/protocol.md",
+        (
+            re.compile(r"\bNormal product client scans\b.*\bruntime_public_key\b.*\broute_token\b.*\bremote route material\b", re.IGNORECASE | re.DOTALL),
+            re.compile(r"\bIdentity-only QR\b.*\bcompatibility or diagnostic\b.*\bnormal product scan path\b", re.IGNORECASE | re.DOTALL),
+            re.compile(r"\bnormal product QR scans require\b.*\bruntime_public_key\b", re.IGNORECASE | re.DOTALL),
+        ),
+        "docs/protocol.md must state that normal product QR scans require runtime public key, route token, and remote route material while identity-only QR remains diagnostic/compatibility only.",
+    ),
 )
 
 

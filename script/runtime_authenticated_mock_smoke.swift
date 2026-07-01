@@ -134,6 +134,10 @@ let smokeLifecycleSessionID = "\(smokeSessionID)-lifecycle"
 let smokeResidencySessionID = "\(smokeSessionID)-residency"
 let smokeOwnerIsolationSessionAID = "\(smokeSessionID)-owner-a"
 let smokeOwnerIsolationSessionBID = "\(smokeSessionID)-owner-b"
+let smokeDocumentAttachmentText = "Smoke attachment body proves authenticated relay attachment handling."
+let smokeImageAttachmentPrompt = "Describe this smoke image."
+let smokeImageAttachmentName = "smoke-vision-gate.png"
+let smokeImageAttachmentBase64 = "iVBORw0KGgo="
 
 final class ServerOutput {
     private let lock = NSLock()
@@ -1672,7 +1676,6 @@ func readStoppedChatStream(client: TCPClient, requestID: String, context: String
 }
 
 func relayPlaintextBoundaryMarkers() -> [String] {
-    let attachmentText = "Smoke attachment body proves authenticated relay attachment handling."
     return [
         "pairing.request",
         "smoke-pair-invalid-code-health",
@@ -1720,10 +1723,16 @@ func relayPlaintextBoundaryMarkers() -> [String] {
         "matched_fields",
         "Say hello from the smoke test.",
         "Summarize the attached smoke note.",
+        smokeImageAttachmentPrompt,
+        smokeImageAttachmentName,
+        smokeImageAttachmentBase64,
+        "smoke-chat-image-non-vision",
+        "unsupported_attachment",
+        "Image attachments require a vision-capable model.",
         "Create a session for lifecycle smoke.",
         "Runtime smoke lifecycle",
-        attachmentText,
-        Data(attachmentText.utf8).base64EncodedString(),
+        smokeDocumentAttachmentText,
+        Data(smokeDocumentAttachmentText.utf8).base64EncodedString(),
         "Prefers smoke-tested concise answers.",
         "Mock streaming response.",
         "Attachment received.",
@@ -2628,7 +2637,6 @@ func runMockBackendChecks(client: TCPClient, port: UInt16, unloadEventFile: URL)
     }
 
     print("Checking chat.send with document attachment...")
-    let attachmentText = "Smoke attachment body proves authenticated relay attachment handling."
     try client.send(envelope(
         "chat.send",
         requestID: "smoke-chat-attachment",
@@ -2644,7 +2652,7 @@ func runMockBackendChecks(client: TCPClient, port: UInt16, unloadEventFile: URL)
                             "type": "document",
                             "mime_type": "text/plain",
                             "name": "smoke-note.md",
-                            "data_base64": Data(attachmentText.utf8).base64EncodedString()
+                            "data_base64": Data(smokeDocumentAttachmentText.utf8).base64EncodedString()
                         ]
                     ]
                 ]
@@ -2660,6 +2668,52 @@ func runMockBackendChecks(client: TCPClient, port: UInt16, unloadEventFile: URL)
           attachmentStreamedText.contains("Attachment received.")
     else {
         throw SmokeFailure.message("attachment chat stream did not confirm attachment handling: \(attachmentStreamedText)")
+    }
+
+    print("Checking chat.send image attachment rejection for non-vision model...")
+    try client.send(envelope(
+        "chat.send",
+        requestID: "smoke-chat-image-non-vision",
+        payload: [
+            "session_id": smokeSessionID,
+            "model": "dev-mock",
+            "messages": [
+                [
+                    "role": "user",
+                    "content": smokeImageAttachmentPrompt,
+                    "attachments": [
+                        [
+                            "type": "image",
+                            "mime_type": "image/png",
+                            "name": smokeImageAttachmentName,
+                            "data_base64": smokeImageAttachmentBase64
+                        ]
+                    ]
+                ]
+            ]
+        ]
+    ))
+    let imageAttachmentError = try client.readEnvelope()
+    try assertNoBackendLeak(imageAttachmentError, context: "smoke-chat-image-non-vision")
+    try requireErrorCode(
+        imageAttachmentError,
+        "unsupported_attachment",
+        requestID: "smoke-chat-image-non-vision",
+        context: "smoke-chat-image-non-vision"
+    )
+    let imageAttachmentErrorPayload = try payload(
+        imageAttachmentError,
+        context: "smoke-chat-image-non-vision"
+    )
+    let imageAttachmentErrorMessage = try requireString(
+        imageAttachmentErrorPayload,
+        "message",
+        context: "smoke-chat-image-non-vision"
+    )
+    guard imageAttachmentErrorMessage.contains("vision-capable model") else {
+        throw SmokeFailure.message(
+            "image attachment rejection did not explain the vision-capable model requirement: \(imageAttachmentError)"
+        )
     }
 
     print("Checking chat.cancel...")
