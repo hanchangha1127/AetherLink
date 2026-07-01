@@ -10,7 +10,7 @@ AetherLink v0.1 proves the smallest useful local loop: a client pairs with Aethe
 - Ollama and LM Studio are runtime-mediated local model backends.
 - Pairing uses a runtime-host-displayed QR code in v0.1; production QR generation requires eligible remote route material, local direct QR generation is diagnostics/development only, and the accepted trusted runtime record persists on the client.
 - Discovery remains scoped to pairing setup, while runtime access requires a trusted-device model and authenticated runtime session.
-- The client can request runtime health, list models, select a chat model, separately select one embedding model for future retrieval features, send chat, receive streamed answer deltas, render preserved reasoning/think deltas separately as muted collapsible UI, request runtime-mediated suggested next questions, reopen previous runtime-backed chats, manage user-entered runtime-owned memory notes, and cancel generation.
+- The client can request runtime health, list models, select a chat model, separately select one embedding model for future retrieval features, send chat, receive streamed answer deltas, render preserved reasoning/think deltas separately as muted collapsible UI, reopen previous runtime-backed chats, manage user-entered runtime-owned memory notes, and cancel generation.
 - If archive is exposed in v0.1 local chat UX, archive is distinct from delete: archived chats are retained but excluded from memory/reflection/research/compaction inputs unless restored or explicitly selected later.
 - Model listing includes installed Ollama models from runtime-host-side `/api/tags` and optional running state from runtime-host-side `/api/ps`; local models are the main path.
 - Model listing includes LM Studio local LLM and embedding models from runtime-host-side LM Studio REST API responses; chat and embedding selection surfaces stay separate, and no LM Studio defaults are invented.
@@ -59,7 +59,6 @@ AetherLink v0.1 proves the smallest useful local loop: a client pairs with Aethe
 - Client can add, disable, and remove user-managed runtime memory notes through the trusted runtime; enabled notes are included only through the runtime-mediated `chat.send` path.
 - Runtime host streams backend answer chunks back as `chat.delta`; Ollama reasoning/think chunks are preserved separately as reasoning deltas rather than mixed into final answer text.
 - Runtime host sends `chat.done` when generation completes.
-- Client can request runtime-mediated suggested next questions after `chat.done`; the runtime host returns `chat.suggestions.result`, and the client renders optional next-question chips without calling model backends directly.
 - Client can send `chat.cancel`; the runtime host cancels the active generation abstraction.
 - Runtime errors are returned as structured `error` messages and shown in the client UI.
 - Untrusted clients receive `pairing_required` or `authentication_required` before runtime commands execute.

@@ -12,11 +12,6 @@ func shouldShowRouteDiagnosticsPanel(model: CompanionAppModel) -> Bool {
 @MainActor
 func shouldShowPairingRouteSetupPanel(model: CompanionAppModel) -> Bool {
     shouldShowRouteDiagnosticsPanel(model: model)
-        || (
-            model.pairingSession == nil
-                && !model.canPrepareRemoteRelayRouteAutomatically
-                && !model.hasDevelopmentRelayRoute
-        )
 }
 
 struct RemoteRelayRoutePanel: View {
@@ -504,10 +499,7 @@ struct RemoteRelayRoutePanel: View {
         case .reconnecting:
             return String(format: NSLocalizedString("Reconnecting through %@.", comment: ""), endpoint)
         case .failed:
-            return String(
-                format: NSLocalizedString("Connection through %@ failed. Check Connection Recovery, then try again.", comment: ""),
-                endpoint
-            )
+            return remoteRelayConnectionFailureRecoveryText(endpoint: endpoint)
         }
     }
 

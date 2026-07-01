@@ -1,0 +1,52 @@
+[runtime] AetherLink dev server listening on 127.0.0.1:43170
+[runtime] Backend: Ollama + LM Studio
+[runtime] Advertising _aetherlink._tcp.local. on port 43170
+[runtime] For local direct diagnostics with a USB-connected trusted device, run:
+[runtime]   adb reverse tcp:43170 tcp:43170
+[runtime] Then use the local diagnostic route 127.0.0.1:43170 in AetherLink.
+[runtime] WARNING: AETHERLINK_DEV_PAIRING=1 opened a development-only pairing window.
+[runtime] Do not enable this mode for production or normal trusted-device use.
+[runtime] AETHERLINK_DEV_PAIRING_INFO {"expires_at":"2026-06-30T04:54:40Z","host":"127.0.0.1","pairing_code":"801315","pairing_nonce":"64BA80F2-473D-4152-ADF9-2D3A6B7CFE1D","port":43170,"relay_scope":"local_diagnostic","route_token":"dev-aetherlink-route","runtime_device_id":"aetherlink-dev-runtime","runtime_key_fingerprint":"aca2e12660ea0ac3ce01c1452a038f86c42a023e03339482e36d5860140ebe4f","runtime_name":"AetherLink Dev Runtime","runtime_public_key":"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE\/UbCrtW3W7FQAXN3ThTQUT\/RdcUl\/tti86\/jeC8ENeEjYBDfsWhKhexFIUgEsDTP7hA80dP6hAsXkAHwxdEMOg==","service_type":"_aetherlink._tcp.local."}
+[runtime] AETHERLINK_DEV_PAIRING_URI aetherlink://pair?version=1&pairing_nonce=64BA80F2-473D-4152-ADF9-2D3A6B7CFE1D&pairing_code=801315&runtime_device_id=aetherlink-dev-runtime&runtime_name=AetherLink%20Dev%20Runtime&runtime_key_fingerprint=aca2e12660ea0ac3ce01c1452a038f86c42a023e03339482e36d5860140ebe4f&runtime_public_key=MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE/UbCrtW3W7FQAXN3ThTQUT/RdcUl/tti86/jeC8ENeEjYBDfsWhKhexFIUgEsDTP7hA80dP6hAsXkAHwxdEMOg%3D%3D&route_token=dev-aetherlink-route&host=127.0.0.1&port=43170&route_scope=local_diagnostic
+[runtime] AETHERLINK_DEV_PAIRING_COMPACT_URI aetherlink://pair?v=1&n=64BA80F2-473D-4152-ADF9-2D3A6B7CFE1D&c=801315&rid=aetherlink-dev-runtime&rn=AetherLink%20Dev%20Runtime&rf=aca2e12660ea0ac3ce01c1452a038f86c42a023e03339482e36d5860140ebe4f&rk=MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE/UbCrtW3W7FQAXN3ThTQUT/RdcUl/tti86/jeC8ENeEjYBDfsWhKhexFIUgEsDTP7hA80dP6hAsXkAHwxdEMOg%3D%3D&rt=dev-aetherlink-route&h=127.0.0.1&p=43170&rsc=local_diagnostic
+[runtime] received type=pairing.request request_id=2c2d1eb1-5d27-47b2-842a-247db21ad94e
+[runtime] Development pairing accepted for device_id=ad684923-2a73-4356-aeb2-224a0cac2715 name="Samsung SM-S936N"
+[runtime] sending type=pairing.result request_id=2c2d1eb1-5d27-47b2-842a-247db21ad94e
+[runtime] received type=runtime.health request_id=a340517d-d3b7-4f2e-878e-4d0b9a8d28eb
+[runtime] received type=memory.list request_id=43ec0963-df58-4261-badc-c2647324ce18
+[runtime] received type=chat.sessions.list request_id=8a27866c-5fdb-4c49-9adb-9fff8f924b8b
+[runtime] sending type=memory.list request_id=43ec0963-df58-4261-badc-c2647324ce18
+[runtime] sending type=runtime.health request_id=a340517d-d3b7-4f2e-878e-4d0b9a8d28eb
+[runtime] received type=models.list request_id=d65036cb-8221-4d8c-8bbe-48d23ef19b00
+[runtime] received type=memory.list request_id=480975a7-bb51-4a8b-88c6-9cbd83b83fc6
+[runtime] sending type=memory.list request_id=480975a7-bb51-4a8b-88c6-9cbd83b83fc6
+[runtime] sending type=chat.sessions.list request_id=8a27866c-5fdb-4c49-9adb-9fff8f924b8b
+[runtime] sending type=models.list request_id=d65036cb-8221-4d8c-8bbe-48d23ef19b00
+[runtime] received type=hello request_id=c81a80cc-5491-4229-b2f9-efed6c67cda4
+[runtime] sending type=auth.challenge request_id=c81a80cc-5491-4229-b2f9-efed6c67cda4
+[runtime] received type=auth.response request_id=c81a80cc-5491-4229-b2f9-efed6c67cda4
+[runtime] sending type=auth.response request_id=c81a80cc-5491-4229-b2f9-efed6c67cda4
+[runtime] received type=runtime.health request_id=c51607dd-fcfc-4cf8-a58e-da15c7415702
+[runtime] received type=chat.sessions.list request_id=19670353-5766-484d-891c-a81e7efa913c
+[runtime] received type=memory.list request_id=72c9350d-4917-4252-bfc0-d95980296e0b
+[runtime] sending type=memory.list request_id=72c9350d-4917-4252-bfc0-d95980296e0b
+[runtime] sending type=runtime.health request_id=c51607dd-fcfc-4cf8-a58e-da15c7415702
+[runtime] received type=models.list request_id=d25ecf73-a5d9-4ea6-b642-f903f6a4f88b
+[runtime] received type=memory.list request_id=23139c14-e151-4764-9e57-8c30afcdd0f8
+[runtime] sending type=memory.list request_id=23139c14-e151-4764-9e57-8c30afcdd0f8
+[runtime] sending type=chat.sessions.list request_id=19670353-5766-484d-891c-a81e7efa913c
+[runtime] sending type=models.list request_id=d25ecf73-a5d9-4ea6-b642-f903f6a4f88b
+[runtime] received type=hello request_id=ac2ca735-8e8b-4f8e-9728-5086234d293e
+[runtime] sending type=auth.challenge request_id=ac2ca735-8e8b-4f8e-9728-5086234d293e
+[runtime] received type=auth.response request_id=ac2ca735-8e8b-4f8e-9728-5086234d293e
+[runtime] sending type=auth.response request_id=ac2ca735-8e8b-4f8e-9728-5086234d293e
+[runtime] received type=runtime.health request_id=1c6c7a20-7cdd-4a64-9fa2-81985b17b0df
+[runtime] received type=memory.list request_id=5f3bc56a-d466-493e-81d9-8a2393ffc3ca
+[runtime] sending type=memory.list request_id=5f3bc56a-d466-493e-81d9-8a2393ffc3ca
+[runtime] received type=chat.sessions.list request_id=54496f07-8c56-4694-8e23-95fab06d00ba
+[runtime] sending type=runtime.health request_id=1c6c7a20-7cdd-4a64-9fa2-81985b17b0df
+[runtime] sending type=chat.sessions.list request_id=54496f07-8c56-4694-8e23-95fab06d00ba
+[runtime] received type=models.list request_id=4af03d31-1fa4-4171-9fd0-d762bd04c112
+[runtime] received type=memory.list request_id=051d4239-c93a-41b5-b613-3b217b761f8d
+[runtime] sending type=memory.list request_id=051d4239-c93a-41b5-b613-3b217b761f8d
+[runtime] sending type=models.list request_id=4af03d31-1fa4-4171-9fd0-d762bd04c112

@@ -1,0 +1,302 @@
+import Foundation
+
+public struct RuntimeLongInactivityMemorySummarizationPolicy: Equatable, Sendable {
+    public static let defaultMinimumInactiveInterval: TimeInterval = 14 * 24 * 60 * 60
+
+    public var minimumInactiveInterval: TimeInterval
+    public var minimumMessageCount: Int
+    public var maxCandidateCount: Int
+    public var maxSourceMessageCount: Int
+    public var maxDraftPreviewCharacters: Int
+    public var maxSourceExcerptCharacters: Int
+
+    public init(
+        minimumInactiveInterval: TimeInterval = Self.defaultMinimumInactiveInterval,
+        minimumMessageCount: Int = 6,
+        maxCandidateCount: Int = 25,
+        maxSourceMessageCount: Int = 12,
+        maxDraftPreviewCharacters: Int = 600,
+        maxSourceExcerptCharacters: Int = 160
+    ) {
+        self.minimumInactiveInterval = max(0, minimumInactiveInterval)
+        self.minimumMessageCount = max(1, minimumMessageCount)
+        self.maxCandidateCount = max(0, maxCandidateCount)
+        self.maxSourceMessageCount = max(1, maxSourceMessageCount)
+        self.maxDraftPreviewCharacters = max(80, maxDraftPreviewCharacters)
+        self.maxSourceExcerptCharacters = max(40, maxSourceExcerptCharacters)
+    }
+
+    public func candidate(
+        for session: RuntimeChatStoredSession,
+        now: Date
+    ) -> RuntimeLongInactivityMemorySummarizationCandidate? {
+        guard session.status == "active" else { return nil }
+        guard session.messageCount >= minimumMessageCount else { return nil }
+
+        let inactiveInterval = now.timeIntervalSince(session.lastActivityAt)
+        guard inactiveInterval >= minimumInactiveInterval else { return nil }
+
+        return RuntimeLongInactivityMemorySummarizationCandidate(
+            sessionID: session.sessionID,
+            title: session.title,
+            model: session.model,
+            lastActivityAt: session.lastActivityAt,
+            messageCount: session.messageCount,
+            inactiveInterval: inactiveInterval
+        )
+    }
+
+    public func candidates(
+        from sessions: [RuntimeChatStoredSession],
+        now: Date
+    ) -> [RuntimeLongInactivityMemorySummarizationCandidate] {
+        guard maxCandidateCount > 0 else { return [] }
+        return sessions
+            .compactMap { candidate(for: $0, now: now) }
+            .sorted { lhs, rhs in
+                if lhs.lastActivityAt != rhs.lastActivityAt {
+                    return lhs.lastActivityAt < rhs.lastActivityAt
+                }
+                return lhs.sessionID < rhs.sessionID
+            }
+            .limited(to: maxCandidateCount)
+    }
+
+    public func draft(
+        for candidate: RuntimeLongInactivityMemorySummarizationCandidate,
+        messages: [RuntimeChatStoredMessage]
+    ) -> RuntimeLongInactivityMemorySummarizationDraft? {
+        let visibleMessages = visibleSourceMessages(from: messages)
+        let selectedMessages = Array(visibleMessages.suffix(maxSourceMessageCount))
+        guard !selectedMessages.isEmpty else { return nil }
+
+        return RuntimeLongInactivityMemorySummarizationDraft(
+            candidate: candidate,
+            id: draftID(for: candidate, visibleMessageCount: visibleMessages.count),
+            sourceMessageCount: selectedMessages.count,
+            sourceRangeDescription: sourceRangeDescription(
+                selectedMessages: selectedMessages,
+                totalMessageCount: visibleMessages.count
+            ),
+            sourcePointers: selectedMessages.map { message in
+                RuntimeLongInactivityMemorySummarizationSourcePointer(
+                    sessionID: candidate.sessionID,
+                    messageIndex: message.ordinal,
+                    role: message.role,
+                    createdAt: message.createdAt,
+                    excerpt: message.content.truncated(to: maxSourceExcerptCharacters)
+                )
+            },
+            summaryPreview: summaryPreview(from: selectedMessages)
+        )
+    }
+
+    private func draftID(
+        for candidate: RuntimeLongInactivityMemorySummarizationCandidate,
+        visibleMessageCount: Int
+    ) -> String {
+        let lastActivityMillis = Int(candidate.lastActivityAt.timeIntervalSince1970 * 1_000)
+        return [
+            "long-inactivity",
+            candidate.sessionID,
+            String(lastActivityMillis),
+            String(visibleMessageCount)
+        ].joined(separator: ":")
+    }
+
+    private func visibleSourceMessages(
+        from messages: [RuntimeChatStoredMessage]
+    ) -> [RuntimeLongInactivityMemorySummarizationSourceMessage] {
+        let unindexedMessages: [RuntimeLongInactivityMemorySummarizationSourceMessage] = messages.compactMap { message in
+            let role = message.role.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            guard role == "user" || role == "assistant" else { return nil }
+            let content = normalizedDraftContent(message.content)
+            guard !content.isEmpty else { return nil }
+            return RuntimeLongInactivityMemorySummarizationSourceMessage(
+                ordinal: 0,
+                role: role,
+                content: content,
+                createdAt: message.createdAt
+            )
+        }
+        return unindexedMessages.enumerated().map { offset, message in
+            RuntimeLongInactivityMemorySummarizationSourceMessage(
+                ordinal: offset + 1,
+                role: message.role,
+                content: message.content,
+                createdAt: message.createdAt
+            )
+        }
+    }
+
+    private func sourceRangeDescription(
+        selectedMessages: [RuntimeLongInactivityMemorySummarizationSourceMessage],
+        totalMessageCount: Int
+    ) -> String {
+        guard let first = selectedMessages.first?.ordinal,
+              let last = selectedMessages.last?.ordinal else {
+            return "visible messages 0-0 of \(totalMessageCount)"
+        }
+        if first == last {
+            return "visible message \(first) of \(totalMessageCount)"
+        }
+        return "visible messages \(first)-\(last) of \(totalMessageCount)"
+    }
+
+    private func summaryPreview(
+        from messages: [RuntimeLongInactivityMemorySummarizationSourceMessage]
+    ) -> String {
+        var remainingCharacters = maxDraftPreviewCharacters
+        var lines: [String] = []
+        for message in messages {
+            guard remainingCharacters > 0 else { break }
+            let label = message.role == "assistant" ? "Assistant" : "User"
+            let prefix = "\(label): "
+            let availableCharacters = max(0, remainingCharacters - prefix.count)
+            guard availableCharacters > 0 else { break }
+            let content = message.content.truncated(to: availableCharacters)
+            guard !content.isEmpty else { continue }
+            let line = prefix + content
+            lines.append(line)
+            remainingCharacters -= line.count
+            if remainingCharacters > 0 {
+                remainingCharacters -= 1
+            }
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private func normalizedDraftContent(_ content: String) -> String {
+        content
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+    }
+}
+
+public struct RuntimeLongInactivityMemorySummarizationCandidate: Equatable, Sendable {
+    public var sessionID: String
+    public var title: String
+    public var model: String
+    public var lastActivityAt: Date
+    public var messageCount: Int
+    public var inactiveInterval: TimeInterval
+
+    public init(
+        sessionID: String,
+        title: String,
+        model: String,
+        lastActivityAt: Date,
+        messageCount: Int,
+        inactiveInterval: TimeInterval
+    ) {
+        self.sessionID = sessionID
+        self.title = title
+        self.model = model
+        self.lastActivityAt = lastActivityAt
+        self.messageCount = messageCount
+        self.inactiveInterval = inactiveInterval
+    }
+}
+
+public struct RuntimeLongInactivityMemorySummarizationDraft: Equatable, Sendable {
+    public var candidate: RuntimeLongInactivityMemorySummarizationCandidate
+    public var id: String
+    public var sourceMessageCount: Int
+    public var sourceRangeDescription: String
+    public var sourcePointers: [RuntimeLongInactivityMemorySummarizationSourcePointer]
+    public var summaryPreview: String
+
+    public init(
+        candidate: RuntimeLongInactivityMemorySummarizationCandidate,
+        id: String,
+        sourceMessageCount: Int,
+        sourceRangeDescription: String,
+        sourcePointers: [RuntimeLongInactivityMemorySummarizationSourcePointer],
+        summaryPreview: String
+    ) {
+        self.candidate = candidate
+        self.id = id
+        self.sourceMessageCount = sourceMessageCount
+        self.sourceRangeDescription = sourceRangeDescription
+        self.sourcePointers = sourcePointers
+        self.summaryPreview = summaryPreview
+    }
+}
+
+public struct RuntimeLongInactivityMemorySummarizationSourcePointer: Equatable, Sendable {
+    public var sessionID: String
+    public var messageIndex: Int
+    public var role: String
+    public var createdAt: Date?
+    public var excerpt: String
+
+    public init(
+        sessionID: String,
+        messageIndex: Int,
+        role: String,
+        createdAt: Date?,
+        excerpt: String
+    ) {
+        self.sessionID = sessionID
+        self.messageIndex = messageIndex
+        self.role = role
+        self.createdAt = createdAt
+        self.excerpt = excerpt
+    }
+}
+
+public extension RuntimeChatEventStore {
+    func listLongInactivityMemorySummarizationCandidates(
+        ownerDeviceID: String?,
+        now: Date = Date(),
+        policy: RuntimeLongInactivityMemorySummarizationPolicy = RuntimeLongInactivityMemorySummarizationPolicy()
+    ) throws -> [RuntimeLongInactivityMemorySummarizationCandidate] {
+        let sessions = try listSessions(
+            ownerDeviceID: ownerDeviceID,
+            limit: Int.max,
+            includeArchived: false
+        )
+        return policy.candidates(from: sessions, now: now)
+    }
+
+    func listLongInactivityMemorySummarizationDrafts(
+        ownerDeviceID: String?,
+        now: Date = Date(),
+        policy: RuntimeLongInactivityMemorySummarizationPolicy = RuntimeLongInactivityMemorySummarizationPolicy()
+    ) throws -> [RuntimeLongInactivityMemorySummarizationDraft] {
+        let candidates = try listLongInactivityMemorySummarizationCandidates(
+            ownerDeviceID: ownerDeviceID,
+            now: now,
+            policy: policy
+        )
+        var drafts: [RuntimeLongInactivityMemorySummarizationDraft] = []
+        for candidate in candidates {
+            let messages = try listMessages(
+                ownerDeviceID: ownerDeviceID,
+                sessionID: candidate.sessionID,
+                limit: Int.max
+            )
+            if let draft = policy.draft(for: candidate, messages: messages) {
+                drafts.append(draft)
+            }
+        }
+        return drafts
+    }
+}
+
+private struct RuntimeLongInactivityMemorySummarizationSourceMessage {
+    var ordinal: Int
+    var role: String
+    var content: String
+    var createdAt: Date?
+}
+
+private extension String {
+    func truncated(to limit: Int) -> String {
+        guard limit > 0 else { return "" }
+        guard count > limit else { return self }
+        guard limit > 3 else { return String(prefix(limit)) }
+        return String(prefix(limit - 3)) + "..."
+    }
+}

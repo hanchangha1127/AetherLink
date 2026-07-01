@@ -167,13 +167,86 @@ class RuntimeConnectionManagerTest {
                 endpointHint = RuntimeEndpointHint(
                     host = "192.168.1.10",
                     port = 43170,
-                    source = RuntimeEndpointSource.TrustedLastKnown,
+                    source = RuntimeEndpointSource.PairingQr,
                 ),
             ),
             timeoutMillis = 1_250,
         )
 
         assertEquals(listOf(ConnectCall("192.168.1.10", 43170, 1_250)), calls)
+    }
+
+    @Test
+    fun defaultResolverIgnoresTrustedLastKnownEndpointHintForPairedTarget() {
+        val calls = mutableListOf<ConnectCall>()
+        val manager = RuntimeConnectionManager(
+            RuntimeTransportConnector { host, port, timeoutMillis ->
+                calls += ConnectCall(host, port, timeoutMillis)
+                TestRuntimeProtocolChannel
+            }
+        )
+
+        val failure = assertThrows(RuntimeConnectionFailure::class.java) {
+            runBlocking {
+                manager.connect(
+                    RuntimeConnectionTarget(
+                        identity = pairedIdentity(),
+                        endpointHint = RuntimeEndpointHint(
+                            host = "192.168.1.10",
+                            port = 43170,
+                            source = RuntimeEndpointSource.TrustedLastKnown,
+                        ),
+                    ),
+                )
+            }
+        }
+
+        assertEquals(RuntimeConnectionFailureReason.NoConnectableRoute, failure.reason)
+        assertTrue(failure.routes.none { it is RuntimeRouteCandidate.DirectTcp })
+        assertTrue(failure.routes.any { it is RuntimeRouteCandidate.LocalDirect })
+        assertTrue(failure.routes.any { it is RuntimeRouteCandidate.PeerToPeer })
+        assertTrue(failure.routes.any { it is RuntimeRouteCandidate.Relay })
+        assertEquals(emptyList<ConnectCall>(), calls)
+    }
+
+    @Test
+    fun preparedRelayRouteStillConnectsWhenTargetHasTrustedLastKnownEndpointHint() = runBlocking {
+        val directCalls = mutableListOf<ConnectCall>()
+        val relayCalls = mutableListOf<String>()
+        val identity = pairedIdentity(routeToken = "route-token")
+        val relayRoute = PreparedRemoteRuntimeRoute.Relay(
+            identity = identity,
+            relayId = "relay-session",
+            host = "relay.example.test",
+            port = 443,
+            security = securityContext("relay-session"),
+        )
+        val manager = RuntimeConnectionManager(
+            connector = RuntimeTransportConnector { host, port, timeoutMillis ->
+                directCalls += ConnectCall(host, port, timeoutMillis)
+                throw IllegalStateException("trusted last-known direct endpoint must not be attempted")
+            },
+            remoteRoutePreparer = RuntimeRemoteRoutePreparer { listOf(relayRoute) },
+            relayConnector = RuntimeRelayConnector { route, timeoutMillis ->
+                relayCalls += "${route.relayId}:$timeoutMillis"
+                TestRuntimeProtocolChannel
+            },
+        )
+
+        manager.connect(
+            RuntimeConnectionTarget(
+                identity = identity,
+                endpointHint = RuntimeEndpointHint(
+                    host = "192.168.1.10",
+                    port = 43170,
+                    source = RuntimeEndpointSource.TrustedLastKnown,
+                ),
+            ),
+            timeoutMillis = 1_250,
+        )
+
+        assertEquals(listOf("relay-session:1250"), relayCalls)
+        assertEquals(emptyList<ConnectCall>(), directCalls)
     }
 
     @Test

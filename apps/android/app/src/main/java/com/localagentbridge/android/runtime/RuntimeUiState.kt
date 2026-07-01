@@ -36,9 +36,11 @@ data class RuntimeUiState(
     val chatInput: String = "",
     val pendingAttachments: List<RuntimePendingAttachment> = emptyList(),
     val isStreaming: Boolean = false,
-    val isLoadingSuggestions: Boolean = false,
     val activeRequestId: String? = null,
     val memoryEntries: List<RuntimeMemoryEntry> = emptyList(),
+    val memorySummaryDrafts: List<RuntimeMemorySummaryDraft> = emptyList(),
+    val approvingMemorySummaryDraftIds: Set<String> = emptySet(),
+    val dismissingMemorySummaryDraftIds: Set<String> = emptySet(),
     val selectedLanguageTag: String = RuntimeAppLanguage.English.languageTag,
     val selectedLanguageSource: String = APP_LANGUAGE_SOURCE_DEFAULT,
     val selectedTheme: RuntimeAppTheme = RuntimeAppTheme.System,
@@ -126,6 +128,12 @@ data class RuntimeTrustedRuntime(
     val relayExpiresAtEpochMillis: Long? = null,
     val relayNonce: String? = null,
     val relayScope: String? = null,
+    val p2pRouteClass: String? = null,
+    val p2pRecordId: String? = null,
+    val p2pEncryptedBody: String? = null,
+    val p2pExpiresAtEpochMillis: Long? = null,
+    val p2pAntiReplayNonce: String? = null,
+    val p2pProtocolVersion: Int? = null,
 ) {
     val lastKnownEndpoint: RuntimeEndpointHint
         get() = requireNotNull(endpointHint) { "Trusted runtime endpoint hint is not available" }
@@ -155,6 +163,7 @@ data class RuntimeModel(
     val source: String? = "local",
     val description: String? = null,
     val sizeBytes: Long? = null,
+    val contextWindowTokens: Int? = null,
 )
 
 const val MODEL_KIND_CHAT = "chat"
@@ -176,7 +185,6 @@ data class RuntimeChatMessage(
     val reasoning: String = "",
     val isReasoningOpen: Boolean = false,
     val inlineReasoningPendingTag: String = "",
-    val suggestions: List<String> = emptyList(),
     val attachments: List<RuntimeMessageAttachment> = emptyList(),
 )
 
@@ -209,6 +217,9 @@ data class RuntimeChatSession(
     val lastEvent: String? = null,
     val lastFinishReason: String? = null,
     val lastErrorCode: String? = null,
+    val searchRank: Int? = null,
+    val searchSnippet: String? = null,
+    val searchMatchedFields: List<String> = emptyList(),
 )
 
 data class RuntimeMemoryEntry(
@@ -217,6 +228,43 @@ data class RuntimeMemoryEntry(
     val enabled: Boolean,
     val createdAtMillis: Long,
     val updatedAtMillis: Long,
+    val source: RuntimeMemoryEntrySource? = null,
+)
+
+data class RuntimeMemoryEntrySource(
+    val kind: String,
+    val draftId: String,
+    val summaryMethod: String,
+    val session: RuntimeMemorySummaryDraftSession,
+    val sourceMessageCount: Int,
+    val sourceRange: String,
+    val sourcePointers: List<RuntimeMemorySummaryDraftSourcePointer>,
+)
+
+data class RuntimeMemorySummaryDraft(
+    val id: String,
+    val session: RuntimeMemorySummaryDraftSession,
+    val sourceMessageCount: Int,
+    val sourceRange: String,
+    val sourcePointers: List<RuntimeMemorySummaryDraftSourcePointer>,
+    val summaryPreview: String,
+)
+
+data class RuntimeMemorySummaryDraftSession(
+    val sessionId: String,
+    val title: String,
+    val modelId: String,
+    val lastActivityAtMillis: Long?,
+    val messageCount: Int,
+    val inactiveSeconds: Long,
+)
+
+data class RuntimeMemorySummaryDraftSourcePointer(
+    val sessionId: String,
+    val messageIndex: Int,
+    val role: String,
+    val createdAtMillis: Long?,
+    val excerpt: String,
 )
 
 data class RuntimeUiError(

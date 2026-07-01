@@ -25,8 +25,6 @@
         "chat.cancel",
         "chat.sessions.list",
         "chat.messages.list",
-        "chat.suggestions.request",
-        "chat.suggestions.result",
         "chat.title.request",
         "chat.title.result",
         "chat.session.rename",
@@ -36,6 +34,9 @@
         "memory.list",
         "memory.upsert",
         "memory.delete",
+        "memory.summary.drafts.list",
+        "memory.summary.draft.approve",
+        "memory.summary.draft.dismiss",
         "error"
       ]
     },
@@ -109,14 +110,6 @@
       "then": { "properties": { "payload": { "$ref": "#/$defs/chatMessagesListPayload" } } }
     },
     {
-      "if": { "properties": { "type": { "const": "chat.suggestions.request" } }, "required": ["type"] },
-      "then": { "properties": { "payload": { "$ref": "#/$defs/chatSuggestionsRequestPayload" } } }
-    },
-    {
-      "if": { "properties": { "type": { "const": "chat.suggestions.result" } }, "required": ["type"] },
-      "then": { "properties": { "payload": { "$ref": "#/$defs/chatSuggestionsResultPayload" } } }
-    },
-    {
       "if": { "properties": { "type": { "const": "chat.title.request" } }, "required": ["type"] },
       "then": { "properties": { "payload": { "$ref": "#/$defs/chatTitleRequestPayload" } } }
     },
@@ -151,6 +144,18 @@
     {
       "if": { "properties": { "type": { "const": "memory.delete" } }, "required": ["type"] },
       "then": { "properties": { "payload": { "$ref": "#/$defs/memoryDeletePayload" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "memory.summary.drafts.list" } }, "required": ["type"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/memorySummaryDraftsListPayload" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "memory.summary.draft.approve" } }, "required": ["type"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/memorySummaryDraftApprovePayload" } } }
+    },
+    {
+      "if": { "properties": { "type": { "const": "memory.summary.draft.dismiss" } }, "required": ["type"] },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/memorySummaryDraftDismissPayload" } } }
     },
     {
       "if": { "properties": { "type": { "const": "error" } }, "required": ["type"] },
@@ -288,6 +293,7 @@
           "uniqueItems": true
         },
         "size_bytes": { "type": "integer", "minimum": 0 },
+        "context_window_tokens": { "type": "integer", "minimum": 1 },
         "modified_at": { "type": "string", "format": "date-time" },
         "installed": { "type": "boolean" },
         "running": { "type": "boolean" },
@@ -345,14 +351,45 @@
           "type": "object",
           "required": [
             "runtime_device_id",
-            "runtime_key_fingerprint",
-            "relay_host",
-            "relay_port",
-            "relay_id",
-            "relay_secret",
-            "relay_expires_at",
-            "relay_nonce"
+            "runtime_key_fingerprint"
           ],
+          "anyOf": [
+            {
+              "required": [
+                "relay_host",
+                "relay_port",
+                "relay_id",
+                "relay_secret",
+                "relay_expires_at",
+                "relay_nonce"
+              ]
+            },
+            {
+              "required": [
+                "p2p_class",
+                "p2p_record_id",
+                "p2p_encrypted_body",
+                "p2p_expires_at",
+                "p2p_anti_replay_nonce",
+                "p2p_protocol_version"
+              ]
+            }
+          ],
+          "dependentRequired": {
+            "relay_host": ["relay_port", "relay_id", "relay_secret", "relay_expires_at", "relay_nonce"],
+            "relay_port": ["relay_host", "relay_id", "relay_secret", "relay_expires_at", "relay_nonce"],
+            "relay_id": ["relay_host", "relay_port", "relay_secret", "relay_expires_at", "relay_nonce"],
+            "relay_secret": ["relay_host", "relay_port", "relay_id", "relay_expires_at", "relay_nonce"],
+            "relay_expires_at": ["relay_host", "relay_port", "relay_id", "relay_secret", "relay_nonce"],
+            "relay_nonce": ["relay_host", "relay_port", "relay_id", "relay_secret", "relay_expires_at"],
+            "relay_scope": ["relay_host", "relay_port", "relay_id", "relay_secret", "relay_expires_at", "relay_nonce"],
+            "p2p_class": ["p2p_record_id", "p2p_encrypted_body", "p2p_expires_at", "p2p_anti_replay_nonce", "p2p_protocol_version"],
+            "p2p_record_id": ["p2p_class", "p2p_encrypted_body", "p2p_expires_at", "p2p_anti_replay_nonce", "p2p_protocol_version"],
+            "p2p_encrypted_body": ["p2p_class", "p2p_record_id", "p2p_expires_at", "p2p_anti_replay_nonce", "p2p_protocol_version"],
+            "p2p_expires_at": ["p2p_class", "p2p_record_id", "p2p_encrypted_body", "p2p_anti_replay_nonce", "p2p_protocol_version"],
+            "p2p_anti_replay_nonce": ["p2p_class", "p2p_record_id", "p2p_encrypted_body", "p2p_expires_at", "p2p_protocol_version"],
+            "p2p_protocol_version": ["p2p_class", "p2p_record_id", "p2p_encrypted_body", "p2p_expires_at", "p2p_anti_replay_nonce"]
+          },
           "properties": {
             "runtime_device_id": { "$ref": "#/$defs/nonEmptyString" },
             "runtime_key_fingerprint": { "$ref": "#/$defs/nonEmptyString" },
@@ -362,7 +399,13 @@
             "relay_secret": { "$ref": "#/$defs/nonEmptyString" },
             "relay_expires_at": { "type": "integer", "minimum": 1 },
             "relay_nonce": { "$ref": "#/$defs/nonEmptyString" },
-            "relay_scope": { "enum": ["remote", "private_overlay", "usb_reverse"] }
+            "relay_scope": { "enum": ["remote", "private_overlay", "usb_reverse"] },
+            "p2p_class": { "const": "p2p_rendezvous" },
+            "p2p_record_id": { "$ref": "#/$defs/nonEmptyString" },
+            "p2p_encrypted_body": { "$ref": "#/$defs/nonEmptyString" },
+            "p2p_expires_at": { "type": "integer", "minimum": 1 },
+            "p2p_anti_replay_nonce": { "$ref": "#/$defs/nonEmptyString" },
+            "p2p_protocol_version": { "const": 1 }
           },
           "additionalProperties": false
         }
@@ -465,8 +508,9 @@
         {
           "type": "object",
           "properties": {
-            "limit": { "type": "integer", "minimum": 1, "maximum": 200 },
-            "include_archived": { "type": "boolean", "default": false }
+            "limit": { "type": "integer", "minimum": 0, "maximum": 200 },
+            "include_archived": { "type": "boolean", "default": false },
+            "query": { "$ref": "#/$defs/nonEmptyString" }
           },
           "additionalProperties": false
         },
@@ -506,7 +550,23 @@
           ]
         },
         "last_finish_reason": { "type": "string" },
-        "last_error_code": { "type": "string" }
+        "last_error_code": { "type": "string" },
+        "search": { "$ref": "#/$defs/chatSessionSearch" }
+      },
+      "additionalProperties": false
+    },
+    "chatSessionSearch": {
+      "type": "object",
+      "required": ["rank", "snippet", "matched_fields"],
+      "properties": {
+        "rank": { "type": "integer", "minimum": 1 },
+        "snippet": { "type": "string" },
+        "matched_fields": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/nonEmptyString" },
+          "minItems": 1,
+          "uniqueItems": true
+        }
       },
       "additionalProperties": false
     },
@@ -517,7 +577,7 @@
           "required": ["session_id"],
           "properties": {
             "session_id": { "$ref": "#/$defs/nonEmptyString" },
-            "limit": { "type": "integer", "minimum": 1, "maximum": 500 }
+            "limit": { "type": "integer", "minimum": 0, "maximum": 500 }
           },
           "additionalProperties": false
         },
@@ -558,34 +618,6 @@
         "mime_type": { "$ref": "#/$defs/nonEmptyString" },
         "name": { "type": "string" },
         "text": { "type": "string" }
-      },
-      "additionalProperties": false
-    },
-    "chatSuggestionsRequestPayload": {
-      "type": "object",
-      "required": ["session_id", "model", "messages"],
-      "properties": {
-        "session_id": { "$ref": "#/$defs/nonEmptyString" },
-        "model": { "$ref": "#/$defs/nonEmptyString" },
-        "max_suggestions": { "type": "integer", "minimum": 1, "maximum": 5 },
-        "locale": { "type": "string" },
-        "messages": {
-          "type": "array",
-          "items": { "$ref": "#/$defs/chatMessage" },
-          "minItems": 1
-        }
-      },
-      "additionalProperties": false
-    },
-    "chatSuggestionsResultPayload": {
-      "type": "object",
-      "required": ["suggestions"],
-      "properties": {
-        "suggestions": {
-          "type": "array",
-          "items": { "$ref": "#/$defs/nonEmptyString" },
-          "maxItems": 5
-        }
       },
       "additionalProperties": false
     },
@@ -683,7 +715,34 @@
         "content": { "$ref": "#/$defs/nonEmptyString" },
         "enabled": { "type": "boolean" },
         "created_at": { "type": "string", "format": "date-time" },
-        "updated_at": { "type": "string", "format": "date-time" }
+        "updated_at": { "type": "string", "format": "date-time" },
+        "source": { "$ref": "#/$defs/memoryEntrySource" }
+      },
+      "additionalProperties": false
+    },
+    "memoryEntrySource": {
+      "type": "object",
+      "required": [
+        "kind",
+        "draft_id",
+        "summary_method",
+        "session",
+        "source_message_count",
+        "source_range",
+        "source_pointers"
+      ],
+      "properties": {
+        "kind": { "const": "long_inactivity_summary_draft" },
+        "draft_id": { "$ref": "#/$defs/nonEmptyString" },
+        "summary_method": { "const": "deterministic_preview" },
+        "session": { "$ref": "#/$defs/memorySummaryDraftSession" },
+        "source_message_count": { "type": "integer", "minimum": 1 },
+        "source_range": { "$ref": "#/$defs/nonEmptyString" },
+        "source_pointers": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/memorySummaryDraftSourcePointer" },
+          "minItems": 1
+        }
       },
       "additionalProperties": false
     },
@@ -746,6 +805,134 @@
         }
       ]
     },
+    "memorySummaryDraftsListPayload": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "limit": { "type": "integer", "minimum": 0, "maximum": 50 }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["drafts"],
+          "properties": {
+            "drafts": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/memorySummaryDraft" }
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "memorySummaryDraftApprovePayload": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["draft_id"],
+          "properties": {
+            "draft_id": { "$ref": "#/$defs/nonEmptyString" },
+            "content": { "$ref": "#/$defs/nonEmptyString" },
+            "enabled": { "type": "boolean" },
+            "expected_session_id": { "$ref": "#/$defs/nonEmptyString" },
+            "expected_source_message_count": { "type": "integer", "minimum": 1 }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["draft_id", "status", "entry"],
+          "properties": {
+            "draft_id": { "$ref": "#/$defs/nonEmptyString" },
+            "status": { "const": "approved" },
+            "entry": { "$ref": "#/$defs/memoryEntry" }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "memorySummaryDraftDismissPayload": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["draft_id"],
+          "properties": {
+            "draft_id": { "$ref": "#/$defs/nonEmptyString" },
+            "expected_session_id": { "$ref": "#/$defs/nonEmptyString" },
+            "expected_source_message_count": { "type": "integer", "minimum": 1 }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["draft_id", "status", "dismissed_at"],
+          "properties": {
+            "draft_id": { "$ref": "#/$defs/nonEmptyString" },
+            "status": { "const": "dismissed" },
+            "dismissed_at": { "type": "string", "format": "date-time" }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "memorySummaryDraft": {
+      "type": "object",
+      "required": [
+        "id",
+        "session",
+        "source_message_count",
+        "source_range",
+        "source_pointers",
+        "summary_preview"
+      ],
+      "properties": {
+        "id": { "$ref": "#/$defs/nonEmptyString" },
+        "session": { "$ref": "#/$defs/memorySummaryDraftSession" },
+        "source_message_count": { "type": "integer", "minimum": 1 },
+        "source_range": { "$ref": "#/$defs/nonEmptyString" },
+        "source_pointers": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/memorySummaryDraftSourcePointer" },
+          "minItems": 1
+        },
+        "summary_preview": { "$ref": "#/$defs/nonEmptyString" }
+      },
+      "additionalProperties": false
+    },
+    "memorySummaryDraftSession": {
+      "type": "object",
+      "required": [
+        "session_id",
+        "title",
+        "model",
+        "last_activity_at",
+        "message_count",
+        "inactive_seconds"
+      ],
+      "properties": {
+        "session_id": { "$ref": "#/$defs/nonEmptyString" },
+        "title": { "type": "string" },
+        "model": { "type": "string" },
+        "last_activity_at": { "type": "string", "format": "date-time" },
+        "message_count": { "type": "integer", "minimum": 0 },
+        "inactive_seconds": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "memorySummaryDraftSourcePointer": {
+      "type": "object",
+      "required": ["session_id", "message_index", "role", "excerpt"],
+      "properties": {
+        "session_id": { "$ref": "#/$defs/nonEmptyString" },
+        "message_index": { "type": "integer", "minimum": 1 },
+        "role": { "enum": ["user", "assistant"] },
+        "created_at": { "type": "string", "format": "date-time" },
+        "excerpt": { "$ref": "#/$defs/nonEmptyString" }
+      },
+      "additionalProperties": false
+    },
     "errorPayload": {
       "type": "object",
       "required": ["code", "message", "retryable"],
@@ -770,6 +957,8 @@
             "unreadable_attachment",
             "chat_store_unavailable",
             "memory_store_unavailable",
+            "memory_summary_draft_unavailable",
+            "memory_summary_draft_stale",
             "transport_error",
             "internal_error"
           ]

@@ -151,6 +151,7 @@ public struct RuntimeChatStoredSession: Equatable, Sendable {
     public var lastEvent: String?
     public var lastFinishReason: String?
     public var lastErrorCode: String?
+    public var search: RuntimeChatStoredSessionSearch?
 
     public init(
         sessionID: String,
@@ -162,7 +163,8 @@ public struct RuntimeChatStoredSession: Equatable, Sendable {
         archivedAt: Date? = nil,
         lastEvent: String? = nil,
         lastFinishReason: String? = nil,
-        lastErrorCode: String? = nil
+        lastErrorCode: String? = nil,
+        search: RuntimeChatStoredSessionSearch? = nil
     ) {
         self.sessionID = sessionID
         self.title = title
@@ -174,6 +176,19 @@ public struct RuntimeChatStoredSession: Equatable, Sendable {
         self.lastEvent = lastEvent
         self.lastFinishReason = lastFinishReason
         self.lastErrorCode = lastErrorCode
+        self.search = search
+    }
+}
+
+public struct RuntimeChatStoredSessionSearch: Equatable, Sendable {
+    public var rank: Int
+    public var snippet: String
+    public var matchedFields: [String]
+
+    public init(rank: Int, snippet: String, matchedFields: [String]) {
+        self.rank = rank
+        self.snippet = snippet
+        self.matchedFields = matchedFields
     }
 }
 
@@ -202,6 +217,7 @@ public struct RuntimeChatStoredMessage: Equatable, Sendable {
 public protocol RuntimeChatEventStore: Sendable {
     func append(_ event: RuntimeChatStoredEvent) throws
     func listSessions(ownerDeviceID: String?, limit: Int, includeArchived: Bool) throws -> [RuntimeChatStoredSession]
+    func listSessions(ownerDeviceID: String?, limit: Int, includeArchived: Bool, query: String?) throws -> [RuntimeChatStoredSession]
     func listAllSessions(limit: Int, includeArchived: Bool) throws -> [RuntimeChatStoredSession]
     func listMessages(ownerDeviceID: String?, sessionID: String, limit: Int) throws -> [RuntimeChatStoredMessage]
     func listAllMessages(sessionID: String, limit: Int) throws -> [RuntimeChatStoredMessage]
@@ -214,9 +230,64 @@ public protocol RuntimeChatEventStore: Sendable {
     ) throws -> RuntimeChatSessionMutationResult
 }
 
+public enum RuntimeChatEventStoreDefaults {
+    public static func productionStore(
+        sqliteDatabaseURL: URL = SQLiteRuntimeChatEventStore.defaultDatabaseURL(),
+        legacyJSONLFileURL: URL? = JSONLRuntimeChatEventStore.defaultFileURL()
+    ) -> any RuntimeChatEventStore {
+        SQLiteRuntimeChatEventStore(
+            databaseURL: sqliteDatabaseURL,
+            legacyJSONLFileURL: legacyJSONLFileURL
+        )
+    }
+}
+
 public extension RuntimeChatEventStore {
     func listSessions(limit: Int, includeArchived: Bool) throws -> [RuntimeChatStoredSession] {
         try listSessions(ownerDeviceID: nil, limit: limit, includeArchived: includeArchived)
+    }
+
+    func listSessions(
+        ownerDeviceID: String?,
+        limit: Int,
+        includeArchived: Bool,
+        query: String?
+    ) throws -> [RuntimeChatStoredSession] {
+        guard let searchQuery = RuntimeChatSessionSearchQuery(query) else {
+            return try listSessions(ownerDeviceID: ownerDeviceID, limit: limit, includeArchived: includeArchived)
+        }
+        guard limit > 0 else { return [] }
+
+        let candidates = try listSessions(
+            ownerDeviceID: ownerDeviceID,
+            limit: Int.max,
+            includeArchived: includeArchived
+        )
+        var matches: [(session: RuntimeChatStoredSession, match: RuntimeChatSessionSearchMatch)] = []
+        for session in candidates {
+            let messages = try listMessages(ownerDeviceID: ownerDeviceID, sessionID: session.sessionID, limit: Int.max)
+            if let match = session.runtimeSearchMatch(searchQuery, messages: messages) {
+                matches.append((session, match))
+            }
+        }
+        return matches
+            .sorted { lhs, rhs in
+                if lhs.match.score != rhs.match.score {
+                    return lhs.match.score > rhs.match.score
+                }
+                return lhs.session.lastActivityAt > rhs.session.lastActivityAt
+            }
+            .limited(to: limit)
+            .enumerated()
+            .map { offset, result in
+                var session = result.session
+                session.search = RuntimeChatStoredSessionSearch(
+                    rank: offset + 1,
+                    snippet: result.match.snippet,
+                    matchedFields: result.match.matchedFields
+                )
+                return session
+            }
     }
 
     func listSessions(limit: Int) throws -> [RuntimeChatStoredSession] {
@@ -402,6 +473,10 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
     }
 
     private func readEvents() throws -> [RuntimeChatStoredEvent] {
+        try Self.events(from: fileURL)
+    }
+
+    static func events(from fileURL: URL) throws -> [RuntimeChatStoredEvent] {
         guard FileManager.default.fileExists(atPath: fileURL.path) else { return [] }
         let data = try Data(contentsOf: fileURL)
         guard !data.isEmpty else { return [] }
@@ -450,7 +525,7 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
         return "decode failed"
     }
 
-    private static func validateStoredEvent(_ event: RuntimeChatStoredEvent, line: Int) throws {
+    static func validateStoredEvent(_ event: RuntimeChatStoredEvent, line: Int) throws {
         try requireNonBlank(event.id, line: line, reason: "chat event id is empty")
         try requireNonBlank(event.requestID, line: line, reason: "chat request id is empty")
         try requireNonBlank(event.sessionID, line: line, reason: "chat session id is empty")
@@ -498,7 +573,7 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
         try RuntimeEventLogFileProtection.appendLine(line, to: fileURL)
     }
 
-    private static func sessions(
+    static func sessions(
         from events: [RuntimeChatStoredEvent],
         limit: Int,
         includeArchived: Bool
@@ -508,8 +583,8 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
             let state = lifecycleState(from: events)
             guard state == .active || (includeArchived && state == .archived) else { return nil }
             let chatEvents = events.filter { !$0.kind.isSessionMetadata }
-            guard let last = chatEvents.max(by: { $0.timestamp < $1.timestamp })
-                    ?? events.max(by: { $0.timestamp < $1.timestamp }) else { return nil }
+            guard let last = latestEvent(from: chatEvents)
+                    ?? latestEvent(from: events) else { return nil }
             let messages = messages(from: events, sessionID: sessionID, limit: Int.max)
             let archivedAt = state == .archived ? latestLifecycleEvent(from: events)?.timestamp : nil
             return RuntimeChatStoredSession(
@@ -529,14 +604,21 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
         .limited(to: limit)
     }
 
-    private static func messages(
+    static func messages(
         from events: [RuntimeChatStoredEvent],
         sessionID: String,
         limit: Int
     ) -> [RuntimeChatStoredMessage] {
         let sessionEvents = events
-            .filter { $0.sessionID == sessionID }
-            .sorted { $0.timestamp < $1.timestamp }
+            .enumerated()
+            .filter { $0.element.sessionID == sessionID }
+            .sorted { lhs, rhs in
+                if lhs.element.timestamp == rhs.element.timestamp {
+                    return lhs.offset < rhs.offset
+                }
+                return lhs.element.timestamp < rhs.element.timestamp
+            }
+            .map(\.element)
         guard !sessionEvents.isEmpty else { return [] }
         guard lifecycleState(from: sessionEvents) != .deleted else { return [] }
 
@@ -608,16 +690,23 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
 
     private static func latestStoredTitle(from events: [RuntimeChatStoredEvent]) -> String? {
         events
-            .filter { $0.kind == .title }
-            .sorted { $0.timestamp > $1.timestamp }
-            .compactMap { event in
+            .enumerated()
+            .filter { $0.element.kind == .title }
+            .compactMap { offset, event -> (offset: Int, event: RuntimeChatStoredEvent, title: String)? in
                 let title = event.title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                return title.isEmpty ? nil : title
+                guard !title.isEmpty else { return nil }
+                return (offset, event, title)
             }
-            .first
+            .max { lhs, rhs in
+                if lhs.event.timestamp == rhs.event.timestamp {
+                    return lhs.offset < rhs.offset
+                }
+                return lhs.event.timestamp < rhs.event.timestamp
+            }?
+            .title
     }
 
-    private static func latestModel(from events: [RuntimeChatStoredEvent]) -> String {
+    static func latestModel(from events: [RuntimeChatStoredEvent]) -> String {
         events
             .reversed()
             .first { !$0.model.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }?
@@ -653,6 +742,18 @@ public final class JSONLRuntimeChatEventStore: RuntimeChatEventStore, @unchecked
             })?.element
     }
 
+    private static func latestEvent(from events: [RuntimeChatStoredEvent]) -> RuntimeChatStoredEvent? {
+        events
+            .enumerated()
+            .max { lhs, rhs in
+                if lhs.element.timestamp == rhs.element.timestamp {
+                    return lhs.offset < rhs.offset
+                }
+                return lhs.element.timestamp < rhs.element.timestamp
+            }?
+            .element
+    }
+
     private static let defaultSessionTitle = "New chat"
 }
 
@@ -662,7 +763,7 @@ private enum RuntimeChatSessionLifecycleState: String {
     case deleted
 }
 
-private extension RuntimeChatSessionMutation {
+extension RuntimeChatSessionMutation {
     var eventKind: RuntimeChatStoredEventKind {
         switch self {
         case .archive:
@@ -690,7 +791,7 @@ private extension RuntimeChatStoredEventKind {
     }
 }
 
-private extension RuntimeChatStoredEvent {
+extension RuntimeChatStoredEvent {
     func sanitizedForStorage() -> RuntimeChatStoredEvent {
         var copy = self
         copy.messages = messages?.map { message in
@@ -704,7 +805,7 @@ private extension RuntimeChatStoredEvent {
     }
 }
 
-private extension ChatAttachment {
+extension ChatAttachment {
     var withoutInlineData: ChatAttachment {
         ChatAttachment(
             type: type,
@@ -730,7 +831,7 @@ private extension ChatMessage {
     }
 }
 
-private extension Array {
+extension Array {
     func limited(to limit: Int) -> [Element] {
         guard limit > 0 else { return [] }
         guard count > limit else { return self }
@@ -744,9 +845,21 @@ private extension Array {
     }
 }
 
-private extension String {
+extension String {
     var nilIfBlank: String? {
         isEmpty ? nil : self
+    }
+
+    var runtimeSearchSnippetText: String {
+        components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var normalizedRuntimeSearchText: String {
+        folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+            .lowercased()
     }
 }
 
@@ -757,6 +870,139 @@ private extension Optional where Wrapped == String {
             return nil
         }
         return value
+    }
+}
+
+struct RuntimeChatSessionSearchQuery {
+    let terms: [String]
+
+    init?(_ rawQuery: String?) {
+        let terms = rawQuery?
+            .normalizedRuntimeSearchText
+            .split(whereSeparator: { $0.isWhitespace })
+            .map(String.init)
+            ?? []
+        guard !terms.isEmpty else { return nil }
+        self.terms = terms
+    }
+}
+
+struct RuntimeChatSessionSearchField {
+    var name: String
+    var text: String
+    var weight: Int
+    var order: Int
+}
+
+struct RuntimeChatSessionSearchMatch {
+    var score: Int
+    var snippet: String
+    var matchedFields: [String]
+}
+
+extension RuntimeChatStoredSession {
+    func runtimeSearchMatch(
+        _ query: RuntimeChatSessionSearchQuery,
+        messages: [RuntimeChatStoredMessage]
+    ) -> RuntimeChatSessionSearchMatch? {
+        let fields = searchFields(messages: messages)
+        var matchedTerms = Set<String>()
+        var matchedFields: [String] = []
+        var score = 0
+        var snippetCandidates: [(field: RuntimeChatSessionSearchField, termCount: Int)] = []
+
+        for field in fields {
+            let normalizedText = field.text.normalizedRuntimeSearchText
+            guard !normalizedText.isEmpty else { continue }
+            let fieldTerms = query.terms.filter { normalizedText.contains($0) }
+            guard !fieldTerms.isEmpty else { continue }
+
+            matchedTerms.formUnion(fieldTerms)
+            if !matchedFields.contains(field.name) {
+                matchedFields.append(field.name)
+            }
+            score += field.weight * fieldTerms.count
+            if fieldTerms.count == query.terms.count {
+                score += 25
+            }
+            snippetCandidates.append((field, fieldTerms.count))
+        }
+
+        guard query.terms.allSatisfy({ matchedTerms.contains($0) }) else { return nil }
+
+        let bestSnippetField = snippetCandidates
+            .sorted { lhs, rhs in
+                if lhs.termCount != rhs.termCount {
+                    return lhs.termCount > rhs.termCount
+                }
+                if lhs.field.weight != rhs.field.weight {
+                    return lhs.field.weight > rhs.field.weight
+                }
+                return lhs.field.order < rhs.field.order
+            }
+            .first?
+            .field
+        let snippet = bestSnippetField
+            .map { Self.searchSnippet(from: $0.text, terms: query.terms) }
+            ?? title
+
+        return RuntimeChatSessionSearchMatch(
+            score: score,
+            snippet: snippet,
+            matchedFields: matchedFields
+        )
+    }
+
+    private func searchFields(messages: [RuntimeChatStoredMessage]) -> [RuntimeChatSessionSearchField] {
+        var fields: [RuntimeChatSessionSearchField] = []
+        func append(_ name: String, _ text: String?, weight: Int) {
+            guard let text = text?.runtimeSearchSnippetText, !text.isEmpty else { return }
+            fields.append(RuntimeChatSessionSearchField(name: name, text: text, weight: weight, order: fields.count))
+        }
+
+        append("title", title, weight: 100)
+        append("session_id", sessionID, weight: 40)
+        append("model", model, weight: 60)
+        append("status", status, weight: 25)
+        append("last_event", lastEvent, weight: 25)
+        append("last_finish_reason", lastFinishReason, weight: 20)
+        append("last_error_code", lastErrorCode, weight: 20)
+        for message in messages {
+            append("transcript", message.content, weight: 80)
+            append("reasoning", message.reasoning, weight: 50)
+            for attachment in message.attachments {
+                append("attachment", attachment.name, weight: 45)
+                append("attachment", attachment.mimeType, weight: 25)
+                append("attachment", attachment.text, weight: 70)
+            }
+        }
+        return fields
+    }
+
+    private static func searchSnippet(
+        from text: String,
+        terms: [String],
+        maxCharacters: Int = 160
+    ) -> String {
+        let cleanText = text.runtimeSearchSnippetText
+        guard !cleanText.isEmpty else { return "" }
+        guard cleanText.count > maxCharacters else { return cleanText }
+
+        let firstRange = terms
+            .compactMap { term in
+                cleanText.range(of: term, options: [.caseInsensitive, .diacriticInsensitive])
+            }
+            .min { lhs, rhs in lhs.lowerBound < rhs.lowerBound }
+        let center = firstRange?.lowerBound ?? cleanText.startIndex
+        let prefixCharacters = maxCharacters / 3
+        let start = cleanText.index(center, offsetBy: -prefixCharacters, limitedBy: cleanText.startIndex)
+            ?? cleanText.startIndex
+        let end = cleanText.index(start, offsetBy: maxCharacters, limitedBy: cleanText.endIndex)
+            ?? cleanText.endIndex
+        let snippet = cleanText[start..<end].trimmingCharacters(in: .whitespacesAndNewlines)
+        let leading = start == cleanText.startIndex ? "" : "..."
+        let trailing = end == cleanText.endIndex ? "" : "..."
+        return leading + snippet + trailing
     }
 }
 

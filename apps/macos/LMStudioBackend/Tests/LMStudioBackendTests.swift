@@ -36,6 +36,7 @@ final class LMStudioBackendTests: XCTestCase {
                       "key": "google/gemma-4-26b-a4b",
                       "display_name": "Gemma 4 26B A4B",
                       "size_bytes": 17990911801,
+                      "context_length": 131072,
                       "loaded_instances": [{"id": "google/gemma-4-26b-a4b"}]
                     },
                     {
@@ -60,6 +61,7 @@ final class LMStudioBackendTests: XCTestCase {
         XCTAssertEqual(models.first?.capabilities, ["chat"])
         XCTAssertEqual(models.first?.providerModelID, "google/gemma-4-26b-a4b")
         XCTAssertEqual(models.first?.sizeBytes, 17990911801)
+        XCTAssertEqual(models.first?.contextWindowTokens, 131072)
         XCTAssertEqual(models.first?.source, .local)
         XCTAssertTrue(models.first?.installed == true)
         XCTAssertTrue(models.first?.running == true)
@@ -79,7 +81,7 @@ final class LMStudioBackendTests: XCTestCase {
             case "/v1/models":
                 return self.response(
                     statusCode: 200,
-                    body: #"{"object":"list","data":[{"id":"loaded-local-model","object":"model"},{"id":"text-embedding-nomic","object":"model"}]}"#
+                    body: #"{"object":"list","data":[{"id":"loaded-local-model","object":"model","context_window_tokens":32768},{"id":"text-embedding-nomic","object":"model"}]}"#
                 )
             default:
                 XCTFail("Unexpected path: \(request.url?.path ?? "nil")")
@@ -94,6 +96,7 @@ final class LMStudioBackendTests: XCTestCase {
         XCTAssertEqual(models.map(\.provider), [.lmStudio, .lmStudio])
         XCTAssertEqual(models.map(\.kind), [.chat, .embedding])
         XCTAssertEqual(models.map(\.capabilities), [["chat"], ["embedding"]])
+        XCTAssertEqual(models.first?.contextWindowTokens, 32768)
     }
 
     func testUnloadModelPostsLoadedInstanceID() async throws {

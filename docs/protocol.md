@@ -58,10 +58,13 @@ Rules:
 26. The client app may ask AetherLink Runtime for a short generated chat title with `chat.title.request`.
 27. The client app may rename a runtime-owned session with `chat.session.rename`.
 28. The client app may archive, restore, or delete runtime-owned sessions with `chat.session.archive`, `chat.session.restore`, and `chat.session.delete`.
-29. An already-authenticated client may request fresh relay lease material with `route.refresh` before an existing QR-provisioned route expires.
-29. The client app may send `chat.cancel` for an active request.
+29. The protocol still defines authenticated `route.refresh` for explicit diagnostic or test coverage of fresh remote route material before an existing QR-provisioned route expires. The Android product default does not advertise or automatically send it; normal users refresh routes by scanning the latest QR. The current implementation can carry relay lease material and opaque P2P rendezvous material, but the P2P material is still only route record renewal, not real NAT traversal.
+30. The client app may list runtime-generated review drafts for long-inactive chat memory summaries with `memory.summary.drafts.list`.
+31. The client app may approve one long-inactivity memory summary draft into runtime-owned memory with `memory.summary.draft.approve`.
+32. The client app may dismiss one long-inactivity memory summary draft without writing runtime-owned memory with `memory.summary.draft.dismiss`.
+33. The client app may send `chat.cancel` for an active request.
 
-Runtime commands are gated after pairing. `runtime.health`, `models.list`, `models.pull`, `route.refresh`, `chat.send`, `chat.sessions.list`, `chat.messages.list`, `chat.suggestions.request`, `chat.title.request`, `chat.session.rename`, `chat.session.archive`, `chat.session.restore`, `chat.session.delete`, and `chat.cancel` require an authenticated session; unauthenticated requests return `authentication_required`. The runtime must continue checking that the authenticated device id is still present in the trusted-device store before accepting later commands. If trust is removed while a connection is still open, the next command fails with `pairing_required` and the cached authenticated session is cleared.
+Runtime commands are gated after pairing. `runtime.health`, `models.list`, `models.pull`, `route.refresh`, `chat.send`, `chat.sessions.list`, `chat.messages.list`, `chat.title.request`, `chat.session.rename`, `chat.session.archive`, `chat.session.restore`, `chat.session.delete`, `memory.list`, `memory.upsert`, `memory.delete`, `memory.summary.drafts.list`, `memory.summary.draft.approve`, `memory.summary.draft.dismiss`, and `chat.cancel` require an authenticated session; unauthenticated requests return `authentication_required`. The runtime must continue checking that the authenticated device id is still present in the trusted-device store before accepting later commands. If trust is removed while a connection is still open, the next command fails with `pairing_required` and the cached authenticated session is cleared.
 
 The authentication flow is part of the v0.1 product contract even if a development build uses minimal local transport plumbing while the channel is being hardened.
 
@@ -109,7 +112,15 @@ The equivalent compact camera QR form is:
 aetherlink://pair?v=1&n=<nonce>&c=<6-digit-code>&rid=<stable-runtime-id>&rn=AetherLink%20Runtime&rf=<runtime-key-fingerprint>&rk=<base64-runtime-public-key>&rt=<paired-route-token>&rh=<relay-host>&rp=43171&ri=<private-network-id>&rs=<pairwise-frame-secret>&rx=<epoch-ms>&rrn=<route-nonce>
 ```
 
-`relay_host`, `relay_port`, `relay_id`, `relay_secret`, `relay_expires_at`, and `relay_nonce` are required route material for the current QR relay path. `relay_id` must be explicit route material; `route_token` is a paired-runtime routing token and is not accepted as a fallback relay id. `relay_scope`, when present on a relay route, must exactly match one of `remote`, `private_overlay`, or `usb_reverse`. `relay_secret` is shared only through QR pairing and is not sent in the relay registration line. `relay_expires_at` is an epoch-millisecond expiration, and `relay_nonce` is pairwise anti-replay material for the fresh QR route attempt. After pairing succeeds, the client persists the trusted runtime identity plus the current relay host/id/secret/lease/nonce route material. The trusted-device relationship is long-lived, but the saved relay lease is not; if it expires or is incomplete, the client must refresh the route by scanning a fresh QR or through a future trusted route-renewal flow. The current relay uses outbound TCP from both peers and forwards bytes after matching one runtime and one client by `relay_id`. AetherLink frame bodies over QR-provisioned relay routes are encrypted with AES-GCM using direction-bound nonces (`CLNT` for client-to-runtime, `RUNT` for runtime-to-client). The frame key is derived from the QR-provisioned `relay_secret` and `relay_nonce`, so a route lease with the same secret but a different nonce cannot decrypt frames from another lease. This supports QR-only different-network development testing when a mutually reachable, QR-eligible relay is configured because Android scans the route QR, stores the remote route with the pinned runtime identity, and does not ask for a host or port. It is still not a complete production relay/TURN system.
+`relay_host`, `relay_port`, `relay_id`, `relay_secret`, `relay_expires_at`, and `relay_nonce` are required route material for the current QR relay path. `relay_id` must be explicit route material; `route_token` is a paired-runtime routing token and is not accepted as a fallback relay id. `relay_scope`, when present on a relay route, must exactly match one of `remote`, `private_overlay`, or `usb_reverse`. `relay_secret` is shared only through QR pairing and is not sent in the relay registration line. `relay_expires_at` is an epoch-millisecond expiration, and `relay_nonce` is pairwise anti-replay material for the fresh QR route attempt. After pairing succeeds, the client persists the trusted runtime identity plus the current relay host/id/secret/lease/nonce route material. The trusted-device relationship is long-lived, but the saved relay lease is not; if it expires or is incomplete, normal Android product builds guide the user to scan a fresh QR. Authenticated relay refresh remains available only when explicitly enabled for diagnostic or test coverage; when enabled, it may preserve a stable relay id or frame secret, but the client rejects a refresh that reuses the current relay nonce or does not advance `relay_expires_at`. The current relay uses outbound TCP from both peers and forwards bytes after matching one runtime and one client by `relay_id`. AetherLink frame bodies over QR-provisioned relay routes are encrypted with AES-GCM using direction-bound nonces (`CLNT` for client-to-runtime, `RUNT` for runtime-to-client). The frame key is derived from the QR-provisioned `relay_secret` and `relay_nonce`, so a route lease with the same secret but a different nonce cannot decrypt frames from another lease. This supports QR-only different-network development testing when a mutually reachable, QR-eligible relay is configured because Android scans the route QR, stores the remote route with the pinned runtime identity, and does not ask for a host or port. It is still not a complete production relay/TURN system.
+
+P2P rendezvous QR payloads use a separate route namespace:
+
+```text
+aetherlink://pair?v=1&n=<nonce>&c=<6-digit-code>&rid=<stable-runtime-id>&rn=AetherLink%20Runtime&rf=<runtime-key-fingerprint>&rk=<base64-runtime-public-key>&rt=<paired-route-token>&pc=p2p_rendezvous&prid=<opaque-record-id>&peb=<opaque-encrypted-candidate-body>&px=<epoch-ms>&pn=<anti-replay-nonce>&pv=1
+```
+
+`p2p_class=p2p_rendezvous`, `p2p_record_id`, `p2p_encrypted_body`, `p2p_expires_at`, `p2p_anti_replay_nonce`, and `p2p_protocol_version=1` are a complete family; canonical names and compact aliases must not be mixed into the relay alias families. Android drops incomplete or expired P2P rendezvous material and stores complete future records only as opaque route material bound to the pinned runtime identity. The P2P body is treated as encrypted candidate material for a future connector; current code does not decrypt it, exchange candidates, run STUN, punch holes, or complete a real P2P connection.
 
 Development USB smoke tests may add `relay_scope=usb_reverse` when the relay host is loopback and adb reverse maps the phone's loopback port to the runtime host. This is accepted only by debug clients for validation. Normal QR pairing rejects loopback, `.local`, unspecified, link-local, and multicast relay hosts. Carrier-grade NAT, private IPv4, and ULA IPv6 relay literals require explicit private-overlay opt-in before QR generation can include `relay_scope=private_overlay`; that scope means the user controls a VPN, tunnel, or private overlay that makes the route reachable from both paired devices. Scope-less private relay literals remain invalid because they otherwise look like same-network fixed IPs.
 
@@ -127,13 +138,13 @@ The target end-to-end encryption boundary is between the paired client app and r
 
 Bitcoin-network analogy note: AetherLink may use decentralized peer-discovery ideas, but only for finding QR-paired trusted runtime/client identities. It is not a public untrusted network, and unpaired peers must not receive usable routing metadata or AI protocol access.
 
-Route records are defined at the connection overlay layer. See [connection-overlay.md](connection-overlay.md#route-record-contract). The only product target is a paired runtime identity; `host` and `port` remain development/local-direct hints. Future route records should be opaque, expiring, pairwise, replay-protected records such as `local_direct`, `p2p_rendezvous`, and `relay_allocation`. The current active `route.refresh` message exists only because the temporary relay implementation has begun and needs a runtime-mediated way to renew expiring QR-provisioned relay leases for already-trusted devices.
+Route records are defined at the connection overlay layer. See [connection-overlay.md](connection-overlay.md#route-record-contract). The only product target is a paired runtime identity; `host` and `port` remain development/local-direct hints. Future route records should be opaque, expiring, pairwise, replay-protected records such as `local_direct`, `p2p_rendezvous`, and `relay_allocation`. macOS pairing QR generation and Android QR parsing now share a first QR-carried `p2p_rendezvous` family using `p2p_class`, `p2p_record_id`, `p2p_encrypted_body`, `p2p_expires_at`, `p2p_anti_replay_nonce`, and `p2p_protocol_version`, plus compact aliases `pc`, `prid`, `peb`, `px`, `pn`, and `pv`. Android can persist complete P2P rendezvous records as pending pairing route material and, after accepted pairing, same-runtime QR route-refresh scan, or explicitly enabled authenticated `route.refresh` response, as trusted runtime route material for later restore planning. This is QR generation, optional diagnostic route-material renewal, storage, and route planning only, not real NAT traversal.
 
 ## `route.refresh`
 
 Direction: Client -> Runtime, then Runtime -> Client with the same `request_id`.
 
-`route.refresh` lets an already-authenticated client ask the paired runtime host for fresh relay route material before the QR-provisioned relay lease expires. This is not model access, not backend discovery, and not a direct connection to Ollama or LM Studio. It only renews the client-to-runtime overlay route.
+`route.refresh` lets an already-authenticated client ask the paired runtime host for fresh remote route material before QR-provisioned material expires. Android keeps this path disabled by default for normal users so route repair remains a latest-QR scan flow; the message is used only when explicitly enabled for diagnostic and no-device regression coverage. This is not model access, not backend discovery, and not a direct connection to Ollama or LM Studio. It renews client-to-runtime overlay route records only.
 
 Request payload:
 
@@ -147,7 +158,7 @@ Request payload:
 }
 ```
 
-Successful response payload:
+Successful relay response payload:
 
 ```json
 {
@@ -169,7 +180,30 @@ Successful response payload:
 }
 ```
 
+Successful opaque P2P rendezvous response payload:
+
+```json
+{
+  "version": 1,
+  "type": "route.refresh",
+  "request_id": "req_route_refresh_001",
+  "timestamp": "2026-06-25T12:00:01Z",
+  "payload": {
+    "runtime_device_id": "stable-runtime-id",
+    "runtime_key_fingerprint": "runtime-key-fingerprint",
+    "p2p_class": "p2p_rendezvous",
+    "p2p_record_id": "opaque-record-id",
+    "p2p_encrypted_body": "opaque-encrypted-candidate-body",
+    "p2p_expires_at": 1782205505000,
+    "p2p_anti_replay_nonce": "fresh-p2p-route-nonce",
+    "p2p_protocol_version": 1
+  }
+}
+```
+
 The runtime must bind successful refresh material to the paired runtime identity with `runtime_device_id` and `runtime_key_fingerprint`. The client must reject a refresh response whose identity fields are missing or do not match the pinned trusted runtime. The runtime may return `route_refresh_unavailable` when no refreshable route is configured, allocation fails, the route is not QR-eligible, or the route scope cannot be represented by the protocol enum. The client should keep the existing trusted runtime identity and fall back to scanning a fresh QR when refresh fails. `relay_scope` is optional, but when present it must be exactly one of `remote`, `private_overlay`, or `usb_reverse`; unknown or whitespace-mutated values are invalid and must not be saved as trusted route material. `relay_scope = private_overlay` is allowed only for explicit VPN, tunnel, or private-overlay routes that both devices can reach; scope-less private relay literals stay invalid.
+
+Relay route material and P2P rendezvous material are both complete families. If any relay field is present, `relay_host`, `relay_port`, `relay_id`, `relay_secret`, `relay_expires_at`, and `relay_nonce` must all be valid and fresh. If any P2P field is present, `p2p_class=p2p_rendezvous`, `p2p_record_id`, `p2p_encrypted_body`, `p2p_expires_at`, `p2p_anti_replay_nonce`, and `p2p_protocol_version=1` must all be valid and fresh. Partial or expired families are rejected before trusted route storage. A response may contain relay, P2P, or both families, but P2P data remains opaque route material for a future connector; current code does not decrypt candidates, run STUN, exchange candidates, punch holes, or complete a real P2P connection.
 
 ## `pairing.request`
 
@@ -371,6 +405,7 @@ The AetherLink Runtime responds with the same `type` in v0.1:
         "model_kind": "chat",
         "capabilities": ["chat"],
         "size_bytes": 4660000000,
+        "context_window_tokens": 32768,
         "modified_at": "2026-06-23T09:00:00Z",
         "installed": true,
         "running": true,
@@ -422,6 +457,7 @@ Model fields:
 - `qualified_id`: provider-prefixed model id, such as `ollama:llama3.1:8b` or `lm_studio:google/gemma-4-26b-a4b`, recommended for `chat.send` when more than one provider is enabled.
 - `model_kind`: `chat` for conversational/text-generation models, `embedding` for embedding models.
 - `capabilities`: capability tags such as `chat` or `embedding`; clients should prefer these over name heuristics when present.
+- `context_window_tokens`: optional runtime-host-derived model context window hint. When present, the runtime may use it to choose backend-side compaction budgets; clients should treat it as metadata and must not call provider APIs directly to derive or enforce it.
 - `installed`: `true` only when the AetherLink Runtime sees the model in a local backend model list.
 - `running`: `true` when the AetherLink Runtime detects the model as loaded or running.
 - `source`: optional backend-derived source metadata. `local` means runtime-host-local. Other values are compatibility metadata and should not make a model appear as a normal chat-picker recommendation.
@@ -498,9 +534,9 @@ The AetherLink Runtime routes provider-prefixed model ids to the selected runtim
 
 The AetherLink Runtime is the authoritative source for runtime-owned user memory. Current clients should not prepend cached memory as `chat.send` system context; they send client-visible conversation messages and manage memory through `memory.list`, `memory.upsert`, and `memory.delete`. If a compatibility client still sends a `system` message beginning with `Runtime user memory:`, the runtime removes that stale client context and replaces it with enabled entries from its own memory store before calling a backend. If no enabled runtime entries exist, no cached client memory is forwarded. This does not create a direct client-to-backend path; the entire message list still goes only to the AetherLink Runtime, and only the AetherLink Runtime calls Ollama or LM Studio.
 
-`chat.send.locale` is optional and carries the client's normalized app-language preference for runtime-generated chat side effects, such as automatic chat titles or follow-up suggestions triggered after the response. It does not change transport routing and must not expose backend or device locale details. Current client implementations normalize this to the launch language set: English, Korean, Japanese, Simplified Chinese, and French.
+`chat.send.locale` is optional and carries the client's normalized app-language preference for runtime-generated chat side effects, such as automatic chat titles triggered after the response. It does not change transport routing and must not expose backend or device locale details. Current client implementations normalize this to the launch language set: English, Korean, Japanese, Simplified Chinese, and French.
 
-The AetherLink Runtime is the authoritative processing boundary for chat. After a syntactically valid `chat.send` is parsed, the runtime host stores request metadata and client-visible messages before model resolution, attachment capability checks, or generation starts, then stores streamed answer deltas, reasoning deltas, completion usage, cancellation, and errors as processing events. Runtime-only system context, including the AetherLink capability guard and `Runtime user memory:` prompt context, is backend-call context only and must not be stored or returned as user-visible chat history. Inline attachment bytes are not kept in the event log. Client-side history can exist as UI cache, but it is not the only source of processing state. Authenticated clients can read runtime-owned summaries and transcripts through `chat.sessions.list` and `chat.messages.list`.
+The AetherLink Runtime is the authoritative processing boundary for chat. After a syntactically valid `chat.send` is parsed, the runtime host refuses to append to an existing archived session unless the client restores it first. Archived-session sends return `error` with `code = "chat_session_must_be_restored_before_send"` before backend dispatch or chat-event mutation. For active or new sessions, the runtime host stores request metadata and client-visible messages before model resolution, attachment capability checks, or generation starts, then stores streamed answer deltas, reasoning deltas, completion usage, cancellation, and errors as processing events. Runtime-only system context, including the AetherLink capability guard and `Runtime user memory:` prompt context, is backend-call context only and must not be stored or returned as user-visible chat history. Inline attachment bytes are not kept in the event log. Client-side history can exist as UI cache, but it is not the only source of processing state. Authenticated clients can read runtime-owned summaries and transcripts through `chat.sessions.list` and `chat.messages.list`.
 
 The first runtime-side context compaction slice is also backend-call context only. When the runtime's heuristic character budget says the active `chat.send` history is too large, the runtime keeps the most recent client-visible messages verbatim, summarizes older active-session turns into a backend-only `system` message, and sends that compacted input to the selected backend. The client-visible transcript, `chat.messages.list`, `chat.sessions.list`, archive state, and delete state are not rewritten by compaction. Archived sessions and deleted sessions must not be used as compaction inputs. The capability guard, runtime-owned memory prompt context, and compaction summary remain separate runtime-only system context so memory/capability guard separation is preserved.
 
@@ -616,7 +652,8 @@ Request:
   "timestamp": "2026-06-23T09:02:06Z",
   "payload": {
     "limit": 100,
-    "include_archived": true
+    "include_archived": true,
+    "query": "relay route"
   }
 }
 ```
@@ -639,7 +676,12 @@ Response:
         "message_count": 2,
         "status": "active",
         "last_event": "done",
-        "last_finish_reason": "stop"
+        "last_finish_reason": "stop",
+        "search": {
+          "rank": 1,
+          "snippet": "Runtime-mediated model access without a direct client backend.",
+          "matched_fields": ["title", "transcript"]
+        }
       },
       {
         "session_id": "archived-1",
@@ -659,7 +701,9 @@ Response:
 
 `include_archived` defaults to `false`. When it is `false`, archived sessions are omitted. When it is `true`, the runtime may return active and archived sessions with `status`; deleted sessions are never returned. Archived summaries include `archived_at` when known. `last_activity_at` remains the last chat activity timestamp, not necessarily the archive timestamp.
 
-`limit` is optional. The runtime clamps it to an implementation-defined maximum. `title` is runtime-owned metadata when a `chat.title.request` result has been generated and saved by the runtime; otherwise it should remain a neutral placeholder such as `New chat` instead of exposing the first user prompt verbatim.
+`query` is optional. When present, the runtime filters within the authenticated device's owner scope after applying the normal active/archived/deleted lifecycle rules. Query responses may include per-session `search` metadata with a 1-based `rank`, a bounded `snippet`, and stable `matched_fields` names such as `title`, `model`, `transcript`, `reasoning`, or `attachment`. The current runtime stores and searches sanitized client-visible transcript text and separately stored assistant reasoning text while keeping runtime-only system context and inline attachment bytes excluded from returned history, searchable transcript text, and snippets. The SQLite/FTS default event-store backend preserves this contract behind the same store protocol by using FTS for queried session candidates and the deterministic runtime search engine for final rank/snippet metadata.
+
+`limit` is optional. The runtime clamps it to an implementation-defined maximum, and `0` returns an empty result window. `title` is runtime-owned metadata when a `chat.title.request` result has been generated and saved by the runtime; otherwise it should remain a neutral placeholder such as `New chat` instead of exposing the first user prompt verbatim.
 
 Runtime summaries may include processing metadata: `last_event`, `last_finish_reason`, and `last_error_code`. `last_event` describes the latest runtime-side processing event for that session, such as `done`, `cancelled`, or `error`. These fields let a client show runtime-owned processing state without making the client the durable transcript store.
 
@@ -719,62 +763,7 @@ Response:
 }
 ```
 
-The runtime must omit inline attachment bytes from stored transcripts. Stored message attachments may include safe metadata such as `type`, `mime_type`, `name`, and extracted `text`, but must not include `data_base64`. The current runtime store reconstructs multi-turn transcripts from stored request/response event pairs and returns attachment metadata for user messages when available. Archive/delete semantics are runtime-owned; clients may keep local suppression metadata so a locally deleted runtime-owned session does not reappear after the next history sync.
-
-## `chat.suggestions.request`
-
-Direction: Client -> Runtime.
-
-After a normal `chat.done`, the client app may ask the AetherLink Runtime to generate short suggested next questions for the latest conversation. This request is a runtime-mediated model call. The client app must not call Ollama, LM Studio, or another serving backend directly for suggestions.
-
-```json
-{
-  "version": 1,
-  "type": "chat.suggestions.request",
-  "request_id": "req_suggestions_001",
-  "timestamp": "2026-06-23T09:02:06Z",
-  "payload": {
-    "session_id": "default",
-    "model": "ollama:llama3.1:8b",
-    "max_suggestions": 3,
-    "locale": "en",
-    "messages": [
-      {
-        "role": "user",
-        "content": "Explain this architecture."
-      },
-      {
-        "role": "assistant",
-        "content": "The runtime mediates local model access..."
-      }
-    ]
-  }
-}
-```
-
-The AetherLink Runtime should use recent `messages`, the selected `model`, and the optional `locale` to generate concise next-question candidates. The runtime should return structured suggestions only; it should not stream these as normal assistant chat output.
-
-## `chat.suggestions.result`
-
-Direction: Runtime -> Client.
-
-```json
-{
-  "version": 1,
-  "type": "chat.suggestions.result",
-  "request_id": "req_suggestions_001",
-  "timestamp": "2026-06-23T09:02:07Z",
-  "payload": {
-    "suggestions": [
-      "How should pairing be secured later?",
-      "What happens when the runtime is offline?",
-      "How are model capabilities detected?"
-    ]
-  }
-}
-```
-
-The client app renders these as optional UI chips near the latest assistant answer. Selecting a suggestion should fill or send the normal chat composer through `chat.send`; suggestions are not a separate conversation role.
+`limit` is optional. The runtime clamps it to an implementation-defined maximum, and `0` returns an empty result window. The runtime must omit inline attachment bytes from stored transcripts. Stored message attachments may include safe metadata such as `type`, `mime_type`, `name`, and extracted `text`, but must not include `data_base64`. The current runtime store reconstructs multi-turn transcripts from stored request/response event pairs and returns attachment metadata for user messages when available. Archive/delete semantics are runtime-owned; clients may keep local suppression metadata so a locally deleted runtime-owned session does not reappear after the next history sync.
 
 ## `chat.title.request`
 
@@ -929,7 +918,7 @@ Acknowledgement payload:
 
 Direction: Client -> Runtime, Runtime -> Client.
 
-This records a runtime-side deletion/tombstone for a chat session. The runtime must only accept deletion for an already archived session; active sessions must return `error` with `code: "chat_session_must_be_archived_before_delete"`. This keeps archive and permanent delete as distinct operations even if a future client bypasses UI confirmation. After deletion, the runtime must stop returning the deleted session from `chat.sessions.list` and should return no transcript for `chat.messages.list`. Implementations may keep append-only audit events internally, but deleted sessions must not be used for memory, retrieval, suggestions, or compaction inputs.
+This records a runtime-side deletion/tombstone for a chat session. The runtime must only accept deletion for an already archived session; active sessions must return `error` with `code: "chat_session_must_be_archived_before_delete"`. This keeps archive and permanent delete as distinct operations even if a future client bypasses UI confirmation. After deletion, the runtime must stop returning the deleted session from `chat.sessions.list` and should return no transcript for `chat.messages.list`. Implementations may keep append-only audit events internally, but deleted sessions must not be used for memory, retrieval, or compaction inputs.
 
 Request payload:
 
@@ -1022,6 +1011,7 @@ Common v0.1 error codes:
 - `unsupported_attachment`
 - `unreadable_attachment`
 - `chat_session_must_be_archived_before_delete`
+- `chat_session_must_be_restored_before_send`
 - `chat_store_unavailable`
 - `memory_store_unavailable`
 - `transport_error`
@@ -1032,6 +1022,10 @@ Common v0.1 error codes:
 Basic runtime-owned memory CRUD is active after authentication. These messages store short user-managed notes on the AetherLink Runtime host so future clients can sync the same trusted-runtime memory state. They do not implement semantic search, automatic memory extraction, embedding indexes, reflection, MCP, tools, or web search. The current `chat.send` compaction slice is separate: it is a runtime-side, backend-only active-session prompt-shaping path, not memory CRUD or durable memory extraction.
 
 Current clients do not include cached memory context inside `chat.send.messages`. Compatibility clients may still send stale memory context, but the runtime treats it as defensive compatibility input, strips it, and rebuilds memory prompt context from the runtime-owned memory store. Archived or deleted chat sessions must not be used as memory inputs unless restored or explicitly selected by a future permissioned workflow.
+
+Long-inactivity memory summary drafts are review artifacts. `memory.summary.drafts.list` identifies active, owner-scoped, sufficiently old chats that can be reviewed later for possible memory extraction. Listing returns bounded visible-transcript source pointers and a deterministic preview, but it does not call a model, does not write memory, does not inject memory into `chat.send`, and does not include assistant reasoning, runtime-only system context, archived/deleted sessions, or another trusted device's sessions. `memory.summary.draft.approve` is the separate write command: the runtime recomputes the owner-scoped draft, validates optional expected metadata, and writes an idempotent runtime memory entry with id `memory-summary:<draft_id>`. Approved summary entries carry optional durable `source` metadata that records the draft id, deterministic summary method, source session metadata, source range, and bounded visible-transcript source pointers. `memory.summary.draft.dismiss` is a separate owner-scoped decision command: the runtime recomputes the current draft, validates the same stale-guard metadata, persists a dismiss decision for that draft id, and does not create or update a memory entry. Approved or dismissed drafts are hidden from later draft-list responses for that owner.
+
+Memory entries may include a `source` object. Current runtimes only emit it for approved long-inactivity summary drafts, and clients must treat it as audit metadata for the approved entry, not as additional chat context. Clients should show source metadata as a review aid only, keep source excerpts collapsed by default, and avoid presenting the field as a full transcript. Source excerpts are bounded visible transcript excerpts; runtimes must not persist assistant reasoning, runtime-only system prompts, runtime memory context, compaction summaries, archived/deleted sessions, or another trusted device's transcript in this field.
 
 ### `memory.list`
 
@@ -1138,17 +1132,176 @@ Response:
 }
 ```
 
+### `memory.summary.drafts.list`
+
+Lists deterministic long-inactivity memory summary drafts for the authenticated trusted device. This is a review/read command only; clients must not treat it as approved memory, and runtimes must not persist new memory entries from this request.
+
+Request:
+
+```json
+{
+  "version": 1,
+  "type": "memory.summary.drafts.list",
+  "request_id": "req_memory_summary_drafts_001",
+  "timestamp": "2026-07-01T09:30:00Z",
+  "payload": {
+    "limit": 10
+  }
+}
+```
+
+Response:
+
+```json
+{
+  "version": 1,
+  "type": "memory.summary.drafts.list",
+  "request_id": "req_memory_summary_drafts_001",
+  "timestamp": "2026-07-01T09:30:01Z",
+  "payload": {
+    "drafts": [
+      {
+        "id": "long-inactivity:session-1:1780304525000:6",
+        "session": {
+          "session_id": "session-1",
+          "title": "Runtime notes",
+          "model": "ollama:llama3.1:8b",
+          "last_activity_at": "2026-06-01T09:02:05Z",
+          "message_count": 7,
+          "inactive_seconds": 2592000
+        },
+        "source_message_count": 6,
+        "source_range": "visible messages 1-6 of 6",
+        "source_pointers": [
+          {
+            "session_id": "session-1",
+            "message_index": 1,
+            "role": "user",
+            "created_at": "2026-06-01T09:00:00Z",
+            "excerpt": "Summarize my preference."
+          }
+        ],
+        "summary_preview": "User: Summarize my preference."
+      }
+    ]
+  }
+}
+```
+
+### `memory.summary.draft.approve`
+
+Approves one currently available long-inactivity memory summary draft into runtime-owned memory for the authenticated trusted device. The runtime must look up the draft from its owner-scoped chat store by `draft_id`; it must not trust client-supplied session ids as authority. If `expected_session_id` or `expected_source_message_count` is supplied and no longer matches the recomputed draft, the runtime returns `memory_summary_draft_stale`. If the draft is unavailable or belongs to another owner, the runtime returns `memory_summary_draft_unavailable`.
+
+Request:
+
+```json
+{
+  "version": 1,
+  "type": "memory.summary.draft.approve",
+  "request_id": "req_memory_summary_draft_approve_001",
+  "timestamp": "2026-07-01T09:31:00Z",
+  "payload": {
+    "draft_id": "long-inactivity:session-1:1780304525000:6",
+    "enabled": true,
+    "expected_session_id": "session-1",
+    "expected_source_message_count": 6
+  }
+}
+```
+
+Response:
+
+```json
+{
+  "version": 1,
+  "type": "memory.summary.draft.approve",
+  "request_id": "req_memory_summary_draft_approve_001",
+  "timestamp": "2026-07-01T09:31:01Z",
+  "payload": {
+    "draft_id": "long-inactivity:session-1:1780304525000:6",
+    "status": "approved",
+    "entry": {
+      "id": "memory-summary:long-inactivity:session-1:1780304525000:6",
+      "content": "User: Summarize my preference.",
+      "enabled": true,
+      "created_at": "2026-07-01T09:31:01Z",
+      "updated_at": "2026-07-01T09:31:01Z",
+      "source": {
+        "kind": "long_inactivity_summary_draft",
+        "draft_id": "long-inactivity:session-1:1780304525000:6",
+        "summary_method": "deterministic_preview",
+        "session": {
+          "session_id": "session-1",
+          "title": "Runtime notes",
+          "model": "ollama:llama3.1:8b",
+          "last_activity_at": "2026-06-01T09:02:05Z",
+          "message_count": 7,
+          "inactive_seconds": 2592000
+        },
+        "source_message_count": 6,
+        "source_range": "visible messages 1-6 of 6",
+        "source_pointers": [
+          {
+            "session_id": "session-1",
+            "message_index": 1,
+            "role": "user",
+            "created_at": "2026-06-01T09:00:00Z",
+            "excerpt": "Summarize my preference."
+          }
+        ]
+      }
+    }
+  }
+}
+```
+
+### `memory.summary.draft.dismiss`
+
+Dismisses one currently available long-inactivity memory summary draft for the authenticated trusted device without creating runtime-owned memory. The runtime must recompute the owner-scoped draft by `draft_id`; it must not trust client-supplied session ids as authority. If `expected_session_id` or `expected_source_message_count` is supplied and no longer matches the recomputed draft, the runtime returns `memory_summary_draft_stale`. If the draft is unavailable or belongs to another owner, the runtime returns `memory_summary_draft_unavailable`. Dismissed drafts are hidden from later draft-list responses for that owner. Repeating dismiss for the same current draft id is idempotent.
+
+Request:
+
+```json
+{
+  "version": 1,
+  "type": "memory.summary.draft.dismiss",
+  "request_id": "req_memory_summary_draft_dismiss_001",
+  "timestamp": "2026-07-01T09:32:00Z",
+  "payload": {
+    "draft_id": "long-inactivity:session-1:1780304525000:6",
+    "expected_session_id": "session-1",
+    "expected_source_message_count": 6
+  }
+}
+```
+
+Response:
+
+```json
+{
+  "version": 1,
+  "type": "memory.summary.draft.dismiss",
+  "request_id": "req_memory_summary_draft_dismiss_001",
+  "timestamp": "2026-07-01T09:32:01Z",
+  "payload": {
+    "draft_id": "long-inactivity:session-1:1780304525000:6",
+    "status": "dismissed",
+    "dismissed_at": "2026-07-01T09:32:01Z"
+  }
+}
+```
+
 ## Future Extension Points
 
 Runtime-side chat history and basic memory CRUD are active. The broader namespaces below remain reserved until their product, privacy, and permission models are designed.
 
-- Advanced memory: `memory.search`, automatic memory extraction, memory reflection, embedding-backed recall, memory compaction, and project-scoped memory. Archived sessions are retained but excluded from memory, reflection, research, and compaction inputs unless restored or explicitly selected by the user.
+- Advanced memory: `memory.search`, automatic memory extraction, memory reflection, embedding-backed recall, memory compaction, LLM-generated long-inactivity memory summaries, richer dismiss/review policy, and project-scoped memory. Archived sessions are retained but excluded from memory, reflection, research, and compaction inputs unless restored or explicitly selected by the user.
 - Session compaction: the first runtime-side heuristic slice can compact oversized active `chat.send` history before backend dispatch without changing client-visible history. Future messages may expose tokenizer-aware budgets, durable compacted session summaries, transcript source pointers, LLM-generated summaries, and longer-inactivity compact memory summaries. This is separate from model lifecycle messages such as unload-after-10-minutes-inactive.
 - Embeddings/research: future runtime-side semantic search, clustering, research notebook, source citation, and deep-research-like brief messages are reserved but not named yet. Embedding models must be listed and selected separately from chat/text-generation models, and retrieval/ranking/knowledge indexing must use the selected embedding model.
 - Projects/workspaces: reserve the `projects.` namespace for future project-scoped chats, files, instructions, memory, indexes, model/backend preferences, trusted-source controls, and project-level search/research. Do not add active message names until the product shape is ready.
 - Scheduling/automation: reserve the `automation.` namespace for future scheduled tasks, reminders, monitors, recurring automations, runtime-triggered jobs, permission prompts, audit logs, and mobile approval/status surfaces. Do not add active message names until the scheduler and permission model are designed.
 - Files/images: `chat.send.messages[].attachments[]` is the initial carrier for user-selected images and parsed documents. Runtime-side ingestion, parsing, indexing, and backend calls must run through the AetherLink Runtime, never direct client-to-backend access. Future dedicated file/index messages can extend this once project/workspace permissions are designed.
-- Routes/connectivity: `route.refresh` is the current active route message for authenticated relay lease renewal. Other `route.*` names remain reserved for future route diagnostics, remote candidate exchange, encrypted relay allocation status, and route failure reporting because production NAT traversal, signaling, DHT/bootstrap discovery, and production relay transport are not complete yet.
+- Routes/connectivity: `route.refresh` is the current active route message for authenticated remote route-material renewal, currently covering relay lease material and opaque P2P rendezvous records. Other `route.*` names remain reserved for future route diagnostics, remote candidate exchange, encrypted relay allocation status, and route failure reporting because production NAT traversal, signaling, DHT/bootstrap discovery, and production relay transport are not complete yet.
 - Internal Python tools: future deterministic Python execution messages are reserved but not named yet. Python execution must run in the AetherLink Runtime with runtime-owned permissions, scoping, and audit logs.
 - Skills: `skills.list`, `skills.run`, `skills.result`.
 - MCP: `mcp.servers.list`, `mcp.tools.list`, `mcp.tool.call`, `mcp.tool.result`.

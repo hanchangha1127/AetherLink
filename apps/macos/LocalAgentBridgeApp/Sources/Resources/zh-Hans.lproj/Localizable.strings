@@ -421,7 +421,6 @@
 "%@ is ready and waiting for a trusted device." = "%@ 已就绪，正在等待受信任设备。";
 "AetherLink Runtime and the trusted device are connected through %@. Model requests still run only through AetherLink Runtime." = "AetherLink Runtime 和受信任设备已通过 %@ 连接。模型请求仍只在 AetherLink Runtime 中运行。";
 "Reconnecting through %@." = "正在通过 %@ 重新连接。";
-"Connection through %@ failed. Check Connection Recovery, then try again." = "通过 %@ 的连接失败。请检查连接恢复后重试。";
 "AetherLink can prepare connection details automatically when you generate a pairing QR." = "生成配对二维码时，AetherLink 可以自动准备连接信息。";
 "Pairing from another network needs connection details inside the pairing QR." = "从另一个网络配对时，配对二维码内需要包含中继、VPN、隧道或私有覆盖网络路径。";
 "Saved connection details use %@. Generate a fresh QR after updating the connection." = "已保存的连接信息正在使用 %@。更新连接后请生成新的二维码。";

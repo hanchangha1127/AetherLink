@@ -17,12 +17,16 @@ ANDROID_PROTOCOL_MODELS_PATH = ROOT / "apps" / "android" / "core" / "protocol" /
 SWIFT_PROTOCOL_ENVELOPE_PATH = ROOT / "apps" / "macos" / "Protocol" / "Sources" / "ProtocolEnvelope.swift"
 COMPACT_RELAY_QR_FIXTURE_PATH = ROOT / "shared" / "protocol" / "fixtures" / "macos-compact-relay-pairing-uri.txt"
 COMPACT_PRIVATE_OVERLAY_RELAY_QR_FIXTURE_PATH = ROOT / "shared" / "protocol" / "fixtures" / "macos-compact-private-overlay-pairing-uri.txt"
+COMPACT_P2P_RENDEZVOUS_QR_FIXTURE_PATH = ROOT / "shared" / "protocol" / "fixtures" / "macos-compact-p2p-rendezvous-pairing-uri.txt"
 
 RESERVED_PREFIXES = ("skills.", "mcp.", "web_search.")
 ALLOWED_MEMORY_TYPES = {
     "memory.list",
     "memory.upsert",
     "memory.delete",
+    "memory.summary.drafts.list",
+    "memory.summary.draft.approve",
+    "memory.summary.draft.dismiss",
 }
 ALLOWED_TOOL_TYPES = frozenset()
 REQUIRED_RELAY_QR_FIELDS = {
@@ -77,6 +81,15 @@ PAIRING_QR_REQUIRED_FIELD_GROUPS = {
     },
 }
 COMPACT_RELAY_QR_FIELDS = {"rh", "rp", "ri", "rs", "rx", "rrn"}
+P2P_RENDEZVOUS_QR_FIELDS = {
+    "p2p_class",
+    "p2p_record_id",
+    "p2p_encrypted_body",
+    "p2p_expires_at",
+    "p2p_anti_replay_nonce",
+    "p2p_protocol_version",
+}
+COMPACT_P2P_RENDEZVOUS_QR_FIELDS = {"pc", "prid", "peb", "px", "pn", "pv"}
 
 
 def main() -> int:
@@ -243,7 +256,6 @@ def check_locale_payload_schemas(schema: dict) -> list[str]:
     failures: list[str] = []
     payload_defs = {
         "chat.send": "chatSendPayload",
-        "chat.suggestions.request": "chatSuggestionsRequestPayload",
         "chat.title.request": "chatTitleRequestPayload",
     }
     defs = schema.get("$defs", {})
@@ -345,14 +357,24 @@ def check_pairing_qr_schema(schema: dict) -> list[str]:
     for field in COMPACT_RELAY_QR_FIELDS:
         if field not in properties:
             failures.append(f"pairing QR schema missing compact relay property {field}")
+    for field in P2P_RENDEZVOUS_QR_FIELDS:
+        if field not in properties:
+            failures.append(f"pairing QR schema missing P2P rendezvous property {field}")
+    for field in COMPACT_P2P_RENDEZVOUS_QR_FIELDS:
+        if field not in properties:
+            failures.append(f"pairing QR schema missing compact P2P rendezvous property {field}")
 
     for field in ["port", "runtime_port", "p", "relay_port", "remote_port", "route_port", "rendezvous_port", "rp"]:
         if properties.get(field, {}).get("$ref") != "#/$defs/portValue":
             failures.append(f"pairing QR schema {field} must use portValue")
 
-    for field in ["relay_expires_at", "remote_expires_at", "route_expires_at", "rendezvous_expires_at", "rx"]:
+    for field in ["relay_expires_at", "remote_expires_at", "route_expires_at", "rendezvous_expires_at", "rx", "p2p_expires_at", "px"]:
         if properties.get(field, {}).get("$ref") != "#/$defs/epochMillisValue":
             failures.append(f"pairing QR schema {field} must use epochMillisValue")
+
+    for field in ["p2p_protocol_version", "pv"]:
+        if properties.get(field, {}).get("$ref") != "#/$defs/p2pProtocolVersionValue":
+            failures.append(f"pairing QR schema {field} must use p2pProtocolVersionValue")
 
     for scope_field in ["relay_scope", "remote_scope", "rsc"]:
         scope_enum = properties.get(scope_field, {}).get("enum", [])
@@ -375,6 +397,20 @@ def check_pairing_qr_schema(schema: dict) -> list[str]:
         if missing:
             failures.append(
                 f"pairing QR schema must require compact {missing} when {field} is present"
+            )
+    for field in P2P_RENDEZVOUS_QR_FIELDS:
+        dependencies = set(dependent_required.get(field, []))
+        missing = sorted((P2P_RENDEZVOUS_QR_FIELDS - {field}) - dependencies)
+        if missing:
+            failures.append(
+                f"pairing QR schema must require P2P rendezvous {missing} when {field} is present"
+            )
+    for field in COMPACT_P2P_RENDEZVOUS_QR_FIELDS:
+        dependencies = set(dependent_required.get(field, []))
+        missing = sorted((COMPACT_P2P_RENDEZVOUS_QR_FIELDS - {field}) - dependencies)
+        if missing:
+            failures.append(
+                f"pairing QR schema must require compact P2P rendezvous {missing} when {field} is present"
             )
     for label, fields in [
         ("remote relay alias", REMOTE_RELAY_QR_FIELDS),
@@ -428,6 +464,10 @@ def check_pairing_qr_schema(schema: dict) -> list[str]:
         label="shared compact private overlay relay QR fixture",
         expected_host="100.64.1.10",
         expected_scope="private_overlay",
+    ))
+    failures.extend(check_compact_p2p_rendezvous_fixture(
+        fixture_path=COMPACT_P2P_RENDEZVOUS_QR_FIXTURE_PATH,
+        label="shared compact P2P rendezvous QR fixture",
     ))
     return failures
 
@@ -555,6 +595,84 @@ def check_compact_relay_fixture(
         failures.append(f"{label} rp must be a digit string")
     if not query.get("rx", "").isdigit():
         failures.append(f"{label} rx must be a digit string")
+
+    return failures
+
+
+def check_compact_p2p_rendezvous_fixture(
+    *,
+    fixture_path: Path,
+    label: str,
+) -> list[str]:
+    failures: list[str] = []
+    try:
+        raw_value = fixture_path.read_text(encoding="utf-8").strip()
+    except FileNotFoundError:
+        return [
+            f"missing {label} {fixture_path.relative_to(ROOT)}"
+        ]
+
+    parsed = urlparse(raw_value)
+    if parsed.scheme != "aetherlink" or parsed.netloc != "pair":
+        failures.append(f"{label} must use aetherlink://pair")
+        return failures
+
+    query = {
+        key: values[-1]
+        for key, values in parse_qs(parsed.query, keep_blank_values=True).items()
+    }
+    required_fields = {
+        "v",
+        "n",
+        "c",
+        "rid",
+        "rn",
+        "rf",
+        "rk",
+        "rt",
+        "pc",
+        "prid",
+        "peb",
+        "px",
+        "pn",
+        "pv",
+    }
+    missing = sorted(required_fields - set(query))
+    if missing:
+        failures.append(f"{label} missing {missing}")
+
+    forbidden_route_fields = sorted(
+        {
+            "h",
+            "p",
+            "host",
+            "port",
+            "rh",
+            "rp",
+            "ri",
+            "rs",
+            "rx",
+            "rrn",
+            "relay_host",
+            "relay_port",
+            "relay_id",
+            "relay_secret",
+            "relay_expires_at",
+            "relay_nonce",
+        } & set(query)
+    )
+    if forbidden_route_fields:
+        failures.append(
+            f"{label} must not include local direct or relay route fields "
+            f"{forbidden_route_fields}"
+        )
+
+    if query.get("pc") != "p2p_rendezvous":
+        failures.append(f"{label} must use pc=p2p_rendezvous")
+    if query.get("pv") != "1":
+        failures.append(f"{label} must use pv=1")
+    if not query.get("px", "").isdigit():
+        failures.append(f"{label} px must be a digit string")
 
     return failures
 

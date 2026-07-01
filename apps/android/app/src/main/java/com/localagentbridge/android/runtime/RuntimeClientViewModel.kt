@@ -27,8 +27,6 @@ import com.localagentbridge.android.core.protocol.ChatSessionRenamePayload
 import com.localagentbridge.android.core.protocol.ChatSendPayload
 import com.localagentbridge.android.core.protocol.ChatSessionsListRequestPayload
 import com.localagentbridge.android.core.protocol.ChatSessionsListResultPayload
-import com.localagentbridge.android.core.protocol.ChatSuggestionsRequestPayload
-import com.localagentbridge.android.core.protocol.ChatSuggestionsResultPayload
 import com.localagentbridge.android.core.protocol.ChatTitleRequestPayload
 import com.localagentbridge.android.core.protocol.ChatTitleResultPayload
 import com.localagentbridge.android.core.protocol.ErrorPayload
@@ -36,6 +34,13 @@ import com.localagentbridge.android.core.protocol.HelloPayload
 import com.localagentbridge.android.core.protocol.MemoryDeletePayload
 import com.localagentbridge.android.core.protocol.MemoryDeleteResultPayload
 import com.localagentbridge.android.core.protocol.MemoryListResultPayload
+import com.localagentbridge.android.core.protocol.MemorySummaryDraftApprovePayload
+import com.localagentbridge.android.core.protocol.MemorySummaryDraftApproveResultPayload
+import com.localagentbridge.android.core.protocol.MemorySummaryDraftDismissPayload
+import com.localagentbridge.android.core.protocol.MemorySummaryDraftDismissResultPayload
+import com.localagentbridge.android.core.protocol.MemorySummaryDraftPayload
+import com.localagentbridge.android.core.protocol.MemorySummaryDraftsListRequestPayload
+import com.localagentbridge.android.core.protocol.MemorySummaryDraftsListResultPayload
 import com.localagentbridge.android.core.protocol.MemoryUpsertPayload
 import com.localagentbridge.android.core.protocol.MemoryUpsertResultPayload
 import com.localagentbridge.android.core.protocol.MessageType
@@ -66,6 +71,7 @@ import com.localagentbridge.android.core.transport.RuntimeConnectionTarget
 import com.localagentbridge.android.core.transport.RuntimeEndpointHint
 import com.localagentbridge.android.core.transport.RuntimeEndpointSource
 import com.localagentbridge.android.core.transport.RuntimeProtocolChannel
+import com.localagentbridge.android.core.transport.RuntimePeerToPeerConnector
 import com.localagentbridge.android.core.transport.RuntimeRelayConnector
 import com.localagentbridge.android.core.transport.RuntimeRelayTcpClient
 import com.localagentbridge.android.core.transport.RuntimeRouteCandidate
@@ -100,6 +106,7 @@ import kotlinx.serialization.json.jsonObject
 import java.io.ByteArrayOutputStream
 import java.net.InetSocketAddress
 import java.net.Socket
+import java.time.Instant
 import java.util.Base64
 import java.util.Locale
 import java.util.UUID
@@ -160,6 +167,7 @@ internal data class RuntimeClientViewModelDependencies(
     val transportClient: RuntimeTransportClient,
     val transportConnector: RuntimeTransportConnector,
     val relayConnector: RuntimeRelayConnector,
+    val peerToPeerConnector: RuntimePeerToPeerConnector? = null,
     val discovery: RuntimeDiscoverySource,
     val trustedRuntimeStore: RuntimeTrustedRuntimeStore,
     val deviceIdentityProvider: RuntimeDeviceIdentityProvider,
@@ -168,6 +176,7 @@ internal data class RuntimeClientViewModelDependencies(
     val attachmentReader: RuntimeAttachmentReader? = null,
     val attachmentPromptHeaderProvider: ((String) -> String)? = null,
     val relayReachabilityChecker: RuntimeRelayReachabilityChecker = RuntimeRelayReachabilityChecker { _, _ -> true },
+    val authenticatedRouteRefreshEnabled: Boolean = false,
     val currentTimeMillis: () -> Long = { System.currentTimeMillis() },
 ) {
     companion object {
@@ -191,6 +200,7 @@ internal data class RuntimeClientViewModelDependencies(
                     attachmentOnlyPromptHeader(application, languageTag)
                 },
                 relayReachabilityChecker = AndroidRuntimeRelayReachabilityChecker(),
+                authenticatedRouteRefreshEnabled = false,
             )
         }
     }
@@ -359,12 +369,10 @@ internal val RUNTIME_CLIENT_CAPABILITIES = listOf(
     MessageType.RuntimeHealth,
     MessageType.ModelsList,
     MessageType.ModelsPull,
-    MessageType.RouteRefresh,
     MessageType.ChatSend,
     MessageType.ChatCancel,
     MessageType.ChatSessionsList,
     MessageType.ChatMessagesList,
-    MessageType.ChatSuggestionsRequest,
     MessageType.ChatTitleRequest,
     MessageType.ChatSessionRename,
     MessageType.ChatSessionArchive,
@@ -373,8 +381,19 @@ internal val RUNTIME_CLIENT_CAPABILITIES = listOf(
     MessageType.MemoryList,
     MessageType.MemoryUpsert,
     MessageType.MemoryDelete,
+    MessageType.MemorySummaryDraftsList,
+    MessageType.MemorySummaryDraftApprove,
+    MessageType.MemorySummaryDraftDismiss,
     "chat.attachments",
 )
+
+internal fun runtimeClientCapabilities(authenticatedRouteRefreshEnabled: Boolean): List<String> {
+    return if (authenticatedRouteRefreshEnabled) {
+        RUNTIME_CLIENT_CAPABILITIES + MessageType.RouteRefresh
+    } else {
+        RUNTIME_CLIENT_CAPABILITIES
+    }
+}
 
 internal const val ROUTE_REFRESH_LEASE_RENEWAL_LEAD_MS = 60_000L
 internal const val ROUTE_REFRESH_LEASE_MIN_DELAY_MS = 1_000L
@@ -383,22 +402,22 @@ internal const val RELAY_REACHABILITY_PREFLIGHT_TIMEOUT_MS = 1_500
 
 internal fun runtimeRouteRefreshLeaseDelayMillis(
     nowEpochMillis: Long,
-    relayExpiresAtEpochMillis: Long?,
+    remoteRouteExpiresAtEpochMillis: Long?,
     renewalLeadMillis: Long = ROUTE_REFRESH_LEASE_RENEWAL_LEAD_MS,
     minimumDelayMillis: Long = ROUTE_REFRESH_LEASE_MIN_DELAY_MS,
 ): Long? {
-    val expiresAt = relayExpiresAtEpochMillis ?: return null
+    val expiresAt = remoteRouteExpiresAtEpochMillis ?: return null
     if (expiresAt <= nowEpochMillis) return null
     return maxOf(minimumDelayMillis, expiresAt - nowEpochMillis - renewalLeadMillis)
 }
 
 internal fun runtimeRouteRefreshRetryDelayMillis(
     nowEpochMillis: Long,
-    relayExpiresAtEpochMillis: Long?,
+    remoteRouteExpiresAtEpochMillis: Long?,
     retryDelayMillis: Long = ROUTE_REFRESH_RETRY_DELAY_MS,
     minimumDelayMillis: Long = ROUTE_REFRESH_LEASE_MIN_DELAY_MS,
 ): Long? {
-    val expiresAt = relayExpiresAtEpochMillis ?: return null
+    val expiresAt = remoteRouteExpiresAtEpochMillis ?: return null
     val remainingMillis = expiresAt - nowEpochMillis
     if (remainingMillis <= minimumDelayMillis) return null
     return minOf(retryDelayMillis, remainingMillis - minimumDelayMillis)
@@ -415,6 +434,9 @@ class RuntimeClientViewModel internal constructor(
     )
 
     private val json = dependencies.json
+    private val clientCapabilities = runtimeClientCapabilities(
+        authenticatedRouteRefreshEnabled = dependencies.authenticatedRouteRefreshEnabled,
+    )
     private val client = dependencies.transportClient
     private val remoteRoutePlanner = RuntimeRemoteRoutePlanner(
         pendingPairingPayload = { pendingPairingPayload },
@@ -427,16 +449,16 @@ class RuntimeClientViewModel internal constructor(
             runtimeRouteCandidates(
                 state = state.value,
                 target = target,
-                includeUsbReverseFallback = BuildConfig.DEBUG &&
-                    state.value.runtimeEndpointSource == RuntimeEndpointSource.UsbReverse,
+                includeUsbReverseFallback = shouldIncludeDebugUsbReverseFallback(target),
                 suppressDirectRoutes = pendingPairingPayload
                     ?.takeIf { payload ->
                         target.identity?.let { identity -> payload.matchesIdentity(identity) } == true
                     }
-                    ?.hasRelayRoute() == true,
+                    ?.hasRemoteRoute() == true,
             )
         },
         remoteRoutePreparer = remoteRoutePlanner,
+        peerToPeerConnector = dependencies.peerToPeerConnector,
         relayConnector = dependencies.relayConnector,
         currentTimeMillis = dependencies.currentTimeMillis,
     )
@@ -459,11 +481,12 @@ class RuntimeClientViewModel internal constructor(
     private var pendingChatSessionsRequestId: String? = null
     private var pendingChatMessagesRequestId: String? = null
     private var pendingChatMessagesSessionId: String? = null
-    private var pendingSuggestionRequestId: String? = null
-    private var pendingSuggestionSessionId: String? = null
     private var pendingTitleRequestId: String? = null
     private var pendingTitleSessionId: String? = null
     private var pendingMemoryListRequestId: String? = null
+    private var pendingMemorySummaryDraftsRequestId: String? = null
+    private val pendingMemorySummaryDraftApprovalDraftIdsByRequestId = mutableMapOf<String, String>()
+    private val pendingMemorySummaryDraftDismissalDraftIdsByRequestId = mutableMapOf<String, String>()
     private var pendingRouteRefreshRequestId: String? = null
     private val pendingChatSessionLifecycleRequestIds = mutableSetOf<String>()
     private val pendingChatSessionRenameRequestIds = mutableSetOf<String>()
@@ -518,6 +541,12 @@ class RuntimeClientViewModel internal constructor(
                             relayExpiresAtEpochMillis = trusted.relayExpiresAtEpochMillis,
                             relayNonce = trusted.relayNonce,
                             relayScope = trusted.relayScope,
+                            p2pRouteClass = trusted.p2pRouteClass,
+                            p2pRecordId = trusted.p2pRecordId,
+                            p2pEncryptedBody = trusted.p2pEncryptedBody,
+                            p2pExpiresAtEpochMillis = trusted.p2pExpiresAtEpochMillis,
+                            p2pAntiReplayNonce = trusted.p2pAntiReplayNonce,
+                            p2pProtocolVersion = trusted.p2pProtocolVersion,
                         )
                         it.withTrustedRuntimeRouteFields(runtime, endpoint)
                     }
@@ -608,18 +637,6 @@ class RuntimeClientViewModel internal constructor(
                 pendingAttachments = emptyList(),
             )
         }
-    }
-
-    fun useSuggestedQuestion(question: String) {
-        val trimmed = question.trim()
-        if (trimmed.isBlank()) return
-        if (state.value.isStreaming) {
-            showError("generation_in_progress")
-            return
-        }
-        if (rejectUserMutationWhileActiveChatMessagesLoading()) return
-        val cleanDraft = persistComposerDraft(trimmed)
-        mutableState.update { it.copy(chatInput = cleanDraft, error = null) }
     }
 
     fun addAttachments(uris: List<Uri>) {
@@ -732,7 +749,6 @@ class RuntimeClientViewModel internal constructor(
         }
         rememberPendingAttachmentsForCurrentSession()
         clearPendingAttachmentsForSession(null)
-        clearPendingSuggestions()
         publishPersistedRuntimeData(
             persistedRuntimeData
                 .withNoActiveSession()
@@ -743,7 +759,6 @@ class RuntimeClientViewModel internal constructor(
         mutableState.update {
             it.copy(
                 loadingChatSessionId = null,
-                isLoadingSuggestions = false,
             )
         }
     }
@@ -758,7 +773,6 @@ class RuntimeClientViewModel internal constructor(
             return
         }
         rememberPendingAttachmentsForCurrentSession()
-        clearPendingSuggestions()
         publishPersistedRuntimeData(
             persistedRuntimeData.withActiveSession(sessionId),
             save = true,
@@ -767,7 +781,6 @@ class RuntimeClientViewModel internal constructor(
         mutableState.update {
             it.copy(
                 loadingChatSessionId = null,
-                isLoadingSuggestions = false,
             )
         }
         requestRuntimeChatMessages(sessionId)
@@ -1014,9 +1027,99 @@ class RuntimeClientViewModel internal constructor(
             return
         }
         requestRuntimeMemory()
+        requestRuntimeMemorySummaryDrafts()
+    }
+
+    fun refreshRuntimeMemorySummaryDrafts() {
+        if (state.value.isStreaming) {
+            showError("generation_in_progress")
+            return
+        }
+        if (!canSendRuntimeMemoryCommand()) {
+            showError("memory_runtime_required")
+            return
+        }
+        requestRuntimeMemorySummaryDrafts()
+    }
+
+    fun approveMemorySummaryDraft(draftId: String) {
+        val cleanDraftId = draftId.trim()
+        if (cleanDraftId.isBlank()) return
+        val draft = state.value.memorySummaryDrafts.firstOrNull { it.id == cleanDraftId } ?: return
+        if (state.value.isStreaming) {
+            showError("generation_in_progress")
+            return
+        }
+        if (!canSendRuntimeMemoryCommand()) {
+            showError("memory_runtime_required")
+            return
+        }
+        if (cleanDraftId in pendingMemorySummaryDraftApprovalDraftIdsByRequestId.values) return
+        if (cleanDraftId in pendingMemorySummaryDraftDismissalDraftIdsByRequestId.values) return
+        val requestId = UUID.randomUUID().toString()
+        pendingMemorySummaryDraftApprovalDraftIdsByRequestId[requestId] = cleanDraftId
+        mutableState.update {
+            it.copy(
+                approvingMemorySummaryDraftIds = it.approvingMemorySummaryDraftIds + cleanDraftId,
+                error = null,
+            )
+        }
+        sendEnvelope(
+            envelope(
+                type = MessageType.MemorySummaryDraftApprove,
+                requestId = requestId,
+                serializer = MemorySummaryDraftApprovePayload.serializer(),
+                payload = MemorySummaryDraftApprovePayload(
+                    draftId = cleanDraftId,
+                    enabled = true,
+                    expectedSessionId = draft.session.sessionId,
+                    expectedSourceMessageCount = draft.sourceMessageCount,
+                ),
+            )
+        )
+    }
+
+    fun dismissMemorySummaryDraft(draftId: String) {
+        val cleanDraftId = draftId.trim()
+        if (cleanDraftId.isBlank()) return
+        val draft = state.value.memorySummaryDrafts.firstOrNull { it.id == cleanDraftId } ?: return
+        if (state.value.isStreaming) {
+            showError("generation_in_progress")
+            return
+        }
+        if (!canSendRuntimeMemoryCommand()) {
+            showError("memory_runtime_required")
+            return
+        }
+        if (cleanDraftId in pendingMemorySummaryDraftDismissalDraftIdsByRequestId.values) return
+        if (cleanDraftId in pendingMemorySummaryDraftApprovalDraftIdsByRequestId.values) return
+        val requestId = UUID.randomUUID().toString()
+        pendingMemorySummaryDraftDismissalDraftIdsByRequestId[requestId] = cleanDraftId
+        mutableState.update {
+            it.copy(
+                dismissingMemorySummaryDraftIds = it.dismissingMemorySummaryDraftIds + cleanDraftId,
+                error = null,
+            )
+        }
+        sendEnvelope(
+            envelope(
+                type = MessageType.MemorySummaryDraftDismiss,
+                requestId = requestId,
+                serializer = MemorySummaryDraftDismissPayload.serializer(),
+                payload = MemorySummaryDraftDismissPayload(
+                    draftId = cleanDraftId,
+                    expectedSessionId = draft.session.sessionId,
+                    expectedSourceMessageCount = draft.sourceMessageCount,
+                ),
+            )
+        )
     }
 
     fun refreshRuntimeChatHistory() {
+        refreshRuntimeChatHistory(query = null)
+    }
+
+    fun refreshRuntimeChatHistory(query: String?) {
         if (state.value.isStreaming) {
             showError("generation_in_progress")
             return
@@ -1025,7 +1128,7 @@ class RuntimeClientViewModel internal constructor(
             showError("chat_history_runtime_required")
             return
         }
-        requestRuntimeChatSessions()
+        requestRuntimeChatSessions(query = query)
     }
 
     fun setTrustedRuntimeAutoReconnectEnabled(enabled: Boolean) {
@@ -1151,7 +1254,11 @@ class RuntimeClientViewModel internal constructor(
 
             pendingPairingPayload = payload
             persistPendingPairingPayload(payload)
-            val plan = pendingPairingConnectionPlan(state.value, payload)
+            val plan = pendingPairingConnectionPlan(
+                state = state.value,
+                payload = payload,
+                allowUsbReverseFallback = BuildConfig.DEBUG,
+            )
             mutableState.value = plan.pendingState
 
             if (plan.shouldStartDiscovery) {
@@ -1260,7 +1367,11 @@ class RuntimeClientViewModel internal constructor(
         }
 
         viewModelScope.launch {
-            val target = pairingRuntimeConnectionTarget(state.value, payload)
+            val target = pairingRuntimeConnectionTarget(
+                state = state.value,
+                payload = payload,
+                allowUsbReverseFallback = BuildConfig.DEBUG,
+            )
             if (target == null) {
                 if (payload.shouldWaitForDiscoveryRoute()) {
                     mutableState.update {
@@ -1345,7 +1456,11 @@ class RuntimeClientViewModel internal constructor(
         val payload = pendingPairingPayload ?: return
         val current = state.value
         if (current.isConnected || current.isConnecting) return
-        val target = pairingRuntimeConnectionTarget(current, payload) ?: return
+        val target = pairingRuntimeConnectionTarget(
+            state = current,
+            payload = payload,
+            allowUsbReverseFallback = BuildConfig.DEBUG,
+        ) ?: return
         mutableState.update { it.copy(isPairingAwaitingRoute = false) }
         if (connectToRuntime(target, requestHealthAfterConnect = false)) {
             sendPairingRequest(payload)
@@ -1386,7 +1501,7 @@ class RuntimeClientViewModel internal constructor(
             }
             return
         }
-        if (payload.hasRelayRoute()) {
+        if (payload.hasRemoteRoute()) {
             mutableState.update {
                 it.copy(
                     isPairingAwaitingRoute = false,
@@ -1405,7 +1520,7 @@ class RuntimeClientViewModel internal constructor(
     }
 
     private fun schedulePendingPairingRetry(payload: RuntimePairingPayload) {
-        if (pendingPairingPayload != payload || !payload.hasRelayRoute()) return
+        if (pendingPairingPayload != payload || !payload.hasRemoteRoute()) return
         if (pendingPairingRetryAttempts >= MAX_PENDING_PAIRING_RETRY_ATTEMPTS) {
             cancelPendingPairingRetry()
             pendingPairingPayload = null
@@ -1428,7 +1543,11 @@ class RuntimeClientViewModel internal constructor(
             val current = state.value
             if (current.isConnected || current.isConnecting) return@launch
             pendingPairingRequestPayload = null
-            val target = pairingRuntimeConnectionTarget(current, payload)
+            val target = pairingRuntimeConnectionTarget(
+                state = current,
+                payload = payload,
+                allowUsbReverseFallback = BuildConfig.DEBUG,
+            )
             if (target == null) {
                 handlePendingPairingConnectionFailure(payload)
                 return@launch
@@ -1447,6 +1566,15 @@ class RuntimeClientViewModel internal constructor(
         pendingPairingRetryAttempts = 0
     }
 
+    private fun shouldIncludeDebugUsbReverseFallback(target: RuntimeConnectionTarget): Boolean {
+        if (!BuildConfig.DEBUG) return false
+        if (state.value.runtimeEndpointSource == RuntimeEndpointSource.UsbReverse) return true
+        val pending = pendingPairingPayload ?: return false
+        if (pending.hasRemoteRoute()) return false
+        val identity = target.identity ?: return false
+        return pending.matchesIdentity(identity)
+    }
+
     private fun schedulePendingPairingDiscoveryTimeout(payload: RuntimePairingPayload) {
         if (pendingPairingPayload != payload || !payload.shouldWaitForDiscoveryRoute()) return
         pendingPairingDiscoveryTimeoutJob?.cancel()
@@ -1455,7 +1583,15 @@ class RuntimeClientViewModel internal constructor(
             if (pendingPairingPayload != payload) return@launch
             val current = state.value
             if (current.isConnected || current.isConnecting) return@launch
-            if (pairingRuntimeConnectionTarget(current, payload) != null) return@launch
+            if (
+                pairingRuntimeConnectionTarget(
+                    state = current,
+                    payload = payload,
+                    allowUsbReverseFallback = BuildConfig.DEBUG,
+                ) != null
+            ) {
+                return@launch
+            }
             pendingPairingPayload = null
             pendingPairingRequestPayload = null
             clearPersistedPendingPairingRoute()
@@ -1561,6 +1697,9 @@ class RuntimeClientViewModel internal constructor(
         cancelPendingPairingDiscoveryTimeout()
         pendingModelPullRequestId = null
         pendingMemoryListRequestId = null
+        pendingMemorySummaryDraftsRequestId = null
+        pendingMemorySummaryDraftApprovalDraftIdsByRequestId.clear()
+        pendingMemorySummaryDraftDismissalDraftIdsByRequestId.clear()
         pendingRouteRefreshRequestId = null
         pendingPairingPayload = null
         pendingPairingRequestPayload = null
@@ -1569,7 +1708,6 @@ class RuntimeClientViewModel internal constructor(
         pendingChatSessionRenameRequestIds.clear()
         pendingChatSessionLifecycleMutationsByRequestId.clear()
         pendingChatSessionRenameMutationsByRequestId.clear()
-        clearPendingSuggestions()
         clearPendingTitleRequest()
         modelIdToSelectAfterRefresh = null
         mutableState.update {
@@ -1577,9 +1715,11 @@ class RuntimeClientViewModel internal constructor(
                 isConnected = false,
                 isConnecting = false,
                 isStreaming = false,
-                isLoadingSuggestions = false,
                 installingModelId = null,
                 activeRequestId = null,
+                memorySummaryDrafts = emptyList(),
+                approvingMemorySummaryDraftIds = emptySet(),
+                dismissingMemorySummaryDraftIds = emptySet(),
                 runtimeStatus = "disconnected",
                 activeRouteKind = null,
                 routeRefreshNoticeRuntimeName = null,
@@ -1619,11 +1759,12 @@ class RuntimeClientViewModel internal constructor(
         sendEnvelope(ProtocolEnvelope(type = MessageType.ModelsList))
     }
 
-    private fun requestRuntimeChatSessions() {
+    private fun requestRuntimeChatSessions(query: String? = null) {
         if (!isSessionAuthenticated || activeChannel?.isConnected != true) return
         if (pendingChatSessionsRequestId != null) return
         val requestId = UUID.randomUUID().toString()
         pendingChatSessionsRequestId = requestId
+        val normalizedQuery = query?.trim()?.ifBlank { null }
         sendEnvelope(
             envelope(
                 type = MessageType.ChatSessionsList,
@@ -1632,6 +1773,7 @@ class RuntimeClientViewModel internal constructor(
                 payload = ChatSessionsListRequestPayload(
                     limit = MAX_RUNTIME_CHAT_SESSIONS,
                     includeArchived = true,
+                    query = normalizedQuery,
                 ),
             )
         )
@@ -1674,6 +1816,23 @@ class RuntimeClientViewModel internal constructor(
         val requestId = UUID.randomUUID().toString()
         pendingMemoryListRequestId = requestId
         sendEnvelope(ProtocolEnvelope(type = MessageType.MemoryList, requestId = requestId))
+    }
+
+    private fun requestRuntimeMemorySummaryDrafts() {
+        if (!isSessionAuthenticated || activeChannel?.isConnected != true) return
+        if (pendingMemorySummaryDraftsRequestId != null) return
+        val requestId = UUID.randomUUID().toString()
+        pendingMemorySummaryDraftsRequestId = requestId
+        sendEnvelope(
+            envelope(
+                type = MessageType.MemorySummaryDraftsList,
+                requestId = requestId,
+                serializer = MemorySummaryDraftsListRequestPayload.serializer(),
+                payload = MemorySummaryDraftsListRequestPayload(
+                    limit = MAX_RUNTIME_MEMORY_SUMMARY_DRAFTS,
+                ),
+            )
+        )
     }
 
     private fun sendRuntimeChatSessionLifecycleIfNeeded(
@@ -1904,7 +2063,6 @@ class RuntimeClientViewModel internal constructor(
         )
         val assistantMessage = RuntimeChatMessage(role = "assistant", content = "")
         val updatedMessages = current.messages + userMessage + assistantMessage
-        clearPendingSuggestions()
         persistComposerDraft("", sessionId = sessionId)
         clearPendingAttachmentsForSession(sessionId)
         if (startedWithoutActiveSession) {
@@ -1919,7 +2077,6 @@ class RuntimeClientViewModel internal constructor(
                 messages = updatedMessages,
                 activeRequestId = requestId,
                 isStreaming = true,
-                isLoadingSuggestions = false,
                 error = null
             )
         }
@@ -1986,15 +2143,12 @@ class RuntimeClientViewModel internal constructor(
         val model = current.selectedModelId ?: return
         val requestId = UUID.randomUUID().toString()
         val assistantMessage = RuntimeChatMessage(role = "assistant", content = "")
-        val updatedMessages = retry.contextMessages
-            .map { it.copy(suggestions = emptyList()) } + assistantMessage
-        clearPendingSuggestions()
+        val updatedMessages = retry.contextMessages + assistantMessage
         mutableState.update {
             it.copy(
                 messages = updatedMessages,
                 activeRequestId = requestId,
                 isStreaming = true,
-                isLoadingSuggestions = false,
                 error = null,
             )
         }
@@ -2038,14 +2192,12 @@ class RuntimeClientViewModel internal constructor(
             showError("reuse_message_unavailable")
             return
         }
-        clearPendingSuggestions()
         clearPendingAttachmentsForSession()
         val cleanDraft = persistComposerDraft(latestUserMessage.content)
         mutableState.update {
             it.copy(
                 chatInput = cleanDraft,
                 pendingAttachments = emptyList(),
-                isLoadingSuggestions = false,
                 error = null,
             )
         }
@@ -2112,7 +2264,7 @@ class RuntimeClientViewModel internal constructor(
                 pendingPairingPayload == null &&
                 preflightError.invalidatesStoredRemoteRoute()
             ) {
-                current.trustedRuntime?.withoutRelayRoute()
+                current.trustedRuntime?.withoutInvalidatedRemoteRoute(preflightError)
             } else {
                 null
             }
@@ -2181,7 +2333,7 @@ class RuntimeClientViewModel internal constructor(
                 pendingPairingPayload == null &&
                 uiError.invalidatesStoredRemoteRoute()
             ) {
-                current.trustedRuntime?.withoutRelayRoute()
+                current.trustedRuntime?.withoutInvalidatedRemoteRoute(uiError)
             } else {
                 null
             }
@@ -2273,15 +2425,15 @@ class RuntimeClientViewModel internal constructor(
                             isSessionAuthenticated = false
                             clearPendingRuntimeHistoryRequests()
                             pendingMemoryListRequestId = null
+                            pendingMemorySummaryDraftsRequestId = null
                             pendingRouteRefreshRequestId = null
                             pendingPairingRequestPayload = null
                             cancelRuntimeRouteRefreshLease()
-                            clearPendingSuggestions()
                             clearPendingTitleRequest()
                             val current = state.value
                             val uiError = current.runtimeReceiveFailureUiError(error)
                             val trustedRuntimeWithoutFailedRelay = if (uiError.invalidatesStoredRemoteRoute()) {
-                                current.trustedRuntime?.withoutRelayRoute()
+                                current.trustedRuntime?.withoutInvalidatedRemoteRoute(uiError)
                             } else {
                                 null
                             }
@@ -2352,13 +2504,15 @@ class RuntimeClientViewModel internal constructor(
             MessageType.ChatDelta -> handleChatDelta(envelope)
             MessageType.ChatDone -> handleChatDone(envelope)
             MessageType.ChatCancel -> handleCancelAck(envelope)
-            MessageType.ChatSuggestionsResult -> handleChatSuggestionsResult(envelope)
             MessageType.ChatTitleResult -> handleChatTitleResult(envelope)
             MessageType.ChatSessionRename -> handleChatSessionRename(envelope)
             MessageType.ChatSessionArchive,
             MessageType.ChatSessionRestore,
             MessageType.ChatSessionDelete -> handleChatSessionLifecycle(envelope)
             MessageType.MemoryList -> handleMemoryList(envelope)
+            MessageType.MemorySummaryDraftsList -> handleMemorySummaryDraftsList(envelope)
+            MessageType.MemorySummaryDraftApprove -> handleMemorySummaryDraftApprove(envelope)
+            MessageType.MemorySummaryDraftDismiss -> handleMemorySummaryDraftDismiss(envelope)
             MessageType.MemoryUpsert -> handleMemoryUpsert(envelope)
             MessageType.MemoryDelete -> handleMemoryDelete(envelope)
             MessageType.Error -> handleError(envelope)
@@ -2428,6 +2582,7 @@ class RuntimeClientViewModel internal constructor(
             requestRuntimeHealthInternal()
             requestRuntimeChatSessions()
             requestRuntimeMemory()
+            requestRuntimeMemorySummaryDrafts()
         } else {
             isSessionAuthenticated = false
             cancelRuntimeRouteRefreshLease()
@@ -2469,7 +2624,7 @@ class RuntimeClientViewModel internal constructor(
 
             didAttemptTrustedRuntimeRestore = true
             pairingStore.trustRuntime(trusted)
-            val trustedEndpoint = trusted.lastKnownEndpointHintOrNull()
+            val sessionEndpoint = acceptedPairingCurrentEndpointHint(pending)
             val runtime = trusted.toRuntimeTrustedRuntime()
             cancelPendingPairingRetry()
             cancelPendingPairingDiscoveryTimeout()
@@ -2483,13 +2638,14 @@ class RuntimeClientViewModel internal constructor(
             )
             mutableState.update {
                 it.withClearedPendingPairing()
-                    .withTrustedRuntimeRouteFields(runtime, trustedEndpoint)
+                    .withTrustedRuntimeRouteFields(runtime, sessionEndpoint)
                     .copy(routeRefreshNoticeRuntimeName = null, error = null)
             }
             scheduleRuntimeRouteRefreshLease()
             requestRuntimeHealthInternal()
             requestRuntimeChatSessions()
             requestRuntimeMemory()
+            requestRuntimeMemorySummaryDrafts()
         }
     }
 
@@ -2504,7 +2660,7 @@ class RuntimeClientViewModel internal constructor(
                             payload = HelloPayload(
                                 deviceId = identity.deviceId,
                                 deviceName = identity.deviceName,
-                                capabilities = CLIENT_CAPABILITIES,
+                                capabilities = clientCapabilities,
                             ),
                         )
                     )
@@ -2516,6 +2672,7 @@ class RuntimeClientViewModel internal constructor(
     }
 
     private fun requestRuntimeRouteRefresh() {
+        if (!dependencies.authenticatedRouteRefreshEnabled) return
         if (!isSessionAuthenticated) return
         if (activeChannel?.isConnected != true) return
         if (state.value.trustedRuntime == null) return
@@ -2553,6 +2710,7 @@ class RuntimeClientViewModel internal constructor(
     private fun scheduleRuntimeRouteRefreshLease() {
         routeRefreshLeaseJob?.cancel()
         routeRefreshLeaseJob = null
+        if (!dependencies.authenticatedRouteRefreshEnabled) return
         if (!isSessionAuthenticated) return
         val channel = activeChannel ?: return
         if (!channel.isConnected) return
@@ -2560,10 +2718,10 @@ class RuntimeClientViewModel internal constructor(
         if (!current.isConnected) return
         val trustedRuntime = current.trustedRuntime ?: return
         val now = nowMillis()
-        if (!trustedRuntime.hasRelayRoute(now)) return
+        val expiresAt = trustedRuntime.activeRemoteRouteLeaseExpiresAtEpochMillis(now) ?: return
         val delayMillis = runtimeRouteRefreshLeaseDelayMillis(
             nowEpochMillis = now,
-            relayExpiresAtEpochMillis = trustedRuntime.relayExpiresAtEpochMillis,
+            remoteRouteExpiresAtEpochMillis = expiresAt,
         ) ?: return
         routeRefreshLeaseJob = viewModelScope.launch {
             delay(delayMillis)
@@ -2575,14 +2733,18 @@ class RuntimeClientViewModel internal constructor(
     private fun scheduleRuntimeRouteRefreshRetry(): Boolean {
         routeRefreshLeaseJob?.cancel()
         routeRefreshLeaseJob = null
+        if (!dependencies.authenticatedRouteRefreshEnabled) return false
         if (!isSessionAuthenticated) return false
         val channel = activeChannel ?: return false
         if (!channel.isConnected) return false
         val current = state.value
         if (!current.isConnected) return false
+        val trustedRuntime = current.trustedRuntime
+        val now = nowMillis()
         val delayMillis = runtimeRouteRefreshRetryDelayMillis(
-            nowEpochMillis = nowMillis(),
-            relayExpiresAtEpochMillis = current.trustedRuntime?.relayExpiresAtEpochMillis,
+            nowEpochMillis = now,
+            remoteRouteExpiresAtEpochMillis = trustedRuntime
+                .retryableRemoteRouteLeaseExpiresAtEpochMillis(now),
         ) ?: run {
             publishRouteRefreshLeaseExpired(current)
             return false
@@ -2597,7 +2759,7 @@ class RuntimeClientViewModel internal constructor(
 
     private fun publishRouteRefreshLeaseExpired(current: RuntimeUiState) {
         val trustedRuntime = current.trustedRuntime ?: return
-        if (trustedRuntime.relayExpiresAtEpochMillis == null) return
+        if (!trustedRuntime.hasCompleteRemoteRouteMaterial()) return
         mutableState.update {
             it.copy(
                 isConnected = false,
@@ -2643,6 +2805,7 @@ class RuntimeClientViewModel internal constructor(
             requestModelsInternal()
             requestRuntimeChatSessions()
             requestRuntimeMemory()
+            requestRuntimeMemorySummaryDrafts()
         }
     }
 
@@ -2680,6 +2843,7 @@ class RuntimeClientViewModel internal constructor(
                 source = it.source,
                 description = it.description,
                 sizeBytes = it.sizeBytes,
+                contextWindowTokens = it.contextWindowTokens?.takeIf { tokens -> tokens > 0 },
             )
         }
         val current = state.value
@@ -2784,10 +2948,6 @@ class RuntimeClientViewModel internal constructor(
             save = true,
             clearError = false,
         )
-        requestChatSuggestions(
-            sourceState = state.value,
-            requireMissingSuggestions = true,
-        )
     }
 
     private fun handleChatDelta(envelope: ProtocolEnvelope) {
@@ -2806,7 +2966,6 @@ class RuntimeClientViewModel internal constructor(
         persistActiveMessages(updatedState.messages, clearError = false)
         if (payload?.finishReason != "cancelled") {
             val titleRequested = requestChatTitleIfNeeded(updatedState)
-            requestChatSuggestions(updatedState)
             if (!titleRequested) {
                 requestRuntimeChatSessions()
             }
@@ -2836,57 +2995,6 @@ class RuntimeClientViewModel internal constructor(
             )
         )
         return true
-    }
-
-    private fun requestChatSuggestions(
-        sourceState: RuntimeUiState,
-        requireMissingSuggestions: Boolean = false,
-    ) {
-        val candidate = chatSuggestionsRequestCandidate(
-            sourceState = sourceState,
-            isSessionAuthenticated = isSessionAuthenticated,
-            requireMissingSuggestions = requireMissingSuggestions,
-            maxContextMessages = MAX_SUGGESTION_CONTEXT_MESSAGES,
-            maxSuggestions = MAX_SUGGESTIONS,
-        ) ?: return
-        val requestId = UUID.randomUUID().toString()
-        pendingSuggestionRequestId = requestId
-        pendingSuggestionSessionId = candidate.sessionId
-        mutableState.update {
-            it.copy(
-                isLoadingSuggestions = true,
-                error = null,
-            )
-        }
-        sendEnvelope(
-            envelope(
-                type = MessageType.ChatSuggestionsRequest,
-                requestId = requestId,
-                serializer = ChatSuggestionsRequestPayload.serializer(),
-                payload = ChatSuggestionsRequestPayload(
-                    sessionId = candidate.sessionId,
-                    model = candidate.model,
-                    messages = candidate.messages,
-                    maxSuggestions = candidate.maxSuggestions,
-                    locale = candidate.locale,
-                ),
-            )
-        )
-    }
-
-    private fun handleChatSuggestionsResult(envelope: ProtocolEnvelope) {
-        if (pendingSuggestionRequestId != envelope.requestId) return
-        if (pendingSuggestionSessionId != state.value.activeChatSessionId) {
-            clearPendingSuggestions()
-            mutableState.update { it.copy(isLoadingSuggestions = false) }
-            return
-        }
-        val payload = decodePayload(ChatSuggestionsResultPayload.serializer(), envelope.payload)
-        clearPendingSuggestions()
-        val suggestions = payload?.suggestions.orEmpty().cleanedSuggestions()
-        val updatedState = state.value.withChatSuggestions(suggestions)
-        mutableState.value = updatedState.copy(isLoadingSuggestions = false)
-        persistActiveMessages(updatedState.messages, clearError = false)
     }
 
     private fun handleChatTitleResult(envelope: ProtocolEnvelope) {
@@ -2949,6 +3057,65 @@ class RuntimeClientViewModel internal constructor(
         )
     }
 
+    private fun handleMemorySummaryDraftsList(envelope: ProtocolEnvelope) {
+        if (pendingMemorySummaryDraftsRequestId == envelope.requestId) {
+            pendingMemorySummaryDraftsRequestId = null
+        }
+        val payload = decodePayload(MemorySummaryDraftsListResultPayload.serializer(), envelope.payload) ?: return
+        mutableState.update {
+            it.copy(
+                memorySummaryDrafts = runtimeMemorySummaryDrafts(payload.drafts),
+                error = null,
+            )
+        }
+    }
+
+    private fun handleMemorySummaryDraftApprove(envelope: ProtocolEnvelope) {
+        val pendingDraftId = pendingMemorySummaryDraftApprovalDraftIdsByRequestId.remove(envelope.requestId)
+        val payload = decodePayload(MemorySummaryDraftApproveResultPayload.serializer(), envelope.payload) ?: run {
+            pendingDraftId?.let { draftId ->
+                mutableState.update {
+                    it.copy(approvingMemorySummaryDraftIds = it.approvingMemorySummaryDraftIds - draftId)
+                }
+            }
+            return
+        }
+        val approvedDraftId = payload.draftId.trim().ifBlank { pendingDraftId } ?: return
+        val draftIdsToClear = setOfNotNull(pendingDraftId, approvedDraftId)
+        publishPersistedRuntimeData(
+            persistedRuntimeData.withRuntimeMemoryEntry(payload.entry, nowMillis()),
+            save = true,
+        )
+        mutableState.update {
+            it.copy(
+                memorySummaryDrafts = it.memorySummaryDrafts.filterNot { draft -> draft.id in draftIdsToClear },
+                approvingMemorySummaryDraftIds = it.approvingMemorySummaryDraftIds - draftIdsToClear,
+                error = null,
+            )
+        }
+    }
+
+    private fun handleMemorySummaryDraftDismiss(envelope: ProtocolEnvelope) {
+        val pendingDraftId = pendingMemorySummaryDraftDismissalDraftIdsByRequestId.remove(envelope.requestId)
+        val payload = decodePayload(MemorySummaryDraftDismissResultPayload.serializer(), envelope.payload) ?: run {
+            pendingDraftId?.let { draftId ->
+                mutableState.update {
+                    it.copy(dismissingMemorySummaryDraftIds = it.dismissingMemorySummaryDraftIds - draftId)
+                }
+            }
+            return
+        }
+        val dismissedDraftId = payload.draftId.trim().ifBlank { pendingDraftId } ?: return
+        val draftIdsToClear = setOfNotNull(pendingDraftId, dismissedDraftId)
+        mutableState.update {
+            it.copy(
+                memorySummaryDrafts = it.memorySummaryDrafts.filterNot { draft -> draft.id in draftIdsToClear },
+                dismissingMemorySummaryDraftIds = it.dismissingMemorySummaryDraftIds - draftIdsToClear,
+                error = null,
+            )
+        }
+    }
+
     private fun handleMemoryUpsert(envelope: ProtocolEnvelope) {
         val payload = decodePayload(MemoryUpsertResultPayload.serializer(), envelope.payload) ?: return
         publishPersistedRuntimeData(
@@ -2997,11 +3164,6 @@ class RuntimeClientViewModel internal constructor(
             )
             return
         }
-        if (pendingSuggestionRequestId == envelope.requestId) {
-            clearPendingSuggestions()
-            mutableState.update { it.copy(isLoadingSuggestions = false) }
-            return
-        }
         if (pendingTitleRequestId == envelope.requestId) {
             clearPendingTitleRequest()
             return
@@ -3025,6 +3187,28 @@ class RuntimeClientViewModel internal constructor(
             val payload = decodePayload(ErrorPayload.serializer(), envelope.payload)
             pendingMemoryListRequestId = null
             showError("memory_load_failed", payload?.message)
+            return
+        }
+        if (pendingMemorySummaryDraftsRequestId == envelope.requestId) {
+            val payload = decodePayload(ErrorPayload.serializer(), envelope.payload)
+            pendingMemorySummaryDraftsRequestId = null
+            showError("memory_summary_drafts_load_failed", payload?.message)
+            return
+        }
+        pendingMemorySummaryDraftApprovalDraftIdsByRequestId.remove(envelope.requestId)?.let { draftId ->
+            val payload = decodePayload(ErrorPayload.serializer(), envelope.payload)
+            mutableState.update {
+                it.copy(approvingMemorySummaryDraftIds = it.approvingMemorySummaryDraftIds - draftId)
+            }
+            showError("memory_summary_draft_approval_failed", payload?.message)
+            return
+        }
+        pendingMemorySummaryDraftDismissalDraftIdsByRequestId.remove(envelope.requestId)?.let { draftId ->
+            val payload = decodePayload(ErrorPayload.serializer(), envelope.payload)
+            mutableState.update {
+                it.copy(dismissingMemorySummaryDraftIds = it.dismissingMemorySummaryDraftIds - draftId)
+            }
+            showError("memory_summary_draft_dismiss_failed", payload?.message)
             return
         }
         if (pendingRouteRefreshRequestId == envelope.requestId) {
@@ -3108,8 +3292,6 @@ class RuntimeClientViewModel internal constructor(
                 val current = state.value
                 val isActiveChatSend = envelope.type == MessageType.ChatSend &&
                     current.activeRequestId == envelope.requestId
-                val isSuggestionRequest = envelope.type == MessageType.ChatSuggestionsRequest &&
-                    pendingSuggestionRequestId == envelope.requestId
                 val isTitleRequest = envelope.type == MessageType.ChatTitleRequest &&
                     pendingTitleRequestId == envelope.requestId
                 val lifecycleMutation = pendingChatSessionLifecycleMutationsByRequestId.remove(envelope.requestId)
@@ -3118,6 +3300,20 @@ class RuntimeClientViewModel internal constructor(
                 val isSessionRenameRequest = pendingChatSessionRenameRequestIds.remove(envelope.requestId)
                 val isMemoryListRequest = envelope.type == MessageType.MemoryList &&
                     pendingMemoryListRequestId == envelope.requestId
+                val isMemorySummaryDraftsRequest = envelope.type == MessageType.MemorySummaryDraftsList &&
+                    pendingMemorySummaryDraftsRequestId == envelope.requestId
+                val memorySummaryDraftApprovalId =
+                    if (envelope.type == MessageType.MemorySummaryDraftApprove) {
+                        pendingMemorySummaryDraftApprovalDraftIdsByRequestId.remove(envelope.requestId)
+                    } else {
+                        null
+                    }
+                val memorySummaryDraftDismissalId =
+                    if (envelope.type == MessageType.MemorySummaryDraftDismiss) {
+                        pendingMemorySummaryDraftDismissalDraftIdsByRequestId.remove(envelope.requestId)
+                    } else {
+                        null
+                    }
                 val isRouteRefreshRequest = envelope.type == MessageType.RouteRefresh &&
                     pendingRouteRefreshRequestId == envelope.requestId
                 val isPairingRequest = envelope.type == MessageType.PairingRequest
@@ -3131,11 +3327,6 @@ class RuntimeClientViewModel internal constructor(
                 if (isPairingRequest) {
                     pendingPairingRequestPayload = null
                 }
-                if (isSuggestionRequest) {
-                    clearPendingSuggestions()
-                    mutableState.update { it.copy(isLoadingSuggestions = false) }
-                    return@onFailure
-                }
                 if (isRuntimeHistoryRequest) {
                     clearPendingRuntimeHistoryRequests()
                     showError("chat_history_load_failed", error.message)
@@ -3144,6 +3335,31 @@ class RuntimeClientViewModel internal constructor(
                 if (isMemoryListRequest) {
                     pendingMemoryListRequestId = null
                     showError("memory_load_failed", error.message)
+                    return@onFailure
+                }
+                if (isMemorySummaryDraftsRequest) {
+                    pendingMemorySummaryDraftsRequestId = null
+                    showError("memory_summary_drafts_load_failed", error.message)
+                    return@onFailure
+                }
+                if (memorySummaryDraftApprovalId != null) {
+                    mutableState.update {
+                        it.copy(
+                            approvingMemorySummaryDraftIds =
+                                it.approvingMemorySummaryDraftIds - memorySummaryDraftApprovalId,
+                        )
+                    }
+                    showError("memory_summary_draft_approval_failed", error.message)
+                    return@onFailure
+                }
+                if (memorySummaryDraftDismissalId != null) {
+                    mutableState.update {
+                        it.copy(
+                            dismissingMemorySummaryDraftIds =
+                                it.dismissingMemorySummaryDraftIds - memorySummaryDraftDismissalId,
+                        )
+                    }
+                    showError("memory_summary_draft_dismiss_failed", error.message)
                     return@onFailure
                 }
                 if (isRouteRefreshRequest) {
@@ -3236,10 +3452,10 @@ class RuntimeClientViewModel internal constructor(
         if (autoReconnectTrustedRuntimeConnectionTarget(current) != null) {
             return false
         }
-        if (!current.trustedRuntime.hasExpiredRelayRoute(dependencies.currentTimeMillis())) {
+        if (!current.trustedRuntime.hasExpiredRemoteRoute(dependencies.currentTimeMillis())) {
             return false
         }
-        val trustedRuntimeWithoutExpiredRelay = current.trustedRuntime?.withoutRelayRoute()
+        val trustedRuntimeWithoutExpiredRelay = current.trustedRuntime?.withoutRemoteRoutes()
         mutableState.update {
             val expiredState = it.copy(
                 isConnected = false,
@@ -3261,11 +3477,6 @@ class RuntimeClientViewModel internal constructor(
             }
         }
         return true
-    }
-
-    private fun clearPendingSuggestions() {
-        pendingSuggestionRequestId = null
-        pendingSuggestionSessionId = null
     }
 
     private fun clearPendingRuntimeHistoryRequests() {
@@ -3476,10 +3687,9 @@ class RuntimeClientViewModel internal constructor(
         const val RECONNECT_DELAY_MS = 750L
         const val MAX_PENDING_PAIRING_RETRY_ATTEMPTS = 120
         const val PENDING_PAIRING_DISCOVERY_TIMEOUT_MS = 15_000L
-        const val MAX_SUGGESTIONS = 3
-        const val MAX_SUGGESTION_CONTEXT_MESSAGES = 8
         const val MAX_RUNTIME_CHAT_SESSIONS = 100
         const val MAX_RUNTIME_CHAT_MESSAGES = 200
+        const val MAX_RUNTIME_MEMORY_SUMMARY_DRAFTS = 5
         const val ATTACHMENT_TYPE_IMAGE = "image"
         const val ATTACHMENT_TYPE_DOCUMENT = "document"
         val CLIENT_CAPABILITIES = RUNTIME_CLIENT_CAPABILITIES
@@ -3487,6 +3697,43 @@ class RuntimeClientViewModel internal constructor(
         val ACCEPTED_PULL_STATUSES = setOf("accepted", "queued", "pending", "started", "pulling", "downloading", "installing", "in_progress")
         val FAILED_PULL_STATUSES = setOf("failed", "failure", "error", "cancelled", "canceled")
     }
+}
+
+private fun runtimeMemorySummaryDrafts(
+    drafts: List<MemorySummaryDraftPayload>,
+): List<RuntimeMemorySummaryDraft> {
+    return drafts.mapNotNull { draft ->
+        val id = draft.id.trim()
+        val preview = draft.summaryPreview.trim()
+        if (id.isBlank() || preview.isBlank()) return@mapNotNull null
+        RuntimeMemorySummaryDraft(
+            id = id,
+            session = RuntimeMemorySummaryDraftSession(
+                sessionId = draft.session.sessionId.trim(),
+                title = draft.session.title.trim(),
+                modelId = draft.session.model.trim(),
+                lastActivityAtMillis = parseProtocolTimestampMillisOrNull(draft.session.lastActivityAt),
+                messageCount = draft.session.messageCount.coerceAtLeast(0),
+                inactiveSeconds = draft.session.inactiveSeconds.coerceAtLeast(0L),
+            ),
+            sourceMessageCount = draft.sourceMessageCount.coerceAtLeast(0),
+            sourceRange = draft.sourceRange.trim(),
+            sourcePointers = draft.sourcePointers.map { pointer ->
+                RuntimeMemorySummaryDraftSourcePointer(
+                    sessionId = pointer.sessionId.trim(),
+                    messageIndex = pointer.messageIndex,
+                    role = pointer.role.trim(),
+                    createdAtMillis = pointer.createdAt?.let(::parseProtocolTimestampMillisOrNull),
+                    excerpt = pointer.excerpt.trim(),
+                )
+            }.filter { it.excerpt.isNotBlank() },
+            summaryPreview = preview,
+        )
+    }
+}
+
+private fun parseProtocolTimestampMillisOrNull(timestamp: String): Long? {
+    return runCatching { Instant.parse(timestamp).toEpochMilli() }.getOrNull()
 }
 
 private val EMBEDDING_MODEL_NAME_HINTS = setOf(
@@ -3696,8 +3943,8 @@ internal fun trustedRuntimeConnectionTarget(state: RuntimeUiState): RuntimeConne
             routeToken = trustedRuntime.routeToken,
         ),
         endpointHint = trustedRuntime.endpointHint
-            ?.takeUnless { trustedRuntime.hasRelayRoute() }
-            ?.takeUnless { it.source == RuntimeEndpointSource.TrustedLastKnown },
+            ?.takeUnless { trustedRuntime.hasRemoteRoute() }
+            ?.takeUnless { it.source == RuntimeEndpointSource.TrustedLastKnown }
     )
 }
 
@@ -3721,7 +3968,7 @@ internal fun autoReconnectTrustedRuntimeConnectionTarget(state: RuntimeUiState):
     val discoveredTarget = trustedDiscoveredRuntimeConnectionTarget(state)
     if (discoveredTarget != null) return discoveredTarget
     val trustedTarget = trustedRuntimeConnectionTarget(state) ?: return null
-    if (state.trustedRuntime?.hasRelayRoute() == true) return trustedTarget
+    if (state.trustedRuntime?.hasRemoteRoute() == true) return trustedTarget
     return trustedTarget.takeIf { it.endpointHint != null }
 }
 
@@ -3746,7 +3993,7 @@ internal fun shouldRetryTrustedRuntimeConnectFailure(
 
 internal fun RuntimeUiState.shouldDiscoverTrustedRuntimeRoute(): Boolean {
     return trustedRuntime != null &&
-        trustedRuntime.hasRelayRoute() != true &&
+        trustedRuntime.hasRemoteRoute() != true &&
         !isConnected &&
         !isConnecting
 }
@@ -3772,11 +4019,11 @@ internal fun runtimeRouteCandidates(
     val seenEndpoints = mutableSetOf<Pair<String, Int>>()
 
     val identity = target.identity
-    val hasSavedRelayRoute = identity != null &&
+    val hasSavedRemoteRoute = identity != null &&
         state.trustedRuntime
-            ?.let { it.matchesIdentity(identity) && it.hasRelayRoute() } == true
+            ?.let { it.matchesIdentity(identity) && it.hasRemoteRoute() } == true
     if (identity != null) {
-        if (!hasSavedRelayRoute && !suppressDirectRoutes) state.selectedRouteEndpointHintOrNull()?.let { endpoint ->
+        if (!hasSavedRemoteRoute && !suppressDirectRoutes) state.selectedRouteEndpointHintOrNull()?.let { endpoint ->
             val key = endpoint.host to endpoint.port
             if (
                 endpoint.isAllowedDirectEndpoint() &&
@@ -3807,7 +4054,7 @@ internal fun runtimeRouteCandidates(
                 )
             }
         }
-        if (includeUsbReverseFallback && !hasSavedRelayRoute && !suppressDirectRoutes) {
+        if (includeUsbReverseFallback && !hasSavedRemoteRoute && !suppressDirectRoutes) {
             val endpoint = RuntimeEndpointHint(
                 host = "127.0.0.1",
                 port = 43170,
@@ -3825,7 +4072,7 @@ internal fun runtimeRouteCandidates(
 
     target.endpointHint?.let { endpoint ->
         val key = endpoint.host to endpoint.port
-        if (!hasSavedRelayRoute && !suppressDirectRoutes && endpoint.isAllowedDirectEndpoint() && seenEndpoints.add(key)) {
+        if (!hasSavedRemoteRoute && !suppressDirectRoutes && endpoint.isAllowedDirectEndpoint() && seenEndpoints.add(key)) {
             routes += RuntimeRouteCandidate.DirectTcp(
                 hint = endpoint,
                 source = endpoint.routeSource(),
@@ -4086,15 +4333,16 @@ private fun RuntimePairingPayload.endpointHintOrNull(): RuntimeEndpointHint? {
 }
 
 internal fun RuntimeUiState.withPendingPairing(payload: RuntimePairingPayload): RuntimeUiState {
-    val endpoint = if (payload.hasRelayRoute()) null else payload.endpointHintOrNull()
+    val hasRemoteRoute = payload.hasRemoteRoute()
+    val endpoint = if (hasRemoteRoute) null else payload.endpointHintOrNull()
     return copy(
         pairingCode = payload.pairingCode,
         pendingPairingRuntimeName = payload.runtimeName,
-        isPairingAwaitingRoute = endpoint == null && !payload.hasRelayRoute(),
+        isPairingAwaitingRoute = endpoint == null && !hasRemoteRoute,
         runtimeHost = endpoint?.host ?: runtimeHost,
         runtimePort = endpoint?.port?.toString() ?: runtimePort,
         runtimeEndpointSource = endpoint?.source ?: runtimeEndpointSource,
-        runtimeStatus = if (endpoint == null && !payload.hasRelayRoute()) "pairing" else runtimeStatus,
+        runtimeStatus = if (endpoint == null && !hasRemoteRoute) "pairing" else runtimeStatus,
         routeRefreshNoticeRuntimeName = null,
         error = null,
     )
@@ -4102,6 +4350,7 @@ internal fun RuntimeUiState.withPendingPairing(payload: RuntimePairingPayload): 
 
 internal fun RuntimeUiState.withClearedPendingPairing(): RuntimeUiState {
     return copy(
+        pairingCode = "",
         pendingPairingRuntimeName = null,
         isPairingAwaitingRoute = false,
         runtimeStatus = if (runtimeStatus == "pairing") "disconnected" else runtimeStatus,
@@ -4112,11 +4361,12 @@ internal fun RuntimeUiState.withTrustedRuntimeRouteFields(
     runtime: RuntimeTrustedRuntime,
     endpoint: RuntimeEndpointHint?,
 ): RuntimeUiState {
+    val hasRemoteRoute = runtime.hasRemoteRoute()
     return copy(
         trustedRuntime = runtime,
-        runtimeHost = if (runtime.hasRelayRoute()) "" else endpoint?.host ?: runtimeHost,
-        runtimePort = if (runtime.hasRelayRoute()) "" else endpoint?.port?.toString() ?: runtimePort,
-        runtimeEndpointSource = if (runtime.hasRelayRoute()) {
+        runtimeHost = if (hasRemoteRoute) "" else endpoint?.host ?: runtimeHost,
+        runtimePort = if (hasRemoteRoute) "" else endpoint?.port?.toString() ?: runtimePort,
+        runtimeEndpointSource = if (hasRemoteRoute) {
             RuntimeEndpointSource.Manual
         } else {
             endpoint?.source ?: runtimeEndpointSource
@@ -4136,6 +4386,32 @@ private fun RuntimeTrustedRuntime.withoutRelayRoute(): RuntimeTrustedRuntime {
     )
 }
 
+private fun RuntimeTrustedRuntime.withoutRemoteRoutes(): RuntimeTrustedRuntime {
+    return copy(
+        relayHost = null,
+        relayPort = null,
+        relayId = null,
+        relaySecret = null,
+        relayExpiresAtEpochMillis = null,
+        relayNonce = null,
+        relayScope = null,
+        p2pRouteClass = null,
+        p2pRecordId = null,
+        p2pEncryptedBody = null,
+        p2pExpiresAtEpochMillis = null,
+        p2pAntiReplayNonce = null,
+        p2pProtocolVersion = null,
+    )
+}
+
+private fun RuntimeTrustedRuntime.withoutInvalidatedRemoteRoute(error: RuntimeUiError): RuntimeTrustedRuntime {
+    return if (error.isExpiredRemoteRouteError()) {
+        withoutRemoteRoutes()
+    } else {
+        withoutRelayRoute()
+    }
+}
+
 private fun RuntimeTrustedRuntime.toTrustedRuntimeOrNull(): TrustedRuntime? {
     val cleanFingerprint = fingerprint?.takeIf(String::isNotBlank) ?: return null
     return TrustedRuntime(
@@ -4144,8 +4420,8 @@ private fun RuntimeTrustedRuntime.toTrustedRuntimeOrNull(): TrustedRuntime? {
         fingerprint = cleanFingerprint,
         publicKeyBase64 = publicKeyBase64,
         routeToken = routeToken,
-        host = endpointHint?.host,
-        port = endpointHint?.port,
+        host = null,
+        port = null,
         relayHost = relayHost,
         relayPort = relayPort,
         relayId = relayId,
@@ -4153,6 +4429,12 @@ private fun RuntimeTrustedRuntime.toTrustedRuntimeOrNull(): TrustedRuntime? {
         relayExpiresAtEpochMillis = relayExpiresAtEpochMillis,
         relayNonce = relayNonce,
         relayScope = relayScope,
+        p2pRouteClass = p2pRouteClass,
+        p2pRecordId = p2pRecordId,
+        p2pEncryptedBody = p2pEncryptedBody,
+        p2pExpiresAtEpochMillis = p2pExpiresAtEpochMillis,
+        p2pAntiReplayNonce = p2pAntiReplayNonce,
+        p2pProtocolVersion = p2pProtocolVersion,
     )
 }
 
@@ -4171,27 +4453,43 @@ internal fun RuntimePairingPayload.toConnectionTarget(
     )
 }
 
+internal fun acceptedPairingCurrentEndpointHint(pending: RuntimePairingPayload): RuntimeEndpointHint? {
+    return if (pending.hasRemoteRoute()) null else pending.endpointHintOrNull()
+}
+
 internal fun pairingRuntimeConnectionTarget(
     state: RuntimeUiState,
     payload: RuntimePairingPayload,
+    allowUsbReverseFallback: Boolean = false,
 ): RuntimeConnectionTarget? {
     val endpoint = payload.endpointHintOrNull()
-    if (payload.hasRelayRoute()) return payload.toConnectionTarget(endpoint = null)
+    if (payload.hasRemoteRoute()) return payload.toConnectionTarget(endpoint = null)
     if (endpoint != null) return payload.toConnectionTarget(endpoint)
 
     val identityOnlyTarget = payload.toConnectionTarget(endpoint = null)
     val identity = requireNotNull(identityOnlyTarget.identity)
     val discovered = state.discoveredRuntimes.firstOrNull { discovered ->
         discovered.matchesTrustedIdentity(identity, allowMissingMetadata = false)
-    } ?: return null
-
-    return identityOnlyTarget.copy(
-        endpointHint = RuntimeEndpointHint(
-            host = discovered.host,
-            port = discovered.port,
-            source = RuntimeEndpointSource.BonjourDiscovery,
+    }
+    if (discovered != null) {
+        return identityOnlyTarget.copy(
+            endpointHint = RuntimeEndpointHint(
+                host = discovered.host,
+                port = discovered.port,
+                source = RuntimeEndpointSource.BonjourDiscovery,
+            )
         )
-    )
+    }
+    if (allowUsbReverseFallback) {
+        return identityOnlyTarget.copy(
+            endpointHint = RuntimeEndpointHint(
+                host = "127.0.0.1",
+                port = 43170,
+                source = RuntimeEndpointSource.UsbReverse,
+            )
+        )
+    }
+    return null
 }
 
 internal fun shouldPreemptActiveConnectionForPairingQr(
@@ -4212,6 +4510,9 @@ internal fun trustedRuntimeFromAcceptedPairing(
 ): TrustedRuntime? {
     if (pending.hasExpiredRemoteRoute()) return null
     val hasRelayRoute = pending.hasRelayRoute()
+    val hasPeerToPeerRoute = pending.hasPeerToPeerRoute()
+    if (!hasRelayRoute && pending.hasAnyRelayRouteMaterial()) return null
+    if (!hasPeerToPeerRoute && pending.hasAnyPeerToPeerRouteMaterial()) return null
     val acceptedRuntimeDeviceId = payload.runtimeDeviceIdV2
         ?: payload.runtimeDeviceId
         ?: pending.runtimeDeviceId
@@ -4242,6 +4543,12 @@ internal fun trustedRuntimeFromAcceptedPairing(
         relayExpiresAtEpochMillis = if (hasRelayRoute) pending.relayExpiresAtEpochMillis else null,
         relayNonce = if (hasRelayRoute) pending.relayNonce else null,
         relayScope = if (hasRelayRoute) pending.relayScope else null,
+        p2pRouteClass = if (hasPeerToPeerRoute) pending.p2pRouteClass else null,
+        p2pRecordId = if (hasPeerToPeerRoute) pending.p2pRecordId else null,
+        p2pEncryptedBody = if (hasPeerToPeerRoute) pending.p2pEncryptedBody else null,
+        p2pExpiresAtEpochMillis = if (hasPeerToPeerRoute) pending.p2pExpiresAtEpochMillis else null,
+        p2pAntiReplayNonce = if (hasPeerToPeerRoute) pending.p2pAntiReplayNonce else null,
+        p2pProtocolVersion = if (hasPeerToPeerRoute) pending.p2pProtocolVersion else null,
     )
 }
 
@@ -4252,7 +4559,10 @@ internal fun trustedRuntimeFromRouteRefreshQr(
     current ?: return null
     if (payload.hasExpiredRemoteRoute()) return null
     val hasRelayRoute = payload.hasRelayRoute()
-    if (!hasRelayRoute) return null
+    val hasPeerToPeerRoute = payload.hasPeerToPeerRoute()
+    if (!payload.hasRemoteRoute()) return null
+    if (!hasRelayRoute && payload.hasAnyRelayRouteMaterial()) return null
+    if (!hasPeerToPeerRoute && payload.hasAnyPeerToPeerRouteMaterial()) return null
     if (current.deviceId != payload.runtimeDeviceId) return null
     if (current.fingerprint != null && current.fingerprint != payload.fingerprint) return null
     if (!runtimePublicKeyMatches(current.publicKeyBase64, payload.runtimePublicKeyBase64)) {
@@ -4273,6 +4583,12 @@ internal fun trustedRuntimeFromRouteRefreshQr(
         relayExpiresAtEpochMillis = if (hasRelayRoute) payload.relayExpiresAtEpochMillis else null,
         relayNonce = if (hasRelayRoute) payload.relayNonce else null,
         relayScope = if (hasRelayRoute) payload.relayScope else null,
+        p2pRouteClass = if (hasPeerToPeerRoute) payload.p2pRouteClass else null,
+        p2pRecordId = if (hasPeerToPeerRoute) payload.p2pRecordId else null,
+        p2pEncryptedBody = if (hasPeerToPeerRoute) payload.p2pEncryptedBody else null,
+        p2pExpiresAtEpochMillis = if (hasPeerToPeerRoute) payload.p2pExpiresAtEpochMillis else null,
+        p2pAntiReplayNonce = if (hasPeerToPeerRoute) payload.p2pAntiReplayNonce else null,
+        p2pProtocolVersion = if (hasPeerToPeerRoute) payload.p2pProtocolVersion else null,
     )
 }
 
@@ -4285,21 +4601,38 @@ internal fun trustedRuntimeFromRouteRefreshPayload(
     val fingerprint = current.fingerprint ?: return null
     if (payload.runtimeDeviceId != current.deviceId) return null
     if (payload.runtimeKeyFingerprint != fingerprint) return null
+    val hasRelayMaterial = payload.hasAnyRouteRefreshRelayMaterial()
+    val hasPeerToPeerMaterial = payload.hasAnyRouteRefreshPeerToPeerMaterial()
+    if (!hasRelayMaterial && !hasPeerToPeerMaterial) return null
+    if (hasRelayMaterial && !payload.isFreshRelayRouteRefresh(current, nowEpochMillis)) {
+        return null
+    }
+    if (hasPeerToPeerMaterial && !payload.isFreshPeerToPeerRouteRefresh(current, nowEpochMillis)) {
+        return null
+    }
     val relayScope = payload.validatedRouteRefreshRelayScopeOrNull()
         ?: run {
             if (payload.relayScope == null) null else return null
         }
     val candidateRuntime = current.copy(
         endpointHint = null,
-        relayHost = payload.relayHost,
-        relayPort = payload.relayPort,
-        relayId = payload.relayId,
-        relaySecret = payload.relaySecret,
-        relayExpiresAtEpochMillis = payload.relayExpiresAtEpochMillis,
-        relayNonce = payload.relayNonce,
-        relayScope = relayScope,
+        relayHost = if (hasRelayMaterial) payload.relayHost else null,
+        relayPort = if (hasRelayMaterial) payload.relayPort else null,
+        relayId = if (hasRelayMaterial) payload.relayId else null,
+        relaySecret = if (hasRelayMaterial) payload.relaySecret else null,
+        relayExpiresAtEpochMillis = if (hasRelayMaterial) payload.relayExpiresAtEpochMillis else null,
+        relayNonce = if (hasRelayMaterial) payload.relayNonce else null,
+        relayScope = if (hasRelayMaterial) relayScope else null,
+        p2pRouteClass = if (hasPeerToPeerMaterial) payload.p2pRouteClass else null,
+        p2pRecordId = if (hasPeerToPeerMaterial) payload.p2pRecordId else null,
+        p2pEncryptedBody = if (hasPeerToPeerMaterial) payload.p2pEncryptedBody else null,
+        p2pExpiresAtEpochMillis = if (hasPeerToPeerMaterial) payload.p2pExpiresAtEpochMillis else null,
+        p2pAntiReplayNonce = if (hasPeerToPeerMaterial) payload.p2pAntiReplayNonce else null,
+        p2pProtocolVersion = if (hasPeerToPeerMaterial) payload.p2pProtocolVersion else null,
     )
-    if (!candidateRuntime.hasRelayRoute(nowEpochMillis)) return null
+    if (hasRelayMaterial && !candidateRuntime.hasRelayRoute(nowEpochMillis)) return null
+    if (hasPeerToPeerMaterial && !candidateRuntime.hasPeerToPeerRoute(nowEpochMillis)) return null
+    if (!candidateRuntime.hasRemoteRoute(nowEpochMillis)) return null
     return TrustedRuntime(
         deviceId = current.deviceId,
         name = current.name,
@@ -4308,14 +4641,61 @@ internal fun trustedRuntimeFromRouteRefreshPayload(
         routeToken = current.routeToken,
         host = null,
         port = null,
-        relayHost = payload.relayHost,
-        relayPort = payload.relayPort,
-        relayId = payload.relayId,
-        relaySecret = payload.relaySecret,
-        relayExpiresAtEpochMillis = payload.relayExpiresAtEpochMillis,
-        relayNonce = payload.relayNonce,
-        relayScope = relayScope,
+        relayHost = if (hasRelayMaterial) payload.relayHost else null,
+        relayPort = if (hasRelayMaterial) payload.relayPort else null,
+        relayId = if (hasRelayMaterial) payload.relayId else null,
+        relaySecret = if (hasRelayMaterial) payload.relaySecret else null,
+        relayExpiresAtEpochMillis = if (hasRelayMaterial) payload.relayExpiresAtEpochMillis else null,
+        relayNonce = if (hasRelayMaterial) payload.relayNonce else null,
+        relayScope = if (hasRelayMaterial) relayScope else null,
+        p2pRouteClass = if (hasPeerToPeerMaterial) payload.p2pRouteClass else null,
+        p2pRecordId = if (hasPeerToPeerMaterial) payload.p2pRecordId else null,
+        p2pEncryptedBody = if (hasPeerToPeerMaterial) payload.p2pEncryptedBody else null,
+        p2pExpiresAtEpochMillis = if (hasPeerToPeerMaterial) payload.p2pExpiresAtEpochMillis else null,
+        p2pAntiReplayNonce = if (hasPeerToPeerMaterial) payload.p2pAntiReplayNonce else null,
+        p2pProtocolVersion = if (hasPeerToPeerMaterial) payload.p2pProtocolVersion else null,
     )
+}
+
+private fun RouteRefreshPayload.isFreshRelayRouteRefresh(
+    current: RuntimeTrustedRuntime,
+    nowEpochMillis: Long,
+): Boolean {
+    if (!current.hasRelayRoute(nowEpochMillis)) return true
+    if (payloadRelayNonceReusesCurrent(current)) return false
+    val currentExpiry = current.relayExpiresAtEpochMillis ?: return true
+    val refreshedExpiry = relayExpiresAtEpochMillis ?: return true
+    return refreshedExpiry > currentExpiry
+}
+
+private fun RouteRefreshPayload.payloadRelayNonceReusesCurrent(
+    current: RuntimeTrustedRuntime,
+): Boolean {
+    return relayNonce != null && relayNonce == current.relayNonce
+}
+
+private fun RouteRefreshPayload.isFreshPeerToPeerRouteRefresh(
+    current: RuntimeTrustedRuntime,
+    nowEpochMillis: Long,
+): Boolean {
+    if (!current.hasPeerToPeerRoute(nowEpochMillis)) return true
+    if (payloadP2pRecordIdReusesCurrent(current)) return false
+    if (payloadP2pNonceReusesCurrent(current)) return false
+    val currentExpiry = current.p2pExpiresAtEpochMillis ?: return true
+    val refreshedExpiry = p2pExpiresAtEpochMillis ?: return true
+    return refreshedExpiry > currentExpiry
+}
+
+private fun RouteRefreshPayload.payloadP2pRecordIdReusesCurrent(
+    current: RuntimeTrustedRuntime,
+): Boolean {
+    return p2pRecordId != null && p2pRecordId == current.p2pRecordId
+}
+
+private fun RouteRefreshPayload.payloadP2pNonceReusesCurrent(
+    current: RuntimeTrustedRuntime,
+): Boolean {
+    return p2pAntiReplayNonce != null && p2pAntiReplayNonce == current.p2pAntiReplayNonce
 }
 
 private val ROUTE_REFRESH_RELAY_SCOPES = setOf("remote", "private_overlay", "usb_reverse")
@@ -4323,6 +4703,25 @@ private val ROUTE_REFRESH_RELAY_SCOPES = setOf("remote", "private_overlay", "usb
 private fun RouteRefreshPayload.validatedRouteRefreshRelayScopeOrNull(): String? {
     val rawScope = relayScope ?: return null
     return rawScope.takeIf { it in ROUTE_REFRESH_RELAY_SCOPES }
+}
+
+private fun RouteRefreshPayload.hasAnyRouteRefreshRelayMaterial(): Boolean {
+    return relayHost != null ||
+        relayPort != null ||
+        relayId != null ||
+        relaySecret != null ||
+        relayExpiresAtEpochMillis != null ||
+        relayNonce != null ||
+        relayScope != null
+}
+
+private fun RouteRefreshPayload.hasAnyRouteRefreshPeerToPeerMaterial(): Boolean {
+    return p2pRouteClass != null ||
+        p2pRecordId != null ||
+        p2pEncryptedBody != null ||
+        p2pExpiresAtEpochMillis != null ||
+        p2pAntiReplayNonce != null ||
+        p2pProtocolVersion != null
 }
 
 internal sealed class RuntimePairingQrParseResult {
@@ -4357,7 +4756,7 @@ internal fun parseRuntimePairingQrPayload(
             clearPendingPairing = true,
         )
     }
-    if (requireRemoteRoute && !payload.hasRelayRoute()) {
+    if (requireRemoteRoute && !payload.hasRemoteRoute()) {
         return RuntimePairingQrParseResult.Rejected(
             error = RuntimeUiError(
                 code = "pairing_endpoint_unavailable",
@@ -4378,22 +4777,27 @@ internal data class PendingPairingConnectionPlan(
 internal fun pendingPairingConnectionPlan(
     state: RuntimeUiState,
     payload: RuntimePairingPayload,
+    allowUsbReverseFallback: Boolean = false,
 ): PendingPairingConnectionPlan {
     val pendingState = state.withPendingPairing(payload)
     return PendingPairingConnectionPlan(
         pendingState = pendingState,
-        target = pairingRuntimeConnectionTarget(pendingState, payload),
+        target = pairingRuntimeConnectionTarget(
+            state = pendingState,
+            payload = payload,
+            allowUsbReverseFallback = allowUsbReverseFallback,
+        ),
         shouldStartDiscovery = payload.shouldWaitForDiscoveryRoute(),
         shouldWaitForDiscoveryRoute = payload.shouldWaitForDiscoveryRoute(),
     )
 }
 
 internal fun RuntimePairingPayload.shouldWaitForDiscoveryRoute(): Boolean {
-    return endpointHintOrNull() == null && !hasRelayRoute()
+    return endpointHintOrNull() == null && !hasRemoteRoute()
 }
 
 internal fun pendingPairingExhaustedRouteError(payload: RuntimePairingPayload): RuntimeUiError {
-    return if (payload.hasRelayRoute()) {
+    return if (payload.hasRemoteRoute()) {
         RuntimeUiError(
             code = "remote_route_unreachable",
             diagnosticCode = "route_diagnostic_relay_failed",
@@ -4434,6 +4838,12 @@ private fun TrustedRuntime.toRuntimeTrustedRuntime(): RuntimeTrustedRuntime {
         relayExpiresAtEpochMillis = relayExpiresAtEpochMillis,
         relayNonce = relayNonce,
         relayScope = relayScope,
+        p2pRouteClass = p2pRouteClass,
+        p2pRecordId = p2pRecordId,
+        p2pEncryptedBody = p2pEncryptedBody,
+        p2pExpiresAtEpochMillis = p2pExpiresAtEpochMillis,
+        p2pAntiReplayNonce = p2pAntiReplayNonce,
+        p2pProtocolVersion = p2pProtocolVersion,
     )
 }
 
@@ -4458,52 +4868,6 @@ internal data class ChatTitleRequestCandidate(
     val messages: List<ChatMessagePayload>,
     val locale: String?,
 )
-
-internal data class ChatSuggestionsRequestCandidate(
-    val sessionId: String,
-    val model: String,
-    val messages: List<ChatMessagePayload>,
-    val maxSuggestions: Int,
-    val locale: String?,
-)
-
-internal fun chatSuggestionsRequestCandidate(
-    sourceState: RuntimeUiState,
-    isSessionAuthenticated: Boolean,
-    requireMissingSuggestions: Boolean,
-    maxContextMessages: Int,
-    maxSuggestions: Int,
-): ChatSuggestionsRequestCandidate? {
-    if (!sourceState.isConnected || !isSessionAuthenticated) return null
-    if (sourceState.isStreaming || sourceState.isLoadingSuggestions) return null
-    if (sourceState.selectedModelSendState() != SelectedModelSendState.Ready) return null
-
-    val sessionId = sourceState.activeChatSessionId ?: return null
-    val model = sourceState.selectedModelId ?: return null
-    val latestAssistant = sourceState.messages.lastOrNull { it.role == "assistant" && it.content.isNotBlank() }
-        ?: return null
-    if (requireMissingSuggestions && latestAssistant.suggestions.isNotEmpty()) return null
-
-    val recentMessages = sourceState.messages
-        .filter { it.role == "user" || it.role == "assistant" }
-        .filter { it.content.isNotBlank() }
-        .takeLast(maxContextMessages)
-        .map { message ->
-            ChatMessagePayload(
-                role = message.role,
-                content = message.content,
-            )
-        }
-    if (recentMessages.size < 2) return null
-
-    return ChatSuggestionsRequestCandidate(
-        sessionId = sessionId,
-        model = model,
-        messages = recentMessages,
-        maxSuggestions = maxSuggestions,
-        locale = sourceState.runtimeRequestLocale(),
-    )
-}
 
 internal fun chatTitleRequestCandidate(
     sourceState: RuntimeUiState,
@@ -4703,7 +5067,6 @@ private fun RuntimeChatMessage.withAssistantDelta(payload: ChatDeltaPayload): Ru
         reasoning = reasoning + payload.reasoning + parsedContent.reasoning,
         isReasoningOpen = parsedContent.isReasoningOpen,
         inlineReasoningPendingTag = parsedContent.pendingTag,
-        suggestions = emptyList(),
     )
 }
 
@@ -4720,15 +5083,6 @@ internal fun RuntimeUiState.withChatDone(
         activeRequestId = null,
         error = if (payload?.finishReason == "cancelled") RuntimeUiError("generation_cancelled") else error,
     )
-}
-
-internal fun RuntimeUiState.withChatSuggestions(suggestions: List<String>): RuntimeUiState {
-    val updated = messages.toMutableList()
-    val index = updated.indexOfLast { it.role == "assistant" && it.content.isNotBlank() }
-    if (index < 0) return this
-    val cleanedSuggestions = suggestions.cleanedSuggestions()
-    updated[index] = updated[index].copy(suggestions = cleanedSuggestions)
-    return copy(messages = updated)
 }
 
 internal fun RuntimeUiState.withChatCancelAck(
@@ -4767,7 +5121,6 @@ internal fun RuntimeUiState.withRuntimeError(
             messages
         },
         isStreaming = if (isActiveChatError) false else isStreaming,
-        isLoadingSuggestions = if (isActiveChatError) false else isLoadingSuggestions,
         activeRequestId = if (isActiveChatError) null else activeRequestId,
         isLoadingModels = false,
         installingModelId = if (isModelPullError) null else installingModelId,
@@ -4798,7 +5151,6 @@ internal fun RuntimeUiState.withRuntimeReceiveFailure(error: RuntimeUiError): Ru
     return copy(
         isConnected = false,
         isStreaming = false,
-        isLoadingSuggestions = false,
         installingModelId = null,
         activeRequestId = null,
         runtimeStatus = "disconnected",
@@ -4849,13 +5201,17 @@ private fun RuntimeUiError?.invalidatesStoredRemoteRoute(): Boolean {
         this?.diagnosticCode == "route_diagnostic_remote_route_expired"
 }
 
+private fun RuntimeUiError.isExpiredRemoteRouteError(): Boolean {
+    return code == "remote_route_expired" ||
+        diagnosticCode == "route_diagnostic_remote_route_expired"
+}
+
 internal fun RuntimeUiState.withPairingRequiredRuntimeState(detail: String?): RuntimeUiState {
     return copy(
         isConnected = false,
         isConnecting = false,
         isStreaming = false,
         isLoadingModels = false,
-        isLoadingSuggestions = false,
         installingModelId = null,
         activeRequestId = null,
         runtimeStatus = "pairing_required",

@@ -21,6 +21,12 @@ public struct PairingSession: Identifiable, Equatable, Sendable {
     public var relayExpiresAtEpochMillis: Int64?
     public var relayNonce: String?
     public var relayScope: String?
+    public var p2pRouteClass: String?
+    public var p2pRecordID: String?
+    public var p2pEncryptedBody: String?
+    public var p2pExpiresAtEpochMillis: Int64?
+    public var p2pAntiReplayNonce: String?
+    public var p2pProtocolVersion: Int?
     public var serviceType: String
 
     public var qrPayload: String {
@@ -48,6 +54,24 @@ public struct PairingSession: Identifiable, Equatable, Sendable {
         }
         if let routeToken, !routeToken.isEmpty {
             queryItems.append(URLQueryItem(name: compact ? "rt" : "route_token", value: routeToken))
+        }
+        if let p2pRouteClass, !p2pRouteClass.isEmpty {
+            queryItems.append(URLQueryItem(name: compact ? "pc" : "p2p_class", value: p2pRouteClass))
+        }
+        if let p2pRecordID, !p2pRecordID.isEmpty {
+            queryItems.append(URLQueryItem(name: compact ? "prid" : "p2p_record_id", value: p2pRecordID))
+        }
+        if let p2pEncryptedBody, !p2pEncryptedBody.isEmpty {
+            queryItems.append(URLQueryItem(name: compact ? "peb" : "p2p_encrypted_body", value: p2pEncryptedBody))
+        }
+        if let p2pExpiresAtEpochMillis {
+            queryItems.append(URLQueryItem(name: compact ? "px" : "p2p_expires_at", value: String(p2pExpiresAtEpochMillis)))
+        }
+        if let p2pAntiReplayNonce, !p2pAntiReplayNonce.isEmpty {
+            queryItems.append(URLQueryItem(name: compact ? "pn" : "p2p_anti_replay_nonce", value: p2pAntiReplayNonce))
+        }
+        if let p2pProtocolVersion {
+            queryItems.append(URLQueryItem(name: compact ? "pv" : "p2p_protocol_version", value: String(p2pProtocolVersion)))
         }
         if let host {
             queryItems.append(URLQueryItem(name: compact ? "h" : "host", value: host))
@@ -168,6 +192,12 @@ public final class PairingCoordinator: @unchecked Sendable {
         relayExpiresAtEpochMillis: Int64? = nil,
         relayNonce: String? = nil,
         relayScope: String? = nil,
+        p2pRouteClass: String? = nil,
+        p2pRecordID: String? = nil,
+        p2pEncryptedBody: String? = nil,
+        p2pExpiresAtEpochMillis: Int64? = nil,
+        p2pAntiReplayNonce: String? = nil,
+        p2pProtocolVersion: Int? = nil,
         serviceType: String = "_aetherlink._tcp.local."
     ) -> PairingSession {
         let code = String(format: "%06d", Int.random(in: 0...999_999))
@@ -190,6 +220,12 @@ public final class PairingCoordinator: @unchecked Sendable {
             relayExpiresAtEpochMillis: relayExpiresAtEpochMillis,
             relayNonce: relayNonce,
             relayScope: host == nil ? relayScope : relayScope ?? "local_diagnostic",
+            p2pRouteClass: p2pRouteClass,
+            p2pRecordID: p2pRecordID,
+            p2pEncryptedBody: p2pEncryptedBody,
+            p2pExpiresAtEpochMillis: p2pExpiresAtEpochMillis,
+            p2pAntiReplayNonce: p2pAntiReplayNonce,
+            p2pProtocolVersion: p2pProtocolVersion,
             serviceType: serviceType
         )
         lock.withLock {

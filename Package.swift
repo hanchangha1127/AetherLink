@@ -59,7 +59,8 @@ let package = Package(
                 "LMStudioBackend",
                 "DocumentIngestion"
             ],
-            path: "apps/macos/CompanionCore/Sources"
+            path: "apps/macos/CompanionCore/Sources",
+            linkerSettings: [.linkedLibrary("sqlite3")]
         ),
         .executableTarget(
             name: macCompanionTarget,

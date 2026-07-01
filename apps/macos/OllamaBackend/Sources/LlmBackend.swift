@@ -77,6 +77,7 @@ public struct ModelInfo: Identifiable, Equatable, Sendable {
     public var source: ModelSource
     public var remoteModel: String?
     public var remoteHost: String?
+    public var contextWindowTokens: Int?
 
     public init(
         id: String,
@@ -91,7 +92,8 @@ public struct ModelInfo: Identifiable, Equatable, Sendable {
         running: Bool = false,
         source: ModelSource = .local,
         remoteModel: String? = nil,
-        remoteHost: String? = nil
+        remoteHost: String? = nil,
+        contextWindowTokens: Int? = nil
     ) {
         self.id = id
         self.name = name
@@ -106,6 +108,7 @@ public struct ModelInfo: Identifiable, Equatable, Sendable {
         self.source = source
         self.remoteModel = remoteModel
         self.remoteHost = remoteHost
+        self.contextWindowTokens = contextWindowTokens
     }
 }
 

@@ -7,9 +7,11 @@ import com.localagentbridge.android.core.protocol.ChatSessionLifecyclePayload
 import com.localagentbridge.android.core.protocol.ChatSessionSummaryPayload
 import com.localagentbridge.android.core.protocol.ChatStoredMessagePayload
 import com.localagentbridge.android.core.protocol.MemoryEntryPayload
+import com.localagentbridge.android.core.protocol.MemoryEntrySourcePayload
 import com.localagentbridge.android.core.pairing.AndroidKeystoreRelaySecretStore
 import com.localagentbridge.android.core.pairing.RelaySecretStore
 import com.localagentbridge.android.core.pairing.RuntimePairingPayload
+import com.localagentbridge.android.core.pairing.isCanonicalOpaqueRouteValue
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.decodeFromString
@@ -103,6 +105,9 @@ data class PersistedChatSession(
     val lastEvent: String? = null,
     val lastFinishReason: String? = null,
     val lastErrorCode: String? = null,
+    val runtimeSearchRank: Int? = null,
+    val runtimeSearchSnippet: String? = null,
+    val runtimeSearchMatchedFields: List<String> = emptyList(),
     val messages: List<PersistedChatMessage> = emptyList(),
 )
 
@@ -112,7 +117,6 @@ data class PersistedChatMessage(
     val role: String,
     val content: String,
     val reasoning: String = "",
-    val suggestions: List<String> = emptyList(),
     val attachments: List<PersistedMessageAttachment> = emptyList(),
     val createdAtMillis: Long,
 )
@@ -140,6 +144,37 @@ data class PersistedMemoryEntry(
     val enabled: Boolean = true,
     val createdAtMillis: Long,
     val updatedAtMillis: Long,
+    val source: PersistedMemoryEntrySource? = null,
+)
+
+@Serializable
+data class PersistedMemoryEntrySource(
+    val kind: String,
+    val draftId: String,
+    val summaryMethod: String,
+    val session: PersistedMemoryEntrySourceSession,
+    val sourceMessageCount: Int,
+    val sourceRange: String,
+    val sourcePointers: List<PersistedMemoryEntrySourcePointer>,
+)
+
+@Serializable
+data class PersistedMemoryEntrySourceSession(
+    val sessionId: String,
+    val title: String,
+    val modelId: String,
+    val lastActivityAtMillis: Long?,
+    val messageCount: Int,
+    val inactiveSeconds: Long,
+)
+
+@Serializable
+data class PersistedMemoryEntrySourcePointer(
+    val sessionId: String,
+    val messageIndex: Int,
+    val role: String,
+    val createdAtMillis: Long?,
+    val excerpt: String,
 )
 
 @Serializable
@@ -161,6 +196,12 @@ data class PersistedPendingPairingRoute(
     val relayExpiresAtEpochMillis: Long? = null,
     val relayNonce: String? = null,
     val relayScope: String? = null,
+    val p2pRouteClass: String? = null,
+    val p2pRecordId: String? = null,
+    val p2pEncryptedBody: String? = null,
+    val p2pExpiresAtEpochMillis: Long? = null,
+    val p2pAntiReplayNonce: String? = null,
+    val p2pProtocolVersion: Int? = null,
     val serviceType: String? = null,
     val capturedAtEpochMillis: Long,
     val expiresAtEpochMillis: Long,
@@ -208,12 +249,24 @@ internal fun PersistedRuntimeData.sanitized(): PersistedRuntimeData {
                             migratedTitle != DEFAULT_CHAT_TITLE &&
                             migratedTitle != fallbackTitle
                     ),
+                    runtimeSearchRank = session.runtimeSearchRank?.takeIf { it > 0 },
+                    runtimeSearchSnippet = session.runtimeSearchSnippet?.trim()?.takeIf(String::isNotBlank),
+                    runtimeSearchMatchedFields = session.runtimeSearchMatchedFields
+                        .mapNotNull { it.trim().takeIf(String::isNotBlank) }
+                        .distinct(),
                 messages = session.messages
                     .filter { it.role in CHAT_STORAGE_ROLES }
                     .map { it.withCleanAttachments() },
             )
         }
     val cleanMemory = memoryEntries
+        .map {
+            it.copy(
+                id = it.id.trim(),
+                content = it.content.trim(),
+                source = it.source?.sanitizedOrNull(),
+            )
+        }
         .filter { it.id.isNotBlank() && it.content.isNotBlank() }
         .distinctBy { it.id }
     val cleanSuppressedRuntimeSessions = suppressedRuntimeSessions
@@ -250,7 +303,18 @@ internal fun PersistedRuntimeData.withoutRuntimeOwnedLocalData(): PersistedRunti
     return copy(
         sessions = sessions.map { session ->
             if (session.runtimeOwned && session.messages.isNotEmpty()) {
-                session.copy(messages = emptyList())
+                session.copy(
+                    runtimeSearchRank = null,
+                    runtimeSearchSnippet = null,
+                    runtimeSearchMatchedFields = emptyList(),
+                    messages = emptyList(),
+                )
+            } else if (session.runtimeOwned) {
+                session.copy(
+                    runtimeSearchRank = null,
+                    runtimeSearchSnippet = null,
+                    runtimeSearchMatchedFields = emptyList(),
+                )
             } else {
                 session
             }
@@ -307,15 +371,21 @@ internal fun PersistedPendingPairingRoute.toRuntimePairingPayloadOrNull(): Runti
         relayExpiresAtEpochMillis = clean.relayExpiresAtEpochMillis,
         relayNonce = clean.relayNonce,
         relayScope = clean.relayScope,
+        p2pRouteClass = clean.p2pRouteClass,
+        p2pRecordId = clean.p2pRecordId,
+        p2pEncryptedBody = clean.p2pEncryptedBody,
+        p2pExpiresAtEpochMillis = clean.p2pExpiresAtEpochMillis,
+        p2pAntiReplayNonce = clean.p2pAntiReplayNonce,
+        p2pProtocolVersion = clean.p2pProtocolVersion,
         serviceType = clean.serviceType,
     )
 }
 
 private fun RuntimePairingPayload.toPersistedPendingPairingRoute(nowMillis: Long): PersistedPendingPairingRoute {
     val pairingWindowExpiresAt = nowMillis + PENDING_PAIRING_ROUTE_TTL_MILLIS
-    val routeExpiresAt = relayExpiresAtEpochMillis?.takeIf { it > 0L }
-    val expiresAt = minOf(pairingWindowExpiresAt, routeExpiresAt ?: Long.MAX_VALUE)
-    val keepDirectEndpoint = !hasRelayRoute()
+    val relayRouteExpiresAt = relayExpiresAtEpochMillis?.takeIf { it > 0L }
+    val p2pRouteExpiresAt = p2pExpiresAtEpochMillis?.takeIf { it > 0L }
+    val expiresAt = listOfNotNull(pairingWindowExpiresAt, relayRouteExpiresAt, p2pRouteExpiresAt).min()
     return PersistedPendingPairingRoute(
         pairingNonce = pairingNonce,
         pairingCode = pairingCode,
@@ -324,8 +394,8 @@ private fun RuntimePairingPayload.toPersistedPendingPairingRoute(nowMillis: Long
         fingerprint = fingerprint,
         runtimePublicKeyBase64 = runtimePublicKeyBase64?.takeIf(String::isNotBlank),
         routeToken = routeToken?.takeIf(String::isNotBlank),
-        host = host?.takeIf(String::isNotBlank)?.takeIf { keepDirectEndpoint },
-        port = port?.takeIf { keepDirectEndpoint },
+        host = null,
+        port = null,
         relayHost = relayHost?.takeIf(String::isNotBlank),
         relayPort = relayPort,
         relayId = relayId?.takeIf(String::isNotBlank),
@@ -339,9 +409,15 @@ private fun RuntimePairingPayload.toPersistedPendingPairingRoute(nowMillis: Long
                     pairingNonce = pairingNonce,
                 )
             },
-        relayExpiresAtEpochMillis = routeExpiresAt,
+        relayExpiresAtEpochMillis = relayRouteExpiresAt,
         relayNonce = relayNonce?.takeIf(String::isNotBlank),
         relayScope = relayScope?.takeIf(String::isNotBlank),
+        p2pRouteClass = p2pRouteClass?.takeIf(String::isNotBlank),
+        p2pRecordId = p2pRecordId?.takeIf(String::isNotBlank),
+        p2pEncryptedBody = p2pEncryptedBody?.takeIf(String::isNotBlank),
+        p2pExpiresAtEpochMillis = p2pRouteExpiresAt,
+        p2pAntiReplayNonce = p2pAntiReplayNonce?.takeIf(String::isNotBlank),
+        p2pProtocolVersion = p2pProtocolVersion,
         serviceType = serviceType?.takeIf(String::isNotBlank),
         capturedAtEpochMillis = nowMillis,
         expiresAtEpochMillis = expiresAt,
@@ -374,6 +450,11 @@ private fun PersistedPendingPairingRoute.sanitizedOrNull(): PersistedPendingPair
     val cleanRelaySecretRef = relaySecretRef?.trim()?.takeIf(String::isNotBlank)
     val cleanRelayExpiresAt = relayExpiresAtEpochMillis?.takeIf { it > 0L }
     val cleanRelayNonce = relayNonce?.trim()?.takeIf(String::isNotBlank)
+    val cleanP2pRouteClass = p2pRouteClass?.takeIf(::isCanonicalOpaqueRouteValue)
+    val cleanP2pRecordId = p2pRecordId?.takeIf(::isCanonicalOpaqueRouteValue)
+    val cleanP2pEncryptedBody = p2pEncryptedBody?.takeIf(::isCanonicalOpaqueRouteValue)
+    val cleanP2pExpiresAt = p2pExpiresAtEpochMillis?.takeIf { it > 0L }
+    val cleanP2pAntiReplayNonce = p2pAntiReplayNonce?.takeIf(::isCanonicalOpaqueRouteValue)
     val hasRelayField = listOf(
         cleanRelayHost,
         cleanRelayPort,
@@ -396,6 +477,27 @@ private fun PersistedPendingPairingRoute.sanitizedOrNull(): PersistedPendingPair
     ) {
         return null
     }
+    val hasP2pField = listOf(
+        cleanP2pRouteClass,
+        cleanP2pRecordId,
+        cleanP2pEncryptedBody,
+        cleanP2pExpiresAt,
+        cleanP2pAntiReplayNonce,
+        p2pProtocolVersion,
+    ).any { it != null }
+    if (
+        hasP2pField &&
+        (
+            cleanP2pRouteClass != "p2p_rendezvous" ||
+                cleanP2pRecordId == null ||
+                cleanP2pEncryptedBody == null ||
+                cleanP2pExpiresAt == null ||
+                cleanP2pAntiReplayNonce == null ||
+                p2pProtocolVersion != 1
+        )
+    ) {
+        return null
+    }
     return copy(
         pairingNonce = cleanNonce,
         pairingCode = cleanCode,
@@ -404,8 +506,8 @@ private fun PersistedPendingPairingRoute.sanitizedOrNull(): PersistedPendingPair
         fingerprint = cleanFingerprint,
         runtimePublicKeyBase64 = runtimePublicKeyBase64?.trim()?.takeIf(String::isNotBlank),
         routeToken = routeToken?.trim()?.takeIf(String::isNotBlank),
-        host = cleanHost,
-        port = cleanPort,
+        host = null,
+        port = null,
         relayHost = cleanRelayHost,
         relayPort = cleanRelayPort,
         relayId = cleanRelayId,
@@ -414,6 +516,12 @@ private fun PersistedPendingPairingRoute.sanitizedOrNull(): PersistedPendingPair
         relayExpiresAtEpochMillis = cleanRelayExpiresAt,
         relayNonce = cleanRelayNonce,
         relayScope = relayScope?.trim()?.takeIf(String::isNotBlank),
+        p2pRouteClass = cleanP2pRouteClass,
+        p2pRecordId = cleanP2pRecordId,
+        p2pEncryptedBody = cleanP2pEncryptedBody,
+        p2pExpiresAtEpochMillis = cleanP2pExpiresAt,
+        p2pAntiReplayNonce = cleanP2pAntiReplayNonce,
+        p2pProtocolVersion = p2pProtocolVersion,
         serviceType = serviceType?.trim()?.takeIf(String::isNotBlank),
     )
 }
@@ -824,6 +932,12 @@ internal fun PersistedRuntimeData.withRuntimeChatSessionSummaries(
             null
         }
         val title = summary.title.trim().takeIf(String::isNotBlank) ?: existing?.title ?: DEFAULT_CHAT_TITLE
+        val searchRank = summary.search?.rank?.takeIf { it > 0 }
+        val searchSnippet = summary.search?.snippet?.trim()?.takeIf(String::isNotBlank)
+        val searchMatchedFields = summary.search?.matchedFields
+            ?.mapNotNull { it.trim().takeIf(String::isNotBlank) }
+            ?.distinct()
+            .orEmpty()
         existing?.copy(
             title = if (existing.titleManuallyEdited) existing.title else title,
             modelId = modelId,
@@ -835,6 +949,9 @@ internal fun PersistedRuntimeData.withRuntimeChatSessionSummaries(
             lastEvent = summary.lastEvent?.trim()?.takeIf(String::isNotBlank),
             lastFinishReason = summary.lastFinishReason?.trim()?.takeIf(String::isNotBlank),
             lastErrorCode = summary.lastErrorCode?.trim()?.takeIf(String::isNotBlank),
+            runtimeSearchRank = searchRank,
+            runtimeSearchSnippet = searchSnippet,
+            runtimeSearchMatchedFields = searchMatchedFields,
         ) ?: PersistedChatSession(
             id = summary.sessionId,
             title = title,
@@ -848,6 +965,9 @@ internal fun PersistedRuntimeData.withRuntimeChatSessionSummaries(
             lastEvent = summary.lastEvent?.trim()?.takeIf(String::isNotBlank),
             lastFinishReason = summary.lastFinishReason?.trim()?.takeIf(String::isNotBlank),
             lastErrorCode = summary.lastErrorCode?.trim()?.takeIf(String::isNotBlank),
+            runtimeSearchRank = searchRank,
+            runtimeSearchSnippet = searchSnippet,
+            runtimeSearchMatchedFields = searchMatchedFields,
         )
     }
     return copy(
@@ -1063,6 +1183,9 @@ private fun PersistedChatSession.toRuntimeChatSession(): RuntimeChatSession {
         lastEvent = lastEvent,
         lastFinishReason = lastFinishReason,
         lastErrorCode = lastErrorCode,
+        searchRank = runtimeSearchRank,
+        searchSnippet = runtimeSearchSnippet,
+        searchMatchedFields = runtimeSearchMatchedFields,
     )
 }
 
@@ -1086,6 +1209,7 @@ internal fun runtimeMemoryEntries(data: PersistedRuntimeData): List<RuntimeMemor
             enabled = entry.enabled,
             createdAtMillis = entry.createdAtMillis,
             updatedAtMillis = entry.updatedAtMillis,
+            source = entry.source?.toRuntimeMemoryEntrySource(),
         )
     }
 }
@@ -1125,7 +1249,6 @@ private fun PersistedChatMessage.toRuntimeChatMessage(): RuntimeChatMessage {
         role = role,
         content = content,
         reasoning = reasoning,
-        suggestions = suggestions.cleanedSuggestions(),
         attachments = attachments.map { it.toRuntimeMessageAttachment() },
     )
 }
@@ -1136,7 +1259,6 @@ private fun RuntimeChatMessage.toPersistedChatMessage(nowMillis: Long): Persiste
         role = role,
         content = content,
         reasoning = reasoning,
-        suggestions = suggestions.cleanedSuggestions(),
         attachments = attachments.map { it.toPersistedMessageAttachment() },
         createdAtMillis = nowMillis,
     )
@@ -1221,6 +1343,104 @@ private fun MemoryEntryPayload.toPersistedMemoryEntry(
         enabled = enabled,
         createdAtMillis = createdAt,
         updatedAtMillis = updatedAt,
+        source = source?.toPersistedMemoryEntrySource() ?: existing?.source,
+    )
+}
+
+private fun MemoryEntrySourcePayload.toPersistedMemoryEntrySource(): PersistedMemoryEntrySource? {
+    val cleanKind = kind.trim().takeIf(String::isNotBlank) ?: return null
+    val cleanDraftId = draftId.trim().takeIf(String::isNotBlank) ?: return null
+    val cleanSummaryMethod = summaryMethod.trim().takeIf(String::isNotBlank) ?: return null
+    val cleanSessionId = session.sessionId.trim().takeIf(String::isNotBlank) ?: return null
+    val pointers = sourcePointers.mapNotNull { pointer ->
+        PersistedMemoryEntrySourcePointer(
+            sessionId = pointer.sessionId.trim(),
+            messageIndex = pointer.messageIndex,
+            role = pointer.role.trim(),
+            createdAtMillis = pointer.createdAt?.let(::parseTimestampMillis),
+            excerpt = pointer.excerpt.trim(),
+        ).sanitizedOrNull()
+    }
+    if (pointers.isEmpty()) return null
+    return PersistedMemoryEntrySource(
+        kind = cleanKind,
+        draftId = cleanDraftId,
+        summaryMethod = cleanSummaryMethod,
+        session = PersistedMemoryEntrySourceSession(
+            sessionId = cleanSessionId,
+            title = session.title.trim(),
+            modelId = session.model.trim(),
+            lastActivityAtMillis = parseTimestampMillis(session.lastActivityAt),
+            messageCount = session.messageCount.coerceAtLeast(0),
+            inactiveSeconds = session.inactiveSeconds.coerceAtLeast(0L),
+        ),
+        sourceMessageCount = sourceMessageCount.coerceAtLeast(pointers.size),
+        sourceRange = sourceRange.trim().takeIf(String::isNotBlank) ?: return null,
+        sourcePointers = pointers,
+    )
+}
+
+private fun PersistedMemoryEntrySource.sanitizedOrNull(): PersistedMemoryEntrySource? {
+    val cleanKind = kind.trim().takeIf(String::isNotBlank) ?: return null
+    val cleanDraftId = draftId.trim().takeIf(String::isNotBlank) ?: return null
+    val cleanSummaryMethod = summaryMethod.trim().takeIf(String::isNotBlank) ?: return null
+    val cleanSourceRange = sourceRange.trim().takeIf(String::isNotBlank) ?: return null
+    val cleanSessionId = session.sessionId.trim().takeIf(String::isNotBlank) ?: return null
+    val cleanPointers = sourcePointers.mapNotNull { it.sanitizedOrNull() }
+    if (cleanPointers.isEmpty()) return null
+    return copy(
+        kind = cleanKind,
+        draftId = cleanDraftId,
+        summaryMethod = cleanSummaryMethod,
+        session = session.copy(
+            sessionId = cleanSessionId,
+            title = session.title.trim(),
+            modelId = session.modelId.trim(),
+            messageCount = session.messageCount.coerceAtLeast(0),
+            inactiveSeconds = session.inactiveSeconds.coerceAtLeast(0L),
+        ),
+        sourceMessageCount = sourceMessageCount.coerceAtLeast(cleanPointers.size),
+        sourceRange = cleanSourceRange,
+        sourcePointers = cleanPointers,
+    )
+}
+
+private fun PersistedMemoryEntrySourcePointer.sanitizedOrNull(): PersistedMemoryEntrySourcePointer? {
+    val cleanSessionId = sessionId.trim().takeIf(String::isNotBlank) ?: return null
+    val cleanRole = role.trim().takeIf(String::isNotBlank) ?: return null
+    val cleanExcerpt = excerpt.trim().takeIf(String::isNotBlank) ?: return null
+    return copy(
+        sessionId = cleanSessionId,
+        messageIndex = messageIndex.coerceAtLeast(1),
+        role = cleanRole,
+        excerpt = cleanExcerpt,
+    )
+}
+
+private fun PersistedMemoryEntrySource.toRuntimeMemoryEntrySource(): RuntimeMemoryEntrySource {
+    return RuntimeMemoryEntrySource(
+        kind = kind,
+        draftId = draftId,
+        summaryMethod = summaryMethod,
+        session = RuntimeMemorySummaryDraftSession(
+            sessionId = session.sessionId,
+            title = session.title,
+            modelId = session.modelId,
+            lastActivityAtMillis = session.lastActivityAtMillis,
+            messageCount = session.messageCount,
+            inactiveSeconds = session.inactiveSeconds,
+        ),
+        sourceMessageCount = sourceMessageCount,
+        sourceRange = sourceRange,
+        sourcePointers = sourcePointers.map { pointer ->
+            RuntimeMemorySummaryDraftSourcePointer(
+                sessionId = pointer.sessionId,
+                messageIndex = pointer.messageIndex,
+                role = pointer.role,
+                createdAtMillis = pointer.createdAtMillis,
+                excerpt = pointer.excerpt,
+            )
+        },
     )
 }
 
@@ -1267,25 +1487,6 @@ private val CHAT_STORAGE_ROLES = setOf("user", "assistant")
 private const val DEFAULT_CHAT_TITLE = ""
 private const val LEGACY_DEFAULT_CHAT_TITLE = "New chat"
 private const val MAX_TITLE_LENGTH = 48
-private const val MAX_SAVED_SUGGESTIONS = 3
-
-internal fun List<String>.cleanedSuggestions(): List<String> {
-    return map { it.cleanedSuggestion() }
-        .filter { it.isNotBlank() }
-        .distinctBy { it.lowercase() }
-        .take(MAX_SAVED_SUGGESTIONS)
-}
-
-private fun String.cleanedSuggestion(): String {
-    val prefixPattern = Regex("""^\s*(?:[-*•]\s+|\d{1,2}[.)]\s+)""")
-    return trim()
-        .trim('"', '\'', '`')
-        .trim()
-        .replace(prefixPattern, "")
-        .trim()
-        .trim('"', '\'', '`')
-        .trim()
-}
 
 internal fun String.cleanedChatTitle(): String {
     return trim()

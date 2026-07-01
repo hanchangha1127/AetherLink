@@ -245,10 +245,7 @@ struct StatusView: View {
         case .reconnecting:
             return String(format: NSLocalizedString("Reconnecting through %@.", comment: ""), endpoint)
         case .failed:
-            return String(
-                format: NSLocalizedString("Connection through %@ failed. Check Connection Recovery, then try again.", comment: ""),
-                endpoint
-            )
+            return remoteRelayConnectionFailureRecoveryText(endpoint: endpoint)
         case .stopped:
             return NSLocalizedString("Start AetherLink Runtime to use these connection details.", comment: "")
         }

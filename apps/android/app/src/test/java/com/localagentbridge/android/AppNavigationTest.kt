@@ -4,6 +4,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.LocaleList
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import com.localagentbridge.android.core.transport.RuntimeEndpointHint
 import com.localagentbridge.android.core.transport.RuntimeEndpointSource
 import com.localagentbridge.android.runtime.APP_LANGUAGE_SOURCE_DEFAULT
 import com.localagentbridge.android.runtime.APP_LANGUAGE_SOURCE_IN_APP
@@ -62,7 +63,6 @@ import com.localagentbridge.android.ui.memoryEmptyStateTextRes
 import com.localagentbridge.android.ui.memoryLockNoticeTextRes
 import com.localagentbridge.android.ui.MessageContentPart
 import com.localagentbridge.android.ui.newUserMessageAddedSince
-import com.localagentbridge.android.ui.normalizedSuggestedQuestions
 import com.localagentbridge.android.ui.parseMessageContent
 import com.localagentbridge.android.ui.providerDiagnosticCode
 import com.localagentbridge.android.ui.providerDiagnosticMessage
@@ -82,21 +82,17 @@ import com.localagentbridge.android.ui.routeAvailabilityCompactLabelRes
 import com.localagentbridge.android.ui.routeNoticeActionLabelRes
 import com.localagentbridge.android.ui.routeNoticePrimaryAction
 import com.localagentbridge.android.ui.shouldAutoScrollChat
-import com.localagentbridge.android.ui.shouldShowAssistantSuggestions
-import com.localagentbridge.android.ui.shouldShowAssistantSuggestionsForMessage
 import com.localagentbridge.android.ui.shouldShowChatBottomError
 import com.localagentbridge.android.ui.shouldShowChatEmptyState
 import com.localagentbridge.android.ui.shouldShowJumpToLatestChatButton
 import com.localagentbridge.android.ui.shouldScanLatestQrFromEmptyChat
 import com.localagentbridge.android.ui.shouldPerformSelectionChangeHaptic
-import com.localagentbridge.android.ui.SUGGESTED_QUESTION_MAX_ITEMS
 import com.localagentbridge.android.ui.settingsPrimaryConnectionSectionInitiallyExpanded
 import com.localagentbridge.android.ui.settingsPrimaryConnectionSectionSubtitleRes
 import com.localagentbridge.android.ui.settingsPrimaryConnectionSectionTitleRes
 import com.localagentbridge.android.ui.settingsLowerPrioritySectionInitiallyExpanded
 import com.localagentbridge.android.ui.settingsScreenShowsGenericHeader
 import com.localagentbridge.android.ui.settingsScreenShowsTroubleshootingSection
-import com.localagentbridge.android.ui.suggestedQuestionMaxLines
 import com.localagentbridge.android.ui.usableManualPairingPayload
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -1557,7 +1553,7 @@ class AppNavigationTest {
             "&runtime_device_id=runtime-1&runtime_key_fingerprint=fp-1"
         val localDiagnosticPairQr = "aetherlink://pair?version=1&pairing_nonce=nonce-1" +
             "&pairing_code=123456&runtime_device_id=runtime-1&runtime_key_fingerprint=fp-1" +
-            "&host=192.168.1.20&port=43170"
+            "&host=192.168.1.20&port=43170&route_scope=local_diagnostic"
 
         assertEquals(true, incompletePairQr.isAetherLinkPairingQrCandidateValue())
         assertEquals(false, incompletePairQr.isAetherLinkPairingQrValue())
@@ -1565,6 +1561,7 @@ class AppNavigationTest {
         assertEquals(false, unversionedPairQr.isAetherLinkPairingQrValue())
         assertEquals(true, localDiagnosticPairQr.isAetherLinkPairingQrCandidateValue())
         assertEquals(false, localDiagnosticPairQr.isAetherLinkPairingQrValue())
+        assertEquals(true, localDiagnosticPairQr.isAetherLinkPairingQrValue(requireRemoteRoute = false))
         assertEquals(false, "https://example.test/pair?code=123456".isAetherLinkPairingQrCandidateValue())
         assertEquals(false, "aetherlink://settings?pairing_code=123456".isAetherLinkPairingQrCandidateValue())
         assertEquals(false, "aetherlink:/pair?pairing_code=123456".isAetherLinkPairingQrCandidateValue())
@@ -1579,6 +1576,9 @@ class AppNavigationTest {
         val invalidPairQr = "aetherlink://pair?pairing_code=123456"
         val identityOnlyPairQr = "aetherlink://pair?version=1&pairing_nonce=nonce-1" +
             "&pairing_code=123456&runtime_device_id=runtime-1&runtime_key_fingerprint=fp-1"
+        val localDiagnosticPairQr = "aetherlink://pair?version=1&pairing_nonce=nonce-1" +
+            "&pairing_code=123456&runtime_device_id=runtime-1&runtime_key_fingerprint=fp-1" +
+            "&host=192.168.1.20&port=43170&route_scope=local_diagnostic"
         val expiredPairQr = "aetherlink://pair?version=1&pairing_nonce=nonce-1&pairing_code=123456" +
             "&runtime_device_id=runtime-1&runtime_key_fingerprint=fp-1" +
             "&relay_host=relay.example.test&relay_port=443&relay_id=relay-1" +
@@ -1599,6 +1599,10 @@ class AppNavigationTest {
         assertEquals(
             PairingQrRawValueScanResult.Valid,
             identityOnlyPairQr.aetherLinkPairingQrRawValueScanResult(requireRemoteRoute = false),
+        )
+        assertEquals(
+            PairingQrRawValueScanResult.Valid,
+            localDiagnosticPairQr.aetherLinkPairingQrRawValueScanResult(requireRemoteRoute = false),
         )
         assertEquals(
             PairingQrRawValueScanResult.InvalidPairingQr,
@@ -2160,6 +2164,42 @@ class AppNavigationTest {
     }
 
     @Test
+    fun routeNoticeActionIgnoresTrustedLastKnownEndpointForNormalQrFirstRecovery() {
+        val endpointHintOnly = RuntimeUiState(
+            trustedRuntime = trustedRuntime(
+                relayHost = null,
+                relayPort = null,
+                relayId = null,
+                relaySecret = null,
+                relayExpiresAtEpochMillis = null,
+                relayNonce = null,
+                endpointHint = RuntimeEndpointHint(
+                    host = "192.0.2.10",
+                    port = 43170,
+                    source = RuntimeEndpointSource.TrustedLastKnown,
+                ),
+            ),
+        )
+        val legacySelectedEndpoint = endpointHintOnly.copy(
+            runtimeHost = "192.0.2.11",
+            runtimePort = "43170",
+            runtimeEndpointSource = RuntimeEndpointSource.TrustedLastKnown,
+        )
+
+        listOf(endpointHintOnly, legacySelectedEndpoint).forEach { state ->
+            val notice = runtimeRouteNotice(state, state.trustedRuntime)
+
+            assertEquals(false, hasConnectableTrustedRuntimeRoute(state))
+            assertEquals(RouteNoticePrimaryAction.ScanLatestQr, routeNoticePrimaryAction(state))
+            assertEquals(R.string.status_route_needed_title, connectionStatusHeroTitleRes(state))
+            assertEquals(R.string.status_route_needed_detail, connectionStatusHeroDetailRes(state))
+            assertEquals(R.string.route_notice_remote_pending, notice?.detailRes)
+            assertEquals(RouteNoticePrimaryAction.ScanLatestQr, notice?.action)
+            assertEquals(R.string.chat_hint_scan_latest_qr, chatInputHintRes(state))
+        }
+    }
+
+    @Test
     fun routeNoticeActionStillConnectsForNonManualTrustedEndpointHints() {
         val state = RuntimeUiState(
             trustedRuntime = trustedRuntime(
@@ -2577,11 +2617,6 @@ class AppNavigationTest {
         """.trimIndent()
 
         assertEquals(true, reasoningNeedsExpansion(reasoning))
-    }
-
-    @Test
-    fun suggestedQuestionChipsStayCompact() {
-        assertEquals(2, suggestedQuestionMaxLines())
     }
 
     @Test
@@ -3127,164 +3162,6 @@ class AppNavigationTest {
         )
     }
 
-    @Test
-    fun assistantSuggestionsShowWhileGeneratingBeforeRowsArrive() {
-        assertEquals(
-            true,
-            shouldShowAssistantSuggestions(
-                isLatestAssistant = true,
-                hasAssistantOutput = true,
-                isStreaming = false,
-                isLoadingSuggestions = true,
-                suggestions = emptyList(),
-            ),
-        )
-    }
-
-    @Test
-    fun assistantSuggestionsHideForStreamingOrOlderMessages() {
-        assertEquals(
-            false,
-            shouldShowAssistantSuggestions(
-                isLatestAssistant = true,
-                hasAssistantOutput = true,
-                isStreaming = true,
-                isLoadingSuggestions = true,
-                suggestions = emptyList(),
-            ),
-        )
-        assertEquals(
-            false,
-            shouldShowAssistantSuggestions(
-                isLatestAssistant = false,
-                hasAssistantOutput = true,
-                isStreaming = false,
-                isLoadingSuggestions = true,
-                suggestions = listOf("Follow up?"),
-            ),
-        )
-    }
-
-    @Test
-    fun assistantSuggestionsHideUntilAssistantOutputExists() {
-        assertEquals(
-            false,
-            shouldShowAssistantSuggestions(
-                isLatestAssistant = true,
-                hasAssistantOutput = false,
-                isStreaming = false,
-                isLoadingSuggestions = true,
-                suggestions = emptyList(),
-            ),
-        )
-        assertEquals(
-            false,
-            shouldShowAssistantSuggestions(
-                isLatestAssistant = true,
-                hasAssistantOutput = false,
-                isStreaming = false,
-                isLoadingSuggestions = false,
-                suggestions = listOf("Follow up?"),
-            ),
-        )
-    }
-
-    @Test
-    fun assistantSuggestionsUseOnlyLatestAssistantWithRealOutputFromState() {
-        val olderAssistant = RuntimeChatMessage(
-            id = "assistant-old",
-            role = "assistant",
-            content = "Earlier answer",
-            suggestions = listOf("Old follow-up?"),
-        )
-        val userMessage = RuntimeChatMessage(
-            id = "user-new",
-            role = "user",
-            content = "Next prompt",
-        )
-        val latestAssistant = RuntimeChatMessage(
-            id = "assistant-new",
-            role = "assistant",
-            content = "Latest answer",
-            suggestions = listOf("New follow-up?"),
-        )
-        val state = RuntimeUiState(
-            messages = listOf(olderAssistant, userMessage, latestAssistant),
-        )
-
-        assertEquals(false, shouldShowAssistantSuggestionsForMessage(state, olderAssistant))
-        assertEquals(false, shouldShowAssistantSuggestionsForMessage(state, userMessage))
-        assertEquals(true, shouldShowAssistantSuggestionsForMessage(state, latestAssistant))
-    }
-
-    @Test
-    fun assistantSuggestionsStayHiddenForReasoningOnlyAssistantRows() {
-        val reasoningOnlyAssistant = RuntimeChatMessage(
-            id = "assistant-thinking",
-            role = "assistant",
-            content = "",
-            reasoning = "Checking the route.",
-            suggestions = listOf("Follow-up should wait"),
-        )
-        val state = RuntimeUiState(
-            messages = listOf(
-                RuntimeChatMessage(id = "user", role = "user", content = "Prompt"),
-                reasoningOnlyAssistant,
-            ),
-            isLoadingSuggestions = true,
-        )
-
-        assertEquals(false, shouldShowAssistantSuggestionsForMessage(state, reasoningOnlyAssistant))
-    }
-
-    @Test
-    fun assistantSuggestionsNormalizeBlankDuplicatesAndMaximumRows() {
-        val suggestions = listOf(
-            "  Follow up?  ",
-            "",
-            "follow   up?",
-            "Compare options?",
-            "Summarize this\nagain?",
-            "Draft next step?",
-            "Extra row should be hidden",
-        )
-
-        assertEquals(
-            listOf(
-                "Follow up?",
-                "Compare options?",
-                "Summarize this again?",
-                "Draft next step?",
-            ),
-            normalizedSuggestedQuestions(suggestions),
-        )
-        assertEquals(SUGGESTED_QUESTION_MAX_ITEMS, normalizedSuggestedQuestions(suggestions).size)
-    }
-
-    @Test
-    fun assistantSuggestionsHideWhenRowsNormalizeToBlank() {
-        assertEquals(
-            false,
-            shouldShowAssistantSuggestions(
-                isLatestAssistant = true,
-                hasAssistantOutput = true,
-                isStreaming = false,
-                isLoadingSuggestions = false,
-                suggestions = listOf(" ", "\n\t"),
-            ),
-        )
-        assertEquals(
-            true,
-            shouldShowAssistantSuggestions(
-                isLatestAssistant = true,
-                hasAssistantOutput = true,
-                isStreaming = false,
-                isLoadingSuggestions = true,
-                suggestions = listOf(" ", "\n\t"),
-            ),
-        )
-    }
-
     private fun trustedRuntime(
         relayHost: String? = "relay.example.test",
         relayPort: Int? = 443,
@@ -3293,6 +3170,7 @@ class AppNavigationTest {
         relayExpiresAtEpochMillis: Long? = null,
         relayNonce: String? = null,
         relayScope: String? = null,
+        endpointHint: RuntimeEndpointHint? = null,
     ): RuntimeTrustedRuntime {
         return RuntimeTrustedRuntime(
             deviceId = "runtime-1",
@@ -3300,6 +3178,7 @@ class AppNavigationTest {
             fingerprint = "runtime-fingerprint",
             publicKeyBase64 = "runtime-public-key",
             routeToken = "route-token",
+            endpointHint = endpointHint,
             relayHost = relayHost,
             relayPort = relayPort,
             relayId = relayId,

@@ -103,4 +103,10 @@ data class TrustedRuntime(
     val relayExpiresAtEpochMillis: Long? = null,
     val relayNonce: String? = null,
     val relayScope: String? = null,
+    val p2pRouteClass: String? = null,
+    val p2pRecordId: String? = null,
+    val p2pEncryptedBody: String? = null,
+    val p2pExpiresAtEpochMillis: Long? = null,
+    val p2pAntiReplayNonce: String? = null,
+    val p2pProtocolVersion: Int? = null,
 )

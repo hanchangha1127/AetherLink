@@ -34,8 +34,6 @@ object MessageType {
     const val ChatCancel = "chat.cancel"
     const val ChatSessionsList = "chat.sessions.list"
     const val ChatMessagesList = "chat.messages.list"
-    const val ChatSuggestionsRequest = "chat.suggestions.request"
-    const val ChatSuggestionsResult = "chat.suggestions.result"
     const val ChatTitleRequest = "chat.title.request"
     const val ChatTitleResult = "chat.title.result"
     const val ChatSessionRename = "chat.session.rename"
@@ -45,6 +43,9 @@ object MessageType {
     const val MemoryList = "memory.list"
     const val MemoryUpsert = "memory.upsert"
     const val MemoryDelete = "memory.delete"
+    const val MemorySummaryDraftsList = "memory.summary.drafts.list"
+    const val MemorySummaryDraftApprove = "memory.summary.draft.approve"
+    const val MemorySummaryDraftDismiss = "memory.summary.draft.dismiss"
     const val Error = "error"
 }
 
@@ -109,6 +110,7 @@ data class ModelInfoPayload(
     val source: String? = null,
     val description: String? = null,
     @SerialName("size_bytes") val sizeBytes: Long? = null,
+    @SerialName("context_window_tokens") val contextWindowTokens: Int? = null,
     @SerialName("modified_at") val modifiedAt: String? = null,
     @SerialName("remote_model") val remoteModel: String? = null,
 )
@@ -144,6 +146,12 @@ data class RouteRefreshPayload(
     @SerialName("relay_expires_at") val relayExpiresAtEpochMillis: Long? = null,
     @SerialName("relay_nonce") val relayNonce: String? = null,
     @SerialName("relay_scope") val relayScope: String? = null,
+    @SerialName("p2p_class") val p2pRouteClass: String? = null,
+    @SerialName("p2p_record_id") val p2pRecordId: String? = null,
+    @SerialName("p2p_encrypted_body") val p2pEncryptedBody: String? = null,
+    @SerialName("p2p_expires_at") val p2pExpiresAtEpochMillis: Long? = null,
+    @SerialName("p2p_anti_replay_nonce") val p2pAntiReplayNonce: String? = null,
+    @SerialName("p2p_protocol_version") val p2pProtocolVersion: Int? = null,
 )
 
 @Serializable
@@ -205,6 +213,7 @@ data class ChatCancelPayload(
 data class ChatSessionsListRequestPayload(
     val limit: Int? = null,
     @SerialName("include_archived") val includeArchived: Boolean = false,
+    val query: String? = null,
 )
 
 @Serializable
@@ -224,6 +233,14 @@ data class ChatSessionSummaryPayload(
     @SerialName("last_event") val lastEvent: String? = null,
     @SerialName("last_finish_reason") val lastFinishReason: String? = null,
     @SerialName("last_error_code") val lastErrorCode: String? = null,
+    val search: ChatSessionSearchPayload? = null,
+)
+
+@Serializable
+data class ChatSessionSearchPayload(
+    val rank: Int,
+    val snippet: String,
+    @SerialName("matched_fields") val matchedFields: List<String> = emptyList(),
 )
 
 @Serializable
@@ -245,20 +262,6 @@ data class ChatStoredMessagePayload(
     val reasoning: String? = null,
     val attachments: List<ChatAttachmentPayload> = emptyList(),
     @SerialName("created_at") val createdAt: String? = null,
-)
-
-@Serializable
-data class ChatSuggestionsRequestPayload(
-    @SerialName("session_id") val sessionId: String,
-    val model: String,
-    val messages: List<ChatMessagePayload>,
-    @SerialName("max_suggestions") val maxSuggestions: Int = 3,
-    val locale: String? = null,
-)
-
-@Serializable
-data class ChatSuggestionsResultPayload(
-    val suggestions: List<String>,
 )
 
 @Serializable
@@ -302,6 +305,18 @@ data class MemoryEntryPayload(
     val enabled: Boolean = true,
     @SerialName("created_at") val createdAt: String? = null,
     @SerialName("updated_at") val updatedAt: String? = null,
+    val source: MemoryEntrySourcePayload? = null,
+)
+
+@Serializable
+data class MemoryEntrySourcePayload(
+    val kind: String,
+    @SerialName("draft_id") val draftId: String,
+    @SerialName("summary_method") val summaryMethod: String,
+    val session: MemorySummaryDraftSessionPayload,
+    @SerialName("source_message_count") val sourceMessageCount: Int,
+    @SerialName("source_range") val sourceRange: String,
+    @SerialName("source_pointers") val sourcePointers: List<MemorySummaryDraftSourcePointerPayload>,
 )
 
 @Serializable
@@ -325,6 +340,75 @@ data class MemoryDeletePayload(
 data class MemoryDeleteResultPayload(
     val id: String,
     @SerialName("deleted_at") val deletedAt: String? = null,
+)
+
+@Serializable
+data class MemorySummaryDraftsListRequestPayload(
+    val limit: Int? = null,
+)
+
+@Serializable
+data class MemorySummaryDraftsListResultPayload(
+    val drafts: List<MemorySummaryDraftPayload>,
+)
+
+@Serializable
+data class MemorySummaryDraftApprovePayload(
+    @SerialName("draft_id") val draftId: String,
+    val content: String? = null,
+    val enabled: Boolean? = null,
+    @SerialName("expected_session_id") val expectedSessionId: String? = null,
+    @SerialName("expected_source_message_count") val expectedSourceMessageCount: Int? = null,
+)
+
+@Serializable
+data class MemorySummaryDraftApproveResultPayload(
+    @SerialName("draft_id") val draftId: String,
+    val status: String,
+    val entry: MemoryEntryPayload,
+)
+
+@Serializable
+data class MemorySummaryDraftDismissPayload(
+    @SerialName("draft_id") val draftId: String,
+    @SerialName("expected_session_id") val expectedSessionId: String? = null,
+    @SerialName("expected_source_message_count") val expectedSourceMessageCount: Int? = null,
+)
+
+@Serializable
+data class MemorySummaryDraftDismissResultPayload(
+    @SerialName("draft_id") val draftId: String,
+    val status: String,
+    @SerialName("dismissed_at") val dismissedAt: String? = null,
+)
+
+@Serializable
+data class MemorySummaryDraftPayload(
+    val id: String,
+    val session: MemorySummaryDraftSessionPayload,
+    @SerialName("source_message_count") val sourceMessageCount: Int,
+    @SerialName("source_range") val sourceRange: String,
+    @SerialName("source_pointers") val sourcePointers: List<MemorySummaryDraftSourcePointerPayload>,
+    @SerialName("summary_preview") val summaryPreview: String,
+)
+
+@Serializable
+data class MemorySummaryDraftSessionPayload(
+    @SerialName("session_id") val sessionId: String,
+    val title: String,
+    val model: String,
+    @SerialName("last_activity_at") val lastActivityAt: String,
+    @SerialName("message_count") val messageCount: Int,
+    @SerialName("inactive_seconds") val inactiveSeconds: Long,
+)
+
+@Serializable
+data class MemorySummaryDraftSourcePointerPayload(
+    @SerialName("session_id") val sessionId: String,
+    @SerialName("message_index") val messageIndex: Int,
+    val role: String,
+    @SerialName("created_at") val createdAt: String? = null,
+    val excerpt: String,
 )
 
 @Serializable

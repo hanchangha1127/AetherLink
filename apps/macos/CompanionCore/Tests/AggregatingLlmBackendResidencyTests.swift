@@ -59,6 +59,55 @@ final class AggregatingLlmBackendResidencyTests: XCTestCase {
         }
     }
 
+    func testUnloadFailureEmitsProviderSpecificFailureEventWithoutBreakingNextChat() async throws {
+        let ollama = ResidencyTestBackend(
+            provider: .ollama,
+            models: [ModelInfo(id: "qwen-local", name: "qwen-local", provider: .ollama)],
+            unloadErrors: [
+                "qwen-local": NSError(
+                    domain: "AetherLinkResidencyTest",
+                    code: 42,
+                    userInfo: [NSLocalizedDescriptionKey: "unload denied"]
+                )
+            ]
+        )
+        let lmStudio = ResidencyTestBackend(
+            provider: .lmStudio,
+            models: [ModelInfo(id: "gemma-local", name: "gemma-local", provider: .lmStudio)]
+        )
+        let backend = AggregatingLlmBackend(
+            [ollama, lmStudio],
+            modelIdleUnloadDelayNanoseconds: 60_000_000_000
+        )
+        let events = ResidencyEventRecorder()
+        backend.setResidencyEventHandler { event in
+            events.append(event)
+        }
+
+        _ = try await collect(backend.chat(request: chatRequest(model: "ollama:qwen-local")))
+        _ = try await collect(backend.chat(request: chatRequest(model: "lm_studio:gemma-local")))
+
+        await eventually {
+            events.containsUnloadFailure(
+                provider: .ollama,
+                modelID: "qwen-local",
+                reason: .modelSwitch,
+                message: "unload denied"
+            )
+        }
+        XCTAssertEqual(ollama.unloadedModels, ["qwen-local"])
+        XCTAssertEqual(lmStudio.routedModels, ["gemma-local"])
+        XCTAssertEqual(
+            backend.modelResidencySnapshot(),
+            RuntimeModelResidencySnapshot(
+                activeProvider: .lmStudio,
+                activeModelID: "gemma-local",
+                inFlightGenerations: 0,
+                idleUnloadDelaySeconds: 60
+            )
+        )
+    }
+
     func testUnknownUnqualifiedModelDoesNotFallbackToOllama() async throws {
         let ollama = ResidencyTestBackend(
             provider: .ollama,
@@ -219,6 +268,7 @@ private final class ResidencyTestBackend: LlmBackend, @unchecked Sendable {
 
     private let lock = NSLock()
     private let models: [ModelInfo]
+    private let unloadErrors: [String: Error]
     private var unloaded: [String] = []
     private var routed: [String] = []
 
@@ -230,9 +280,14 @@ private final class ResidencyTestBackend: LlmBackend, @unchecked Sendable {
         lock.withLock { routed }
     }
 
-    init(provider: ModelProvider, models: [ModelInfo] = []) {
+    init(
+        provider: ModelProvider,
+        models: [ModelInfo] = [],
+        unloadErrors: [String: Error] = [:]
+    ) {
         self.provider = provider
         self.models = models
+        self.unloadErrors = unloadErrors
     }
 
     func healthCheck() async -> BackendStatus {
@@ -257,12 +312,45 @@ private final class ResidencyTestBackend: LlmBackend, @unchecked Sendable {
         lock.withLock {
             unloaded.append(providerModelID)
         }
+        if let error = unloadErrors[providerModelID] {
+            throw error
+        }
         return .unloaded(provider: provider, modelID: providerModelID)
     }
 
     @discardableResult
     func cancel(generationID: String) -> GenerationCancellationResult {
         .notFound(generationID: generationID)
+    }
+}
+
+private final class ResidencyEventRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var events: [RuntimeModelResidencyEvent] = []
+
+    func append(_ event: RuntimeModelResidencyEvent) {
+        lock.withLock {
+            events.append(event)
+        }
+    }
+
+    func containsUnloadFailure(
+        provider: ModelProvider,
+        modelID: String,
+        reason: RuntimeModelResidencyUnloadReason,
+        message: String
+    ) -> Bool {
+        lock.withLock {
+            events.contains { event in
+                if case let .unloadFailed(eventProvider, eventModelID, eventReason, eventMessage) = event {
+                    return eventProvider == provider &&
+                        eventModelID == modelID &&
+                        eventReason == reason &&
+                        eventMessage == message
+                }
+                return false
+            }
+        }
     }
 }
 

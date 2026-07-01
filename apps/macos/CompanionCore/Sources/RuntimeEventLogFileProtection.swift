@@ -31,7 +31,7 @@ enum RuntimeEventLogFileProtection {
         }
     }
 
-    private static func prepareDirectory(for fileURL: URL) throws {
+    static func prepareDirectory(for fileURL: URL) throws {
         let directory = fileURL.deletingLastPathComponent()
         try FileManager.default.createDirectory(
             at: directory,
@@ -44,7 +44,7 @@ enum RuntimeEventLogFileProtection {
         )
     }
 
-    private static func secureFile(at fileURL: URL) throws {
+    static func secureFile(at fileURL: URL) throws {
         try FileManager.default.setAttributes(
             [.posixPermissions: filePermissions],
             ofItemAtPath: fileURL.path

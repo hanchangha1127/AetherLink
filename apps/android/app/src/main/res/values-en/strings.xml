@@ -27,6 +27,17 @@
     <string name="clear_chat_search">Clear chat search</string>
     <string name="clear_chat_search_named">Clear chat search for %1$s</string>
     <string name="no_chat_search_results">No matching chats.</string>
+    <string name="chat_search_match_rank">Match %1$d</string>
+    <string name="chat_search_match_metadata">%1$s · %2$s</string>
+    <string name="chat_search_match_fields">Matched: %1$s</string>
+    <string name="chat_search_field_title">Title</string>
+    <string name="chat_search_field_session">Session</string>
+    <string name="chat_search_field_model">Model</string>
+    <string name="chat_search_field_status">Status</string>
+    <string name="chat_search_field_error">Error</string>
+    <string name="chat_search_field_transcript">Transcript</string>
+    <string name="chat_search_field_reasoning">Reasoning</string>
+    <string name="chat_search_field_attachment">Attachment</string>
     <string name="untitled_chat">Untitled chat</string>
     <string name="chat_top_bar_active_title_summary">Current chat %1$s</string>
     <plurals name="chat_message_count">
@@ -75,6 +86,7 @@
     </plurals>
     <string name="chat_history_summary_detail">Active: %1$s. Archived: %2$s.</string>
     <string name="chat_history_summary_accessibility">Chat history summary. %1$s. %2$s</string>
+    <string name="chat_history_search_result_summary">Results for \"%1$s\": %2$s. %3$s.</string>
     <string name="chat_history_action_state_wait_for_stream">Wait for the current response before changing chat history.</string>
     <string name="chat_history_refresh">Refresh chat history</string>
     <string name="chat_history_refresh_state_ready">Ready to refresh chat history.</string>
@@ -400,15 +412,6 @@
     <string name="assistant_reasoning_state_shown">Fully shown</string>
     <string name="assistant_reasoning_show">Show thinking</string>
     <string name="assistant_reasoning_hide">Hide thinking</string>
-    <string name="suggested_next_questions">Next questions</string>
-    <plurals name="suggested_questions_state_count">
-        <item quantity="one">%1$d suggested next question available.</item>
-        <item quantity="other">%1$d suggested next questions available.</item>
-    </plurals>
-    <string name="generating_suggestions">Generating next questions...</string>
-    <string name="content_desc_suggested_question">Suggested question: %1$s</string>
-    <string name="action_use_suggested_question">Insert suggested question</string>
-    <string name="suggested_question_state_wait_for_stream">Wait for the current response before using a suggested question.</string>
     <string name="copy_message">Copy message</string>
     <string name="regenerate_response">Regenerate response</string>
     <string name="regenerate_response_state_ready">Ready to regenerate the latest response.</string>
@@ -501,6 +504,33 @@
     <string name="memory_summary">%1$s, %2$s.</string>
     <string name="memory_refresh">Refresh memory</string>
     <string name="memory_refresh_state_ready">Ready to refresh memory.</string>
+    <string name="memory_summary_drafts_title">Suggested memories</string>
+    <plurals name="memory_summary_drafts_count">
+        <item quantity="one">%1$d suggestion from older chats</item>
+        <item quantity="other">%1$d suggestions from older chats</item>
+    </plurals>
+    <plurals name="memory_summary_draft_source_count">
+        <item quantity="one">%1$d source</item>
+        <item quantity="other">%1$d sources</item>
+    </plurals>
+    <string name="memory_summary_draft_source_range">Range %1$s</string>
+    <string name="memory_summary_draft_preview_label">Preview</string>
+    <string name="memory_summary_draft_source_excerpt">%1$s: %2$s</string>
+    <string name="memory_summary_draft_row_summary">%1$s. %2$s. %3$s. %4$s</string>
+    <string name="memory_source_from_chat">From older chat: %1$s</string>
+    <string name="memory_source_show">Show source</string>
+    <string name="memory_source_hide">Hide source</string>
+    <string name="memory_source_show_named">Show source for memory %1$s</string>
+    <string name="memory_source_hide_named">Hide source for memory %1$s</string>
+    <string name="memory_source_summary">%1$s. %2$s. %3$s</string>
+    <string name="memory_summary_draft_approve">Add Suggested Memory</string>
+    <string name="memory_summary_draft_approving">Adding memory…</string>
+    <string name="memory_summary_draft_approve_named">Add suggested memory from %1$s</string>
+    <string name="memory_summary_draft_approve_state_ready">Ready to add suggested memory.</string>
+    <string name="memory_summary_draft_dismiss">Dismiss Suggested Memory</string>
+    <string name="memory_summary_draft_dismissing">Dismissing memory…</string>
+    <string name="memory_summary_draft_dismiss_named">Dismiss suggested memory from %1$s</string>
+    <string name="memory_summary_draft_dismiss_state_ready">Ready to dismiss suggested memory.</string>
     <string name="memory_remove">Remove memory</string>
     <string name="memory_remove_named">Remove memory %1$s</string>
     <string name="memory_enable_named">Enable memory %1$s</string>
@@ -573,6 +603,9 @@
     <string name="error_chat_history_runtime_required">Connect to AetherLink Runtime before changing runtime-saved chats.</string>
     <string name="error_memory_runtime_required">Connect to the trusted runtime before changing memory.</string>
     <string name="error_memory_load_failed">Could not load memory from AetherLink Runtime.</string>
+    <string name="error_memory_summary_drafts_load_failed">Could not load memory suggestions from AetherLink Runtime.</string>
+    <string name="error_memory_summary_draft_approval_failed">Could not add suggested memory from AetherLink Runtime.</string>
+    <string name="error_memory_summary_draft_dismiss_failed">Could not dismiss suggested memory from AetherLink Runtime.</string>
     <string name="error_runtime_error">AetherLink Runtime could not complete the request.</string>
     <string name="error_send_failed">Could not send the message to AetherLink Runtime.</string>
     <string name="error_regenerate_unavailable">There is no completed assistant response to regenerate.</string>

@@ -486,8 +486,8 @@ private let providerEndpointDiagnosticPatterns = [
 ]
 
 private let sensitiveRouteDiagnosticPatterns = [
-    #"(?:^|[\s?&{,;])["']?(?:relay_secret|relaySecret|route_secret|routeSecret|route_token|routeToken|pairing_secret|pairingSecret|relay_id|relayId|relay_nonce|relayNonce|allocation_token|allocationToken|rs|rt|ri|rrn)["']?\s*(?:=|:|\s)\s*["']?[^"',\s;})]+"#,
-    #"\b(?:relay_secret|relaySecret|route_secret|routeSecret|route_token|routeToken|pairing_secret|pairingSecret|relay_id|relayId|relay_nonce|relayNonce|allocation_token|allocationToken)\b"#,
+    #"(?:^|[\s?&{,;])["']?(?:relay_secret|relaySecret|route_secret|routeSecret|route_token|routeToken|pairing_secret|pairingSecret|relay_id|relayId|relay_nonce|relayNonce|allocation_token|allocationToken|p2p_class|p2pClass|p2pRouteClass|p2p_record_id|p2pRecordID|p2pRecordId|p2p_encrypted_body|p2pEncryptedBody|p2p_expires_at|p2pExpiresAt|p2pExpiresAtEpochMillis|p2p_anti_replay_nonce|p2pAntiReplayNonce|p2p_protocol_version|p2pProtocolVersion|rs|rt|ri|rrn|pc|prid|peb|px|pn|pv)["']?\s*(?:=|:|\s)\s*["']?[^"',\s;})]+"#,
+    #"\b(?:relay_secret|relaySecret|route_secret|routeSecret|route_token|routeToken|pairing_secret|pairingSecret|relay_id|relayId|relay_nonce|relayNonce|allocation_token|allocationToken|p2p_class|p2pClass|p2pRouteClass|p2p_record_id|p2pRecordID|p2pRecordId|p2p_encrypted_body|p2pEncryptedBody|p2p_expires_at|p2pExpiresAt|p2pExpiresAtEpochMillis|p2p_anti_replay_nonce|p2pAntiReplayNonce|p2p_protocol_version|p2pProtocolVersion)\b"#,
 ]
 
 private func remotePairingEndpoint(

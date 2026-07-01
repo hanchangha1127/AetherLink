@@ -32,7 +32,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         requiresAuthentication: Bool = true,
         pairingCoordinator: PairingCoordinator = PairingCoordinator(),
         trustedDeviceStore: TrustedDeviceStore = TrustedDeviceStore(),
-        chatEventStore: any RuntimeChatEventStore = JSONLRuntimeChatEventStore(),
+        chatEventStore: any RuntimeChatEventStore = RuntimeChatEventStoreDefaults.productionStore(),
         memoryStore: any RuntimeMemoryStore = JSONLRuntimeMemoryStore(),
         routeRefresher: (any RuntimeRouteRefreshing)? = nil,
         runtimeChallengeSigner: (any RuntimeChallengeSigning)? = nil,
@@ -95,9 +95,6 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         case MessageType.chatMessagesList:
             guard await allowRuntimeCommand(envelope, sink: sink) else { return }
             handleChatMessagesList(envelope, sink: sink)
-        case MessageType.chatSuggestionsRequest:
-            guard await allowRuntimeCommand(envelope, sink: sink) else { return }
-            await handleChatSuggestionsRequest(envelope, sink: sink)
         case MessageType.chatTitleRequest:
             guard await allowRuntimeCommand(envelope, sink: sink) else { return }
             await handleChatTitleRequest(envelope, sink: sink)
@@ -122,6 +119,15 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         case MessageType.memoryDelete:
             guard await allowRuntimeCommand(envelope, sink: sink) else { return }
             handleMemoryDelete(envelope, sink: sink)
+        case MessageType.memorySummaryDraftsList:
+            guard await allowRuntimeCommand(envelope, sink: sink) else { return }
+            handleMemorySummaryDraftsList(envelope, sink: sink)
+        case MessageType.memorySummaryDraftApprove:
+            guard await allowRuntimeCommand(envelope, sink: sink) else { return }
+            handleMemorySummaryDraftApprove(envelope, sink: sink)
+        case MessageType.memorySummaryDraftDismiss:
+            guard await allowRuntimeCommand(envelope, sink: sink) else { return }
+            handleMemorySummaryDraftDismiss(envelope, sink: sink)
         default:
             sink.send(errorEnvelope(
                 requestID: envelope.requestID,
@@ -210,41 +216,6 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                     ]
                 ))
             }
-        } catch {
-            sink.send(errorEnvelope(requestID: envelope.requestID, error: error))
-        }
-    }
-
-    private func handleChatSuggestionsRequest(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) async {
-        do {
-            let parsedRequest = try chatSuggestionsRequest(from: envelope)
-            _ = try await resolvedInstalledChatModel(parsedRequest.request.model)
-
-            var generatedText = ""
-            var inlineReasoningSplitter = RuntimeInlineReasoningSplitter()
-            for try await event in backend.chat(request: parsedRequest.request) {
-                switch event {
-                case .delta(let text):
-                    generatedText += inlineReasoningSplitter.split(text).answerText
-                case .reasoningDelta:
-                    continue
-                case .done:
-                    generatedText += inlineReasoningSplitter.flush().answerText
-                    break
-                }
-            }
-
-            let suggestions = Self.suggestions(
-                from: generatedText,
-                maxSuggestions: parsedRequest.maxSuggestions
-            )
-            sink.send(ProtocolEnvelope(
-                type: MessageType.chatSuggestionsResult,
-                requestID: envelope.requestID,
-                payload: [
-                    "suggestions": .array(suggestions.map { .string($0) })
-                ]
-            ))
         } catch {
             sink.send(errorEnvelope(requestID: envelope.requestID, error: error))
         }
@@ -450,6 +421,9 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                         if let remoteModel = model.remoteModel, !remoteModel.isEmpty {
                             payload["remote_model"] = .string(remoteModel)
                         }
+                        if let contextWindowTokens = model.contextWindowTokens, contextWindowTokens > 0 {
+                            payload["context_window_tokens"] = .number(Double(contextWindowTokens))
+                        }
                         return .object(payload)
                     })
                 ]
@@ -537,6 +511,10 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
             let parsedClientRequest = try parsedChatRequest(from: envelope)
             let clientRequest = parsedClientRequest.request
             let locale = optionalString("locale", in: envelope.payload)
+            try validateChatSessionCanReceiveSend(
+                sessionID: clientRequest.sessionID,
+                ownerDeviceID: ownerDeviceID
+            )
             storageContext = RuntimeChatStorageContext(
                 requestID: envelope.requestID,
                 sessionID: clientRequest.sessionID,
@@ -556,18 +534,21 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                 guardedRequest,
                 memoryEntries: memoryEntries
             )
-            let backendRequest = Self.chatRequestWithRuntimeConversationCompaction(request)
             try recordChatEvent(.init(
                 kind: .request,
                 requestID: envelope.requestID,
-                sessionID: backendRequest.sessionID,
-                model: backendRequest.model,
+                sessionID: request.sessionID,
+                model: request.model,
                 messages: storedMessages,
                 ownerDeviceID: ownerDeviceID
             ))
             registerActiveChatStorageContext(storageContext)
             activeStorageRequestID = envelope.requestID
-            let model = try await resolvedInstalledChatModel(backendRequest.model)
+            let model = try await resolvedInstalledChatModel(request.model)
+            let backendRequest = Self.chatRequestWithRuntimeConversationCompaction(
+                request,
+                contextWindowTokens: model.contextWindowTokens
+            )
             try validateAttachments(in: backendRequest, for: model)
             var inlineReasoningSplitter = RuntimeInlineReasoningSplitter()
             for try await event in backend.chat(request: backendRequest) {
@@ -665,6 +646,25 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
             try chatEventStore.append(event)
         } catch {
             throw LocalRuntimeRouterError.chatStoreUnavailable(error.localizedDescription)
+        }
+    }
+
+    private func validateChatSessionCanReceiveSend(sessionID: String, ownerDeviceID: String?) throws {
+        let sessions: [RuntimeChatStoredSession]
+        do {
+            sessions = try chatEventStore.listSessions(
+                ownerDeviceID: ownerDeviceID,
+                limit: Int.max,
+                includeArchived: true
+            )
+        } catch {
+            throw LocalRuntimeRouterError.chatStoreUnavailable(error.localizedDescription)
+        }
+        guard let session = sessions.first(where: { $0.sessionID == sessionID }) else {
+            return
+        }
+        if session.status == "archived" {
+            throw LocalRuntimeRouterError.chatSessionMustBeRestoredBeforeSend(sessionID)
         }
     }
 
@@ -846,11 +846,12 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
             }) {
                 return try Self.resolvedChatModel(
                     provider: model.provider,
-                    kind: model.kind,
-                    capabilities: model.capabilities,
-                    requestedModel: requestedModel
-                )
-            }
+                        kind: model.kind,
+                        capabilities: model.capabilities,
+                        requestedModel: requestedModel,
+                        contextWindowTokens: model.contextWindowTokens
+                    )
+                }
             throw LocalRuntimeRouterError.modelNotInstalled(requestedModel)
         }
 
@@ -869,7 +870,8 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                 provider: model.provider,
                 kind: model.kind,
                 capabilities: model.capabilities,
-                requestedModel: requestedModel
+                requestedModel: requestedModel,
+                contextWindowTokens: model.contextWindowTokens
             )
         }
         throw LocalRuntimeRouterError.modelNotInstalled(requestedModel)
@@ -879,7 +881,8 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         provider: ModelProvider,
         kind: ModelKind,
         capabilities: [String],
-        requestedModel: String
+        requestedModel: String,
+        contextWindowTokens: Int?
     ) throws -> ResolvedRuntimeModel {
         guard kind == ModelKind.chat else {
             throw LocalRuntimeRouterError.modelNotInstalled(requestedModel)
@@ -887,7 +890,8 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         return ResolvedRuntimeModel(
             provider: provider,
             kind: kind,
-            capabilities: capabilities
+            capabilities: capabilities,
+            contextWindowTokens: contextWindowTokens
         )
     }
 
@@ -938,11 +942,13 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                 maxLimit: 200
             )
             let includeArchived = optionalBool("include_archived", in: envelope.payload) ?? false
+            let query = optionalString("query", in: envelope.payload)
             let ownerDeviceID = commandOwnerDeviceID(connectionID: sink.connectionID)
             let sessions = try chatEventStore.listSessions(
                 ownerDeviceID: ownerDeviceID,
                 limit: limit,
-                includeArchived: includeArchived
+                includeArchived: includeArchived,
+                query: query
             )
             sink.send(ProtocolEnvelope(
                 type: MessageType.chatSessionsList,
@@ -968,6 +974,13 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                         }
                         if let lastErrorCode = session.lastErrorCode {
                             payload["last_error_code"] = .string(lastErrorCode)
+                        }
+                        if let search = session.search {
+                            payload["search"] = .object([
+                                "rank": .number(Double(search.rank)),
+                                "snippet": .string(search.snippet),
+                                "matched_fields": .array(search.matchedFields.map { .string($0) })
+                            ])
                         }
                         return .object(payload)
                     })
@@ -1156,13 +1169,272 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
     }
 
     private func memoryEntryPayload(_ entry: RuntimeMemoryEntry) -> [String: JSONValue] {
-        [
+        var payload: [String: JSONValue] = [
             "id": .string(entry.id),
             "content": .string(entry.content),
             "enabled": .bool(entry.enabled),
             "created_at": .string(dateFormatter.string(from: entry.createdAt)),
             "updated_at": .string(dateFormatter.string(from: entry.updatedAt))
         ]
+        if let source = entry.source {
+            payload["source"] = .object(memoryEntrySourcePayload(source))
+        }
+        return payload
+    }
+
+    private func handleMemorySummaryDraftsList(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) {
+        do {
+            let limit = boundedWindowLimit(
+                optionalInt("limit", in: envelope.payload),
+                defaultLimit: 25,
+                maxLimit: 50
+            )
+            let ownerDeviceID = commandOwnerDeviceID(connectionID: sink.connectionID)
+            let drafts = try availableMemorySummaryDrafts(
+                ownerDeviceID: ownerDeviceID,
+                limit: limit
+            )
+            sink.send(ProtocolEnvelope(
+                type: MessageType.memorySummaryDraftsList,
+                requestID: envelope.requestID,
+                payload: [
+                    "drafts": .array(drafts.map { .object(memorySummaryDraftPayload($0)) })
+                ]
+            ))
+        } catch let error as LocalRuntimeRouterError {
+            sink.send(errorEnvelope(requestID: envelope.requestID, error: error))
+        } catch {
+            sink.send(errorEnvelope(requestID: envelope.requestID, error: LocalRuntimeRouterError.chatStoreUnavailable(error.localizedDescription)))
+        }
+    }
+
+    private func availableMemorySummaryDrafts(
+        ownerDeviceID: String?,
+        limit: Int
+    ) throws -> [RuntimeLongInactivityMemorySummarizationDraft] {
+        let policy = RuntimeLongInactivityMemorySummarizationPolicy(maxCandidateCount: limit)
+        let drafts = try chatEventStore.listLongInactivityMemorySummarizationDrafts(
+            ownerDeviceID: ownerDeviceID,
+            policy: policy
+        )
+        let approvedEntryIDs: Set<String>
+        let dismissedDraftIDs: Set<String>
+        do {
+            approvedEntryIDs = Set(try memoryStore.list(ownerDeviceID: ownerDeviceID).map(\.id))
+            dismissedDraftIDs = try memoryStore.dismissedMemorySummaryDraftIDs(ownerDeviceID: ownerDeviceID)
+        } catch {
+            throw LocalRuntimeRouterError.memoryStoreUnavailable(error.localizedDescription)
+        }
+        return drafts.filter { draft in
+            !approvedEntryIDs.contains(memorySummaryDraftEntryID(draft.id)) &&
+                !dismissedDraftIDs.contains(draft.id)
+        }
+    }
+
+    private func handleMemorySummaryDraftApprove(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) {
+        do {
+            let ownerDeviceID = commandOwnerDeviceID(connectionID: sink.connectionID)
+            let draftID = try requiredString("draft_id", in: envelope.payload)
+            let rawExpectedSessionID = optionalString("expected_session_id", in: envelope.payload)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let expectedSessionID = rawExpectedSessionID.flatMap { $0.isEmpty ? nil : $0 }
+            let expectedSourceMessageCount = optionalInt("expected_source_message_count", in: envelope.payload)
+            let policy = RuntimeLongInactivityMemorySummarizationPolicy(maxCandidateCount: 50)
+            let drafts = try chatEventStore.listLongInactivityMemorySummarizationDrafts(
+                ownerDeviceID: ownerDeviceID,
+                policy: policy
+            )
+            guard let draft = drafts.first(where: { $0.id == draftID }) else {
+                throw LocalRuntimeRouterError.memorySummaryDraftUnavailable(draftID)
+            }
+            if let expectedSessionID, expectedSessionID != draft.candidate.sessionID {
+                throw LocalRuntimeRouterError.memorySummaryDraftStale(draftID)
+            }
+            if let expectedSourceMessageCount, expectedSourceMessageCount != draft.sourceMessageCount {
+                throw LocalRuntimeRouterError.memorySummaryDraftStale(draftID)
+            }
+            let rawContent = optionalString("content", in: envelope.payload)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let content = rawContent.flatMap { $0.isEmpty ? nil : $0 } ?? draft.summaryPreview
+            let entry = try memoryStore.upsert(
+                ownerDeviceID: ownerDeviceID,
+                id: memorySummaryDraftEntryID(draftID),
+                content: content,
+                enabled: optionalBool("enabled", in: envelope.payload) ?? true,
+                source: memorySummaryDraftEntrySource(draft),
+                timestamp: Date()
+            )
+            sink.send(ProtocolEnvelope(
+                type: MessageType.memorySummaryDraftApprove,
+                requestID: envelope.requestID,
+                payload: [
+                    "draft_id": .string(draft.id),
+                    "status": .string("approved"),
+                    "entry": .object(memoryEntryPayload(entry))
+                ]
+            ))
+        } catch {
+            sink.send(errorEnvelope(requestID: envelope.requestID, error: error))
+        }
+    }
+
+    private func handleMemorySummaryDraftDismiss(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) {
+        do {
+            let ownerDeviceID = commandOwnerDeviceID(connectionID: sink.connectionID)
+            let draftID = try requiredString("draft_id", in: envelope.payload)
+            let rawExpectedSessionID = optionalString("expected_session_id", in: envelope.payload)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let expectedSessionID = rawExpectedSessionID.flatMap { $0.isEmpty ? nil : $0 }
+            let expectedSourceMessageCount = optionalInt("expected_source_message_count", in: envelope.payload)
+            let policy = RuntimeLongInactivityMemorySummarizationPolicy(maxCandidateCount: 50)
+            let drafts = try chatEventStore.listLongInactivityMemorySummarizationDrafts(
+                ownerDeviceID: ownerDeviceID,
+                policy: policy
+            )
+            guard let draft = drafts.first(where: { $0.id == draftID }) else {
+                throw LocalRuntimeRouterError.memorySummaryDraftUnavailable(draftID)
+            }
+            if let expectedSessionID, expectedSessionID != draft.candidate.sessionID {
+                throw LocalRuntimeRouterError.memorySummaryDraftStale(draftID)
+            }
+            if let expectedSourceMessageCount, expectedSourceMessageCount != draft.sourceMessageCount {
+                throw LocalRuntimeRouterError.memorySummaryDraftStale(draftID)
+            }
+            let result = try memoryStore.dismissMemorySummaryDraft(
+                ownerDeviceID: ownerDeviceID,
+                draftID: draft.id,
+                timestamp: Date()
+            )
+            sink.send(ProtocolEnvelope(
+                type: MessageType.memorySummaryDraftDismiss,
+                requestID: envelope.requestID,
+                payload: [
+                    "draft_id": .string(result.draftID),
+                    "status": .string("dismissed"),
+                    "dismissed_at": .string(dateFormatter.string(from: result.dismissedAt))
+                ]
+            ))
+        } catch {
+            sink.send(errorEnvelope(requestID: envelope.requestID, error: error))
+        }
+    }
+
+    private func memorySummaryDraftEntryID(_ draftID: String) -> String {
+        "memory-summary:\(draftID)"
+    }
+
+    private func memorySummaryDraftEntrySource(
+        _ draft: RuntimeLongInactivityMemorySummarizationDraft
+    ) -> RuntimeMemoryEntrySource {
+        RuntimeMemoryEntrySource(
+            kind: "long_inactivity_summary_draft",
+            draftID: draft.id,
+            summaryMethod: "deterministic_preview",
+            session: RuntimeMemoryEntrySourceSession(
+                sessionID: draft.candidate.sessionID,
+                title: draft.candidate.title,
+                model: draft.candidate.model,
+                lastActivityAt: draft.candidate.lastActivityAt,
+                messageCount: draft.candidate.messageCount,
+                inactiveSeconds: max(0, Int(draft.candidate.inactiveInterval))
+            ),
+            sourceMessageCount: draft.sourceMessageCount,
+            sourceRange: draft.sourceRangeDescription,
+            sourcePointers: draft.sourcePointers.map { pointer in
+                RuntimeMemoryEntrySourcePointer(
+                    sessionID: pointer.sessionID,
+                    messageIndex: pointer.messageIndex,
+                    role: pointer.role,
+                    createdAt: pointer.createdAt,
+                    excerpt: pointer.excerpt
+                )
+            }
+        )
+    }
+
+    private func memoryEntrySourcePayload(_ source: RuntimeMemoryEntrySource) -> [String: JSONValue] {
+        [
+            "kind": .string(source.kind),
+            "draft_id": .string(source.draftID),
+            "summary_method": .string(source.summaryMethod),
+            "session": .object(memoryEntrySourceSessionPayload(source.session)),
+            "source_message_count": .number(Double(source.sourceMessageCount)),
+            "source_range": .string(source.sourceRange),
+            "source_pointers": .array(source.sourcePointers.map { pointer in
+                .object(memoryEntrySourcePointerPayload(pointer))
+            })
+        ]
+    }
+
+    private func memoryEntrySourceSessionPayload(
+        _ session: RuntimeMemoryEntrySourceSession
+    ) -> [String: JSONValue] {
+        [
+            "session_id": .string(session.sessionID),
+            "title": .string(session.title),
+            "model": .string(session.model),
+            "last_activity_at": .string(dateFormatter.string(from: session.lastActivityAt)),
+            "message_count": .number(Double(session.messageCount)),
+            "inactive_seconds": .number(Double(session.inactiveSeconds))
+        ]
+    }
+
+    private func memoryEntrySourcePointerPayload(
+        _ pointer: RuntimeMemoryEntrySourcePointer
+    ) -> [String: JSONValue] {
+        var payload: [String: JSONValue] = [
+            "session_id": .string(pointer.sessionID),
+            "message_index": .number(Double(pointer.messageIndex)),
+            "role": .string(pointer.role),
+            "excerpt": .string(pointer.excerpt)
+        ]
+        if let createdAt = pointer.createdAt {
+            payload["created_at"] = .string(dateFormatter.string(from: createdAt))
+        }
+        return payload
+    }
+
+    private func memorySummaryDraftPayload(
+        _ draft: RuntimeLongInactivityMemorySummarizationDraft
+    ) -> [String: JSONValue] {
+        [
+            "id": .string(draft.id),
+            "session": .object(memorySummaryDraftSessionPayload(draft.candidate)),
+            "source_message_count": .number(Double(draft.sourceMessageCount)),
+            "source_range": .string(draft.sourceRangeDescription),
+            "source_pointers": .array(draft.sourcePointers.map { pointer in
+                .object(memorySummaryDraftSourcePointerPayload(pointer))
+            }),
+            "summary_preview": .string(draft.summaryPreview)
+        ]
+    }
+
+    private func memorySummaryDraftSessionPayload(
+        _ candidate: RuntimeLongInactivityMemorySummarizationCandidate
+    ) -> [String: JSONValue] {
+        [
+            "session_id": .string(candidate.sessionID),
+            "title": .string(candidate.title),
+            "model": .string(candidate.model),
+            "last_activity_at": .string(dateFormatter.string(from: candidate.lastActivityAt)),
+            "message_count": .number(Double(candidate.messageCount)),
+            "inactive_seconds": .number(Double(Int(candidate.inactiveInterval)))
+        ]
+    }
+
+    private func memorySummaryDraftSourcePointerPayload(
+        _ pointer: RuntimeLongInactivityMemorySummarizationSourcePointer
+    ) -> [String: JSONValue] {
+        var payload: [String: JSONValue] = [
+            "session_id": .string(pointer.sessionID),
+            "message_index": .number(Double(pointer.messageIndex)),
+            "role": .string(pointer.role),
+            "excerpt": .string(pointer.excerpt)
+        ]
+        if let createdAt = pointer.createdAt {
+            payload["created_at"] = .string(dateFormatter.string(from: createdAt))
+        }
+        return payload
     }
 
     private func chatRequest(from envelope: ProtocolEnvelope) throws -> ChatRequest {
@@ -1207,33 +1479,6 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                 messages: parsedMessages.map(\.backendMessage)
             ),
             storageMessages: parsedMessages.map(\.storageMessage)
-        )
-    }
-
-    private func chatSuggestionsRequest(from envelope: ProtocolEnvelope) throws -> ChatSuggestionRuntimeRequest {
-        let baseRequest = try chatRequest(from: envelope)
-        let maxSuggestions = optionalInt("max_suggestions", in: envelope.payload)
-            .map { min(max($0, 1), Self.maxChatSuggestionCount) }
-            ?? 3
-        let locale = optionalString("locale", in: envelope.payload)
-        let recentMessages = Array(baseRequest.messages.suffix(8))
-        guard recentMessages.contains(where: { $0.role == "user" }) else {
-            throw LocalRuntimeRouterError.invalidPayload("messages must include at least one user message")
-        }
-
-        let suggestionRequest = ChatRequest(
-            generationID: envelope.requestID,
-            sessionID: baseRequest.sessionID,
-            model: baseRequest.model,
-            messages: Self.suggestionPromptMessages(
-                recentMessages: recentMessages,
-                maxSuggestions: maxSuggestions,
-                locale: locale
-            )
-        )
-        return ChatSuggestionRuntimeRequest(
-            request: suggestionRequest,
-            maxSuggestions: maxSuggestions
         )
     }
 
@@ -1525,34 +1770,6 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         return name
     }
 
-    private static func suggestionPromptMessages(
-        recentMessages: [ChatMessage],
-        maxSuggestions: Int,
-        locale: String?
-    ) -> [ChatMessage] {
-        let localeInstruction = locale
-            .map { "Use this BCP-47 locale when writing suggestions unless the conversation clearly uses another language: \($0)." }
-            ?? "Use the same language as the conversation."
-        return [
-            ChatMessage(
-                role: "system",
-                content: """
-                You generate short follow-up questions for a chat assistant UI.
-                Return only strict JSON with this shape: {"suggestions":["question 1","question 2"]}.
-                Generate \(maxSuggestions) useful next questions at most.
-                Each question must be concise, natural, and directly related to the latest assistant answer.
-                Do not answer the conversation. Do not include markdown, numbering, explanations, or extra keys.
-                \(localeInstruction)
-                """
-            )
-        ] + recentMessages + [
-            ChatMessage(
-                role: "user",
-                content: "Generate the next questions now."
-            )
-        ]
-    }
-
     private static func titlePromptMessages(
         recentMessages: [ChatMessage],
         locale: String?
@@ -1629,10 +1846,16 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         )
     }
 
-    private static func chatRequestWithRuntimeConversationCompaction(_ request: ChatRequest) -> ChatRequest {
+    private static func chatRequestWithRuntimeConversationCompaction(
+        _ request: ChatRequest,
+        contextWindowTokens: Int? = nil
+    ) -> ChatRequest {
         let messages = request.messages.filter { !$0.isRuntimeConversationCompactionContext }
         let estimatedCharacters = estimatedRuntimeContextCharacters(in: messages)
-        guard estimatedCharacters > runtimeConversationCompactionMaxContextCharacters else {
+        let maxContextCharacters = runtimeConversationCompactionMaxContextCharacters(
+            contextWindowTokens: contextWindowTokens
+        )
+        guard estimatedCharacters > maxContextCharacters else {
             return ChatRequest(
                 generationID: request.generationID,
                 sessionID: request.sessionID,
@@ -1809,7 +2032,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
     private static let runtimeCapabilityGuardMessage = ChatMessage(
         role: "system",
         content: """
-        AetherLink currently provides runtime-mediated local model chat, model listing, file/image attachment handling when supported, chat titles, and suggested next questions.
+        AetherLink currently provides runtime-mediated local model chat, model listing, file/image attachment handling when supported, and chat titles.
         The current build does not provide live web search, browsing, MCP tools, skills, scheduled automations, Python execution, or other external tools unless explicit tool output is included in this conversation.
         Do not claim that you can search the web, browse, run tools, access files, or use unavailable integrations. If asked for an unavailable capability, say it is not available in this build and offer the closest supported alternative.
         """
@@ -1819,23 +2042,23 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
     private static let runtimeUserMemoryMaxEntries = 8
     private static let runtimeUserMemoryMaxCharacters = 1_500
     private static let runtimeConversationCompactionPrefix = "Runtime conversation summary:"
-    private static let runtimeConversationCompactionMaxContextCharacters = 24_000
+    private static let runtimeConversationCompactionDefaultMaxContextCharacters = 24_000
+    private static let runtimeConversationCompactionCharactersPerTokenBudget = 3
+    private static let runtimeConversationCompactionMinModelContextCharacters = 4_000
     private static let runtimeConversationCompactionRecentTurnCount = 12
     private static let runtimeConversationCompactionMaxSummaryCharacters = 4_000
     private static let runtimeConversationCompactionMaxSummaryLines = 24
     private static let runtimeConversationCompactionMaxLineCharacters = 320
 
-    private static let maxChatSuggestionCount = 4
-
-    private static func suggestions(from rawText: String, maxSuggestions: Int) -> [String] {
-        let trimmedText = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let decoder = JSONDecoder()
-        if let data = jsonPayloadText(from: trimmedText).data(using: .utf8) {
-            if let result = try? decoder.decode(ChatSuggestionsResult.self, from: data) {
-                return result.suggestions.cleanedSuggestions(maxCount: maxSuggestions)
-            }
+    private static func runtimeConversationCompactionMaxContextCharacters(contextWindowTokens: Int?) -> Int {
+        guard let contextWindowTokens, contextWindowTokens > 0 else {
+            return runtimeConversationCompactionDefaultMaxContextCharacters
         }
-        return fallbackSuggestionList(from: trimmedText, maxSuggestions: maxSuggestions)
+        let boundedTokens = min(contextWindowTokens, Int.max / runtimeConversationCompactionCharactersPerTokenBudget)
+        return max(
+            runtimeConversationCompactionMinModelContextCharacters,
+            boundedTokens * runtimeConversationCompactionCharactersPerTokenBudget
+        )
     }
 
     private static func title(from rawText: String) -> String {
@@ -1882,13 +2105,6 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         }
         let body = String(bodySlice).trimmingCharacters(in: .whitespacesAndNewlines)
         return body.isEmpty ? nil : body
-    }
-
-    private static func fallbackSuggestionList(from text: String, maxSuggestions: Int) -> [String] {
-        let candidates = text
-            .components(separatedBy: .newlines)
-            .filter { $0.hasSuggestionListPrefix }
-        return candidates.cleanedSuggestions(maxCount: maxSuggestions)
     }
 
     private static func isFirstAnsweredTurn(_ messages: [RuntimeChatStoredMessage]) -> Bool {
@@ -1948,11 +2164,6 @@ private enum AuthSessionState: Equatable {
     case authenticated(deviceID: String)
 }
 
-private struct ChatSuggestionRuntimeRequest {
-    var request: ChatRequest
-    var maxSuggestions: Int
-}
-
 private struct ChatTitleRuntimeRequest {
     var request: ChatRequest
 }
@@ -2008,37 +2219,94 @@ private let allowedRouteRefreshRelayScopes: Set<String> = [
 private extension RuntimeRouteRefreshResult {
     func routeRefreshPayload(nowEpochMillis: Int64 = currentRouteRefreshEpochMillis()) -> [String: JSONValue]? {
         guard runtimeDeviceID.isCanonicalRouteRefreshValue,
-              runtimeKeyFingerprint.isCanonicalRouteRefreshValue,
-              relayHost.isCanonicalRouteRefreshValue,
-              relayID.isCanonicalRouteRefreshValue,
-              relaySecret.isCanonicalRouteRefreshValue,
-              relayNonce.isCanonicalRouteRefreshValue,
-              (1...65_535).contains(relayPort),
-              relayExpiresAtEpochMillis > nowEpochMillis
+              runtimeKeyFingerprint.isCanonicalRouteRefreshValue
         else {
-            return nil
-        }
-        guard let validatedRelayScope else {
-            return nil
-        }
-        guard relayHost.isEligibleRouteRefreshRelayHost(relayScope: validatedRelayScope) else {
             return nil
         }
 
         var payload: [String: JSONValue] = [
             "runtime_device_id": .string(runtimeDeviceID),
-            "runtime_key_fingerprint": .string(runtimeKeyFingerprint),
-            "relay_host": .string(relayHost),
-            "relay_port": .number(Double(relayPort)),
-            "relay_id": .string(relayID),
-            "relay_secret": .string(relaySecret),
-            "relay_expires_at": .number(Double(relayExpiresAtEpochMillis)),
-            "relay_nonce": .string(relayNonce)
+            "runtime_key_fingerprint": .string(runtimeKeyFingerprint)
         ]
-        if let validatedRelayScope {
-            payload["relay_scope"] = .string(validatedRelayScope)
+
+        let hasRelayMaterial = hasAnyRelayRouteMaterial
+        let hasP2PMaterial = hasAnyP2PRouteMaterial
+        guard hasRelayMaterial || hasP2PMaterial else {
+            return nil
+        }
+
+        if hasRelayMaterial {
+            guard let relayHost,
+                  let relayPort,
+                  let relayID,
+                  let relaySecret,
+                  let relayExpiresAtEpochMillis,
+                  let relayNonce,
+                  relayHost.isCanonicalRouteRefreshValue,
+                  relayID.isCanonicalRouteRefreshValue,
+                  relaySecret.isCanonicalRouteRefreshValue,
+                  relayNonce.isCanonicalRouteRefreshValue,
+                  (1...65_535).contains(relayPort),
+                  relayExpiresAtEpochMillis > nowEpochMillis,
+                  let validatedRelayScope,
+                  relayHost.isEligibleRouteRefreshRelayHost(relayScope: validatedRelayScope)
+            else {
+                return nil
+            }
+            payload["relay_host"] = .string(relayHost)
+            payload["relay_port"] = .number(Double(relayPort))
+            payload["relay_id"] = .string(relayID)
+            payload["relay_secret"] = .string(relaySecret)
+            payload["relay_expires_at"] = .number(Double(relayExpiresAtEpochMillis))
+            payload["relay_nonce"] = .string(relayNonce)
+            if let validatedRelayScope {
+                payload["relay_scope"] = .string(validatedRelayScope)
+            }
+        }
+
+        if hasP2PMaterial {
+            guard let p2pRouteClass,
+                  let p2pRecordID,
+                  let p2pEncryptedBody,
+                  let p2pExpiresAtEpochMillis,
+                  let p2pAntiReplayNonce,
+                  let p2pProtocolVersion,
+                  p2pRouteClass == "p2p_rendezvous",
+                  p2pRecordID.isCanonicalRouteRefreshValue,
+                  p2pEncryptedBody.isCanonicalRouteRefreshValue,
+                  p2pAntiReplayNonce.isCanonicalRouteRefreshValue,
+                  p2pExpiresAtEpochMillis > nowEpochMillis,
+                  p2pProtocolVersion == 1
+            else {
+                return nil
+            }
+            payload["p2p_class"] = .string(p2pRouteClass)
+            payload["p2p_record_id"] = .string(p2pRecordID)
+            payload["p2p_encrypted_body"] = .string(p2pEncryptedBody)
+            payload["p2p_expires_at"] = .number(Double(p2pExpiresAtEpochMillis))
+            payload["p2p_anti_replay_nonce"] = .string(p2pAntiReplayNonce)
+            payload["p2p_protocol_version"] = .number(Double(p2pProtocolVersion))
         }
         return payload
+    }
+
+    var hasAnyRelayRouteMaterial: Bool {
+        relayHost != nil ||
+            relayPort != nil ||
+            relayID != nil ||
+            relaySecret != nil ||
+            relayExpiresAtEpochMillis != nil ||
+            relayNonce != nil ||
+            relayScope != nil
+    }
+
+    var hasAnyP2PRouteMaterial: Bool {
+        p2pRouteClass != nil ||
+            p2pRecordID != nil ||
+            p2pEncryptedBody != nil ||
+            p2pExpiresAtEpochMillis != nil ||
+            p2pAntiReplayNonce != nil ||
+            p2pProtocolVersion != nil
     }
 
     var validatedRelayScope: String?? {
@@ -2072,10 +2340,6 @@ private func currentRouteRefreshEpochMillis() -> Int64 {
     Int64((Date().timeIntervalSince1970 * 1000).rounded())
 }
 
-private struct ChatSuggestionsResult: Decodable {
-    var suggestions: [String]
-}
-
 private struct ChatTitleResult: Decodable {
     var title: String
 }
@@ -2087,8 +2351,11 @@ private enum LocalRuntimeRouterError: Error, LocalizedError {
     case unreadableAttachment(String)
     case chatSessionNotFound(String)
     case chatSessionMustBeArchivedBeforeDelete(String)
+    case chatSessionMustBeRestoredBeforeSend(String)
     case chatStoreUnavailable(String)
     case memoryStoreUnavailable(String)
+    case memorySummaryDraftUnavailable(String)
+    case memorySummaryDraftStale(String)
 
     var code: String {
         switch self {
@@ -2104,10 +2371,16 @@ private enum LocalRuntimeRouterError: Error, LocalizedError {
             return "chat_session_not_found"
         case .chatSessionMustBeArchivedBeforeDelete:
             return "chat_session_must_be_archived_before_delete"
+        case .chatSessionMustBeRestoredBeforeSend:
+            return "chat_session_must_be_restored_before_send"
         case .chatStoreUnavailable:
             return "chat_store_unavailable"
         case .memoryStoreUnavailable:
             return "memory_store_unavailable"
+        case .memorySummaryDraftUnavailable:
+            return "memory_summary_draft_unavailable"
+        case .memorySummaryDraftStale:
+            return "memory_summary_draft_stale"
         }
     }
 
@@ -2124,10 +2397,16 @@ private enum LocalRuntimeRouterError: Error, LocalizedError {
             return "Chat session not found in AetherLink Runtime: \(sessionID)"
         case .chatSessionMustBeArchivedBeforeDelete(let sessionID):
             return "Archive this chat before permanently deleting it: \(sessionID)"
+        case .chatSessionMustBeRestoredBeforeSend(let sessionID):
+            return "Restore this archived chat before sending another message: \(sessionID)"
         case .chatStoreUnavailable(let message):
             return "The runtime could not access chat history on this host: \(message)"
         case .memoryStoreUnavailable(let message):
             return "The runtime could not access memory on this host: \(message)"
+        case .memorySummaryDraftUnavailable:
+            return "Memory summary draft is no longer available."
+        case .memorySummaryDraftStale:
+            return "Memory summary draft changed before approval. Refresh suggested memories and review it again."
         }
     }
 }
@@ -2332,6 +2611,7 @@ private struct ResolvedRuntimeModel {
     var provider: ModelProvider
     var kind: ModelKind
     var capabilities: [String]
+    var contextWindowTokens: Int?
 }
 
 private enum RuntimeInlineReasoningSegment: Equatable {
@@ -2543,59 +2823,7 @@ private func optionalBool(_ key: String, in payload: [String: JSONValue]) -> Boo
     }
 }
 
-private extension Array where Element == String {
-    func cleanedSuggestions(maxCount: Int) -> [String] {
-        var seen = Set<String>()
-        var result: [String] = []
-        for suggestion in self {
-            let cleaned = suggestion.cleanedSuggestion()
-            guard !cleaned.isEmpty else { continue }
-            let key = cleaned.suggestionDedupeKey
-            guard !seen.contains(key) else { continue }
-            seen.insert(key)
-            result.append(cleaned)
-            if result.count >= maxCount {
-                break
-            }
-        }
-        return result
-    }
-}
-
 private extension String {
-    var hasSuggestionListPrefix: Bool {
-        range(
-            of: #"^\s*(?:[-*•]\s+|\d{1,2}[\.)]\s+)"#,
-            options: .regularExpression
-        ) != nil
-    }
-
-    func cleanedSuggestion() -> String {
-        var cleaned = trimmingCharacters(in: .whitespacesAndNewlines)
-            .trimmingCharacters(in: CharacterSet(charactersIn: "\"'`"))
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        if let prefixRange = cleaned.range(of: #"^\s*(?:[-*•]\s+|\d{1,2}[\.)]\s+)"#, options: .regularExpression) {
-            cleaned.removeSubrange(prefixRange)
-        }
-        return cleaned
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .trimmingCharacters(in: CharacterSet(charactersIn: "\"'`"))
-            .collapsedSuggestionWhitespace()
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    var suggestionDedupeKey: String {
-        collapsedSuggestionWhitespace()
-            .folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], locale: .current)
-            .lowercased()
-    }
-
-    func collapsedSuggestionWhitespace() -> String {
-        components(separatedBy: .whitespacesAndNewlines)
-            .filter { !$0.isEmpty }
-            .joined(separator: " ")
-    }
-
     var isPlaceholderChatTitle: Bool {
         let normalized = trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         return normalized.isEmpty || normalized == "new chat"

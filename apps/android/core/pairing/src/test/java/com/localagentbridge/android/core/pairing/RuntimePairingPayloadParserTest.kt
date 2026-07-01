@@ -288,6 +288,31 @@ class RuntimePairingPayloadParserTest {
     }
 
     @Test
+    fun diagnosticParseAcceptsLegacyLocalDirectQrWithoutVersionOrRouteScope() {
+        val rawPayload = "aetherlink://pair?pairing_nonce=nonce-1&pairing_code=123456" +
+            "&runtime_device_id=runtime-1&runtime_name=AetherLink+Runtime" +
+            "&runtime_key_fingerprint=fp-1&host=192.168.1.10&port=43170"
+
+        try {
+            RuntimePairingPayloadParser.parse(rawPayload)
+            fail("Expected default parser policy to reject legacy diagnostic local endpoint QR")
+        } catch (_: IllegalArgumentException) {
+            // Expected.
+        }
+
+        val payload = RuntimePairingPayloadParser.parse(
+            rawValue = rawPayload,
+            allowDiagnosticLocalDirectEndpoint = true,
+        )
+
+        assertEquals("nonce-1", payload.pairingNonce)
+        assertEquals("runtime-1", payload.runtimeDeviceId)
+        assertEquals("192.168.1.10", payload.host)
+        assertEquals(43170, payload.port)
+        assertNull(payload.relayScope)
+    }
+
+    @Test
     fun parsesRelaySecretFromQrPayload() {
         val payload = RuntimePairingPayloadParser.parse(
             "aetherlink://pair?version=1&pairing_nonce=nonce-1&pairing_code=123456" +
@@ -464,6 +489,148 @@ class RuntimePairingPayloadParserTest {
         assertEquals("secret-1", payload.relaySecret)
         assertEquals(4102444800000L, payload.relayExpiresAtEpochMillis)
         assertEquals("nonce-route-1", payload.relayNonce)
+        assertNull(payload.p2pRecordId)
+    }
+
+    @Test
+    fun parsesP2pRendezvousRouteQrPayloadWithoutRelayAliasCollision() {
+        val payload = RuntimePairingPayloadParser.parse(
+            "aetherlink://pair?version=1&pairing_nonce=nonce-1&pairing_code=123456" +
+                "&runtime_device_id=runtime-1&runtime_name=AetherLink+Runtime" +
+                "&runtime_key_fingerprint=fp-1&p2p_class=p2p_rendezvous" +
+                "&p2p_record_id=p2p-record-1&p2p_encrypted_body=opaque-candidate-1" +
+                "&p2p_expires_at=4102444800000&p2p_anti_replay_nonce=nonce-p2p-1" +
+                "&p2p_protocol_version=1"
+        )
+
+        assertNull(payload.host)
+        assertNull(payload.port)
+        assertNull(payload.relayHost)
+        assertNull(payload.relayPort)
+        assertNull(payload.relayId)
+        assertNull(payload.relaySecret)
+        assertNull(payload.relayExpiresAtEpochMillis)
+        assertNull(payload.relayNonce)
+        assertEquals("p2p_rendezvous", payload.p2pRouteClass)
+        assertEquals("p2p-record-1", payload.p2pRecordId)
+        assertEquals("opaque-candidate-1", payload.p2pEncryptedBody)
+        assertEquals(4102444800000L, payload.p2pExpiresAtEpochMillis)
+        assertEquals("nonce-p2p-1", payload.p2pAntiReplayNonce)
+        assertEquals(1, payload.p2pProtocolVersion)
+    }
+
+    @Test
+    fun parsesP2pRendezvousExpirationEpochSecondsFromQrPayload() {
+        val payload = RuntimePairingPayloadParser.parse(
+            "aetherlink://pair?version=1&pairing_nonce=nonce-1&pairing_code=123456" +
+                "&runtime_device_id=runtime-1&runtime_name=AetherLink+Runtime" +
+                "&runtime_key_fingerprint=fp-1&p2p_class=p2p_rendezvous" +
+                "&p2p_record_id=p2p-record-1&p2p_encrypted_body=opaque-candidate-1" +
+                "&p2p_expires_at=4102444800&p2p_anti_replay_nonce=nonce-p2p-1" +
+                "&p2p_protocol_version=1"
+        )
+
+        assertEquals(4102444800000L, payload.p2pExpiresAtEpochMillis)
+    }
+
+    @Test
+    fun p2pRendezvousQrStripsDiagnosticDirectEndpointWhenP2pRouteIsPresent() {
+        val payload = RuntimePairingPayloadParser.parse(
+            "aetherlink://pair?version=1&pairing_nonce=nonce-1&pairing_code=123456" +
+                "&runtime_device_id=runtime-1&runtime_name=AetherLink+Runtime" +
+                "&runtime_key_fingerprint=fp-1&host=192.168.1.10&port=43170" +
+                "&p2p_class=p2p_rendezvous&p2p_record_id=p2p-record-1" +
+                "&p2p_encrypted_body=opaque-candidate-1&p2p_expires_at=4102444800000" +
+                "&p2p_anti_replay_nonce=nonce-p2p-1&p2p_protocol_version=1"
+        )
+
+        assertNull(payload.host)
+        assertNull(payload.port)
+        assertEquals("p2p-record-1", payload.p2pRecordId)
+    }
+
+    @Test
+    fun parsesSharedCompactP2pRendezvousQrFixture() {
+        val payload = RuntimePairingPayloadParser.parse(
+            sharedProtocolFixture("macos-compact-p2p-rendezvous-pairing-uri.txt"),
+        )
+
+        assertEquals("nonce-p2p-1", payload.pairingNonce)
+        assertEquals("123456", payload.pairingCode)
+        assertEquals("runtime-1", payload.runtimeDeviceId)
+        assertEquals("AetherLink Runtime", payload.runtimeName)
+        assertEquals("runtime-fingerprint", payload.fingerprint)
+        assertEquals("runtime+public/key=", payload.runtimePublicKeyBase64)
+        assertEquals("route-token-1", payload.routeToken)
+        assertNull(payload.relayHost)
+        assertNull(payload.relayPort)
+        assertEquals("p2p_rendezvous", payload.p2pRouteClass)
+        assertEquals("p2p-record-1", payload.p2pRecordId)
+        assertEquals("opaque-candidate-1", payload.p2pEncryptedBody)
+        assertEquals(4102444800000L, payload.p2pExpiresAtEpochMillis)
+        assertEquals("nonce-p2p-route-1", payload.p2pAntiReplayNonce)
+        assertEquals(1, payload.p2pProtocolVersion)
+    }
+
+    @Test
+    fun rejectsIncompleteP2pRendezvousRouteQrPayload() {
+        listOf(
+            "p2p_record_id=p2p-record-1&p2p_encrypted_body=opaque-candidate-1" +
+                "&p2p_expires_at=4102444800000&p2p_anti_replay_nonce=nonce-p2p-1" +
+                "&p2p_protocol_version=1",
+            "p2p_class=p2p_rendezvous&p2p_encrypted_body=opaque-candidate-1" +
+                "&p2p_expires_at=4102444800000&p2p_anti_replay_nonce=nonce-p2p-1" +
+                "&p2p_protocol_version=1",
+            "p2p_class=p2p_rendezvous&p2p_record_id=p2p-record-1" +
+                "&p2p_expires_at=4102444800000&p2p_anti_replay_nonce=nonce-p2p-1" +
+                "&p2p_protocol_version=1",
+            "p2p_class=p2p_rendezvous&p2p_record_id=p2p-record-1" +
+                "&p2p_encrypted_body=opaque-candidate-1&p2p_anti_replay_nonce=nonce-p2p-1" +
+                "&p2p_protocol_version=1",
+            "p2p_class=p2p_rendezvous&p2p_record_id=p2p-record-1" +
+                "&p2p_encrypted_body=opaque-candidate-1&p2p_expires_at=4102444800000" +
+                "&p2p_protocol_version=1",
+            "p2p_class=p2p_rendezvous&p2p_record_id=p2p-record-1" +
+                "&p2p_encrypted_body=opaque-candidate-1&p2p_expires_at=4102444800000" +
+                "&p2p_anti_replay_nonce=nonce-p2p-1",
+        ).forEach { routeFields ->
+            try {
+                RuntimePairingPayloadParser.parse(
+                    "aetherlink://pair?version=1&pairing_nonce=nonce-1&pairing_code=123456" +
+                        "&runtime_device_id=runtime-1&runtime_name=AetherLink+Runtime" +
+                        "&runtime_key_fingerprint=fp-1&$routeFields"
+                )
+                fail("Expected incomplete P2P rendezvous route to throw")
+            } catch (_: IllegalArgumentException) {
+                // Expected.
+            }
+        }
+    }
+
+    @Test
+    fun rejectsInvalidP2pRendezvousRouteQrPayload() {
+        val base = "aetherlink://pair?version=1&pairing_nonce=nonce-1&pairing_code=123456" +
+            "&runtime_device_id=runtime-1&runtime_name=AetherLink+Runtime" +
+            "&runtime_key_fingerprint=fp-1&p2p_class=p2p_rendezvous" +
+            "&p2p_record_id=p2p-record-1&p2p_encrypted_body=opaque-candidate-1" +
+            "&p2p_expires_at=4102444800000&p2p_anti_replay_nonce=nonce-p2p-1" +
+            "&p2p_protocol_version=1"
+        listOf(
+            "p2p_class=p2p_signal",
+            "p2p_record_id=p2p%20record-1",
+            "p2p_encrypted_body=opaque%20candidate-1",
+            "p2p_expires_at=not-a-number",
+            "p2p_anti_replay_nonce=nonce%20p2p-1",
+            "p2p_protocol_version=2",
+        ).forEach { mutation ->
+            val field = mutation.substringBefore("=")
+            try {
+                RuntimePairingPayloadParser.parse(base.replace("$field=${fieldValue(field)}", mutation))
+                fail("Expected invalid P2P rendezvous route field $field to throw")
+            } catch (_: IllegalArgumentException) {
+                // Expected.
+            }
+        }
     }
 
     @Test
@@ -758,6 +925,12 @@ class RuntimePairingPayloadParserTest {
             "relay_id" -> "relay-1"
             "relay_nonce" -> "nonce-route-1"
             "relay_scope" -> "remote"
+            "p2p_class" -> "p2p_rendezvous"
+            "p2p_record_id" -> "p2p-record-1"
+            "p2p_encrypted_body" -> "opaque-candidate-1"
+            "p2p_expires_at" -> "4102444800000"
+            "p2p_anti_replay_nonce" -> "nonce-p2p-1"
+            "p2p_protocol_version" -> "1"
             else -> error("Unexpected test field: $field")
         }
     }

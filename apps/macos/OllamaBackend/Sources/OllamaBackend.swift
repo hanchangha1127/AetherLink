@@ -37,13 +37,13 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
         do {
             let tags = try decoder.decode(OllamaTagsResponse.self, from: tagsData)
             let running = try decoder.decode(OllamaRunningModelsResponse.self, from: psData)
-            let capabilities = await modelCapabilitiesByName(
+            let detailsByName = await modelDetailsByName(
                 names: Self.uniqueModelNames(tags.models.map(\.name) + running.models.map(\.name))
             )
             return Self.mergeModels(
                 installedModels: tags.models,
                 runningModels: running.models,
-                capabilitiesByName: capabilities
+                detailsByName: detailsByName
             )
         } catch let error as DecodingError {
             throw OllamaBackendError.responseDecoding(endpoint: "\(tagsEndpoint), \(psEndpoint)", reason: error.localizedDescription)
@@ -90,7 +90,7 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
     private static func mergeModels(
         installedModels: [OllamaModel],
         runningModels: [OllamaRunningModel],
-        capabilitiesByName: [String: [String]] = [:]
+        detailsByName: [String: OllamaModelDetails] = [:]
     ) -> [ModelInfo] {
         var result: [ModelInfo] = []
         var indexesByID: [String: Int] = [:]
@@ -103,8 +103,9 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
         }
 
         for model in installedModels {
+            let details = modelDetails(for: model.name, in: detailsByName)
             let capabilities = inferredCapabilities(
-                capabilitiesByName[model.name] ?? capabilitiesByName[canonicalModelName(model.name)] ?? [],
+                details.capabilities,
                 for: model.name
             )
             let kind = ModelKind.from(capabilities: capabilities, fallbackName: model.name)
@@ -120,7 +121,8 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
                 running: false,
                 source: model.source,
                 remoteModel: model.remoteModel,
-                remoteHost: model.remoteHost
+                remoteHost: model.remoteHost,
+                contextWindowTokens: details.contextWindowTokens
             ))
         }
 
@@ -130,12 +132,16 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
                 if result[existingIndex].sizeBytes == nil {
                     result[existingIndex].sizeBytes = model.size
                 }
+                if result[existingIndex].contextWindowTokens == nil {
+                    result[existingIndex].contextWindowTokens = modelDetails(for: model.name, in: detailsByName).contextWindowTokens
+                }
             } else {
                 if model.source == .cloud {
                     continue
                 }
+                let details = modelDetails(for: model.name, in: detailsByName)
                 let capabilities = inferredCapabilities(
-                    capabilitiesByName[model.name] ?? capabilitiesByName[canonicalModelName(model.name)] ?? [],
+                    details.capabilities,
                     for: model.name
                 )
                 let kind = ModelKind.from(capabilities: capabilities, fallbackName: model.name)
@@ -148,7 +154,8 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
                     sizeBytes: model.size,
                     installed: true,
                     running: true,
-                    source: model.source
+                    source: model.source,
+                    contextWindowTokens: details.contextWindowTokens
                 ))
             }
         }
@@ -156,14 +163,14 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
         return result
     }
 
-    private func modelCapabilitiesByName(names: [String]) async -> [String: [String]] {
-        var result: [String: [String]] = [:]
+    private func modelDetailsByName(names: [String]) async -> [String: OllamaModelDetails] {
+        var result: [String: OllamaModelDetails] = [:]
         for name in names where !name.isEmpty {
             do {
-                let capabilities = try await fetchModelCapabilities(name: name)
-                if !capabilities.isEmpty {
-                    result[name] = capabilities
-                    result[Self.canonicalModelName(name)] = capabilities
+                let details = try await fetchModelDetails(name: name)
+                if !details.isEmpty {
+                    result[name] = details
+                    result[Self.canonicalModelName(name)] = details
                 }
             } catch {
                 continue
@@ -172,7 +179,7 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
         return result
     }
 
-    private func fetchModelCapabilities(name: String) async throws -> [String] {
+    private func fetchModelDetails(name: String) async throws -> OllamaModelDetails {
         let endpoint = "POST /api/show"
         var urlRequest = URLRequest(url: baseURL.appending(path: "api/show"))
         urlRequest.httpMethod = "POST"
@@ -180,9 +187,17 @@ public final class OllamaBackend: LlmBackend, @unchecked Sendable {
         urlRequest.httpBody = try encoder.encode(OllamaShowRequest(model: name))
         let data = try await performDataRequest(endpoint: endpoint, request: urlRequest)
         let response = try decoder.decode(OllamaShowResponse.self, from: data)
-        return response.capabilities.map {
+        let capabilities = response.capabilities.map {
             $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         }.filter { !$0.isEmpty }
+        return OllamaModelDetails(
+            capabilities: capabilities,
+            contextWindowTokens: response.contextWindowTokens
+        )
+    }
+
+    private static func modelDetails(for name: String, in detailsByName: [String: OllamaModelDetails]) -> OllamaModelDetails {
+        detailsByName[name] ?? detailsByName[canonicalModelName(name)] ?? OllamaModelDetails()
     }
 
     private static func canonicalModelName(_ name: String) -> String {
@@ -521,8 +536,89 @@ private struct OllamaShowRequest: Encodable {
     var model: String
 }
 
+private struct OllamaModelDetails {
+    var capabilities: [String] = []
+    var contextWindowTokens: Int?
+
+    var isEmpty: Bool {
+        capabilities.isEmpty && contextWindowTokens == nil
+    }
+}
+
 private struct OllamaShowResponse: Decodable {
     var capabilities: [String]
+    var contextWindowTokens: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case capabilities
+        case contextLength = "context_length"
+        case contextWindow = "context_window"
+        case contextWindowTokens = "context_window_tokens"
+        case numCtx = "num_ctx"
+        case modelInfo = "model_info"
+        case parameters
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        capabilities = try container.decodeIfPresent([String].self, forKey: .capabilities) ?? []
+
+        let directContextWindow = try Self.firstPositive(
+            container.decodeIfPresent(Int.self, forKey: .contextWindowTokens),
+            container.decodeIfPresent(Int.self, forKey: .contextLength),
+            container.decodeIfPresent(Int.self, forKey: .contextWindow),
+            container.decodeIfPresent(Int.self, forKey: .numCtx)
+        )
+        let modelInfo = try container.decodeIfPresent([String: FlexibleInt].self, forKey: .modelInfo)
+        let modelInfoContextWindow = Self.firstPositive(
+            modelInfo?["llama.context_length"]?.value,
+            modelInfo?["general.context_length"]?.value,
+            modelInfo?["context_length"]?.value,
+            modelInfo?["num_ctx"]?.value
+        )
+        let parameters = try container.decodeIfPresent(String.self, forKey: .parameters)
+        contextWindowTokens = directContextWindow
+            ?? modelInfoContextWindow
+            ?? Self.contextWindowTokens(fromParameters: parameters)
+    }
+
+    private static func firstPositive(_ values: Int?...) -> Int? {
+        values.first { ($0 ?? 0) > 0 } ?? nil
+    }
+
+    private static func contextWindowTokens(fromParameters parameters: String?) -> Int? {
+        guard let parameters else { return nil }
+        for line in parameters.split(whereSeparator: \.isNewline) {
+            let parts = line.split { character in
+                character == " " || character == "\t" || character == "="
+            }
+            guard parts.count >= 2 else { continue }
+            guard parts[0].trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "num_ctx" else {
+                continue
+            }
+            if let value = Int(parts[1]), value > 0 {
+                return value
+            }
+        }
+        return nil
+    }
+}
+
+private struct FlexibleInt: Decodable {
+    var value: Int?
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let int = try? container.decode(Int.self) {
+            value = int
+        } else if let double = try? container.decode(Double.self) {
+            value = Int(double)
+        } else if let string = try? container.decode(String.self) {
+            value = Int(string.trimmingCharacters(in: .whitespacesAndNewlines))
+        } else {
+            value = nil
+        }
+    }
 }
 
 private struct OllamaChatRequest: Encodable {

@@ -45,7 +45,7 @@ class RuntimeRelayRoutePreparationTest {
         assertNull(valid.copy(port = null).toPreparedRelayRouteOrNull(identity))
         assertNull(valid.copy(port = 0).toPreparedRelayRouteOrNull(identity))
         assertNull(valid.copy(port = 70000).toPreparedRelayRouteOrNull(identity))
-        assertNull(valid.copy(relayId = null, routeTokenFallback = null).toPreparedRelayRouteOrNull(identity))
+        assertNull(valid.copy(relayId = null).toPreparedRelayRouteOrNull(identity))
         assertNull(valid.copy(relayId = "").toPreparedRelayRouteOrNull(identity))
         assertNull(valid.copy(relayFrameSecret = null).toPreparedRelayRouteOrNull(identity))
         assertNull(valid.copy(relayFrameSecret = "").toPreparedRelayRouteOrNull(identity))
@@ -138,20 +138,17 @@ class RuntimeRelayRoutePreparationTest {
     }
 
     @Test
-    fun routeTokenFallbackCanSupplyMissingRelayId() {
+    fun relayRoutePreparationRequiresExplicitRelayId() {
         val route = RuntimeRelayRoutePreparation(
             host = "relay.example.test",
             port = 443,
             relayId = null,
             relayFrameSecret = "secret-1",
-            routeTokenFallback = "route-token-1",
             expiresAtEpochMillis = 4102444800000L,
             antiReplayNonce = "nonce-1",
         ).toPreparedRelayRouteOrNull(identity)
 
-        assertEquals("route-token-1", route?.relayId)
-        assertEquals("route-token-1", route?.security?.rendezvousToken)
-        assertEquals("nonce-1", route?.security?.antiReplayNonce)
+        assertNull(route)
     }
 
     @Test

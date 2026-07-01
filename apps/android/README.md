@@ -11,7 +11,7 @@ v0.1 responsibilities:
 - Render streamed responses, including preserved reasoning when available.
 - Cancel generation.
 - Provide a ChatGPT-like sidebar for chat history and settings.
-- Support localized UI strings, suggested follow-up questions, and haptic feedback.
+- Support localized UI strings and haptic feedback.
 
 The client app must not ask the user to manually enter backend URLs. It never calls Ollama or LM Studio directly; all model, chat, and generation control traffic goes through the paired runtime host.
 Release builds hide manual host/port tools. Debug builds expose USB reverse, emulator bridge, and manual route fields only behind Developer routes diagnostics.

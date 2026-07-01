@@ -101,10 +101,14 @@ sealed class PreparedRemoteRuntimeRoute {
     data class PeerToPeer(
         override val identity: PairedRuntimeIdentity,
         val sessionId: String,
+        val encryptedCandidateMaterial: String? = null,
         override val security: RemoteRouteSecurityContext,
     ) : PreparedRemoteRuntimeRoute() {
         init {
             require(sessionId.isNotBlank()) { "Peer-to-peer session id must not be blank" }
+            require(encryptedCandidateMaterial?.isNotBlank() != false) {
+                "Peer-to-peer encrypted candidate material must not be blank"
+            }
         }
 
         override val capability: RuntimeRouteCapability = RuntimeRouteCapability.PeerToPeer
@@ -407,7 +411,9 @@ class RuntimeConnectionManager(
 
         val DefaultRuntimeRouteResolver = RuntimeRouteResolver { target ->
             val routes = mutableListOf<RuntimeRouteCandidate>()
-            target.endpointHint?.let { endpoint ->
+            target.endpointHint?.takeUnless { endpoint ->
+                endpoint.source == RuntimeEndpointSource.TrustedLastKnown
+            }?.let { endpoint ->
                 routes +=
                     RuntimeRouteCandidate.DirectTcp(
                         hint = endpoint,

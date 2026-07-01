@@ -29,9 +29,9 @@ Bitcoin-network analogy note: AetherLink borrows only the idea that peers can be
 
 Any future relay/signaling component is connection infrastructure only. It must not run AI, store or inspect AI protocol payloads, see model lists, prompts, files, memory, or backend credentials, or replace the local runtime.
 
-Current implementation status: AetherLink has pairing, trusted runtime records, local endpoint hints, Bonjour/local discovery candidates, USB reverse/dev-server paths, a route-candidate abstraction, and a temporary outbound TCP development relay keyed by private `relay_id`. QR-provisioned relay routes require `relay_secret`, `relay_expires_at`, and `relay_nonce`, so AetherLink frame bodies are encrypted before relay forwarding and stale QR route material can be rejected. Real remote P2P NAT traversal, distributed/bootstrap discovery, hardened relay allocation, replay-resistant session setup, and production end-to-end transport encryption are not complete yet.
+Current implementation status: AetherLink has pairing, trusted runtime records, local endpoint hints, Bonjour/local discovery candidates, USB reverse/dev-server paths, a route-candidate abstraction, opaque P2P rendezvous route records for QR/authenticated refresh planning, and a temporary outbound TCP development relay keyed by private `relay_id`. QR-provisioned relay routes require `relay_secret`, `relay_expires_at`, and `relay_nonce`, so AetherLink frame bodies are encrypted before relay forwarding and stale QR route material can be rejected. Real remote P2P NAT traversal, distributed/bootstrap discovery, hardened relay allocation, replay-resistant session setup, and production end-to-end transport encryption are not complete yet.
 
-Production pairing QRs are generated only when the runtime has eligible remote route material to include. Local direct QR payloads are diagnostics/development artifacts, not the product route for same-network or fixed-IP pairing. When a QR/trusted runtime record contains relay metadata, the client tries prepared remote routes before local direct routes: future P2P first, then the current relay, then fresh local discovery and diagnostic endpoint hints. Automatic reconnect does not promote a stale last-known private IP address as the product route; it resolves the paired runtime identity through current discovery, USB/emulator development forwarding, or relay metadata instead.
+Production pairing QRs are generated only when the runtime has eligible remote route material to include. Local direct QR payloads are diagnostics/development artifacts, not the product route for same-network or fixed-IP pairing. When a QR/trusted runtime record contains remote route metadata, the client tries prepared remote routes before local direct routes: opaque P2P records first, then the current relay, then fresh local discovery and diagnostic endpoint hints. Automatic reconnect does not promote a stale last-known private IP address as the product route; it resolves the paired runtime identity through current discovery, USB/emulator development forwarding, P2P record material, or relay metadata instead.
 
 ## Repository Layout
 
@@ -312,8 +312,7 @@ runtime-owned chat history storage, archive/permanent-delete guardrails,
 runtime-owned memory guardrails, runtime-mediated attachment/document/image
 guardrails, Android attachment loading and composer send-policy guardrails,
 vision-model attachment gating, chat/embedding model separation and persisted
-model-selection guardrails, runtime-generated chat title guardrails,
-runtime-generated next-question guardrails, Android reasoning/think state
+model-selection guardrails, runtime-generated chat title guardrails, Android reasoning/think state
 separation, and runtime reasoning/think streaming separation.
 It does not require a connected phone. Because it is a no-device gate, it has
 explicit caveats: it does not prove physical Android rendering on a real
@@ -337,7 +336,7 @@ and keep the same key set and order as English without duplicate keys.
 
 Android and macOS five-language app-language verification now covers Android
 resource parity, macOS localization parity, and the shared `chat.send.locale`
-handoff used by runtime-generated chat titles and follow-up suggestions.
+handoff used by runtime-generated chat titles.
 
 The copy hygiene check scans user-facing Android and macOS resources plus
 runtime/device-visible status strings for stale prototype wording. It blocks
@@ -365,7 +364,7 @@ Use this checklist when deciding whether a change belongs in v0.1:
 - The device app connects to AetherLink Runtime, not to Ollama or LM Studio.
 - The device app can request runtime health, list installed local models, request runtime-mediated Ollama model pulls, send chat with an installed model, render streamed answer deltas, show preserved reasoning/think deltas as muted collapsible UI, and cancel an active generation.
 - If no local backend models are available, the device app shows an empty model list until the user pulls an Ollama model through AetherLink Runtime or Ollama/LM Studio reports an installed model.
-- Untrusted or unauthenticated clients cannot run `runtime.health`, `models.list`, `models.pull`, `chat.send`, or `chat.cancel`.
+- Untrusted or unauthenticated clients cannot run `runtime.health`, `models.list`, `models.pull`, `chat.send`, `chat.cancel`, `route.refresh`, chat history/title/session mutation commands, or memory list/upsert/delete commands.
 - Docs and UI do not imply MCP, skills, web search, advanced memory, direct client-backend access, or future client/runtime OS targets are part of the local chat backend path.
 
 ## License

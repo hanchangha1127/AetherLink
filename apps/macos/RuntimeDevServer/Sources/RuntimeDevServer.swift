@@ -12,6 +12,7 @@ import protocol OllamaBackend.LlmBackend
 import struct OllamaBackend.ModelInfo
 import enum OllamaBackend.ModelProvider
 import struct OllamaBackend.ModelPullResult
+import struct OllamaBackend.ModelUnloadResult
 import class OllamaBackend.OllamaBackend
 import enum OllamaBackend.OllamaBackendError
 import Pairing
@@ -27,11 +28,14 @@ struct RuntimeDevServer {
         let environment = ProcessInfo.processInfo.environment
         let port = UInt16(environment["LOCAL_AGENT_BRIDGE_PORT"] ?? "") ?? 43170
         let useMockBackend = environment["LOCAL_AGENT_BRIDGE_MOCK_BACKEND"] == "1"
+        let useAggregateMockBackend = useMockBackend
+            && environment["AETHERLINK_DEV_MOCK_AGGREGATE_RESIDENCY"] == "1"
         let backend: any LlmBackend = useMockBackend
-            ? DevMockBackend(environment: environment)
+            ? Self.developmentMockBackend(environment: environment, aggregateResidency: useAggregateMockBackend)
             : AggregatingLlmBackend(ollama: OllamaBackend(), lmStudio: LMStudioBackend())
         let pairingCoordinator = PairingCoordinator()
         let trustedDeviceStore = Self.trustedDeviceStore(environment: environment)
+        let runtimeChatEventStore = Self.runtimeChatEventStore(environment: environment)
         let identity = Self.runtimeIdentity(environment: environment)
         let server = LocalPeerServer()
         let advertiser = BonjourAdvertiser()
@@ -62,6 +66,9 @@ struct RuntimeDevServer {
             allocationProvider: {
                 Self.relayRouteAllocation(environment: environment, identity: identity)
             },
+            p2pRouteProvider: {
+                Self.developmentP2PRouteMaterial(environment: environment)
+            },
             relayStatusHandler: relayStatusHandler,
             relayMessageHandler: relayMessageHandler,
             relayDisconnectHandler: { connectionID in
@@ -73,6 +80,7 @@ struct RuntimeDevServer {
             backend: backend,
             pairingCoordinator: pairingCoordinator,
             trustedDeviceStore: trustedDeviceStore,
+            chatEventStore: runtimeChatEventStore,
             routeRefresher: routeRefresher,
             runtimeChallengeSigner: identity.signer,
             onPairingAccepted: { device in
@@ -106,7 +114,7 @@ struct RuntimeDevServer {
         }
 
         print("[runtime] AetherLink dev server listening on 127.0.0.1:\(port)")
-        print("[runtime] Backend: \(useMockBackend ? "dev mock" : "Ollama + LM Studio")")
+        print("[runtime] Backend: \(useMockBackend ? (useAggregateMockBackend ? "dev aggregate mock" : "dev mock") : "Ollama + LM Studio")")
         if shouldAdvertiseBonjour {
             print("[runtime] Advertising _aetherlink._tcp.local. on port \(port)")
         } else {
@@ -151,6 +159,45 @@ struct RuntimeDevServer {
             return TrustedDeviceStore()
         }
         return TrustedDeviceStore(fileURL: URL(fileURLWithPath: path))
+    }
+
+    private static func runtimeChatEventStore(environment: [String: String]) -> any RuntimeChatEventStore {
+        guard let sqlitePath = environment["AETHERLINK_DEV_RUNTIME_CHAT_SQLITE_FILE"]?.takeIfNotEmpty else {
+            return RuntimeChatEventStoreDefaults.productionStore()
+        }
+        let legacyJSONLFileURL = environment["AETHERLINK_DEV_RUNTIME_CHAT_JSONL_FILE"]?.takeIfNotEmpty
+            .map { URL(fileURLWithPath: $0) }
+        return SQLiteRuntimeChatEventStore(
+            databaseURL: URL(fileURLWithPath: sqlitePath),
+            legacyJSONLFileURL: legacyJSONLFileURL
+        )
+    }
+
+    private static func developmentMockBackend(
+        environment: [String: String],
+        aggregateResidency: Bool
+    ) -> any LlmBackend {
+        guard aggregateResidency else {
+            return DevMockBackend(environment: environment)
+        }
+        let idleDelayMilliseconds = UInt64(environment["AETHERLINK_DEV_MOCK_RESIDENCY_IDLE_MS"] ?? "") ?? 600_000
+        return AggregatingLlmBackend(
+            [
+                DevMockBackend(
+                    provider: .ollama,
+                    modelID: "dev-mock",
+                    modelName: "Dev Mock Streaming Model",
+                    environment: environment
+                ),
+                DevMockBackend(
+                    provider: .lmStudio,
+                    modelID: "dev-mock-alt",
+                    modelName: "Dev Mock Alternate Model",
+                    environment: environment
+                )
+            ],
+            modelIdleUnloadDelayNanoseconds: idleDelayMilliseconds * 1_000_000
+        )
     }
 
     private static func printDevelopmentConnectionHint(
@@ -273,7 +320,13 @@ struct RuntimeDevServer {
             relaySecret: relayConfiguration?.relaySecret,
             relayExpiresAtEpochMillis: relayRouteLease?.expiresAtEpochMillis,
             relayNonce: relayRouteLease?.nonce,
-            relayScope: relayConfiguration.flatMap { relayScope(for: $0.host) }
+            relayScope: relayConfiguration.flatMap { relayScope(for: $0.host) },
+            p2pRouteClass: nil,
+            p2pRecordID: nil,
+            p2pEncryptedBody: nil,
+            p2pExpiresAtEpochMillis: nil,
+            p2pAntiReplayNonce: nil,
+            p2pProtocolVersion: nil
         )
 
         print("[runtime] WARNING: AETHERLINK_DEV_PAIRING=1 opened a development-only pairing window.")
@@ -394,6 +447,21 @@ struct RuntimeDevServer {
         return (
             expiresAtEpochMillis: Int64((expiresAt.timeIntervalSince1970 * 1000).rounded()),
             nonce: UUID().uuidString
+        )
+    }
+
+    private static func developmentP2PRouteMaterial(environment: [String: String]) -> DevelopmentP2PRouteMaterial? {
+        guard environment["AETHERLINK_DEV_ROUTE_REFRESH_P2P"] == "1" else {
+            return nil
+        }
+        let expiresAt = Date().addingTimeInterval(15 * 60)
+        return DevelopmentP2PRouteMaterial(
+            routeClass: environment["AETHERLINK_DEV_ROUTE_REFRESH_P2P_CLASS"]?.takeIfNotEmpty ?? "p2p_rendezvous",
+            recordID: environment["AETHERLINK_DEV_ROUTE_REFRESH_P2P_RECORD_ID"]?.takeIfNotEmpty ?? "smoke-p2p-record-1",
+            encryptedBody: environment["AETHERLINK_DEV_ROUTE_REFRESH_P2P_ENCRYPTED_BODY"]?.takeIfNotEmpty ?? "smoke-p2p-encrypted-body-1",
+            expiresAtEpochMillis: Int64((expiresAt.timeIntervalSince1970 * 1000).rounded()),
+            antiReplayNonce: environment["AETHERLINK_DEV_ROUTE_REFRESH_P2P_NONCE"]?.takeIfNotEmpty ?? "smoke-p2p-nonce-1",
+            protocolVersion: Int(environment["AETHERLINK_DEV_ROUTE_REFRESH_P2P_PROTOCOL_VERSION"] ?? "") ?? 1
         )
     }
 
@@ -571,6 +639,15 @@ private struct DevRuntimeIdentity {
     }
 }
 
+private struct DevelopmentP2PRouteMaterial {
+    var routeClass: String
+    var recordID: String
+    var encryptedBody: String
+    var expiresAtEpochMillis: Int64
+    var antiReplayNonce: String
+    var protocolVersion: Int
+}
+
 private enum RuntimeDevServerState {
     static var server: LocalPeerServer?
     static var advertiser: BonjourAdvertiser?
@@ -603,6 +680,7 @@ private final class DevelopmentRuntimeRouteRefresher: RuntimeRouteRefreshing {
     private let runtimeDeviceID: String
     private let runtimeKeyFingerprint: String
     private let allocationProvider: () -> CompanionRemoteRelayRouteAllocation?
+    private let p2pRouteProvider: () -> DevelopmentP2PRouteMaterial?
     private let relayStatusHandler: @Sendable (RelayPeerStatus) -> Void
     private let relayMessageHandler: LocalPeerMessageHandler
     private let relayDisconnectHandler: @Sendable (UUID) -> Void
@@ -615,6 +693,7 @@ private final class DevelopmentRuntimeRouteRefresher: RuntimeRouteRefreshing {
         runtimeKeyFingerprint: String,
         initialAllocation: CompanionRemoteRelayRouteAllocation?,
         allocationProvider: @escaping () -> CompanionRemoteRelayRouteAllocation?,
+        p2pRouteProvider: @escaping () -> DevelopmentP2PRouteMaterial?,
         relayStatusHandler: @escaping @Sendable (RelayPeerStatus) -> Void,
         relayMessageHandler: @escaping LocalPeerMessageHandler,
         relayDisconnectHandler: @escaping @Sendable (UUID) -> Void,
@@ -624,6 +703,7 @@ private final class DevelopmentRuntimeRouteRefresher: RuntimeRouteRefreshing {
         self.runtimeKeyFingerprint = runtimeKeyFingerprint
         self.activeAllocation = initialAllocation
         self.allocationProvider = allocationProvider
+        self.p2pRouteProvider = p2pRouteProvider
         self.relayStatusHandler = relayStatusHandler
         self.relayMessageHandler = relayMessageHandler
         self.relayDisconnectHandler = relayDisconnectHandler
@@ -668,6 +748,7 @@ private final class DevelopmentRuntimeRouteRefresher: RuntimeRouteRefreshing {
         else {
             return nil
         }
+        let p2pRoute = p2pRouteProvider()
         return RuntimeRouteRefreshResult(
             runtimeDeviceID: runtimeDeviceID,
             runtimeKeyFingerprint: runtimeKeyFingerprint,
@@ -677,7 +758,13 @@ private final class DevelopmentRuntimeRouteRefresher: RuntimeRouteRefreshing {
             relaySecret: relaySecret,
             relayExpiresAtEpochMillis: lease.expiresAtEpochMillis,
             relayNonce: lease.nonce,
-            relayScope: relayScopeProvider(configuration.host)
+            relayScope: relayScopeProvider(configuration.host),
+            p2pRouteClass: p2pRoute?.routeClass,
+            p2pRecordID: p2pRoute?.recordID,
+            p2pEncryptedBody: p2pRoute?.encryptedBody,
+            p2pExpiresAtEpochMillis: p2pRoute?.expiresAtEpochMillis,
+            p2pAntiReplayNonce: p2pRoute?.antiReplayNonce,
+            p2pProtocolVersion: p2pRoute?.protocolVersion
         )
     }
 
@@ -786,15 +873,27 @@ private extension RelayPeerStatus {
 }
 
 private final class DevMockBackend: LlmBackend, @unchecked Sendable {
-    let provider = ModelProvider.ollama
+    let provider: ModelProvider
+    private let modelID: String
+    private let modelName: String
     private let chunkDelayNanoseconds: UInt64
+    private let unloadEventFile: String?
     private let lock = NSLock()
     private var tasks: [String: Task<Void, Never>] = [:]
     private var pulledModels: [String] = []
 
-    init(environment: [String: String] = ProcessInfo.processInfo.environment) {
+    init(
+        provider: ModelProvider = .ollama,
+        modelID: String = "dev-mock",
+        modelName: String = "Dev Mock Streaming Model",
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) {
+        self.provider = provider
+        self.modelID = modelID
+        self.modelName = modelName
         let delayMilliseconds = UInt64(environment["AETHERLINK_DEV_MOCK_CHUNK_DELAY_MS"] ?? "") ?? 350
         chunkDelayNanoseconds = max(1, delayMilliseconds) * 1_000_000
+        unloadEventFile = environment["AETHERLINK_DEV_MOCK_UNLOAD_EVENT_FILE"]?.takeIfNotEmpty
     }
 
     func healthCheck() async -> BackendStatus {
@@ -805,8 +904,9 @@ private final class DevMockBackend: LlmBackend, @unchecked Sendable {
         lock.withLock {
             var models = [
                 ModelInfo(
-                    id: "dev-mock",
-                    name: "Dev Mock Streaming Model",
+                    id: modelID,
+                    name: modelName,
+                    provider: provider,
                     sizeBytes: 0,
                     modifiedAt: Date(),
                     installed: true,
@@ -818,6 +918,7 @@ private final class DevMockBackend: LlmBackend, @unchecked Sendable {
                 ModelInfo(
                     id: $0,
                     name: $0,
+                    provider: provider,
                     sizeBytes: 0,
                     modifiedAt: Date(),
                     installed: true,
@@ -838,10 +939,34 @@ private final class DevMockBackend: LlmBackend, @unchecked Sendable {
         return ModelPullResult(model: name, status: "success", installed: true)
     }
 
+    func unloadModel(providerModelID: String) async throws -> ModelUnloadResult {
+        if let unloadEventFile {
+            let line = "\(provider.rawValue)|\(providerModelID)\n"
+            if let data = line.data(using: .utf8) {
+                let url = URL(fileURLWithPath: unloadEventFile)
+                if FileManager.default.fileExists(atPath: unloadEventFile),
+                   let handle = try? FileHandle(forWritingTo: url) {
+                    try handle.seekToEnd()
+                    try handle.write(contentsOf: data)
+                    try handle.close()
+                } else {
+                    try data.write(to: url, options: .atomic)
+                }
+            }
+        }
+        return .unloaded(provider: provider, modelID: providerModelID)
+    }
+
     func chat(request: ChatRequest) -> AsyncThrowingStream<ChatStreamEvent, Error> {
         AsyncThrowingStream { continuation in
             let task = Task { [weak self] in
-                let chunks = ["Mock ", "streaming ", "response."]
+                let hasAttachmentContext = request.messages.contains { message in
+                    !message.attachments.isEmpty
+                        || message.content.contains("[Attached document:")
+                }
+                let chunks = hasAttachmentContext
+                    ? ["Mock ", "streaming ", "response.", " Attachment ", "received."]
+                    : ["Mock ", "streaming ", "response."]
                 for chunk in chunks {
                     if Task.isCancelled {
                         continuation.finish(throwing: OllamaBackendError.generationCancelled(generationID: request.generationID))

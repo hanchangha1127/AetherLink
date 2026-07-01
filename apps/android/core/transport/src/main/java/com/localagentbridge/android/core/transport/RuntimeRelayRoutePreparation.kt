@@ -5,7 +5,6 @@ data class RuntimeRelayRoutePreparation(
     val port: Int?,
     val relayId: String?,
     val relayFrameSecret: String?,
-    val routeTokenFallback: String? = null,
     val expiresAtEpochMillis: Long? = null,
     val antiReplayNonce: String? = null,
     val relayScope: String? = null,
@@ -31,7 +30,6 @@ fun RuntimeRelayRoutePreparation.toPreparedRelayRouteOrNull(
     if (!routeHost.isAllowedPreparedRelayHost(relayScope)) return null
     val routePort = port?.takeIf { it in 1..65535 } ?: return null
     val routeRelayId = relayId?.takeIf { it.isNotBlank() }
-        ?: routeTokenFallback?.takeIf { it.isNotBlank() }
         ?: return null
     val frameSecret = relayFrameSecret?.takeIf { it.isNotBlank() } ?: return null
     val expiresAt = expiresAtEpochMillis?.takeIf { it > nowEpochMillis } ?: return null

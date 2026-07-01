@@ -54,6 +54,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Error
 import androidx.compose.material.icons.filled.FlashlightOff
 import androidx.compose.material.icons.filled.FlashlightOn
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -128,6 +129,7 @@ import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -465,6 +467,7 @@ private fun LocalAgentBridgeApp(
             ) { uris ->
                 handlePickedAttachments(uris, viewModel::addAttachments)
             }
+            val requireRemoteRouteForPairingQr = !BuildConfig.DEBUG
             val handlePairingQr: (String) -> Unit = { rawValue ->
                 val treatAsOnboarding = shouldTreatPairingQrAsOnboarding(
                     destination = destination,
@@ -476,7 +479,7 @@ private fun LocalAgentBridgeApp(
                 destination = AppDestination.Settings
                 viewModel.trustRuntimeFromPairingQr(
                     rawValue = rawValue,
-                    requireRemoteRoute = true,
+                    requireRemoteRoute = requireRemoteRouteForPairingQr,
                 )
             }
             val scanPairingQr = {
@@ -490,7 +493,7 @@ private fun LocalAgentBridgeApp(
                 destination = AppDestination.Settings
                 viewModel.trustRuntimeFromPairingQr(
                     rawValue = uri,
-                    requireRemoteRoute = true,
+                    requireRemoteRoute = requireRemoteRouteForPairingQr,
                 )
                 onPairingUriConsumed()
             }
@@ -580,6 +583,7 @@ private fun LocalAgentBridgeApp(
                         showPairingQrScanner = false
                         viewModel.showQrScanFailed(detail)
                     },
+                    requireRemoteRoute = requireRemoteRouteForPairingQr,
                     modifier = Modifier.fillMaxSize(),
                 )
             } else {
@@ -696,7 +700,6 @@ private fun LocalAgentBridgeApp(
                                     onRefreshHealth = viewModel::requestRuntimeHealth,
                                     onAttachFiles = { attachmentPickerLauncher.launch(attachmentPickerMimeTypes(state)) },
                                     onRemoveAttachment = viewModel::removePendingAttachment,
-                                    onSuggestionClick = viewModel::useSuggestedQuestion,
                                     onScanLatestQr = scanPairingQr,
                                     onRegenerateLatestResponse = viewModel::regenerateLatestResponse,
                                     onReuseLatestUserMessage = viewModel::reuseLatestUserMessageAsDraft,
@@ -730,8 +733,12 @@ private fun LocalAgentBridgeApp(
                                     onAddMemoryEntry = viewModel::addMemoryEntry,
                                     onRemoveMemoryEntry = viewModel::removeMemoryEntry,
                                     onSetMemoryEntryEnabled = viewModel::setMemoryEntryEnabled,
+                                    onApproveMemorySummaryDraft = viewModel::approveMemorySummaryDraft,
+                                    onDismissMemorySummaryDraft = viewModel::dismissMemorySummaryDraft,
                                     onRefreshMemory = viewModel::refreshRuntimeMemory,
-                                    onRefreshChatHistory = viewModel::refreshRuntimeChatHistory,
+                                    onRefreshChatHistory = { query ->
+                                        viewModel.refreshRuntimeChatHistory(query)
+                                    },
                                     onOpenChatSession = { sessionId ->
                                         viewModel.selectChatSession(sessionId)
                                         destination = AppDestination.Chat
@@ -1069,6 +1076,7 @@ private fun ChatModelTopBarMenu(
     var isExpanded by rememberSaveable { mutableStateOf(false) }
     var modelSearchQuery by rememberSaveable { mutableStateOf("") }
     val hapticFeedback = LocalHapticFeedback.current
+    val menuContext = LocalContext.current
     val chatModels = chatModelMenuModels(
         models = state.models,
         selectedModelId = state.selectedModelId,
@@ -1194,197 +1202,199 @@ private fun ChatModelTopBarMenu(
                 .widthIn(min = 260.dp, max = 360.dp)
                 .heightIn(max = 420.dp),
         ) {
-            DropdownMenuItem(
-                modifier = Modifier.semantics(mergeDescendants = true) {
-                    contentDescription = modelRefreshLabel
-                    stateDescription = modelRefreshStateDescription
-                    if (modelRefreshEnabled) {
-                        onClick(label = modelRefreshLabel, action = null)
-                    }
-                },
-                text = {
-                    Column {
-                        Text(
-                            text = modelRefreshLabel,
-                        )
-                        Text(
-                            text = selectedModel?.let { model ->
-                                stringResource(
-                                    R.string.model_provider_value,
-                                    runtimeProviderDisplayName(model.provider),
-                                )
-                            } ?: if (state.isConnected) {
-                                stringResource(R.string.chat_status_connected)
-                            } else {
-                                stringResource(R.string.chat_status_disconnected)
-                            },
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                },
-                leadingIcon = { Icon(Icons.Filled.Refresh, contentDescription = null) },
-                enabled = modelRefreshEnabled,
-                onClick = {
-                    hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
-                    onRequestModels()
-                },
-            )
-            HorizontalDivider()
-            if (selectedModelUnavailable) {
-                DropdownInfoItem {
-                    Column {
-                        Text(
-                            text = selectedModelUnavailableLabel
-                                ?: stringResource(R.string.selected_model),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Text(
-                            text = selectedModelRecoveryMessage,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 3,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
-                HorizontalDivider()
-            }
-            if (imageAttachmentVisionRecoveryNeeded) {
-                val visionRecoverySummary = stringResource(R.string.model_picker_vision_recovery_detail)
-                DropdownInfoItem {
-                    Text(
-                        text = visionRecoverySummary,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.error,
-                        maxLines = 3,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.semantics {
-                            contentDescription = visionRecoverySummary
-                            liveRegion = LiveRegionMode.Polite
-                        },
-                    )
-                }
-                HorizontalDivider()
-            }
-            if (hasSearchableModels) {
-                OutlinedTextField(
-                    value = modelSearchQuery,
-                    onValueChange = { modelSearchQuery = it },
-                    singleLine = true,
-                    textStyle = MaterialTheme.typography.bodyMedium,
-                    label = {
-                        Text(
-                            text = stringResource(R.string.model_search_label),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Filled.Search,
-                            contentDescription = null,
-                        )
-                    },
-                    trailingIcon = {
-                        if (modelSearchQuery.isNotEmpty()) {
-                            IconButton(
-                                onClick = {
-                                    hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
-                                    modelSearchQuery = ""
-                                },
-                                modifier = Modifier.semantics {
-                                    contentDescription = clearModelSearchContentDescription
-                                    onClick(label = clearModelSearchContentDescription, action = null)
-                                },
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Filled.Close,
-                                    contentDescription = null,
-                                )
-                            }
+            CompositionLocalProvider(LocalContext provides menuContext) {
+                DropdownMenuItem(
+                    modifier = Modifier.semantics(mergeDescendants = true) {
+                        contentDescription = modelRefreshLabel
+                        stateDescription = modelRefreshStateDescription
+                        if (modelRefreshEnabled) {
+                            onClick(label = modelRefreshLabel, action = null)
                         }
                     },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag(CHAT_MODEL_SEARCH_TEST_TAG)
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                )
-            }
-            if (chatModels.isEmpty()) {
-                val emptyStateTitle = stringResource(
-                    if (state.isConnected) {
-                        R.string.no_models_connected_title
-                    } else {
-                        R.string.no_models_disconnected_title
+                    text = {
+                        Column {
+                            Text(
+                                text = modelRefreshLabel,
+                            )
+                            Text(
+                                text = selectedModel?.let { model ->
+                                    stringResource(
+                                        R.string.model_provider_value,
+                                        runtimeProviderDisplayName(model.provider),
+                                    )
+                                } ?: if (state.isConnected) {
+                                    stringResource(R.string.chat_status_connected)
+                                } else {
+                                    stringResource(R.string.chat_status_disconnected)
+                                },
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    },
+                    leadingIcon = { Icon(Icons.Filled.Refresh, contentDescription = null) },
+                    enabled = modelRefreshEnabled,
+                    onClick = {
+                        hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
+                        onRequestModels()
                     },
                 )
-                val emptyStateDetail = stringResource(
-                    if (state.isConnected) {
-                        R.string.models_from_runtime
-                    } else {
-                        R.string.no_models_disconnected
-                    },
-                )
-                val emptyStateSummary = stringResource(
-                    R.string.model_picker_empty_state_summary,
-                    emptyStateTitle,
-                    emptyStateDetail,
-                )
-                DropdownInfoItem {
-                    Column(
-                        modifier = Modifier.semantics(mergeDescendants = true) {
-                            contentDescription = emptyStateSummary
-                            liveRegion = LiveRegionMode.Polite
-                        },
-                    ) {
-                        Text(
-                            text = emptyStateTitle,
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Text(
-                            text = emptyStateDetail,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                        )
+                HorizontalDivider()
+                if (selectedModelUnavailable) {
+                    DropdownInfoItem {
+                        Column {
+                            Text(
+                                text = selectedModelUnavailableLabel
+                                    ?: stringResource(R.string.selected_model),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text(
+                                text = selectedModelRecoveryMessage,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 3,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
                     }
+                    HorizontalDivider()
                 }
-            } else {
-                if (visibleModels.isEmpty()) {
-                    val noModelSearchResultsText = stringResource(R.string.no_model_search_results)
+                if (imageAttachmentVisionRecoveryNeeded) {
+                    val visionRecoverySummary = stringResource(R.string.model_picker_vision_recovery_detail)
                     DropdownInfoItem {
                         Text(
-                            text = noModelSearchResultsText,
-                            maxLines = 2,
+                            text = visionRecoverySummary,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.error,
+                            maxLines = 3,
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.semantics {
-                                contentDescription = noModelSearchResultsText
+                                contentDescription = visionRecoverySummary
                                 liveRegion = LiveRegionMode.Polite
                             },
                         )
                     }
+                    HorizontalDivider()
                 }
-                visibleModels.forEach { model ->
-                    ChatModelMenuItem(
-                        model = model,
-                        selected = model.id == state.selectedModelId,
-                        installing = model.id == state.installingModelId,
-                        actionsEnabled = modelMenuActionsEnabled,
-                        visionRecoveryMode = imageAttachmentVisionRecoveryNeeded,
-                        onSelect = {
-                            hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.SelectionChange)
-                            onSelectModel(model.id)
-                            isExpanded = false
+                if (hasSearchableModels) {
+                    OutlinedTextField(
+                        value = modelSearchQuery,
+                        onValueChange = { modelSearchQuery = it },
+                        singleLine = true,
+                        textStyle = MaterialTheme.typography.bodyMedium,
+                        label = {
+                            Text(
+                                text = stringResource(R.string.model_search_label),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Filled.Search,
+                                contentDescription = null,
+                            )
+                        },
+                        trailingIcon = {
+                            if (modelSearchQuery.isNotEmpty()) {
+                                IconButton(
+                                    onClick = {
+                                        hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
+                                        modelSearchQuery = ""
+                                    },
+                                    modifier = Modifier.semantics {
+                                        contentDescription = clearModelSearchContentDescription
+                                        onClick(label = clearModelSearchContentDescription, action = null)
+                                    },
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Close,
+                                        contentDescription = null,
+                                    )
+                                }
+                            }
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag(CHAT_MODEL_SEARCH_TEST_TAG)
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                    )
+                }
+                if (chatModels.isEmpty()) {
+                    val emptyStateTitle = stringResource(
+                        if (state.isConnected) {
+                            R.string.no_models_connected_title
+                        } else {
+                            R.string.no_models_disconnected_title
                         },
                     )
+                    val emptyStateDetail = stringResource(
+                        if (state.isConnected) {
+                            R.string.models_from_runtime
+                        } else {
+                            R.string.no_models_disconnected
+                        },
+                    )
+                    val emptyStateSummary = stringResource(
+                        R.string.model_picker_empty_state_summary,
+                        emptyStateTitle,
+                        emptyStateDetail,
+                    )
+                    DropdownInfoItem {
+                        Column(
+                            modifier = Modifier.semantics(mergeDescendants = true) {
+                                contentDescription = emptyStateSummary
+                                liveRegion = LiveRegionMode.Polite
+                            },
+                        ) {
+                            Text(
+                                text = emptyStateTitle,
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text(
+                                text = emptyStateDetail,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
+                } else {
+                    if (visibleModels.isEmpty()) {
+                        val noModelSearchResultsText = stringResource(R.string.no_model_search_results)
+                        DropdownInfoItem {
+                            Text(
+                                text = noModelSearchResultsText,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.semantics {
+                                    contentDescription = noModelSearchResultsText
+                                    liveRegion = LiveRegionMode.Polite
+                                },
+                            )
+                        }
+                    }
+                    visibleModels.forEach { model ->
+                        ChatModelMenuItem(
+                            model = model,
+                            selected = model.id == state.selectedModelId,
+                            installing = model.id == state.installingModelId,
+                            actionsEnabled = modelMenuActionsEnabled,
+                            visionRecoveryMode = imageAttachmentVisionRecoveryNeeded,
+                            onSelect = {
+                                hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.SelectionChange)
+                                onSelectModel(model.id)
+                                isExpanded = false
+                            },
+                        )
+                    }
                 }
             }
         }
@@ -1442,7 +1452,7 @@ private fun ChatModelMenuItem(
             visionRecoveryMode = visionRecoveryMode,
             contentDescription = rowContentDescription,
             actionLabel = rowActionLabel,
-        ),
+        ).testTag(chatModelMenuItemTestTag(model.id)),
         text = {
             Column {
                 Text(
@@ -1461,13 +1471,13 @@ private fun ChatModelMenuItem(
         },
         trailingIcon = {
             if (visionRecoveryMode && !model.supportsImageInput()) {
-                Text(
-                    text = stringResource(R.string.model_not_recommended_for_images),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.error,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.widthIn(max = 132.dp),
+                Icon(
+                    imageVector = Icons.Filled.Error,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier
+                        .size(20.dp)
+                        .testTag(chatModelVisionWarningIconTestTag(model.id)),
                 )
             } else if (!model.installed && !installing) {
                 Text(
@@ -1750,7 +1760,49 @@ private val modelDisplayProviderPrefixes = setOf(
 internal const val DRAWER_HISTORY_TEST_TAG = "aetherlink_drawer_history"
 internal const val DRAWER_CHAT_SEARCH_TEST_TAG = "aetherlink_drawer_chat_search"
 internal const val DRAWER_SETTINGS_FOOTER_TEST_TAG = "aetherlink_drawer_settings_footer"
+internal const val DRAWER_RUNTIME_SUMMARY_TEST_TAG = "aetherlink_drawer_runtime_summary"
+internal const val DRAWER_RUNTIME_SUMMARY_HEADER_TEST_TAG = "aetherlink_drawer_runtime_summary_header"
+internal const val DRAWER_RUNTIME_SUMMARY_RUNTIME_LABEL_TEST_TAG =
+    "aetherlink_drawer_runtime_summary_runtime_label"
+internal const val DRAWER_RUNTIME_SUMMARY_STATUS_TEST_TAG = "aetherlink_drawer_runtime_summary_status"
+internal const val DRAWER_RUNTIME_SUMMARY_RUNTIME_NAME_TEST_TAG =
+    "aetherlink_drawer_runtime_summary_runtime_name"
+internal const val DRAWER_RUNTIME_SUMMARY_MODEL_LABEL_TEST_TAG = "aetherlink_drawer_runtime_summary_model_label"
+internal const val DRAWER_RUNTIME_SUMMARY_MODEL_NAME_TEST_TAG = "aetherlink_drawer_runtime_summary_model_name"
+internal const val DRAWER_RUNTIME_SUMMARY_MODEL_DETAIL_TEST_TAG =
+    "aetherlink_drawer_runtime_summary_model_detail"
+internal const val DRAWER_CHAT_ROW_TEST_TAG_PREFIX = "aetherlink_drawer_chat_row_"
+internal const val DRAWER_CHAT_ROW_TEXT_TEST_TAG_PREFIX = "aetherlink_drawer_chat_row_text_"
+internal const val DRAWER_CHAT_ROW_TITLE_TEST_TAG_PREFIX = "aetherlink_drawer_chat_row_title_"
+internal const val DRAWER_CHAT_ROW_SUBTITLE_TEST_TAG_PREFIX = "aetherlink_drawer_chat_row_subtitle_"
+internal const val DRAWER_CHAT_ROW_MODEL_TEST_TAG_PREFIX = "aetherlink_drawer_chat_row_model_"
+internal const val DRAWER_CHAT_ROW_OPTIONS_TEST_TAG_PREFIX = "aetherlink_drawer_chat_row_options_"
 internal const val CHAT_MODEL_SEARCH_TEST_TAG = "aetherlink_chat_model_search"
+
+internal fun drawerChatRowTestTag(sessionId: String): String = "$DRAWER_CHAT_ROW_TEST_TAG_PREFIX$sessionId"
+
+internal fun drawerChatRowTextTestTag(sessionId: String): String =
+    "$DRAWER_CHAT_ROW_TEXT_TEST_TAG_PREFIX$sessionId"
+
+internal fun drawerChatRowTitleTestTag(sessionId: String): String =
+    "$DRAWER_CHAT_ROW_TITLE_TEST_TAG_PREFIX$sessionId"
+
+internal fun drawerChatRowSubtitleTestTag(sessionId: String): String =
+    "$DRAWER_CHAT_ROW_SUBTITLE_TEST_TAG_PREFIX$sessionId"
+
+internal fun drawerChatRowModelTestTag(sessionId: String): String =
+    "$DRAWER_CHAT_ROW_MODEL_TEST_TAG_PREFIX$sessionId"
+
+internal fun drawerChatRowOptionsTestTag(sessionId: String): String =
+    "$DRAWER_CHAT_ROW_OPTIONS_TEST_TAG_PREFIX$sessionId"
+
+internal fun chatModelMenuItemTestTag(modelId: String): String = "$CHAT_MODEL_MENU_ITEM_TEST_TAG_PREFIX$modelId"
+
+internal fun chatModelVisionWarningIconTestTag(modelId: String): String =
+    "$CHAT_MODEL_VISION_WARNING_ICON_TEST_TAG_PREFIX$modelId"
+
+internal const val CHAT_MODEL_MENU_ITEM_TEST_TAG_PREFIX = "aetherlink_chat_model_item_"
+internal const val CHAT_MODEL_VISION_WARNING_ICON_TEST_TAG_PREFIX = "aetherlink_chat_model_vision_warning_"
 
 @Composable
 internal fun AetherLinkNavigationDrawerContent(
@@ -1938,69 +1990,88 @@ private fun DrawerRuntimeSummary(state: RuntimeUiState) {
         modelName,
     )
 
-    Surface(
+    Box(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 12.dp, vertical = 2.dp)
-            .clearAndSetSemantics {
-                contentDescription = runtimeSummaryAccessibility
-            },
-        shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.52f),
-        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            .testTag(DRAWER_RUNTIME_SUMMARY_TEST_TAG),
     ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp),
-            verticalArrangement = Arrangement.spacedBy(7.dp),
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clearAndSetSemantics {
+                    contentDescription = runtimeSummaryAccessibility
+                },
+            shape = RoundedCornerShape(18.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.52f),
+            contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
+            Column(
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp),
+                verticalArrangement = Arrangement.spacedBy(7.dp),
             ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag(DRAWER_RUNTIME_SUMMARY_HEADER_TEST_TAG),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = stringResource(R.string.runtime),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.secondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag(DRAWER_RUNTIME_SUMMARY_RUNTIME_LABEL_TEST_TAG),
+                    )
+                    Text(
+                        text = connectionLabel,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = connectionTone,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.End,
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag(DRAWER_RUNTIME_SUMMARY_STATUS_TEST_TAG),
+                    )
+                }
                 Text(
-                    text = stringResource(R.string.runtime),
+                    text = runtimeName,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.testTag(DRAWER_RUNTIME_SUMMARY_RUNTIME_NAME_TEST_TAG),
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.22f))
+                Text(
+                    text = stringResource(R.string.selected_model),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.secondary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.testTag(DRAWER_RUNTIME_SUMMARY_MODEL_LABEL_TEST_TAG),
                 )
                 Text(
-                    text = connectionLabel,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = connectionTone,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            Text(
-                text = runtimeName,
-                style = MaterialTheme.typography.bodyMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.22f))
-            Text(
-                text = stringResource(R.string.selected_model),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.secondary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = modelName,
-                style = MaterialTheme.typography.bodyMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (modelDetail != null) {
-                Text(
-                    text = modelDetail,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    text = modelName,
+                    style = MaterialTheme.typography.bodyMedium,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.testTag(DRAWER_RUNTIME_SUMMARY_MODEL_NAME_TEST_TAG),
                 )
+                if (modelDetail != null) {
+                    Text(
+                        text = modelDetail,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.testTag(DRAWER_RUNTIME_SUMMARY_MODEL_DETAIL_TEST_TAG),
+                    )
+                }
             }
         }
     }
@@ -2225,16 +2296,23 @@ internal fun ChatSessionDrawerItem(
         },
         label = {
             Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(drawerChatRowTestTag(session.id)),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag(drawerChatRowTextTestTag(session.id)),
                     verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
                     Text(
                         text = title,
-                        maxLines = 1,
+                        maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.testTag(drawerChatRowTitleTestTag(session.id)),
                     )
                     if (subtitle.isNotBlank()) {
                         Text(
@@ -2243,6 +2321,7 @@ internal fun ChatSessionDrawerItem(
                             color = subtitleColor,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.testTag(drawerChatRowSubtitleTestTag(session.id)),
                         )
                     }
                     if (modelText != null) {
@@ -2252,6 +2331,7 @@ internal fun ChatSessionDrawerItem(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.testTag(drawerChatRowModelTestTag(session.id)),
                         )
                     }
                 }
@@ -2263,6 +2343,7 @@ internal fun ChatSessionDrawerItem(
                     enabled = enabled,
                     modifier = Modifier
                         .size(32.dp)
+                        .testTag(drawerChatRowOptionsTestTag(session.id))
                         .semantics {
                             contentDescription = chatSessionOptionsContentDescription
                             onClick(label = chatSessionOptionsContentDescription, action = null)
@@ -2564,6 +2645,7 @@ private fun PairingQrScannerScreen(
     onResult: (String) -> Unit,
     onCancel: () -> Unit,
     onFailure: (String?) -> Unit,
+    requireRemoteRoute: Boolean,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -2656,6 +2738,7 @@ private fun PairingQrScannerScreen(
         PairingQrCameraPreview(
             onResult = onResult,
             onFailure = onFailure,
+            requireRemoteRoute = requireRemoteRoute,
             onUnsupportedQr = {
                 scannerFeedback = PairingQrScannerFeedback.UnsupportedQr
             },
@@ -2908,6 +2991,7 @@ internal const val PAIRING_QR_SCANNER_TARGET_TEST_TAG = "pairing_qr_scanner_targ
 private fun PairingQrCameraPreview(
     onResult: (String) -> Unit,
     onFailure: (String?) -> Unit,
+    requireRemoteRoute: Boolean,
     onUnsupportedQr: () -> Unit,
     onInvalidPairingQr: () -> Unit,
     torchEnabled: Boolean,
@@ -2968,7 +3052,11 @@ private fun PairingQrCameraPreview(
                                     )
                                     barcodeScanner.process(inputImage)
                                         .addOnSuccessListener { barcodes ->
-                                            when (val scanResult = barcodes.aetherLinkPairingScanResultOrNull()) {
+                                            when (
+                                                val scanResult = barcodes.aetherLinkPairingScanResultOrNull(
+                                                    requireRemoteRoute = requireRemoteRoute,
+                                                )
+                                            ) {
                                                 is PairingQrBarcodeScanResult.Valid -> {
                                                     if (resultConsumed.compareAndSet(false, true)) {
                                                         onResult(scanResult.rawValue)
@@ -3056,10 +3144,16 @@ internal fun String.aetherLinkPairingQrRawValueScanResult(
     if (!trimmed.isAetherLinkPairingQrCandidateValue()) {
         return PairingQrRawValueScanResult.UnsupportedQr
     }
-    return if (trimmed.isAetherLinkPairingQrValue(requireRemoteRoute = requireRemoteRoute)) {
-        PairingQrRawValueScanResult.Valid
-    } else {
-        PairingQrRawValueScanResult.InvalidPairingQr
+    return when (
+        parseRuntimePairingQrPayload(
+            rawValue = trimmed,
+            allowDebugLoopbackRelay = BuildConfig.DEBUG,
+            allowDiagnosticLocalDirectEndpoint = BuildConfig.DEBUG,
+            requireRemoteRoute = requireRemoteRoute,
+        )
+    ) {
+        is RuntimePairingQrParseResult.Accepted -> PairingQrRawValueScanResult.Valid
+        is RuntimePairingQrParseResult.Rejected -> PairingQrRawValueScanResult.InvalidPairingQr
     }
 }
 
@@ -3071,14 +3165,16 @@ internal fun String.isAetherLinkPairingQrCandidateValue(): Boolean {
     return action == "pair"
 }
 
-private fun List<Barcode>.aetherLinkPairingScanResultOrNull(): PairingQrBarcodeScanResult? {
+private fun List<Barcode>.aetherLinkPairingScanResultOrNull(
+    requireRemoteRoute: Boolean = true,
+): PairingQrBarcodeScanResult? {
     var sawInvalidPairingQr = false
     var sawUnsupportedQr = false
     for (barcode in this) {
         val rawValue = barcode.rawValue
             ?.takeIf { it.isNotBlank() }
             ?: continue
-        when (rawValue.aetherLinkPairingQrRawValueScanResult()) {
+        when (rawValue.aetherLinkPairingQrRawValueScanResult(requireRemoteRoute = requireRemoteRoute)) {
             PairingQrRawValueScanResult.Valid -> {
                 return PairingQrBarcodeScanResult.Valid(rawValue)
             }

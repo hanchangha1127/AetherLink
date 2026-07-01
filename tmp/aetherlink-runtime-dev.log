@@ -1,0 +1,11 @@
+[runtime] AetherLink dev server listening on 127.0.0.1:43170
+[runtime] Backend: Ollama + LM Studio
+[runtime] Advertising _aetherlink._tcp.local. on port 43170
+[runtime] For local direct diagnostics with a USB-connected trusted device, run:
+[runtime]   adb reverse tcp:43170 tcp:43170
+[runtime] Then use the local diagnostic route 127.0.0.1:43170 in AetherLink.
+[runtime] WARNING: AETHERLINK_DEV_PAIRING=1 opened a development-only pairing window.
+[runtime] Do not enable this mode for production or normal trusted-device use.
+[runtime] AETHERLINK_DEV_PAIRING_INFO {"expires_at":"2026-06-30T04:43:38Z","host":"127.0.0.1","pairing_code":"238095","pairing_nonce":"61D0930D-95D6-45EF-9F97-5A80B948BD63","port":43170,"relay_scope":"local_diagnostic","route_token":"dev-aetherlink-route","runtime_device_id":"aetherlink-dev-runtime","runtime_key_fingerprint":"aca2e12660ea0ac3ce01c1452a038f86c42a023e03339482e36d5860140ebe4f","runtime_name":"AetherLink Dev Runtime","runtime_public_key":"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE\/UbCrtW3W7FQAXN3ThTQUT\/RdcUl\/tti86\/jeC8ENeEjYBDfsWhKhexFIUgEsDTP7hA80dP6hAsXkAHwxdEMOg==","service_type":"_aetherlink._tcp.local."}
+[runtime] AETHERLINK_DEV_PAIRING_URI aetherlink://pair?version=1&pairing_nonce=61D0930D-95D6-45EF-9F97-5A80B948BD63&pairing_code=238095&runtime_device_id=aetherlink-dev-runtime&runtime_name=AetherLink%20Dev%20Runtime&runtime_key_fingerprint=aca2e12660ea0ac3ce01c1452a038f86c42a023e03339482e36d5860140ebe4f&runtime_public_key=MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE/UbCrtW3W7FQAXN3ThTQUT/RdcUl/tti86/jeC8ENeEjYBDfsWhKhexFIUgEsDTP7hA80dP6hAsXkAHwxdEMOg%3D%3D&route_token=dev-aetherlink-route&host=127.0.0.1&port=43170&route_scope=local_diagnostic
+[runtime] AETHERLINK_DEV_PAIRING_COMPACT_URI aetherlink://pair?v=1&n=61D0930D-95D6-45EF-9F97-5A80B948BD63&c=238095&rid=aetherlink-dev-runtime&rn=AetherLink%20Dev%20Runtime&rf=aca2e12660ea0ac3ce01c1452a038f86c42a023e03339482e36d5860140ebe4f&rk=MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE/UbCrtW3W7FQAXN3ThTQUT/RdcUl/tti86/jeC8ENeEjYBDfsWhKhexFIUgEsDTP7hA80dP6hAsXkAHwxdEMOg%3D%3D&rt=dev-aetherlink-route&h=127.0.0.1&p=43170&rsc=local_diagnostic

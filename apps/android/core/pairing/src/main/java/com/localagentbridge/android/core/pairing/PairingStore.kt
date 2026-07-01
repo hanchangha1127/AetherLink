@@ -29,15 +29,27 @@ class PairingStore(
     val trustedRuntime: Flow<TrustedRuntime?> = flow {
         context.localAgentBridgeDataStore.data.collect { prefs ->
             val loaded = loadTrustedRuntime(prefs)
-            if (loaded.shouldRemoveStoredRelayRoute) {
+            if (
+                loaded.shouldRemoveStoredRelayRoute ||
+                loaded.shouldRemoveStoredP2pRoute ||
+                loaded.shouldRemoveStoredDirectEndpoint ||
+                loaded.relaySecretRefToPersist != null
+            ) {
                 context.localAgentBridgeDataStore.edit { editPrefs ->
-                    loaded.relaySecretRefsToRemove.forEach(relaySecretStore::removeSecret)
-                    editPrefs.removeRelayRouteKeys()
-                }
-            } else if (loaded.relaySecretRefToPersist != null) {
-                context.localAgentBridgeDataStore.edit { editPrefs ->
-                    editPrefs[Keys.runtimeRelaySecretRef] = loaded.relaySecretRefToPersist
-                    editPrefs.remove(Keys.runtimeRelaySecret)
+                    if (loaded.shouldRemoveStoredRelayRoute) {
+                        loaded.relaySecretRefsToRemove.forEach(relaySecretStore::removeSecret)
+                        editPrefs.removeRelayRouteKeys()
+                    }
+                    if (loaded.shouldRemoveStoredP2pRoute) {
+                        editPrefs.removeP2pRouteKeys()
+                    }
+                    if (loaded.shouldRemoveStoredDirectEndpoint) {
+                        editPrefs.removeDirectEndpointKeys()
+                    }
+                    if (loaded.relaySecretRefToPersist != null) {
+                        editPrefs[Keys.runtimeRelaySecretRef] = loaded.relaySecretRefToPersist
+                        editPrefs.remove(Keys.runtimeRelaySecret)
+                    }
                 }
             }
             emit(loaded.trustedRuntime)
@@ -45,15 +57,26 @@ class PairingStore(
     }
 
     private fun loadTrustedRuntime(prefs: Preferences): LoadedTrustedRuntime {
+        val hasStoredRelayRoute = prefs.hasStoredRelayRoute()
+        val hasStoredP2pRoute = prefs.hasStoredP2pRoute()
+        val hasStoredDirectEndpoint = prefs.hasStoredDirectEndpoint()
         val id = prefs[Keys.runtimeDeviceId] ?: prefs[LegacyKeys.runtimeDeviceId]
-            ?: return LoadedTrustedRuntime(null, shouldRemoveStoredRelayRoute = false)
+            ?: return LoadedTrustedRuntime(
+                null,
+                shouldRemoveStoredRelayRoute = false,
+                shouldRemoveStoredP2pRoute = hasStoredP2pRoute,
+                shouldRemoveStoredDirectEndpoint = hasStoredDirectEndpoint,
+            )
         val name = prefs[Keys.runtimeName] ?: prefs[LegacyKeys.runtimeName] ?: "AetherLink Runtime"
         val fingerprint = prefs[Keys.runtimeFingerprint] ?: prefs[LegacyKeys.runtimeFingerprint]
-            ?: return LoadedTrustedRuntime(null, shouldRemoveStoredRelayRoute = false)
+            ?: return LoadedTrustedRuntime(
+                null,
+                shouldRemoveStoredRelayRoute = false,
+                shouldRemoveStoredP2pRoute = hasStoredP2pRoute,
+                shouldRemoveStoredDirectEndpoint = hasStoredDirectEndpoint,
+            )
         val publicKeyBase64 = prefs[Keys.runtimePublicKey] ?: prefs[LegacyKeys.runtimePublicKey]
         val routeToken = prefs[Keys.runtimeRouteToken] ?: prefs[LegacyKeys.runtimeRouteToken]
-        val host: String? = null
-        val port: Int? = null
         val relayHost = prefs[Keys.runtimeRelayHost]
         val relayPort = prefs[Keys.runtimeRelayPort]
         val relayId = prefs[Keys.runtimeRelayId]
@@ -65,23 +88,36 @@ class PairingStore(
         val relayExpiresAtEpochMillis = prefs[Keys.runtimeRelayExpiresAtEpochMillis]
         val relayNonce = prefs[Keys.runtimeRelayNonce]
         val relayScope = prefs[Keys.runtimeRelayScope]
+        val p2pRouteClass = prefs[Keys.runtimeP2pRouteClass]
+        val p2pRecordId = prefs[Keys.runtimeP2pRecordId]
+        val p2pEncryptedBody = prefs[Keys.runtimeP2pEncryptedBody]
+        val p2pExpiresAtEpochMillis = prefs[Keys.runtimeP2pExpiresAtEpochMillis]
+        val p2pAntiReplayNonce = prefs[Keys.runtimeP2pAntiReplayNonce]
+        val p2pProtocolVersion = prefs[Keys.runtimeP2pProtocolVersion]
         val trusted = TrustedRuntime(
-            id,
-            name,
-            fingerprint,
-            publicKeyBase64,
-            routeToken,
-            host,
-            port,
-            relayHost,
-            relayPort,
-            relayId,
-            relaySecret,
-            relayExpiresAtEpochMillis,
-            relayNonce,
-            relayScope,
+            deviceId = id,
+            name = name,
+            fingerprint = fingerprint,
+            publicKeyBase64 = publicKeyBase64,
+            routeToken = routeToken,
+            host = null,
+            port = null,
+            relayHost = relayHost,
+            relayPort = relayPort,
+            relayId = relayId,
+            relaySecret = relaySecret,
+            relayExpiresAtEpochMillis = relayExpiresAtEpochMillis,
+            relayNonce = relayNonce,
+            relayScope = relayScope,
+            p2pRouteClass = p2pRouteClass,
+            p2pRecordId = p2pRecordId,
+            p2pEncryptedBody = p2pEncryptedBody,
+            p2pExpiresAtEpochMillis = p2pExpiresAtEpochMillis,
+            p2pAntiReplayNonce = p2pAntiReplayNonce,
+            p2pProtocolVersion = p2pProtocolVersion,
         )
-        val hasStoredRelayRoute = prefs.hasStoredRelayRoute()
+        val trustedWithoutInvalidP2p = if (trusted.hasValidP2pRoute()) trusted else trusted.withoutP2pRoute()
+        val shouldRemoveStoredP2pRoute = hasStoredP2pRoute && !trusted.hasValidP2pRoute()
         return if (trusted.hasValidRelayRoute()) {
             val relaySecretRefToPersist = if (!legacyRelaySecret.isNullOrBlank() || relaySecretRef.isNullOrBlank()) {
                 val ref = relaySecretHandle(id, requireNotNull(relayId))
@@ -91,14 +127,18 @@ class PairingStore(
                 null
             }
             LoadedTrustedRuntime(
-                trusted,
+                trustedWithoutInvalidP2p,
                 shouldRemoveStoredRelayRoute = false,
+                shouldRemoveStoredP2pRoute = shouldRemoveStoredP2pRoute,
+                shouldRemoveStoredDirectEndpoint = hasStoredDirectEndpoint,
                 relaySecretRefToPersist = relaySecretRefToPersist,
             )
         } else {
             LoadedTrustedRuntime(
-                trusted.withoutRelayRoute(),
+                trustedWithoutInvalidP2p.withoutRelayRoute(),
                 shouldRemoveStoredRelayRoute = hasStoredRelayRoute,
+                shouldRemoveStoredP2pRoute = shouldRemoveStoredP2pRoute,
+                shouldRemoveStoredDirectEndpoint = hasStoredDirectEndpoint,
                 relaySecretRefsToRemove = listOfNotNull(relaySecretRef),
             )
         }
@@ -121,8 +161,7 @@ class PairingStore(
             } else {
                 prefs.remove(Keys.runtimeRouteToken)
             }
-            prefs.remove(Keys.runtimeHost)
-            prefs.remove(Keys.runtimePort)
+            prefs.removeDirectEndpointKeys()
             val relayHost = runtime.relayHost
             val relayPort = runtime.relayPort
             val relayId = runtime.relayId
@@ -161,6 +200,16 @@ class PairingStore(
                 prefs[Keys.runtimeRelaySecretRef]?.let(relaySecretStore::removeSecret)
                 prefs.removeRelayRouteKeys()
             }
+            if (runtime.hasValidP2pRoute()) {
+                prefs[Keys.runtimeP2pRouteClass] = requireNotNull(runtime.p2pRouteClass)
+                prefs[Keys.runtimeP2pRecordId] = requireNotNull(runtime.p2pRecordId)
+                prefs[Keys.runtimeP2pEncryptedBody] = requireNotNull(runtime.p2pEncryptedBody)
+                prefs[Keys.runtimeP2pExpiresAtEpochMillis] = requireNotNull(runtime.p2pExpiresAtEpochMillis)
+                prefs[Keys.runtimeP2pAntiReplayNonce] = requireNotNull(runtime.p2pAntiReplayNonce)
+                prefs[Keys.runtimeP2pProtocolVersion] = requireNotNull(runtime.p2pProtocolVersion)
+            } else {
+                prefs.removeP2pRouteKeys()
+            }
             prefs.removeLegacyRuntimeKeys()
         }
     }
@@ -189,6 +238,12 @@ class PairingStore(
         val runtimeRelayExpiresAtEpochMillis = longPreferencesKey("runtime_relay_expires_at_epoch_millis")
         val runtimeRelayNonce = stringPreferencesKey("runtime_relay_nonce")
         val runtimeRelayScope = stringPreferencesKey("runtime_relay_scope")
+        val runtimeP2pRouteClass = stringPreferencesKey("runtime_p2p_route_class")
+        val runtimeP2pRecordId = stringPreferencesKey("runtime_p2p_record_id")
+        val runtimeP2pEncryptedBody = stringPreferencesKey("runtime_p2p_encrypted_body")
+        val runtimeP2pExpiresAtEpochMillis = longPreferencesKey("runtime_p2p_expires_at_epoch_millis")
+        val runtimeP2pAntiReplayNonce = stringPreferencesKey("runtime_p2p_anti_replay_nonce")
+        val runtimeP2pProtocolVersion = intPreferencesKey("runtime_p2p_protocol_version")
     }
 
     private object LegacyKeys {
@@ -207,9 +262,16 @@ class PairingStore(
         remove(Keys.runtimeFingerprint)
         remove(Keys.runtimePublicKey)
         remove(Keys.runtimeRouteToken)
+        removeDirectEndpointKeys()
+        removeRelayRouteKeys()
+        removeP2pRouteKeys()
+    }
+
+    private fun MutablePreferences.removeDirectEndpointKeys() {
         remove(Keys.runtimeHost)
         remove(Keys.runtimePort)
-        removeRelayRouteKeys()
+        remove(LegacyKeys.runtimeHost)
+        remove(LegacyKeys.runtimePort)
     }
 
     private fun MutablePreferences.removeRelayRouteKeys() {
@@ -221,6 +283,15 @@ class PairingStore(
         remove(Keys.runtimeRelayExpiresAtEpochMillis)
         remove(Keys.runtimeRelayNonce)
         remove(Keys.runtimeRelayScope)
+    }
+
+    private fun MutablePreferences.removeP2pRouteKeys() {
+        remove(Keys.runtimeP2pRouteClass)
+        remove(Keys.runtimeP2pRecordId)
+        remove(Keys.runtimeP2pEncryptedBody)
+        remove(Keys.runtimeP2pExpiresAtEpochMillis)
+        remove(Keys.runtimeP2pAntiReplayNonce)
+        remove(Keys.runtimeP2pProtocolVersion)
     }
 
     private fun MutablePreferences.removeLegacyRuntimeKeys() {
@@ -244,9 +315,27 @@ class PairingStore(
             this[Keys.runtimeRelayScope] != null
     }
 
+    private fun Preferences.hasStoredP2pRoute(): Boolean {
+        return this[Keys.runtimeP2pRouteClass] != null ||
+            this[Keys.runtimeP2pRecordId] != null ||
+            this[Keys.runtimeP2pEncryptedBody] != null ||
+            this[Keys.runtimeP2pExpiresAtEpochMillis] != null ||
+            this[Keys.runtimeP2pAntiReplayNonce] != null ||
+            this[Keys.runtimeP2pProtocolVersion] != null
+    }
+
+    private fun Preferences.hasStoredDirectEndpoint(): Boolean {
+        return this[Keys.runtimeHost] != null ||
+            this[Keys.runtimePort] != null ||
+            this[LegacyKeys.runtimeHost] != null ||
+            this[LegacyKeys.runtimePort] != null
+    }
+
     private data class LoadedTrustedRuntime(
         val trustedRuntime: TrustedRuntime?,
         val shouldRemoveStoredRelayRoute: Boolean,
+        val shouldRemoveStoredP2pRoute: Boolean = false,
+        val shouldRemoveStoredDirectEndpoint: Boolean = false,
         val relaySecretRefToPersist: String? = null,
         val relaySecretRefsToRemove: List<String> = emptyList(),
     )
@@ -334,11 +423,6 @@ private fun relaySecretHandle(deviceId: String, relayId: String): String {
     return "relay-v1-" + digest.joinToString("") { "%02x".format(it) }
 }
 
-internal data class TrustedRuntimeDirectEndpoint(
-    val host: String,
-    val port: Int,
-)
-
 internal fun TrustedRuntime.hasValidRelayRoute(): Boolean {
     val expiresAt = relayExpiresAtEpochMillis
     return hasCompleteRelayRoute() &&
@@ -351,6 +435,22 @@ internal fun TrustedRuntime.hasExpiredRelayRoute(
 ): Boolean {
     val expiresAt = relayExpiresAtEpochMillis ?: return false
     return hasCompleteRelayRoute() && expiresAt <= nowEpochMillis
+}
+
+internal fun TrustedRuntime.hasValidP2pRoute(
+    nowEpochMillis: Long = System.currentTimeMillis(),
+): Boolean {
+    val expiresAt = p2pExpiresAtEpochMillis
+    return hasCompleteP2pRoute() &&
+        expiresAt != null &&
+        expiresAt > nowEpochMillis
+}
+
+internal fun TrustedRuntime.hasExpiredP2pRoute(
+    nowEpochMillis: Long = System.currentTimeMillis(),
+): Boolean {
+    val expiresAt = p2pExpiresAtEpochMillis ?: return false
+    return hasCompleteP2pRoute() && expiresAt <= nowEpochMillis
 }
 
 private fun TrustedRuntime.hasCompleteRelayRoute(): Boolean {
@@ -367,6 +467,17 @@ private fun TrustedRuntime.hasCompleteRelayRoute(): Boolean {
         !relayNonce.isNullOrBlank()
 }
 
+private fun TrustedRuntime.hasCompleteP2pRoute(): Boolean {
+    val expiresAt = p2pExpiresAtEpochMillis
+    return p2pRouteClass == "p2p_rendezvous" &&
+        isCanonicalOpaqueRouteValue(p2pRecordId) &&
+        isCanonicalOpaqueRouteValue(p2pEncryptedBody) &&
+        expiresAt != null &&
+        expiresAt > 0L &&
+        isCanonicalOpaqueRouteValue(p2pAntiReplayNonce) &&
+        p2pProtocolVersion == 1
+}
+
 private fun TrustedRuntime.withoutRelayRoute(): TrustedRuntime {
     return copy(
         relayHost = null,
@@ -379,11 +490,15 @@ private fun TrustedRuntime.withoutRelayRoute(): TrustedRuntime {
     )
 }
 
-internal fun TrustedRuntime.validDirectEndpointOrNull(): TrustedRuntimeDirectEndpoint? {
-    if (hasValidRelayRoute()) return null
-    val endpointHost = host?.takeIf { it.isNotBlank() } ?: return null
-    val endpointPort = port?.takeIf { it in 1..65535 } ?: return null
-    return TrustedRuntimeDirectEndpoint(endpointHost, endpointPort)
+private fun TrustedRuntime.withoutP2pRoute(): TrustedRuntime {
+    return copy(
+        p2pRouteClass = null,
+        p2pRecordId = null,
+        p2pEncryptedBody = null,
+        p2pExpiresAtEpochMillis = null,
+        p2pAntiReplayNonce = null,
+        p2pProtocolVersion = null,
+    )
 }
 
 private fun String.isDebugUsbReverseRelayRoute(relayScope: String?): Boolean {

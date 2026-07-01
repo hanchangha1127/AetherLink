@@ -27,6 +27,17 @@
     <string name="clear_chat_search">チャット検索をクリア</string>
     <string name="clear_chat_search_named">「%1$s」のチャット検索をクリア</string>
     <string name="no_chat_search_results">一致するチャットはありません。</string>
+    <string name="chat_search_match_rank">一致 %1$d</string>
+    <string name="chat_search_match_metadata">%1$s · %2$s</string>
+    <string name="chat_search_match_fields">一致項目: %1$s</string>
+    <string name="chat_search_field_title">タイトル</string>
+    <string name="chat_search_field_session">セッション</string>
+    <string name="chat_search_field_model">モデル</string>
+    <string name="chat_search_field_status">状態</string>
+    <string name="chat_search_field_error">エラー</string>
+    <string name="chat_search_field_transcript">会話内容</string>
+    <string name="chat_search_field_reasoning">推論</string>
+    <string name="chat_search_field_attachment">添付ファイル</string>
     <string name="untitled_chat">無題のチャット</string>
     <string name="chat_top_bar_active_title_summary">現在のチャット「%1$s」</string>
     <plurals name="chat_message_count">
@@ -75,6 +86,7 @@
     </plurals>
     <string name="chat_history_summary_detail">アクティブ: %1$s。アーカイブ済み: %2$s。</string>
     <string name="chat_history_summary_accessibility">チャット履歴の概要。%1$s。%2$s</string>
+    <string name="chat_history_search_result_summary">「%1$s」の結果: %2$s。%3$s。</string>
     <string name="chat_history_action_state_wait_for_stream">チャット履歴を変更する前に、現在の応答が終わるまでお待ちください。</string>
     <string name="chat_history_refresh">チャット履歴を更新</string>
     <string name="chat_history_refresh_state_ready">チャット履歴を更新できます。</string>
@@ -400,15 +412,6 @@
     <string name="assistant_reasoning_state_shown">すべて表示済み</string>
     <string name="assistant_reasoning_show">思考を表示</string>
     <string name="assistant_reasoning_hide">思考を非表示</string>
-    <string name="suggested_next_questions">次の質問</string>
-    <plurals name="suggested_questions_state_count">
-        <item quantity="one">おすすめの次の質問が%1$d件あります。</item>
-        <item quantity="other">おすすめの次の質問が%1$d件あります。</item>
-    </plurals>
-    <string name="generating_suggestions">次の質問を生成中...</string>
-    <string name="content_desc_suggested_question">おすすめの質問: %1$s</string>
-    <string name="action_use_suggested_question">おすすめの質問を入力</string>
-    <string name="suggested_question_state_wait_for_stream">おすすめの質問を使う前に、現在の応答が完了するまで待ってください。</string>
     <string name="copy_message">メッセージをコピー</string>
     <string name="regenerate_response">応答を再生成</string>
     <string name="regenerate_response_state_ready">最新の応答を再生成できます。</string>
@@ -501,6 +504,33 @@
     <string name="memory_summary">%1$s、%2$s。</string>
     <string name="memory_refresh">メモリを更新</string>
     <string name="memory_refresh_state_ready">メモリを更新できます。</string>
+    <string name="memory_summary_drafts_title">提案メモリ</string>
+    <plurals name="memory_summary_drafts_count">
+        <item quantity="one">古いチャットからの提案 %1$d 件</item>
+        <item quantity="other">古いチャットからの提案 %1$d 件</item>
+    </plurals>
+    <plurals name="memory_summary_draft_source_count">
+        <item quantity="one">ソース %1$d 件</item>
+        <item quantity="other">ソース %1$d 件</item>
+    </plurals>
+    <string name="memory_summary_draft_source_range">範囲 %1$s</string>
+    <string name="memory_summary_draft_preview_label">プレビュー</string>
+    <string name="memory_summary_draft_source_excerpt">%1$s: %2$s</string>
+    <string name="memory_summary_draft_row_summary">%1$s。%2$s。%3$s。%4$s</string>
+    <string name="memory_source_from_chat">古いチャット: %1$s</string>
+    <string name="memory_source_show">ソースを表示</string>
+    <string name="memory_source_hide">ソースを非表示</string>
+    <string name="memory_source_show_named">「%1$s」のメモリのソースを表示</string>
+    <string name="memory_source_hide_named">「%1$s」のメモリのソースを非表示</string>
+    <string name="memory_source_summary">%1$s。%2$s。%3$s</string>
+    <string name="memory_summary_draft_approve">提案メモリを追加</string>
+    <string name="memory_summary_draft_approving">メモリを追加中…</string>
+    <string name="memory_summary_draft_approve_named">%1$s の提案メモリを追加</string>
+    <string name="memory_summary_draft_approve_state_ready">提案メモリを追加できます。</string>
+    <string name="memory_summary_draft_dismiss">提案メモリを非表示</string>
+    <string name="memory_summary_draft_dismissing">メモリを非表示にしています…</string>
+    <string name="memory_summary_draft_dismiss_named">%1$s の提案メモリを非表示</string>
+    <string name="memory_summary_draft_dismiss_state_ready">提案メモリを非表示にできます。</string>
     <string name="memory_remove">メモリを削除</string>
     <string name="memory_remove_named">「%1$s」のメモリを削除</string>
     <string name="memory_enable_named">「%1$s」のメモリを有効化</string>
@@ -573,6 +603,9 @@
     <string name="error_chat_history_runtime_required">ランタイム保存済みチャットを変更する前に、AetherLink Runtime に接続してください。</string>
     <string name="error_memory_runtime_required">メモリを変更する前に、信頼済みランタイムに接続してください。</string>
     <string name="error_memory_load_failed">AetherLink Runtime からメモリを読み込めませんでした。</string>
+    <string name="error_memory_summary_drafts_load_failed">AetherLink Runtime からメモリ提案を読み込めませんでした。</string>
+    <string name="error_memory_summary_draft_approval_failed">AetherLink Runtime から提案メモリを追加できませんでした。</string>
+    <string name="error_memory_summary_draft_dismiss_failed">AetherLink Runtime から提案メモリを非表示にできませんでした。</string>
     <string name="error_runtime_error">ランタイムエラーです。</string>
     <string name="error_send_failed">AetherLink Runtime にメッセージを送信できませんでした。</string>
     <string name="error_regenerate_unavailable">再生成できる完了済みのアシスタント応答がありません。</string>

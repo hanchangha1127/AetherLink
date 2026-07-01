@@ -1,4 +1,5 @@
 import Darwin
+import BridgeProtocol
 import Foundation
 import XCTest
 @testable import Transport
@@ -74,6 +75,79 @@ final class RelayPeerClientTests: XCTestCase {
         Thread.sleep(forTimeInterval: 0.2)
         XCTAssertEqual(disconnectRecorder.count, 1)
     }
+
+    func testRelayPeerClientEncryptsRuntimeFramesWithRouteNonceBoundCipher() throws {
+        let server = try ControlledRelayServer()
+        defer { server.stop() }
+
+        let codec = ProtocolCodec()
+        let relaySecret = "nonce-bound-relay-secret"
+        let relayNonce = "nonce-bound-route"
+        let requestHandled = DispatchSemaphore(value: 0)
+        let readyStatus = DispatchSemaphore(value: 0)
+        let client = RelayPeerClient()
+        defer { client.stop() }
+
+        let responseEnvelope = ProtocolEnvelope(
+            type: MessageType.runtimeHealth,
+            requestID: "nonce-bound-response",
+            payload: ["status": .string("runtime-ciphertext")]
+        )
+        let plaintextResponseBody = try codec.encodeEnvelopeBody(responseEnvelope)
+
+        client.start(
+            configuration: RelayPeerConfiguration(
+                host: "127.0.0.1",
+                port: server.port,
+                relayID: "relay-nonce-bound",
+                relaySecret: relaySecret,
+                relayNonce: relayNonce,
+                reconnectDelay: 60
+            ),
+            onStatusChange: { status in
+                if status == .ready {
+                    readyStatus.signal()
+                }
+            },
+            onMessage: { envelope, sink in
+                XCTAssertEqual(envelope.type, MessageType.modelsList)
+                XCTAssertEqual(envelope.requestID, "nonce-bound-request")
+                sink.send(responseEnvelope)
+                requestHandled.signal()
+            }
+        )
+
+        XCTAssertEqual(server.waitForHandshake(), "AETHERLINK_RELAY runtime relay-nonce-bound\n")
+        server.write("AETHERLINK_RELAY ready\n")
+        XCTAssertEqual(readyStatus.wait(timeout: .now() + 2), .success)
+
+        let requestEnvelope = ProtocolEnvelope(
+            type: MessageType.modelsList,
+            requestID: "nonce-bound-request",
+            payload: ["probe": .string("client-ciphertext")]
+        )
+        var clientCipher = RelayFrameCipher(relaySecret: relaySecret, routeNonce: relayNonce)
+        let encryptedRequestBody = try clientCipher.encryptClientBody(try codec.encodeEnvelopeBody(requestEnvelope))
+        server.writeFrameBody(encryptedRequestBody)
+
+        XCTAssertEqual(requestHandled.wait(timeout: .now() + 2), .success)
+        let encryptedResponseBody = try XCTUnwrap(server.waitForFrameBody())
+
+        XCTAssertNotEqual(encryptedResponseBody, plaintextResponseBody)
+        XCTAssertNil(encryptedResponseBody.range(of: Data(MessageType.runtimeHealth.utf8)))
+        XCTAssertNil(encryptedResponseBody.range(of: Data("runtime-ciphertext".utf8)))
+
+        var runtimeCipher = RelayFrameCipher(relaySecret: relaySecret, routeNonce: relayNonce)
+        let decryptedResponseBody = try runtimeCipher.decryptRuntimeBody(encryptedResponseBody)
+        let decodedResponse = try codec.decodeEnvelope(decryptedResponseBody)
+        XCTAssertEqual(decodedResponse.version, responseEnvelope.version)
+        XCTAssertEqual(decodedResponse.type, responseEnvelope.type)
+        XCTAssertEqual(decodedResponse.requestID, responseEnvelope.requestID)
+        XCTAssertEqual(decodedResponse.payload, responseEnvelope.payload)
+
+        var wrongNonceCipher = RelayFrameCipher(relaySecret: relaySecret, routeNonce: "wrong-route")
+        XCTAssertThrowsError(try wrongNonceCipher.decryptRuntimeBody(encryptedResponseBody))
+    }
 }
 
 private final class ControlledRelayServer {
@@ -143,6 +217,8 @@ private final class ControlledRelayServer {
                 Darwin.close(fd)
                 return
             }
+            var timeout = timeval(tv_sec: 2, tv_usec: 0)
+            setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
             self.receiveHandshake(socket: fd)
         }
     }
@@ -156,12 +232,41 @@ private final class ControlledRelayServer {
         }
     }
 
+    func waitForFrameBody() -> Data? {
+        let fd = lock.withLock { acceptedSocket }
+        guard fd >= 0,
+              let lengthData = readExactly(byteCount: 4, socket: fd)
+        else {
+            return nil
+        }
+        let bodyLength = lengthData.reduce(UInt32(0)) { partial, byte in
+            (partial << 8) | UInt32(byte)
+        }
+        guard bodyLength > 0,
+              bodyLength <= UInt32(ProtocolCodec.maxFrameBytes)
+        else {
+            return nil
+        }
+        return readExactly(byteCount: Int(bodyLength), socket: fd)
+    }
+
     func write(_ line: String) {
         let fd = lock.withLock { acceptedSocket }
         guard fd >= 0 else { return }
         let bytes = Array(line.utf8)
         _ = bytes.withUnsafeBytes { rawBuffer in
             Darwin.send(fd, rawBuffer.baseAddress, rawBuffer.count, 0)
+        }
+    }
+
+    func writeFrameBody(_ body: Data) {
+        let fd = lock.withLock { acceptedSocket }
+        guard fd >= 0 else { return }
+        var length = UInt32(body.count).bigEndian
+        var frame = Data(bytes: &length, count: MemoryLayout<UInt32>.size)
+        frame.append(body)
+        frame.withUnsafeBytes { rawBuffer in
+            _ = Darwin.send(fd, rawBuffer.baseAddress, rawBuffer.count, 0)
         }
     }
 
@@ -192,6 +297,22 @@ private final class ControlledRelayServer {
                 return
             }
         }
+    }
+
+    private func readExactly(byteCount: Int, socket: Int32) -> Data? {
+        var buffer = [UInt8](repeating: 0, count: byteCount)
+        var offset = 0
+        while offset < byteCount {
+            let received = buffer.withUnsafeMutableBytes { rawBuffer -> Int in
+                guard let baseAddress = rawBuffer.baseAddress else { return -1 }
+                return Darwin.recv(socket, baseAddress.advanced(by: offset), byteCount - offset, 0)
+            }
+            guard received > 0 else {
+                return nil
+            }
+            offset += received
+        }
+        return Data(buffer)
     }
 }
 

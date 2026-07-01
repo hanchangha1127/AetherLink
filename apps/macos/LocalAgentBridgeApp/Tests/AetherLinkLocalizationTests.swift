@@ -1721,7 +1721,7 @@ final class AetherLinkLocalizationTests: XCTestCase {
     }
 
     @MainActor
-    func testRouteDiagnosticsPanelStaysHiddenOnCleanFirstRunButPairingExposesSetup() throws {
+    func testRouteDiagnosticsPanelStaysHiddenOnCleanFirstRunAndPairingHidesSetup() throws {
         let cleanFirstRunModel = CompanionAppModel(
             environment: isolatedRuntimeIdentityEnvironment(),
             userDefaults: try isolatedDefaults()
@@ -1730,7 +1730,7 @@ final class AetherLinkLocalizationTests: XCTestCase {
         XCTAssertFalse(cleanFirstRunModel.bootstrapRelaySettings.isEnabled)
         XCTAssertNil(cleanFirstRunModel.remoteRoutePreparationIssue)
         XCTAssertFalse(shouldShowRouteDiagnosticsPanel(model: cleanFirstRunModel))
-        XCTAssertTrue(shouldShowPairingRouteSetupPanel(model: cleanFirstRunModel))
+        XCTAssertFalse(shouldShowPairingRouteSetupPanel(model: cleanFirstRunModel))
 
         let savedRouteModel = CompanionAppModel(
             environment: isolatedRuntimeIdentityEnvironment(),
@@ -2495,6 +2495,10 @@ final class AetherLinkLocalizationTests: XCTestCase {
             #"{"relay_secret":"secret","relay_id":"room","relay_nonce":"nonce"}"#,
             "relaySecret: secret routeToken: token relayId: room relayNonce: nonce",
             "allocationToken bearer-token rrn=nonce ri=room",
+            "p2p_record_id=record-1 p2p_encrypted_body=opaque-body-1 p2p_anti_replay_nonce=nonce-1",
+            "p2pRouteClass: p2p_rendezvous p2pRecordID: record-2 p2pEncryptedBody: opaque-body-2 p2pExpiresAtEpochMillis: 4102444800000 p2pAntiReplayNonce: nonce-2",
+            "p2pRecordId=record-2b p2pExpiresAt=4102444800000 p2pProtocolVersion=1",
+            "pc=p2p_rendezvous prid=record-3 peb=opaque-body-3 px=4102444800000 pn=nonce-3 pv=1",
         ]
 
         for diagnostic in diagnostics {
@@ -2514,6 +2518,22 @@ final class AetherLinkLocalizationTests: XCTestCase {
             )
             XCTAssertEqual(
                 sanitizedRouteDiagnosticDisclosureText("allocation_token: bearer-token relayId: room"),
+                "Sensitive technical detail redacted."
+            )
+            XCTAssertEqual(
+                sanitizedRouteDiagnosticDisclosureText("p2p_record_id=record-1 p2p_encrypted_body=opaque-body-1 p2p_anti_replay_nonce=nonce-1"),
+                "Sensitive technical detail redacted."
+            )
+            XCTAssertEqual(
+                sanitizedRouteDiagnosticDisclosureText(#"{"p2pRecordID":"record-2","p2pEncryptedBody":"opaque-body-2","p2pAntiReplayNonce":"nonce-2"}"#),
+                "Sensitive technical detail redacted."
+            )
+            XCTAssertEqual(
+                sanitizedRouteDiagnosticDisclosureText("p2pRecordId=record-2b p2pExpiresAtEpochMillis=4102444800000 p2pProtocolVersion=1"),
+                "Sensitive technical detail redacted."
+            )
+            XCTAssertEqual(
+                sanitizedRouteDiagnosticDisclosureText("pc=p2p_rendezvous prid=record-3 peb=opaque-body-3 px=4102444800000 pn=nonce-3 pv=1"),
                 "Sensitive technical detail redacted."
             )
             XCTAssertEqual(
@@ -4348,6 +4368,51 @@ final class AetherLinkLocalizationTests: XCTestCase {
             XCTAssertEqual(
                 remoteRoutePreparationIssueText(issue),
                 "Connection through relay.example.test:43171 failed. Check Connection Recovery, then generate a fresh QR."
+            )
+        }
+    }
+
+    func testRemoteRelayConnectionFailureRecoveryCopyRequiresFreshQR() {
+        let expectations: [(languageTag: String, copy: String)] = [
+            (
+                "en",
+                "Connection through relay.example.test:43171 failed. Check Connection Recovery, then generate a fresh QR."
+            ),
+            (
+                "ko",
+                "relay.example.test:43171을(를) 통한 연결에 실패했습니다. 연결 복구를 확인한 뒤 새 QR을 생성하세요."
+            ),
+            (
+                "ja",
+                "relay.example.test:43171 経由の接続に失敗しました。接続の復旧を確認してから、新しい QR を生成してください。"
+            ),
+            (
+                "zh-Hans",
+                "通过 relay.example.test:43171 的连接失败。请检查连接恢复，然后生成新的二维码。"
+            ),
+            (
+                "fr",
+                "La connexion via relay.example.test:43171 a échoué. Vérifiez la récupération de connexion, puis générez un nouveau QR."
+            ),
+        ]
+
+        XCTAssertEqual(expectations.map(\.languageTag), AetherLinkAppLanguage.allCases.map(\.rawValue))
+
+        for expectation in expectations {
+            withStoredAppLanguage(expectation.languageTag) {
+                XCTAssertEqual(
+                    remoteRelayConnectionFailureRecoveryText(endpoint: "relay.example.test:43171"),
+                    expectation.copy,
+                    expectation.languageTag
+                )
+                XCTAssertFalse(remoteRelayConnectionFailureRecoveryText(endpoint: "relay.example.test:43171").contains("try again"))
+            }
+        }
+
+        withStoredAppLanguage("en") {
+            XCTAssertEqual(
+                remoteRelayConnectionFailureRecoveryText(endpoint: "relay_secret=secret route_token=token"),
+                "Connection failed. Check Connection Recovery, then generate a fresh QR."
             )
         }
     }

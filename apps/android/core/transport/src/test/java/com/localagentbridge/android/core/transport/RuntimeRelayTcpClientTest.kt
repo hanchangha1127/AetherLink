@@ -176,6 +176,100 @@ class RuntimeRelayTcpClientTest {
     }
 
     @Test
+    fun relayChannelEncryptsSentFramesAndDecryptsRuntimeResponses() {
+        runBlocking {
+            val codec = ProtocolCodec()
+            val relaySecret = "relay-channel-secret"
+            val relayNonce = "relay-channel-nonce"
+            val server = ServerSocket(0)
+            val encryptedClientBody = CompletableFuture<ByteArray>()
+            val encryptedRuntimeBody = CompletableFuture<ByteArray>()
+            val serverThread = thread(start = true, isDaemon = true) {
+                runCatching {
+                    server.accept().use { socket ->
+                        val handshake = socket.getInputStream().readAsciiLine()
+                        assertEquals("AETHERLINK_RELAY client relay-channel", handshake)
+                        socket.getOutputStream().write("AETHERLINK_RELAY ready\n".toByteArray(Charsets.UTF_8))
+                        socket.getOutputStream().flush()
+
+                        val runtimeCryptor = RelayFrameBodyCryptor(relaySecret, relayNonce)
+                        val encryptedRequestBody = codec.readFrameBody(socket.getInputStream())
+                        assertFalse(encryptedRequestBody.containsBytes(MessageType.ModelsList.encodeToByteArray()))
+                        assertFalse(encryptedRequestBody.containsBytes("client-request-1".encodeToByteArray()))
+                        val request = codec.decode(runtimeCryptor.decryptClientFrameBodyForTest(encryptedRequestBody))
+                        assertEquals(MessageType.ModelsList, request.type)
+                        assertEquals("client-request-1", request.requestId)
+                        encryptedClientBody.complete(encryptedRequestBody)
+
+                        val response = ProtocolEnvelope(
+                            type = MessageType.RuntimeHealth,
+                            requestId = "runtime-response-1",
+                        )
+                        val plaintextBody = codec.encodeBody(response)
+                        val ciphertextBody = runtimeCryptor.encryptRuntimeFrameBodyForTest(plaintextBody)
+
+                        assertFalse(plaintextBody.contentEquals(ciphertextBody))
+                        assertFalse(ciphertextBody.containsBytes(MessageType.RuntimeHealth.encodeToByteArray()))
+                        assertFalse(ciphertextBody.containsBytes("runtime-response-1".encodeToByteArray()))
+                        encryptedRuntimeBody.complete(ciphertextBody)
+
+                        socket.getOutputStream().write(codec.encodeFrameBody(ciphertextBody))
+                        socket.getOutputStream().flush()
+                    }
+                }.onFailure { failure ->
+                    encryptedClientBody.completeExceptionally(failure)
+                    encryptedRuntimeBody.completeExceptionally(failure)
+                }
+            }
+            val client = RuntimeRelayTcpClient()
+            val route = PreparedRemoteRuntimeRoute.Relay(
+                identity = PairedRuntimeIdentity(
+                    deviceId = "runtime-1",
+                    name = "AetherLink",
+                    fingerprint = "fingerprint",
+                ),
+                relayId = "relay-channel",
+                host = "127.0.0.1",
+                port = server.localPort,
+                relayFrameSecret = relaySecret,
+                security = RemoteRouteSecurityContext(
+                    rendezvousToken = "relay-channel",
+                    expiresAtEpochMillis = Long.MAX_VALUE,
+                    antiReplayNonce = relayNonce,
+                ),
+            )
+
+            val channel = client.connect(route, timeoutMillis = 1_000)
+            try {
+                channel.send(
+                    ProtocolEnvelope(
+                        type = MessageType.ModelsList,
+                        requestId = "client-request-1",
+                    ),
+                )
+                val received = channel.receive()
+                val capturedClientCiphertextBody = encryptedClientBody.get(2, TimeUnit.SECONDS)
+                val capturedCiphertextBody = encryptedRuntimeBody.get(2, TimeUnit.SECONDS)
+
+                assertEquals(MessageType.RuntimeHealth, received.type)
+                assertEquals("runtime-response-1", received.requestId)
+                assertThrows(Exception::class.java) {
+                    RelayFrameBodyCryptor(relaySecret, "wrong-route-nonce")
+                        .decryptClientFrameBodyForTest(capturedClientCiphertextBody)
+                }
+                assertThrows(Exception::class.java) {
+                    RelayFrameBodyCryptor(relaySecret, "wrong-route-nonce")
+                        .decryptRuntimeFrameBody(capturedCiphertextBody)
+                }
+            } finally {
+                channel.close()
+                server.close()
+                serverThread.join(1_500)
+            }
+        }
+    }
+
+    @Test
     fun relayClientSerializesEncryptionWithConcurrentSends() = runBlocking {
         val codec = ProtocolCodec()
         val relaySecret = "relay-concurrent-secret"
@@ -245,6 +339,13 @@ class RuntimeRelayTcpClientTest {
 }
 
 private fun ByteArray.toHex(): String = joinToString(separator = "") { "%02x".format(it) }
+
+private fun ByteArray.containsBytes(needle: ByteArray): Boolean {
+    if (needle.isEmpty()) return true
+    return indices.any { start ->
+        start + needle.size <= size && needle.indices.all { offset -> this[start + offset] == needle[offset] }
+    }
+}
 
 private fun java.io.InputStream.readAsciiLine(maxBytes: Int = 256): String {
     val buffer = StringBuilder()

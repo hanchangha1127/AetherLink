@@ -1,0 +1,146 @@
+--------- beginning of main
+06-30 13:50:12.078 30218 30218 I Zygote  : Process 30218 created for com.localagentbridge.android
+06-30 13:50:12.078 30218 30218 I tbridge.android: Late-enabling -Xcheck:jni
+06-30 13:50:12.094 30218 30218 I tbridge.android: Using CollectorTypeCMC GC.
+06-30 13:50:12.098 30218 30218 D nativeloader: Load libframework-connectivity-tiramisu-jni.so using APEX ns com_android_tethering for caller /apex/com.android.tethering/javalib/framework-connectivity-t.jar: ok
+06-30 13:50:12.099 30218 30218 D ActivityThread: setConscryptValidator
+06-30 13:50:12.099 30218 30218 D ActivityThread: setConscryptValidator - put
+06-30 13:50:12.109 30218 30218 D ApplicationLoaders: Returning zygote-cached class loader: /system_ext/framework/androidx.window.extensions.jar
+06-30 13:50:12.109 30218 30218 D ApplicationLoaders: Returning zygote-cached class loader: /system_ext/framework/androidx.window.sidecar.jar
+06-30 13:50:12.367 30218 30218 D nativeloader: Configuring clns-9 for other apk /data/app/~~7C3JjFdeUjB7xIXErBTBQw==/com.localagentbridge.android-krtiw_sfeAQqoSMHDyIDDw==/base.apk. target_sdk_version=36, uses_libraries=, library_path=/data/app/~~7C3JjFdeUjB7xIXErBTBQw==/com.localagentbridge.android-krtiw_sfeAQqoSMHDyIDDw==/lib/arm64:/data/app/~~7C3JjFdeUjB7xIXErBTBQw==/com.localagentbridge.android-krtiw_sfeAQqoSMHDyIDDw==/base.apk!/lib/arm64-v8a, permitted_path=/data:/mnt/expand:/data/user/0/com.localagentbridge.android
+06-30 13:50:12.370 30218 30218 V GraphicsEnvironment: Currently set values for:
+06-30 13:50:12.370 30218 30218 V GraphicsEnvironment:   angle_gl_driver_selection_pkgs=[]
+06-30 13:50:12.370 30218 30218 V GraphicsEnvironment:   angle_gl_driver_selection_values=[]
+06-30 13:50:12.370 30218 30218 V GraphicsEnvironment: com.localagentbridge.android is not listed in per-application setting
+06-30 13:50:12.370 30218 30218 V GraphicsEnvironment: ANGLE allowlist from config: com.dreamgames.royalmatch com.dts.freefiremax com.dxx.firenow com.gramgames.mergedragons com.ludo.king com.mojang.minecraftpe com.my.defense com.nintendo.zaka com.os.airforce com.playrix.fishdomdd.gplay io.teslatech.callbreak jp.konami.prospia net.peakgames.toonblast
+06-30 13:50:12.370 30218 30218 V GraphicsEnvironment: No special selections for ANGLE, returning default driver choice
+06-30 13:50:12.370 30218 30218 V GraphicsEnvironment: App is not on the allowlist for updatable production driver.
+--------- beginning of system
+06-30 13:50:12.385 30218 30218 D ActivityThread: com.localagentbridge.android will use render engine as VK
+06-30 13:50:12.385 30218 30218 D HWUI    : HWUI - treat SMPTE_170M as sRGB
+06-30 13:50:12.386 30218 30281 I DisplayManager: Choreographer implicitly registered for the refresh rate.
+06-30 13:50:12.386 30218 30281 D HWUI    : CacheManager constructor. deviceInfo=(1080, 1920)
+06-30 13:50:12.386 30218 30281 D vulkan  : searching for layers in '/data/app/~~7C3JjFdeUjB7xIXErBTBQw==/com.localagentbridge.android-krtiw_sfeAQqoSMHDyIDDw==/lib/arm64'
+06-30 13:50:12.387 30218 30281 D vulkan  : searching for layers in '/data/app/~~7C3JjFdeUjB7xIXErBTBQw==/com.localagentbridge.android-krtiw_sfeAQqoSMHDyIDDw==/base.apk!/lib/arm64-v8a'
+06-30 13:50:12.391 30218 30281 E Adreno-AppProfiles: QSPM AIDL service doesn't exist
+06-30 13:50:12.391 30218 30281 I AdrenoVK-0: ===== BEGIN DUMP OF OVERRIDDEN SETTINGS =====
+06-30 13:50:12.391 30218 30281 I AdrenoVK-0: ===== END DUMP OF OVERRIDDEN SETTINGS =====
+06-30 13:50:12.392 30218 30218 D DesktopExperienceFlags: Toggle override initialized to: false
+06-30 13:50:12.393 30218 30218 E ashmem  : Pinning is deprecated since Android Q. Please use trim or other methods.
+06-30 13:50:12.394 30218 30281 D qdgralloc: Fetching IMapper5 from QtiMapper5
+06-30 13:50:12.399 30218 30281 I SnapAlloc: Graphics lib is available
+06-30 13:50:12.402 30218 30281 I Adreno-UNKNOWN: Using previously loaded IMapper library.
+06-30 13:50:12.404 30218 30281 I AdrenoVK-0: QUALCOMM build          : f61dec9117, I68b0a64d7e
+06-30 13:50:12.404 30218 30281 I AdrenoVK-0: Build Date              : 03/26/26
+06-30 13:50:12.404 30218 30281 I AdrenoVK-0: Shader Compiler Version : E031.47.18.50
+06-30 13:50:12.404 30218 30281 I AdrenoVK-0: Local Branch            : 
+06-30 13:50:12.404 30218 30281 I AdrenoVK-0: Remote Branch           : refs/tags/AU_LINUX_ANDROID_LA.VENDOR.15.4.0.11.00.00.1088.862
+06-30 13:50:12.404 30218 30281 I AdrenoVK-0: Remote Branch           : NONE
+06-30 13:50:12.404 30218 30281 I AdrenoVK-0: Reconstruct Branch      : NOTHING
+06-30 13:50:12.404 30218 30281 I AdrenoVK-0: Build Config            : S P 18.0.0 AArch64
+06-30 13:50:12.404 30218 30281 I AdrenoVK-0: Driver Path             : /vendor/lib64/hw/vulkan.adreno.so
+06-30 13:50:12.404 30218 30281 I AdrenoVK-0: Driver Version          : 0800.64.7
+06-30 13:50:12.404 30218 30281 I AdrenoVK-0: PFP                     : 0x01500077
+06-30 13:50:12.404 30218 30281 I AdrenoVK-0: ME                      : 0x01500014
+06-30 13:50:12.404 30218 30281 I AdrenoVK-0: Application Name    : android framework
+06-30 13:50:12.404 30218 30281 I AdrenoVK-0: Process Name        : com.localagentbridge.android
+06-30 13:50:12.404 30218 30281 I AdrenoVK-0: Application Version : 0x00000000
+06-30 13:50:12.404 30218 30281 I AdrenoVK-0: Engine Name         : android framework
+06-30 13:50:12.404 30218 30281 I AdrenoVK-0: Engine Version      : 0x00000000
+06-30 13:50:12.404 30218 30281 I AdrenoVK-0: Api Version         : 0x00401000
+06-30 13:50:12.407 30218 30218 D CompatChangeReporter: Compat change id reported: 377864165; UID 10623; state: ENABLED
+06-30 13:50:12.408 30218 30218 D DesktopModeFlags: Toggle override initialized to: OVERRIDE_UNSET
+06-30 13:50:12.408 30218 30218 I DecorView: setWindowBackground: isPopOver=false color=ff303030 d=android.graphics.drawable.ColorDrawable@9ca1754
+06-30 13:50:12.414 30218 30218 D ViewRootImpl: desktopMode is false
+06-30 13:50:12.415 30218 30218 I ViewRootImpl: dVRR is disabled
+06-30 13:50:12.415 30218 30218 D HardwareRenderer: onDisplayChanged. displayId=0 current wxh=1440x3120 mLargest wxh=0x0
+06-30 13:50:12.415 30218 30218 D HardwareRenderer: Set largestWidth and largestHeight as logical resolution. (1440x3120)
+06-30 13:50:12.415 30218 30281 D HWUI    : setMaxSurfaceArea requested wxh=(1440,3120) requestedSurfaceArea(4492800) mMaxSurfaceArea(2073600)
+06-30 13:50:12.415 30218 30281 D NativeCustomFrequencyManager: [NativeCFMS] BpCustomFrequencyManager::BpCustomFrequencyManager()
+06-30 13:50:12.417 30218 30290 E perf_hint: Session ID too large, must fit 32-bit integer
+06-30 13:50:12.417 30218 30218 D InputTransport: Input channel constructed: 'd1d7744', fd=115
+06-30 13:50:12.418 30218 30218 I InsetsController: onStateChanged: host=com.localagentbridge.android/com.localagentbridge.android.MainActivity, from=android.view.ViewRootImpl.onInsetsStateChanged:3038, state=InsetsState: {mDisplayFrame=Rect(0, 0 - 1440, 3120), mDisplayCutout=DisplayCutout{insets=Rect(0, 126 - 0, 0) waterfall=Insets{left=0, top=0, right=0, bottom=0} boundingRect={Bounds=[Rect(0, 0 - 0, 0), Rect(686, 0 - 754, 126), Rect(0, 0 - 0, 0), Rect(0, 0 - 0, 0)]} cutoutPathParserInfo={CutoutPathParserInfo{displayWidth=1440 displayHeight=3120 physicalDisplayWidth=1440 physicalDisplayHeight=3120 density={3.75} cutoutSpec={M 0,0 H -9.066666666666667 V 33.6 H 9.066666666666667 V 0 H 0 Z @dp} rotation={0} scale={1.0} physicalPixelDisplaySizeRatio={1.0}}} sideOverrides={}}, mRoundedCorners=RoundedCorners{[RoundedCorner{position=TopLeft, radius=140, center=Point(140, 140)}, RoundedCorner{position=TopRight, radius=140, center=Point(1300, 140)}, RoundedCorner{position=BottomRight, radius=140, center=Point(1300, 2980)}, RoundedCorner{position=BottomLeft, radius=140, center=Point(140, 2980)}]}  mRoundedCornerFrame=Rect(0, 0 - 1440, 3120), mPrivacyIndicatorBounds=PrivacyIndicatorBounds {static bounds=Rect(1286, 0 - 1440, 127) rotation=0}, mDisplayShape=DisplayShape{ spec=-311912193 displayWidth=1440 displayHeight=3120 physicalPixelDisplaySizeRatio=1.0 rotation=0 offsetX=0 offsetY=0 scale=1.0}, mSources= { InsetsSource: {ae4c0000 mType=statusBars mFrame=[0,0][1440,127] mAttachedInsets=null mVisible=true mFlags= mSideHint=TOP mBoundingRects=null}, InsetsSource: {ae4c0005 mType=mandatorySystemGestures mFrame=[0,0][1440,168] mAttachedInsets=null mVisible=true mFlags= mSideHint=TOP mBoundingRects=null}, InsetsSource: {ae4c0006 mType=tappableElement mFrame=[0,0][1440,127] mAttachedInsets=null mVisible=true mFlags= mSideHint=TOP mBoundingRects=null}, InsetsSource: {3 mType=ime mFrame=[0,0][0,0] mAttachedInsets=null mVisible=false mFlags=INVALID mSideHint=NONE mBoundingRects=null}, InsetsSource: {27 mType=displayCutout mFrame=[0,0][1440,126] mAttachedInsets=null mVisible=true mFlags= mSideHint=TOP mBoundingRects=null}, InsetsSource: {e710001 mType=navigationBars mFrame=[0,2952][1440,3120] mAttachedInsets=null mVisible=true mFlags= mSideHint=BOTTOM mBoundingRects=null}, InsetsSource: {e710004 mType=systemGestures mFrame=[0,0][0,0] mAttachedInsets=null mVisible=true mFlags= mSideHint=NONE mBoundingRects=null}, InsetsSource: {e710005 mType=mandatorySystemGestures mFrame=[0,2952][1440,3120] mAttachedInsets=null mVisible=true mFlags= mSideHint=BOTTOM mBoundingRects=null}, InsetsSource: {e710006 mType=tappableElement mFrame=[0,2952][1440,3120] mAttachedInsets=null mVisible=true mFlags= mSideHint=BOTTOM mBoundingRects=null}, InsetsSource: {e710024 mType=systemGestures mFrame=[0,0][0,0] mAttachedInsets=null mVisible=true mFlags= mSideHint=NONE mBoundingRects=null} }
+06-30 13:50:12.418 30218 30218 I VRI[MainActivity]@b1c124d: synced displayState. AttachInfo displayState=2
+06-30 13:50:12.418 30218 30218 I VRI[MainActivity]@b1c124d: setView = com.android.internal.policy.DecorView@919b57c IsHRR=false mFlingFrameRateChange=0 TM=true
+06-30 13:50:12.418 30218 30218 I IDS_TAG : Clearing training data of android.app.Application@16d6178
+06-30 13:50:12.418 30218 30218 I IDS_TAG : Starting IDS observe window
+06-30 13:50:12.418 30218 30218 I IDS_TAG : Getting Shared Preference for android.app.Application@16d6178 uid = 10623
+06-30 13:50:12.419 30218 30218 I IDS_TAG : App android.app.Application@16d6178 has not finished training
+06-30 13:50:12.419 30218 30218 I IDS_TAG : Closing IDS observe window
+06-30 13:50:12.419 30218 30218 I IDS_TAG : Getting Shared Preference for android.app.Application@16d6178 uid = 10623
+06-30 13:50:12.419 30218 30218 I IDS_TAG : IDS count updated to 1 for android.app.Application@16d6178
+06-30 13:50:12.420 30218 30218 D WindowOnBackDispatcher: setTopOnBackInvokedCallback (unwrapped): android.app.Activity$$ExternalSyntheticLambda0@b0aad68
+06-30 13:50:12.459 30218 30218 I tbridge.android: hiddenapi: Accessing hidden method Landroid/os/SystemProperties;->addChangeCallback(Ljava/lang/Runnable;)V (runtime_flags=0, domain=platform, api=unsupported) from Landroidx/compose/ui/platform/AndroidComposeView$Companion; (domain=app, TargetSdkVersion=36) using reflection: allowed
+06-30 13:50:12.484 30218 30218 V Configuration: Updating configuration, locales updated from [ko_KR] to [ko]
+06-30 13:50:12.491 30218 30218 D VRI[MainActivity]@b1c124d: WindowInsets changed: 1440x3120 statusBars:[0,127,0,0] navigationBars:[0,0,0,168] mandatorySystemGestures:[0,168,0,168] 
+06-30 13:50:12.497 30218 30236 I tbridge.android: Compiler allocated 5223KB to compile void android.view.ViewRootImpl.performTraversals()
+06-30 13:50:12.527 30218 30218 I HWUI    : Using FreeType backend (prop=Auto)
+06-30 13:50:12.589 30218 30218 E BufferQueueProducer: Unable to open libpenguin.so: dlopen failed: library "libpenguin.so" not found.
+06-30 13:50:12.589 30218 30218 E tbridge.android: Unable to open libpenguin.so: dlopen failed: library "libpenguin.so" not found.
+06-30 13:50:12.589 30218 30218 I BufferQueueProducer: [](id:760a00000000,api:0,p:-1977209072,c:30218) setDequeueTimeout:2077252342
+06-30 13:50:12.589 30218 30218 I BLASTBufferQueue_Java: new BLASTBufferQueue, mName= VRI[MainActivity]@b1c124d mNativeObject= 0xb4000079ba2512a0 caller= android.view.ViewRootImpl.updateBlastSurfaceIfNeeded:3603 android.view.ViewRootImpl.relayoutWindow:11813 android.view.ViewRootImpl.performTraversals:4840 android.view.ViewRootImpl.doTraversal:3959 android.view.ViewRootImpl$TraversalRunnable.run:13034 android.view.Choreographer$CallbackRecord.run:1961 android.view.Choreographer$CallbackRecord.run:1970 android.view.Choreographer.doCallbacks:1423 android.view.Choreographer.doFrame:1348 android.view.Choreographer$FrameDisplayEventReceiver.run:1930 
+06-30 13:50:12.589 30218 30218 I BLASTBufferQueue_Java: update, w= 1440 h= 3120 mName = VRI[MainActivity]@b1c124d mNativeObject= 0xb4000079ba2512a0 sc.mNativeObject= 0xb40000782a257e10 format= -1 caller= android.view.ViewRootImpl.updateBlastSurfaceIfNeeded:3608 android.view.ViewRootImpl.relayoutWindow:11813 android.view.ViewRootImpl.performTraversals:4840 android.view.ViewRootImpl.doTraversal:3959 android.view.ViewRootImpl$TraversalRunnable.run:13034 android.view.Choreographer$CallbackRecord.run:1961 
+06-30 13:50:12.589 30218 30218 I VRI[MainActivity]@b1c124d: Relayout returned: old=(0,0,1440,3120) new=(0,0,1440,3120) relayoutAsync=false req=(1440,3120)0 dur=10 res=0x3 s={true 0xb400007a0a27daa0} ch=true seqId=0
+06-30 13:50:12.590 30218 30218 I VRI[MainActivity]@b1c124d: performConfigurationChange setNightDimText nightDimLevel=0
+06-30 13:50:12.590 30218 30218 D VRI[MainActivity]@b1c124d: mThreadedRenderer.initialize() mSurface={isValid=true 0xb400007a0a27daa0} hwInitialized=true
+06-30 13:50:12.602 30218 30218 D VRI[MainActivity]@b1c124d: reportNextDraw android.view.ViewRootImpl.performTraversals:5507 android.view.ViewRootImpl.doTraversal:3959 android.view.ViewRootImpl$TraversalRunnable.run:13034 android.view.Choreographer$CallbackRecord.run:1961 android.view.Choreographer$CallbackRecord.run:1970 
+06-30 13:50:12.602 30218 30218 D VRI[MainActivity]@b1c124d: Setup new sync=wmsSync-VRI[MainActivity]@b1c124d#0
+06-30 13:50:12.602 30218 30218 I VRI[MainActivity]@b1c124d: Creating new active sync group VRI[MainActivity]@b1c124d#1
+06-30 13:50:12.603 30218 30218 D VRI[MainActivity]@b1c124d: registerCallbacksForSync syncBuffer=false
+06-30 13:50:12.611 30218 30218 I View    : setRequestedFrameRate frameRate=0.0, this=androidx.compose.ui.platform.AndroidComposeView{f7816e8 VFED..... ......ID 0,0-1440,3120 aid=1073741824}, caller=android.view.ViewGroup.setRequestedFrameRate:10045 androidx.compose.ui.platform.Api35Impl.setRequestedFrameRate:4033 androidx.compose.ui.platform.AndroidComposeView.dispatchDraw:2248 android.view.View.draw:26758 android.view.View.updateDisplayListIfDirty:25577 
+06-30 13:50:12.611 30218 30218 I View    : setRequestedFrameRate frameRate=-4.0, this=android.view.View{5367b28 V.ED..... ......I. 0,0-0,0}, caller=androidx.compose.ui.platform.Api35Impl.setRequestedFrameRate:4033 androidx.compose.ui.platform.AndroidComposeView.dispatchDraw:2251 android.view.View.draw:26758 android.view.View.updateDisplayListIfDirty:25577 android.view.View.draw:26477 
+06-30 13:50:12.612 30218 30218 I View    : setRequestedFrameRate frameRate=NaN, this=androidx.compose.ui.platform.AndroidComposeView{f7816e8 VFED..... ........ 0,0-1440,3120 aid=1073741824}, caller=android.view.ViewGroup.setRequestedFrameRate:10045 androidx.compose.ui.platform.Api35Impl.setRequestedFrameRate:4033 androidx.compose.ui.platform.AndroidComposeView.dispatchDraw:2248 android.view.View.draw:26758 android.view.View.updateDisplayListIfDirty:25577 
+06-30 13:50:12.612 30218 30218 I View    : setRequestedFrameRate frameRate=NaN, this=android.view.View{5367b28 V.ED..... ........ 0,0-0,0}, caller=androidx.compose.ui.platform.Api35Impl.setRequestedFrameRate:4033 androidx.compose.ui.platform.AndroidComposeView.dispatchDraw:2251 android.view.View.draw:26758 android.view.View.updateDisplayListIfDirty:25577 android.view.ViewGroup.recreateChildDisplayList:4881 
+06-30 13:50:12.612 30218 30286 D VRI[MainActivity]@b1c124d: Received frameDrawingCallback syncResult=0 frameNum=1.
+06-30 13:50:12.612 30218 30286 I VRI[MainActivity]@b1c124d: mWNT: t=0xb40000795a2609c0 mBlastBufferQueue=0xb4000079ba2512a0 fn= 1 HdrRenderState mRenderHdrSdrRatio=1.0 caller= android.view.ViewRootImpl$12.onFrameDraw:15561 android.view.ThreadedRenderer$1.onFrameDraw:751 <bottom of call stack> 
+06-30 13:50:12.612 30218 30286 I VRI[MainActivity]@b1c124d: Setting up sync and frameCommitCallback
+06-30 13:50:12.612 30218 30281 I AdrenoUtils: <ReadGpuID:366>: Reading chip ID through GSL
+06-30 13:50:12.620 30218 30281 I BLASTBufferQueue: [VRI[MainActivity]@b1c124d#0](f:0,a:0,s:0) onFrameAvailable the first frame is available
+06-30 13:50:12.620 30218 30281 I SurfaceComposerClient: apply transaction with the first frame. layerId: 84356, bufferData(ID: 129785321750531, frameNumber: 1)
+06-30 13:50:12.620 30218 30281 I VRI[MainActivity]@b1c124d: Received frameCommittedCallback lastAttemptedDrawFrameNum=1 didProduceBuffer=true
+06-30 13:50:12.621 30218 30281 D HWUI    : CFMS:: SetUp Pid : 30218    Tid : 30281
+06-30 13:50:12.621 30218 30218 D VRI[MainActivity]@b1c124d: reportDrawFinished seqId=0
+06-30 13:50:12.621 30218 30281 D HWUI    : HWUI - treat SMPTE_170M as sRGB
+06-30 13:50:12.625 30218 30218 D RuntimeClientVM: Connecting to runtime endpoint=127.0.0.1:43170 source=PairingQr identity=aetherlink-dev-runtime
+06-30 13:50:12.641 30218 30218 I View    : setRequestedFrameRate frameRate=NaN, this=androidx.compose.ui.platform.AndroidComposeView{f7816e8 VFED..... ........ 0,0-1440,3120 aid=1073741824}, caller=android.view.ViewGroup.setRequestedFrameRate:10045 androidx.compose.ui.platform.Api35Impl.setRequestedFrameRate:4033 androidx.compose.ui.platform.AndroidComposeView.dispatchDraw:2248 android.view.View.draw:26758 android.view.View.updateDisplayListIfDirty:25577 
+06-30 13:50:12.641 30218 30218 I View    : setRequestedFrameRate frameRate=-4.0, this=android.view.View{5367b28 V.ED..... ........ 0,0-0,0}, caller=androidx.compose.ui.platform.Api35Impl.setRequestedFrameRate:4033 androidx.compose.ui.platform.AndroidComposeView.dispatchDraw:2251 android.view.View.draw:26758 android.view.View.updateDisplayListIfDirty:25577 android.view.ViewGroup.recreateChildDisplayList:4881 
+06-30 13:50:12.643 30218 30218 I InsetsSourceConsumer: applyRequestedVisibilityToControl: visible=true, type=navigationBars, host=com.localagentbridge.android/com.localagentbridge.android.MainActivity
+06-30 13:50:12.643 30218 30218 I InsetsSourceConsumer: applyRequestedVisibilityToControl: visible=true, type=statusBars, host=com.localagentbridge.android/com.localagentbridge.android.MainActivity
+06-30 13:50:12.643 30218 30218 D RuntimeClientVM: Connected to runtime endpoint=127.0.0.1:43170 source=PairingQr identity=aetherlink-dev-runtime route=direct=127.0.0.1:43170 source=PairingQr
+06-30 13:50:12.690 30218 30218 I View    : setRequestedFrameRate frameRate=NaN, this=androidx.compose.ui.platform.AndroidComposeView{f7816e8 VFED..... ......ID 0,0-1440,3120 aid=1073741824}, caller=android.view.ViewGroup.setRequestedFrameRate:10045 androidx.compose.ui.platform.Api35Impl.setRequestedFrameRate:4033 androidx.compose.ui.platform.AndroidComposeView.dispatchDraw:2248 android.view.View.draw:26758 android.view.View.updateDisplayListIfDirty:25577 
+06-30 13:50:12.690 30218 30218 I View    : setRequestedFrameRate frameRate=-4.0, this=android.view.View{5367b28 V.ED..... ........ 0,0-0,0}, caller=androidx.compose.ui.platform.Api35Impl.setRequestedFrameRate:4033 androidx.compose.ui.platform.AndroidComposeView.dispatchDraw:2251 android.view.View.draw:26758 android.view.View.updateDisplayListIfDirty:25577 android.view.ViewGroup.recreateChildDisplayList:4881 
+06-30 13:50:12.690 30218 30218 D VRI[MainActivity]@b1c124d: mThreadedRenderer.initializeIfNeeded()#2 mSurface={isValid=true 0xb400007a0a27daa0}
+06-30 13:50:12.690 30218 30218 D InputMethodManagerUtils: startInputInner - Id : 0
+06-30 13:50:12.690 30218 30218 I InputMethodManager: startInputInner - IInputMethodManagerGlobalInvoker.startInputOrWindowGainedFocus
+06-30 13:50:12.693 30218 30314 D InputTransport: Input channel constructed: 'ClientS', fd=154
+06-30 13:50:12.734 30218 30218 I View    : setRequestedFrameRate frameRate=NaN, this=androidx.compose.ui.platform.AndroidComposeView{f7816e8 VFED..... ......ID 0,0-1440,3120 aid=1073741824}, caller=android.view.ViewGroup.setRequestedFrameRate:10045 androidx.compose.ui.platform.Api35Impl.setRequestedFrameRate:4033 androidx.compose.ui.platform.AndroidComposeView.dispatchDraw:2248 android.view.View.draw:26758 android.view.View.updateDisplayListIfDirty:25577 
+06-30 13:50:12.735 30218 30218 I View    : setRequestedFrameRate frameRate=-4.0, this=android.view.View{5367b28 V.ED..... ........ 0,0-0,0}, caller=androidx.compose.ui.platform.Api35Impl.setRequestedFrameRate:4033 androidx.compose.ui.platform.AndroidComposeView.dispatchDraw:2251 android.view.View.draw:26758 android.view.View.updateDisplayListIfDirty:25577 android.view.ViewGroup.recreateChildDisplayList:4881 
+06-30 13:50:12.736 30218 30218 D RuntimeClientVM: Sending pairing.request request_id=2c2d1eb1-5d27-47b2-842a-247db21ad94e
+06-30 13:50:12.736 30218 30218 D InsetsController: hide(ime())
+06-30 13:50:12.736 30218 30218 I ImeTracker: com.localagentbridge.android:b6b4dab6: onCancelled at PHASE_CLIENT_ALREADY_HIDDEN
+06-30 13:50:12.739 30218 30218 I View    : setRequestedFrameRate frameRate=NaN, this=androidx.compose.ui.platform.AndroidComposeView{f7816e8 VFED..... ........ 0,0-1440,3120 aid=1073741824}, caller=android.view.ViewGroup.setRequestedFrameRate:10045 androidx.compose.ui.platform.Api35Impl.setRequestedFrameRate:4033 androidx.compose.ui.platform.AndroidComposeView.dispatchDraw:2248 android.view.View.draw:26758 android.view.View.updateDisplayListIfDirty:25577 
+06-30 13:50:12.739 30218 30218 I View    : setRequestedFrameRate frameRate=NaN, this=android.view.View{5367b28 V.ED..... ........ 0,0-0,0}, caller=androidx.compose.ui.platform.Api35Impl.setRequestedFrameRate:4033 androidx.compose.ui.platform.AndroidComposeView.dispatchDraw:2251 android.view.View.draw:26758 android.view.View.updateDisplayListIfDirty:25577 android.view.ViewGroup.recreateChildDisplayList:4881 
+06-30 13:50:12.746 30218 30218 D RuntimeClientVM: Received pairing.result request_id=2c2d1eb1-5d27-47b2-842a-247db21ad94e
+06-30 13:50:12.749 30218 30218 D RuntimeClientVM: Sending runtime.health request_id=a340517d-d3b7-4f2e-878e-4d0b9a8d28eb
+06-30 13:50:12.749 30218 30218 D RuntimeClientVM: Sending chat.sessions.list request_id=8a27866c-5fdb-4c49-9adb-9fff8f924b8b
+06-30 13:50:12.749 30218 30218 D RuntimeClientVM: Sending memory.list request_id=43ec0963-df58-4261-badc-c2647324ce18
+06-30 13:50:12.752 30218 30218 D RuntimeClientVM: Received memory.list request_id=43ec0963-df58-4261-badc-c2647324ce18
+06-30 13:50:12.791 30218 30218 D RuntimeClientVM: Received runtime.health request_id=a340517d-d3b7-4f2e-878e-4d0b9a8d28eb
+06-30 13:50:12.792 30218 30218 D RuntimeClientVM: Sending models.list request_id=d65036cb-8221-4d8c-8bbe-48d23ef19b00
+06-30 13:50:12.792 30218 30218 D RuntimeClientVM: Sending memory.list request_id=480975a7-bb51-4a8b-88c6-9cbd83b83fc6
+06-30 13:50:12.794 30218 30218 D RuntimeClientVM: Received memory.list request_id=480975a7-bb51-4a8b-88c6-9cbd83b83fc6
+06-30 13:50:12.803 30218 30218 I View    : setRequestedFrameRate frameRate=NaN, this=androidx.compose.ui.platform.AndroidComposeView{f7816e8 VFED..... ........ 0,0-1440,3120 aid=1073741824}, caller=android.view.ViewGroup.setRequestedFrameRate:10045 androidx.compose.ui.platform.Api35Impl.setRequestedFrameRate:4033 androidx.compose.ui.platform.AndroidComposeView.dispatchDraw:2248 android.view.View.draw:26758 android.view.View.updateDisplayListIfDirty:25577 
+06-30 13:50:12.803 30218 30218 I View    : setRequestedFrameRate frameRate=NaN, this=android.view.View{5367b28 V.ED..... ........ 0,0-0,0}, caller=androidx.compose.ui.platform.Api35Impl.setRequestedFrameRate:4033 androidx.compose.ui.platform.AndroidComposeView.dispatchDraw:2251 android.view.View.draw:26758 android.view.View.updateDisplayListIfDirty:25577 android.view.ViewGroup.recreateChildDisplayList:4881 
+06-30 13:50:12.831 30218 30218 D RuntimeClientVM: Received chat.sessions.list request_id=8a27866c-5fdb-4c49-9adb-9fff8f924b8b
+06-30 13:50:12.832 30218 30218 D RuntimeClientVM: Received models.list request_id=d65036cb-8221-4d8c-8bbe-48d23ef19b00
+06-30 13:50:12.855 30218 30218 I View    : setRequestedFrameRate frameRate=NaN, this=androidx.compose.ui.platform.AndroidComposeView{f7816e8 VFED..... ......ID 0,0-1440,3120 aid=1073741824}, caller=android.view.ViewGroup.setRequestedFrameRate:10045 androidx.compose.ui.platform.Api35Impl.setRequestedFrameRate:4033 androidx.compose.ui.platform.AndroidComposeView.dispatchDraw:2248 android.view.View.draw:26758 android.view.View.updateDisplayListIfDirty:25577 
+06-30 13:50:12.855 30218 30218 I View    : setRequestedFrameRate frameRate=-4.0, this=android.view.View{5367b28 V.ED..... ........ 0,0-0,0}, caller=androidx.compose.ui.platform.Api35Impl.setRequestedFrameRate:4033 androidx.compose.ui.platform.AndroidComposeView.dispatchDraw:2251 android.view.View.draw:26758 android.view.View.updateDisplayListIfDirty:25577 android.view.ViewGroup.recreateChildDisplayList:4881 
+06-30 13:50:12.857 30218 30218 I View    : setRequestedFrameRate frameRate=NaN, this=androidx.compose.ui.platform.AndroidComposeView{f7816e8 VFED..... ........ 0,0-1440,3120 aid=1073741824}, caller=android.view.ViewGroup.setRequestedFrameRate:10045 androidx.compose.ui.platform.Api35Impl.setRequestedFrameRate:4033 androidx.compose.ui.platform.AndroidComposeView.dispatchDraw:2248 android.view.View.draw:26758 android.view.View.updateDisplayListIfDirty:25577 
+06-30 13:50:12.857 30218 30218 I View    : setRequestedFrameRate frameRate=NaN, this=android.view.View{5367b28 V.ED..... ........ 0,0-0,0}, caller=androidx.compose.ui.platform.Api35Impl.setRequestedFrameRate:4033 androidx.compose.ui.platform.AndroidComposeView.dispatchDraw:2251 android.view.View.draw:26758 android.view.View.updateDisplayListIfDirty:25577 android.view.ViewGroup.recreateChildDisplayList:4881 
+06-30 13:50:12.960 30218 30218 I View    : setRequestedFrameRate frameRate=NaN, this=androidx.compose.ui.platform.AndroidComposeView{f7816e8 VFED..... ......ID 0,0-1440,3120 aid=1073741824}, caller=android.view.ViewGroup.setRequestedFrameRate:10045 androidx.compose.ui.platform.Api35Impl.setRequestedFrameRate:4033 androidx.compose.ui.platform.AndroidComposeView.dispatchDraw:2248 android.view.View.draw:26758 android.view.View.updateDisplayListIfDirty:25577 
+06-30 13:50:12.960 30218 30218 I View    : setRequestedFrameRate frameRate=NaN, this=android.view.View{5367b28 V.ED..... ........ 0,0-0,0}, caller=androidx.compose.ui.platform.Api35Impl.setRequestedFrameRate:4033 androidx.compose.ui.platform.AndroidComposeView.dispatchDraw:2251 android.view.View.draw:26758 android.view.View.updateDisplayListIfDirty:25577 android.view.ViewGroup.recreateChildDisplayList:4881 
+06-30 13:50:12.964 30218 30218 I View    : setRequestedFrameRate frameRate=NaN, this=androidx.compose.ui.platform.AndroidComposeView{f7816e8 VFED..... ........ 0,0-1440,3120 aid=1073741824}, caller=android.view.ViewGroup.setRequestedFrameRate:10045 androidx.compose.ui.platform.Api35Impl.setRequestedFrameRate:4033 androidx.compose.ui.platform.AndroidComposeView.dispatchDraw:2248 android.view.View.draw:26758 android.view.View.updateDisplayListIfDirty:25577 
+06-30 13:50:12.964 30218 30218 I View    : setRequestedFrameRate frameRate=NaN, this=android.view.View{5367b28 V.ED..... ........ 0,0-0,0}, caller=androidx.compose.ui.platform.Api35Impl.setRequestedFrameRate:4033 androidx.compose.ui.platform.AndroidComposeView.dispatchDraw:2251 android.view.View.draw:26758 android.view.View.updateDisplayListIfDirty:25577 android.view.ViewGroup.recreateChildDisplayList:4881 
+06-30 13:50:17.656 30218 30336 D ProfileInstaller: Installing profile for com.localagentbridge.android
+06-30 13:50:21.736 30218 30218 I View    : setRequestedFrameRate frameRate=NaN, this=androidx.compose.ui.platform.AndroidComposeView{f7816e8 VFED..... ........ 0,0-1440,3120 aid=1073741824}, caller=android.view.ViewGroup.setRequestedFrameRate:10045 androidx.compose.ui.platform.Api35Impl.setRequestedFrameRate:4033 androidx.compose.ui.platform.AndroidComposeView.dispatchDraw:2248 android.view.View.draw:26758 android.view.View.updateDisplayListIfDirty:25577 
+06-30 13:50:21.736 30218 30218 I View    : setRequestedFrameRate frameRate=NaN, this=android.view.View{5367b28 V.ED..... ........ 0,0-0,0}, caller=androidx.compose.ui.platform.Api35Impl.setRequestedFrameRate:4033 androidx.compose.ui.platform.AndroidComposeView.dispatchDraw:2251 android.view.View.draw:26758 android.view.View.updateDisplayListIfDirty:25577 android.view.View.draw:26477 

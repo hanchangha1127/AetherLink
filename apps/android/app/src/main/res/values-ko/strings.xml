@@ -27,6 +27,17 @@
     <string name="clear_chat_search">채팅 검색 지우기</string>
     <string name="clear_chat_search_named">%1$s 검색어로 된 채팅 검색 지우기</string>
     <string name="no_chat_search_results">일치하는 채팅이 없습니다.</string>
+    <string name="chat_search_match_rank">일치 %1$d</string>
+    <string name="chat_search_match_metadata">%1$s · %2$s</string>
+    <string name="chat_search_match_fields">일치 항목: %1$s</string>
+    <string name="chat_search_field_title">제목</string>
+    <string name="chat_search_field_session">세션</string>
+    <string name="chat_search_field_model">모델</string>
+    <string name="chat_search_field_status">상태</string>
+    <string name="chat_search_field_error">오류</string>
+    <string name="chat_search_field_transcript">대화 내용</string>
+    <string name="chat_search_field_reasoning">추론</string>
+    <string name="chat_search_field_attachment">첨부 파일</string>
     <string name="untitled_chat">제목 없는 채팅</string>
     <string name="chat_top_bar_active_title_summary">현재 채팅 %1$s</string>
     <plurals name="chat_message_count">
@@ -75,6 +86,7 @@
     </plurals>
     <string name="chat_history_summary_detail">활성: %1$s. 보관: %2$s.</string>
     <string name="chat_history_summary_accessibility">채팅 기록 요약. %1$s. %2$s</string>
+    <string name="chat_history_search_result_summary">\"%1$s\" 검색 결과: %2$s. %3$s.</string>
     <string name="chat_history_action_state_wait_for_stream">채팅 기록을 변경하기 전에 현재 응답이 끝날 때까지 기다리세요.</string>
     <string name="chat_history_refresh">채팅 기록 새로고침</string>
     <string name="chat_history_refresh_state_ready">채팅 기록을 새로고칠 수 있습니다.</string>
@@ -400,15 +412,6 @@
     <string name="assistant_reasoning_state_shown">전체 표시됨</string>
     <string name="assistant_reasoning_show">생각 펼치기</string>
     <string name="assistant_reasoning_hide">생각 접기</string>
-    <string name="suggested_next_questions">다음 질문</string>
-    <plurals name="suggested_questions_state_count">
-        <item quantity="one">추천 다음 질문 %1$d개가 있습니다.</item>
-        <item quantity="other">추천 다음 질문 %1$d개가 있습니다.</item>
-    </plurals>
-    <string name="generating_suggestions">다음 질문 생성 중...</string>
-    <string name="content_desc_suggested_question">추천 질문: %1$s</string>
-    <string name="action_use_suggested_question">추천 질문 입력</string>
-    <string name="suggested_question_state_wait_for_stream">추천 질문을 사용하기 전에 현재 응답이 끝날 때까지 기다리세요.</string>
     <string name="copy_message">메시지 복사</string>
     <string name="regenerate_response">응답 다시 생성</string>
     <string name="regenerate_response_state_ready">최신 응답을 다시 생성할 준비가 되었습니다.</string>
@@ -501,6 +504,33 @@
     <string name="memory_summary">%1$s, %2$s.</string>
     <string name="memory_refresh">메모리 새로고침</string>
     <string name="memory_refresh_state_ready">메모리를 새로고침할 준비가 되었습니다.</string>
+    <string name="memory_summary_drafts_title">제안된 메모리</string>
+    <plurals name="memory_summary_drafts_count">
+        <item quantity="one">오래된 채팅에서 온 제안 %1$d개</item>
+        <item quantity="other">오래된 채팅에서 온 제안 %1$d개</item>
+    </plurals>
+    <plurals name="memory_summary_draft_source_count">
+        <item quantity="one">출처 %1$d개</item>
+        <item quantity="other">출처 %1$d개</item>
+    </plurals>
+    <string name="memory_summary_draft_source_range">범위 %1$s</string>
+    <string name="memory_summary_draft_preview_label">미리보기</string>
+    <string name="memory_summary_draft_source_excerpt">%1$s: %2$s</string>
+    <string name="memory_summary_draft_row_summary">%1$s. %2$s. %3$s. %4$s</string>
+    <string name="memory_source_from_chat">오래된 채팅에서: %1$s</string>
+    <string name="memory_source_show">출처 보기</string>
+    <string name="memory_source_hide">출처 숨기기</string>
+    <string name="memory_source_show_named">%1$s 메모리의 출처 보기</string>
+    <string name="memory_source_hide_named">%1$s 메모리의 출처 숨기기</string>
+    <string name="memory_source_summary">%1$s. %2$s. %3$s</string>
+    <string name="memory_summary_draft_approve">제안 메모리 추가</string>
+    <string name="memory_summary_draft_approving">메모리 추가 중…</string>
+    <string name="memory_summary_draft_approve_named">%1$s의 제안 메모리 추가</string>
+    <string name="memory_summary_draft_approve_state_ready">제안 메모리를 추가할 준비가 되었습니다.</string>
+    <string name="memory_summary_draft_dismiss">제안 메모리 숨기기</string>
+    <string name="memory_summary_draft_dismissing">메모리 숨기는 중…</string>
+    <string name="memory_summary_draft_dismiss_named">%1$s의 제안 메모리 숨기기</string>
+    <string name="memory_summary_draft_dismiss_state_ready">제안 메모리를 숨길 준비가 되었습니다.</string>
     <string name="memory_remove">메모리 삭제</string>
     <string name="memory_remove_named">%1$s 메모리 삭제</string>
     <string name="memory_enable_named">%1$s 메모리 사용</string>
@@ -573,6 +603,9 @@
     <string name="error_chat_history_runtime_required">런타임에 저장된 채팅을 변경하려면 먼저 AetherLink Runtime에 연결하세요.</string>
     <string name="error_memory_runtime_required">메모리를 변경하기 전에 신뢰된 런타임에 연결하세요.</string>
     <string name="error_memory_load_failed">AetherLink Runtime에서 메모리를 불러오지 못했습니다.</string>
+    <string name="error_memory_summary_drafts_load_failed">AetherLink Runtime에서 메모리 제안을 불러오지 못했습니다.</string>
+    <string name="error_memory_summary_draft_approval_failed">AetherLink Runtime에서 제안 메모리를 추가하지 못했습니다.</string>
+    <string name="error_memory_summary_draft_dismiss_failed">AetherLink Runtime에서 제안 메모리를 숨기지 못했습니다.</string>
     <string name="error_runtime_error">런타임 오류가 발생했습니다.</string>
     <string name="error_send_failed">AetherLink Runtime으로 메시지를 보낼 수 없습니다.</string>
     <string name="error_regenerate_unavailable">다시 생성할 완료된 어시스턴트 응답이 없습니다.</string>

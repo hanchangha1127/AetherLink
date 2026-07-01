@@ -220,6 +220,56 @@
     "route_nonce": { "$ref": "#/$defs/nonEmptyString" },
     "rendezvous_nonce": { "$ref": "#/$defs/nonEmptyString" },
     "rrn": { "$ref": "#/$defs/nonEmptyString" },
+    "p2p_class": {
+      "description": "P2P rendezvous record class. This is opaque route-preparation material, not host/port reachability or proof that NAT traversal is implemented.",
+      "const": "p2p_rendezvous"
+    },
+    "pc": {
+      "description": "Compact alias for p2p_class.",
+      "const": "p2p_rendezvous"
+    },
+    "p2p_record_id": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^\\S+$"
+    },
+    "prid": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^\\S+$"
+    },
+    "p2p_encrypted_body": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^\\S+$"
+    },
+    "peb": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^\\S+$"
+    },
+    "p2p_expires_at": {
+      "$ref": "#/$defs/epochMillisValue"
+    },
+    "px": {
+      "$ref": "#/$defs/epochMillisValue"
+    },
+    "p2p_anti_replay_nonce": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^\\S+$"
+    },
+    "pn": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^\\S+$"
+    },
+    "p2p_protocol_version": {
+      "$ref": "#/$defs/p2pProtocolVersionValue"
+    },
+    "pv": {
+      "$ref": "#/$defs/p2pProtocolVersionValue"
+    },
     "relay_scope": {
       "description": "Optional route scope. `remote` marks a normal public QR-provisioned relay route, `private_overlay` marks a user-managed VPN/tunnel/private-overlay relay route, and `usb_reverse` is debug-only for loopback relay routes through adb reverse.",
       "type": "string",
@@ -278,7 +328,19 @@
     "ri": ["rh", "rp", "rs", "rx", "rrn"],
     "rs": ["rh", "rp", "ri", "rx", "rrn"],
     "rx": ["rh", "rp", "ri", "rs", "rrn"],
-    "rrn": ["rh", "rp", "ri", "rs", "rx"]
+    "rrn": ["rh", "rp", "ri", "rs", "rx"],
+    "p2p_class": ["p2p_record_id", "p2p_encrypted_body", "p2p_expires_at", "p2p_anti_replay_nonce", "p2p_protocol_version"],
+    "p2p_record_id": ["p2p_class", "p2p_encrypted_body", "p2p_expires_at", "p2p_anti_replay_nonce", "p2p_protocol_version"],
+    "p2p_encrypted_body": ["p2p_class", "p2p_record_id", "p2p_expires_at", "p2p_anti_replay_nonce", "p2p_protocol_version"],
+    "p2p_expires_at": ["p2p_class", "p2p_record_id", "p2p_encrypted_body", "p2p_anti_replay_nonce", "p2p_protocol_version"],
+    "p2p_anti_replay_nonce": ["p2p_class", "p2p_record_id", "p2p_encrypted_body", "p2p_expires_at", "p2p_protocol_version"],
+    "p2p_protocol_version": ["p2p_class", "p2p_record_id", "p2p_encrypted_body", "p2p_expires_at", "p2p_anti_replay_nonce"],
+    "pc": ["prid", "peb", "px", "pn", "pv"],
+    "prid": ["pc", "peb", "px", "pn", "pv"],
+    "peb": ["pc", "prid", "px", "pn", "pv"],
+    "px": ["pc", "prid", "peb", "pn", "pv"],
+    "pn": ["pc", "prid", "peb", "px", "pv"],
+    "pv": ["pc", "prid", "peb", "px", "pn"]
   },
   "additionalProperties": false,
   "$defs": {
@@ -310,6 +372,17 @@
         {
           "type": "string",
           "pattern": "^[1-9][0-9]*$"
+        }
+      ]
+    },
+    "p2pProtocolVersionValue": {
+      "description": "URL query values are strings after decoding; the current P2P rendezvous preparation contract supports protocol version 1 only.",
+      "anyOf": [
+        {
+          "const": 1
+        },
+        {
+          "const": "1"
         }
       ]
     },

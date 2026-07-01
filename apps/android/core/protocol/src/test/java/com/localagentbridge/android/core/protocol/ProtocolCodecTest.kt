@@ -79,8 +79,38 @@ class ProtocolCodecTest {
     }
 
     @Test
+    fun modelInfoPayloadCanCarryContextWindowMetadata() {
+        val payload = ModelsResultPayload(
+            models = listOf(
+                ModelInfoPayload(
+                    id = "llama3.1:8b",
+                    name = "Llama 3.1 8B",
+                    provider = "ollama",
+                    modelKind = "chat",
+                    capabilities = listOf("chat"),
+                    qualifiedId = "ollama:llama3.1:8b",
+                    installed = true,
+                    source = "local",
+                    contextWindowTokens = 32768,
+                ),
+            ),
+        )
+
+        val json = Json.parseToJsonElement(Json.encodeToString(payload)).jsonObject
+        val decoded = Json.decodeFromString<ModelsResultPayload>(Json.encodeToString(payload))
+
+        val model = json["models"]?.jsonArray?.first()?.jsonObject
+        assertEquals("32768", model?.get("context_window_tokens")?.jsonPrimitive?.content)
+        assertEquals(32768, decoded.models.first().contextWindowTokens)
+    }
+
+    @Test
     fun chatHistorySessionPayloadsUseProtocolFieldNames() {
-        val request = ChatSessionsListRequestPayload(limit = 50, includeArchived = true)
+        val request = ChatSessionsListRequestPayload(
+            limit = 50,
+            includeArchived = true,
+            query = "relay route",
+        )
         val result = ChatSessionsListResultPayload(
             sessions = listOf(
                 ChatSessionSummaryPayload(
@@ -91,6 +121,11 @@ class ProtocolCodecTest {
                     messageCount = 2,
                     status = "archived",
                     archivedAt = "2026-06-23T09:05:05Z",
+                    search = ChatSessionSearchPayload(
+                        rank = 1,
+                        snippet = "Runtime history matched relay route.",
+                        matchedFields = listOf("title", "transcript"),
+                    ),
                 ),
             ),
         )
@@ -101,6 +136,7 @@ class ProtocolCodecTest {
 
         assertEquals("50", requestJson["limit"]?.jsonPrimitive?.content)
         assertEquals("true", requestJson["include_archived"]?.jsonPrimitive?.content)
+        assertEquals("relay route", requestJson["query"]?.jsonPrimitive?.content)
         val session = resultJson["sessions"]?.jsonArray?.first()?.jsonObject
         assertEquals("session-1", session?.get("session_id")?.jsonPrimitive?.content)
         assertEquals("Runtime history", session?.get("title")?.jsonPrimitive?.content)
@@ -109,9 +145,19 @@ class ProtocolCodecTest {
         assertEquals("2", session?.get("message_count")?.jsonPrimitive?.content)
         assertEquals("archived", session?.get("status")?.jsonPrimitive?.content)
         assertEquals("2026-06-23T09:05:05Z", session?.get("archived_at")?.jsonPrimitive?.content)
+        val search = session?.get("search")?.jsonObject
+        assertEquals("1", search?.get("rank")?.jsonPrimitive?.content)
+        assertEquals("Runtime history matched relay route.", search?.get("snippet")?.jsonPrimitive?.content)
+        assertEquals(
+            listOf("title", "transcript"),
+            search?.get("matched_fields")?.jsonArray?.map { it.jsonPrimitive.content },
+        )
         assertEquals("session-1", decoded.sessions.first().sessionId)
         assertEquals("archived", decoded.sessions.first().status)
         assertEquals("2026-06-23T09:05:05Z", decoded.sessions.first().archivedAt)
+        assertEquals(1, decoded.sessions.first().search?.rank)
+        assertEquals("Runtime history matched relay route.", decoded.sessions.first().search?.snippet)
+        assertEquals(listOf("title", "transcript"), decoded.sessions.first().search?.matchedFields)
     }
 
     @Test
@@ -188,12 +234,37 @@ class ProtocolCodecTest {
     @Test
     fun memoryPayloadsUseProtocolFieldNames() {
         val protocolJson = Json { encodeDefaults = true }
+        val source = MemoryEntrySourcePayload(
+            kind = "long_inactivity_summary_draft",
+            draftId = "long-inactivity:session-1:1000:6",
+            summaryMethod = "deterministic_preview",
+            session = MemorySummaryDraftSessionPayload(
+                sessionId = "session-1",
+                title = "Runtime notes",
+                model = "ollama:llama3.1:8b",
+                lastActivityAt = "2026-06-01T09:02:05Z",
+                messageCount = 7,
+                inactiveSeconds = 1_209_600,
+            ),
+            sourceMessageCount = 6,
+            sourceRange = "visible messages 1-6 of 6",
+            sourcePointers = listOf(
+                MemorySummaryDraftSourcePointerPayload(
+                    sessionId = "session-1",
+                    messageIndex = 1,
+                    role = "user",
+                    createdAt = "2026-06-01T09:00:00Z",
+                    excerpt = "Summarize my preference.",
+                ),
+            ),
+        )
         val entry = MemoryEntryPayload(
             id = "memory-1",
             content = "Prefers concise answers.",
             enabled = true,
             createdAt = "2026-06-25T05:25:00Z",
             updatedAt = "2026-06-25T05:26:00Z",
+            source = source,
         )
         val listResult = MemoryListResultPayload(entries = listOf(entry))
         val upsert = MemoryUpsertPayload(
@@ -219,10 +290,189 @@ class ProtocolCodecTest {
         assertEquals(true, listedEntry?.get("enabled")?.jsonPrimitive?.boolean)
         assertEquals("2026-06-25T05:25:00Z", listedEntry?.get("created_at")?.jsonPrimitive?.content)
         assertEquals("2026-06-25T05:26:00Z", listedEntry?.get("updated_at")?.jsonPrimitive?.content)
+        val listedSource = listedEntry?.get("source")?.jsonObject
+        assertEquals("long_inactivity_summary_draft", listedSource?.get("kind")?.jsonPrimitive?.content)
+        assertEquals("long-inactivity:session-1:1000:6", listedSource?.get("draft_id")?.jsonPrimitive?.content)
+        assertEquals("deterministic_preview", listedSource?.get("summary_method")?.jsonPrimitive?.content)
+        assertEquals("session-1", listedSource?.get("session")?.jsonObject?.get("session_id")?.jsonPrimitive?.content)
+        assertEquals("visible messages 1-6 of 6", listedSource?.get("source_range")?.jsonPrimitive?.content)
+        assertEquals(
+            "Summarize my preference.",
+            listedSource?.get("source_pointers")?.jsonArray?.first()?.jsonObject?.get("excerpt")?.jsonPrimitive?.content,
+        )
         assertEquals("memory-1", upsertJson["id"]?.jsonPrimitive?.content)
         assertEquals("Prefers concise Korean answers.", upsertJson["content"]?.jsonPrimitive?.content)
         assertEquals(false, upsertJson["enabled"]?.jsonPrimitive?.boolean)
         assertEquals("memory-1", deleteJson["id"]?.jsonPrimitive?.content)
         assertEquals("2026-06-25T05:27:00Z", deleteJson["deleted_at"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun memorySummaryDraftsListPayloadUsesProtocolFieldNames() {
+        val protocolJson = Json { encodeDefaults = true }
+        val request = MemorySummaryDraftsListRequestPayload(limit = 10)
+        val result = MemorySummaryDraftsListResultPayload(
+            drafts = listOf(
+                MemorySummaryDraftPayload(
+                    id = "long-inactivity:session-1:1000:6",
+                    session = MemorySummaryDraftSessionPayload(
+                        sessionId = "session-1",
+                        title = "Runtime notes",
+                        model = "ollama:llama3.1:8b",
+                        lastActivityAt = "2026-06-01T09:02:05Z",
+                        messageCount = 7,
+                        inactiveSeconds = 1_209_600,
+                    ),
+                    sourceMessageCount = 6,
+                    sourceRange = "visible messages 1-6 of 6",
+                    sourcePointers = listOf(
+                        MemorySummaryDraftSourcePointerPayload(
+                            sessionId = "session-1",
+                            messageIndex = 1,
+                            role = "user",
+                            createdAt = "2026-06-01T09:00:00Z",
+                            excerpt = "Summarize my preference.",
+                        ),
+                    ),
+                    summaryPreview = "User: Summarize my preference.",
+                ),
+            ),
+        )
+
+        val requestJson = Json.parseToJsonElement(Json.encodeToString(request)).jsonObject
+        val resultJson = Json.parseToJsonElement(protocolJson.encodeToString(result)).jsonObject
+        val decoded = Json.decodeFromString<MemorySummaryDraftsListResultPayload>(
+            protocolJson.encodeToString(result),
+        )
+
+        assertEquals(MessageType.MemorySummaryDraftsList, "memory.summary.drafts.list")
+        assertEquals("10", requestJson["limit"]?.jsonPrimitive?.content)
+        val draft = resultJson["drafts"]?.jsonArray?.first()?.jsonObject
+        assertEquals("long-inactivity:session-1:1000:6", draft?.get("id")?.jsonPrimitive?.content)
+        val session = draft?.get("session")?.jsonObject
+        assertEquals("session-1", session?.get("session_id")?.jsonPrimitive?.content)
+        assertEquals("Runtime notes", session?.get("title")?.jsonPrimitive?.content)
+        assertEquals("ollama:llama3.1:8b", session?.get("model")?.jsonPrimitive?.content)
+        assertEquals("2026-06-01T09:02:05Z", session?.get("last_activity_at")?.jsonPrimitive?.content)
+        assertEquals("7", session?.get("message_count")?.jsonPrimitive?.content)
+        assertEquals("1209600", session?.get("inactive_seconds")?.jsonPrimitive?.content)
+        assertEquals("6", draft?.get("source_message_count")?.jsonPrimitive?.content)
+        assertEquals("visible messages 1-6 of 6", draft?.get("source_range")?.jsonPrimitive?.content)
+        val sourcePointer = draft?.get("source_pointers")?.jsonArray?.first()?.jsonObject
+        assertEquals("session-1", sourcePointer?.get("session_id")?.jsonPrimitive?.content)
+        assertEquals("1", sourcePointer?.get("message_index")?.jsonPrimitive?.content)
+        assertEquals("user", sourcePointer?.get("role")?.jsonPrimitive?.content)
+        assertEquals("2026-06-01T09:00:00Z", sourcePointer?.get("created_at")?.jsonPrimitive?.content)
+        assertEquals("Summarize my preference.", sourcePointer?.get("excerpt")?.jsonPrimitive?.content)
+        assertEquals("User: Summarize my preference.", draft?.get("summary_preview")?.jsonPrimitive?.content)
+        assertEquals("session-1", decoded.drafts.first().session.sessionId)
+        assertEquals(1_209_600L, decoded.drafts.first().session.inactiveSeconds)
+        assertEquals(1, decoded.drafts.first().sourcePointers.first().messageIndex)
+    }
+
+    @Test
+    fun memorySummaryDraftApprovePayloadUsesProtocolFieldNames() {
+        val protocolJson = Json { encodeDefaults = true }
+        val request = MemorySummaryDraftApprovePayload(
+            draftId = "long-inactivity:session-1:1000:6",
+            content = "Prefer concise Korean release-note summaries.",
+            enabled = true,
+            expectedSessionId = "session-1",
+            expectedSourceMessageCount = 6,
+        )
+        val result = MemorySummaryDraftApproveResultPayload(
+            draftId = "long-inactivity:session-1:1000:6",
+            status = "approved",
+            entry = MemoryEntryPayload(
+                id = "memory-summary:long-inactivity:session-1:1000:6",
+                content = "Prefer concise Korean release-note summaries.",
+                enabled = true,
+                createdAt = "2026-06-25T05:25:00Z",
+                updatedAt = "2026-06-25T05:26:00Z",
+                source = MemoryEntrySourcePayload(
+                    kind = "long_inactivity_summary_draft",
+                    draftId = "long-inactivity:session-1:1000:6",
+                    summaryMethod = "deterministic_preview",
+                    session = MemorySummaryDraftSessionPayload(
+                        sessionId = "session-1",
+                        title = "Runtime notes",
+                        model = "ollama:llama3.1:8b",
+                        lastActivityAt = "2026-06-01T09:02:05Z",
+                        messageCount = 7,
+                        inactiveSeconds = 1_209_600,
+                    ),
+                    sourceMessageCount = 6,
+                    sourceRange = "visible messages 1-6 of 6",
+                    sourcePointers = listOf(
+                        MemorySummaryDraftSourcePointerPayload(
+                            sessionId = "session-1",
+                            messageIndex = 1,
+                            role = "user",
+                            createdAt = "2026-06-01T09:00:00Z",
+                            excerpt = "Summarize my preference.",
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        val requestJson = Json.parseToJsonElement(Json.encodeToString(request)).jsonObject
+        val resultJson = Json.parseToJsonElement(protocolJson.encodeToString(result)).jsonObject
+        val decoded = Json.decodeFromString<MemorySummaryDraftApproveResultPayload>(
+            protocolJson.encodeToString(result),
+        )
+
+        assertEquals(MessageType.MemorySummaryDraftApprove, "memory.summary.draft.approve")
+        assertEquals("long-inactivity:session-1:1000:6", requestJson["draft_id"]?.jsonPrimitive?.content)
+        assertEquals("Prefer concise Korean release-note summaries.", requestJson["content"]?.jsonPrimitive?.content)
+        assertEquals(true, requestJson["enabled"]?.jsonPrimitive?.boolean)
+        assertEquals("session-1", requestJson["expected_session_id"]?.jsonPrimitive?.content)
+        assertEquals("6", requestJson["expected_source_message_count"]?.jsonPrimitive?.content)
+        assertEquals("long-inactivity:session-1:1000:6", resultJson["draft_id"]?.jsonPrimitive?.content)
+        assertEquals("approved", resultJson["status"]?.jsonPrimitive?.content)
+        val entry = resultJson["entry"]?.jsonObject
+        assertEquals("memory-summary:long-inactivity:session-1:1000:6", entry?.get("id")?.jsonPrimitive?.content)
+        assertEquals("Prefer concise Korean release-note summaries.", entry?.get("content")?.jsonPrimitive?.content)
+        assertEquals(
+            "long_inactivity_summary_draft",
+            entry?.get("source")?.jsonObject?.get("kind")?.jsonPrimitive?.content,
+        )
+        assertEquals(
+            "visible messages 1-6 of 6",
+            decoded.entry.source?.sourceRange,
+        )
+        assertEquals("memory-summary:long-inactivity:session-1:1000:6", decoded.entry.id)
+    }
+
+    @Test
+    fun memorySummaryDraftDismissPayloadUsesProtocolFieldNames() {
+        val protocolJson = Json { encodeDefaults = true }
+        val request = MemorySummaryDraftDismissPayload(
+            draftId = "long-inactivity:session-1:1000:6",
+            expectedSessionId = "session-1",
+            expectedSourceMessageCount = 6,
+        )
+        val result = MemorySummaryDraftDismissResultPayload(
+            draftId = "long-inactivity:session-1:1000:6",
+            status = "dismissed",
+            dismissedAt = "2026-06-25T05:26:00Z",
+        )
+
+        val requestJson = Json.parseToJsonElement(Json.encodeToString(request)).jsonObject
+        val resultJson = Json.parseToJsonElement(protocolJson.encodeToString(result)).jsonObject
+        val decoded = Json.decodeFromString<MemorySummaryDraftDismissResultPayload>(
+            protocolJson.encodeToString(result),
+        )
+
+        assertEquals(MessageType.MemorySummaryDraftDismiss, "memory.summary.draft.dismiss")
+        assertEquals("long-inactivity:session-1:1000:6", requestJson["draft_id"]?.jsonPrimitive?.content)
+        assertEquals("session-1", requestJson["expected_session_id"]?.jsonPrimitive?.content)
+        assertEquals("6", requestJson["expected_source_message_count"]?.jsonPrimitive?.content)
+        assertEquals("long-inactivity:session-1:1000:6", resultJson["draft_id"]?.jsonPrimitive?.content)
+        assertEquals("dismissed", resultJson["status"]?.jsonPrimitive?.content)
+        assertEquals("2026-06-25T05:26:00Z", resultJson["dismissed_at"]?.jsonPrimitive?.content)
+        assertEquals("long-inactivity:session-1:1000:6", decoded.draftId)
+        assertEquals("dismissed", decoded.status)
+        assertEquals("2026-06-25T05:26:00Z", decoded.dismissedAt)
     }
 }

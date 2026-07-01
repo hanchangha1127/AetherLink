@@ -421,7 +421,6 @@
 "%@ is ready and waiting for a trusted device." = "%@ est prêt et attend un appareil approuvé.";
 "AetherLink Runtime and the trusted device are connected through %@. Model requests still run only through AetherLink Runtime." = "AetherLink Runtime et l’appareil approuvé sont connectés via %@. Les requêtes de modèle s’exécutent toujours uniquement via AetherLink Runtime.";
 "Reconnecting through %@." = "Reconnexion via %@.";
-"Connection through %@ failed. Check Connection Recovery, then try again." = "La connexion via %@ a échoué. Vérifiez la récupération de connexion, puis réessayez.";
 "AetherLink can prepare connection details automatically when you generate a pairing QR." = "AetherLink peut préparer automatiquement les informations de connexion lorsque vous générez un QR de jumelage.";
 "Pairing from another network needs connection details inside the pairing QR." = "Le jumelage depuis un autre réseau nécessite une route relais, VPN, tunnel ou overlay privé dans le QR de jumelage.";
 "Saved connection details use %@. Generate a fresh QR after updating the connection." = "Les informations de connexion enregistrées utilisent %@. Générez un nouveau QR après avoir mis à jour la connexion.";

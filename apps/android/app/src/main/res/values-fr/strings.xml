@@ -27,6 +27,17 @@
     <string name="clear_chat_search">Effacer la recherche de chats</string>
     <string name="clear_chat_search_named">Effacer la recherche de chats pour %1$s</string>
     <string name="no_chat_search_results">Aucun chat correspondant.</string>
+    <string name="chat_search_match_rank">Résultat %1$d</string>
+    <string name="chat_search_match_metadata">%1$s · %2$s</string>
+    <string name="chat_search_match_fields">Correspondance : %1$s</string>
+    <string name="chat_search_field_title">Titre</string>
+    <string name="chat_search_field_session">Session</string>
+    <string name="chat_search_field_model">Modèle</string>
+    <string name="chat_search_field_status">État</string>
+    <string name="chat_search_field_error">Erreur</string>
+    <string name="chat_search_field_transcript">Transcription</string>
+    <string name="chat_search_field_reasoning">Raisonnement</string>
+    <string name="chat_search_field_attachment">Pièce jointe</string>
     <string name="untitled_chat">Chat sans titre</string>
     <string name="chat_top_bar_active_title_summary">Chat actuel %1$s</string>
     <plurals name="chat_message_count">
@@ -75,6 +86,7 @@
     </plurals>
     <string name="chat_history_summary_detail">Actifs : %1$s. Archivés : %2$s.</string>
     <string name="chat_history_summary_accessibility">Résumé de l’historique des chats. %1$s. %2$s</string>
+    <string name="chat_history_search_result_summary">Résultats pour « %1$s » : %2$s. %3$s.</string>
     <string name="chat_history_action_state_wait_for_stream">Attendez la fin de la réponse en cours avant de modifier l’historique des chats.</string>
     <string name="chat_history_refresh">Actualiser l’historique des chats</string>
     <string name="chat_history_refresh_state_ready">L’historique des chats peut être actualisé.</string>
@@ -400,15 +412,6 @@
     <string name="assistant_reasoning_state_shown">Entièrement affichée</string>
     <string name="assistant_reasoning_show">Afficher la réflexion</string>
     <string name="assistant_reasoning_hide">Masquer la réflexion</string>
-    <string name="suggested_next_questions">Questions suivantes</string>
-    <plurals name="suggested_questions_state_count">
-        <item quantity="one">%1$d question suivante suggérée disponible.</item>
-        <item quantity="other">%1$d questions suivantes suggérées disponibles.</item>
-    </plurals>
-    <string name="generating_suggestions">Génération des questions suivantes...</string>
-    <string name="content_desc_suggested_question">Question suggérée : %1$s</string>
-    <string name="action_use_suggested_question">Insérer la question suggérée</string>
-    <string name="suggested_question_state_wait_for_stream">Attendez la fin de la réponse en cours avant d’utiliser une question suggérée.</string>
     <string name="copy_message">Copier le message</string>
     <string name="regenerate_response">Régénérer la réponse</string>
     <string name="regenerate_response_state_ready">Prêt à régénérer la dernière réponse.</string>
@@ -501,6 +504,33 @@
     <string name="memory_summary">%1$s, %2$s.</string>
     <string name="memory_refresh">Actualiser la mémoire</string>
     <string name="memory_refresh_state_ready">Prêt à actualiser la mémoire.</string>
+    <string name="memory_summary_drafts_title">Mémoires suggérées</string>
+    <plurals name="memory_summary_drafts_count">
+        <item quantity="one">%1$d suggestion issue d’anciens chats</item>
+        <item quantity="other">%1$d suggestions issues d’anciens chats</item>
+    </plurals>
+    <plurals name="memory_summary_draft_source_count">
+        <item quantity="one">%1$d source</item>
+        <item quantity="other">%1$d sources</item>
+    </plurals>
+    <string name="memory_summary_draft_source_range">Plage %1$s</string>
+    <string name="memory_summary_draft_preview_label">Aperçu</string>
+    <string name="memory_summary_draft_source_excerpt">%1$s : %2$s</string>
+    <string name="memory_summary_draft_row_summary">%1$s. %2$s. %3$s. %4$s</string>
+    <string name="memory_source_from_chat">Depuis un ancien chat : %1$s</string>
+    <string name="memory_source_show">Afficher la source</string>
+    <string name="memory_source_hide">Masquer la source</string>
+    <string name="memory_source_show_named">Afficher la source de la mémoire « %1$s »</string>
+    <string name="memory_source_hide_named">Masquer la source de la mémoire « %1$s »</string>
+    <string name="memory_source_summary">%1$s. %2$s. %3$s</string>
+    <string name="memory_summary_draft_approve">Ajouter la mémoire suggérée</string>
+    <string name="memory_summary_draft_approving">Ajout de la mémoire…</string>
+    <string name="memory_summary_draft_approve_named">Ajouter la mémoire suggérée depuis %1$s</string>
+    <string name="memory_summary_draft_approve_state_ready">Prêt à ajouter la mémoire suggérée.</string>
+    <string name="memory_summary_draft_dismiss">Masquer la mémoire suggérée</string>
+    <string name="memory_summary_draft_dismissing">Masquage de la mémoire…</string>
+    <string name="memory_summary_draft_dismiss_named">Masquer la mémoire suggérée depuis %1$s</string>
+    <string name="memory_summary_draft_dismiss_state_ready">Prêt à masquer la mémoire suggérée.</string>
     <string name="memory_remove">Supprimer la mémoire</string>
     <string name="memory_remove_named">Supprimer la mémoire « %1$s »</string>
     <string name="memory_enable_named">Activer la mémoire « %1$s »</string>
@@ -573,6 +603,9 @@
     <string name="error_chat_history_runtime_required">Connectez-vous à AetherLink Runtime avant de modifier les chats enregistrés par le runtime.</string>
     <string name="error_memory_runtime_required">Connectez-vous au runtime de confiance avant de modifier la mémoire.</string>
     <string name="error_memory_load_failed">Impossible de charger la mémoire depuis AetherLink Runtime.</string>
+    <string name="error_memory_summary_drafts_load_failed">Impossible de charger les suggestions de mémoire depuis AetherLink Runtime.</string>
+    <string name="error_memory_summary_draft_approval_failed">Impossible d’ajouter la mémoire suggérée depuis AetherLink Runtime.</string>
+    <string name="error_memory_summary_draft_dismiss_failed">Impossible de masquer la mémoire suggérée depuis AetherLink Runtime.</string>
     <string name="error_runtime_error">Erreur du runtime.</string>
     <string name="error_send_failed">Impossible d’envoyer le message à AetherLink Runtime.</string>
     <string name="error_regenerate_unavailable">Aucune réponse de l’assistant terminée ne peut être régénérée.</string>

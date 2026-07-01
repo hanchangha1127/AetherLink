@@ -21,6 +21,12 @@ data class RuntimePairingPayload(
     val relayExpiresAtEpochMillis: Long? = null,
     val relayNonce: String? = null,
     val relayScope: String? = null,
+    val p2pRouteClass: String? = null,
+    val p2pRecordId: String? = null,
+    val p2pEncryptedBody: String? = null,
+    val p2pExpiresAtEpochMillis: Long? = null,
+    val p2pAntiReplayNonce: String? = null,
+    val p2pProtocolVersion: Int? = null,
     val serviceType: String?,
 )
 
@@ -98,7 +104,7 @@ object RuntimePairingPayloadParser {
         val relayExpiresAtEpochMillis = rawRelayExpiresAt
             ?.takeIf { it.isNotBlank() }
             ?.toLongOrNull()
-            ?.normalizeRelayExpirationEpochMillis()
+            ?.normalizeRouteExpirationEpochMillis()
         val rawRelayNonce = query["relay_nonce"]
             ?: query["remote_nonce"]
             ?: query["route_nonce"]
@@ -111,6 +117,23 @@ object RuntimePairingPayloadParser {
                 ?: query["route_scope"]
                 ?: query["rsc"]
             ).optionalOpaqueQrValue("Invalid relay scope")
+        val p2pRouteClass = (query["p2p_class"] ?: query["pc"])
+            .optionalOpaqueQrValue("Invalid P2P route class")
+        val p2pRecordId = (query["p2p_record_id"] ?: query["prid"])
+            .optionalOpaqueQrValue("Invalid P2P record id")
+        val p2pEncryptedBody = (query["p2p_encrypted_body"] ?: query["peb"])
+            .optionalOpaqueQrValue("Invalid P2P encrypted body")
+        val rawP2pExpiresAt = query["p2p_expires_at"] ?: query["px"]
+        val p2pExpiresAtEpochMillis = rawP2pExpiresAt
+            ?.takeIf { it.isNotBlank() }
+            ?.toLongOrNull()
+            ?.normalizeRouteExpirationEpochMillis()
+        val p2pAntiReplayNonce = (query["p2p_anti_replay_nonce"] ?: query["pn"])
+            .optionalOpaqueQrValue("Invalid P2P anti-replay nonce")
+        val rawP2pProtocolVersion = query["p2p_protocol_version"] ?: query["pv"]
+        val p2pProtocolVersion = rawP2pProtocolVersion
+            ?.takeIf { it.isNotBlank() }
+            ?.toIntOrNull()
         val hasExplicitRelayField =
             relayHost != null ||
                 rawRelayPort != null ||
@@ -118,21 +141,31 @@ object RuntimePairingPayloadParser {
                 relaySecret != null ||
                 rawRelayExpiresAt != null ||
                 rawRelayNonce != null
+        val hasExplicitP2pField =
+            p2pRouteClass != null ||
+                p2pRecordId != null ||
+                p2pEncryptedBody != null ||
+                rawP2pExpiresAt != null ||
+                p2pAntiReplayNonce != null ||
+                rawP2pProtocolVersion != null
+        val hasExplicitRemoteRouteField = hasExplicitRelayField || hasExplicitP2pField
 
-        require(version == "1") { "Unsupported pairing QR version" }
+        require(version == "1" || (version == null && allowDiagnosticLocalDirectEndpoint)) {
+            "Unsupported pairing QR version"
+        }
         require(!pairingCode.isNullOrBlank()) { "Missing pairing code" }
         require(pairingCode.matches(Regex("\\d{6}"))) { "Invalid pairing code" }
         val hasDirectEndpointField = host != null || rawPort != null
-        if (hasDirectEndpointField && !hasExplicitRelayField) {
+        if (hasDirectEndpointField && !hasExplicitRemoteRouteField) {
             require(host != null) { "Missing local diagnostic route host" }
             require(port != null && port in 1..65535) { "Invalid runtime port" }
         }
         val keepDiagnosticDirectEndpoint =
             hasDirectEndpointField &&
-                !hasExplicitRelayField &&
+                !hasExplicitRemoteRouteField &&
                 allowDiagnosticLocalDirectEndpoint &&
-                relayScope.isDiagnosticLocalDirectScope()
-        if (hasDirectEndpointField && !hasExplicitRelayField && !keepDiagnosticDirectEndpoint) {
+                relayScope.isNullOrDiagnosticLocalDirectScope()
+        if (hasDirectEndpointField && !hasExplicitRemoteRouteField && !keepDiagnosticDirectEndpoint) {
             throw IllegalArgumentException("Local direct endpoint QR routes are diagnostic-only")
         }
         if (hasExplicitRelayField) {
@@ -153,6 +186,16 @@ object RuntimePairingPayloadParser {
             }
             require(!relayNonce.isNullOrBlank()) { "Invalid relay nonce" }
         }
+        if (hasExplicitP2pField) {
+            require(p2pRouteClass == "p2p_rendezvous") { "Invalid P2P route class" }
+            require(!p2pRecordId.isNullOrBlank()) { "Missing P2P record id" }
+            require(!p2pEncryptedBody.isNullOrBlank()) { "Missing P2P encrypted body" }
+            require(p2pExpiresAtEpochMillis != null && p2pExpiresAtEpochMillis > 0L) {
+                "Invalid P2P expiration"
+            }
+            require(!p2pAntiReplayNonce.isNullOrBlank()) { "Invalid P2P anti-replay nonce" }
+            require(p2pProtocolVersion == 1) { "Invalid P2P protocol version" }
+        }
 
         return RuntimePairingPayload(
             pairingNonce = pairingNonce,
@@ -171,6 +214,12 @@ object RuntimePairingPayloadParser {
             relayExpiresAtEpochMillis = relayExpiresAtEpochMillis,
             relayNonce = relayNonce,
             relayScope = relayScope,
+            p2pRouteClass = p2pRouteClass,
+            p2pRecordId = p2pRecordId,
+            p2pEncryptedBody = p2pEncryptedBody,
+            p2pExpiresAtEpochMillis = p2pExpiresAtEpochMillis,
+            p2pAntiReplayNonce = p2pAntiReplayNonce,
+            p2pProtocolVersion = p2pProtocolVersion,
             serviceType = query["service_type"],
         )
     }
@@ -208,7 +257,7 @@ object RuntimePairingPayloadParser {
 
     private fun String?.optionalOpaqueQrValue(invalidMessage: String): String? {
         val value = this?.takeIf { it.isNotBlank() } ?: return null
-        require(value == value.trim() && value.none(Char::isWhitespace)) { invalidMessage }
+        require(isCanonicalOpaqueRouteValue(value)) { invalidMessage }
         return value
     }
 
@@ -221,13 +270,19 @@ object RuntimePairingPayloadParser {
             ?.takeIf { it.isNotBlank() }
             ?: DEFAULT_RUNTIME_NAME
 
-    private fun Long.normalizeRelayExpirationEpochMillis(): Long =
+    private fun Long.normalizeRouteExpirationEpochMillis(): Long =
         if (this in 1 until MIN_REASONABLE_EPOCH_MILLIS) this * MILLIS_PER_SECOND else this
 
     private const val DEFAULT_RUNTIME_NAME = "AetherLink Runtime"
     private const val RUNTIME_NAME_MAX_CHARS = 80
     private const val MILLIS_PER_SECOND = 1_000L
     private const val MIN_REASONABLE_EPOCH_MILLIS = 100_000_000_000L
+}
+
+fun isCanonicalOpaqueRouteValue(value: String?): Boolean {
+    return !value.isNullOrBlank() &&
+        value == value.trim() &&
+        value.none(Char::isWhitespace)
 }
 
 fun isEligibleRemoteRelayHost(host: String, relayScope: String? = null): Boolean {
@@ -344,8 +399,8 @@ private val ALLOWED_REMOTE_RELAY_SCOPES = setOf(
     DEBUG_USB_REVERSE_RELAY_SCOPE,
 )
 
-private fun String?.isDiagnosticLocalDirectScope(): Boolean =
-    this == LOCAL_DIRECT_DIAGNOSTIC_SCOPE
+private fun String?.isNullOrDiagnosticLocalDirectScope(): Boolean =
+    this == null || this == LOCAL_DIRECT_DIAGNOSTIC_SCOPE
 
 private fun String?.isPrivateOverlayScope(): Boolean =
     this == PRIVATE_OVERLAY_RELAY_SCOPE

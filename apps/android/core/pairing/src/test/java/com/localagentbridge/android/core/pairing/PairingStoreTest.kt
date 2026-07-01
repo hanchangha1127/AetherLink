@@ -18,24 +18,6 @@ import org.robolectric.RobolectricTestRunner
 @RunWith(RobolectricTestRunner::class)
 class PairingStoreTest {
     @Test
-    fun trustedRuntimeDirectEndpointPreservesValidQrHostAndPort() {
-        val runtime = trustedRuntime(host = "192.168.1.10", port = 43170)
-
-        val endpoint = runtime.validDirectEndpointOrNull()
-
-        assertEquals("192.168.1.10", endpoint?.host)
-        assertEquals(43170, endpoint?.port)
-    }
-
-    @Test
-    fun trustedRuntimeDirectEndpointRejectsBlankOrInvalidValues() {
-        assertNull(trustedRuntime(host = "", port = 43170).validDirectEndpointOrNull())
-        assertNull(trustedRuntime(host = "192.168.1.10", port = null).validDirectEndpointOrNull())
-        assertNull(trustedRuntime(host = "192.168.1.10", port = 0).validDirectEndpointOrNull())
-        assertNull(trustedRuntime(host = "192.168.1.10", port = 70000).validDirectEndpointOrNull())
-    }
-
-    @Test
     fun trustedRuntimeCanCarryRelaySecret() {
         val runtime = trustedRuntime(host = "192.168.1.10", port = 43170).copy(
             relayHost = "relay.example.test",
@@ -49,6 +31,33 @@ class PairingStoreTest {
         assertEquals("secret-1", runtime.relaySecret)
         assertEquals(4102444800000L, runtime.relayExpiresAtEpochMillis)
         assertEquals("nonce-route-1", runtime.relayNonce)
+    }
+
+    @Test
+    fun trustedRuntimeCanCarryP2pRendezvousRoute() {
+        val runtime = completeP2pRuntime()
+
+        assertEquals("p2p_rendezvous", runtime.p2pRouteClass)
+        assertEquals("p2p-record-1", runtime.p2pRecordId)
+        assertEquals("opaque-candidate-1", runtime.p2pEncryptedBody)
+        assertEquals(4102444800000L, runtime.p2pExpiresAtEpochMillis)
+        assertEquals("nonce-p2p-1", runtime.p2pAntiReplayNonce)
+        assertEquals(1, runtime.p2pProtocolVersion)
+        assertEquals(true, runtime.hasValidP2pRoute(nowEpochMillis = 1_000L))
+    }
+
+    @Test
+    fun trustedRuntimeRejectsNonCanonicalP2pRendezvousRoute() {
+        val routes = listOf(
+            completeP2pRuntime().copy(p2pRouteClass = " p2p_rendezvous"),
+            completeP2pRuntime().copy(p2pRecordId = "p2p record 1"),
+            completeP2pRuntime().copy(p2pEncryptedBody = " opaque-candidate-1"),
+            completeP2pRuntime().copy(p2pAntiReplayNonce = "nonce p2p 1"),
+        )
+
+        routes.forEach { runtime ->
+            assertEquals(false, runtime.hasValidP2pRoute(nowEpochMillis = 1_000L))
+        }
     }
 
     @Test
@@ -78,6 +87,17 @@ class PairingStoreTest {
     }
 
     @Test
+    fun trustedRuntimeRejectsExpiredP2pRendezvousRoute() {
+        val runtime = completeP2pRuntime().copy(
+            p2pExpiresAtEpochMillis = 2_000L,
+        )
+
+        assertEquals(false, runtime.hasValidP2pRoute())
+        assertEquals(true, runtime.hasExpiredP2pRoute(nowEpochMillis = 2_001L))
+        assertEquals(false, runtime.hasExpiredP2pRoute(nowEpochMillis = 1_999L))
+    }
+
+    @Test
     fun trustedRuntimeReportsExpiredCompleteRelayLease() {
         val runtime = trustedRuntime(host = null, port = null).copy(
             relayHost = "relay.example.test",
@@ -102,7 +122,6 @@ class PairingStoreTest {
             relaySecret = "secret-1",
         )
 
-        assertNull(runtime.validDirectEndpointOrNull())
         assertEquals(false, runtime.hasValidRelayRoute())
     }
 
@@ -118,7 +137,6 @@ class PairingStoreTest {
             relayScope = "usb_reverse",
         )
 
-        assertNull(runtime.validDirectEndpointOrNull())
         assertEquals(true, runtime.hasValidRelayRoute())
     }
 
@@ -134,39 +152,62 @@ class PairingStoreTest {
             relayScope = "private_overlay",
         )
 
-        assertNull(runtime.validDirectEndpointOrNull())
         assertEquals(true, runtime.hasValidRelayRoute())
     }
 
     @Test
-    fun trustedRuntimeDirectEndpointIsSuppressedWhenRelayRouteExists() {
-        val runtime = trustedRuntime(host = "192.168.1.10", port = 43170).copy(
-            relayHost = "relay.example.test",
-            relayPort = 443,
-            relayId = "relay-1",
-            relaySecret = "secret-1",
-            relayExpiresAtEpochMillis = 4102444800000L,
-            relayNonce = "nonce-route-1",
-        )
+    fun pairingStoreDropsDirectEndpointForTrustedRuntimeRestore() = runTest {
+        val store = pairingStore()
+        store.forgetRuntime()
 
-        val endpoint = runtime.validDirectEndpointOrNull()
+        store.trustRuntime(trustedRuntime(host = "127.0.0.1", port = 43170))
 
-        assertNull(endpoint)
+        val trusted = store.trustedRuntime.first()
+        assertEquals("runtime-1", trusted?.deviceId)
+        assertNull(trusted?.host)
+        assertNull(trusted?.port)
+
+        val prefs = ApplicationProvider.getApplicationContext<android.content.Context>()
+            .localAgentBridgeDataStore
+            .data
+            .first()
+        assertNoStoredDirectEndpoint(prefs)
+
+        store.forgetRuntime()
     }
 
     @Test
-    fun trustedRuntimeDirectEndpointIsKeptWhenRelayRouteHasNoSecret() {
-        val runtime = trustedRuntime(host = "192.168.1.10", port = 43170).copy(
-            relayHost = "relay.example.test",
-            relayPort = 443,
-            relayId = "relay-1",
-            relaySecret = null,
-        )
+    fun pairingStoreDropsStoredAndLegacyDirectEndpointOnRead() = runTest {
+        val store = pairingStore()
+        store.forgetRuntime()
 
-        val endpoint = runtime.validDirectEndpointOrNull()
+        ApplicationProvider.getApplicationContext<android.content.Context>()
+            .localAgentBridgeDataStore
+            .edit { prefs ->
+                prefs[stringPreferencesKey("runtime_device_id")] = "runtime-1"
+                prefs[stringPreferencesKey("runtime_name")] = "AetherLink Runtime"
+                prefs[stringPreferencesKey("runtime_fingerprint")] = "runtime-fingerprint"
+                prefs[stringPreferencesKey("runtime_public_key")] = "runtime-public-key"
+                prefs[stringPreferencesKey("runtime_route_token")] = "route-token"
+                prefs[stringPreferencesKey("runtime_host")] = "192.168.1.10"
+                prefs[intPreferencesKey("runtime_port")] = 43170
+                prefs[stringPreferencesKey("mac_host")] = "192.168.1.11"
+                prefs[intPreferencesKey("mac_port")] = 43171
+            }
 
-        assertEquals("192.168.1.10", endpoint?.host)
-        assertEquals(43170, endpoint?.port)
+        val trusted = store.trustedRuntime.first()
+        assertEquals("runtime-1", trusted?.deviceId)
+        assertEquals("runtime-fingerprint", trusted?.fingerprint)
+        assertNull(trusted?.host)
+        assertNull(trusted?.port)
+
+        val prefs = ApplicationProvider.getApplicationContext<android.content.Context>()
+            .localAgentBridgeDataStore
+            .data
+            .first()
+        assertNoStoredDirectEndpoint(prefs)
+
+        store.forgetRuntime()
     }
 
     @Test
@@ -206,6 +247,42 @@ class PairingStoreTest {
     }
 
     @Test
+    fun pairingStorePersistsCompleteP2pRendezvousRoute() = runTest {
+        val store = pairingStore()
+        store.forgetRuntime()
+
+        store.trustRuntime(completeP2pRuntime())
+
+        val trusted = store.trustedRuntime.first()
+        assertEquals("runtime-1", trusted?.deviceId)
+        assertEquals("AetherLink Runtime", trusted?.name)
+        assertEquals("runtime-fingerprint", trusted?.fingerprint)
+        assertEquals("runtime-public-key", trusted?.publicKeyBase64)
+        assertEquals("route-token", trusted?.routeToken)
+        assertNull(trusted?.host)
+        assertNull(trusted?.port)
+        assertEquals("p2p_rendezvous", trusted?.p2pRouteClass)
+        assertEquals("p2p-record-1", trusted?.p2pRecordId)
+        assertEquals("opaque-candidate-1", trusted?.p2pEncryptedBody)
+        assertEquals(4102444800000L, trusted?.p2pExpiresAtEpochMillis)
+        assertEquals("nonce-p2p-1", trusted?.p2pAntiReplayNonce)
+        assertEquals(1, trusted?.p2pProtocolVersion)
+
+        val prefs = ApplicationProvider.getApplicationContext<android.content.Context>()
+            .localAgentBridgeDataStore
+            .data
+            .first()
+        assertEquals("p2p_rendezvous", prefs[stringPreferencesKey("runtime_p2p_route_class")])
+        assertEquals("p2p-record-1", prefs[stringPreferencesKey("runtime_p2p_record_id")])
+        assertEquals("opaque-candidate-1", prefs[stringPreferencesKey("runtime_p2p_encrypted_body")])
+        assertEquals(4102444800000L, prefs[longPreferencesKey("runtime_p2p_expires_at_epoch_millis")])
+        assertEquals("nonce-p2p-1", prefs[stringPreferencesKey("runtime_p2p_anti_replay_nonce")])
+        assertEquals(1, prefs[intPreferencesKey("runtime_p2p_protocol_version")])
+
+        store.forgetRuntime()
+    }
+
+    @Test
     fun pairingStoreDropsExpiredCompleteRelayRouteOnWrite() = runTest {
         val secretStore = FakeRelaySecretStore()
         val store = pairingStore(secretStore)
@@ -236,6 +313,38 @@ class PairingStoreTest {
             .first()
         assertNoStoredRelayRoute(prefs)
         assertTrue(secretStore.secrets.isEmpty())
+
+        store.forgetRuntime()
+    }
+
+    @Test
+    fun pairingStoreDropsExpiredCompleteP2pRendezvousRouteOnWrite() = runTest {
+        val store = pairingStore()
+        store.forgetRuntime()
+
+        store.trustRuntime(
+            completeP2pRuntime().copy(
+                p2pExpiresAtEpochMillis = 2_000L,
+                p2pAntiReplayNonce = "expired-p2p-nonce-1",
+            )
+        )
+
+        val trusted = store.trustedRuntime.first()
+        assertEquals("runtime-1", trusted?.deviceId)
+        assertNull(trusted?.p2pRouteClass)
+        assertNull(trusted?.p2pRecordId)
+        assertNull(trusted?.p2pEncryptedBody)
+        assertNull(trusted?.p2pExpiresAtEpochMillis)
+        assertNull(trusted?.p2pAntiReplayNonce)
+        assertNull(trusted?.p2pProtocolVersion)
+        assertEquals(false, trusted?.hasValidP2pRoute())
+        assertEquals(false, trusted?.hasExpiredP2pRoute(nowEpochMillis = 2_001L))
+
+        val prefs = ApplicationProvider.getApplicationContext<android.content.Context>()
+            .localAgentBridgeDataStore
+            .data
+            .first()
+        assertNoStoredP2pRoute(prefs)
 
         store.forgetRuntime()
     }
@@ -279,6 +388,85 @@ class PairingStoreTest {
             .first()
         assertNoStoredRelayRoute(prefs)
         assertTrue(secretStore.secrets.isEmpty())
+
+        store.forgetRuntime()
+    }
+
+    @Test
+    fun pairingStoreDropsExpiredStoredP2pRendezvousRouteOnRead() = runTest {
+        val store = pairingStore()
+        store.forgetRuntime()
+
+        ApplicationProvider.getApplicationContext<android.content.Context>()
+            .localAgentBridgeDataStore
+            .edit { prefs ->
+                prefs[stringPreferencesKey("runtime_device_id")] = "runtime-1"
+                prefs[stringPreferencesKey("runtime_name")] = "AetherLink Runtime"
+                prefs[stringPreferencesKey("runtime_fingerprint")] = "runtime-fingerprint"
+                prefs[stringPreferencesKey("runtime_public_key")] = "runtime-public-key"
+                prefs[stringPreferencesKey("runtime_route_token")] = "route-token"
+                prefs[stringPreferencesKey("runtime_p2p_route_class")] = "p2p_rendezvous"
+                prefs[stringPreferencesKey("runtime_p2p_record_id")] = "p2p-record-1"
+                prefs[stringPreferencesKey("runtime_p2p_encrypted_body")] = "opaque-candidate-1"
+                prefs[longPreferencesKey("runtime_p2p_expires_at_epoch_millis")] = 2_000L
+                prefs[stringPreferencesKey("runtime_p2p_anti_replay_nonce")] = "expired-p2p-nonce-1"
+                prefs[intPreferencesKey("runtime_p2p_protocol_version")] = 1
+            }
+
+        val trusted = store.trustedRuntime.first()
+        assertEquals("runtime-1", trusted?.deviceId)
+        assertNull(trusted?.p2pRouteClass)
+        assertNull(trusted?.p2pRecordId)
+        assertNull(trusted?.p2pEncryptedBody)
+        assertNull(trusted?.p2pExpiresAtEpochMillis)
+        assertNull(trusted?.p2pAntiReplayNonce)
+        assertNull(trusted?.p2pProtocolVersion)
+
+        val prefs = ApplicationProvider.getApplicationContext<android.content.Context>()
+            .localAgentBridgeDataStore
+            .data
+            .first()
+        assertNoStoredP2pRoute(prefs)
+
+        store.forgetRuntime()
+    }
+
+    @Test
+    fun pairingStoreDropsNonCanonicalStoredP2pRendezvousRouteOnRead() = runTest {
+        val store = pairingStore()
+        store.forgetRuntime()
+
+        ApplicationProvider.getApplicationContext<android.content.Context>()
+            .localAgentBridgeDataStore
+            .edit { prefs ->
+                prefs[stringPreferencesKey("runtime_device_id")] = "runtime-1"
+                prefs[stringPreferencesKey("runtime_name")] = "AetherLink Runtime"
+                prefs[stringPreferencesKey("runtime_fingerprint")] = "runtime-fingerprint"
+                prefs[stringPreferencesKey("runtime_public_key")] = "runtime-public-key"
+                prefs[stringPreferencesKey("runtime_route_token")] = "route-token"
+                prefs[stringPreferencesKey("runtime_p2p_route_class")] = "p2p_rendezvous"
+                prefs[stringPreferencesKey("runtime_p2p_record_id")] = "p2p record 1"
+                prefs[stringPreferencesKey("runtime_p2p_encrypted_body")] = "opaque-candidate-1"
+                prefs[longPreferencesKey("runtime_p2p_expires_at_epoch_millis")] = 4102444800000L
+                prefs[stringPreferencesKey("runtime_p2p_anti_replay_nonce")] = "nonce-p2p-1"
+                prefs[intPreferencesKey("runtime_p2p_protocol_version")] = 1
+            }
+
+        val trusted = store.trustedRuntime.first()
+        assertEquals("runtime-1", trusted?.deviceId)
+        assertEquals("runtime-fingerprint", trusted?.fingerprint)
+        assertNull(trusted?.p2pRouteClass)
+        assertNull(trusted?.p2pRecordId)
+        assertNull(trusted?.p2pEncryptedBody)
+        assertNull(trusted?.p2pExpiresAtEpochMillis)
+        assertNull(trusted?.p2pAntiReplayNonce)
+        assertNull(trusted?.p2pProtocolVersion)
+
+        val prefs = ApplicationProvider.getApplicationContext<android.content.Context>()
+            .localAgentBridgeDataStore
+            .data
+            .first()
+        assertNoStoredP2pRoute(prefs)
 
         store.forgetRuntime()
     }
@@ -399,6 +587,45 @@ class PairingStoreTest {
     }
 
     @Test
+    fun pairingStoreDropsIncompleteP2pRendezvousRouteOnRead() = runTest {
+        val store = pairingStore()
+        store.forgetRuntime()
+
+        ApplicationProvider.getApplicationContext<android.content.Context>()
+            .localAgentBridgeDataStore
+            .edit { prefs ->
+                prefs[stringPreferencesKey("runtime_device_id")] = "runtime-1"
+                prefs[stringPreferencesKey("runtime_name")] = "AetherLink Runtime"
+                prefs[stringPreferencesKey("runtime_fingerprint")] = "runtime-fingerprint"
+                prefs[stringPreferencesKey("runtime_public_key")] = "runtime-public-key"
+                prefs[stringPreferencesKey("runtime_route_token")] = "route-token"
+                prefs[stringPreferencesKey("runtime_p2p_route_class")] = "p2p_rendezvous"
+                prefs[stringPreferencesKey("runtime_p2p_record_id")] = "p2p-record-1"
+                prefs[longPreferencesKey("runtime_p2p_expires_at_epoch_millis")] = 4102444800000L
+                prefs[stringPreferencesKey("runtime_p2p_anti_replay_nonce")] = "nonce-p2p-1"
+                prefs[intPreferencesKey("runtime_p2p_protocol_version")] = 1
+            }
+
+        val trusted = store.trustedRuntime.first()
+        assertEquals("runtime-1", trusted?.deviceId)
+        assertEquals("runtime-fingerprint", trusted?.fingerprint)
+        assertNull(trusted?.p2pRouteClass)
+        assertNull(trusted?.p2pRecordId)
+        assertNull(trusted?.p2pEncryptedBody)
+        assertNull(trusted?.p2pExpiresAtEpochMillis)
+        assertNull(trusted?.p2pAntiReplayNonce)
+        assertNull(trusted?.p2pProtocolVersion)
+
+        val prefs = ApplicationProvider.getApplicationContext<android.content.Context>()
+            .localAgentBridgeDataStore
+            .data
+            .first()
+        assertNoStoredP2pRoute(prefs)
+
+        store.forgetRuntime()
+    }
+
+    @Test
     fun pairingStoreForgetRuntimeClearsRelayRoute() = runTest {
         val secretStore = FakeRelaySecretStore()
         val store = pairingStore(secretStore)
@@ -440,6 +667,17 @@ class PairingStoreTest {
         )
     }
 
+    private fun completeP2pRuntime(): TrustedRuntime {
+        return trustedRuntime(host = "192.168.1.10", port = 43170).copy(
+            p2pRouteClass = "p2p_rendezvous",
+            p2pRecordId = "p2p-record-1",
+            p2pEncryptedBody = "opaque-candidate-1",
+            p2pExpiresAtEpochMillis = 4102444800000L,
+            p2pAntiReplayNonce = "nonce-p2p-1",
+            p2pProtocolVersion = 1,
+        )
+    }
+
     private fun pairingStore(relaySecretStore: RelaySecretStore = FakeRelaySecretStore()): PairingStore {
         return PairingStore(ApplicationProvider.getApplicationContext(), relaySecretStore)
     }
@@ -453,6 +691,22 @@ class PairingStoreTest {
         assertNull(prefs[longPreferencesKey("runtime_relay_expires_at_epoch_millis")])
         assertNull(prefs[stringPreferencesKey("runtime_relay_nonce")])
         assertNull(prefs[stringPreferencesKey("runtime_relay_scope")])
+    }
+
+    private fun assertNoStoredP2pRoute(prefs: androidx.datastore.preferences.core.Preferences) {
+        assertNull(prefs[stringPreferencesKey("runtime_p2p_route_class")])
+        assertNull(prefs[stringPreferencesKey("runtime_p2p_record_id")])
+        assertNull(prefs[stringPreferencesKey("runtime_p2p_encrypted_body")])
+        assertNull(prefs[longPreferencesKey("runtime_p2p_expires_at_epoch_millis")])
+        assertNull(prefs[stringPreferencesKey("runtime_p2p_anti_replay_nonce")])
+        assertNull(prefs[intPreferencesKey("runtime_p2p_protocol_version")])
+    }
+
+    private fun assertNoStoredDirectEndpoint(prefs: androidx.datastore.preferences.core.Preferences) {
+        assertNull(prefs[stringPreferencesKey("runtime_host")])
+        assertNull(prefs[intPreferencesKey("runtime_port")])
+        assertNull(prefs[stringPreferencesKey("mac_host")])
+        assertNull(prefs[intPreferencesKey("mac_port")])
     }
 
     private class FakeRelaySecretStore : RelaySecretStore {

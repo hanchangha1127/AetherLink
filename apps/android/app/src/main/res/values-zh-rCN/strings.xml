@@ -27,6 +27,17 @@
     <string name="clear_chat_search">清除聊天搜索</string>
     <string name="clear_chat_search_named">清除“%1$s”的聊天搜索</string>
     <string name="no_chat_search_results">没有匹配的聊天。</string>
+    <string name="chat_search_match_rank">匹配 %1$d</string>
+    <string name="chat_search_match_metadata">%1$s · %2$s</string>
+    <string name="chat_search_match_fields">匹配项：%1$s</string>
+    <string name="chat_search_field_title">标题</string>
+    <string name="chat_search_field_session">会话</string>
+    <string name="chat_search_field_model">模型</string>
+    <string name="chat_search_field_status">状态</string>
+    <string name="chat_search_field_error">错误</string>
+    <string name="chat_search_field_transcript">对话内容</string>
+    <string name="chat_search_field_reasoning">推理</string>
+    <string name="chat_search_field_attachment">附件</string>
     <string name="untitled_chat">未命名聊天</string>
     <string name="chat_top_bar_active_title_summary">当前聊天 %1$s</string>
     <plurals name="chat_message_count">
@@ -75,6 +86,7 @@
     </plurals>
     <string name="chat_history_summary_detail">活跃：%1$s。已归档：%2$s。</string>
     <string name="chat_history_summary_accessibility">聊天历史摘要。%1$s。%2$s</string>
+    <string name="chat_history_search_result_summary">“%1$s”的结果：%2$s。%3$s。</string>
     <string name="chat_history_action_state_wait_for_stream">更改聊天记录前，请等待当前回复完成。</string>
     <string name="chat_history_refresh">刷新聊天记录</string>
     <string name="chat_history_refresh_state_ready">可以刷新聊天记录。</string>
@@ -400,15 +412,6 @@
     <string name="assistant_reasoning_state_shown">已完整显示</string>
     <string name="assistant_reasoning_show">展开思考</string>
     <string name="assistant_reasoning_hide">收起思考</string>
-    <string name="suggested_next_questions">后续问题</string>
-    <plurals name="suggested_questions_state_count">
-        <item quantity="one">有 %1$d 个建议后续问题。</item>
-        <item quantity="other">有 %1$d 个建议后续问题。</item>
-    </plurals>
-    <string name="generating_suggestions">正在生成后续问题...</string>
-    <string name="content_desc_suggested_question">建议问题：%1$s</string>
-    <string name="action_use_suggested_question">插入建议问题</string>
-    <string name="suggested_question_state_wait_for_stream">使用建议问题前，请等待当前响应完成。</string>
     <string name="copy_message">复制消息</string>
     <string name="regenerate_response">重新生成回复</string>
     <string name="regenerate_response_state_ready">可以重新生成最新回复。</string>
@@ -501,6 +504,33 @@
     <string name="memory_summary">%1$s，%2$s。</string>
     <string name="memory_refresh">刷新记忆</string>
     <string name="memory_refresh_state_ready">可以刷新记忆。</string>
+    <string name="memory_summary_drafts_title">建议记忆</string>
+    <plurals name="memory_summary_drafts_count">
+        <item quantity="one">来自较早聊天的 %1$d 条建议</item>
+        <item quantity="other">来自较早聊天的 %1$d 条建议</item>
+    </plurals>
+    <plurals name="memory_summary_draft_source_count">
+        <item quantity="one">%1$d 条来源</item>
+        <item quantity="other">%1$d 条来源</item>
+    </plurals>
+    <string name="memory_summary_draft_source_range">范围 %1$s</string>
+    <string name="memory_summary_draft_preview_label">预览</string>
+    <string name="memory_summary_draft_source_excerpt">%1$s：%2$s</string>
+    <string name="memory_summary_draft_row_summary">%1$s。%2$s。%3$s。%4$s</string>
+    <string name="memory_source_from_chat">来自较早聊天：%1$s</string>
+    <string name="memory_source_show">显示来源</string>
+    <string name="memory_source_hide">隐藏来源</string>
+    <string name="memory_source_show_named">显示记忆“%1$s”的来源</string>
+    <string name="memory_source_hide_named">隐藏记忆“%1$s”的来源</string>
+    <string name="memory_source_summary">%1$s。%2$s。%3$s</string>
+    <string name="memory_summary_draft_approve">添加建议记忆</string>
+    <string name="memory_summary_draft_approving">正在添加记忆…</string>
+    <string name="memory_summary_draft_approve_named">添加来自 %1$s 的建议记忆</string>
+    <string name="memory_summary_draft_approve_state_ready">已准备好添加建议记忆。</string>
+    <string name="memory_summary_draft_dismiss">隐藏建议记忆</string>
+    <string name="memory_summary_draft_dismissing">正在隐藏记忆…</string>
+    <string name="memory_summary_draft_dismiss_named">隐藏来自 %1$s 的建议记忆</string>
+    <string name="memory_summary_draft_dismiss_state_ready">已准备好隐藏建议记忆。</string>
     <string name="memory_remove">删除记忆</string>
     <string name="memory_remove_named">删除记忆“%1$s”</string>
     <string name="memory_enable_named">启用记忆“%1$s”</string>
@@ -573,6 +603,9 @@
     <string name="error_chat_history_runtime_required">更改运行时保存的聊天前，请先连接到 AetherLink Runtime。</string>
     <string name="error_memory_runtime_required">更改记忆前，请先连接受信任的运行时。</string>
     <string name="error_memory_load_failed">无法从 AetherLink Runtime 加载记忆。</string>
+    <string name="error_memory_summary_drafts_load_failed">无法从 AetherLink Runtime 加载记忆建议。</string>
+    <string name="error_memory_summary_draft_approval_failed">无法从 AetherLink Runtime 添加建议记忆。</string>
+    <string name="error_memory_summary_draft_dismiss_failed">无法从 AetherLink Runtime 隐藏建议记忆。</string>
     <string name="error_runtime_error">运行时错误。</string>
     <string name="error_send_failed">无法向 AetherLink Runtime 发送消息。</string>
     <string name="error_regenerate_unavailable">没有可重新生成的已完成助手回复。</string>

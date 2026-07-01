@@ -73,7 +73,10 @@ final class OllamaBackendTests: XCTestCase {
                     """
                 )
             case "/api/show":
-                return self.response(statusCode: 200, body: #"{"capabilities":["completion"]}"#)
+                return self.response(
+                    statusCode: 200,
+                    body: #"{"capabilities":["completion"],"model_info":{"llama.context_length":32768}}"#
+                )
             default:
                 XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
                 return self.response(statusCode: 404, body: "{}")
@@ -107,6 +110,7 @@ final class OllamaBackendTests: XCTestCase {
         XCTAssertEqual(models[3].sizeBytes, 2048)
         XCTAssertEqual(models.map(\.kind), [.chat, .chat, .chat, .chat])
         XCTAssertEqual(models[0].capabilities, ["completion"])
+        XCTAssertEqual(models[0].contextWindowTokens, 32768)
     }
 
     func testListModelsUsesShowCapabilitiesToSeparateEmbeddingModels() async throws {
@@ -120,9 +124,15 @@ final class OllamaBackendTests: XCTestCase {
             case "/api/show":
                 showRequestCount += 1
                 if showRequestCount == 1 {
-                    return self.response(statusCode: 200, body: #"{"capabilities":["embedding"]}"#)
+                    return self.response(
+                        statusCode: 200,
+                        body: #"{"capabilities":["embedding"],"context_window_tokens":8192}"#
+                    )
                 }
-                return self.response(statusCode: 200, body: #"{"capabilities":["completion"]}"#)
+                return self.response(
+                    statusCode: 200,
+                    body: #"{"capabilities":["completion"],"parameters":"num_ctx 32768\n"}"#
+                )
             default:
                 XCTFail("Unexpected request path: \(request.url?.path ?? "nil")")
                 return self.response(statusCode: 404, body: "{}")
@@ -133,7 +143,9 @@ final class OllamaBackendTests: XCTestCase {
 
         XCTAssertEqual(models.first { $0.id == "nomic-embed-text" }?.kind, .embedding)
         XCTAssertEqual(models.first { $0.id == "nomic-embed-text" }?.capabilities, ["embedding"])
+        XCTAssertEqual(models.first { $0.id == "nomic-embed-text" }?.contextWindowTokens, 8192)
         XCTAssertEqual(models.first { $0.id == "qwen3:8b" }?.kind, .chat)
+        XCTAssertEqual(models.first { $0.id == "qwen3:8b" }?.contextWindowTokens, 32768)
     }
 
     func testListModelsDoesNotInventRecommendedDefaultsWhenTagsAreEmpty() async throws {

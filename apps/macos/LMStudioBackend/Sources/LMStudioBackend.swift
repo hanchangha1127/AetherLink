@@ -54,7 +54,8 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
                     sizeBytes: model.sizeBytes,
                     installed: true,
                     running: !model.loadedInstances.isEmpty,
-                    source: .local
+                    source: .local,
+                    contextWindowTokens: model.contextWindowTokens
                 )
             }
         } catch {
@@ -168,7 +169,8 @@ public final class LMStudioBackend: LlmBackend, @unchecked Sendable {
                     providerModelID: model.id,
                     installed: true,
                     running: false,
-                    source: .local
+                    source: .local,
+                    contextWindowTokens: model.contextWindowTokens
                 )
             }
         } catch {
@@ -435,6 +437,7 @@ private struct LMStudioNativeModel: Decodable {
     var key: String
     var displayName: String?
     var sizeBytes: Int64?
+    var contextWindowTokens: Int?
     var loadedInstances: [LMStudioLoadedInstance]
     var capabilities: [String] {
         let normalizedType = type?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -456,6 +459,10 @@ private struct LMStudioNativeModel: Decodable {
         case id
         case displayName = "display_name"
         case sizeBytes = "size_bytes"
+        case contextWindowTokens = "context_window_tokens"
+        case contextLength = "context_length"
+        case maxContextLength = "max_context_length"
+        case nContext = "n_ctx"
         case loadedInstances = "loaded_instances"
     }
 
@@ -466,7 +473,17 @@ private struct LMStudioNativeModel: Decodable {
             ?? container.decode(String.self, forKey: .id)
         displayName = try container.decodeIfPresent(String.self, forKey: .displayName)
         sizeBytes = try container.decodeIfPresent(Int64.self, forKey: .sizeBytes)
+        contextWindowTokens = Self.firstPositive(
+            try container.decodeIfPresent(Int.self, forKey: .contextWindowTokens),
+            try container.decodeIfPresent(Int.self, forKey: .contextLength),
+            try container.decodeIfPresent(Int.self, forKey: .maxContextLength),
+            try container.decodeIfPresent(Int.self, forKey: .nContext)
+        )
         loadedInstances = try container.decodeIfPresent([LMStudioLoadedInstance].self, forKey: .loadedInstances) ?? []
+    }
+
+    private static func firstPositive(_ values: Int?...) -> Int? {
+        values.first { ($0 ?? 0) > 0 } ?? nil
     }
 }
 
@@ -480,6 +497,28 @@ private struct OpenAIModelsResponse: Decodable {
 
 private struct OpenAIModel: Decodable {
     var id: String
+    var contextWindowTokens: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case contextWindowTokens = "context_window_tokens"
+        case contextLength = "context_length"
+        case maxContextLength = "max_context_length"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        contextWindowTokens = Self.firstPositive(
+            try container.decodeIfPresent(Int.self, forKey: .contextWindowTokens),
+            try container.decodeIfPresent(Int.self, forKey: .contextLength),
+            try container.decodeIfPresent(Int.self, forKey: .maxContextLength)
+        )
+    }
+
+    private static func firstPositive(_ values: Int?...) -> Int? {
+        values.first { ($0 ?? 0) > 0 } ?? nil
+    }
 }
 
 private struct LMStudioUnloadRequest: Encodable {

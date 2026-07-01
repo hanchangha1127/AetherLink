@@ -6,19 +6,124 @@ public struct RuntimeMemoryEntry: Equatable, Sendable {
     public var enabled: Bool
     public var createdAt: Date
     public var updatedAt: Date
+    public var source: RuntimeMemoryEntrySource?
 
     public init(
         id: String,
         content: String,
         enabled: Bool = true,
         createdAt: Date,
-        updatedAt: Date
+        updatedAt: Date,
+        source: RuntimeMemoryEntrySource? = nil
     ) {
         self.id = id
         self.content = content
         self.enabled = enabled
         self.createdAt = createdAt
         self.updatedAt = updatedAt
+        self.source = source
+    }
+}
+
+public struct RuntimeMemoryEntrySource: Codable, Equatable, Sendable {
+    public var kind: String
+    public var draftID: String
+    public var summaryMethod: String
+    public var session: RuntimeMemoryEntrySourceSession
+    public var sourceMessageCount: Int
+    public var sourceRange: String
+    public var sourcePointers: [RuntimeMemoryEntrySourcePointer]
+
+    public init(
+        kind: String,
+        draftID: String,
+        summaryMethod: String,
+        session: RuntimeMemoryEntrySourceSession,
+        sourceMessageCount: Int,
+        sourceRange: String,
+        sourcePointers: [RuntimeMemoryEntrySourcePointer]
+    ) {
+        self.kind = kind
+        self.draftID = draftID
+        self.summaryMethod = summaryMethod
+        self.session = session
+        self.sourceMessageCount = sourceMessageCount
+        self.sourceRange = sourceRange
+        self.sourcePointers = sourcePointers
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case kind
+        case draftID = "draft_id"
+        case summaryMethod = "summary_method"
+        case session
+        case sourceMessageCount = "source_message_count"
+        case sourceRange = "source_range"
+        case sourcePointers = "source_pointers"
+    }
+}
+
+public struct RuntimeMemoryEntrySourceSession: Codable, Equatable, Sendable {
+    public var sessionID: String
+    public var title: String
+    public var model: String
+    public var lastActivityAt: Date
+    public var messageCount: Int
+    public var inactiveSeconds: Int
+
+    public init(
+        sessionID: String,
+        title: String,
+        model: String,
+        lastActivityAt: Date,
+        messageCount: Int,
+        inactiveSeconds: Int
+    ) {
+        self.sessionID = sessionID
+        self.title = title
+        self.model = model
+        self.lastActivityAt = lastActivityAt
+        self.messageCount = messageCount
+        self.inactiveSeconds = inactiveSeconds
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case sessionID = "session_id"
+        case title
+        case model
+        case lastActivityAt = "last_activity_at"
+        case messageCount = "message_count"
+        case inactiveSeconds = "inactive_seconds"
+    }
+}
+
+public struct RuntimeMemoryEntrySourcePointer: Codable, Equatable, Sendable {
+    public var sessionID: String
+    public var messageIndex: Int
+    public var role: String
+    public var createdAt: Date?
+    public var excerpt: String
+
+    public init(
+        sessionID: String,
+        messageIndex: Int,
+        role: String,
+        createdAt: Date?,
+        excerpt: String
+    ) {
+        self.sessionID = sessionID
+        self.messageIndex = messageIndex
+        self.role = role
+        self.createdAt = createdAt
+        self.excerpt = excerpt
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case sessionID = "session_id"
+        case messageIndex = "message_index"
+        case role
+        case createdAt = "created_at"
+        case excerpt
     }
 }
 
@@ -29,6 +134,16 @@ public struct RuntimeMemoryDeleteResult: Equatable, Sendable {
     public init(id: String, deletedAt: Date) {
         self.id = id
         self.deletedAt = deletedAt
+    }
+}
+
+public struct RuntimeMemorySummaryDraftDismissResult: Equatable, Sendable {
+    public var draftID: String
+    public var dismissedAt: Date
+
+    public init(draftID: String, dismissedAt: Date) {
+        self.draftID = draftID
+        self.dismissedAt = dismissedAt
     }
 }
 
@@ -57,9 +172,16 @@ public protocol RuntimeMemoryStore: Sendable {
         id: String?,
         content: String,
         enabled: Bool?,
+        source: RuntimeMemoryEntrySource?,
         timestamp: Date
     ) throws -> RuntimeMemoryEntry
     func delete(ownerDeviceID: String?, id: String, timestamp: Date) throws -> RuntimeMemoryDeleteResult
+    func dismissedMemorySummaryDraftIDs(ownerDeviceID: String?) throws -> Set<String>
+    func dismissMemorySummaryDraft(
+        ownerDeviceID: String?,
+        draftID: String,
+        timestamp: Date
+    ) throws -> RuntimeMemorySummaryDraftDismissResult
 }
 
 public extension RuntimeMemoryStore {
@@ -68,7 +190,24 @@ public extension RuntimeMemoryStore {
     }
 
     func upsert(id: String?, content: String, enabled: Bool?, timestamp: Date) throws -> RuntimeMemoryEntry {
-        try upsert(ownerDeviceID: nil, id: id, content: content, enabled: enabled, timestamp: timestamp)
+        try upsert(ownerDeviceID: nil, id: id, content: content, enabled: enabled, source: nil, timestamp: timestamp)
+    }
+
+    func upsert(
+        ownerDeviceID: String?,
+        id: String?,
+        content: String,
+        enabled: Bool?,
+        timestamp: Date
+    ) throws -> RuntimeMemoryEntry {
+        try upsert(
+            ownerDeviceID: ownerDeviceID,
+            id: id,
+            content: content,
+            enabled: enabled,
+            source: nil,
+            timestamp: timestamp
+        )
     }
 
     func delete(id: String, timestamp: Date) throws -> RuntimeMemoryDeleteResult {
@@ -92,6 +231,7 @@ public struct NullRuntimeMemoryStore: RuntimeMemoryStore {
         id: String?,
         content: String,
         enabled: Bool?,
+        source: RuntimeMemoryEntrySource?,
         timestamp: Date
     ) throws -> RuntimeMemoryEntry {
         let cleanID = id
@@ -102,12 +242,25 @@ public struct NullRuntimeMemoryStore: RuntimeMemoryStore {
             content: content.trimmingCharacters(in: .whitespacesAndNewlines),
             enabled: enabled ?? true,
             createdAt: timestamp,
-            updatedAt: timestamp
+            updatedAt: timestamp,
+            source: source
         )
     }
 
     public func delete(ownerDeviceID: String?, id: String, timestamp: Date) throws -> RuntimeMemoryDeleteResult {
         RuntimeMemoryDeleteResult(id: id, deletedAt: timestamp)
+    }
+
+    public func dismissedMemorySummaryDraftIDs(ownerDeviceID: String?) throws -> Set<String> {
+        []
+    }
+
+    public func dismissMemorySummaryDraft(
+        ownerDeviceID: String?,
+        draftID: String,
+        timestamp: Date
+    ) throws -> RuntimeMemorySummaryDraftDismissResult {
+        RuntimeMemorySummaryDraftDismissResult(draftID: draftID, dismissedAt: timestamp)
     }
 }
 
@@ -140,6 +293,7 @@ public final class JSONLRuntimeMemoryStore: RuntimeMemoryStore, @unchecked Senda
         id: String?,
         content: String,
         enabled: Bool?,
+        source: RuntimeMemoryEntrySource?,
         timestamp: Date = Date()
     ) throws -> RuntimeMemoryEntry {
         try lock.withLock {
@@ -158,7 +312,8 @@ public final class JSONLRuntimeMemoryStore: RuntimeMemoryStore, @unchecked Senda
                 content: cleanContent,
                 enabled: enabled ?? existing?.enabled ?? true,
                 createdAt: existing?.createdAt ?? timestamp,
-                updatedAt: timestamp
+                updatedAt: timestamp,
+                source: source ?? existing?.source
             )
             try appendUnlocked(RuntimeMemoryStoredEvent(
                 kind: .upsert,
@@ -167,7 +322,8 @@ public final class JSONLRuntimeMemoryStore: RuntimeMemoryStore, @unchecked Senda
                 content: entry.content,
                 enabled: entry.enabled,
                 createdAt: entry.createdAt,
-                ownerDeviceID: scopedOwnerDeviceID
+                ownerDeviceID: scopedOwnerDeviceID,
+                source: entry.source
             ))
             return entry
         }
@@ -187,6 +343,33 @@ public final class JSONLRuntimeMemoryStore: RuntimeMemoryStore, @unchecked Senda
                 ownerDeviceID: scopedOwnerDeviceID
             ))
             return RuntimeMemoryDeleteResult(id: cleanID, deletedAt: timestamp)
+        }
+    }
+
+    public func dismissedMemorySummaryDraftIDs(ownerDeviceID: String?) throws -> Set<String> {
+        try lock.withLock {
+            Self.dismissedMemorySummaryDraftIDs(from: try readEvents(ownerDeviceID: ownerDeviceID))
+        }
+    }
+
+    public func dismissMemorySummaryDraft(
+        ownerDeviceID: String?,
+        draftID: String,
+        timestamp: Date = Date()
+    ) throws -> RuntimeMemorySummaryDraftDismissResult {
+        try lock.withLock {
+            let cleanDraftID = draftID.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !cleanDraftID.isEmpty else {
+                throw RuntimeMemoryStoreError.missingID
+            }
+            let scopedOwnerDeviceID = ownerDeviceID.normalizedOwnerDeviceID
+            try appendUnlocked(RuntimeMemoryStoredEvent(
+                kind: .dismissMemorySummaryDraft,
+                id: cleanDraftID,
+                timestamp: timestamp,
+                ownerDeviceID: scopedOwnerDeviceID
+            ))
+            return RuntimeMemorySummaryDraftDismissResult(draftID: cleanDraftID, dismissedAt: timestamp)
         }
     }
 
@@ -267,8 +450,49 @@ public final class JSONLRuntimeMemoryStore: RuntimeMemoryStore, @unchecked Senda
                     reason: "memory upsert content is empty"
                 )
             }
-        case .delete:
+            if let source = event.source {
+                try validateStoredSource(source, line: line)
+            }
+        case .delete,
+             .dismissMemorySummaryDraft:
             break
+        }
+    }
+
+    private static func validateStoredSource(_ source: RuntimeMemoryEntrySource, line: Int) throws {
+        guard !source.kind.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw RuntimeMemoryStoreError.corruptEventLog(
+                line: line,
+                reason: "memory source kind is empty"
+            )
+        }
+        guard !source.draftID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw RuntimeMemoryStoreError.corruptEventLog(
+                line: line,
+                reason: "memory source draft id is empty"
+            )
+        }
+        guard source.sourceMessageCount > 0 else {
+            throw RuntimeMemoryStoreError.corruptEventLog(
+                line: line,
+                reason: "memory source message count is invalid"
+            )
+        }
+        guard !source.sourcePointers.isEmpty else {
+            throw RuntimeMemoryStoreError.corruptEventLog(
+                line: line,
+                reason: "memory source pointers are empty"
+            )
+        }
+        for pointer in source.sourcePointers {
+            guard !pointer.sessionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  !pointer.role.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  !pointer.excerpt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                throw RuntimeMemoryStoreError.corruptEventLog(
+                    line: line,
+                    reason: "memory source pointer is invalid"
+                )
+            }
         }
     }
 
@@ -293,10 +517,13 @@ public final class JSONLRuntimeMemoryStore: RuntimeMemoryStore, @unchecked Senda
                     content: content,
                     enabled: event.enabled ?? existing?.enabled ?? true,
                     createdAt: event.createdAt ?? existing?.createdAt ?? event.timestamp,
-                    updatedAt: event.timestamp
+                    updatedAt: event.timestamp,
+                    source: event.source ?? existing?.source
                 )
             case .delete:
                 entriesByID.removeValue(forKey: event.id)
+            case .dismissMemorySummaryDraft:
+                break
             }
         }
         return entriesByID.values.sorted {
@@ -306,11 +533,18 @@ public final class JSONLRuntimeMemoryStore: RuntimeMemoryStore, @unchecked Senda
             return $0.updatedAt > $1.updatedAt
         }
     }
+
+    private static func dismissedMemorySummaryDraftIDs(from events: [RuntimeMemoryStoredEvent]) -> Set<String> {
+        Set(events.compactMap { event in
+            event.kind == .dismissMemorySummaryDraft ? event.id : nil
+        })
+    }
 }
 
 private enum RuntimeMemoryStoredEventKind: String, Codable {
     case upsert
     case delete
+    case dismissMemorySummaryDraft = "dismiss_memory_summary_draft"
 }
 
 private struct RuntimeMemoryStoredEvent: Codable {
@@ -321,6 +555,7 @@ private struct RuntimeMemoryStoredEvent: Codable {
     var enabled: Bool?
     var createdAt: Date?
     var ownerDeviceID: String?
+    var source: RuntimeMemoryEntrySource?
 
     enum CodingKeys: String, CodingKey {
         case kind
@@ -330,6 +565,7 @@ private struct RuntimeMemoryStoredEvent: Codable {
         case enabled
         case createdAt = "created_at"
         case ownerDeviceID = "owner_device_id"
+        case source
     }
 }
 

@@ -26,14 +26,18 @@ func remoteRoutePreparationIssueText(_ issue: CompanionRemoteRoutePreparationIss
     case .routeLeaseSecretMissing:
         return NSLocalizedString("Connection details need a secure connection secret before they can be included in a QR.", comment: "")
     case .relayConnectionFailed:
-        if let endpoint = fallbackEndpoint {
-            return String(
-                format: NSLocalizedString("Connection through %@ failed. Check Connection Recovery, then generate a fresh QR.", comment: ""),
-                endpoint
-            )
-        }
-        return NSLocalizedString("Connection failed. Check Connection Recovery, then generate a fresh QR.", comment: "")
+        return remoteRelayConnectionFailureRecoveryText(endpoint: fallbackEndpoint)
     }
+}
+
+func remoteRelayConnectionFailureRecoveryText(endpoint: String?) -> String {
+    if let endpoint = displayableRouteIssueEndpoint(endpoint) {
+        return String(
+            format: NSLocalizedString("Connection through %@ failed. Check Connection Recovery, then generate a fresh QR.", comment: ""),
+            endpoint
+        )
+    }
+    return NSLocalizedString("Connection failed. Check Connection Recovery, then generate a fresh QR.", comment: "")
 }
 
 func relayQRCodeReadinessText(
@@ -60,14 +64,7 @@ func relayQRCodeReadinessText(
     case .reconnecting:
         return NSLocalizedString("Connection details are prepared. AetherLink Runtime is reconnecting; generate the latest QR after the connection is ready.", comment: "")
     case .failed:
-        let endpoint = connectionStatus.endpoint?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
-        if let endpoint {
-            return String(
-                format: NSLocalizedString("Connection through %@ failed. Check Connection Recovery, then generate a fresh QR.", comment: ""),
-                endpoint
-            )
-        }
-        return NSLocalizedString("Connection failed. Check Connection Recovery, then generate a fresh QR.", comment: "")
+        return remoteRelayConnectionFailureRecoveryText(endpoint: connectionStatus.endpoint)
     case .waitingForPeer, .ready:
         return NSLocalizedString("Connection details are ready. Generate the latest QR to pair this device.", comment: "")
     }

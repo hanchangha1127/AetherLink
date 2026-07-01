@@ -62,6 +62,7 @@ struct SmokeOptions {
     var allowUnavailable = false
     var transportMode: TransportMode = .direct
     var allowDirectFallback = false
+    var expectP2PRouteRefresh = false
 
     static func parse(_ arguments: [String]) throws -> SmokeOptions {
         var options = SmokeOptions()
@@ -75,14 +76,18 @@ struct SmokeOptions {
                 options.transportMode = .relay
             case "--allow-direct-fallback":
                 options.allowDirectFallback = true
+            case "--expect-p2p-route-refresh":
+                options.expectP2PRouteRefresh = true
             case "--help", "-h":
                 print("""
-                Usage: ./script/runtime_authenticated_mock_smoke.swift [--relay] [--allow-direct-fallback] [--real-ollama] [--allow-unavailable]
+                Usage: ./script/runtime_authenticated_mock_smoke.swift [--relay] [--allow-direct-fallback] [--expect-p2p-route-refresh] [--real-ollama] [--allow-unavailable]
 
-                  default              Run authenticated mock E2E smoke, including pull and chat coverage.
+                  default              Run authenticated mock E2E smoke, including pull, attachment, and chat coverage.
                   --relay              Route the smoke through AetherLinkRelay allocation with encrypted relay frames.
                   --allow-direct-fallback
                                        Allow explicit mixed-route relay diagnostics where QR pairing info also carries direct host/port.
+                  --expect-p2p-route-refresh
+                                       Require authenticated route.refresh to include complete opaque P2P rendezvous route material.
                   --real-ollama        Run pairing/auth smoke against the real provider aggregate with Ollama behind the runtime host.
                   --allow-unavailable  In --real-ollama mode, skip successfully if Ollama is unavailable.
                 """)
@@ -100,9 +105,35 @@ struct SmokeOptions {
         if options.allowDirectFallback, options.transportMode != .relay {
             throw SmokeFailure.message("--allow-direct-fallback only applies with --relay")
         }
+        if options.expectP2PRouteRefresh, options.transportMode != .relay {
+            throw SmokeFailure.message("--expect-p2p-route-refresh only applies with --relay")
+        }
         return options
     }
 }
+
+struct ExpectedP2PRouteRefresh {
+    var routeClass: String
+    var recordID: String
+    var encryptedBody: String
+    var antiReplayNonce: String
+    var protocolVersion: Int
+}
+
+let expectedP2PRouteRefresh = ExpectedP2PRouteRefresh(
+    routeClass: "p2p_rendezvous",
+    recordID: "smoke-p2p-record-1",
+    encryptedBody: "smoke-p2p-encrypted-body-1",
+    antiReplayNonce: "smoke-p2p-nonce-1",
+    protocolVersion: 1
+)
+
+let smokeSessionID = "smoke-session-\(UUID().uuidString)"
+let smokeTitleSessionID = "\(smokeSessionID)-title"
+let smokeLifecycleSessionID = "\(smokeSessionID)-lifecycle"
+let smokeResidencySessionID = "\(smokeSessionID)-residency"
+let smokeOwnerIsolationSessionAID = "\(smokeSessionID)-owner-a"
+let smokeOwnerIsolationSessionBID = "\(smokeSessionID)-owner-b"
 
 final class ServerOutput {
     private let lock = NSLock()
@@ -214,6 +245,57 @@ struct ParsedPairingURI {
     var hasDirectPort: Bool
 }
 
+final class RelayCiphertextBoundaryRecorder {
+    private let lock = NSLock()
+    private var frameBodies: [(direction: String, body: Data)] = []
+
+    func record(direction: String, body: Data) {
+        lock.lock()
+        frameBodies.append((direction, body))
+        lock.unlock()
+    }
+
+    func requireNoPlaintextMarkers(_ markers: [String]) throws {
+        lock.lock()
+        let captured = frameBodies
+        lock.unlock()
+
+        guard !captured.isEmpty else {
+            throw SmokeFailure.message("relay ciphertext boundary smoke did not capture encrypted relay frame bodies")
+        }
+        for marker in markers {
+            let markerData = Data(marker.utf8)
+            for (index, frame) in captured.enumerated() where frame.body.range(of: markerData) != nil {
+                throw SmokeFailure.message(
+                    "relay ciphertext boundary exposed plaintext marker \(marker) " +
+                    "in \(frame.direction) frame \(index)"
+                )
+            }
+        }
+        print("Relay ciphertext boundary verified across \(captured.count) encrypted frame bodies.")
+    }
+}
+
+enum RelayCiphertextBoundary {
+    static var enabled = false
+    static let recorder = RelayCiphertextBoundaryRecorder()
+
+    static func recordClientFrameBody(_ body: Data) {
+        guard enabled else { return }
+        recorder.record(direction: "client-to-runtime", body: body)
+    }
+
+    static func recordRuntimeFrameBody(_ body: Data) {
+        guard enabled else { return }
+        recorder.record(direction: "runtime-to-client", body: body)
+    }
+
+    static func requireNoPlaintextMarkers(_ markers: [String]) throws {
+        guard enabled else { return }
+        try recorder.requireNoPlaintextMarkers(markers)
+    }
+}
+
 final class TCPClient {
     let fd: Int32
     private var relayCipher: RelayFrameBodyCipher?
@@ -283,6 +365,7 @@ final class TCPClient {
         var body = try JSONSerialization.data(withJSONObject: envelope, options: [])
         if var cipher = relayCipher {
             body = try cipher.encryptClientFrameBody(body)
+            RelayCiphertextBoundary.recordClientFrameBody(body)
             relayCipher = cipher
         }
         var length = UInt32(body.count).bigEndian
@@ -299,6 +382,7 @@ final class TCPClient {
         }
         var body = try readExactly(Int(length))
         if var cipher = relayCipher {
+            RelayCiphertextBoundary.recordRuntimeFrameBody(body)
             body = try cipher.decryptRuntimeFrameBody(body)
             relayCipher = cipher
         }
@@ -430,6 +514,31 @@ func runAndCapture(_ arguments: [String]) throws -> String {
     return output.trimmingCharacters(in: .whitespacesAndNewlines)
 }
 
+func seedTrustedDevicesFile(
+    fileURL: URL,
+    devices: [(id: String, name: String, publicKeyBase64: String)]
+) throws {
+    try FileManager.default.createDirectory(
+        at: fileURL.deletingLastPathComponent(),
+        withIntermediateDirectories: true,
+        attributes: [.posixPermissions: 0o700]
+    )
+    let records = devices.map { device in
+        [
+            "id": device.id,
+            "name": device.name,
+            "publicKeyBase64": device.publicKeyBase64,
+            "pairedAt": "2026-06-30T00:00:00Z"
+        ]
+    }
+    let data = try JSONSerialization.data(withJSONObject: records, options: [.prettyPrinted, .sortedKeys])
+    try data.write(to: fileURL, options: [.atomic])
+    try FileManager.default.setAttributes(
+        [.posixPermissions: 0o600],
+        ofItemAtPath: fileURL.standardizedFileURL.path
+    )
+}
+
 func freePort() throws -> UInt16 {
     let fd = socket(AF_INET, SOCK_STREAM, 0)
     guard fd >= 0 else {
@@ -509,6 +618,39 @@ func requireRequestID(_ response: [String: Any], _ expected: String, context: St
     guard actual == expected else {
         throw SmokeFailure.message("\(context) expected request_id=\(expected), got \(actual ?? "nil")")
     }
+}
+
+func requireErrorCode(
+    _ response: [String: Any],
+    _ expectedCode: String,
+    requestID: String,
+    context: String,
+    retryable: Bool = false
+) throws {
+    try requireType(response, "error", context: context)
+    try requireRequestID(response, requestID, context: context)
+    let errorPayload = try payload(response, context: context)
+    guard errorPayload["code"] as? String == expectedCode else {
+        throw SmokeFailure.message("\(context) expected error code \(expectedCode), got \(String(describing: errorPayload["code"])): \(response)")
+    }
+    try requireBool(errorPayload, "retryable", retryable, context: context)
+}
+
+func requireRejectedPairingResult(
+    _ response: [String: Any],
+    expectedCode: String,
+    requestID: String,
+    context: String,
+    retryable: Bool
+) throws {
+    try requireType(response, "pairing.result", context: context)
+    try requireRequestID(response, requestID, context: context)
+    let rejectionPayload = try payload(response, context: context)
+    try requireBool(rejectionPayload, "accepted", false, context: context)
+    guard rejectionPayload["code"] as? String == expectedCode else {
+        throw SmokeFailure.message("\(context) expected pairing rejection code \(expectedCode), got \(String(describing: rejectionPayload["code"])): \(response)")
+    }
+    try requireBool(rejectionPayload, "retryable", retryable, context: context)
 }
 
 func requireBool(_ object: [String: Any], _ key: String, _ expected: Bool, context: String) throws {
@@ -701,7 +843,8 @@ func refreshRelayRoute(
     client: TCPClient,
     runtimeDeviceID: String,
     runtimeKeyFingerprint: String,
-    expectedEndpoint: RelayEndpoint
+    expectedEndpoint: RelayEndpoint,
+    expectP2PRouteRefresh: Bool
 ) throws -> RelayConfiguration {
     print("Checking route.refresh relay renewal...")
     let response = try sendAndRead(client, type: "route.refresh", requestID: "smoke-route-refresh")
@@ -728,6 +871,9 @@ func refreshRelayRoute(
         throw SmokeFailure.message("route.refresh returned invalid relay port: \(response)")
     }
     let relayNonce = try requireString(routePayload, "relay_nonce", context: "route.refresh")
+    if expectP2PRouteRefresh {
+        try requireP2PRouteRefreshMaterial(routePayload, context: "route.refresh")
+    }
     return RelayConfiguration(
         relayID: try requireString(routePayload, "relay_id", context: "route.refresh"),
         relaySecret: try requireString(routePayload, "relay_secret", context: "route.refresh"),
@@ -735,6 +881,67 @@ func refreshRelayRoute(
         host: relayHost,
         port: relayPortValue
     )
+}
+
+func requireP2PRouteRefreshMaterial(_ routePayload: [String: Any], context: String) throws {
+    guard try requireString(routePayload, "p2p_class", context: context) == expectedP2PRouteRefresh.routeClass,
+          try requireString(routePayload, "p2p_record_id", context: context) == expectedP2PRouteRefresh.recordID,
+          try requireString(routePayload, "p2p_encrypted_body", context: context) == expectedP2PRouteRefresh.encryptedBody,
+          try requireString(routePayload, "p2p_anti_replay_nonce", context: context) == expectedP2PRouteRefresh.antiReplayNonce,
+          try requireInt(routePayload, "p2p_protocol_version", context: context) == expectedP2PRouteRefresh.protocolVersion
+    else {
+        throw SmokeFailure.message("\(context) returned unexpected P2P rendezvous route material: \(routePayload)")
+    }
+    let p2pExpiresAt = try requireInt64(routePayload, "p2p_expires_at", context: context)
+    guard p2pExpiresAt > Int64(Date().timeIntervalSince1970 * 1000) else {
+        throw SmokeFailure.message("\(context) returned expired P2P rendezvous material: \(routePayload)")
+    }
+}
+
+func clientAuthSignature(
+    privateKey: P256.Signing.PrivateKey,
+    deviceID: String,
+    nonce: String
+) throws -> String {
+    let authMessage = "AetherLink client auth response v1\n\(deviceID)\n\(nonce)"
+    let digest = SHA256.hash(data: Data(authMessage.utf8))
+    return try privateKey.signature(for: digest).derRepresentation.base64EncodedString()
+}
+
+func rawNonceSignature(privateKey: P256.Signing.PrivateKey, nonce: String) throws -> String {
+    let digest = SHA256.hash(data: Data(nonce.utf8))
+    return try privateKey.signature(for: digest).derRepresentation.base64EncodedString()
+}
+
+func trustedHelloNonce(client: TCPClient, deviceID: String, requestID: String) throws -> String {
+    let challenge = try sendAndRead(
+        client,
+        type: "hello",
+        requestID: requestID,
+        payload: [
+            "device_id": deviceID,
+            "device_name": "Smoke Test Client",
+            "client_capabilities": ["chat", "streaming", "attachments"]
+        ]
+    )
+    try requireType(challenge, "auth.challenge", context: requestID)
+    let challengePayload = try payload(challenge, context: requestID)
+    return try requireString(challengePayload, "nonce", context: requestID)
+}
+
+func requireAcceptedAuthResponse(
+    _ response: [String: Any],
+    requestID: String,
+    context: String,
+    deviceID: String? = nil
+) throws {
+    try requireType(response, "auth.response", context: context)
+    try requireRequestID(response, requestID, context: context)
+    let authPayload = try payload(response, context: context)
+    try requireBool(authPayload, "accepted", true, context: context)
+    if let deviceID, authPayload["device_id"] as? String != deviceID {
+        throw SmokeFailure.message("\(context) returned a different device_id: \(response)")
+    }
 }
 
 func authenticateFreshClient(
@@ -747,23 +954,12 @@ func authenticateFreshClient(
 ) throws -> TCPClient {
     let client = try connectWithRetry(host: host, port: port, relay: relay)
     do {
-        let challenge = try sendAndRead(
-            client,
-            type: "hello",
-            requestID: "\(requestPrefix)-hello",
-            payload: [
-                "device_id": deviceID,
-                "device_name": "Smoke Test Client",
-                "client_capabilities": ["chat", "streaming", "attachments"]
-            ]
+        let nonce = try trustedHelloNonce(
+            client: client,
+            deviceID: deviceID,
+            requestID: "\(requestPrefix)-hello"
         )
-        try requireType(challenge, "auth.challenge", context: "\(requestPrefix) hello")
-        let challengePayload = try payload(challenge, context: "\(requestPrefix) hello")
-        let nonce = try requireString(challengePayload, "nonce", context: "\(requestPrefix) hello")
-
-        let authMessage = "AetherLink client auth response v1\n\(deviceID)\n\(nonce)"
-        let digest = SHA256.hash(data: Data(authMessage.utf8))
-        let signature = try privateKey.signature(for: digest).derRepresentation.base64EncodedString()
+        let signature = try clientAuthSignature(privateKey: privateKey, deviceID: deviceID, nonce: nonce)
         let authResponse = try sendAndRead(
             client,
             type: "auth.response",
@@ -774,14 +970,537 @@ func authenticateFreshClient(
                 "signature": signature
             ]
         )
-        try requireType(authResponse, "auth.response", context: "\(requestPrefix) auth.response")
-        let authPayload = try payload(authResponse, context: "\(requestPrefix) auth.response")
-        try requireBool(authPayload, "accepted", true, context: "\(requestPrefix) auth.response")
+        try requireAcceptedAuthResponse(
+            authResponse,
+            requestID: "\(requestPrefix)-auth",
+            context: "\(requestPrefix) auth.response",
+            deviceID: deviceID
+        )
         return client
     } catch {
         client.close()
         throw error
     }
+}
+
+func runRejectedPairingChecks(
+    host: String,
+    port: UInt16,
+    relay: RelayConfiguration?,
+    pairingNonce: String,
+    pairingCode: String,
+    deviceID: String,
+    publicKeyBase64: String
+) throws {
+    print("Checking rejected pairing request does not trust the device...")
+    let invalidCode = pairingCode == "000000" ? "999999" : "000000"
+    do {
+        let client = try connectWithRetry(host: host, port: port, relay: relay)
+        defer { client.close() }
+        let response = try sendAndRead(
+            client,
+            type: "pairing.request",
+            requestID: "smoke-pair-invalid-code",
+            payload: [
+                "pairing_nonce": pairingNonce,
+                "pairing_code": invalidCode,
+                "device_id": deviceID,
+                "device_name": "AetherLink Invalid Pairing Smoke",
+                "public_key": publicKeyBase64
+            ]
+        )
+        try requireRejectedPairingResult(
+            response,
+            expectedCode: "pairing_invalid",
+            requestID: "smoke-pair-invalid-code",
+            context: "invalid pairing.request",
+            retryable: true
+        )
+        let rejectionPayload = try payload(response, context: "invalid pairing.request")
+        guard try requireInt(rejectionPayload, "failed_attempts", context: "invalid pairing.request") == 1,
+              try requireInt(rejectionPayload, "remaining_attempts", context: "invalid pairing.request") >= 1
+        else {
+            throw SmokeFailure.message("invalid pairing.request did not report a bounded failed-attempt state: \(response)")
+        }
+        let healthAfterRejection = try sendAndRead(
+            client,
+            type: "runtime.health",
+            requestID: "smoke-pair-invalid-code-health"
+        )
+        try requireErrorCode(
+            healthAfterRejection,
+            "authentication_required",
+            requestID: "smoke-pair-invalid-code-health",
+            context: "runtime.health after invalid pairing.request"
+        )
+    }
+
+    do {
+        let client = try connectWithRetry(host: host, port: port, relay: relay)
+        defer { client.close() }
+        let response = try sendAndRead(
+            client,
+            type: "hello",
+            requestID: "smoke-invalid-pairing-hello",
+            payload: [
+                "device_id": deviceID,
+                "device_name": "AetherLink Invalid Pairing Smoke",
+                "client_capabilities": ["chat", "streaming"]
+            ]
+        )
+        try requireErrorCode(
+            response,
+            "pairing_required",
+            requestID: "smoke-invalid-pairing-hello",
+            context: "hello after rejected pairing"
+        )
+    }
+}
+
+func runInvalidPairingIdentityCheck(
+    host: String,
+    port: UInt16,
+    relay: RelayConfiguration?,
+    pairingNonce: String,
+    pairingCode: String,
+    deviceID: String
+) throws {
+    print("Checking malformed pairing identity does not trust the device...")
+    do {
+        let client = try connectWithRetry(host: host, port: port, relay: relay)
+        defer { client.close() }
+        let response = try sendAndRead(
+            client,
+            type: "pairing.request",
+            requestID: "smoke-pair-invalid-identity",
+            payload: [
+                "pairing_nonce": pairingNonce,
+                "pairing_code": pairingCode,
+                "device_id": deviceID,
+                "device_name": "AetherLink Invalid Identity Smoke",
+                "public_key": "not-a-p256-public-key"
+            ]
+        )
+        try requireRejectedPairingResult(
+            response,
+            expectedCode: "pairing_invalid_device_identity",
+            requestID: "smoke-pair-invalid-identity",
+            context: "invalid pairing identity",
+            retryable: true
+        )
+        let rejectionPayload = try payload(response, context: "invalid pairing identity")
+        guard try requireInt(rejectionPayload, "failed_attempts", context: "invalid pairing identity") == 2,
+              try requireInt(rejectionPayload, "remaining_attempts", context: "invalid pairing identity") >= 1
+        else {
+            throw SmokeFailure.message("invalid pairing identity did not preserve a retryable active session: \(response)")
+        }
+        let healthAfterRejection = try sendAndRead(
+            client,
+            type: "runtime.health",
+            requestID: "smoke-pair-invalid-identity-health"
+        )
+        try requireErrorCode(
+            healthAfterRejection,
+            "authentication_required",
+            requestID: "smoke-pair-invalid-identity-health",
+            context: "runtime.health after invalid pairing identity"
+        )
+    }
+
+    do {
+        let client = try connectWithRetry(host: host, port: port, relay: relay)
+        defer { client.close() }
+        let response = try sendAndRead(
+            client,
+            type: "hello",
+            requestID: "smoke-invalid-identity-hello",
+            payload: [
+                "device_id": deviceID,
+                "device_name": "AetherLink Invalid Identity Smoke",
+                "client_capabilities": ["chat", "streaming"]
+            ]
+        )
+        try requireErrorCode(
+            response,
+            "pairing_required",
+            requestID: "smoke-invalid-identity-hello",
+            context: "hello after invalid pairing identity"
+        )
+    }
+}
+
+func pairTrustedDevice(
+    host: String,
+    port: UInt16,
+    relay: RelayConfiguration?,
+    pairingNonce: String,
+    pairingCode: String,
+    deviceID: String,
+    deviceName: String,
+    publicKeyBase64: String,
+    requestID: String
+) throws {
+    let pairingClient = try connectWithRetry(host: host, port: port, relay: relay)
+    do {
+        let pairResponse = try sendAndRead(
+            pairingClient,
+            type: "pairing.request",
+            requestID: requestID,
+            payload: [
+                "pairing_nonce": pairingNonce,
+                "pairing_code": pairingCode,
+                "device_id": deviceID,
+                "device_name": deviceName,
+                "public_key": publicKeyBase64
+            ]
+        )
+        try requireType(pairResponse, "pairing.result", context: "pairing.request")
+        try requireRequestID(pairResponse, requestID, context: "pairing.request")
+        let pairPayload = try payload(pairResponse, context: "pairing.request")
+        try requireBool(pairPayload, "accepted", true, context: "pairing.request")
+        pairingClient.close()
+    } catch {
+        pairingClient.close()
+        throw error
+    }
+}
+
+func runConsumedPairingReuseCheck(
+    host: String,
+    port: UInt16,
+    relay: RelayConfiguration?,
+    pairingNonce: String,
+    pairingCode: String,
+    deviceID: String,
+    publicKeyBase64: String
+) throws {
+    print("Checking consumed pairing QR cannot be reused...")
+    do {
+        let client = try connectWithRetry(host: host, port: port, relay: relay)
+        defer { client.close() }
+        let response = try sendAndRead(
+            client,
+            type: "pairing.request",
+            requestID: "smoke-pair-consumed-reuse",
+            payload: [
+                "pairing_nonce": pairingNonce,
+                "pairing_code": pairingCode,
+                "device_id": deviceID,
+                "device_name": "AetherLink Consumed Pairing Smoke",
+                "public_key": publicKeyBase64
+            ]
+        )
+        try requireRejectedPairingResult(
+            response,
+            expectedCode: "pairing_not_active",
+            requestID: "smoke-pair-consumed-reuse",
+            context: "consumed pairing.request",
+            retryable: false
+        )
+        let healthAfterRejection = try sendAndRead(
+            client,
+            type: "runtime.health",
+            requestID: "smoke-pair-consumed-health"
+        )
+        try requireErrorCode(
+            healthAfterRejection,
+            "authentication_required",
+            requestID: "smoke-pair-consumed-health",
+            context: "runtime.health after consumed pairing reuse"
+        )
+    }
+
+    do {
+        let client = try connectWithRetry(host: host, port: port, relay: relay)
+        defer { client.close() }
+        let response = try sendAndRead(
+            client,
+            type: "hello",
+            requestID: "smoke-pair-consumed-hello",
+            payload: [
+                "device_id": deviceID,
+                "device_name": "AetherLink Consumed Pairing Smoke",
+                "client_capabilities": ["chat", "streaming"]
+            ]
+        )
+        try requireErrorCode(
+            response,
+            "pairing_required",
+            requestID: "smoke-pair-consumed-hello",
+            context: "hello after consumed pairing reuse"
+        )
+    }
+}
+
+func runRawNonceAuthRejectionCheck(
+    host: String,
+    port: UInt16,
+    relay: RelayConfiguration?,
+    deviceID: String,
+    privateKey: P256.Signing.PrivateKey
+) throws {
+    print("Checking raw nonce auth signature rejection...")
+    let client = try connectWithRetry(host: host, port: port, relay: relay)
+    defer { client.close() }
+    let nonce = try trustedHelloNonce(
+        client: client,
+        deviceID: deviceID,
+        requestID: "smoke-auth-raw-nonce-hello"
+    )
+    let signature = try rawNonceSignature(privateKey: privateKey, nonce: nonce)
+    let response = try sendAndRead(
+        client,
+        type: "auth.response",
+        requestID: "smoke-auth-raw-nonce-response",
+        payload: [
+            "device_id": deviceID,
+            "nonce": nonce,
+            "signature": signature
+        ]
+    )
+    try requireErrorCode(
+        response,
+        "authentication_failed",
+        requestID: "smoke-auth-raw-nonce-response",
+        context: "raw nonce auth.response"
+    )
+
+    let modelsAfterRawNonce = try sendAndRead(
+        client,
+        type: "models.list",
+        requestID: "smoke-auth-raw-nonce-models"
+    )
+    try requireErrorCode(
+        modelsAfterRawNonce,
+        "authentication_required",
+        requestID: "smoke-auth-raw-nonce-models",
+        context: "models.list after raw nonce auth.response"
+    )
+}
+
+func runAuthReplayAndSupersededChallengeChecks(
+    host: String,
+    port: UInt16,
+    relay: RelayConfiguration?,
+    deviceID: String,
+    privateKey: P256.Signing.PrivateKey
+) throws {
+    print("Checking auth replay and superseded challenge rejection...")
+    do {
+        let client = try connectWithRetry(host: host, port: port, relay: relay)
+        defer { client.close() }
+        let nonce = try trustedHelloNonce(
+            client: client,
+            deviceID: deviceID,
+            requestID: "smoke-auth-replay-hello"
+        )
+        let signature = try clientAuthSignature(privateKey: privateKey, deviceID: deviceID, nonce: nonce)
+        let authPayload: [String: Any] = [
+            "device_id": deviceID,
+            "nonce": nonce,
+            "signature": signature
+        ]
+        let firstAuthResponse = try sendAndRead(
+            client,
+            type: "auth.response",
+            requestID: "smoke-auth-replay-first",
+            payload: authPayload
+        )
+        try requireAcceptedAuthResponse(
+            firstAuthResponse,
+            requestID: "smoke-auth-replay-first",
+            context: "auth replay first auth.response",
+            deviceID: deviceID
+        )
+
+        let replayResponse = try sendAndRead(
+            client,
+            type: "auth.response",
+            requestID: "smoke-auth-replay-second",
+            payload: authPayload
+        )
+        try requireErrorCode(
+            replayResponse,
+            "authentication_failed",
+            requestID: "smoke-auth-replay-second",
+            context: "replayed auth.response"
+        )
+
+        let modelsAfterReplay = try sendAndRead(
+            client,
+            type: "models.list",
+            requestID: "smoke-auth-replay-models"
+        )
+        try requireType(modelsAfterReplay, "models.list", context: "models.list after replayed auth.response")
+    }
+
+    do {
+        let client = try connectWithRetry(host: host, port: port, relay: relay)
+        defer { client.close() }
+        let staleNonce = try trustedHelloNonce(
+            client: client,
+            deviceID: deviceID,
+            requestID: "smoke-auth-superseded-hello-1"
+        )
+        let freshNonce = try trustedHelloNonce(
+            client: client,
+            deviceID: deviceID,
+            requestID: "smoke-auth-superseded-hello-2"
+        )
+        guard staleNonce != freshNonce else {
+            throw SmokeFailure.message("superseded auth smoke expected distinct challenge nonces")
+        }
+
+        let staleSignature = try clientAuthSignature(privateKey: privateKey, deviceID: deviceID, nonce: staleNonce)
+        let staleAuthResponse = try sendAndRead(
+            client,
+            type: "auth.response",
+            requestID: "smoke-auth-superseded-stale",
+            payload: [
+                "device_id": deviceID,
+                "nonce": staleNonce,
+                "signature": staleSignature
+            ]
+        )
+        try requireErrorCode(
+            staleAuthResponse,
+            "authentication_failed",
+            requestID: "smoke-auth-superseded-stale",
+            context: "superseded stale auth.response"
+        )
+
+        let freshSignature = try clientAuthSignature(privateKey: privateKey, deviceID: deviceID, nonce: freshNonce)
+        let freshAuthResponse = try sendAndRead(
+            client,
+            type: "auth.response",
+            requestID: "smoke-auth-superseded-fresh",
+            payload: [
+                "device_id": deviceID,
+                "nonce": freshNonce,
+                "signature": freshSignature
+            ]
+        )
+        try requireAcceptedAuthResponse(
+            freshAuthResponse,
+            requestID: "smoke-auth-superseded-fresh",
+            context: "superseded fresh auth.response",
+            deviceID: deviceID
+        )
+
+        let healthAfterSuperseded = try sendAndRead(
+            client,
+            type: "runtime.health",
+            requestID: "smoke-auth-superseded-health"
+        )
+        try requireType(healthAfterSuperseded, "runtime.health", context: "runtime.health after superseded auth")
+    }
+}
+
+func runUnauthenticatedAndUntrustedRejectionChecks(
+    host: String,
+    port: UInt16,
+    relay: RelayConfiguration?
+) throws {
+    print("Checking unauthenticated runtime command rejection...")
+    let unauthenticatedCommands: [(type: String, requestID: String, payload: [String: Any])] = [
+        ("models.list", "smoke-unauthenticated-models", [:]),
+        ("models.pull", "smoke-unauthenticated-pull", [:]),
+        (
+            "chat.send",
+            "smoke-unauthenticated-chat",
+            [
+                "session_id": smokeSessionID,
+                "model": "dev-mock",
+                "messages": [
+                    ["role": "user", "content": "This must not reach the backend."]
+                ]
+            ]
+        ),
+        ("chat.cancel", "smoke-unauthenticated-cancel", ["target_request_id": "smoke-chat"]),
+        ("route.refresh", "smoke-unauthenticated-route-refresh", [:]),
+        ("chat.sessions.list", "smoke-unauthenticated-sessions", [:]),
+        ("chat.messages.list", "smoke-unauthenticated-messages", [:]),
+        ("chat.title.request", "smoke-unauthenticated-title", [:]),
+        ("chat.session.rename", "smoke-unauthenticated-rename", [:]),
+        ("chat.session.archive", "smoke-unauthenticated-archive", [:]),
+        ("chat.session.restore", "smoke-unauthenticated-restore", [:]),
+        ("chat.session.delete", "smoke-unauthenticated-delete", [:]),
+        ("memory.list", "smoke-unauthenticated-memory", [:]),
+        ("memory.upsert", "smoke-unauthenticated-memory-upsert", [:]),
+        ("memory.delete", "smoke-unauthenticated-memory-delete", [:])
+    ]
+    for command in unauthenticatedCommands {
+        let client = try connectWithRetry(host: host, port: port, relay: relay)
+        defer { client.close() }
+        let response = try sendAndRead(
+            client,
+            type: command.type,
+            requestID: command.requestID,
+            payload: command.payload
+        )
+        try requireErrorCode(
+            response,
+            "authentication_required",
+            requestID: command.requestID,
+            context: "unauthenticated \(command.type)"
+        )
+    }
+
+    print("Checking untrusted client hello rejection...")
+    let client = try connectWithRetry(host: host, port: port, relay: relay)
+    defer { client.close() }
+    let response = try sendAndRead(
+        client,
+        type: "hello",
+        requestID: "smoke-untrusted-hello",
+        payload: [
+            "device_id": "aetherlink-auth-smoke-untrusted-device",
+            "device_name": "Untrusted Smoke Client",
+            "client_capabilities": ["chat", "streaming"]
+        ]
+    )
+    try requireErrorCode(
+        response,
+        "pairing_required",
+        requestID: "smoke-untrusted-hello",
+        context: "untrusted hello"
+    )
+}
+
+func runTrustedDeviceRevocationCheck(client: TCPClient, trustedDevicesFile: URL) throws {
+    print("Checking trusted-device revocation clears an authenticated session...")
+    guard FileManager.default.fileExists(atPath: trustedDevicesFile.path) else {
+        throw SmokeFailure.message("Trusted-device store was missing before revocation check: \(trustedDevicesFile.path)")
+    }
+    try Data("[]".utf8).write(to: trustedDevicesFile, options: [.atomic])
+    try FileManager.default.setAttributes(
+        [.posixPermissions: 0o600],
+        ofItemAtPath: trustedDevicesFile.standardizedFileURL.path
+    )
+
+    let revokedHealth = try sendAndRead(
+        client,
+        type: "runtime.health",
+        requestID: "smoke-revoked-health"
+    )
+    try requireErrorCode(
+        revokedHealth,
+        "pairing_required",
+        requestID: "smoke-revoked-health",
+        context: "runtime.health after trusted-device revocation"
+    )
+
+    let clearedSessionModels = try sendAndRead(
+        client,
+        type: "models.list",
+        requestID: "smoke-revoked-models"
+    )
+    try requireErrorCode(
+        clearedSessionModels,
+        "authentication_required",
+        requestID: "smoke-revoked-models",
+        context: "models.list after trusted-device revocation cleared session"
+    )
 }
 
 func fetchLocalOllamaJSON(path: String) throws -> [String: Any] {
@@ -872,7 +1591,9 @@ func startServer(
     trustedDevicesFile: URL,
     backendMode: BackendMode,
     relay: RelayConfiguration?,
-    bootstrapRelay: RelayEndpoint?
+    bootstrapRelay: RelayEndpoint?,
+    expectP2PRouteRefresh: Bool,
+    mockUnloadEventFile: URL?
 ) throws -> Process {
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
@@ -882,13 +1603,35 @@ func startServer(
     switch backendMode {
     case .mock:
         environment["LOCAL_AGENT_BRIDGE_MOCK_BACKEND"] = "1"
+        environment["AETHERLINK_DEV_MOCK_AGGREGATE_RESIDENCY"] = "1"
+        environment["AETHERLINK_DEV_MOCK_RESIDENCY_IDLE_MS"] = "3000"
+        environment["AETHERLINK_DEV_MOCK_UNLOAD_EVENT_FILE"] = mockUnloadEventFile?.path
     case .realOllama:
         environment["LOCAL_AGENT_BRIDGE_MOCK_BACKEND"] = nil
+        environment["AETHERLINK_DEV_MOCK_AGGREGATE_RESIDENCY"] = nil
+        environment["AETHERLINK_DEV_MOCK_RESIDENCY_IDLE_MS"] = nil
+        environment["AETHERLINK_DEV_MOCK_UNLOAD_EVENT_FILE"] = nil
     }
     environment["AETHERLINK_DEV_PAIRING"] = "1"
     environment["AETHERLINK_DEV_TRUSTED_DEVICES_FILE"] = trustedDevicesFile.path
+    environment["AETHERLINK_DEV_RUNTIME_CHAT_SQLITE_FILE"] = trustedDevicesFile
+        .deletingLastPathComponent()
+        .appendingPathComponent("runtime-chat-events.sqlite")
+        .path
+    environment["AETHERLINK_DEV_RUNTIME_CHAT_JSONL_FILE"] = trustedDevicesFile
+        .deletingLastPathComponent()
+        .appendingPathComponent("runtime-chat-events.jsonl")
+        .path
     environment["AETHERLINK_DEV_RUNTIME_PUBLIC_KEY"] = "aetherlink-smoke-runtime-public-key"
     environment["AETHERLINK_DEV_RUNTIME_KEY_FINGERPRINT"] = "aetherlink-smoke-runtime-fingerprint"
+    if expectP2PRouteRefresh {
+        environment["AETHERLINK_DEV_ROUTE_REFRESH_P2P"] = "1"
+        environment["AETHERLINK_DEV_ROUTE_REFRESH_P2P_CLASS"] = expectedP2PRouteRefresh.routeClass
+        environment["AETHERLINK_DEV_ROUTE_REFRESH_P2P_RECORD_ID"] = expectedP2PRouteRefresh.recordID
+        environment["AETHERLINK_DEV_ROUTE_REFRESH_P2P_ENCRYPTED_BODY"] = expectedP2PRouteRefresh.encryptedBody
+        environment["AETHERLINK_DEV_ROUTE_REFRESH_P2P_NONCE"] = expectedP2PRouteRefresh.antiReplayNonce
+        environment["AETHERLINK_DEV_ROUTE_REFRESH_P2P_PROTOCOL_VERSION"] = String(expectedP2PRouteRefresh.protocolVersion)
+    }
     if let relay {
         environment["AETHERLINK_RELAY_HOST"] = relay.host
         environment["AETHERLINK_RELAY_PORT"] = String(relay.port)
@@ -907,7 +1650,904 @@ func startServer(
     return process
 }
 
-func runMockBackendChecks(client: TCPClient, port: UInt16) throws {
+func readStoppedChatStream(client: TCPClient, requestID: String, context: String) throws -> String {
+    var streamedText = ""
+    while true {
+        let response = try client.readEnvelope()
+        try assertNoBackendLeak(response, context: context)
+        try requireRequestID(response, requestID, context: context)
+        let responseType = response["type"] as? String
+        if responseType == "chat.delta" {
+            streamedText += (try payload(response, context: "\(context) delta")["delta"] as? String) ?? ""
+        } else if responseType == "chat.done" {
+            let donePayload = try payload(response, context: "\(context) done")
+            guard donePayload["finish_reason"] as? String == "stop" else {
+                throw SmokeFailure.message("\(context) chat.done did not finish with stop: \(response)")
+            }
+            return streamedText
+        } else {
+            throw SmokeFailure.message("Unexpected \(context) response: \(response)")
+        }
+    }
+}
+
+func relayPlaintextBoundaryMarkers() -> [String] {
+    let attachmentText = "Smoke attachment body proves authenticated relay attachment handling."
+    return [
+        "pairing.request",
+        "smoke-pair-invalid-code-health",
+        "pairing_invalid",
+        "smoke-pair-invalid-identity",
+        "smoke-invalid-identity-hello",
+        "pairing_invalid_device_identity",
+        "AetherLink Invalid Identity Smoke",
+        "smoke-pair-consumed",
+        "smoke-pair-consumed-health",
+        "pairing_not_active",
+        "No active pairing session is available.",
+        "AetherLink Consumed Pairing Smoke",
+        "auth.challenge",
+        "auth.response",
+        "authentication_failed",
+        "authentication_required",
+        "Could not authenticate this device.",
+        "runtime.health",
+        "models.list",
+        "models.pull",
+        "chat.send",
+        "chat.cancel",
+        "chat.sessions.list",
+        "chat.messages.list",
+        "chat.title.request",
+        "chat.session.rename",
+        "chat.session.archive",
+        "chat.session.restore",
+        "chat.session.delete",
+        "memory.upsert",
+        "memory.list",
+        "memory.delete",
+        "smoke-auth-raw-nonce",
+        "smoke-auth-replay",
+        "smoke-auth-superseded",
+        "smoke-owner",
+        "Device A private smoke memory.",
+        "Device B private smoke memory.",
+        "Use device A memory.",
+        "Use device B memory.",
+        "B cannot rename A",
+        "smoke-sessions-search-metadata",
+        "hello smoke test",
+        "matched_fields",
+        "Say hello from the smoke test.",
+        "Summarize the attached smoke note.",
+        "Create a session for lifecycle smoke.",
+        "Runtime smoke lifecycle",
+        attachmentText,
+        Data(attachmentText.utf8).base64EncodedString(),
+        "Prefers smoke-tested concise answers.",
+        "Mock streaming response.",
+        "Attachment received.",
+        "dev-mock"
+    ]
+}
+
+func verifyRelayCiphertextBoundaryIfNeeded() throws {
+    guard RelayCiphertextBoundary.enabled else { return }
+    print("Checking relay ciphertext boundary...")
+    try RelayCiphertextBoundary.requireNoPlaintextMarkers(relayPlaintextBoundaryMarkers())
+}
+
+func mockUnloadEvents(from fileURL: URL) throws -> [String] {
+    guard FileManager.default.fileExists(atPath: fileURL.path) else {
+        return []
+    }
+    let text = try String(contentsOf: fileURL, encoding: .utf8)
+    return text
+        .split(separator: "\n")
+        .map(String.init)
+        .filter { !$0.isEmpty }
+}
+
+func waitForMockUnloadEvent(_ expected: String, fileURL: URL, context: String) throws {
+    let deadline = Date().addingTimeInterval(8)
+    var latestEvents: [String] = []
+    while Date() < deadline {
+        latestEvents = try mockUnloadEvents(from: fileURL)
+        if latestEvents.contains(expected) {
+            return
+        }
+        usleep(100_000)
+    }
+    throw SmokeFailure.message("\(context) did not observe expected unload event \(expected). Events: \(latestEvents)")
+}
+
+func requireNoMockUnloadEvents(_ fileURL: URL, context: String) throws {
+    let events = try mockUnloadEvents(from: fileURL)
+    guard events.isEmpty else {
+        throw SmokeFailure.message("\(context) observed unexpected model unload event(s): \(events)")
+    }
+}
+
+func runAuthenticatedModelResidencyChecks(client: TCPClient, unloadEventFile: URL) throws {
+    print("Checking authenticated model residency unload policy...")
+    try requireNoMockUnloadEvents(unloadEventFile, context: "model residency before same-model repeat")
+
+    try client.send(envelope(
+        "chat.send",
+        requestID: "smoke-chat-repeat",
+        payload: [
+            "session_id": smokeResidencySessionID,
+            "model": "dev-mock",
+            "messages": [
+                ["role": "user", "content": "Repeat the same model before switching."]
+            ]
+        ]
+    ))
+    let repeatText = try readStoppedChatStream(
+        client: client,
+        requestID: "smoke-chat-repeat",
+        context: "smoke-chat-repeat"
+    )
+    guard repeatText.contains("Mock streaming response.") else {
+        throw SmokeFailure.message("same-model repeat did not stream mock text: \(repeatText)")
+    }
+    try requireNoMockUnloadEvents(unloadEventFile, context: "model residency same-model repeat")
+
+    try client.send(envelope(
+        "chat.send",
+        requestID: "smoke-chat-model-switch",
+        payload: [
+            "session_id": smokeResidencySessionID,
+            "model": "lm_studio:dev-mock-alt",
+            "messages": [
+                ["role": "user", "content": "Switch providers to verify model unload."]
+            ]
+        ]
+    ))
+    let switchText = try readStoppedChatStream(
+        client: client,
+        requestID: "smoke-chat-model-switch",
+        context: "smoke-chat-model-switch"
+    )
+    guard switchText.contains("Mock streaming response.") else {
+        throw SmokeFailure.message("model-switch chat did not stream mock text: \(switchText)")
+    }
+    try waitForMockUnloadEvent(
+        "ollama|dev-mock",
+        fileURL: unloadEventFile,
+        context: "model residency model-switch unload"
+    )
+    try waitForMockUnloadEvent(
+        "lm_studio|dev-mock-alt",
+        fileURL: unloadEventFile,
+        context: "model residency idle unload"
+    )
+}
+
+func requireDictionaryArray(_ object: [String: Any], key: String, context: String) throws -> [[String: Any]] {
+    guard let array = object[key] as? [[String: Any]] else {
+        throw SmokeFailure.message("\(context) expected \(key) array of objects: \(object)")
+    }
+    return array
+}
+
+func requireStringArray(_ object: [String: Any], key: String, context: String) throws -> [String] {
+    guard let array = object[key] as? [String] else {
+        throw SmokeFailure.message("\(context) expected \(key) array of strings: \(object)")
+    }
+    return array
+}
+
+func requireSessionSummary(_ sessions: [[String: Any]], sessionID: String, context: String) throws -> [String: Any] {
+    guard let session = sessions.first(where: { $0["session_id"] as? String == sessionID }) else {
+        throw SmokeFailure.message("\(context) did not include \(sessionID): \(sessions)")
+    }
+    return session
+}
+
+func requireNoSession(_ sessions: [[String: Any]], sessionID: String, context: String) throws {
+    guard !sessions.contains(where: { $0["session_id"] as? String == sessionID }) else {
+        throw SmokeFailure.message("\(context) unexpectedly included \(sessionID): \(sessions)")
+    }
+}
+
+func requireSearchMetadata(
+    _ session: [String: Any],
+    expectedRank: Int,
+    snippetContains expectedSnippet: String,
+    matchedField expectedMatchedField: String,
+    context: String
+) throws {
+    guard let search = session["search"] as? [String: Any] else {
+        throw SmokeFailure.message("\(context) expected search metadata: \(session)")
+    }
+    let rank = try requireInt(search, "rank", context: context)
+    guard rank == expectedRank else {
+        throw SmokeFailure.message("\(context) expected search rank \(expectedRank), got \(rank): \(session)")
+    }
+    let snippet = try requireString(search, "snippet", context: context)
+    guard snippet.contains(expectedSnippet) else {
+        throw SmokeFailure.message("\(context) expected snippet containing \(expectedSnippet), got \(snippet)")
+    }
+    let matchedFields = try requireStringArray(search, key: "matched_fields", context: context)
+    guard matchedFields.contains(expectedMatchedField) else {
+        throw SmokeFailure.message("\(context) expected matched field \(expectedMatchedField), got \(matchedFields)")
+    }
+}
+
+func listChatSessions(
+    client: TCPClient,
+    requestID: String,
+    includeArchived: Bool = false,
+    query: String? = nil
+) throws -> [[String: Any]] {
+    var requestPayload: [String: Any] = [
+        "include_archived": includeArchived,
+        "limit": 20
+    ]
+    if let query, !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        requestPayload["query"] = query
+    }
+    let response = try sendAndRead(
+        client,
+        type: "chat.sessions.list",
+        requestID: requestID,
+        payload: requestPayload
+    )
+    try requireType(response, "chat.sessions.list", context: requestID)
+    try requireRequestID(response, requestID, context: requestID)
+    let listPayload = try payload(response, context: requestID)
+    return try requireDictionaryArray(listPayload, key: "sessions", context: requestID)
+}
+
+func listChatMessages(client: TCPClient, requestID: String, sessionID: String) throws -> [[String: Any]] {
+    let response = try sendAndRead(
+        client,
+        type: "chat.messages.list",
+        requestID: requestID,
+        payload: [
+            "session_id": sessionID,
+            "limit": 20
+        ]
+    )
+    try requireType(response, "chat.messages.list", context: requestID)
+    try requireRequestID(response, requestID, context: requestID)
+    let messagesPayload = try payload(response, context: requestID)
+    guard messagesPayload["session_id"] as? String == sessionID else {
+        throw SmokeFailure.message("\(requestID) returned a different session id: \(response)")
+    }
+    return try requireDictionaryArray(messagesPayload, key: "messages", context: requestID)
+}
+
+func listMemoryEntries(client: TCPClient, requestID: String) throws -> [[String: Any]] {
+    let response = try sendAndRead(client, type: "memory.list", requestID: requestID)
+    try requireType(response, "memory.list", context: requestID)
+    try requireRequestID(response, requestID, context: requestID)
+    let memoryPayload = try payload(response, context: requestID)
+    return try requireDictionaryArray(memoryPayload, key: "entries", context: requestID)
+}
+
+func requireOnlyMemoryEntry(
+    _ entries: [[String: Any]],
+    id: String,
+    content: String,
+    context: String
+) throws {
+    guard entries.count == 1,
+          entries.first?["id"] as? String == id,
+          entries.first?["content"] as? String == content,
+          entries.first?["enabled"] as? Bool == true
+    else {
+        throw SmokeFailure.message("\(context) expected one enabled memory entry \(id): \(entries)")
+    }
+}
+
+func requireEmptyMessages(_ messages: [[String: Any]], context: String) throws {
+    guard messages.isEmpty else {
+        throw SmokeFailure.message("\(context) expected no visible messages: \(messages)")
+    }
+}
+
+func runAuthenticatedTitleAndSessionLifecycleChecks(client: TCPClient) throws {
+    print("Checking authenticated chat title and session lifecycle...")
+    try client.send(envelope(
+        "chat.send",
+        requestID: "smoke-session-lifecycle-seed",
+        payload: [
+            "session_id": smokeLifecycleSessionID,
+            "model": "dev-mock",
+            "messages": [
+                ["role": "user", "content": "Create a session for lifecycle smoke."]
+            ]
+        ]
+    ))
+    let seedText = try readStoppedChatStream(
+        client: client,
+        requestID: "smoke-session-lifecycle-seed",
+        context: "smoke-session-lifecycle-seed"
+    )
+    guard seedText.contains("Mock streaming response.") else {
+        throw SmokeFailure.message("lifecycle seed chat did not stream mock text: \(seedText)")
+    }
+
+    let titleResponse = try sendAndRead(
+        client,
+        type: "chat.title.request",
+        requestID: "smoke-title",
+        payload: [
+            "session_id": smokeTitleSessionID,
+            "model": "dev-mock",
+            "locale": "en",
+            "messages": [
+                ["role": "user", "content": "Create a session for lifecycle smoke."],
+                ["role": "assistant", "content": "Mock streaming response."]
+            ]
+        ]
+    )
+    try requireType(titleResponse, "chat.title.result", context: "chat.title.request")
+    try requireRequestID(titleResponse, "smoke-title", context: "chat.title.request")
+    let titlePayload = try payload(titleResponse, context: "chat.title.request")
+    guard titlePayload["title"] as? String == "Mock streaming response." else {
+        throw SmokeFailure.message("chat.title.request returned an unexpected title: \(titleResponse)")
+    }
+
+    let renamedTitle = "Runtime smoke lifecycle"
+    let renameResponse = try sendAndRead(
+        client,
+        type: "chat.session.rename",
+        requestID: "smoke-session-rename",
+        payload: [
+            "session_id": smokeLifecycleSessionID,
+            "title": " \(renamedTitle) "
+        ]
+    )
+    try requireType(renameResponse, "chat.session.rename", context: "chat.session.rename")
+    try requireRequestID(renameResponse, "smoke-session-rename", context: "chat.session.rename")
+    let renamePayload = try payload(renameResponse, context: "chat.session.rename")
+    guard renamePayload["session_id"] as? String == smokeLifecycleSessionID,
+          renamePayload["title"] as? String == renamedTitle,
+          renamePayload["renamed_at"] is String
+    else {
+        throw SmokeFailure.message("chat.session.rename returned an unexpected payload: \(renameResponse)")
+    }
+
+    let renamedSessions = try listChatSessions(client: client, requestID: "smoke-sessions-after-rename")
+    let renamedSession = try requireSessionSummary(
+        renamedSessions,
+        sessionID: smokeLifecycleSessionID,
+        context: "chat.sessions.list after rename"
+    )
+    guard renamedSession["title"] as? String == renamedTitle,
+          renamedSession["status"] as? String == "active"
+    else {
+        throw SmokeFailure.message("chat.session.rename did not update active session summary: \(renamedSession)")
+    }
+
+    let archiveResponse = try sendAndRead(
+        client,
+        type: "chat.session.archive",
+        requestID: "smoke-session-archive",
+        payload: ["session_id": smokeLifecycleSessionID]
+    )
+    try requireType(archiveResponse, "chat.session.archive", context: "chat.session.archive")
+    try requireRequestID(archiveResponse, "smoke-session-archive", context: "chat.session.archive")
+    let archivePayload = try payload(archiveResponse, context: "chat.session.archive")
+    guard archivePayload["session_id"] as? String == smokeLifecycleSessionID,
+          archivePayload["status"] as? String == "archived",
+          archivePayload["archived_at"] is String
+    else {
+        throw SmokeFailure.message("chat.session.archive returned an unexpected payload: \(archiveResponse)")
+    }
+
+    let defaultSessionsAfterArchive = try listChatSessions(
+        client: client,
+        requestID: "smoke-sessions-default-after-archive"
+    )
+    guard !defaultSessionsAfterArchive.contains(where: { $0["session_id"] as? String == smokeLifecycleSessionID }) else {
+        throw SmokeFailure.message("archived lifecycle session remained in default session list: \(defaultSessionsAfterArchive)")
+    }
+    let archivedSessions = try listChatSessions(
+        client: client,
+        requestID: "smoke-sessions-include-archived",
+        includeArchived: true
+    )
+    let archivedSession = try requireSessionSummary(
+        archivedSessions,
+        sessionID: smokeLifecycleSessionID,
+        context: "chat.sessions.list include archived"
+    )
+    guard archivedSession["status"] as? String == "archived",
+          archivedSession["archived_at"] is String
+    else {
+        throw SmokeFailure.message("chat.sessions.list did not report archived lifecycle state: \(archivedSession)")
+    }
+
+    let restoreResponse = try sendAndRead(
+        client,
+        type: "chat.session.restore",
+        requestID: "smoke-session-restore",
+        payload: ["session_id": smokeLifecycleSessionID]
+    )
+    try requireType(restoreResponse, "chat.session.restore", context: "chat.session.restore")
+    try requireRequestID(restoreResponse, "smoke-session-restore", context: "chat.session.restore")
+    let restorePayload = try payload(restoreResponse, context: "chat.session.restore")
+    guard restorePayload["session_id"] as? String == smokeLifecycleSessionID,
+          restorePayload["status"] as? String == "restored",
+          restorePayload["restored_at"] is String
+    else {
+        throw SmokeFailure.message("chat.session.restore returned an unexpected payload: \(restoreResponse)")
+    }
+    let restoredSessions = try listChatSessions(client: client, requestID: "smoke-sessions-after-restore")
+    let restoredSession = try requireSessionSummary(
+        restoredSessions,
+        sessionID: smokeLifecycleSessionID,
+        context: "chat.sessions.list after restore"
+    )
+    guard restoredSession["status"] as? String == "active" else {
+        throw SmokeFailure.message("chat.session.restore did not restore active session state: \(restoredSession)")
+    }
+
+    let activeDeleteResponse = try sendAndRead(
+        client,
+        type: "chat.session.delete",
+        requestID: "smoke-session-delete-active",
+        payload: ["session_id": smokeLifecycleSessionID]
+    )
+    try requireErrorCode(
+        activeDeleteResponse,
+        "chat_session_must_be_archived_before_delete",
+        requestID: "smoke-session-delete-active",
+        context: "chat.session.delete active session"
+    )
+
+    let archiveBeforeDeleteResponse = try sendAndRead(
+        client,
+        type: "chat.session.archive",
+        requestID: "smoke-session-archive-before-delete",
+        payload: ["session_id": smokeLifecycleSessionID]
+    )
+    try requireType(
+        archiveBeforeDeleteResponse,
+        "chat.session.archive",
+        context: "chat.session.archive before delete"
+    )
+    try requireRequestID(
+        archiveBeforeDeleteResponse,
+        "smoke-session-archive-before-delete",
+        context: "chat.session.archive before delete"
+    )
+
+    let deleteResponse = try sendAndRead(
+        client,
+        type: "chat.session.delete",
+        requestID: "smoke-session-delete",
+        payload: ["session_id": smokeLifecycleSessionID]
+    )
+    try requireType(deleteResponse, "chat.session.delete", context: "chat.session.delete")
+    try requireRequestID(deleteResponse, "smoke-session-delete", context: "chat.session.delete")
+    let deletePayload = try payload(deleteResponse, context: "chat.session.delete")
+    guard deletePayload["session_id"] as? String == smokeLifecycleSessionID,
+          deletePayload["status"] as? String == "deleted",
+          deletePayload["deleted_at"] is String
+    else {
+        throw SmokeFailure.message("chat.session.delete returned an unexpected payload: \(deleteResponse)")
+    }
+
+    let sessionsAfterDelete = try listChatSessions(
+        client: client,
+        requestID: "smoke-sessions-after-delete",
+        includeArchived: true
+    )
+    guard !sessionsAfterDelete.contains(where: { $0["session_id"] as? String == smokeLifecycleSessionID }) else {
+        throw SmokeFailure.message("chat.session.delete left the lifecycle session listed: \(sessionsAfterDelete)")
+    }
+
+    let deletedMessagesResponse = try sendAndRead(
+        client,
+        type: "chat.messages.list",
+        requestID: "smoke-messages-after-delete",
+        payload: [
+            "session_id": smokeLifecycleSessionID,
+            "limit": 20
+        ]
+    )
+    try requireType(deletedMessagesResponse, "chat.messages.list", context: "chat.messages.list after delete")
+    let deletedMessagesPayload = try payload(deletedMessagesResponse, context: "chat.messages.list after delete")
+    let deletedMessages = try requireDictionaryArray(
+        deletedMessagesPayload,
+        key: "messages",
+        context: "chat.messages.list after delete"
+    )
+    guard deletedMessages.isEmpty else {
+        throw SmokeFailure.message("chat.session.delete left lifecycle messages visible: \(deletedMessagesResponse)")
+    }
+}
+
+func runAuthenticatedHistoryAndMemoryChecks(client: TCPClient) throws {
+    print("Checking authenticated chat history and runtime memory...")
+    let sessionsResponse = try sendAndRead(
+        client,
+        type: "chat.sessions.list",
+        requestID: "smoke-sessions",
+        payload: [
+            "include_archived": true,
+            "limit": 10
+        ]
+    )
+    try requireType(sessionsResponse, "chat.sessions.list", context: "chat.sessions.list")
+    try requireRequestID(sessionsResponse, "smoke-sessions", context: "chat.sessions.list")
+    let sessionsPayload = try payload(sessionsResponse, context: "chat.sessions.list")
+    let sessions = try requireDictionaryArray(sessionsPayload, key: "sessions", context: "chat.sessions.list")
+    guard let smokeSession = sessions.first(where: { $0["session_id"] as? String == smokeSessionID }) else {
+        throw SmokeFailure.message("chat.sessions.list did not include \(smokeSessionID) after chat.send: \(sessionsResponse)")
+    }
+    guard smokeSession["model"] as? String == "dev-mock",
+          let messageCount = smokeSession["message_count"] as? Int,
+          messageCount >= 2
+    else {
+        throw SmokeFailure.message("chat.sessions.list returned incomplete smoke-session summary: \(smokeSession)")
+    }
+
+    let searchedSessions = try listChatSessions(
+        client: client,
+        requestID: "smoke-sessions-search-metadata",
+        includeArchived: true,
+        query: "hello smoke test"
+    )
+    guard searchedSessions.first?["session_id"] as? String == smokeSessionID else {
+        throw SmokeFailure.message("chat.sessions.list query did not rank \(smokeSessionID) first: \(searchedSessions)")
+    }
+    let searchedSmokeSession = try requireSessionSummary(
+        searchedSessions,
+        sessionID: smokeSessionID,
+        context: "chat.sessions.list query search metadata"
+    )
+    try requireSearchMetadata(
+        searchedSmokeSession,
+        expectedRank: 1,
+        snippetContains: "Say hello from the smoke test.",
+        matchedField: "transcript",
+        context: "chat.sessions.list query search metadata"
+    )
+
+    let messagesResponse = try sendAndRead(
+        client,
+        type: "chat.messages.list",
+        requestID: "smoke-messages",
+        payload: [
+            "session_id": smokeSessionID,
+            "limit": 20
+        ]
+    )
+    try requireType(messagesResponse, "chat.messages.list", context: "chat.messages.list")
+    try requireRequestID(messagesResponse, "smoke-messages", context: "chat.messages.list")
+    let messagesPayload = try payload(messagesResponse, context: "chat.messages.list")
+    guard messagesPayload["session_id"] as? String == smokeSessionID else {
+        throw SmokeFailure.message("chat.messages.list returned a different session id: \(messagesResponse)")
+    }
+    let messages = try requireDictionaryArray(messagesPayload, key: "messages", context: "chat.messages.list")
+    guard messages.contains(where: {
+        $0["role"] as? String == "user"
+            && ($0["content"] as? String)?.contains("Say hello from the smoke test.") == true
+    }) else {
+        throw SmokeFailure.message("chat.messages.list did not include the smoke user turn: \(messagesResponse)")
+    }
+    guard messages.contains(where: {
+        $0["role"] as? String == "assistant"
+            && ($0["content"] as? String)?.contains("Mock streaming response.") == true
+    }) else {
+        throw SmokeFailure.message("chat.messages.list did not include the smoke assistant response: \(messagesResponse)")
+    }
+
+    let memoryID = "smoke-memory-route"
+    let memoryUpsertResponse = try sendAndRead(
+        client,
+        type: "memory.upsert",
+        requestID: "smoke-memory-upsert",
+        payload: [
+            "id": memoryID,
+            "content": " Prefers smoke-tested concise answers. ",
+            "enabled": true
+        ]
+    )
+    try requireType(memoryUpsertResponse, "memory.upsert", context: "memory.upsert")
+    try requireRequestID(memoryUpsertResponse, "smoke-memory-upsert", context: "memory.upsert")
+    let memoryUpsertPayload = try payload(memoryUpsertResponse, context: "memory.upsert")
+    guard let upsertedEntry = memoryUpsertPayload["entry"] as? [String: Any],
+          upsertedEntry["id"] as? String == memoryID,
+          upsertedEntry["content"] as? String == "Prefers smoke-tested concise answers.",
+          upsertedEntry["enabled"] as? Bool == true
+    else {
+        throw SmokeFailure.message("memory.upsert returned an unexpected entry: \(memoryUpsertResponse)")
+    }
+
+    let memoryListResponse = try sendAndRead(client, type: "memory.list", requestID: "smoke-memory-list")
+    try requireType(memoryListResponse, "memory.list", context: "memory.list")
+    try requireRequestID(memoryListResponse, "smoke-memory-list", context: "memory.list")
+    let memoryListPayload = try payload(memoryListResponse, context: "memory.list")
+    let memoryEntries = try requireDictionaryArray(memoryListPayload, key: "entries", context: "memory.list")
+    guard memoryEntries.contains(where: {
+        $0["id"] as? String == memoryID
+            && $0["content"] as? String == "Prefers smoke-tested concise answers."
+            && $0["enabled"] as? Bool == true
+    }) else {
+        throw SmokeFailure.message("memory.list did not include the smoke memory entry: \(memoryListResponse)")
+    }
+
+    let memoryDeleteResponse = try sendAndRead(
+        client,
+        type: "memory.delete",
+        requestID: "smoke-memory-delete",
+        payload: ["id": memoryID]
+    )
+    try requireType(memoryDeleteResponse, "memory.delete", context: "memory.delete")
+    try requireRequestID(memoryDeleteResponse, "smoke-memory-delete", context: "memory.delete")
+    let memoryDeletePayload = try payload(memoryDeleteResponse, context: "memory.delete")
+    guard memoryDeletePayload["id"] as? String == memoryID,
+          memoryDeletePayload["deleted_at"] is String
+    else {
+        throw SmokeFailure.message("memory.delete returned an unexpected deletion payload: \(memoryDeleteResponse)")
+    }
+
+    let memoryAfterDeleteResponse = try sendAndRead(
+        client,
+        type: "memory.list",
+        requestID: "smoke-memory-list-after-delete"
+    )
+    try requireType(memoryAfterDeleteResponse, "memory.list", context: "memory.list after delete")
+    try requireRequestID(memoryAfterDeleteResponse, "smoke-memory-list-after-delete", context: "memory.list after delete")
+    let memoryAfterDeletePayload = try payload(memoryAfterDeleteResponse, context: "memory.list after delete")
+    let memoryEntriesAfterDelete = try requireDictionaryArray(
+        memoryAfterDeletePayload,
+        key: "entries",
+        context: "memory.list after delete"
+    )
+    guard !memoryEntriesAfterDelete.contains(where: { $0["id"] as? String == memoryID }) else {
+        throw SmokeFailure.message("memory.delete did not remove the smoke memory entry: \(memoryAfterDeleteResponse)")
+    }
+}
+
+func runMultiDeviceOwnerIsolationChecks(
+    host: String,
+    port: UInt16,
+    relay: RelayConfiguration?,
+    deviceAID: String,
+    privateKeyA: P256.Signing.PrivateKey,
+    deviceBID: String,
+    privateKeyB: P256.Signing.PrivateKey
+) throws {
+    print("Checking multi-device owner isolation...")
+    let memoryID = "smoke-owner-shared-memory"
+    let memoryAContent = "Device A private smoke memory."
+    let memoryBContent = "Device B private smoke memory."
+
+    do {
+        let clientA = try authenticateFreshClient(
+            host: host,
+            port: port,
+            relay: relay,
+            deviceID: deviceAID,
+            privateKey: privateKeyA,
+            requestPrefix: "smoke-owner-a"
+        )
+        defer { clientA.close() }
+        let memoryAUpsert = try sendAndRead(
+            clientA,
+            type: "memory.upsert",
+            requestID: "smoke-owner-a-memory-upsert",
+            payload: [
+                "id": memoryID,
+                "content": memoryAContent,
+                "enabled": true
+            ]
+        )
+        try requireType(memoryAUpsert, "memory.upsert", context: "owner A memory.upsert")
+        try requireRequestID(memoryAUpsert, "smoke-owner-a-memory-upsert", context: "owner A memory.upsert")
+
+        let memoryAList = try listMemoryEntries(client: clientA, requestID: "smoke-owner-a-memory-list")
+        try requireOnlyMemoryEntry(memoryAList, id: memoryID, content: memoryAContent, context: "owner A memory.list")
+
+        try clientA.send(envelope(
+            "chat.send",
+            requestID: "smoke-owner-a-chat",
+            payload: [
+                "session_id": smokeOwnerIsolationSessionAID,
+                "model": "dev-mock",
+                "messages": [
+                    ["role": "user", "content": "Use device A memory."]
+                ]
+            ]
+        ))
+        let chatAText = try readStoppedChatStream(
+            client: clientA,
+            requestID: "smoke-owner-a-chat",
+            context: "owner A chat.send"
+        )
+        guard chatAText.contains("Mock streaming response.") else {
+            throw SmokeFailure.message("owner A chat did not stream mock text: \(chatAText)")
+        }
+    }
+
+    do {
+        let clientB = try authenticateFreshClient(
+            host: host,
+            port: port,
+            relay: relay,
+            deviceID: deviceBID,
+            privateKey: privateKeyB,
+            requestPrefix: "smoke-owner-b"
+        )
+        defer { clientB.close() }
+        let memoryBEmpty = try listMemoryEntries(client: clientB, requestID: "smoke-owner-b-memory-empty")
+        guard memoryBEmpty.isEmpty else {
+            throw SmokeFailure.message("owner B memory.list saw owner A memory before B upsert: \(memoryBEmpty)")
+        }
+
+        let memoryBUpsert = try sendAndRead(
+            clientB,
+            type: "memory.upsert",
+            requestID: "smoke-owner-b-memory-upsert",
+            payload: [
+                "id": memoryID,
+                "content": memoryBContent,
+                "enabled": true
+            ]
+        )
+        try requireType(memoryBUpsert, "memory.upsert", context: "owner B memory.upsert")
+        try requireRequestID(memoryBUpsert, "smoke-owner-b-memory-upsert", context: "owner B memory.upsert")
+
+        let memoryBList = try listMemoryEntries(client: clientB, requestID: "smoke-owner-b-memory-list")
+        try requireOnlyMemoryEntry(memoryBList, id: memoryID, content: memoryBContent, context: "owner B memory.list")
+
+        let sessionsBEmpty = try listChatSessions(
+            client: clientB,
+            requestID: "smoke-owner-b-sessions-empty",
+            includeArchived: true
+        )
+        try requireNoSession(
+            sessionsBEmpty,
+            sessionID: smokeOwnerIsolationSessionAID,
+            context: "owner B chat.sessions.list before B chat"
+        )
+        let messagesBA = try listChatMessages(
+            client: clientB,
+            requestID: "smoke-owner-b-messages-a",
+            sessionID: smokeOwnerIsolationSessionAID
+        )
+        try requireEmptyMessages(messagesBA, context: "owner B chat.messages.list for owner A session")
+
+        let renameBA = try sendAndRead(
+            clientB,
+            type: "chat.session.rename",
+            requestID: "smoke-owner-b-rename-a",
+            payload: [
+                "session_id": smokeOwnerIsolationSessionAID,
+                "title": "B cannot rename A"
+            ]
+        )
+        try requireErrorCode(
+            renameBA,
+            "chat_session_not_found",
+            requestID: "smoke-owner-b-rename-a",
+            context: "owner B rename owner A session"
+        )
+        let archiveBA = try sendAndRead(
+            clientB,
+            type: "chat.session.archive",
+            requestID: "smoke-owner-b-archive-a",
+            payload: ["session_id": smokeOwnerIsolationSessionAID]
+        )
+        try requireErrorCode(
+            archiveBA,
+            "chat_session_not_found",
+            requestID: "smoke-owner-b-archive-a",
+            context: "owner B archive owner A session"
+        )
+        let deleteBA = try sendAndRead(
+            clientB,
+            type: "chat.session.delete",
+            requestID: "smoke-owner-b-delete-a",
+            payload: ["session_id": smokeOwnerIsolationSessionAID]
+        )
+        try requireErrorCode(
+            deleteBA,
+            "chat_session_not_found",
+            requestID: "smoke-owner-b-delete-a",
+            context: "owner B delete owner A session"
+        )
+
+        try clientB.send(envelope(
+            "chat.send",
+            requestID: "smoke-owner-b-chat",
+            payload: [
+                "session_id": smokeOwnerIsolationSessionBID,
+                "model": "dev-mock",
+                "messages": [
+                    ["role": "user", "content": "Use device B memory."]
+                ]
+            ]
+        ))
+        let chatBText = try readStoppedChatStream(
+            client: clientB,
+            requestID: "smoke-owner-b-chat",
+            context: "owner B chat.send"
+        )
+        guard chatBText.contains("Mock streaming response.") else {
+            throw SmokeFailure.message("owner B chat did not stream mock text: \(chatBText)")
+        }
+
+        let sessionsB = try listChatSessions(
+            client: clientB,
+            requestID: "smoke-owner-b-sessions",
+            includeArchived: true
+        )
+        _ = try requireSessionSummary(
+            sessionsB,
+            sessionID: smokeOwnerIsolationSessionBID,
+            context: "owner B chat.sessions.list"
+        )
+        try requireNoSession(
+            sessionsB,
+            sessionID: smokeOwnerIsolationSessionAID,
+            context: "owner B chat.sessions.list"
+        )
+
+        let memoryBDelete = try sendAndRead(
+            clientB,
+            type: "memory.delete",
+            requestID: "smoke-owner-b-memory-delete",
+            payload: ["id": memoryID]
+        )
+        try requireType(memoryBDelete, "memory.delete", context: "owner B memory.delete")
+        try requireRequestID(memoryBDelete, "smoke-owner-b-memory-delete", context: "owner B memory.delete")
+        let memoryBAfterDelete = try listMemoryEntries(client: clientB, requestID: "smoke-owner-b-memory-after-delete")
+        guard memoryBAfterDelete.isEmpty else {
+            throw SmokeFailure.message("owner B memory.delete left B memory visible: \(memoryBAfterDelete)")
+        }
+    }
+
+    do {
+        let clientA = try authenticateFreshClient(
+            host: host,
+            port: port,
+            relay: relay,
+            deviceID: deviceAID,
+            privateKey: privateKeyA,
+            requestPrefix: "smoke-owner-a-recheck"
+        )
+        defer { clientA.close() }
+        let memoryAAfterBDelete = try listMemoryEntries(client: clientA, requestID: "smoke-owner-a-memory-after-b-delete")
+        try requireOnlyMemoryEntry(
+            memoryAAfterBDelete,
+            id: memoryID,
+            content: memoryAContent,
+            context: "owner A memory.list after owner B delete"
+        )
+        let sessionsA = try listChatSessions(
+            client: clientA,
+            requestID: "smoke-owner-a-sessions",
+            includeArchived: true
+        )
+        _ = try requireSessionSummary(
+            sessionsA,
+            sessionID: smokeOwnerIsolationSessionAID,
+            context: "owner A chat.sessions.list"
+        )
+        try requireNoSession(
+            sessionsA,
+            sessionID: smokeOwnerIsolationSessionBID,
+            context: "owner A chat.sessions.list"
+        )
+        let messagesAB = try listChatMessages(
+            client: clientA,
+            requestID: "smoke-owner-a-messages-b",
+            sessionID: smokeOwnerIsolationSessionBID
+        )
+        try requireEmptyMessages(messagesAB, context: "owner A chat.messages.list for owner B session")
+    }
+}
+
+func runMockBackendChecks(client: TCPClient, port: UInt16, unloadEventFile: URL) throws {
     print("Checking runtime.health...")
     let health = try sendAndRead(client, type: "runtime.health", requestID: "smoke-health")
     try requireType(health, "runtime.health", context: "runtime.health")
@@ -925,6 +2565,13 @@ func runMockBackendChecks(client: TCPClient, port: UInt16) throws {
     let modelList = try requireModelList(models, context: "models.list")
     guard modelList.contains(where: { $0["id"] as? String == "dev-mock" }) else {
         throw SmokeFailure.message("models.list did not include dev-mock: \(models)")
+    }
+    guard modelList.contains(where: {
+        $0["id"] as? String == "dev-mock-alt"
+            && $0["provider"] as? String == "lm_studio"
+            && $0["qualified_id"] as? String == "lm_studio:dev-mock-alt"
+    }) else {
+        throw SmokeFailure.message("models.list did not include the LM Studio aggregate mock model: \(models)")
     }
     let mockCloudModels = try modelList.filter { model in
         model["source"] as? String == "cloud"
@@ -968,34 +2615,51 @@ func runMockBackendChecks(client: TCPClient, port: UInt16) throws {
         "chat.send",
         requestID: "smoke-chat",
         payload: [
-            "session_id": "smoke-session",
+            "session_id": smokeSessionID,
             "model": "dev-mock",
             "messages": [
                 ["role": "user", "content": "Say hello from the smoke test."]
             ]
         ]
     ))
-    var streamedText = ""
-    var sawDone = false
-    while !sawDone {
-        let response = try client.readEnvelope()
-        try assertNoBackendLeak(response, context: "smoke-chat")
-        try requireRequestID(response, "smoke-chat", context: "chat.send")
-        let responseType = response["type"] as? String
-        if responseType == "chat.delta" {
-            streamedText += (try payload(response, context: "chat.delta")["delta"] as? String) ?? ""
-        } else if responseType == "chat.done" {
-            let donePayload = try payload(response, context: "chat.done")
-            guard donePayload["finish_reason"] as? String == "stop" else {
-                throw SmokeFailure.message("chat.done did not finish with stop: \(response)")
-            }
-            sawDone = true
-        } else {
-            throw SmokeFailure.message("Unexpected chat response: \(response)")
-        }
-    }
+    let streamedText = try readStoppedChatStream(client: client, requestID: "smoke-chat", context: "smoke-chat")
     guard streamedText.contains("Mock streaming response.") else {
         throw SmokeFailure.message("chat.delta stream did not contain mock response: \(streamedText)")
+    }
+
+    print("Checking chat.send with document attachment...")
+    let attachmentText = "Smoke attachment body proves authenticated relay attachment handling."
+    try client.send(envelope(
+        "chat.send",
+        requestID: "smoke-chat-attachment",
+        payload: [
+            "session_id": smokeSessionID,
+            "model": "dev-mock",
+            "messages": [
+                [
+                    "role": "user",
+                    "content": "Summarize the attached smoke note.",
+                    "attachments": [
+                        [
+                            "type": "document",
+                            "mime_type": "text/plain",
+                            "name": "smoke-note.md",
+                            "data_base64": Data(attachmentText.utf8).base64EncodedString()
+                        ]
+                    ]
+                ]
+            ]
+        ]
+    ))
+    let attachmentStreamedText = try readStoppedChatStream(
+        client: client,
+        requestID: "smoke-chat-attachment",
+        context: "smoke-chat-attachment"
+    )
+    guard attachmentStreamedText.contains("Mock streaming response."),
+          attachmentStreamedText.contains("Attachment received.")
+    else {
+        throw SmokeFailure.message("attachment chat stream did not confirm attachment handling: \(attachmentStreamedText)")
     }
 
     print("Checking chat.cancel...")
@@ -1003,7 +2667,7 @@ func runMockBackendChecks(client: TCPClient, port: UInt16) throws {
         "chat.send",
         requestID: "smoke-chat-cancel",
         payload: [
-            "session_id": "smoke-session",
+            "session_id": smokeSessionID,
             "model": "dev-mock",
             "messages": [
                 ["role": "user", "content": "Start a cancellable response."]
@@ -1042,6 +2706,10 @@ func runMockBackendChecks(client: TCPClient, port: UInt16) throws {
             throw SmokeFailure.message("Unexpected cancel flow response: \(response)")
         }
     }
+
+    try runAuthenticatedModelResidencyChecks(client: client, unloadEventFile: unloadEventFile)
+    try runAuthenticatedHistoryAndMemoryChecks(client: client)
+    try runAuthenticatedTitleAndSessionLifecycleChecks(client: client)
 
     print("OK: authenticated mock E2E smoke passed on local diagnostic port \(port).")
 }
@@ -1144,6 +2812,7 @@ func runRealOllamaChecks(client: TCPClient, port: UInt16, allowUnavailable: Bool
 
 func main() throws {
     let options = try SmokeOptions.parse(CommandLine.arguments)
+    RelayCiphertextBoundary.enabled = options.transportMode == .relay
 
     guard FileManager.default.fileExists(atPath: "Package.swift") else {
         throw SmokeFailure.message("Run this script from the repository root.")
@@ -1223,12 +2892,29 @@ func main() throws {
     defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
 
     let output = ServerOutput()
+    let trustedDevicesFile = temporaryDirectory.appendingPathComponent("trusted-devices.json")
+    let mockUnloadEventFile = temporaryDirectory.appendingPathComponent("mock-unload-events.log")
+    let ownerDeviceBID = "aetherlink-auth-smoke-device-b"
+    let ownerDeviceBPrivateKey = P256.Signing.PrivateKey()
+    let ownerDeviceBPublicKeyBase64 = ownerDeviceBPrivateKey.publicKey.derRepresentation.base64EncodedString()
+    try seedTrustedDevicesFile(
+        fileURL: trustedDevicesFile,
+        devices: [
+            (
+                id: ownerDeviceBID,
+                name: "AetherLink Auth Smoke B",
+                publicKeyBase64: ownerDeviceBPublicKeyBase64
+            )
+        ]
+    )
     let server = try startServer(
         port: port,
-        trustedDevicesFile: temporaryDirectory.appendingPathComponent("trusted-devices.json"),
+        trustedDevicesFile: trustedDevicesFile,
         backendMode: options.backendMode,
         relay: relayConfiguration,
-        bootstrapRelay: bootstrapRelayEndpoint
+        bootstrapRelay: bootstrapRelayEndpoint,
+        expectP2PRouteRefresh: options.expectP2PRouteRefresh,
+        mockUnloadEventFile: options.backendMode == .mock ? mockUnloadEventFile : nil
     )
     let outputPipe = Pipe()
     server.standardOutput = outputPipe
@@ -1338,31 +3024,73 @@ func main() throws {
     let privateKey = P256.Signing.PrivateKey()
     let publicKeyBase64 = privateKey.publicKey.derRepresentation.base64EncodedString()
     let deviceID = "aetherlink-auth-smoke-device"
+    let consumedPairingDeviceID = "aetherlink-auth-smoke-consumed-pair-device"
+    let consumedPairingDevicePrivateKey = P256.Signing.PrivateKey()
+    let consumedPairingDevicePublicKeyBase64 = consumedPairingDevicePrivateKey.publicKey.derRepresentation.base64EncodedString()
+
+    try runRejectedPairingChecks(
+        host: "127.0.0.1",
+        port: port,
+        relay: clientRelayConfiguration,
+        pairingNonce: pairingNonce,
+        pairingCode: pairingCode,
+        deviceID: deviceID,
+        publicKeyBase64: publicKeyBase64
+    )
+
+    try runInvalidPairingIdentityCheck(
+        host: "127.0.0.1",
+        port: port,
+        relay: clientRelayConfiguration,
+        pairingNonce: pairingNonce,
+        pairingCode: pairingCode,
+        deviceID: deviceID
+    )
 
     print("Pairing with dev session runtime_device_id=\(runtimeDeviceID) over \(options.transportMode.name)...")
-    let pairingClient = try connectWithRetry(host: "127.0.0.1", port: port, relay: clientRelayConfiguration)
-    do {
-        let pairResponse = try sendAndRead(
-            pairingClient,
-            type: "pairing.request",
-            requestID: "smoke-pair",
-            payload: [
-                "pairing_nonce": pairingNonce,
-                "pairing_code": pairingCode,
-                "device_id": deviceID,
-                "device_name": "AetherLink Auth Smoke",
-                "public_key": publicKeyBase64
-            ]
-        )
-        try requireType(pairResponse, "pairing.result", context: "pairing.request")
-        try requireRequestID(pairResponse, "smoke-pair", context: "pairing.request")
-        let pairPayload = try payload(pairResponse, context: "pairing.request")
-        try requireBool(pairPayload, "accepted", true, context: "pairing.request")
-        pairingClient.close()
-    } catch {
-        pairingClient.close()
-        throw error
-    }
+    try pairTrustedDevice(
+        host: "127.0.0.1",
+        port: port,
+        relay: clientRelayConfiguration,
+        pairingNonce: pairingNonce,
+        pairingCode: pairingCode,
+        deviceID: deviceID,
+        deviceName: "AetherLink Auth Smoke",
+        publicKeyBase64: publicKeyBase64,
+        requestID: "smoke-pair"
+    )
+
+    try runConsumedPairingReuseCheck(
+        host: "127.0.0.1",
+        port: port,
+        relay: clientRelayConfiguration,
+        pairingNonce: pairingNonce,
+        pairingCode: pairingCode,
+        deviceID: consumedPairingDeviceID,
+        publicKeyBase64: consumedPairingDevicePublicKeyBase64
+    )
+
+    try runRawNonceAuthRejectionCheck(
+        host: "127.0.0.1",
+        port: port,
+        relay: clientRelayConfiguration,
+        deviceID: deviceID,
+        privateKey: privateKey
+    )
+
+    try runAuthReplayAndSupersededChallengeChecks(
+        host: "127.0.0.1",
+        port: port,
+        relay: clientRelayConfiguration,
+        deviceID: deviceID,
+        privateKey: privateKey
+    )
+
+    try runUnauthenticatedAndUntrustedRejectionChecks(
+        host: "127.0.0.1",
+        port: port,
+        relay: clientRelayConfiguration
+    )
 
     print("Authenticating a fresh \(options.transportMode.name) connection with P-256 challenge-response...")
     do {
@@ -1388,16 +3116,29 @@ func main() throws {
                 client: client,
                 runtimeDeviceID: runtimeDeviceID,
                 runtimeKeyFingerprint: pairingInfoRuntimeKeyFingerprint,
-                expectedEndpoint: expectedEndpoint
+                expectedEndpoint: expectedEndpoint,
+                expectP2PRouteRefresh: options.expectP2PRouteRefresh
             )
         }
 
         switch options.backendMode {
         case .mock:
-            try runMockBackendChecks(client: client, port: port)
+            try runMockBackendChecks(client: client, port: port, unloadEventFile: mockUnloadEventFile)
         case .realOllama:
             try runRealOllamaChecks(client: client, port: port, allowUnavailable: options.allowUnavailable)
         }
+    }
+
+    if case .mock = options.backendMode {
+        try runMultiDeviceOwnerIsolationChecks(
+            host: "127.0.0.1",
+            port: port,
+            relay: clientRelayConfiguration,
+            deviceAID: deviceID,
+            privateKeyA: privateKey,
+            deviceBID: ownerDeviceBID,
+            privateKeyB: ownerDeviceBPrivateKey
+        )
     }
 
     print("Reconnecting with the saved trusted \(options.transportMode.name) route...")
@@ -1420,6 +3161,11 @@ func main() throws {
     guard reconnectPayload["status"] as? String == "ok" else {
         throw SmokeFailure.message("saved trusted route reconnect runtime.health did not report ok: \(reconnectHealth)")
     }
+    try runTrustedDeviceRevocationCheck(
+        client: reconnectClient,
+        trustedDevicesFile: trustedDevicesFile
+    )
+    try verifyRelayCiphertextBoundaryIfNeeded()
 }
 
 do {

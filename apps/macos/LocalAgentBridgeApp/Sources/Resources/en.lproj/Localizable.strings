@@ -421,7 +421,6 @@
 "%@ is ready and waiting for a trusted device." = "%@ is ready and waiting for a trusted device.";
 "AetherLink Runtime and the trusted device are connected through %@. Model requests still run only through AetherLink Runtime." = "AetherLink Runtime and the trusted device are connected through %@. Model requests still run only through AetherLink Runtime.";
 "Reconnecting through %@." = "Reconnecting through %@.";
-"Connection through %@ failed. Check Connection Recovery, then try again." = "Connection through %@ failed. Check Connection Recovery, then try again.";
 "AetherLink can prepare connection details automatically when you generate a pairing QR." = "AetherLink can prepare connection details automatically when you generate a pairing QR.";
 "Pairing from another network needs connection details inside the pairing QR." = "Pairing from another network needs a relay, VPN, tunnel, or private-overlay route inside the pairing QR.";
 "Saved connection details use %@. Generate a fresh QR after updating the connection." = "Saved connection details use %@. Generate a fresh QR after updating the connection.";

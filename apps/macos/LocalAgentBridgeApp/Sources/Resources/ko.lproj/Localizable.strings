@@ -421,7 +421,6 @@
 "%@ is ready and waiting for a trusted device." = "%@이(가) 준비되었고 신뢰된 기기를 기다리는 중입니다.";
 "AetherLink Runtime and the trusted device are connected through %@. Model requests still run only through AetherLink Runtime." = "AetherLink Runtime과 신뢰된 기기가 %@을(를) 통해 연결되었습니다. 모델 요청은 계속 AetherLink Runtime에서만 실행됩니다.";
 "Reconnecting through %@." = "%@을(를) 통해 다시 연결 중입니다.";
-"Connection through %@ failed. Check Connection Recovery, then try again." = "%@을(를) 통한 연결에 실패했습니다. 연결 복구를 확인한 뒤 다시 시도하세요.";
 "AetherLink can prepare connection details automatically when you generate a pairing QR." = "페어링 QR을 생성하면 AetherLink가 연결 정보를 자동으로 준비할 수 있습니다.";
 "Pairing from another network needs connection details inside the pairing QR." = "다른 네트워크에서 페어링하려면 페어링 QR 안에 릴레이, VPN, 터널 또는 프라이빗 오버레이 경로가 필요합니다.";
 "Saved connection details use %@. Generate a fresh QR after updating the connection." = "저장된 연결 정보가 %@을(를) 사용 중입니다. 연결을 업데이트한 뒤 새 QR을 생성하세요.";

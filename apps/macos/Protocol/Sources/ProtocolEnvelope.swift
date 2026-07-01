@@ -19,8 +19,6 @@ public enum MessageType {
     public static let chatCancel = "chat.cancel"
     public static let chatSessionsList = "chat.sessions.list"
     public static let chatMessagesList = "chat.messages.list"
-    public static let chatSuggestionsRequest = "chat.suggestions.request"
-    public static let chatSuggestionsResult = "chat.suggestions.result"
     public static let chatTitleRequest = "chat.title.request"
     public static let chatTitleResult = "chat.title.result"
     public static let chatSessionRename = "chat.session.rename"
@@ -30,6 +28,9 @@ public enum MessageType {
     public static let memoryList = "memory.list"
     public static let memoryUpsert = "memory.upsert"
     public static let memoryDelete = "memory.delete"
+    public static let memorySummaryDraftsList = "memory.summary.drafts.list"
+    public static let memorySummaryDraftApprove = "memory.summary.draft.approve"
+    public static let memorySummaryDraftDismiss = "memory.summary.draft.dismiss"
     public static let error = "error"
 }
 
@@ -72,6 +73,7 @@ public struct ModelInfo: Codable, Identifiable, Equatable, Sendable {
     public var running: Bool
     public var source: String
     public var remoteModel: String?
+    public var contextWindowTokens: Int?
 
     public init(
         id: String,
@@ -81,7 +83,8 @@ public struct ModelInfo: Codable, Identifiable, Equatable, Sendable {
         installed: Bool = true,
         running: Bool = false,
         source: String = "local",
-        remoteModel: String? = nil
+        remoteModel: String? = nil,
+        contextWindowTokens: Int? = nil
     ) {
         self.id = id
         self.name = name
@@ -91,6 +94,7 @@ public struct ModelInfo: Codable, Identifiable, Equatable, Sendable {
         self.running = running
         self.source = source
         self.remoteModel = remoteModel
+        self.contextWindowTokens = contextWindowTokens
     }
 
     enum CodingKeys: String, CodingKey {
@@ -102,5 +106,6 @@ public struct ModelInfo: Codable, Identifiable, Equatable, Sendable {
         case running
         case source
         case remoteModel = "remote_model"
+        case contextWindowTokens = "context_window_tokens"
     }
 }

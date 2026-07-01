@@ -1,0 +1,1 @@
+aetherlink://pair?v=1&n=nonce-p2p-1&c=123456&rid=runtime-1&rn=AetherLink%20Runtime&rf=runtime-fingerprint&rk=runtime%2Bpublic/key%3D&rt=route-token-1&pc=p2p_rendezvous&prid=p2p-record-1&peb=opaque-candidate-1&px=4102444800000&pn=nonce-p2p-route-1&pv=1

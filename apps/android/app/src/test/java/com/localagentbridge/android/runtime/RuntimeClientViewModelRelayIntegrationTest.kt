@@ -327,6 +327,7 @@ class RuntimeClientViewModelRelayIntegrationTest {
                         deviceIdentityProvider = FakeDeviceIdentityProvider(testDeviceIdentity()),
                         localDataStore = localStore,
                         lifecycleCallbacksRegistrar = NoopRuntimeLifecycleCallbacksRegistrar,
+                        authenticatedRouteRefreshEnabled = true,
                         currentTimeMillis = { 1_000L },
                     ),
                 )
