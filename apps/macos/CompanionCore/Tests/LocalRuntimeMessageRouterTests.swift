@@ -7758,6 +7758,143 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
     }
 
     @MainActor
+    func testCompanionAppModelAcceptsAdvancingSavedBootstrapLeaseForStableRelayID() async throws {
+        let defaults = try isolatedDefaults()
+        let nearExpiryEpochMillis = Int64(
+            (Date().addingTimeInterval(60).timeIntervalSince1970 * 1000).rounded()
+        )
+        defaults.set("saved-secret", forKey: "aetherlink.relay.secret")
+        defaults.set(nearExpiryEpochMillis, forKey: "aetherlink.relay.lease_expires_at")
+        defaults.set("nonce-current", forKey: "aetherlink.relay.lease_nonce")
+        defaults.set("relay.example.test", forKey: "aetherlink.relay.lease_host")
+        defaults.set(443, forKey: "aetherlink.relay.lease_port")
+        defaults.set("relay-stable", forKey: "aetherlink.relay.lease_id")
+        let relaySecretStore = FakeCompanionRelaySecretStore()
+        let relayClient = FakeRelayPeerClient()
+        let allocator = FakeRemoteRelayRouteAllocator(
+            allocation: CompanionRemoteRelayRouteAllocation(
+                configuration: RelayPeerConfiguration(
+                    host: "relay.example.test",
+                    port: 443,
+                    relayID: "relay-stable",
+                    relaySecret: "saved-secret"
+                ),
+                lease: CompanionRemoteRouteLease(
+                    expiresAtEpochMillis: 4_102_444_800_000,
+                    nonce: "nonce-renewed"
+                )
+            )
+        )
+        let model = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: FakeRuntimeTransport(),
+            advertiser: FakeRuntimeAdvertiser(),
+            relayClient: relayClient,
+            remoteRelayRouteAllocator: allocator,
+            environment: [
+                "AETHERLINK_BOOTSTRAP_RELAY_HOST": "relay.example.test",
+                "AETHERLINK_BOOTSTRAP_RELAY_PORT": "443"
+            ],
+            userDefaults: defaults,
+            relaySecretStore: relaySecretStore,
+            runtimeRouteHostProvider: { "192.168.1.44" }
+        )
+
+        model.start(port: 43210)
+
+        XCTAssertEqual(allocator.calls.count, 1)
+        XCTAssertEqual(allocator.calls.first?.preferredRelaySecret, "saved-secret")
+        XCTAssertEqual(relayClient.startedConfiguration?.relayID, "relay-stable")
+        XCTAssertEqual(relayClient.startedConfiguration?.relayNonce, "nonce-renewed")
+        XCTAssertEqual(defaults.integer(forKey: "aetherlink.relay.lease_expires_at"), 4_102_444_800_000)
+        XCTAssertEqual(defaults.string(forKey: "aetherlink.relay.lease_nonce"), "nonce-renewed")
+        assertStoredRelaySecret("saved-secret", defaults: defaults, store: relaySecretStore)
+
+        relayClient.emit(.waitingForPeer)
+        await Task.yield()
+        model.beginPairing()
+
+        XCTAssertEqual(allocator.calls.count, 1)
+        let qrItems = try queryItems(from: try XCTUnwrap(model.pairingSession).qrPayload)
+        XCTAssertEqual(qrItems["relay_host"], "relay.example.test")
+        XCTAssertEqual(qrItems["relay_port"], "443")
+        XCTAssertEqual(qrItems["relay_id"], "relay-stable")
+        XCTAssertEqual(qrItems["relay_secret"], "saved-secret")
+        XCTAssertEqual(qrItems["relay_expires_at"], "4102444800000")
+        XCTAssertEqual(qrItems["relay_nonce"], "nonce-renewed")
+        XCTAssertNil(qrItems["host"])
+        XCTAssertNil(qrItems["port"])
+    }
+
+    @MainActor
+    func testCompanionAppModelRejectsNonAdvancingSavedBootstrapLeaseForStableRelayID() async throws {
+        let defaults = try isolatedDefaults()
+        let nearExpiryEpochMillis = Int64(
+            (Date().addingTimeInterval(60).timeIntervalSince1970 * 1000).rounded()
+        )
+        defaults.set("saved-secret", forKey: "aetherlink.relay.secret")
+        defaults.set(nearExpiryEpochMillis, forKey: "aetherlink.relay.lease_expires_at")
+        defaults.set("nonce-current", forKey: "aetherlink.relay.lease_nonce")
+        defaults.set("relay.example.test", forKey: "aetherlink.relay.lease_host")
+        defaults.set(443, forKey: "aetherlink.relay.lease_port")
+        defaults.set("relay-stable", forKey: "aetherlink.relay.lease_id")
+        let relaySecretStore = FakeCompanionRelaySecretStore()
+        let relayClient = FakeRelayPeerClient()
+        let allocator = FakeRemoteRelayRouteAllocator(
+            allocation: CompanionRemoteRelayRouteAllocation(
+                configuration: RelayPeerConfiguration(
+                    host: "relay.example.test",
+                    port: 443,
+                    relayID: "relay-stable",
+                    relaySecret: "stale-secret"
+                ),
+                lease: CompanionRemoteRouteLease(
+                    expiresAtEpochMillis: 4_102_444_800_000,
+                    nonce: "nonce-current"
+                )
+            )
+        )
+        let model = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: FakeRuntimeTransport(),
+            advertiser: FakeRuntimeAdvertiser(),
+            relayClient: relayClient,
+            remoteRelayRouteAllocator: allocator,
+            environment: [
+                "AETHERLINK_BOOTSTRAP_RELAY_HOST": "relay.example.test",
+                "AETHERLINK_BOOTSTRAP_RELAY_PORT": "443"
+            ],
+            userDefaults: defaults,
+            relaySecretStore: relaySecretStore,
+            runtimeRouteHostProvider: { "192.168.1.44" }
+        )
+
+        model.start(port: 43210)
+
+        XCTAssertEqual(allocator.calls.count, 1)
+        XCTAssertEqual(relayClient.startedConfiguration?.relayID, "relay-stable")
+        XCTAssertEqual(relayClient.startedConfiguration?.relaySecret, "saved-secret")
+        XCTAssertEqual(relayClient.startedConfiguration?.relayNonce, "nonce-current")
+        XCTAssertEqual(defaults.integer(forKey: "aetherlink.relay.lease_expires_at"), Int(nearExpiryEpochMillis))
+        XCTAssertEqual(defaults.string(forKey: "aetherlink.relay.lease_nonce"), "nonce-current")
+        assertStoredRelaySecret("saved-secret", defaults: defaults, store: relaySecretStore)
+
+        relayClient.emit(.waitingForPeer)
+        await Task.yield()
+        model.beginPairing()
+
+        XCTAssertNil(model.pairingSession)
+        XCTAssertEqual(allocator.calls.count, 2)
+        XCTAssertEqual(model.remoteRoutePreparationIssue?.kind, .automaticPreparationRejected)
+        XCTAssertEqual(model.remoteRoutePreparationIssue?.endpoint, "relay.example.test:443")
+        XCTAssertEqual(model.remoteRoutePreparationIssue?.message, "Remote route lease did not advance.")
+        XCTAssertFalse(model.isDevelopmentRelayQRCodeReady)
+        XCTAssertEqual(defaults.integer(forKey: "aetherlink.relay.lease_expires_at"), Int(nearExpiryEpochMillis))
+        XCTAssertEqual(defaults.string(forKey: "aetherlink.relay.lease_nonce"), "nonce-current")
+        XCTAssertTrue(model.logs.contains("Remote pairing QR not generated: Remote route lease did not advance."))
+    }
+
+    @MainActor
     func testCompanionAppModelDoesNotReuseSavedLeaseForDifferentRelayRoute() async throws {
         let defaults = try isolatedDefaults()
         defaults.set("relay-current", forKey: "aetherlink.relay.id")
@@ -7851,9 +7988,8 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(qrItems["relay_nonce"], "allocated-nonce-2")
         XCTAssertNil(qrItems["host"])
         XCTAssertNil(qrItems["port"])
-        XCTAssertEqual(allocator.calls.count, 2)
+        XCTAssertEqual(allocator.calls.count, 1)
         XCTAssertEqual(allocator.calls.first?.preferredRelaySecret, "allocated-secret-1")
-        XCTAssertEqual(allocator.calls.last?.preferredRelaySecret, "allocated-secret-2")
         assertStoredRelaySecret("allocated-secret-2", defaults: defaults, store: relaySecretStore)
     }
 

@@ -90,6 +90,8 @@ P2P_RENDEZVOUS_QR_FIELDS = {
     "p2p_protocol_version",
 }
 COMPACT_P2P_RENDEZVOUS_QR_FIELDS = {"pc", "prid", "peb", "px", "pn", "pv"}
+OPAQUE_ROUTE_VALUE_MAX_CHARS = 512
+OPAQUE_ROUTE_BODY_MAX_CHARS = 2048
 PAIRING_QR_NO_WHITESPACE_FIELDS = {
     "pairing_nonce",
     "nonce",
@@ -121,6 +123,45 @@ PAIRING_QR_NO_WHITESPACE_FIELDS = {
     "rendezvous_nonce",
     "rrn",
 }
+PAIRING_QR_OPAQUE_VALUE_FIELDS = {
+    "route_token",
+    "discovery_token",
+    "rt",
+    "relay_id",
+    "remote_id",
+    "route_id",
+    "rendezvous_id",
+    "network_id",
+    "ri",
+    "relay_nonce",
+    "remote_nonce",
+    "route_nonce",
+    "rendezvous_nonce",
+    "rrn",
+    "p2p_record_id",
+    "prid",
+    "p2p_anti_replay_nonce",
+    "pn",
+}
+PAIRING_QR_OPAQUE_SECRET_FIELDS = {
+    "relay_secret",
+    "remote_secret",
+    "route_secret",
+    "rendezvous_secret",
+    "rs",
+}
+PAIRING_QR_OPAQUE_BODY_FIELDS = {
+    "p2p_encrypted_body",
+    "peb",
+}
+ROUTE_REFRESH_OPAQUE_VALUE_FIELDS = {
+    "relay_id",
+    "relay_nonce",
+    "p2p_record_id",
+    "p2p_anti_replay_nonce",
+}
+ROUTE_REFRESH_OPAQUE_SECRET_FIELDS = {"relay_secret"}
+ROUTE_REFRESH_OPAQUE_BODY_FIELDS = {"p2p_encrypted_body"}
 
 
 def main() -> int:
@@ -248,6 +289,7 @@ def main() -> int:
     failures.extend(check_locale_payload_schemas(schema))
     failures.extend(check_runtime_health_model_residency_schema(schema))
     failures.extend(check_memory_summary_draft_schema(schema))
+    failures.extend(check_route_refresh_route_material_schema(schema))
     if failures:
         print("Protocol schema check failed:", file=sys.stderr)
         for failure in failures:
@@ -910,9 +952,28 @@ def check_pairing_qr_schema(schema: dict) -> list[str]:
         failures.append("pairing QR schema noWhitespaceString must be a non-empty string")
     if no_whitespace_def.get("pattern") != "^\\S+$":
         failures.append("pairing QR schema noWhitespaceString must reject whitespace")
+    failures.extend(check_opaque_route_material_defs(defs, label="pairing QR schema"))
     for field in PAIRING_QR_NO_WHITESPACE_FIELDS:
         if not pairing_qr_schema_disallows_whitespace(properties.get(field, {})):
             failures.append(f"pairing QR schema {field} must reject whitespace")
+    for field in PAIRING_QR_OPAQUE_VALUE_FIELDS:
+        if properties.get(field, {}).get("$ref") != "#/$defs/opaqueRouteValue":
+            failures.append(
+                f"pairing QR schema {field} must use opaqueRouteValue with "
+                f"maxLength {OPAQUE_ROUTE_VALUE_MAX_CHARS}"
+            )
+    for field in PAIRING_QR_OPAQUE_SECRET_FIELDS:
+        if properties.get(field, {}).get("$ref") != "#/$defs/opaqueRouteSecret":
+            failures.append(
+                f"pairing QR schema {field} must use opaqueRouteSecret with "
+                f"maxLength {OPAQUE_ROUTE_VALUE_MAX_CHARS}"
+            )
+    for field in PAIRING_QR_OPAQUE_BODY_FIELDS:
+        if properties.get(field, {}).get("$ref") != "#/$defs/opaqueRouteBody":
+            failures.append(
+                f"pairing QR schema {field} must use opaqueRouteBody with "
+                f"maxLength {OPAQUE_ROUTE_BODY_MAX_CHARS}"
+            )
 
     dependent_required = schema.get("dependentRequired", {})
     for field in REQUIRED_RELAY_QR_FIELDS:
@@ -1006,9 +1067,89 @@ def check_pairing_qr_schema(schema: dict) -> list[str]:
 def pairing_qr_schema_disallows_whitespace(field_schema: object) -> bool:
     if not isinstance(field_schema, dict):
         return False
-    if field_schema.get("$ref") == "#/$defs/noWhitespaceString":
+    if field_schema.get("$ref") in (
+        "#/$defs/noWhitespaceString",
+        "#/$defs/opaqueRouteValue",
+        "#/$defs/opaqueRouteBody",
+    ):
         return True
     return field_schema.get("pattern") == "^\\S+$" and field_schema.get("minLength") == 1
+
+
+def check_opaque_route_material_defs(defs: dict, *, label: str) -> list[str]:
+    failures: list[str] = []
+    opaque_value = defs.get("opaqueRouteValue", {})
+    if (
+        opaque_value.get("type") != "string"
+        or opaque_value.get("minLength") != 1
+        or opaque_value.get("maxLength") != OPAQUE_ROUTE_VALUE_MAX_CHARS
+        or opaque_value.get("pattern") != "^\\S+$"
+    ):
+        failures.append(
+            f"{label} opaqueRouteValue must be a non-empty, whitespace-free string "
+            f"capped at {OPAQUE_ROUTE_VALUE_MAX_CHARS} characters"
+        )
+
+    opaque_secret = defs.get("opaqueRouteSecret", {})
+    if (
+        opaque_secret.get("type") != "string"
+        or opaque_secret.get("minLength") != 1
+        or opaque_secret.get("maxLength") != OPAQUE_ROUTE_VALUE_MAX_CHARS
+    ):
+        failures.append(
+            f"{label} opaqueRouteSecret must be a non-empty string capped at "
+            f"{OPAQUE_ROUTE_VALUE_MAX_CHARS} characters"
+        )
+
+    opaque_body = defs.get("opaqueRouteBody", {})
+    if (
+        opaque_body.get("type") != "string"
+        or opaque_body.get("minLength") != 1
+        or opaque_body.get("maxLength") != OPAQUE_ROUTE_BODY_MAX_CHARS
+        or opaque_body.get("pattern") != "^\\S+$"
+    ):
+        failures.append(
+            f"{label} opaqueRouteBody must be a non-empty, whitespace-free string "
+            f"capped at {OPAQUE_ROUTE_BODY_MAX_CHARS} characters"
+        )
+    return failures
+
+
+def check_route_refresh_route_material_schema(schema: dict) -> list[str]:
+    failures: list[str] = []
+    defs = schema.get("$defs", {})
+    failures.extend(check_opaque_route_material_defs(defs, label="protocol route.refresh schema"))
+
+    route_refresh = defs.get("routeRefreshPayload", {})
+    route_refresh_options = route_refresh.get("oneOf", [])
+    material_schema = None
+    for option in route_refresh_options:
+        if isinstance(option, dict) and "properties" in option:
+            material_schema = option
+            break
+    if material_schema is None:
+        return ["route.refresh schema must include a route-material payload option"]
+
+    properties = material_schema.get("properties", {})
+    for field in ROUTE_REFRESH_OPAQUE_VALUE_FIELDS:
+        if properties.get(field, {}).get("$ref") != "#/$defs/opaqueRouteValue":
+            failures.append(
+                f"route.refresh schema {field} must use opaqueRouteValue with "
+                f"maxLength {OPAQUE_ROUTE_VALUE_MAX_CHARS}"
+            )
+    for field in ROUTE_REFRESH_OPAQUE_SECRET_FIELDS:
+        if properties.get(field, {}).get("$ref") != "#/$defs/opaqueRouteSecret":
+            failures.append(
+                f"route.refresh schema {field} must use opaqueRouteSecret with "
+                f"maxLength {OPAQUE_ROUTE_VALUE_MAX_CHARS}"
+            )
+    for field in ROUTE_REFRESH_OPAQUE_BODY_FIELDS:
+        if properties.get(field, {}).get("$ref") != "#/$defs/opaqueRouteBody":
+            failures.append(
+                f"route.refresh schema {field} must use opaqueRouteBody with "
+                f"maxLength {OPAQUE_ROUTE_BODY_MAX_CHARS}"
+            )
+    return failures
 
 
 def check_private_overlay_qr_scope_contract(schema: dict) -> list[str]:

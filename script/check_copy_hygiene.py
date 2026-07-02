@@ -270,6 +270,33 @@ def route_diagnostics_guard_failures() -> list[str]:
             f"{localization_tests_path.relative_to(ROOT)}: Missing regression test that keeps "
             "Connection Recovery hidden on clean first-run status and Pairing."
         )
+    required_doc_snippets = {
+        ROOT / "docs/progress.md": (
+            "macOS QR-Only Clean First-Run Pairing No-Device Gate",
+            "shouldShowPairingRouteSetupPanel(model:)` still reuses `shouldShowRouteDiagnosticsPanel(model:)",
+            "rejects the older pairing-only fallback that exposed setup merely because automatic route preparation was unavailable",
+            "current progress/QA evidence, and the roadmap QR-only pairing item",
+            "physical Android recovery flows",
+        ),
+        ROOT / "docs/qa-evidence.md": (
+            "macOS QR-Only Clean First-Run Pairing No-Device Gate",
+            "Focused evidence: `swift test --filter AetherLinkLocalizationTests/testRouteDiagnosticsPanelStaysHiddenOnCleanFirstRunAndPairingHidesSetup` passed from the root SwiftPM package.",
+            "Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring the shared visibility helper, rejecting the older pairing-only fallback that exposed setup merely because automatic route preparation was unavailable, requiring the focused SwiftPM regression, default no-device summary phrase, current progress/QA evidence, and the roadmap QR-only pairing item.",
+            "Gate evidence: `JAVA_HOME=\"/Applications/Android Studio.app/Contents/jbr/Contents/Home\" ANDROID_HOME=\"$HOME/Library/Android/sdk\" ./script/check_no_device_quality.sh` passed and reported `Covered macOS QR-only pairing addendum`.",
+            "physical Android recovery flows",
+        ),
+        ROOT / "docs/roadmap.md": (
+            "normal users only pair or refresh routes by scanning QR",
+        ),
+    }
+    for path, snippets in required_doc_snippets.items():
+        text = path.read_text(encoding="utf-8", errors="replace")
+        for snippet in snippets:
+            if snippet not in text:
+                failures.append(
+                    f"{path.relative_to(ROOT)}: Missing macOS QR-only clean first-run pairing "
+                    f"evidence snippet {snippet!r}."
+                )
 
     return failures
 
@@ -748,7 +775,11 @@ def android_runtime_boundary_guard_failures() -> list[str]:
     runtime_store_path = ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeLocalStore.kt"
     main_activity_path = ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/MainActivity.kt"
     no_device_path = ROOT / "script/check_no_device_quality.sh"
+    android_relay_reachability_probe_path = ROOT / "script/android_relay_reachability_probe.sh"
     qr_verifier_path = ROOT / "script/verify_pairing_qr.swift"
+    docs_progress_path = ROOT / "docs/progress.md"
+    docs_qa_evidence_path = ROOT / "docs/qa-evidence.md"
+    docs_roadmap_path = ROOT / "docs/roadmap.md"
     test_path = ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/AppNavigationTest.kt"
     client_screens_test_path = (
         ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/ui/"
@@ -791,7 +822,14 @@ def android_runtime_boundary_guard_failures() -> list[str]:
     ui_text = ui_path.read_text(encoding="utf-8", errors="replace")
     main_activity_text = main_activity_path.read_text(encoding="utf-8", errors="replace")
     no_device_text = no_device_path.read_text(encoding="utf-8", errors="replace")
+    android_relay_reachability_probe_text = android_relay_reachability_probe_path.read_text(
+        encoding="utf-8",
+        errors="replace",
+    )
     qr_verifier_text = qr_verifier_path.read_text(encoding="utf-8", errors="replace")
+    docs_progress_text = docs_progress_path.read_text(encoding="utf-8", errors="replace")
+    docs_qa_evidence_text = docs_qa_evidence_path.read_text(encoding="utf-8", errors="replace")
+    docs_roadmap_text = docs_roadmap_path.read_text(encoding="utf-8", errors="replace")
     runtime_text = runtime_path.read_text(encoding="utf-8", errors="replace")
     runtime_remote_route_planner_text = runtime_remote_route_planner_path.read_text(
         encoding="utf-8",
@@ -898,17 +936,85 @@ def android_runtime_boundary_guard_failures() -> list[str]:
         "internal fun Intent?.sharedChatDraftOrNull(): SharedChatDraft?",
         "internal fun sharedChatDraftConfirmationMessageRes(draft: SharedChatDraft): Int",
         "internal fun sharedChatDraftConfirmationFeedback(): AetherLinkInteractionFeedback",
+        "SHARED_CHAT_DRAFT_SNACKBAR_HOST_TEST_TAG",
+        "SHARED_CHAT_DRAFT_SNACKBAR_CHAT_BOTTOM_PADDING",
+        "internal fun AetherLinkSnackbarHost(",
+        "modifier = Modifier.fillMaxWidth()",
+        "contentPadding = PaddingValues(horizontal = 8.dp)",
+        "actionOnNewLine = true",
+        "Text(snackbarData.visuals.message)",
         "LaunchedEffect(sharedChatDraft, context)",
         "handlePickedAttachments(draft.attachmentUris, viewModel::addAttachments)",
         "hapticFeedback.performAetherLinkFeedback(sharedChatDraftConfirmationFeedback())",
         "context.getString(sharedChatDraftConfirmationMessageRes(draft))",
         "snackbarHostState.showSnackbar(confirmationMessage)",
+        "val snackbarHostBottomPadding = if (effectiveDestination == AppDestination.Chat)",
+        ".padding(bottom = snackbarHostBottomPadding)",
     )
     for snippet in required_main_activity_snippets:
         if snippet not in main_activity_text:
             failures.append(
                 f"{main_activity_path.relative_to(ROOT)}: Android scanner raw-value acceptance must "
                 "reuse the runtime pairing parser policy before closing the camera scanner."
+            )
+
+    required_archive_snackbar_runtime_snippets = (
+        "val chatArchivedSnackbar = stringResource(R.string.chat_archived_snackbar)",
+        "val undoAction = stringResource(R.string.undo)",
+        "message = chatArchivedSnackbar",
+        "actionLabel = undoAction",
+        "if (result == SnackbarResult.ActionPerformed)",
+        "viewModel.unarchiveChatSession(archivedSessionId)",
+    )
+    for snippet in required_archive_snackbar_runtime_snippets:
+        if snippet not in main_activity_text:
+            failures.append(
+                f"{main_activity_path.relative_to(ROOT)}: Android chat archive feedback must keep "
+                f"the localized undo snackbar contract {snippet}."
+            )
+    if (
+        "message = chatArchivedSnackbar,\n"
+        "                                    actionLabel = undoAction,\n"
+        "                                    withDismissAction = true" in main_activity_text
+    ):
+        failures.append(
+            f"{main_activity_path.relative_to(ROOT)}: Android chat archive undo snackbar must not "
+            "enable an extra dismiss action on compact chat surfaces."
+        )
+
+    required_share_snackbar_compact_snippets = (
+        "sharedChatDraftImportSnackbarStaysBoundedAboveComposerAtLargeFontAcrossSupportedLanguages",
+        "sharedChatDraftSnackbarNarrowRootTestTag",
+        "SHARED_CHAT_DRAFT_SNACKBAR_HOST_TEST_TAG",
+        "SHARED_CHAT_DRAFT_SNACKBAR_CHAT_BOTTOM_PADDING",
+        "snackbarHostState.showSnackbar(message)",
+        "boundsOverlap(snackbarTextBounds, composerBounds)",
+        "snackbarTextBounds.bottom <= composerBounds.top",
+    )
+    for snippet in required_share_snackbar_compact_snippets:
+        if snippet not in client_screens_test_text:
+            failures.append(
+                f"{client_screens_test_path.relative_to(ROOT)}: Missing Android share-sheet compact snackbar regression {snippet}."
+            )
+
+    required_archive_snackbar_compact_snippets = (
+        "chatArchiveUndoSnackbarStaysBoundedAboveComposerAtLargeFontAcrossSupportedLanguages",
+        "chatArchiveSnackbarNarrowRootTestTag",
+        "AetherLinkSnackbarHost(",
+        "R.string.chat_archived_snackbar",
+        "R.string.undo",
+        "message = archiveMessage",
+        "actionLabel = undoAction",
+        "snackbarActionLabelBounds",
+        "boundsOverlap(snackbarTextBounds, snackbarActionLabelBounds)",
+        "boundsOverlap(snackbarTextBounds, composerBounds)",
+        "boundsOverlap(snackbarActionBounds, composerBounds)",
+        "snackbarTextBounds.bottom <= composerBounds.top && snackbarActionBounds.bottom <= composerBounds.top",
+    )
+    for snippet in required_archive_snackbar_compact_snippets:
+        if snippet not in client_screens_test_text:
+            failures.append(
+                f"{client_screens_test_path.relative_to(ROOT)}: Missing Android archive undo compact snackbar regression {snippet}."
             )
 
     pairing_parser_path = ROOT / (
@@ -929,12 +1035,26 @@ def android_runtime_boundary_guard_failures() -> list[str]:
     )
     macos_pairing_path = ROOT / "apps/macos/Pairing/Sources/PairingCoordinator.swift"
     macos_runtime_test_path = ROOT / "apps/macos/CompanionCore/Tests/LocalRuntimeMessageRouterTests.swift"
+    protocol_schema_path = ROOT / "packages/protocol-schema/protocol.schema.json"
+    pairing_qr_schema_path = ROOT / "packages/protocol-schema/pairing-qr.schema.json"
+    protocol_schema_check_path = ROOT / "script/check_protocol_schema.py"
+    protocol_doc_path = ROOT / "docs/protocol.md"
+    progress_path = ROOT / "docs/progress.md"
+    qa_evidence_path = ROOT / "docs/qa-evidence.md"
+    roadmap_path = ROOT / "docs/roadmap.md"
     pairing_parser_text = pairing_parser_path.read_text(encoding="utf-8", errors="replace")
     pairing_parser_test_text = pairing_parser_test_path.read_text(encoding="utf-8", errors="replace")
     pairing_store_text = pairing_store_path.read_text(encoding="utf-8", errors="replace")
     pairing_store_test_text = pairing_store_test_path.read_text(encoding="utf-8", errors="replace")
     macos_pairing_text = macos_pairing_path.read_text(encoding="utf-8", errors="replace")
     macos_runtime_test_text = macos_runtime_test_path.read_text(encoding="utf-8", errors="replace")
+    protocol_schema_text = protocol_schema_path.read_text(encoding="utf-8", errors="replace")
+    pairing_qr_schema_text = pairing_qr_schema_path.read_text(encoding="utf-8", errors="replace")
+    protocol_schema_check_text = protocol_schema_check_path.read_text(encoding="utf-8", errors="replace")
+    protocol_doc_text = protocol_doc_path.read_text(encoding="utf-8", errors="replace")
+    progress_text = progress_path.read_text(encoding="utf-8", errors="replace")
+    qa_evidence_text = qa_evidence_path.read_text(encoding="utf-8", errors="replace")
+    roadmap_text = roadmap_path.read_text(encoding="utf-8", errors="replace")
     required_qr_trust_value_snippets = (
         "requiredOpaqueQrValue(\"Missing pairing nonce\", \"Invalid pairing nonce\")",
         "requiredOpaqueQrValue(\"Missing runtime device id\", \"Invalid runtime device id\")",
@@ -942,14 +1062,15 @@ def android_runtime_boundary_guard_failures() -> list[str]:
         "optionalOpaqueQrValue(\"Invalid runtime public key\")",
         "optionalOpaqueQrValue(\"Invalid route token\")",
         "optionalOpaqueQrValue(\"Invalid relay id\")",
+        "optionalBoundedQrValue(\"Invalid relay secret\")",
         "optionalOpaqueQrValue(\"Invalid relay nonce\")",
         "optionalOpaqueQrValue(\"Invalid relay scope\")",
         "optionalOpaqueQrValue(\"Invalid P2P route class\")",
         "optionalOpaqueQrValue(\"Invalid P2P record id\")",
-        "optionalOpaqueQrValue(\"Invalid P2P encrypted body\")",
+        "Invalid P2P encrypted body",
         "optionalOpaqueQrValue(\"Invalid P2P anti-replay nonce\")",
-        "isCanonicalOpaqueRouteValue(value)",
-        "fun isCanonicalOpaqueRouteValue(value: String?): Boolean",
+        "isCanonicalOpaqueRouteValue(value, maxChars = maxChars)",
+        "fun isCanonicalOpaqueRouteValue(",
     )
     for snippet in required_qr_trust_value_snippets:
         if snippet not in pairing_parser_text:
@@ -972,6 +1093,209 @@ def android_runtime_boundary_guard_failures() -> list[str]:
             f"{pairing_parser_test_path.relative_to(ROOT)}: Missing identity-only route-token whitespace "
             "rejection regression test."
         )
+    required_opaque_route_material_size_bound_snippets = (
+        (
+            pairing_parser_text,
+            pairing_parser_path,
+            "OPAQUE_ROUTE_VALUE_MAX_CHARS = 512",
+            "Android pairing parser must cap opaque QR route ids/tokens/nonces.",
+        ),
+        (
+            pairing_parser_text,
+            pairing_parser_path,
+            "OPAQUE_ROUTE_BODY_MAX_CHARS = 2048",
+            "Android pairing parser must cap opaque QR route bodies separately.",
+        ),
+        (
+            pairing_parser_text,
+            pairing_parser_path,
+            "value.length <= maxChars",
+            "Android pairing parser canonical opaque route validation must include a length ceiling.",
+        ),
+        (
+            pairing_parser_text,
+            pairing_parser_path,
+            "maxChars = OPAQUE_ROUTE_BODY_MAX_CHARS",
+            "Android pairing parser must allow only bounded P2P encrypted bodies.",
+        ),
+        (
+            pairing_parser_test_text,
+            pairing_parser_test_path,
+            "rejectsOversizedOpaqueRouteQrValues",
+            "Android pairing parser tests must reject oversized route tokens, relay material, and P2P material.",
+        ),
+        (
+            pairing_store_text,
+            pairing_store_path,
+            "isCanonicalOpaqueRouteValue(p2pEncryptedBody, maxChars = OPAQUE_ROUTE_BODY_MAX_CHARS)",
+            "PairingStore must use the larger bounded P2P body ceiling on restore.",
+        ),
+        (
+            pairing_store_test_text,
+            pairing_store_test_path,
+            "trustedRuntimeRejectsOversizedP2pRendezvousRoute",
+            "PairingStore tests must reject oversized in-memory P2P route material.",
+        ),
+        (
+            pairing_store_test_text,
+            pairing_store_test_path,
+            "pairingStoreDropsOversizedStoredP2pRendezvousRouteOnRead",
+            "PairingStore tests must drop oversized stored P2P route material.",
+        ),
+        (
+            peer_to_peer_route_preparation_text,
+            peer_to_peer_route_preparation_path,
+            "opaqueRouteRecordValueOrNull(maxChars = OPAQUE_ROUTE_BODY_MAX_CHARS)",
+            "Android P2P route preparation must cap opaque encrypted candidate material.",
+        ),
+        (
+            peer_to_peer_route_preparation_text,
+            peer_to_peer_route_preparation_path,
+            "it.length <= maxChars",
+            "Android P2P route preparation must reject oversized opaque values.",
+        ),
+        (
+            peer_to_peer_route_preparation_test_text,
+            peer_to_peer_route_preparation_test_path,
+            "oversizedPeerToPeerRoutePreparationReturnsNull",
+            "Android P2P route preparation tests must reject oversized route records, bodies, and nonces.",
+        ),
+        (
+            pairing_qr_schema_text,
+            pairing_qr_schema_path,
+            '"route_token": { "$ref": "#/$defs/opaqueRouteValue" }',
+            "Shared pairing QR schema must cap route tokens before parser-specific handling.",
+        ),
+        (
+            pairing_qr_schema_text,
+            pairing_qr_schema_path,
+            '"relay_secret": { "$ref": "#/$defs/opaqueRouteSecret" }',
+            "Shared pairing QR schema must cap relay secrets before parser-specific handling.",
+        ),
+        (
+            pairing_qr_schema_text,
+            pairing_qr_schema_path,
+            '"p2p_encrypted_body": { "$ref": "#/$defs/opaqueRouteBody" }',
+            "Shared pairing QR schema must cap opaque P2P encrypted bodies separately.",
+        ),
+        (
+            protocol_schema_text,
+            protocol_schema_path,
+            '"relay_id": { "$ref": "#/$defs/opaqueRouteValue" }',
+            "Shared route.refresh schema must cap relay identifiers before runtime handling.",
+        ),
+        (
+            protocol_schema_text,
+            protocol_schema_path,
+            '"relay_secret": { "$ref": "#/$defs/opaqueRouteSecret" }',
+            "Shared route.refresh schema must cap relay secrets before runtime handling.",
+        ),
+        (
+            protocol_schema_text,
+            protocol_schema_path,
+            '"p2p_encrypted_body": { "$ref": "#/$defs/opaqueRouteBody" }',
+            "Shared route.refresh schema must cap opaque P2P encrypted bodies separately.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "PAIRING_QR_OPAQUE_VALUE_FIELDS",
+            "Protocol schema checker must pin pairing QR opaque route value size-bound fields.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "ROUTE_REFRESH_OPAQUE_VALUE_FIELDS",
+            "Protocol schema checker must pin route.refresh opaque route value size-bound fields.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "check_route_refresh_route_material_schema",
+            "Protocol schema checker must verify route.refresh route-material size bounds.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimePairingPayloadParserTest",
+            "Default no-device gate must run the parser tests that include route material size bounds.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "PairingStoreTest",
+            "Default no-device gate must run the PairingStore tests that include route material size bounds.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimePeerToPeerRoutePreparationTest",
+            "Default no-device gate must run P2P route preparation size-bound tests.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "shared route material schema size-bound addendum",
+            "Default no-device gate summary must mention shared pairing QR and route.refresh schema size bounds.",
+        ),
+        (
+            protocol_doc_text,
+            protocol_doc_path,
+            "opaque route values, ids, tokens, nonces, and secrets at 512 characters",
+            "Protocol docs must name the shared opaque route value/secret size bound.",
+        ),
+        (
+            protocol_doc_text,
+            protocol_doc_path,
+            "opaque P2P encrypted bodies at 2048 characters",
+            "Protocol docs must name the shared opaque P2P body size bound.",
+        ),
+        (
+            progress_text,
+            progress_path,
+            "Shared Route Material Schema Size Bound No-Device Gate",
+            "Progress docs must record the shared route-material schema size-bound no-device gate.",
+        ),
+        (
+            qa_evidence_text,
+            qa_evidence_path,
+            "Shared Route Material Schema Size Bound No-Device Gate",
+            "QA evidence must record the shared route-material schema size-bound no-device gate.",
+        ),
+        (
+            roadmap_text,
+            roadmap_path,
+            "shared route-material schema size bounds",
+            "Roadmap smoke coverage queue must name shared route-material schema size-bound coverage.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "Android opaque route material size-bound addendum",
+            "Default no-device gate summary must mention Android opaque route material size bounds.",
+        ),
+        (
+            progress_text,
+            progress_path,
+            "Android Opaque Route Material Size Bound No-Device Gate",
+            "Progress docs must record the Android opaque route material size-bound no-device gate.",
+        ),
+        (
+            qa_evidence_text,
+            qa_evidence_path,
+            "Android Opaque Route Material Size Bound No-Device Gate",
+            "QA evidence must record the Android opaque route material size-bound no-device gate.",
+        ),
+        (
+            roadmap_text,
+            roadmap_path,
+            "Android opaque route material size bounds",
+            "Roadmap smoke coverage queue must name Android opaque route material size-bound coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_opaque_route_material_size_bound_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
     for snippet in (
         "normalizesBlankRuntimeNameToDefaultRuntimeName",
         "capsOversizedRuntimeNameBeforeUiOrStorage",
@@ -1047,6 +1371,47 @@ def android_runtime_boundary_guard_failures() -> list[str]:
                 f"{runtime_test_path.relative_to(ROOT)}: Android trusted P2P rendezvous route "
                 f"material must persist, restore, and plan without claiming real P2P; missing {snippet}."
             )
+    required_p2p_restore_discovery_suppression_snippets = (
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "trustedRuntimeRestoreDoesNotStartDiscoveryWhenP2pRouteIsAvailable",
+            "Android runtime tests must prove saved P2P route restore suppresses local discovery.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeClientViewModelTest.trustedRuntimeRestoreDoesNotStartDiscoveryWhenP2pRouteIsAvailable",
+            "Default no-device gate must run the trusted P2P restore discovery-suppression regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "Android trusted P2P restore discovery-suppression addendum",
+            "Default no-device gate summary must mention trusted P2P restore discovery-suppression coverage.",
+        ),
+        (
+            progress_text,
+            progress_path,
+            "Android Trusted P2P Restore Discovery Suppression No-Device Gate",
+            "Progress docs must record the trusted P2P restore discovery-suppression no-device gate.",
+        ),
+        (
+            qa_evidence_text,
+            qa_evidence_path,
+            "Android Trusted P2P Restore Discovery Suppression No-Device Gate",
+            "QA evidence must record the trusted P2P restore discovery-suppression no-device gate.",
+        ),
+        (
+            roadmap_text,
+            roadmap_path,
+            "Android trusted P2P restore discovery suppression",
+            "Roadmap smoke coverage queue must name trusted P2P restore discovery-suppression coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_p2p_restore_discovery_suppression_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
     required_p2p_app_route_fallback_snippets = (
         "val peerToPeerConnector: RuntimePeerToPeerConnector? = null",
         "peerToPeerConnector = dependencies.peerToPeerConnector",
@@ -1113,6 +1478,119 @@ def android_runtime_boundary_guard_failures() -> list[str]:
                 f"{macos_runtime_test_path.relative_to(ROOT)}, and "
                 f"{no_device_path.relative_to(ROOT)}: macOS pairing QR generation must emit the shared "
                 f"opaque P2P rendezvous field family without claiming real P2P; missing {snippet}."
+            )
+    required_macos_p2p_qr_canonical_gate_snippets = (
+        (
+            no_device_text,
+            no_device_path,
+            "LocalRuntimeMessageRouterTests/testPairingQRCodePayloadIncludesP2PRendezvousRecordWhenPresent",
+            "Default no-device gate must directly run the macOS canonical P2P QR generation regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "macOS P2P QR canonical generation addendum",
+            "Default no-device gate summary must mention macOS canonical P2P QR generation coverage.",
+        ),
+        (
+            progress_text,
+            progress_path,
+            "macOS P2P QR Canonical Generation No-Device Gate",
+            "Progress docs must record the macOS canonical P2P QR generation no-device gate.",
+        ),
+        (
+            qa_evidence_text,
+            qa_evidence_path,
+            "macOS P2P QR Canonical Generation No-Device Gate",
+            "QA evidence must record the macOS canonical P2P QR generation no-device gate.",
+        ),
+        (
+            roadmap_text,
+            roadmap_path,
+            "macOS P2P QR canonical generation",
+            "Roadmap smoke coverage queue must name macOS canonical P2P QR generation coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_macos_p2p_qr_canonical_gate_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_macos_qr_payload_shape_snippets = (
+        (
+            macos_pairing_text,
+            macos_pairing_path,
+            'URLQueryItem(name: compact ? "rid" : "runtime_device_id", value: macDeviceID)',
+        ),
+        (
+            macos_pairing_text,
+            macos_pairing_path,
+            'URLQueryItem(name: compact ? "rh" : "relay_host", value: relayHost)',
+        ),
+        (
+            macos_pairing_text,
+            macos_pairing_path,
+            'URLQueryItem(name: compact ? "rs" : "relay_secret", value: relaySecret)',
+        ),
+        (
+            macos_runtime_test_text,
+            macos_runtime_test_path,
+            "testPairingQRCodePayloadCanOmitEndpointHints",
+        ),
+        (
+            macos_runtime_test_text,
+            macos_runtime_test_path,
+            "testPairingQRCodePayloadIncludesRelaySecretWhenPresent",
+        ),
+        (
+            macos_runtime_test_text,
+            macos_runtime_test_path,
+            "testCompactPairingQRCodePayloadUsesShortAliasesForCameraScanning",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "LocalRuntimeMessageRouterTests/testPairingQRCodePayloadCanOmitEndpointHints",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "LocalRuntimeMessageRouterTests/testPairingQRCodePayloadIncludesRelaySecretWhenPresent",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "LocalRuntimeMessageRouterTests/testCompactPairingQRCodePayloadUsesShortAliasesForCameraScanning",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "macOS pairing QR payload shape addendum",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "canonical QR payloads can omit diagnostic endpoint hints, include relay secrets when route material is present, and compact camera QR payloads use short aliases",
+        ),
+        (
+            progress_text,
+            progress_path,
+            "macOS Pairing QR Payload Shape No-Device Gate",
+        ),
+        (
+            qa_evidence_text,
+            qa_evidence_path,
+            "macOS Pairing QR Payload Shape No-Device Gate",
+        ),
+        (
+            roadmap_text,
+            roadmap_path,
+            "macOS pairing QR payload shape",
+        ),
+    )
+    for haystack, path, snippet in required_macos_qr_payload_shape_snippets:
+        if snippet not in haystack:
+            failures.append(
+                f"{path.relative_to(ROOT)}: Missing macOS pairing QR payload-shape guard "
+                f"snippet {snippet!r}."
             )
     if "loaded.shouldRemoveStoredRelayRoute" not in pairing_store_text or "editPrefs.removeRelayRouteKeys()" not in pairing_store_text:
         failures.append(
@@ -1213,6 +1691,1725 @@ def android_runtime_boundary_guard_failures() -> list[str]:
                 f"{no_device_path.relative_to(ROOT)}: Android p2p_rendezvous route preparation and "
                 f"relay fallback ordering must stay in the no-device gate; missing {snippet}."
             )
+    required_route_token_remote_preparation_snippets = (
+        (
+            runtime_connection_manager_test_text,
+            runtime_connection_manager_test_path,
+            "remoteRoutePreparerCanUsePairingRouteTokenWithoutDirectTcpEndpoint",
+            "Android transport tests must prove paired route tokens can prepare remote routes without direct endpoints.",
+        ),
+        (
+            runtime_connection_manager_test_text,
+            runtime_connection_manager_test_path,
+            "sessionId = requireNotNull(pairedRuntime.routeToken)",
+            "Android transport tests must prove P2P route preparation can consume the paired route token.",
+        ),
+        (
+            runtime_connection_manager_test_text,
+            runtime_connection_manager_test_path,
+            'relayId = "relay-${pairedRuntime.routeToken}"',
+            "Android transport tests must prove relay route preparation can consume the paired route token.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeConnectionManagerTest.remoteRoutePreparerCanUsePairingRouteTokenWithoutDirectTcpEndpoint",
+            "Default no-device gate must run the Android route-token remote preparation regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "Android route-token remote preparation addendum",
+            "Default no-device gate summary must mention Android route-token remote preparation coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Android Route-Token Remote Preparation No-Device Gate",
+            "Progress docs must record the Android route-token remote preparation no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Android Route-Token Remote Preparation No-Device Gate",
+            "QA evidence must record the Android route-token remote preparation no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "Android route-token remote preparation",
+            "Roadmap smoke coverage queue must name Android route-token remote preparation coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_route_token_remote_preparation_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_identity_only_no_route_transport_snippets = (
+        (
+            runtime_connection_manager_test_text,
+            runtime_connection_manager_test_path,
+            "identityOnlyTargetResolvesRoutesButNoConnectableRoute",
+            "Android transport tests must prove identity-only trusted targets fail closed without connectable route material.",
+        ),
+        (
+            runtime_connection_manager_test_text,
+            runtime_connection_manager_test_path,
+            "RuntimeConnectionFailureReason.NoConnectableRoute",
+            "Android transport tests must prove identity-only no-route targets return the no-connectable-route failure.",
+        ),
+        (
+            runtime_connection_manager_test_text,
+            runtime_connection_manager_test_path,
+            "RuntimeRouteRejectionReason.DirectTcpEndpointNotPrepared",
+            "Android transport tests must prove identity-only no-route targets do not synthesize direct TCP endpoints.",
+        ),
+        (
+            runtime_connection_manager_test_text,
+            runtime_connection_manager_test_path,
+            "assertEquals(emptyList<ConnectCall>(), calls)",
+            "Android transport tests must prove identity-only no-route targets never call the direct TCP connector.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeConnectionManagerTest.identityOnlyTargetResolvesRoutesButNoConnectableRoute",
+            "Default no-device gate must run the Android identity-only no-route transport boundary regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "Android identity-only no-route transport boundary addendum",
+            "Default no-device gate summary must mention Android identity-only no-route transport boundary coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Android Identity-Only No-Route Transport Boundary No-Device Gate",
+            "Progress docs must record the Android identity-only no-route transport boundary no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Android Identity-Only No-Route Transport Boundary No-Device Gate",
+            "QA evidence must record the Android identity-only no-route transport boundary no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "identity-only no-route transport boundary",
+            "Roadmap smoke coverage queue must name identity-only no-route transport boundary coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_identity_only_no_route_transport_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_relay_ready_timeout_no_device_snippets = (
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeRelayTcpClientTest.relayConnectTimesOutWhenReadyLineNeverArrives",
+            "Default no-device gate must run the Android relay TCP ready timeout regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "Android relay TCP ready timeout addendum",
+            "Default no-device gate summary must mention Android relay TCP ready timeout coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Android Relay TCP Ready Timeout No-Device Gate",
+            "Progress docs must record the Android relay TCP ready timeout no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Android Relay TCP Ready Timeout No-Device Gate",
+            "QA evidence must record the Android relay TCP ready timeout no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "relay TCP ready timeout",
+            "Roadmap smoke coverage queue must name relay TCP ready timeout coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_relay_ready_timeout_no_device_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_relay_nonce_vector_no_device_snippets = (
+        (
+            relay_tcp_client_test_text,
+            relay_tcp_client_test_path,
+            "relayFrameCryptorBindsRouteNonceIntoKey",
+            "Android relay frame cryptor tests must prove the route nonce is part of the relay frame key.",
+        ),
+        (
+            relay_tcp_client_test_text,
+            relay_tcp_client_test_path,
+            "wrongNonceRuntimeCryptor",
+            "Android relay frame cryptor tests must reject decryption with mismatched route nonces.",
+        ),
+        (
+            relay_tcp_client_test_text,
+            relay_tcp_client_test_path,
+            "relayFrameCryptorMatchesNonceBoundSharedCiphertextVectors",
+            "Android relay frame cryptor tests must pin nonce-bound shared ciphertext vectors.",
+        ),
+        (
+            relay_tcp_client_test_text,
+            relay_tcp_client_test_path,
+            "74f16ae572397183106c40e09692c529475b5c71a6a65351177bb184968dd94a16bb1366ba73ef68614d722cebc79e67782e9b5f797bfc3d0b59a6ba9a5d48873303037e1866b51a32fb9d",
+            "Android relay frame cryptor tests must keep the nonce-bound client ciphertext vector stable.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeRelayTcpClientTest.relayFrameCryptorBindsRouteNonceIntoKey",
+            "Default no-device gate must run the Android relay frame cryptor route-nonce key binding regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeRelayTcpClientTest.relayFrameCryptorMatchesNonceBoundSharedCiphertextVectors",
+            "Default no-device gate must run the Android relay frame cryptor nonce-bound vector regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "Android relay frame cryptor nonce-bound vector addendum",
+            "Default no-device gate summary must mention Android relay frame cryptor nonce-bound vector coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Android Relay Frame Cryptor Nonce-Bound Vector No-Device Gate",
+            "Progress docs must record the Android relay frame cryptor nonce-bound vector no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Android Relay Frame Cryptor Nonce-Bound Vector No-Device Gate",
+            "QA evidence must record the Android relay frame cryptor nonce-bound vector no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "Android relay frame cryptor nonce-bound vector",
+            "Roadmap smoke coverage queue must name Android relay frame cryptor nonce-bound vector coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_relay_nonce_vector_no_device_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_relay_concurrent_send_serialization_no_device_snippets = (
+        (
+            relay_tcp_client_test_text,
+            relay_tcp_client_test_path,
+            "relayClientSerializesEncryptionWithConcurrentSends",
+            "Android relay TCP tests must prove concurrent sends serialize encrypted relay frames.",
+        ),
+        (
+            relay_tcp_client_test_text,
+            relay_tcp_client_test_path,
+            "val frameCount = 48",
+            "Android relay TCP concurrent send regression must stress more than a trivial frame count.",
+        ),
+        (
+            relay_tcp_client_test_text,
+            relay_tcp_client_test_path,
+            ".awaitAll()",
+            "Android relay TCP concurrent send regression must dispatch sends concurrently.",
+        ),
+        (
+            relay_tcp_client_test_text,
+            relay_tcp_client_test_path,
+            'assertEquals((0 until frameCount).map { "request-$it" }.toSet(), requestIds.toSet())',
+            "Android relay TCP concurrent send regression must prove every request arrives decryptable.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeRelayTcpClientTest.relayClientSerializesEncryptionWithConcurrentSends",
+            "Default no-device gate must run the Android relay TCP concurrent encrypted-send regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "Android relay concurrent encrypted send serialization addendum",
+            "Default no-device gate summary must mention Android relay concurrent encrypted send serialization coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Android Relay Concurrent Encrypted Send Serialization No-Device Gate",
+            "Progress docs must record the Android relay concurrent encrypted send serialization no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Android Relay Concurrent Encrypted Send Serialization No-Device Gate",
+            "QA evidence must record the Android relay concurrent encrypted send serialization no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "Android relay concurrent encrypted send serialization",
+            "Roadmap smoke coverage queue must name Android relay concurrent encrypted send serialization coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_relay_concurrent_send_serialization_no_device_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_pending_routeless_qr_no_saved_relay_snippets = (
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "pendingPairingQrWithoutRemoteRouteDoesNotFallbackToSavedRelayRoute",
+            "Android ViewModel tests must prove a pending route-less QR cannot borrow saved relay material.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "saved-relay.example.test",
+            "Android pending route-less QR regression must include an existing saved relay route.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "assertTrue(routes.isEmpty())",
+            "Android pending route-less QR regression must fail closed with no prepared remote routes.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeClientViewModelTest.pendingPairingQrWithoutRemoteRouteDoesNotFallbackToSavedRelayRoute",
+            "Default no-device gate must run the Android pending route-less QR no saved relay fallback regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "Android pending route-less QR no saved relay fallback addendum",
+            "Default no-device gate summary must mention Android pending route-less QR no saved relay fallback coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Android Pending Route-Less QR No Saved Relay Fallback No-Device Gate",
+            "Progress docs must record the Android pending route-less QR no saved relay fallback no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Android Pending Route-Less QR No Saved Relay Fallback No-Device Gate",
+            "QA evidence must record the Android pending route-less QR no saved relay fallback no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "pending route-less QR no saved relay fallback",
+            "Roadmap smoke coverage queue must name pending route-less QR no saved relay fallback coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_pending_routeless_qr_no_saved_relay_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_diagnostic_identity_only_discovery_wait_snippets = (
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "diagnosticIdentityOnlyQrPlanStartsDiscoveryAndWaitsForRouteWhenRemoteRouteIsNotRequired",
+            "Android ViewModel tests must prove diagnostic identity-only QR waits for discovery route material.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "assertNull(plan.target)",
+            "Android diagnostic identity-only QR regression must prove no connection target is manufactured.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "assertEquals(true, plan.shouldStartDiscovery)",
+            "Android diagnostic identity-only QR regression must start discovery.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "assertEquals(true, plan.shouldWaitForDiscoveryRoute)",
+            "Android diagnostic identity-only QR regression must wait for discovered route material.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeClientViewModelTest.diagnosticIdentityOnlyQrPlanStartsDiscoveryAndWaitsForRouteWhenRemoteRouteIsNotRequired",
+            "Default no-device gate must run the Android diagnostic identity-only discovery-wait regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "Android diagnostic identity-only discovery wait addendum",
+            "Default no-device gate summary must mention Android diagnostic identity-only discovery-wait coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Android Diagnostic Identity-Only Discovery Wait No-Device Gate",
+            "Progress docs must record the Android diagnostic identity-only discovery-wait no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Android Diagnostic Identity-Only Discovery Wait No-Device Gate",
+            "QA evidence must record the Android diagnostic identity-only discovery-wait no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "diagnostic identity-only discovery wait",
+            "Roadmap smoke coverage queue must name diagnostic identity-only discovery-wait coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_diagnostic_identity_only_discovery_wait_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_prepared_relay_route_ordering_snippets = (
+        (
+            runtime_connection_manager_test_text,
+            runtime_connection_manager_test_path,
+            "preparedRelayRouteIsAttemptedBeforeStaleEndpointHint",
+            "Android transport tests must prove prepared relay routes run before stale trusted endpoint hints.",
+        ),
+        (
+            runtime_connection_manager_test_text,
+            runtime_connection_manager_test_path,
+            "preparedRelayRoutePrecedesFreshDiscoveryRoute",
+            "Android transport tests must prove prepared relay routes run before opportunistic fresh discovery.",
+        ),
+        (
+            runtime_connection_manager_test_text,
+            runtime_connection_manager_test_path,
+            "freshDiscoveryRouteFallbacksWhenPreparedRelayRouteFails",
+            "Android transport tests must preserve fresh discovery fallback when the prepared relay connector fails.",
+        ),
+        (
+            runtime_connection_manager_test_text,
+            runtime_connection_manager_test_path,
+            "assertEquals(listOf(ConnectCall(\"192.168.1.20\", 43170, 5000)), directCalls)",
+            "Android transport tests must pin the fresh discovery fallback route after relay failure.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeConnectionManagerTest.preparedRelayRouteIsAttemptedBeforeStaleEndpointHint",
+            "Default no-device gate must run the prepared relay versus stale endpoint ordering regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeConnectionManagerTest.preparedRelayRoutePrecedesFreshDiscoveryRoute",
+            "Default no-device gate must run the prepared relay versus fresh discovery ordering regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeConnectionManagerTest.freshDiscoveryRouteFallbacksWhenPreparedRelayRouteFails",
+            "Default no-device gate must run the fresh discovery fallback after relay failure regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "Android prepared relay route ordering addendum",
+            "Default no-device gate summary must mention Android prepared relay route ordering coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Android Prepared Relay Route Ordering No-Device Gate",
+            "Progress docs must record the Android prepared relay route ordering no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Android Prepared Relay Route Ordering No-Device Gate",
+            "QA evidence must record the Android prepared relay route ordering no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "prepared relay route ordering",
+            "Roadmap smoke coverage queue must name prepared relay route ordering coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_prepared_relay_route_ordering_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_peer_to_peer_connector_dispatch_snippets = (
+        (
+            runtime_connection_manager_test_text,
+            runtime_connection_manager_test_path,
+            "remoteRoutePreparerCanConnectIdentityOnlyTargetThroughPeerToPeerConnector",
+            "Android transport tests must prove prepared P2P material can use the P2P connector for identity-only targets.",
+        ),
+        (
+            runtime_connection_manager_test_text,
+            runtime_connection_manager_test_path,
+            "assertEquals(emptyList<ConnectCall>(), directCalls)",
+            "Android transport tests must prove P2P connector dispatch does not call direct TCP.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeConnectionManagerTest.remoteRoutePreparerCanConnectIdentityOnlyTargetThroughPeerToPeerConnector",
+            "Default no-device gate must run the Android P2P connector dispatch regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "Android P2P connector dispatch addendum",
+            "Default no-device gate summary must mention Android P2P connector dispatch coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Android P2P Connector Dispatch No-Device Gate",
+            "Progress docs must record the Android P2P connector dispatch no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Android P2P Connector Dispatch No-Device Gate",
+            "QA evidence must record the Android P2P connector dispatch no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "Android P2P connector dispatch",
+            "Roadmap smoke coverage queue must name Android P2P connector dispatch coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_peer_to_peer_connector_dispatch_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_remote_route_direct_transport_boundary_snippets = (
+        (
+            runtime_connection_manager_text,
+            runtime_connection_manager_path,
+            "is RuntimeRouteCandidate.PeerToPeer ->\n                requireNotNull(peerToPeerConnector)",
+            "Android core transport must route P2P candidates only through the P2P connector.",
+        ),
+        (
+            runtime_connection_manager_text,
+            runtime_connection_manager_path,
+            "is RuntimeRouteCandidate.Relay ->\n                requireNotNull(relayConnector)",
+            "Android core transport must route relay candidates only through the relay connector.",
+        ),
+        (
+            runtime_connection_manager_test_text,
+            runtime_connection_manager_test_path,
+            "futurePeerToPeerAndRelayRoutesAreNotAttemptedByDirectTcp",
+            "Android transport tests must prove prepared P2P and relay routes never fall through to direct TCP.",
+        ),
+        (
+            runtime_connection_manager_test_text,
+            runtime_connection_manager_test_path,
+            "assertEquals(emptyList<ConnectCall>(), calls)",
+            "Android transport tests must prove the direct TCP connector is not called for unsupported prepared remote routes.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeConnectionManagerTest.futurePeerToPeerAndRelayRoutesAreNotAttemptedByDirectTcp",
+            "Default no-device gate must run the remote route direct transport boundary regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "Android remote route direct transport boundary addendum",
+            "Default no-device gate summary must mention Android remote route direct transport boundary coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_remote_route_direct_transport_boundary_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_trusted_remote_route_target_endpoint_hint_suppression_snippets = (
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "trustedRuntimeConnectionTargetOmitsDirectEndpointWhenRelayRouteIsSaved",
+            "Android ViewModel tests must prove relay trusted targets suppress stale direct endpoint hints.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "trustedRuntimeConnectionTargetOmitsDirectEndpointWhenP2pRouteIsSaved",
+            "Android ViewModel tests must prove P2P trusted targets suppress stale direct endpoint hints.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            'relayHost = "relay.example.test"',
+            "Android trusted remote-route target suppression regression must include saved relay material.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            'p2pRecordId = "p2p-record-1"',
+            "Android trusted remote-route target suppression regression must include saved P2P material.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "assertNull(target?.endpointHint)",
+            "Android trusted remote-route target suppression regressions must assert endpoint hints are omitted.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeClientViewModelTest.trustedRuntimeConnectionTargetOmitsDirectEndpointWhenRelayRouteIsSaved",
+            "Default no-device gate must run the relay trusted target endpoint-hint suppression regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeClientViewModelTest.trustedRuntimeConnectionTargetOmitsDirectEndpointWhenP2pRouteIsSaved",
+            "Default no-device gate must run the P2P trusted target endpoint-hint suppression regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "Android trusted remote-route target endpoint-hint suppression addendum",
+            "Default no-device gate summary must mention Android trusted remote-route target endpoint-hint suppression coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Android Trusted Remote-Route Target Endpoint-Hint Suppression No-Device Gate",
+            "Progress docs must record the Android trusted remote-route target endpoint-hint suppression no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Android Trusted Remote-Route Target Endpoint-Hint Suppression No-Device Gate",
+            "QA evidence must record the Android trusted remote-route target endpoint-hint suppression no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "Android trusted remote-route target endpoint-hint suppression",
+            "Roadmap smoke coverage queue must name Android trusted remote-route target endpoint-hint suppression coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_trusted_remote_route_target_endpoint_hint_suppression_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_saved_relay_reconnect_pinned_identity_rejection_snippets = (
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "trustedRuntimeRelayReconnectRejectsMismatchedPinnedIdentity",
+            "Android ViewModel tests must reject saved relay reconnect planning for mismatched pinned runtime identity.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            'fingerprint = "other-fingerprint"',
+            "Android saved relay pinned-identity regression must cover a mismatched fingerprint.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            'publicKeyBase64 = "other-runtime-public-key"',
+            "Android saved relay pinned-identity regression must cover a mismatched public key.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "assertTrue(fingerprintMismatch.isEmpty())",
+            "Android saved relay pinned-identity regression must assert fingerprint mismatch produces no route.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "assertTrue(publicKeyMismatch.isEmpty())",
+            "Android saved relay pinned-identity regression must assert public-key mismatch produces no route.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeClientViewModelTest.trustedRuntimeRelayReconnectRejectsMismatchedPinnedIdentity",
+            "Default no-device gate must run the saved relay reconnect pinned-identity rejection regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "Android saved relay reconnect pinned-identity rejection addendum",
+            "Default no-device gate summary must mention saved relay reconnect pinned-identity rejection coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Android Saved Relay Reconnect Pinned-Identity Rejection No-Device Gate",
+            "Progress docs must record the saved relay reconnect pinned-identity rejection no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Android Saved Relay Reconnect Pinned-Identity Rejection No-Device Gate",
+            "QA evidence must record the saved relay reconnect pinned-identity rejection no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "Android saved relay reconnect pinned-identity rejection",
+            "Roadmap smoke coverage queue must name saved relay reconnect pinned-identity rejection coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_saved_relay_reconnect_pinned_identity_rejection_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_trusted_relay_reconnect_scope_eligibility_snippets = (
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "trustedRuntimeRelayReconnectIgnoresLoopbackRelayRoute",
+            "Android ViewModel tests must reject saved loopback relay routes without an explicit relay scope.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "trustedRuntimeRelayReconnectAllowsDebugUsbReverseRelayRoute",
+            "Android ViewModel tests must allow saved loopback relay routes with the debug USB reverse scope.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "trustedRuntimeRelayReconnectAllowsPrivateOverlayRelayRoute",
+            "Android ViewModel tests must allow saved private-overlay relay routes with the private overlay scope.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "trustedRuntimeRelayReconnectRejectsScopeLessPrivateRelayRoute",
+            "Android ViewModel tests must reject saved private relay routes without an explicit private overlay scope.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            'relayScope = "usb_reverse"',
+            "Android trusted relay scope regression must include an explicit usb_reverse scope.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            'relayScope = "private_overlay"',
+            "Android trusted relay scope regression must include an explicit private_overlay scope.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            'assertEquals("127.0.0.1", route.host)',
+            "Android trusted relay scope regression must assert the debug USB reverse host is prepared.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            'assertEquals("100.64.1.10", route.host)',
+            "Android trusted relay scope regression must assert the private overlay host is prepared.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "assertTrue(routes.isEmpty())",
+            "Android trusted relay scope regression must assert scope-less saved routes produce no prepared route.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeClientViewModelTest.trustedRuntimeRelayReconnectIgnoresLoopbackRelayRoute",
+            "Default no-device gate must run the scope-less loopback saved relay rejection regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeClientViewModelTest.trustedRuntimeRelayReconnectAllowsDebugUsbReverseRelayRoute",
+            "Default no-device gate must run the debug USB reverse saved relay eligibility regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeClientViewModelTest.trustedRuntimeRelayReconnectAllowsPrivateOverlayRelayRoute",
+            "Default no-device gate must run the private overlay saved relay eligibility regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeClientViewModelTest.trustedRuntimeRelayReconnectRejectsScopeLessPrivateRelayRoute",
+            "Default no-device gate must run the scope-less private saved relay rejection regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "Android trusted relay reconnect scope eligibility addendum",
+            "Default no-device gate summary must mention Android trusted relay reconnect scope eligibility coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Android Trusted Relay Reconnect Scope Eligibility No-Device Gate",
+            "Progress docs must record the Android trusted relay reconnect scope eligibility no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Android Trusted Relay Reconnect Scope Eligibility No-Device Gate",
+            "QA evidence must record the Android trusted relay reconnect scope eligibility no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "Android trusted relay reconnect scope eligibility",
+            "Roadmap smoke coverage queue must name Android trusted relay reconnect scope eligibility coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_trusted_relay_reconnect_scope_eligibility_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_pending_relay_qr_planning_eligibility_snippets = (
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "runtimeRemoteRoutePlannerUsesInjectedClockForPendingPairingRelayLease",
+            "Android ViewModel tests must evaluate pending pairing relay QR lease expiry with the injected clock.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "pairingRuntimeTargetUsesRelayQrWithoutLocalEndpoint",
+            "Android ViewModel tests must build a relay QR pairing target without direct endpoint hints.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "pendingPairingRelayQrOverridesSavedRelayRoute",
+            "Android ViewModel tests must plan pending pairing relay QR material before saved relay routes.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            'assertNull(target?.endpointHint)',
+            "Android pending relay QR target regression must assert direct endpoint hints are omitted.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            'assertEquals("relay-from-qr.example.test", route.host)',
+            "Android pending relay QR override regression must assert the QR relay host wins over saved relay material.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            'assertEquals("qr-secret", route.relayFrameSecret)',
+            "Android pending relay QR override regression must assert the QR relay secret wins over saved relay material.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeClientViewModelTest.runtimeRemoteRoutePlannerUsesInjectedClockForPendingPairingRelayLease",
+            "Default no-device gate must run the pending relay QR injected-clock lease regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeClientViewModelTest.pairingRuntimeTargetUsesRelayQrWithoutLocalEndpoint",
+            "Default no-device gate must run the relay QR pairing target without direct endpoint regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeClientViewModelTest.pendingPairingRelayQrOverridesSavedRelayRoute",
+            "Default no-device gate must run the pending relay QR over saved relay route regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "Android pending relay QR planning eligibility addendum",
+            "Default no-device gate summary must mention pending relay QR planning eligibility coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Android Pending Relay QR Planning Eligibility No-Device Gate",
+            "Progress docs must record the pending relay QR planning eligibility no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Android Pending Relay QR Planning Eligibility No-Device Gate",
+            "QA evidence must record the pending relay QR planning eligibility no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "Android pending relay QR planning eligibility",
+            "Roadmap smoke coverage queue must name pending relay QR planning eligibility coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_pending_relay_qr_planning_eligibility_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_pairing_relay_qr_direct_endpoint_suppression_snippets = (
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "pairingRuntimeTargetIgnoresDirectEndpointWhenRelayQrAlsoHasIt",
+            "Android ViewModel tests must ignore stray fixed host/port hints on relay-backed pairing QR targets.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            'assertEquals("runtime-relay", target?.identity?.deviceId)',
+            "Android pairing relay QR direct-endpoint suppression must keep the QR-bound runtime identity.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            'assertNull(target?.endpointHint)',
+            "Android pairing relay QR direct-endpoint suppression must assert direct endpoint hints are omitted.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeClientViewModelTest.pairingRuntimeTargetIgnoresDirectEndpointWhenRelayQrAlsoHasIt",
+            "Default no-device gate must run the pairing relay QR direct-endpoint suppression regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "Android pairing relay QR direct-endpoint suppression addendum",
+            "Default no-device gate summary must mention pairing relay QR direct-endpoint suppression coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Android Pairing Relay QR Direct-Endpoint Suppression No-Device Gate",
+            "Progress docs must record the pairing relay QR direct-endpoint suppression no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Android Pairing Relay QR Direct-Endpoint Suppression No-Device Gate",
+            "QA evidence must record the pairing relay QR direct-endpoint suppression no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "Android pairing relay QR direct-endpoint suppression",
+            "Roadmap smoke coverage queue must name pairing relay QR direct-endpoint suppression coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_pairing_relay_qr_direct_endpoint_suppression_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_pairing_p2p_qr_direct_endpoint_suppression_snippets = (
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "pairingRuntimeTargetIgnoresDirectEndpointWhenP2pQrAlsoHasIt",
+            "Android ViewModel tests must ignore stray fixed host/port hints on P2P-backed pairing QR targets.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            'p2pRouteClass = "p2p_rendezvous"',
+            "Android pairing P2P QR direct-endpoint suppression must include P2P rendezvous route material.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            'assertEquals("runtime-p2p", target?.identity?.deviceId)',
+            "Android pairing P2P QR direct-endpoint suppression must keep the QR-bound runtime identity.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            'assertNull(target?.endpointHint)',
+            "Android pairing P2P QR direct-endpoint suppression must assert direct endpoint hints are omitted.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeClientViewModelTest.pairingRuntimeTargetIgnoresDirectEndpointWhenP2pQrAlsoHasIt",
+            "Default no-device gate must run the pairing P2P QR direct-endpoint suppression regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "Android pairing P2P QR direct-endpoint suppression addendum",
+            "Default no-device gate summary must mention pairing P2P QR direct-endpoint suppression coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Android Pairing P2P QR Direct-Endpoint Suppression No-Device Gate",
+            "Progress docs must record the pairing P2P QR direct-endpoint suppression no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Android Pairing P2P QR Direct-Endpoint Suppression No-Device Gate",
+            "QA evidence must record the pairing P2P QR direct-endpoint suppression no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "Android pairing P2P QR direct-endpoint suppression",
+            "Roadmap smoke coverage queue must name pairing P2P QR direct-endpoint suppression coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_pairing_p2p_qr_direct_endpoint_suppression_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_saved_relay_lease_reconnect_eligibility_snippets = (
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "trustedRuntimeRelayReconnectUsesStoredQrLeaseMetadata",
+            "Android ViewModel tests must prove saved QR relay lease metadata is used for trusted reconnect planning.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "runtimeRemoteRoutePlannerUsesInjectedClockForSavedRelayLease",
+            "Android ViewModel tests must prove saved relay lease expiry is evaluated with the injected clock.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "trustedRuntimeRelayReconnectRejectsExpiredSavedRelayLease",
+            "Android ViewModel tests must reject expired saved relay leases before trusted reconnect.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "trustedRuntimeRelayReconnectRejectsIncompleteSavedRelayLease",
+            "Android ViewModel tests must reject incomplete saved relay leases before trusted reconnect.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "autoReconnectTrustedRuntimeTargetUsesSavedRelayRouteWithoutManualEndpoint",
+            "Android ViewModel tests must prove auto reconnect can use saved relay routes without manual endpoints.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            'assertEquals("secret-1", plannedRoute.relayFrameSecret)',
+            "Android saved relay reconnect regression must preserve the relay frame secret in the planned route.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "relayExpiresAtEpochMillis = 2_000L",
+            "Android saved relay lease clock regression must include a bounded lease expiry.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "relayExpiresAtEpochMillis = 1L",
+            "Android saved relay reconnect regression must include an expired relay lease.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "relayNonce = null",
+            "Android saved relay reconnect regression must include an incomplete relay lease nonce.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeClientViewModelTest.trustedRuntimeRelayReconnectUsesStoredQrLeaseMetadata",
+            "Default no-device gate must run the saved QR relay lease metadata regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeClientViewModelTest.runtimeRemoteRoutePlannerUsesInjectedClockForSavedRelayLease",
+            "Default no-device gate must run the saved relay lease injected-clock regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeClientViewModelTest.trustedRuntimeRelayReconnectRejectsExpiredSavedRelayLease",
+            "Default no-device gate must run the expired saved relay lease rejection regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeClientViewModelTest.trustedRuntimeRelayReconnectRejectsIncompleteSavedRelayLease",
+            "Default no-device gate must run the incomplete saved relay lease rejection regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeClientViewModelTest.autoReconnectTrustedRuntimeTargetUsesSavedRelayRouteWithoutManualEndpoint",
+            "Default no-device gate must run the saved relay auto-reconnect without manual endpoint regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "Android saved relay lease reconnect eligibility addendum",
+            "Default no-device gate summary must mention Android saved relay lease reconnect eligibility coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Android Saved Relay Lease Reconnect Eligibility No-Device Gate",
+            "Progress docs must record the Android saved relay lease reconnect eligibility no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Android Saved Relay Lease Reconnect Eligibility No-Device Gate",
+            "QA evidence must record the Android saved relay lease reconnect eligibility no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "Android saved relay lease reconnect eligibility",
+            "Roadmap smoke coverage queue must name Android saved relay lease reconnect eligibility coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_saved_relay_lease_reconnect_eligibility_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_route_refresh_qr_relay_add_route_snippets = (
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "routeRefreshQrAddsRelayRouteToExistingTrustedRuntime",
+            "Android ViewModel tests must prove route-refresh QR relay material can update an existing trusted runtime.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            'assertEquals("relay.example.test", refreshed?.relayHost)',
+            "Android route-refresh QR relay add-route regression must assert the relay host is stored.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            'assertEquals("secret-1", refreshed?.relaySecret)',
+            "Android route-refresh QR relay add-route regression must assert the relay secret is stored.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            'assertEquals("runtime-public-key", refreshed?.publicKeyBase64)',
+            "Android route-refresh QR relay add-route regression must preserve the pinned runtime public key.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "assertNull(refreshed?.host)",
+            "Android route-refresh QR relay add-route regression must drop fixed endpoint host material.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeClientViewModelTest.routeRefreshQrAddsRelayRouteToExistingTrustedRuntime",
+            "Default no-device gate must run the Android route-refresh QR relay add-route regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "Android route-refresh QR relay add-route addendum",
+            "Default no-device gate summary must mention Android route-refresh QR relay add-route coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Android Route Refresh QR Relay Add-Route No-Device Gate",
+            "Progress docs must record the Android route-refresh QR relay add-route no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Android Route Refresh QR Relay Add-Route No-Device Gate",
+            "QA evidence must record the Android route-refresh QR relay add-route no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "Android route-refresh QR relay add-route",
+            "Roadmap smoke coverage queue must name Android route-refresh QR relay add-route coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_route_refresh_qr_relay_add_route_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_route_refresh_qr_p2p_add_route_snippets = (
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "routeRefreshQrAddsP2pRendezvousRouteToExistingTrustedRuntime",
+            "Android ViewModel tests must prove route-refresh QR P2P material can update an existing trusted runtime.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            'assertEquals("p2p_rendezvous", refreshed?.p2pRouteClass)',
+            "Android route-refresh QR P2P add-route regression must assert the P2P route class is stored.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            'assertEquals("opaque-candidate-1", refreshed?.p2pEncryptedBody)',
+            "Android route-refresh QR P2P add-route regression must assert the encrypted P2P body is stored.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            'assertEquals("nonce-p2p-1", refreshed?.p2pAntiReplayNonce)',
+            "Android route-refresh QR P2P add-route regression must assert the P2P anti-replay nonce is stored.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            'assertEquals("runtime-public-key", refreshed?.publicKeyBase64)',
+            "Android route-refresh QR P2P add-route regression must preserve the pinned runtime public key.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "assertNull(refreshed?.host)",
+            "Android route-refresh QR P2P add-route regression must drop fixed endpoint host material.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeClientViewModelTest.routeRefreshQrAddsP2pRendezvousRouteToExistingTrustedRuntime",
+            "Default no-device gate must run the Android route-refresh QR P2P add-route regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "Android route-refresh QR P2P add-route addendum",
+            "Default no-device gate summary must mention Android route-refresh QR P2P add-route coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Android Route Refresh QR P2P Add-Route No-Device Gate",
+            "Progress docs must record the Android route-refresh QR P2P add-route no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Android Route Refresh QR P2P Add-Route No-Device Gate",
+            "QA evidence must record the Android route-refresh QR P2P add-route no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "Android route-refresh QR P2P add-route",
+            "Roadmap smoke coverage queue must name Android route-refresh QR P2P add-route coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_route_refresh_qr_p2p_add_route_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_route_refresh_qr_optional_relay_snippets = (
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "routeRefreshQrWithoutPublicKeyCanRefreshPinnedRuntimeRelayRoute",
+            "Android ViewModel tests must prove route-refresh QR relay material can update a pinned runtime even when the QR omits runtime_public_key/rk.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "relay-new",
+            "Android optional-public-key route-refresh QR relay regression must assert the refreshed relay id.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "secret-new",
+            "Android optional-public-key route-refresh QR relay regression must assert the refreshed relay secret.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "nonce-route-new",
+            "Android optional-public-key route-refresh QR relay regression must assert the refreshed relay nonce.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            'assertEquals("runtime-public-key", refreshed?.publicKeyBase64)',
+            "Android optional-public-key route-refresh QR relay regression must preserve the pinned runtime public key.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeClientViewModelTest.routeRefreshQrWithoutPublicKeyCanRefreshPinnedRuntimeRelayRoute",
+            "Default no-device gate must run the Android route-refresh QR optional-public-key relay regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "Android route-refresh QR optional-public-key relay update addendum",
+            "Default no-device gate summary must mention Android route-refresh QR optional-public-key relay coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Android Route Refresh QR Optional-Public-Key Relay Update No-Device Gate",
+            "Progress docs must record the Android route-refresh QR optional-public-key relay no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Android Route Refresh QR Optional-Public-Key Relay Update No-Device Gate",
+            "QA evidence must record the Android route-refresh QR optional-public-key relay no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "Android route-refresh QR optional-public-key relay update",
+            "Roadmap smoke coverage queue must name Android route-refresh QR optional-public-key relay coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_route_refresh_qr_optional_relay_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_route_refresh_qr_optional_p2p_snippets = (
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "routeRefreshQrWithoutPublicKeyCanRefreshPinnedRuntimeP2pRendezvousRoute",
+            "Android ViewModel tests must prove route-refresh QR P2P material can update a pinned runtime even when the QR omits runtime_public_key/rk.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "p2p-record-new",
+            "Android optional-public-key route-refresh QR P2P regression must assert the refreshed P2P record id.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "opaque-candidate-new",
+            "Android optional-public-key route-refresh QR P2P regression must assert the refreshed encrypted P2P body.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "nonce-p2p-new",
+            "Android optional-public-key route-refresh QR P2P regression must assert the refreshed anti-replay nonce.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            'assertEquals("runtime-public-key", refreshed?.publicKeyBase64)',
+            "Android optional-public-key route-refresh QR P2P regression must preserve the pinned runtime public key.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "assertNull(refreshed?.relayHost)",
+            "Android optional-public-key route-refresh QR P2P regression must not keep stale relay route material.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeClientViewModelTest.routeRefreshQrWithoutPublicKeyCanRefreshPinnedRuntimeP2pRendezvousRoute",
+            "Default no-device gate must run the Android route-refresh QR optional-public-key P2P regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "Android route-refresh QR optional-public-key P2P update addendum",
+            "Default no-device gate summary must mention Android route-refresh QR optional-public-key P2P coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Android Route Refresh QR Optional-Public-Key P2P Update No-Device Gate",
+            "Progress docs must record the Android route-refresh QR optional-public-key P2P no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Android Route Refresh QR Optional-Public-Key P2P Update No-Device Gate",
+            "QA evidence must record the Android route-refresh QR optional-public-key P2P no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "Android route-refresh QR optional-public-key P2P update",
+            "Roadmap smoke coverage queue must name Android route-refresh QR optional-public-key P2P coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_route_refresh_qr_optional_p2p_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_route_refresh_qr_endpoint_fallback_removal_snippets = (
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "routeRefreshQrDropsTrustedEndpointFallbackWhenRelayRouteIsSaved",
+            "Android ViewModel tests must prove relay route-refresh QR material drops stale trusted direct endpoint fallback.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "assertNull(refreshed?.host)",
+            "Android route-refresh QR fixed-endpoint fallback removal must clear the trusted host.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "assertNull(refreshed?.port)",
+            "Android route-refresh QR fixed-endpoint fallback removal must clear the trusted port.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeClientViewModelTest.routeRefreshQrDropsTrustedEndpointFallbackWhenRelayRouteIsSaved",
+            "Default no-device gate must run the Android route-refresh QR fixed-endpoint fallback removal regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "Android route-refresh QR fixed-endpoint fallback removal addendum",
+            "Default no-device gate summary must mention Android route-refresh QR fixed-endpoint fallback removal coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Android Route Refresh QR Fixed-Endpoint Fallback Removal No-Device Gate",
+            "Progress docs must record the Android route-refresh QR fixed-endpoint fallback removal no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Android Route Refresh QR Fixed-Endpoint Fallback Removal No-Device Gate",
+            "QA evidence must record the Android route-refresh QR fixed-endpoint fallback removal no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "Android route-refresh QR fixed-endpoint fallback removal",
+            "Roadmap smoke coverage queue must name Android route-refresh QR fixed-endpoint fallback removal coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_route_refresh_qr_endpoint_fallback_removal_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_route_refresh_qr_direct_only_rejection_snippets = (
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "routeRefreshQrRejectsDirectRouteForExistingTrustedRuntime",
+            "Android ViewModel tests must reject direct-only route-refresh QR payloads for existing trusted runtimes.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            'host = "192.168.219.104"',
+            "Android direct-only route-refresh rejection regression must include direct host material.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "relayHost = null",
+            "Android direct-only route-refresh rejection regression must omit relay material.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "assertNull(trustedRuntimeFromRouteRefreshQr(current, payload))",
+            "Android direct-only route-refresh QR must fail closed without trusted route storage mutation.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeClientViewModelTest.routeRefreshQrRejectsDirectRouteForExistingTrustedRuntime",
+            "Default no-device gate must run the Android route-refresh QR direct-only rejection regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "Android route-refresh QR direct-only rejection addendum",
+            "Default no-device gate summary must mention Android route-refresh QR direct-only rejection coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Android Route Refresh QR Direct-Only Rejection No-Device Gate",
+            "Progress docs must record the Android route-refresh QR direct-only rejection no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Android Route Refresh QR Direct-Only Rejection No-Device Gate",
+            "QA evidence must record the Android route-refresh QR direct-only rejection no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "Android route-refresh QR direct-only rejection",
+            "Roadmap smoke coverage queue must name Android route-refresh QR direct-only rejection coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_route_refresh_qr_direct_only_rejection_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_route_refresh_qr_route_token_rotation_snippets = (
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "routeRefreshQrCanRotateRouteTokenForPinnedRuntimeIdentity",
+            "Android ViewModel tests must prove latest route-refresh QR can rotate route tokens for a pinned runtime identity.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            'assertEquals("route-new", refreshed?.routeToken)',
+            "Android route-refresh QR route-token rotation regression must assert the new route token is stored.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            'assertEquals("relay-new", refreshed?.relayId)',
+            "Android route-refresh QR route-token rotation regression must assert the new relay id is stored.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            'assertEquals("secret-new", refreshed?.relaySecret)',
+            "Android route-refresh QR route-token rotation regression must assert the new relay secret is stored.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeClientViewModelTest.routeRefreshQrCanRotateRouteTokenForPinnedRuntimeIdentity",
+            "Default no-device gate must run the Android route-refresh QR route-token rotation regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "Android route-refresh QR route-token rotation addendum",
+            "Default no-device gate summary must mention Android route-refresh QR route-token rotation coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Android Route Refresh QR Route-Token Rotation No-Device Gate",
+            "Progress docs must record the Android route-refresh QR route-token rotation no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Android Route Refresh QR Route-Token Rotation No-Device Gate",
+            "QA evidence must record the Android route-refresh QR route-token rotation no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "Android route-refresh QR route-token rotation",
+            "Roadmap smoke coverage queue must name Android route-refresh QR route-token rotation coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_route_refresh_qr_route_token_rotation_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_route_refresh_qr_pinned_identity_rejection_snippets = (
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "routeRefreshQrRejectsUntrustedOrMismatchedRuntimeIdentity",
+            "Android ViewModel tests must reject route-refresh QR payloads that are not bound to the current trusted runtime identity.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "current = null",
+            "Android route-refresh QR pinned-identity rejection must prove an untrusted scan cannot create trusted route storage.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            'runtimeDeviceId = "other-runtime"',
+            "Android route-refresh QR pinned-identity rejection must cover mismatched runtime device ids.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            'runtimePublicKeyBase64 = "other-public-key"',
+            "Android route-refresh QR pinned-identity rejection must cover mismatched runtime public keys.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeClientViewModelTest.routeRefreshQrRejectsUntrustedOrMismatchedRuntimeIdentity",
+            "Default no-device gate must run the Android route-refresh QR pinned-identity rejection regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "Android route-refresh QR pinned-identity rejection addendum",
+            "Default no-device gate summary must mention Android route-refresh QR pinned-identity rejection coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Android Route Refresh QR Pinned-Identity Rejection No-Device Gate",
+            "Progress docs must record the Android route-refresh QR pinned-identity rejection no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Android Route Refresh QR Pinned-Identity Rejection No-Device Gate",
+            "QA evidence must record the Android route-refresh QR pinned-identity rejection no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "Android route-refresh QR pinned-identity rejection",
+            "Roadmap smoke coverage queue must name Android route-refresh QR pinned-identity rejection coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_route_refresh_qr_pinned_identity_rejection_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_route_refresh_qr_expired_incomplete_rejection_snippets = (
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "expiredRouteRefreshQrIsNotSavedAsTrustedRuntimeRoute",
+            "Android ViewModel tests must reject expired route-refresh QR relay leases before trusted route storage changes.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "relayExpiresAtEpochMillis = 1L",
+            "Android expired route-refresh QR rejection must pin an already-expired relay lease.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "routeRefreshQrRejectsRelayRouteWithoutSecret",
+            "Android ViewModel tests must reject route-refresh QR relay routes missing relay_secret.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "relaySecret = null",
+            "Android incomplete route-refresh QR rejection must cover missing relay_secret.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeClientViewModelTest.expiredRouteRefreshQrIsNotSavedAsTrustedRuntimeRoute",
+            "Default no-device gate must run the Android expired route-refresh QR rejection regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeClientViewModelTest.routeRefreshQrRejectsRelayRouteWithoutSecret",
+            "Default no-device gate must run the Android incomplete route-refresh QR relay-secret rejection regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "Android route-refresh QR expired-or-incomplete relay rejection addendum",
+            "Default no-device gate summary must mention Android expired-or-incomplete route-refresh QR relay rejection coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Android Route Refresh QR Expired-Or-Incomplete Relay Rejection No-Device Gate",
+            "Progress docs must record the Android route-refresh QR expired-or-incomplete relay rejection no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Android Route Refresh QR Expired-Or-Incomplete Relay Rejection No-Device Gate",
+            "QA evidence must record the Android route-refresh QR expired-or-incomplete relay rejection no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "Android route-refresh QR expired-or-incomplete relay rejection",
+            "Roadmap smoke coverage queue must name Android route-refresh QR expired-or-incomplete relay rejection coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_route_refresh_qr_expired_incomplete_rejection_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_route_refresh_qr_expired_incomplete_p2p_rejection_snippets = (
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "routeRefreshQrRejectsExpiredOrIncompleteP2pRoute",
+            "Android ViewModel tests must reject expired or incomplete route-refresh QR P2P material before trusted route storage changes.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "p2pExpiresAtEpochMillis = 1L",
+            "Android route-refresh QR P2P expiry rejection must pin an already-expired P2P record.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "p2pEncryptedBody = null",
+            "Android route-refresh QR P2P incomplete rejection must cover missing encrypted body material.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "p2pAntiReplayNonce = null",
+            "Android route-refresh QR P2P incomplete rejection must cover missing anti-replay nonce material.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeClientViewModelTest.routeRefreshQrRejectsExpiredOrIncompleteP2pRoute",
+            "Default no-device gate must run the Android route-refresh QR expired/incomplete P2P rejection regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "Android route-refresh QR expired-or-incomplete P2P rejection addendum",
+            "Default no-device gate summary must mention Android route-refresh QR expired-or-incomplete P2P rejection coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Android Route Refresh QR Expired-Or-Incomplete P2P Rejection No-Device Gate",
+            "Progress docs must record the Android route-refresh QR expired-or-incomplete P2P rejection no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Android Route Refresh QR Expired-Or-Incomplete P2P Rejection No-Device Gate",
+            "QA evidence must record the Android route-refresh QR expired-or-incomplete P2P rejection no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "Android route-refresh QR expired-or-incomplete P2P rejection",
+            "Roadmap smoke coverage queue must name Android route-refresh QR expired-or-incomplete P2P rejection coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_route_refresh_qr_expired_incomplete_p2p_rejection_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
     required_trusted_last_known_ui_snippets = (
         "private fun RuntimeEndpointSource.isCurrentDirectRouteCandidate(): Boolean",
         "this != RuntimeEndpointSource.Manual && this != RuntimeEndpointSource.TrustedLastKnown",
@@ -1426,6 +3623,27 @@ def android_runtime_boundary_guard_failures() -> list[str]:
             f"{client_screens_test_path.relative_to(ROOT)}: Missing Android provider row "
             "accessibility summary coverage across supported languages."
         )
+    if "connectionStatusRouteNoticesStayBoundedAtLargeFontAcrossSupportedLanguages" not in client_screens_test_text:
+        failures.append(
+            f"{client_screens_test_path.relative_to(ROOT)}: Missing Android Connection Status route notice "
+            "compact-layout coverage across supported languages."
+        )
+    for snippet in (
+        "connectionStatusRouteNoticeNarrowRootTestTag",
+        "connectionStatusRouteNoticeListTestTag",
+        "RUNTIME_ROUTE_NOTICE_TEST_TAG",
+        "RUNTIME_ROUTE_NOTICE_RECOVERY_TEST_TAG",
+        'assertBoundsInside("$languageTag ${layoutCase.name} route notice action", actionBounds, columnBounds)',
+        "boundsOverlap(titleBounds, statusBounds)",
+        "boundsOverlap(recoveryBounds, actionBounds)",
+        "RouteNoticePrimaryAction.Connect ->",
+        "RouteNoticePrimaryAction.ScanLatestQr ->",
+    ):
+        if snippet not in client_screens_test_text:
+            failures.append(
+                f"{client_screens_test_path.relative_to(ROOT)}: Missing Android Connection Status route notice "
+                f"compact regression assertion {snippet!r}."
+            )
     for snippet in (
         "CONNECTION_STATUS_PANEL_TEST_TAG",
         "CONNECTION_STATUS_HERO_TEST_TAG",
@@ -1438,11 +3656,24 @@ def android_runtime_boundary_guard_failures() -> list[str]:
         "CONNECTION_STATUS_REFRESH_ACTION_LABEL_TEST_TAG",
         "CONNECTION_STATUS_DISCONNECT_ACTION_TEST_TAG",
         "CONNECTION_STATUS_DISCONNECT_ACTION_LABEL_TEST_TAG",
+        "RUNTIME_ROUTE_NOTICE_TEST_TAG",
+        "RUNTIME_ROUTE_NOTICE_ROW_TEST_TAG",
+        "RUNTIME_ROUTE_NOTICE_ICON_TEST_TAG",
+        "RUNTIME_ROUTE_NOTICE_TEXT_COLUMN_TEST_TAG",
+        "RUNTIME_ROUTE_NOTICE_HEADER_TEST_TAG",
+        "RUNTIME_ROUTE_NOTICE_TITLE_TEST_TAG",
+        "RUNTIME_ROUTE_NOTICE_STATUS_TEST_TAG",
+        "RUNTIME_ROUTE_NOTICE_DETAIL_TEST_TAG",
+        "RUNTIME_ROUTE_NOTICE_RECOVERY_TEST_TAG",
+        "RUNTIME_ROUTE_NOTICE_ACTION_TEST_TAG",
         "connectionStatusLineTestTag(key: String)",
         "tagKey = CONNECTION_STATUS_RUNTIME_LINE_KEY",
         "tagKey = CONNECTION_STATUS_PROVIDERS_LINE_KEY",
         "tagKey = CONNECTION_STATUS_AUTO_RECONNECT_LINE_KEY",
         ".testTag(CONNECTION_STATUS_ACTIONS_TEST_TAG)",
+        ".testTag(RUNTIME_ROUTE_NOTICE_TEST_TAG)",
+        ".testTag(RUNTIME_ROUTE_NOTICE_DETAIL_TEST_TAG)",
+        ".testTag(RUNTIME_ROUTE_NOTICE_ACTION_TEST_TAG)",
         ".testTag(providerStatusRowTestTag(provider.id))",
         ".testTag(providerStatusHeaderTestTag(provider.id))",
         ".testTag(providerStatusStatusTestTag(provider.id))",
@@ -1523,6 +3754,142 @@ def android_runtime_boundary_guard_failures() -> list[str]:
             f"{runtime_test_path.relative_to(ROOT)}: Missing Android route-candidate test that blocks "
             "direct Ollama and LM Studio ports from selected and discovered routes."
         )
+    required_direct_model_provider_route_gate_snippets = (
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeClientViewModelTest.runtimeRouteCandidatesRejectDirectModelProviderPortsFromSelectedAndDiscoveredRoutes",
+            "Default no-device gate must run the Android direct model-provider route block regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "Android direct model-provider route block addendum",
+            "Default no-device gate summary must mention the Android direct model-provider route block coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Android Direct Model-Provider Route Block No-Device Gate",
+            "Progress docs must record the Android direct model-provider route block no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Android Direct Model-Provider Route Block No-Device Gate",
+            "QA evidence must record the Android direct model-provider route block no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "Android direct model-provider route block",
+            "Roadmap smoke coverage queue must name Android direct model-provider route block coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_direct_model_provider_route_gate_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_bonjour_identity_metadata_snippets = (
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "discoveredRuntimeSelectionRequiresTrustedIdentityMetadata",
+            "Android discovery selection tests must reject metadata-less or mismatched trusted runtime rows.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "discoveredRuntimeSelectionCanUsePendingPairingIdentityBeforeTrustIsSaved",
+            "Android discovery selection tests must allow pending QR identity metadata before trust is saved.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "runtimeRouteCandidatesUseRouteTokenBeforeLegacyIdentityMetadata",
+            "Android route candidates must prefer route-token matching over legacy identity metadata.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "runtimeRouteCandidatesIgnoreRouteTokenMismatchEvenWhenLegacyIdentityMatches",
+            "Android route candidates must reject route-token mismatches even when legacy metadata matches.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "trustedDiscoveredRuntimeConnectionTargetRejectsMetadataLessDiscovery",
+            "Android trusted discovered target tests must reject metadata-less Bonjour/local discovery.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "runtimeRouteCandidatesIgnoreDiscoveredEndpointWithMismatchedIdentityMetadata",
+            "Android route candidates must reject mismatched discovered identity metadata.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "runtimeRouteCandidatesIgnoreSelectedBonjourEndpointWithMismatchedIdentityMetadata",
+            "Android route candidates must reject selected Bonjour endpoints with mismatched metadata.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "runtimeRouteCandidatesRejectMetadataLessSelectedBonjourEndpoint",
+            "Android route candidates must reject selected Bonjour endpoints without identity metadata.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "runtimeRouteCandidatesRejectSelectedBonjourEndpointMissingCurrentDiscoveryMetadata",
+            "Android route candidates must reject selected Bonjour endpoints whose discovery row is gone.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeClientViewModelTest.discoveredRuntimeSelectionRequiresTrustedIdentityMetadata",
+            "Default no-device gate must run the trusted discovery metadata selection regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeClientViewModelTest.runtimeRouteCandidatesIgnoreRouteTokenMismatchEvenWhenLegacyIdentityMatches",
+            "Default no-device gate must run the route-token mismatch discovery regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeClientViewModelTest.runtimeRouteCandidatesRejectSelectedBonjourEndpointMissingCurrentDiscoveryMetadata",
+            "Default no-device gate must run the selected Bonjour missing-metadata regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "Android Bonjour discovery identity metadata boundary addendum",
+            "Default no-device gate summary must mention Android Bonjour discovery identity metadata coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Android Bonjour Discovery Identity Metadata Boundary No-Device Gate",
+            "Progress docs must record the Android Bonjour discovery identity metadata no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Android Bonjour Discovery Identity Metadata Boundary No-Device Gate",
+            "QA evidence must record the Android Bonjour discovery identity metadata no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "Android Bonjour discovery identity metadata boundary",
+            "Roadmap smoke coverage queue must name Android Bonjour discovery identity metadata coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_bonjour_identity_metadata_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
     if "relayPairingQrPersistsPendingRouteAfterInitialConnectionFailure" not in runtime_test_text:
         failures.append(
             f"{runtime_test_path.relative_to(ROOT)}: Missing Android pending relay QR persistence test "
@@ -1603,6 +3970,128 @@ def android_runtime_boundary_guard_failures() -> list[str]:
             f"{runtime_test_path.relative_to(ROOT)}: Missing Android relay QR completion test that "
             "persists trusted relay material and clears the pending route."
         )
+    if "duplicateCompactRelayQrScanSendsSinglePairingRequestOnActiveRelayConnection" not in runtime_test_text:
+        failures.append(
+            f"{runtime_test_path.relative_to(ROOT)}: Missing Android duplicate relay QR idempotency "
+            "regression that keeps one active pairing request."
+        )
+    if "routeRefreshQrAfterAcceptedRelayPairingDoesNotOpenDuplicateRelayConnection" not in runtime_test_text:
+        failures.append(
+            f"{runtime_test_path.relative_to(ROOT)}: Missing Android route-refresh QR regression that "
+            "reuses the active trusted relay connection."
+        )
+    required_duplicate_relay_qr_idempotency_snippets = (
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "assertEquals(0, directConnectionAttempts)",
+            "Android duplicate relay QR idempotency regression must prove direct TCP is not used.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "assertEquals(1, relayConnectionAttempts)",
+            "Android duplicate relay QR idempotency regression must prove only one relay connection attempt occurs.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "assertEquals(1, channel.sentEnvelopes.count { it.type == MessageType.PairingRequest })",
+            "Android duplicate relay QR idempotency regression must prove only one pairing request is sent.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeClientViewModelTest.duplicateCompactRelayQrScanSendsSinglePairingRequestOnActiveRelayConnection",
+            "Default no-device gate must run the duplicate relay QR idempotency regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "duplicate relay QR idempotency addendum",
+            "Default no-device gate summary must mention duplicate relay QR idempotency coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Duplicate Relay QR Idempotency No-Device Gate",
+            "Progress docs must record the duplicate relay QR idempotency no-device gate.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "focused ViewModel regression, direct TCP non-use assertion, single relay connection assertion, single pairing request assertion, default gate entry, exact summary phrase, current QA evidence, and roadmap coverage",
+            "Progress docs must record the exact duplicate relay QR idempotency guardrail coverage.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Duplicate Relay QR Idempotency No-Device Gate",
+            "QA evidence must record the duplicate relay QR idempotency no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring the focused ViewModel regression, direct TCP non-use assertion, single relay connection assertion, single pairing request assertion, default gate entry, exact summary phrase, current progress/QA evidence, and roadmap coverage.",
+            "QA evidence must record current static evidence for duplicate relay QR idempotency.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "duplicate relay QR idempotency",
+            "Roadmap smoke coverage queue must name duplicate relay QR idempotency coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_duplicate_relay_qr_idempotency_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_route_refresh_qr_active_connection_reuse_snippets = (
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "assertEquals(1, relayConnectionAttempts)",
+            "Android route-refresh QR active-connection reuse regression must prove no duplicate relay dial occurs.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            'assertEquals("relay-refreshed", trusted.relayId)',
+            "Android route-refresh QR active-connection reuse regression must assert refreshed relay material.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeClientViewModelTest.routeRefreshQrAfterAcceptedRelayPairingDoesNotOpenDuplicateRelayConnection",
+            "Default no-device gate must run the Android route-refresh QR active-connection reuse regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "Android route-refresh QR active-connection reuse addendum",
+            "Default no-device gate summary must mention Android route-refresh QR active-connection reuse coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Android Route Refresh QR Active-Connection Reuse No-Device Gate",
+            "Progress docs must record the Android route-refresh QR active-connection reuse no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Android Route Refresh QR Active-Connection Reuse No-Device Gate",
+            "QA evidence must record the Android route-refresh QR active-connection reuse no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "route-refresh QR active-connection reuse",
+            "Roadmap smoke coverage queue must name route-refresh QR active-connection reuse coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_route_refresh_qr_active_connection_reuse_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
     required_authenticated_route_refresh_default_off_snippets = (
         (
             runtime_text,
@@ -1695,6 +4184,271 @@ def android_runtime_boundary_guard_failures() -> list[str]:
                 f"{path.relative_to(ROOT)}: Missing Android accepted-pairing incomplete relay "
                 f"fail-closed guard {snippet}."
             )
+    required_initial_pairing_expired_relay_qr_rejection_snippets = (
+        (
+            runtime_test_text,
+            "expiredRelayQrIsNotSavedAsTrustedRuntime",
+            runtime_test_path,
+            "Android ViewModel tests must reject expired relay QR material before trusted runtime creation.",
+        ),
+        (
+            runtime_test_text,
+            "relayExpiresAtEpochMillis = 1L",
+            runtime_test_path,
+            "Android initial pairing expired relay QR regression must include an already-expired relay lease.",
+        ),
+        (
+            runtime_test_text,
+            "assertNull(trusted)",
+            runtime_test_path,
+            "Android initial pairing expired relay QR regression must assert no trusted runtime is created.",
+        ),
+        (
+            no_device_text,
+            "RuntimeClientViewModelTest.expiredRelayQrIsNotSavedAsTrustedRuntime",
+            no_device_path,
+            "Default no-device gate must run the initial pairing expired relay QR rejection regression.",
+        ),
+        (
+            no_device_text,
+            "Android initial pairing QR expired relay lease rejection addendum",
+            no_device_path,
+            "Default no-device gate summary must mention initial pairing expired relay QR rejection coverage.",
+        ),
+        (
+            docs_progress_text,
+            "Android Initial Pairing QR Expired Relay Lease Rejection No-Device Gate",
+            docs_progress_path,
+            "Progress docs must record the initial pairing expired relay QR rejection no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            "Android Initial Pairing QR Expired Relay Lease Rejection No-Device Gate",
+            docs_qa_evidence_path,
+            "QA evidence must record the initial pairing expired relay QR rejection no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            "Android initial pairing QR expired relay lease rejection",
+            docs_roadmap_path,
+            "Roadmap smoke coverage queue must name initial pairing expired relay QR rejection coverage.",
+        ),
+    )
+    for haystack, snippet, path, guidance in required_initial_pairing_expired_relay_qr_rejection_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_initial_pairing_expired_p2p_qr_rejection_snippets = (
+        (
+            runtime_test_text,
+            "expiredP2pQrIsNotSavedAsTrustedRuntime",
+            runtime_test_path,
+            "Android ViewModel tests must reject expired P2P QR material before trusted runtime creation.",
+        ),
+        (
+            runtime_test_text,
+            "p2pExpiresAtEpochMillis = 1L",
+            runtime_test_path,
+            "Android initial pairing expired P2P QR regression must include an already-expired P2P record.",
+        ),
+        (
+            runtime_test_text,
+            "p2pAntiReplayNonce = \"nonce-p2p-1\"",
+            runtime_test_path,
+            "Android initial pairing expired P2P QR regression must include complete nonce material before expiry rejection.",
+        ),
+        (
+            no_device_text,
+            "RuntimeClientViewModelTest.expiredP2pQrIsNotSavedAsTrustedRuntime",
+            no_device_path,
+            "Default no-device gate must run the initial pairing expired P2P QR rejection regression.",
+        ),
+        (
+            no_device_text,
+            "Android initial pairing QR expired P2P record rejection addendum",
+            no_device_path,
+            "Default no-device gate summary must mention initial pairing expired P2P QR rejection coverage.",
+        ),
+        (
+            docs_progress_text,
+            "Android Initial Pairing QR Expired P2P Record Rejection No-Device Gate",
+            docs_progress_path,
+            "Progress docs must record the initial pairing expired P2P QR rejection no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            "Android Initial Pairing QR Expired P2P Record Rejection No-Device Gate",
+            docs_qa_evidence_path,
+            "QA evidence must record the initial pairing expired P2P QR rejection no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            "Android initial pairing QR expired P2P record rejection",
+            docs_roadmap_path,
+            "Roadmap smoke coverage queue must name initial pairing expired P2P QR rejection coverage.",
+        ),
+    )
+    for haystack, snippet, path, guidance in required_initial_pairing_expired_p2p_qr_rejection_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_accepted_pairing_relay_secret_restore_boundary_snippets = (
+        (
+            runtime_test_text,
+            "acceptedPairingResultPreservesRelaySecretForTrustedRuntimeRestore",
+            runtime_test_path,
+            "Android ViewModel tests must prove accepted relay pairing preserves secret material for trusted restore.",
+        ),
+        (
+            runtime_test_text,
+            'assertEquals("secret-1", trusted.relaySecret)',
+            runtime_test_path,
+            "Android accepted-pairing relay restore regression must assert the relay secret is preserved.",
+        ),
+        (
+            runtime_test_text,
+            'assertEquals("nonce-route-1", trusted.relayNonce)',
+            runtime_test_path,
+            "Android accepted-pairing relay restore regression must assert the relay nonce is preserved.",
+        ),
+        (
+            runtime_test_text,
+            "assertEquals(4102444800000L, trusted.relayExpiresAtEpochMillis)",
+            runtime_test_path,
+            "Android accepted-pairing relay restore regression must assert the relay lease expiry is preserved.",
+        ),
+        (
+            no_device_text,
+            "RuntimeClientViewModelTest.acceptedPairingResultPreservesRelaySecretForTrustedRuntimeRestore",
+            no_device_path,
+            "Default no-device gate must run the accepted-pairing relay secret restore regression.",
+        ),
+        (
+            no_device_text,
+            "Android accepted-pairing relay secret restore boundary addendum",
+            no_device_path,
+            "Default no-device gate summary must mention accepted-pairing relay secret restore coverage.",
+        ),
+        (
+            docs_progress_text,
+            "Android Accepted-Pairing Relay Secret Restore Boundary No-Device Gate",
+            docs_progress_path,
+            "Progress docs must record the accepted-pairing relay secret restore no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            "Android Accepted-Pairing Relay Secret Restore Boundary No-Device Gate",
+            docs_qa_evidence_path,
+            "QA evidence must record the accepted-pairing relay secret restore no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            "Android accepted-pairing relay secret restore boundary",
+            docs_roadmap_path,
+            "Roadmap smoke coverage queue must name accepted-pairing relay secret restore coverage.",
+        ),
+    )
+    for haystack, snippet, path, guidance in required_accepted_pairing_relay_secret_restore_boundary_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_accepted_pairing_runtime_identity_mismatch_snippets = (
+        (
+            runtime_text,
+            "acceptedRuntimeDeviceId != pending.runtimeDeviceId",
+            runtime_path,
+            "Android accepted-pairing trust creation must reject mismatched runtime device ids.",
+        ),
+        (
+            runtime_text,
+            "acceptedFingerprint != pending.fingerprint",
+            runtime_path,
+            "Android accepted-pairing trust creation must reject mismatched runtime fingerprints.",
+        ),
+        (
+            runtime_text,
+            "!runtimePublicKeyMatches(pending.runtimePublicKeyBase64, acceptedPublicKey)",
+            runtime_path,
+            "Android accepted-pairing trust creation must reject mismatched runtime public keys.",
+        ),
+        (
+            runtime_test_text,
+            "acceptedPairingResultRejectsMismatchedRuntimeIdentity",
+            runtime_test_path,
+            "Android ViewModel tests must prove accepted pairing rejects mismatched runtime identity.",
+        ),
+        (
+            runtime_test_text,
+            'runtimeDeviceIdV2 = "other-runtime"',
+            runtime_test_path,
+            "Android accepted-pairing identity mismatch regression must cover device-id mismatch.",
+        ),
+        (
+            runtime_test_text,
+            'runtimeKeyFingerprint = "other-fingerprint"',
+            runtime_test_path,
+            "Android accepted-pairing identity mismatch regression must cover fingerprint mismatch.",
+        ),
+        (
+            runtime_test_text,
+            'runtimePublicKey = "other-public-key"',
+            runtime_test_path,
+            "Android accepted-pairing identity mismatch regression must cover public-key mismatch.",
+        ),
+        (
+            no_device_text,
+            "RuntimeClientViewModelTest.acceptedPairingResultRejectsMismatchedRuntimeIdentity",
+            no_device_path,
+            "Default no-device gate must run the accepted-pairing runtime identity mismatch regression.",
+        ),
+        (
+            no_device_text,
+            "Android accepted-pairing runtime identity mismatch rejection addendum",
+            no_device_path,
+            "Default no-device gate summary must mention accepted-pairing runtime identity mismatch coverage.",
+        ),
+        (
+            docs_progress_text,
+            "Android Accepted-Pairing Runtime Identity Mismatch Rejection No-Device Gate",
+            docs_progress_path,
+            "Progress docs must record the accepted-pairing runtime identity mismatch no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            "Android Accepted-Pairing Runtime Identity Mismatch Rejection No-Device Gate",
+            docs_qa_evidence_path,
+            "QA evidence must record the accepted-pairing runtime identity mismatch no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            "Android accepted-pairing runtime identity mismatch rejection",
+            docs_roadmap_path,
+            "Roadmap smoke coverage queue must name accepted-pairing runtime identity mismatch coverage.",
+        ),
+    )
+    for haystack, snippet, path, guidance in required_accepted_pairing_runtime_identity_mismatch_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_accepted_pairing_p2p_fail_closed_snippets = (
+        (
+            runtime_text,
+            "if (!hasPeerToPeerRoute && pending.hasAnyPeerToPeerRouteMaterial()) return null",
+            runtime_path,
+        ),
+        (
+            runtime_test_text,
+            "acceptedPairingResultRejectsIncompleteP2pRouteInsteadOfDirectFallback",
+            runtime_test_path,
+        ),
+        (
+            runtime_test_text,
+            "p2pProtocolVersion = 2",
+            runtime_test_path,
+        ),
+    )
+    for haystack, snippet, path in required_accepted_pairing_p2p_fail_closed_snippets:
+        if snippet not in haystack:
+            failures.append(
+                f"{path.relative_to(ROOT)}: Missing Android accepted-pairing incomplete P2P "
+                f"fail-closed guard {snippet}."
+            )
     required_accepted_pairing_direct_drop_snippets = (
         (
             runtime_text,
@@ -1756,6 +4510,18 @@ def android_runtime_boundary_guard_failures() -> list[str]:
             f"{relay_tcp_client_test_path.relative_to(ROOT)}: Missing Android relay TCP handshake "
             "rejection regression for routes that connect but are not accepted by the relay."
         )
+    required_relay_ready_timeout_test_snippets = (
+        "relayConnectTimesOutWhenReadyLineNeverArrives",
+        "Thread.sleep(1_000)",
+        "client.connect(route, timeoutMillis = 150)",
+        'assertTrue("Relay connect should not wait forever", elapsedMillis < 1_500)',
+    )
+    for snippet in required_relay_ready_timeout_test_snippets:
+        if snippet not in relay_tcp_client_test_text:
+            failures.append(
+                f"{relay_tcp_client_test_path.relative_to(ROOT)}: Missing Android relay TCP ready-line "
+                f"timeout regression guard {snippet}."
+            )
     if "routeTokenFallback" in relay_route_preparation_text or "routeTokenFallback" in relay_route_preparation_test_text:
         failures.append(
             f"{relay_route_preparation_path.relative_to(ROOT)}: Android relay preparation must require "
@@ -1788,6 +4554,77 @@ def android_runtime_boundary_guard_failures() -> list[str]:
                 f"{runtime_path.relative_to(ROOT)} / {runtime_test_path.relative_to(ROOT)}: "
                 "Android relay preflight must use the non-consuming relay probe and pin the response contract."
             )
+    required_relay_reachability_probe_input_guard_snippets = (
+        (
+            android_relay_reachability_probe_text,
+            android_relay_reachability_probe_path,
+            '[[ "$HOST" == -* || "$HOST" == *"://"*',
+            "Android relay reachability probe must reject URL-shaped hosts before device access.",
+        ),
+        (
+            android_relay_reachability_probe_text,
+            android_relay_reachability_probe_path,
+            "--port must be an integer in 1..65535.",
+            "Android relay reachability probe must reject invalid port values before device access.",
+        ),
+        (
+            android_relay_reachability_probe_text,
+            android_relay_reachability_probe_path,
+            "--relay-id must be a non-empty relay token without whitespace.",
+            "Android relay reachability probe must reject malformed relay ids before device access.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "check_android_relay_reachability_probe_input_guard",
+            "Default no-device gate must run the Android relay reachability probe input guard.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "script/android_relay_reachability_probe.sh --host https://relay.example.test --port 43171",
+            "Default no-device gate must exercise URL-shaped relay host rejection.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "script/android_relay_reachability_probe.sh --host relay.example.test --port 0",
+            "Default no-device gate must exercise invalid relay port rejection.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            'script/android_relay_reachability_probe.sh --host relay.example.test --port 43171 --relay-id "relay 1"',
+            "Default no-device gate must exercise malformed relay-id rejection.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "Android relay reachability probe input guard addendum",
+            "Default no-device gate summary must mention Android relay reachability probe input coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Android Relay Reachability Probe Input No-Device Gate",
+            "Progress docs must record the Android relay reachability probe input no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Android Relay Reachability Probe Input No-Device Gate",
+            "QA evidence must record the Android relay reachability probe input no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "Android relay reachability probe input guard",
+            "Roadmap smoke coverage queue must name Android relay reachability probe input coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_relay_reachability_probe_input_guard_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
     required_relay_auth_terminal_snippets = (
         "requiresFreshRemoteRouteBeforeReconnect()",
         "trustedRuntimeWithoutFailedRelay",
@@ -2067,6 +4904,30 @@ def android_chat_history_danger_guard_failures() -> list[str]:
         (
             "DRAWER_CHAT_ROW_OPTIONS_TEST_TAG_PREFIX",
             "Drawer previous-chat rows need stable options-button tags for compact layout regressions.",
+        ),
+        (
+            "DRAWER_CHAT_ROW_MENU_ITEM_TEST_TAG_PREFIX",
+            "Drawer previous-chat overflow menu items need stable tags for compact layout regressions.",
+        ),
+        (
+            "DRAWER_CHAT_ROW_MENU_ITEM_LABEL_TEST_TAG_PREFIX",
+            "Drawer previous-chat overflow menu labels need stable tags for compact layout regressions.",
+        ),
+        (
+            "val renameActionLabel = stringResource(R.string.rename_chat)",
+            "Drawer overflow visible labels must be resolved before popup content so selected app language is preserved.",
+        ),
+        (
+            "val archiveActionLabel = stringResource(R.string.archive_chat)",
+            "Drawer overflow visible labels must be resolved before popup content so selected app language is preserved.",
+        ),
+        (
+            "val restoreActionLabel = stringResource(R.string.restore_chat)",
+            "Drawer overflow visible labels must be resolved before popup content so selected app language is preserved.",
+        ),
+        (
+            "val deleteActionLabel = stringResource(R.string.delete_chat)",
+            "Drawer overflow visible labels must be resolved before popup content so selected app language is preserved.",
         ),
         (
             ".testTag(drawerChatRowTestTag(session.id))",
@@ -2557,6 +5418,13 @@ def android_chat_history_danger_guard_failures() -> list[str]:
         "drawerChatRowOptionsTestTag(session.id)",
         'assertBoundsInside("$nextLanguageTag drawer chat model", modelBounds, textBounds)',
         "boundsOverlap(textBounds, optionsBounds)",
+        "chatDrawerOverflowMenuActionsStayBoundedAtLargeFontAcrossSupportedLanguages",
+        "drawerChatRowMenuItemTestTag(session.id, actionExpectation.action)",
+        "drawerChatRowMenuItemLabelTestTag(session.id, actionExpectation.action)",
+        "chatDrawerOverflowMenuNarrowRootTestTag",
+        "assertBoundsInside(\"$languageTag drawer overflow ${actionExpectation.action} item\", itemBounds, rootBounds)",
+        "assertBoundsInside(\"$languageTag drawer overflow ${actionExpectation.action} label\", labelBounds, itemBounds)",
+        "drawer overflow menu items ${current.first} and ${next.first} should not overlap",
         "settingsConnectionStatusHeroExposesLocalizedAccessibilitySummaries",
         "R.string.chat_session_row_summary",
         "assertEquals(listOf(HapticFeedbackType.TextHandleMove), hapticFeedback.events)",
@@ -2644,6 +5512,26 @@ def android_chat_model_menu_guard_failures() -> list[str]:
         (
             "CHAT_MODEL_REFRESH_DETAIL_TEST_TAG",
             "Model refresh detail must keep a stable tag for compact bounds regressions.",
+        ),
+        (
+            "CHAT_TOP_BAR_TITLE_ROW_TEST_TAG",
+            "Chat top-bar title row must keep a stable tag for compact bounds regressions.",
+        ),
+        (
+            "CHAT_TOP_BAR_ACTIVE_TITLE_TEST_TAG",
+            "Chat top-bar active title must keep a stable tag for compact bounds regressions.",
+        ),
+        (
+            "CHAT_TOP_BAR_MODEL_PICKER_TEST_TAG",
+            "Chat top-bar model picker must keep a stable tag for compact bounds regressions.",
+        ),
+        (
+            "CHAT_TOP_BAR_NEW_CHAT_ACTION_TEST_TAG",
+            "Chat top-bar New Chat action must keep a stable tag for compact bounds regressions.",
+        ),
+        (
+            ".testTag(CHAT_TOP_BAR_NEW_CHAT_ACTION_TEST_TAG)",
+            "Chat top-bar New Chat action must apply its stable compact-bounds tag to the actionable button.",
         ),
         (
             "maxLines = 2,\n                                overflow = TextOverflow.Ellipsis,\n                                modifier = Modifier.testTag(CHAT_MODEL_REFRESH_LABEL_TEST_TAG)",
@@ -2792,6 +5680,18 @@ def android_chat_model_menu_guard_failures() -> list[str]:
     if any(snippet not in ui_text for snippet in embedding_compact_layout_snippets):
         failures.append(
             f"{ui_relative}: Settings embedding model rows must keep stable compact-layout tags and two-line text bounds."
+        )
+    embedding_settings_screen_layout_test_snippets = (
+        "settingsScreenEmbeddingModelRowsStayBoundedWhenExpandedAtLargeFontAcrossSupportedLanguages",
+        "SettingsScreen(",
+        "settingsEmbeddingModelRowsSettingsListTestTag",
+        "performScrollToNode(hasTestTag(headerTag))",
+        "assertBoundsInside(\"$languageTag Settings embedding row status ${model.id}\", statusBounds, rowBounds)",
+        "assertBoundsInside(\"$languageTag Settings saved missing embedding model detail\", savedDetailBounds, savedRowBounds)",
+    )
+    if any(snippet not in compose_test_text for snippet in embedding_settings_screen_layout_test_snippets):
+        failures.append(
+            f"{compose_test_relative}: Missing full SettingsScreen embedding model compact layout regression."
         )
     embedding_streaming_lockout_test_snippets = (
         "settingsEmbeddingModelControlsAreDisabledWhileStreaming",
@@ -2992,6 +5892,25 @@ def android_chat_model_menu_guard_failures() -> list[str]:
         "chatTopBarModelPickerClosedButtonLocalizesSelectedModelSummaryAcrossSupportedLanguages",
         "chatTopBarShowsNamedActiveChatTitleAndHidesDefaultNewChatFallback",
         "chatTopBarModelPickerKeepsLongModelNamesCompact",
+        "chatTopBarActiveTitleStaysBoundedAtLargeFontAcrossSupportedLanguages",
+        "chatTopBarActiveTitleNarrowRootTestTag",
+        "chatTopBarNewChatActionStaysBoundedAtLargeFontAcrossSupportedStates",
+        "chatTopBarNewChatActionNarrowRootTestTag",
+        "chatTopBarModelPickerStreamingDisabledStateStaysBoundedAtLargeFontAcrossSupportedLanguages",
+        "chatModelPickerStreamingDisabledNarrowRootTestTag",
+        "CHAT_TOP_BAR_TITLE_ROW_TEST_TAG",
+        "CHAT_TOP_BAR_ACTIVE_TITLE_TEST_TAG",
+        "CHAT_TOP_BAR_MODEL_PICKER_TEST_TAG",
+        "CHAT_TOP_BAR_NEW_CHAT_ACTION_TEST_TAG",
+        "assertBoundsInside(\"${layoutCase.languageTag} top-bar active title\", activeTitleBounds, rowBounds)",
+        "boundsOverlap(modelPickerBounds, activeTitleBounds)",
+        "active title should keep a usable ellipsis area",
+        "boundsOverlap(newChatActionBounds, titleRowBounds)",
+        "New Chat action should keep compact touch width",
+        "New Chat action should dispatch once",
+        "streaming-disabled model picker and active title should not overlap",
+        "streaming-disabled model picker should stay compact",
+        "streaming-disabled active title should keep a usable ellipsis area",
         "chatTopBarModelPickerVisionRecoveryRowsStayBoundedAtLargeFontOnNarrowSurface",
         "chatTopBarModelPickerExposesSelectedRowsToAccessibility",
         "chatTopBarModelPickerExplainsDisabledStreamingStateAcrossSupportedLanguages",
@@ -3021,6 +5940,12 @@ def android_chat_model_menu_guard_failures() -> list[str]:
         "Chat model Gemma 4 26B. Ollama - Not installed.",
         'hasClickActionLabel("Choose model")',
         'hasClickActionLabel("Install model")',
+        "chatTopBarModelPickerRowsStayBoundedAtLargeFontAcrossSupportedLanguages",
+        "chatModelRowsNarrowRootTestTag",
+        "hasAnyAncestor(hasTestTag(rowTag))",
+        "assertBoundsInside(\"$languageTag model picker row status ${model.id}\", statusBounds, rowBounds)",
+        "assertBoundsInside(\n                    \"$languageTag model picker install action ${model.id}\"",
+        "model picker install action should not overlap status",
         "선택된 채팅 모델 Qwen3 8B. Ollama - 설치됨.",
         "選択中のチャットモデル「Qwen3 8B」。Ollama - インストール済み。",
         "已选择聊天模型“Qwen3 8B”。Ollama - 已安装。",
@@ -3779,6 +6704,12 @@ def android_chat_search_no_results_live_region_guard_failures() -> list[str]:
         "showSearchMetadata = hasSearchQuery",
         "session.searchSnippet?.trim()?.takeIf(String::isNotBlank)",
         "val searchMetadata = runtimeSearchMetadataText(",
+        "SETTINGS_CHAT_HISTORY_HEADER_TITLE_TEST_TAG",
+        "SETTINGS_CHAT_HISTORY_HEADER_SUBTITLE_TEST_TAG",
+        "SETTINGS_CHAT_HISTORY_REFRESH_ROW_TEST_TAG",
+        "SETTINGS_CHAT_HISTORY_REFRESH_ACTION_TEST_TAG",
+        ".testTag(SETTINGS_CHAT_HISTORY_REFRESH_ROW_TEST_TAG)",
+        ".testTag(SETTINGS_CHAT_HISTORY_REFRESH_ACTION_TEST_TAG)",
         "SETTINGS_CHAT_HISTORY_SEARCH_RESULT_SUMMARY_TEST_TAG",
         "settingsChatHistoryRowContentTestTag(session.id)",
         "settingsChatHistorySearchMetadataTestTag(session.id)",
@@ -3805,12 +6736,21 @@ def android_chat_search_no_results_live_region_guard_failures() -> list[str]:
         "settingsChatHistorySearchLocalizesClearAndNoResultsAcrossSupportedLanguages",
         "settingsChatHistoryShowsRuntimeSearchSnippetForQueryResults",
         "settingsChatHistoryRuntimeSearchMetadataStaysBoundedAtLargeFontAcrossSupportedLanguages",
+        "settingsChatHistorySearchRefreshHeaderStaysBoundedAtLargeFontAcrossSupportedLanguages",
         "settingsChatHistoryRuntimeSearchNarrowRootTestTag",
+        "settingsChatHistorySearchRefreshNarrowRootTestTag",
+        "SETTINGS_CHAT_HISTORY_HEADER_TITLE_TEST_TAG",
+        "SETTINGS_CHAT_HISTORY_HEADER_SUBTITLE_TEST_TAG",
+        "SETTINGS_CHAT_HISTORY_REFRESH_ROW_TEST_TAG",
+        "SETTINGS_CHAT_HISTORY_REFRESH_ACTION_TEST_TAG",
         "SETTINGS_CHAT_HISTORY_SEARCH_RESULT_SUMMARY_TEST_TAG",
         "settingsChatHistoryRowContentTestTag(session.id)",
         "settingsChatHistorySearchMetadataTestTag(session.id)",
         "settingsChatHistorySearchSnippetTestTag(session.id)",
         "settingsChatHistorySearchResultActionsKeepFilteredContext",
+        "chat-history header title/subtitle should not overlap",
+        "chat-history refresh row/search field should not overlap",
+        'assertEquals("relay route", refreshQueries.last())',
         "Match 1 · Reasoning, Transcript, Model",
         "assertBoundsInside(\"$languageTag chat-history runtime search metadata ${session.id}\", metadataBounds, contentBounds)",
         "boundsOverlap(snippetBounds, actionsBounds)",
@@ -3875,7 +6815,13 @@ def android_chat_pairing_empty_state_guard_failures() -> list[str]:
         "internal fun chatEmptyScanActionLabelRes(state: RuntimeUiState): Int",
         "onScanLatestQr = onScanLatestQr",
         "if (preferQrRouteRefresh) {\n                                onScanLatestQr()\n                            } else {\n                                onScanPairingQr()\n                            }",
-        "heading()\n                contentDescription = emptyAccessibilitySummary",
+        "CHAT_EMPTY_STATE_TEST_TAG",
+        "CHAT_EMPTY_STATE_TEXT_TEST_TAG",
+        "CHAT_EMPTY_STATE_TITLE_TEST_TAG",
+        "CHAT_EMPTY_STATE_BODY_TEST_TAG",
+        "CHAT_EMPTY_STATE_PRIMARY_ACTION_TEST_TAG",
+        "CHAT_EMPTY_STATE_PRIMARY_ACTION_LABEL_TEST_TAG",
+        "heading()\n                    contentDescription = emptyAccessibilitySummary",
     )
     for snippet in required_ui_snippets:
         if snippet not in ui_text:
@@ -3897,6 +6843,15 @@ def android_chat_pairing_empty_state_guard_failures() -> list[str]:
         "chatScreenTrustedRuntimeWithoutConnectableRouteShowsLatestQrEmptyState",
         "chatEmptyNoModelGuidesUsersToHeaderModelPickerAcrossSupportedLanguages",
         "chatEmptyUninstalledModelGuidesUsersToInstallOrChooseAcrossSupportedLanguages",
+        "chatEmptyStatesStayBoundedAtLargeFontAcrossSupportedLanguages",
+        "chatEmptyStateNarrowRootTestTag",
+        "CHAT_EMPTY_STATE_TITLE_TEST_TAG",
+        "CHAT_EMPTY_STATE_BODY_TEST_TAG",
+        "CHAT_EMPTY_STATE_PRIMARY_ACTION_TEST_TAG",
+        "CHAT_EMPTY_STATE_PRIMARY_ACTION_LABEL_TEST_TAG",
+        "assertBoundsInside(\"$languageTag ${expectedCase.name} empty title\", titleBounds, textBounds)",
+        "empty state should not overlap composer",
+        "hasStateDescription(actionState) and hasClickActionLabel(actionLabel)",
         "chatScreenUntrustedRuntimeUsesLocalizedQrFirstCopy",
         "R.string.empty_chat_no_model_header_hint",
         "R.string.chat_hint_install_model",
@@ -4467,6 +7422,50 @@ def android_haptic_guard_failures() -> list[str]:
         (
             "R.string.scan_qr_state_ready",
             "Settings QR-first scan action must use localized ready-state accessibility copy.",
+        ),
+        (
+            "SETTINGS_PENDING_PAIRING_ROUTE_STATUS_TEST_TAG",
+            "Settings pending pairing route status must keep a stable compact-layout status tag.",
+        ),
+        (
+            "SETTINGS_PENDING_PAIRING_ROUTE_ROW_TEST_TAG",
+            "Settings pending pairing route status must keep a stable compact-layout row tag.",
+        ),
+        (
+            "SETTINGS_PENDING_PAIRING_ROUTE_ICON_TEST_TAG",
+            "Settings pending pairing route status must keep a stable compact-layout icon tag.",
+        ),
+        (
+            "SETTINGS_PENDING_PAIRING_ROUTE_TEXT_COLUMN_TEST_TAG",
+            "Settings pending pairing route status must keep a stable compact-layout text column tag.",
+        ),
+        (
+            "SETTINGS_PENDING_PAIRING_ROUTE_TITLE_TEST_TAG",
+            "Settings pending pairing route status must keep a stable compact-layout title tag.",
+        ),
+        (
+            "SETTINGS_PENDING_PAIRING_ROUTE_DETAIL_TEST_TAG",
+            "Settings pending pairing route status must keep a stable compact-layout detail tag.",
+        ),
+        (
+            "SETTINGS_PENDING_PAIRING_ROUTE_PROGRESS_TEST_TAG",
+            "Settings pending pairing route status must keep a stable compact-layout progress tag.",
+        ),
+        (
+            "SETTINGS_COMPANION_ONLY_PANEL_TEST_TAG",
+            "Settings companion-only panel must keep a stable compact-layout panel tag.",
+        ),
+        (
+            "SETTINGS_COMPANION_ONLY_CONTENT_TEST_TAG",
+            "Settings companion-only panel must keep a stable compact-layout content tag.",
+        ),
+        (
+            "SETTINGS_COMPANION_ONLY_TITLE_TEST_TAG",
+            "Settings companion-only panel title must keep a stable compact-layout tag.",
+        ),
+        (
+            "SETTINGS_COMPANION_ONLY_DETAIL_TEST_TAG",
+            "Settings companion-only panel detail must keep a stable compact-layout tag.",
         ),
         (
             "AUTO_RECONNECT_CARD_TEST_TAG",
@@ -5111,6 +8110,22 @@ def android_haptic_guard_failures() -> list[str]:
             "Connection troubleshooting switch must expose localized enable/disable action labels.",
         ),
         (
+            "DEVELOPER_DIAGNOSTICS_CARD_TAG",
+            "Connection troubleshooting toggle must keep a stable compact-layout card tag.",
+        ),
+        (
+            "DEVELOPER_DIAGNOSTICS_TEXT_COLUMN_TAG",
+            "Connection troubleshooting toggle must keep a stable compact-layout text column tag.",
+        ),
+        (
+            "DEVELOPER_DIAGNOSTICS_TITLE_TAG",
+            "Connection troubleshooting toggle title must keep a stable compact-layout tag.",
+        ),
+        (
+            "DEVELOPER_DIAGNOSTICS_DETAIL_TAG",
+            "Connection troubleshooting toggle detail must keep a stable compact-layout tag.",
+        ),
+        (
             "actionsDisabledReasonRes = memoryLockNoticeTextRes(\n"
             "                        state = state,",
             "Settings Memory panel must pass streaming-aware disabled reasons.",
@@ -5141,6 +8156,7 @@ def android_haptic_guard_failures() -> list[str]:
         ),
         (
             "text = emptyBody,\n"
+            "                modifier = Modifier.testTag(CHAT_EMPTY_STATE_BODY_TEST_TAG),\n"
             "                style = MaterialTheme.typography.bodyMedium,\n"
             "                color = MaterialTheme.colorScheme.secondary,\n"
             "                textAlign = TextAlign.Center,\n"
@@ -5200,6 +8216,58 @@ def android_haptic_guard_failures() -> list[str]:
             "Stop discovery action must expose an explicit localized click action label.",
         ),
         (
+            "SETTINGS_DISCOVERY_PANEL_TEST_TAG",
+            "Settings discovery panel must keep a stable test tag for compact layout bounds coverage.",
+        ),
+        (
+            "SETTINGS_DISCOVERY_TITLE_TEST_TAG",
+            "Settings discovery title must keep a stable test tag for compact layout bounds coverage.",
+        ),
+        (
+            "SETTINGS_DISCOVERY_DETAIL_TEST_TAG",
+            "Settings discovery detail must keep a stable test tag for compact layout bounds coverage.",
+        ),
+        (
+            "SETTINGS_DISCOVERY_ACTIONS_TEST_TAG",
+            "Settings discovery action stack must keep a stable test tag for compact layout bounds coverage.",
+        ),
+        (
+            "SETTINGS_DISCOVERY_START_ACTION_TEST_TAG",
+            "Settings discovery start action must keep a stable test tag for compact layout bounds coverage.",
+        ),
+        (
+            "SETTINGS_DISCOVERY_START_LABEL_TEST_TAG",
+            "Settings discovery start label must keep a stable test tag for compact layout bounds coverage.",
+        ),
+        (
+            "SETTINGS_DISCOVERY_STOP_ACTION_TEST_TAG",
+            "Settings discovery stop action must keep a stable test tag for compact layout bounds coverage.",
+        ),
+        (
+            "SETTINGS_DISCOVERY_STOP_LABEL_TEST_TAG",
+            "Settings discovery stop label must keep a stable test tag for compact layout bounds coverage.",
+        ),
+        (
+            "SETTINGS_DISCOVERY_PROGRESS_TEST_TAG",
+            "Settings discovery progress indicator must keep a stable test tag for compact layout bounds coverage.",
+        ),
+        (
+            "SETTINGS_DISCOVERY_EMPTY_STATE_TEST_TAG",
+            "Settings discovery empty state must keep a stable test tag for compact layout bounds coverage.",
+        ),
+        (
+            "SETTINGS_DISCOVERY_EMPTY_TEXT_TEST_TAG",
+            "Settings discovery empty text must keep a stable test tag for compact layout bounds coverage.",
+        ),
+        (
+            "text = startDiscoveryActionLabel,\n                        maxLines = 2,",
+            "Settings discovery start label must wrap on compact large-font surfaces.",
+        ),
+        (
+            "text = stopDiscoveryActionLabel,\n                        maxLines = 2,",
+            "Settings discovery stop label must wrap on compact large-font surfaces.",
+        ),
+        (
             "settingsSectionExpandedStateDescriptionRes()",
             "Expandable Settings sections must use localized expanded state copy.",
         ),
@@ -5252,6 +8320,46 @@ def android_haptic_guard_failures() -> list[str]:
         (
             "memoryAddContentDescription = stringResource(R.string.memory_add_label)",
             "Memory add input field must derive a stable accessibility label from localized resources.",
+        ),
+        (
+            "MEMORY_PANEL_HEADER_TEST_TAG = \"memory_panel_header\"",
+            "Memory panel header must keep a stable tag for compact add-controls bounds coverage.",
+        ),
+        (
+            "MEMORY_REFRESH_ACTION_TEST_TAG = \"memory_refresh_action\"",
+            "Memory refresh action must keep a stable tag for compact add-controls bounds coverage.",
+        ),
+        (
+            "MEMORY_LOCK_NOTICE_TEST_TAG = \"memory_lock_notice\"",
+            "Memory lock notice must keep a stable tag for compact add-controls bounds coverage.",
+        ),
+        (
+            "MEMORY_ADD_INPUT_TEST_TAG = \"memory_add_input\"",
+            "Memory add input must keep a stable tag for compact add-controls bounds coverage.",
+        ),
+        (
+            "MEMORY_ADD_ACTION_TEST_TAG = \"memory_add_action\"",
+            "Memory add action must keep a stable tag for compact add-controls bounds coverage.",
+        ),
+        (
+            "MEMORY_ADD_ACTION_LABEL_TEST_TAG = \"memory_add_action_label\"",
+            "Memory add action label must keep a stable tag for compact add-controls bounds coverage.",
+        ),
+        (
+            "MEMORY_ADDED_NOTICE_TEST_TAG = \"memory_added_notice\"",
+            "Memory added notice must keep a stable tag for compact add-controls bounds coverage.",
+        ),
+        (
+            ".testTag(MEMORY_ADD_INPUT_TEST_TAG)",
+            "Memory add input must attach its stable compact-layout test tag.",
+        ),
+        (
+            ".testTag(MEMORY_ADD_ACTION_TEST_TAG)",
+            "Memory add button must attach its stable compact-layout test tag.",
+        ),
+        (
+            ".testTag(MEMORY_ADD_ACTION_LABEL_TEST_TAG)",
+            "Memory add button label must attach its stable compact-layout test tag.",
         ),
         (
             "val archiveAllActionLabel = stringResource(R.string.archive_all_chats)",
@@ -5495,6 +8603,22 @@ def android_haptic_guard_failures() -> list[str]:
             "Chat route availability notice action must expose a stable compact-layout test tag.",
         ),
         (
+            "ROUTE_REFRESH_SAVED_NOTICE_TEST_TAG",
+            "Route-refresh saved notice must expose a stable compact-layout test tag.",
+        ),
+        (
+            "ROUTE_REFRESH_SAVED_NOTICE_TEXT_TEST_TAG",
+            "Route-refresh saved notice text must expose a stable compact-layout test tag.",
+        ),
+        (
+            ".testTag(ROUTE_REFRESH_SAVED_NOTICE_TEST_TAG)",
+            "Route-refresh saved notice must attach the stable tag to the announced surface.",
+        ),
+        (
+            ".testTag(ROUTE_REFRESH_SAVED_NOTICE_TEXT_TEST_TAG)",
+            "Route-refresh saved notice text must attach a stable bounds tag.",
+        ),
+        (
             "LocalCopySuccessAnnouncer",
             "Chat copy actions must route successful copies into an accessibility announcement channel.",
         ),
@@ -5587,6 +8711,14 @@ def android_haptic_guard_failures() -> list[str]:
             "Assistant identity marker must use the localized assistant initial resource.",
         ),
         (
+            "val minMarkerWidth = if (assistantInitial.length > 1) 34.dp else 28.dp",
+            "Assistant identity marker must expand for two-glyph localized initials on compact surfaces.",
+        ),
+        (
+            ".widthIn(min = minMarkerWidth, max = 42.dp)",
+            "Assistant identity marker must keep an adaptive compact width instead of a fixed circle.",
+        ),
+        (
             "ASSISTANT_IDENTITY_MARKER_TEST_TAG",
             "Assistant identity marker must stay testable without changing user-facing copy.",
         ),
@@ -5619,6 +8751,23 @@ def android_haptic_guard_failures() -> list[str]:
         "chatScreenBackendUnavailableRefreshActionExplainsStateAcrossSupportedLanguages",
         "chatScreenBackendUnavailableBannerStaysBoundedAtLargeFontAcrossSupportedLanguages",
         "chatScreenBackendUnavailableSummaryResourceFormatsAcrossSupportedLanguages",
+        "chatScreenAssistantIdentityMarkerStaysLegibleAndSeparateAtLargeFontAcrossSupportedLanguages",
+        "settingsRouteRefreshSavedNoticeStaysBoundedAtLargeFontAcrossSupportedLanguages",
+        "settingsRouteRefreshSavedNoticeNarrowRootTestTag",
+        "settingsRouteRefreshSavedNoticeListTestTag",
+        "chatScreenRouteRefreshSavedNoticeStaysBoundedAboveComposerAtLargeFontAcrossSupportedLanguages",
+        "chatRouteRefreshSavedNoticeNarrowRootTestTag",
+        "ROUTE_REFRESH_SAVED_NOTICE_TEST_TAG",
+        "ROUTE_REFRESH_SAVED_NOTICE_TEXT_TEST_TAG",
+        "R.string.route_refresh_notice",
+        'assertBoundsInside("$nextLanguageTag settings route-refresh saved notice", noticeBounds, panelBounds)',
+        'assertBoundsInside(\n                "$nextLanguageTag settings route-refresh saved notice text",',
+        "boundsOverlap(scanButtonBounds, noticeBounds)",
+        "scanButtonBounds.bottom <= noticeBounds.top",
+        'assertBoundsInside("$nextLanguageTag route-refresh saved notice", noticeBounds, rootBounds)',
+        'assertBoundsInside(\n                "$nextLanguageTag route-refresh saved notice text",',
+        "boundsOverlap(noticeBounds, composerBounds)",
+        "noticeBounds.bottom <= composerBounds.top",
         "chatBackendReadinessBannerNarrowRootTestTag",
         "CHAT_BACKEND_READINESS_BANNER_TEST_TAG",
         "CHAT_BACKEND_READINESS_TITLE_TEST_TAG",
@@ -5678,6 +8827,7 @@ def android_haptic_guard_failures() -> list[str]:
         "Chat Trip plan. 3 messages - Needs attention.",
         "Selected chat One note. 1 message.",
         "chatDrawerOverflowMenuActionsKeepChatContextAcrossSupportedLanguages",
+        "chatDrawerOverflowMenuActionsStayBoundedAtLargeFontAcrossSupportedLanguages",
         "hasClickActionLabel(expected.options)",
         "Rename chat Trip plan",
         "Archive chat Trip plan",
@@ -5801,6 +8951,16 @@ def android_haptic_guard_failures() -> list[str]:
         'assertBoundsInside("$labelPrefix card", cardBounds, rootBounds)',
         'assertFalse("$labelPrefix detail should not overlap switch", boundsOverlap(detailBounds, switchBounds))',
         "settingsCompanionOnlyPanelAnnouncesLocalizedPrivateModelAccessAcrossSupportedLanguages",
+        "settingsCompanionOnlyPanelStaysBoundedAtLargeFontAcrossSupportedLanguages",
+        "settingsCompanionOnlyPanelNarrowRootTestTag",
+        "settingsCompanionOnlyPanelListTestTag",
+        "SETTINGS_COMPANION_ONLY_PANEL_TEST_TAG",
+        "SETTINGS_COMPANION_ONLY_CONTENT_TEST_TAG",
+        "SETTINGS_COMPANION_ONLY_TITLE_TEST_TAG",
+        "SETTINGS_COMPANION_ONLY_DETAIL_TEST_TAG",
+        'assertBoundsInside("$languageTag companion-only panel", panelBounds, rootBounds)',
+        'assertBoundsInside("$languageTag companion-only title", titleBounds, contentBounds)',
+        'assertFalse(\n                "$languageTag companion-only title should not overlap detail.",',
         "R.string.companion_only_title",
         "R.string.companion_only_detail",
         "hasContentDescription(summary) and hasPoliteLiveRegion()",
@@ -5811,6 +8971,9 @@ def android_haptic_guard_failures() -> list[str]:
         "settingsDiscoveredRuntimeActionsUseContextualAccessibilityLabels",
         "settingsDiscoveredRuntimeUnavailableRowsExposeContextualAccessibilityLabels",
         "settingsDiscoveryActionsExplainIdleAndRunningStatesAcrossSupportedLanguages",
+        "settingsDiscoveryActionsStayBoundedAtLargeFontAcrossSupportedLanguages",
+        "settingsDiscoveryActionsNarrowRootTestTag",
+        "settingsDiscoveryActionsListTestTag",
         "hasText(expected.startLabel) and\n"
         "                    hasStateDescription(expected.startReadyState) and",
         "hasText(expected.runningLabel) and\n"
@@ -5819,6 +8982,10 @@ def android_haptic_guard_failures() -> list[str]:
         "                    hasStateDescription(expected.stopIdleState) and",
         "hasText(expected.stopLabel) and\n"
         "                    hasStateDescription(expected.stopReadyState) and",
+        'assertBoundsInside("$labelPrefix panel", panelBounds, rootBounds)',
+        'assertBoundsInside("$labelPrefix start label", startLabelBounds, startBounds)',
+        'assertFalse("$labelPrefix detail should not overlap actions", boundsOverlap(detailBounds, actionsBounds))',
+        "boundsOverlap(progressBounds, emptyStateBounds)",
         "Studio Runtime. Trust details hidden. QR required.",
         "Desk Runtime. Different trusted runtime. Not trusted.",
         "chatTopBarModelPickerDoesNotShowStaleSavedModelWhenDisconnected",
@@ -5841,6 +9008,15 @@ def android_haptic_guard_failures() -> list[str]:
         "compose.onNodeWithText(expectedSecurityNotes.getValue(languageTag))",
         "settingsQrPairingPanelStaysBoundedAtLargeFontAcrossSupportedLanguages",
         "settingsQrPairingPanelNarrowRootTestTag",
+        "settingsPendingPairingRouteStatusStaysBoundedAtLargeFontAcrossSupportedLanguages",
+        "settingsPendingPairingRouteNarrowRootTestTag",
+        "settingsPendingPairingRouteListTestTag",
+        "SETTINGS_PENDING_PAIRING_ROUTE_STATUS_TEST_TAG",
+        "SETTINGS_PENDING_PAIRING_ROUTE_PROGRESS_TEST_TAG",
+        'assertBoundsInside("$languageTag pending pairing route status", statusBounds, rootBounds)',
+        'assertBoundsInside("$languageTag pending pairing route progress", progressBounds, statusBounds)',
+        "boundsOverlap(iconBounds, textColumnBounds)",
+        "boundsOverlap(detailBounds, progressBounds)",
         "SETTINGS_QR_PAIRING_PANEL_TEST_TAG",
         "SETTINGS_QR_PAIRING_SCAN_BUTTON_TEST_TAG",
         'assertBoundsInside("$languageTag QR pairing panel", panelBounds, rootBounds)',
@@ -5878,8 +9054,13 @@ def android_haptic_guard_failures() -> list[str]:
         "settingsChatHistorySearchClearsWithContextAndHapticFeedback",
         "settingsChatHistorySearchLocalizesClearAndNoResultsAcrossSupportedLanguages",
         "settingsChatHistoryRefreshUsesCurrentSearchQuery",
+        "settingsChatHistorySearchRefreshHeaderStaysBoundedAtLargeFontAcrossSupportedLanguages",
         "settingsChatHistorySearchResultActionsKeepFilteredContext",
         "SETTINGS_CHAT_HISTORY_SEARCH_TEST_TAG",
+        "SETTINGS_CHAT_HISTORY_HEADER_TITLE_TEST_TAG",
+        "SETTINGS_CHAT_HISTORY_HEADER_SUBTITLE_TEST_TAG",
+        "SETTINGS_CHAT_HISTORY_REFRESH_ROW_TEST_TAG",
+        "SETTINGS_CHAT_HISTORY_REFRESH_ACTION_TEST_TAG",
         "navigationDrawerSettingsFooterLocalizesActionSemanticsAcrossSupportedLanguages",
         "hasClickActionLabel(settingsLabel)",
         "navigationDrawerRuntimeSummaryStaysBoundedAtLargeFontAcrossSupportedLanguages",
@@ -5955,6 +9136,16 @@ def android_haptic_guard_failures() -> list[str]:
         "hasStateDescription(\"Collapsed\") and",
         'hasClickActionLabel("Enable Connection troubleshooting")',
         'hasClickActionLabel("Disable Connection troubleshooting")',
+        "settingsDeveloperDiagnosticsToggleRowStaysBoundedAtLargeFontAcrossSupportedLanguages",
+        "settingsDeveloperDiagnosticsNarrowRootTestTag",
+        "settingsDeveloperDiagnosticsListTestTag",
+        "DEVELOPER_DIAGNOSTICS_CARD_TAG",
+        "DEVELOPER_DIAGNOSTICS_TEXT_COLUMN_TAG",
+        "DEVELOPER_DIAGNOSTICS_TITLE_TAG",
+        "DEVELOPER_DIAGNOSTICS_DETAIL_TAG",
+        'assertBoundsInside("$languageTag developer diagnostics card", cardBounds, rootBounds)',
+        'assertBoundsInside("$languageTag developer diagnostics switch", switchBounds, rowBounds)',
+        'assertFalse(\n                "$languageTag developer diagnostics text should not overlap switch.",',
         "SemanticsProperties.Role, Role.Button",
         "hasText(\"Manage all chats\") and\n"
         "                hasStateDescription(\"Collapsed\") and\n"
@@ -6024,6 +9215,26 @@ def android_haptic_guard_failures() -> list[str]:
         "val addedNotice = localizedContext.getString(R.string.memory_added)",
         "hasContentDescription(addedNotice) and hasPoliteLiveRegion()",
         "assertEquals(listOf(HapticFeedbackType.TextHandleMove), hapticFeedback.events)",
+        "settingsMemoryAddControlsStayBoundedAtLargeFontAcrossSupportedLanguages",
+        "settingsMemoryAddControlsNarrowRootTestTag",
+        "MEMORY_REFRESH_ACTION_TEST_TAG",
+        "MEMORY_ADD_INPUT_TEST_TAG",
+        "MEMORY_ADD_ACTION_LABEL_TEST_TAG",
+        "MEMORY_LOCK_NOTICE_TEST_TAG",
+        "MEMORY_ADDED_NOTICE_TEST_TAG",
+        '"$languageTag memory add action label",',
+        "memory input/add action should not overlap",
+        "memory added notice should render below the add action",
+        "settingsMemoryEmptyStatesStayBoundedAtLargeFontAcrossSupportedLanguages",
+        "settingsMemoryEmptyStateNarrowRootTestTag",
+        "MEMORY_EMPTY_STATE_TEST_TAG",
+        "MEMORY_EMPTY_STATE_TEXT_TEST_TAG",
+        "R.string.memory_empty_disconnected",
+        "R.string.memory_action_state_wait_for_stream",
+        "assertBoundsInside(\"${layoutCase.languageTag} memory empty state\", emptyBounds, rootBounds)",
+        "assertBoundsInside(\"${layoutCase.languageTag} memory empty text\", emptyTextBounds, emptyBounds)",
+        "memory add action/empty state should not overlap",
+        "memory empty state should render below add action",
         "settingsMemoryActionsWaitForStreamAcrossSupportedLanguages",
         "R.string.memory_action_state_wait_for_stream",
         "hasStateDescription(streamingLock)",
@@ -6074,6 +9285,13 @@ def android_haptic_guard_failures() -> list[str]:
         "chatScreenStreamingCancelControlsStayBoundedAtLargeFontAcrossSupportedLanguages",
         "chatScreenComposerReadinessStatusStaysBoundedAtLargeFontAcrossSupportedLanguages",
         "chatScreenRouteAvailabilityNoticeStaysBoundedAtLargeFontAcrossSupportedLanguages",
+        "RouteNoticeCase(",
+        'name = "relay auth failed"',
+        '"route_diagnostic_relay_auth_failed"',
+        'name = "private overlay scope"',
+        'name = "remote identity mismatch"',
+        'name = "p2p failed without relay fallback"',
+        "routeAvailabilityCompactLabelRes(routeError)",
         "chatComposerDraftControlsNarrowRootTestTag",
         "chatComposerStreamingControlsNarrowRootTestTag",
         "chatComposerStatusNarrowRootTestTag",
@@ -6097,7 +9315,7 @@ def android_haptic_guard_failures() -> list[str]:
         'boundsOverlap(inputBounds, cancelBounds)',
         'assertBoundsInside("$nextLanguageTag composer status row", statusBounds, containerBounds)',
         'boundsOverlap(rowBounds, statusBounds)',
-        'assertBoundsInside("$nextLanguageTag route availability action", actionBounds, noticeBounds)',
+        'assertBoundsInside("$labelPrefix action", actionBounds, noticeBounds)',
         'boundsOverlap(bodyBounds, actionBounds)',
         ".onAllNodesWithTag(CHAT_COMPOSER_CLEAR_DRAFT_ACTION_TEST_TAG, useUnmergedTree = true)",
         ".onAllNodesWithTag(CHAT_COMPOSER_SEND_ACTION_TEST_TAG, useUnmergedTree = true)",
@@ -6558,6 +9776,14 @@ def android_physical_chat_smoke_guard_failures() -> list[str]:
             'json_bool_at "$DEVICE_ROUTE_PROBE_JSON" "probe.route_ready"',
             "Physical external-relay QA must fail successful-looking runs when route readiness is not proven.",
         ),
+        (
+            "--require-different-network-confirmation",
+            "Physical external-relay QA must expose an explicit different-network confirmation option.",
+        ),
+        (
+            "Set AETHERLINK_DIFFERENT_NETWORK_CONFIRMED=1 after putting the phone on a different network.",
+            "Physical external-relay QA must clearly tell operators how to confirm different-network evidence.",
+        ),
     )
     for snippet, guidance in required_physical_wrapper_snippets:
         if snippet not in physical_wrapper_text:
@@ -6572,6 +9798,10 @@ def android_physical_chat_smoke_guard_failures() -> list[str]:
             "No-device quality gate must behavior-test the physical external-relay summary contract.",
         ),
         (
+            "physical external-relay summary addendum",
+            "No-device quality summary must name physical external-relay summary coverage as a distinct addendum.",
+        ),
+        (
             'summary["coverage"]["external_relay_probe_reachable"] is False',
             "No-device physical wrapper guard must prove failed endpoint probe coverage is false.",
         ),
@@ -6583,8 +9813,187 @@ def android_physical_chat_smoke_guard_failures() -> list[str]:
             'summary["probe_summaries"]["device_relay_endpoint"] is None',
             "No-device physical wrapper guard must prove missing child probe summaries stay explicit.",
         ),
+        (
+            'summary["android_device"]["requested_adb_serial"] == "no-device-serial-1"',
+            "No-device physical wrapper guard must prove requested adb serial evidence is preserved.",
+        ),
+        (
+            'summary["android_device"]["observed_adb_serial"] is None',
+            "No-device physical wrapper guard must prove invalid-host runs do not claim an observed adb serial.",
+        ),
+        (
+            '"--serial" in summary["command"]',
+            "No-device physical wrapper guard must prove the redacted command records serial targeting.",
+        ),
+        (
+            '"no-device-serial-1" in summary["command"]',
+            "No-device physical wrapper guard must prove the requested serial value is present in evidence.",
+        ),
+        (
+            "physical external-relay requested serial evidence binding addendum",
+            "No-device quality summary must name physical external-relay requested serial evidence binding as a distinct addendum.",
+        ),
+        (
+            "check_physical_external_relay_different_network_confirmation_guard",
+            "No-device quality gate must behavior-test the physical external-relay different-network confirmation guard.",
+        ),
+        (
+            "AETHERLINK_DIFFERENT_NETWORK_CONFIRMED=0",
+            "No-device physical wrapper guard must prove unconfirmed different-network runs are rejected.",
+        ),
+        (
+            "Set AETHERLINK_DIFFERENT_NETWORK_CONFIRMED=1 after putting the phone on a different network.",
+            "No-device physical wrapper guard must assert the operator confirmation message.",
+        ),
+        (
+            '[[ -e "$summary_path" || -e "$log_path" ]]',
+            "No-device physical wrapper guard must prove unconfirmed runs stop before QA artifact writes.",
+        ),
+        (
+            "physical external-relay different-network confirmation gate addendum",
+            "No-device quality summary must name physical external-relay different-network confirmation coverage as a distinct addendum.",
+        ),
     )
     for snippet, guidance in required_no_device_physical_wrapper_snippets:
+        if snippet not in no_device_text:
+            failures.append(f"{no_device_relative}: {guidance}")
+
+    required_physical_summary_doc_snippets = (
+        (
+            ROOT / "docs/progress.md",
+            "Physical External Relay Summary No-Device Gate",
+            "Progress docs must record the physical external-relay summary no-device gate.",
+        ),
+        (
+            ROOT / "docs/qa-evidence.md",
+            "Physical External Relay Summary No-Device Gate",
+            "QA evidence must record the physical external-relay summary no-device gate.",
+        ),
+        (
+            ROOT / "docs/roadmap.md",
+            "physical external-relay summary",
+            "Roadmap smoke coverage queue must name physical external-relay summary coverage.",
+        ),
+    )
+    for path, snippet, guidance in required_physical_summary_doc_snippets:
+        if snippet not in path.read_text(encoding="utf-8", errors="replace"):
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+
+    required_physical_requested_serial_doc_snippets = (
+        (
+            ROOT / "docs/progress.md",
+            "Physical External Relay Requested Serial Evidence Binding No-Device Gate",
+            "Progress docs must record the physical external-relay requested serial evidence binding no-device gate.",
+        ),
+        (
+            ROOT / "docs/qa-evidence.md",
+            "Physical External Relay Requested Serial Evidence Binding No-Device Gate",
+            "QA evidence must record the physical external-relay requested serial evidence binding no-device gate.",
+        ),
+        (
+            ROOT / "docs/roadmap.md",
+            "requested-serial evidence binding",
+            "Roadmap smoke coverage queue must name requested-serial evidence binding coverage.",
+        ),
+    )
+    for path, snippet, guidance in required_physical_requested_serial_doc_snippets:
+        if snippet not in path.read_text(encoding="utf-8", errors="replace"):
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+
+    required_physical_different_network_confirmation_doc_snippets = (
+        (
+            ROOT / "docs/progress.md",
+            "Physical External Relay Different-Network Confirmation No-Device Gate",
+            "Progress docs must record the physical external-relay different-network confirmation no-device gate.",
+        ),
+        (
+            ROOT / "docs/qa-evidence.md",
+            "Physical External Relay Different-Network Confirmation No-Device Gate",
+            "QA evidence must record the physical external-relay different-network confirmation no-device gate.",
+        ),
+        (
+            ROOT / "docs/qa-evidence.md",
+            "Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring the wrapper option, operator confirmation message, no-device behavior test, no-artifact assertion, exact no-device summary phrase, progress, QA, and roadmap coverage.",
+            "QA evidence must record current static evidence for physical different-network confirmation.",
+        ),
+        (
+            ROOT / "docs/roadmap.md",
+            "different-network confirmation gate",
+            "Roadmap smoke coverage queue must name different-network confirmation gate coverage.",
+        ),
+    )
+    for path, snippet, guidance in required_physical_different_network_confirmation_doc_snippets:
+        if snippet not in path.read_text(encoding="utf-8", errors="replace"):
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+
+    no_adb_smoke_path = ROOT / "script/no_adb_external_relay_pairing_smoke.sh"
+    no_adb_smoke_text = no_adb_smoke_path.read_text(encoding="utf-8", errors="replace")
+    no_adb_smoke_relative = no_adb_smoke_path.relative_to(ROOT)
+    required_no_adb_qr_summary_snippets = (
+        (
+            '"coverage": {',
+            "No-ADB QR smoke summary must expose machine-readable QR artifact coverage.",
+        ),
+        (
+            '"pairing_uri_artifact_present": os.path.exists(pairing_uri_file)',
+            "No-ADB QR smoke summary must record whether the pairing URI artifact exists.",
+        ),
+        (
+            '"pairing_qr_artifact_present": os.path.exists(pairing_qr_file)',
+            "No-ADB QR smoke summary must record whether the QR PNG artifact exists.",
+        ),
+        (
+            '"pairing_qr_round_trip_verified": qr_round_trip_verified == "1"',
+            "No-ADB QR smoke summary must record QR PNG round-trip verification.",
+        ),
+        (
+            '"relay_route_required": True',
+            "No-ADB QR smoke summary must record that relay route material is required.",
+        ),
+        (
+            '"direct_endpoint_forbidden": allow_direct_fallback != "1"',
+            "No-ADB QR smoke summary must record whether direct endpoint fallback was forbidden.",
+        ),
+        (
+            '"artifact_only_emit_mode": emit_only == "1"',
+            "No-ADB QR smoke summary must record emit-only artifact mode.",
+        ),
+    )
+    for snippet, guidance in required_no_adb_qr_summary_snippets:
+        if snippet not in no_adb_smoke_text:
+            failures.append(f"{no_adb_smoke_relative}: {guidance}")
+
+    required_no_device_qr_summary_snippets = (
+        (
+            'coverage["pairing_uri_artifact_present"] is True',
+            "No-device quality gate must assert no-ADB QR URI artifact coverage.",
+        ),
+        (
+            'coverage["pairing_qr_artifact_present"] is True',
+            "No-device quality gate must assert no-ADB QR PNG artifact coverage.",
+        ),
+        (
+            'coverage["pairing_qr_round_trip_verified"] is True',
+            "No-device quality gate must assert no-ADB QR PNG round-trip coverage.",
+        ),
+        (
+            'coverage["relay_route_required"] is True',
+            "No-device quality gate must assert no-ADB QR relay-route coverage.",
+        ),
+        (
+            'coverage["direct_endpoint_forbidden"] is True',
+            "No-device quality gate must assert no-ADB QR direct-endpoint-forbidden coverage.",
+        ),
+        (
+            'coverage["artifact_only_emit_mode"] is True',
+            "No-device quality gate must assert no-ADB QR emit-only coverage.",
+        ),
+        (
+            "no-ADB external-relay QR smoke records machine-readable QR URI, QR PNG, round-trip decode, relay-route, direct-endpoint, and emit-only coverage",
+            "No-device quality summary must name no-ADB QR summary coverage.",
+        ),
+    )
+    for snippet, guidance in required_no_device_qr_summary_snippets:
         if snippet not in no_device_text:
             failures.append(f"{no_device_relative}: {guidance}")
 
@@ -6602,6 +10011,11 @@ def attachment_ingestion_guard_failures() -> list[str]:
     )
     macos_extractor_path = ROOT / "apps/macos/DocumentIngestion/Sources/DocumentTextExtractor.swift"
     macos_test_path = ROOT / "apps/macos/DocumentIngestion/Tests/DocumentTextExtractorTests.swift"
+    lm_studio_test_path = ROOT / "apps/macos/LMStudioBackend/Tests/LMStudioBackendTests.swift"
+    no_device_path = ROOT / "script/check_no_device_quality.sh"
+    docs_progress_path = ROOT / "docs/progress.md"
+    docs_qa_evidence_path = ROOT / "docs/qa-evidence.md"
+    docs_roadmap_path = ROOT / "docs/roadmap.md"
 
     files = (
         android_picker_path,
@@ -6611,6 +10025,11 @@ def attachment_ingestion_guard_failures() -> list[str]:
         android_prompt_resource_test_path,
         macos_extractor_path,
         macos_test_path,
+        lm_studio_test_path,
+        no_device_path,
+        docs_progress_path,
+        docs_qa_evidence_path,
+        docs_roadmap_path,
     )
     for path in files:
         if not path.exists():
@@ -6624,6 +10043,11 @@ def attachment_ingestion_guard_failures() -> list[str]:
     android_prompt_resource_test_text = android_prompt_resource_test_path.read_text(encoding="utf-8")
     macos_extractor_text = macos_extractor_path.read_text(encoding="utf-8")
     macos_test_text = macos_test_path.read_text(encoding="utf-8")
+    lm_studio_test_text = lm_studio_test_path.read_text(encoding="utf-8")
+    no_device_text = no_device_path.read_text(encoding="utf-8")
+    docs_progress_text = docs_progress_path.read_text(encoding="utf-8")
+    docs_qa_evidence_text = docs_qa_evidence_path.read_text(encoding="utf-8")
+    docs_roadmap_text = docs_roadmap_path.read_text(encoding="utf-8")
 
     required_android_picker_mimes = (
         "application/x-hwpml",
@@ -6819,6 +10243,66 @@ def attachment_ingestion_guard_failures() -> list[str]:
                 f"{target_path.relative_to(ROOT)}: document ingestion must keep HWPML support snippet {snippet!r}."
             )
 
+    required_lm_studio_vision_image_snippets = (
+        (
+            lm_studio_test_text,
+            lm_studio_test_path,
+            "testChatWithImageAttachmentUsesNativeImageInput",
+            "LM Studio backend tests must cover native image input request shape.",
+        ),
+        (
+            lm_studio_test_text,
+            lm_studio_test_path,
+            "testChatWithImageAttachmentFallsBackToOpenAICompatibleVisionContentWhenNativeRejects",
+            "LM Studio backend tests must cover OpenAI-compatible vision fallback request shape.",
+        ),
+        (
+            lm_studio_test_text,
+            lm_studio_test_path,
+            'XCTAssertEqual(paths, ["/api/v1/models", "/api/v1/chat", "/v1/chat/completions"])',
+            "LM Studio fallback regression must prove native image input is attempted before fallback.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "LMStudioBackendTests/testChatWithImageAttachmentUsesNativeImageInput",
+            "Default no-device gate must run the LM Studio native vision image request-shape regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "LMStudioBackendTests/testChatWithImageAttachmentFallsBackToOpenAICompatibleVisionContentWhenNativeRejects",
+            "Default no-device gate must run the LM Studio OpenAI-compatible vision fallback regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "LM Studio vision image native/fallback request shape addendum",
+            "Default no-device summary must mention LM Studio vision image native/fallback request-shape coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "LM Studio Vision Image Native/Fallback Request Shape No-Device Gate",
+            "Progress docs must record the LM Studio vision image native/fallback no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "LM Studio Vision Image Native/Fallback Request Shape No-Device Gate",
+            "QA evidence must record the LM Studio vision image native/fallback no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "LM Studio vision image native/fallback request shape",
+            "Roadmap smoke coverage queue must name LM Studio vision image native/fallback request-shape coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_lm_studio_vision_image_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+
     return failures
 
 
@@ -6848,6 +10332,10 @@ def runtime_history_storage_guard_failures() -> list[str]:
         ROOT / "apps/macos/CompanionCore/Tests/RuntimeLongInactivityMemorySummarizationPolicyTests.swift"
     )
     no_device_path = ROOT / "script/check_no_device_quality.sh"
+    docs_progress_path = ROOT / "docs/progress.md"
+    docs_qa_evidence_path = ROOT / "docs/qa-evidence.md"
+    docs_roadmap_path = ROOT / "docs/roadmap.md"
+    docs_security_path = ROOT / "docs/security.md"
     package_path = ROOT / "Package.swift"
 
     required_paths = (
@@ -6871,6 +10359,10 @@ def runtime_history_storage_guard_failures() -> list[str]:
         macos_sqlite_test_path,
         macos_inactivity_test_path,
         no_device_path,
+        docs_progress_path,
+        docs_qa_evidence_path,
+        docs_roadmap_path,
+        docs_security_path,
         package_path,
     )
     if any(not path.exists() for path in required_paths):
@@ -6896,6 +10388,10 @@ def runtime_history_storage_guard_failures() -> list[str]:
     macos_sqlite_test_text = macos_sqlite_test_path.read_text(encoding="utf-8", errors="replace")
     macos_inactivity_test_text = macos_inactivity_test_path.read_text(encoding="utf-8", errors="replace")
     no_device_text = no_device_path.read_text(encoding="utf-8", errors="replace")
+    docs_progress_text = docs_progress_path.read_text(encoding="utf-8", errors="replace")
+    docs_qa_evidence_text = docs_qa_evidence_path.read_text(encoding="utf-8", errors="replace")
+    docs_roadmap_text = docs_roadmap_path.read_text(encoding="utf-8", errors="replace")
+    docs_security_text = docs_security_path.read_text(encoding="utf-8", errors="replace")
     package_text = package_path.read_text(encoding="utf-8", errors="replace")
 
     android_store_relative = android_store_path.relative_to(ROOT)
@@ -6918,6 +10414,10 @@ def runtime_history_storage_guard_failures() -> list[str]:
     macos_sqlite_test_relative = macos_sqlite_test_path.relative_to(ROOT)
     macos_inactivity_test_relative = macos_inactivity_test_path.relative_to(ROOT)
     no_device_relative = no_device_path.relative_to(ROOT)
+    docs_progress_relative = docs_progress_path.relative_to(ROOT)
+    docs_qa_evidence_relative = docs_qa_evidence_path.relative_to(ROOT)
+    docs_roadmap_relative = docs_roadmap_path.relative_to(ROOT)
+    docs_security_relative = docs_security_path.relative_to(ROOT)
     package_relative = package_path.relative_to(ROOT)
 
     required_android_store_snippets = (
@@ -7618,6 +11118,131 @@ def runtime_history_storage_guard_failures() -> list[str]:
                 f"{macos_identity_test_relative}: Missing runtime identity fallback permission regression {snippet}."
             )
 
+    required_macos_identity_signing_snippets = (
+        (
+            macos_identity_test_text,
+            macos_identity_test_relative,
+            "testFileStoreSignsVerifiableAuthChallenge",
+            "Runtime identity fallback tests must prove file-backed identities sign auth challenges.",
+        ),
+        (
+            macos_identity_test_text,
+            macos_identity_test_relative,
+            "RuntimeIdentityKeyStore.verifyAuthChallengeSignature(",
+            "Runtime identity fallback signing regression must verify the generated signature.",
+        ),
+        (
+            macos_identity_test_text,
+            macos_identity_test_relative,
+            'nonce: "different-nonce"',
+            "Runtime identity fallback signing regression must reject nonce-replayed signatures.",
+        ),
+        (
+            no_device_text,
+            no_device_relative,
+            "RuntimeIdentityKeyStoreTests/testFileStoreSignsVerifiableAuthChallenge",
+            "Default no-device gate must run the runtime identity fallback signing regression.",
+        ),
+        (
+            no_device_text,
+            no_device_relative,
+            "macOS runtime identity fallback signing addendum",
+            "Default no-device gate summary must mention runtime identity fallback signing coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_relative,
+            "macOS Runtime Identity Fallback Signing No-Device Gate",
+            "Progress docs must record the runtime identity fallback signing no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_relative,
+            "macOS Runtime Identity Fallback Signing No-Device Gate",
+            "QA evidence must record the runtime identity fallback signing no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_relative,
+            "macOS runtime identity fallback signing",
+            "Roadmap smoke coverage queue must name runtime identity fallback signing coverage.",
+        ),
+        (
+            docs_security_text,
+            docs_security_relative,
+            "file-backed runtime identity fallback also signs nonce-bound auth challenges",
+            "Security docs must state that file-backed runtime identity fallback signs nonce-bound auth challenges.",
+        ),
+    )
+    for haystack, relative, snippet, guidance in required_macos_identity_signing_snippets:
+        if snippet not in haystack:
+            failures.append(f"{relative}: {guidance}")
+    required_macos_trusted_hello_runtime_proof_snippets = (
+        (
+            macos_test_text,
+            macos_test_relative,
+            "testTrustedHelloIncludesVerifiableRuntimeProofWhenSignerIsAvailable",
+            "LocalRuntimeMessageRouter tests must prove trusted hello includes a runtime proof when a signer is available.",
+        ),
+        (
+            macos_test_text,
+            macos_test_relative,
+            'challenge?.payload["runtime_key_fingerprint"]',
+            "Trusted hello runtime-proof regression must assert the runtime key fingerprint is present.",
+        ),
+        (
+            macos_test_text,
+            macos_test_relative,
+            'case .string(let signature)? = challenge?.payload["runtime_signature"]',
+            "Trusted hello runtime-proof regression must assert the runtime signature is present.",
+        ),
+        (
+            macos_test_text,
+            macos_test_relative,
+            'nonce: "different-nonce"',
+            "Trusted hello runtime-proof regression must reject signatures replayed against a different nonce.",
+        ),
+        (
+            no_device_text,
+            no_device_relative,
+            "LocalRuntimeMessageRouterTests/testTrustedHelloIncludesVerifiableRuntimeProofWhenSignerIsAvailable",
+            "Default no-device gate must run the macOS trusted hello runtime-proof regression.",
+        ),
+        (
+            no_device_text,
+            no_device_relative,
+            "macOS trusted hello runtime proof addendum",
+            "Default no-device gate summary must mention macOS trusted hello runtime-proof coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_relative,
+            "macOS Trusted Hello Runtime Proof No-Device Gate",
+            "Progress docs must record the macOS trusted hello runtime-proof no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_relative,
+            "macOS Trusted Hello Runtime Proof No-Device Gate",
+            "QA evidence must record the macOS trusted hello runtime-proof no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_relative,
+            "macOS trusted hello runtime proof",
+            "Roadmap smoke coverage queue must name macOS trusted hello runtime-proof coverage.",
+        ),
+        (
+            docs_security_text,
+            docs_security_relative,
+            "invalid runtime proofs fail client-side",
+            "Security docs must keep runtime proof failure semantics visible.",
+        ),
+    )
+    for haystack, relative, snippet, guidance in required_macos_trusted_hello_runtime_proof_snippets:
+        if snippet not in haystack:
+            failures.append(f"{relative}: {guidance}")
+
     required_macos_test_snippets = (
         "let store = RecordingRuntimeChatEventStore()",
         "let requestEvent = try XCTUnwrap(store.events.first { $0.kind == .request })",
@@ -7856,6 +11481,10 @@ def runtime_history_storage_guard_failures() -> list[str]:
         failures.append(
             f"{no_device_relative}: Default no-device gate must run Android approved-memory source review localization regression."
         )
+    if "ClientScreensNoDeviceComposeTest.settingsMemoryApprovedSourceMetadataStaysBoundedAtLargeFontAcrossSupportedLanguages" not in no_device_text:
+        failures.append(
+            f"{no_device_relative}: Default no-device gate must run Android approved-memory source compact layout regression."
+        )
     if "long-inactivity memory summary draft approval addendum" not in no_device_text:
         failures.append(
             f"{no_device_relative}: Default no-device gate must mention memory summary draft approval coverage."
@@ -7879,6 +11508,22 @@ def runtime_history_storage_guard_failures() -> list[str]:
     if "Android memory summary draft compact review layout" not in no_device_text:
         failures.append(
             f"{no_device_relative}: Default no-device gate must mention Android memory summary draft compact review layout coverage."
+        )
+    if "Android Settings memory approved-source compact layout" not in no_device_text:
+        failures.append(
+            f"{no_device_relative}: Default no-device gate must mention Android Settings memory approved-source compact layout coverage."
+        )
+    if "Android Settings memory add controls compact layout" not in no_device_text:
+        failures.append(
+            f"{no_device_relative}: Default no-device gate must mention Android Settings memory add controls compact layout coverage."
+        )
+    if "Android Settings memory empty-state compact layout" not in no_device_text:
+        failures.append(
+            f"{no_device_relative}: Default no-device gate must mention Android Settings memory empty-state compact layout coverage."
+        )
+    if "Android Settings chat-history search-refresh header compact layout" not in no_device_text:
+        failures.append(
+            f"{no_device_relative}: Default no-device gate must mention Android Settings chat-history search-refresh header compact layout coverage."
         )
 
     return failures
@@ -8056,8 +11701,21 @@ def macos_runtime_local_chat_routing_guard_failures() -> list[str]:
     router_path = ROOT / "apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift"
     aggregate_test_path = ROOT / "apps/macos/CompanionCore/Tests/AggregatingLlmBackendResidencyTests.swift"
     router_test_path = ROOT / "apps/macos/CompanionCore/Tests/LocalRuntimeMessageRouterTests.swift"
+    no_device_path = ROOT / "script/check_no_device_quality.sh"
+    progress_path = ROOT / "docs/progress.md"
+    qa_evidence_path = ROOT / "docs/qa-evidence.md"
+    roadmap_path = ROOT / "docs/roadmap.md"
 
-    required_paths = (aggregate_path, router_path, aggregate_test_path, router_test_path)
+    required_paths = (
+        aggregate_path,
+        router_path,
+        aggregate_test_path,
+        router_test_path,
+        no_device_path,
+        progress_path,
+        qa_evidence_path,
+        roadmap_path,
+    )
     if any(not path.exists() for path in required_paths):
         failures.append("macOS runtime-local chat routing guard files are missing.")
         return failures
@@ -8066,11 +11724,19 @@ def macos_runtime_local_chat_routing_guard_failures() -> list[str]:
     router_text = router_path.read_text(encoding="utf-8", errors="replace")
     aggregate_test_text = aggregate_test_path.read_text(encoding="utf-8", errors="replace")
     router_test_text = router_test_path.read_text(encoding="utf-8", errors="replace")
+    no_device_text = no_device_path.read_text(encoding="utf-8", errors="replace")
+    progress_text = progress_path.read_text(encoding="utf-8", errors="replace")
+    qa_evidence_text = qa_evidence_path.read_text(encoding="utf-8", errors="replace")
+    roadmap_text = roadmap_path.read_text(encoding="utf-8", errors="replace")
 
     aggregate_relative = aggregate_path.relative_to(ROOT)
     router_relative = router_path.relative_to(ROOT)
     aggregate_test_relative = aggregate_test_path.relative_to(ROOT)
     router_test_relative = router_test_path.relative_to(ROOT)
+    no_device_relative = no_device_path.relative_to(ROOT)
+    progress_relative = progress_path.relative_to(ROOT)
+    qa_evidence_relative = qa_evidence_path.relative_to(ROOT)
+    roadmap_relative = roadmap_path.relative_to(ROOT)
 
     required_aggregate_snippets = (
         (
@@ -8109,9 +11775,12 @@ def macos_runtime_local_chat_routing_guard_failures() -> list[str]:
         "testRepeatedSameModelDoesNotUnloadBetweenChats",
         "testIdlePolicyUnloadsActiveModelAfterDelay",
         "testInstalledCloudChatModelIsNotRoutedAsChat",
+        "testUnknownUnqualifiedModelDoesNotFallbackToOllama",
+        "testQualifiedModelMustBeReportedByThatProvider",
         "testDuplicateProviderBackendsKeepFirstProviderInsteadOfCrashing",
         "source: .cloud",
         "XCTAssertTrue(ollama.routedModels.isEmpty)",
+        "XCTAssertTrue(lmStudio.routedModels.isEmpty)",
     )
     for snippet in required_aggregate_test_snippets:
         if snippet not in aggregate_test_text:
@@ -8132,6 +11801,77 @@ def macos_runtime_local_chat_routing_guard_failures() -> list[str]:
         failures.append(
             f"{router_test_relative}: Installed provider-managed/cloud chat models must not remain selectable."
         )
+
+    required_unknown_unqualified_gate_snippets = (
+        (
+            no_device_text,
+            no_device_relative,
+            "AggregatingLlmBackendResidencyTests/testUnknownUnqualifiedModelDoesNotFallbackToOllama",
+            "Default no-device gate must run the unknown unqualified model fallback rejection regression.",
+        ),
+        (
+            no_device_text,
+            no_device_relative,
+            "macOS unknown unqualified model routing addendum",
+            "Default no-device summary must mention unknown unqualified model routing coverage.",
+        ),
+        (
+            progress_text,
+            progress_relative,
+            "macOS Unknown Unqualified Model Routing No-Device Gate",
+            "Progress docs must record unknown unqualified model routing no-device gate coverage.",
+        ),
+        (
+            qa_evidence_text,
+            qa_evidence_relative,
+            "macOS Unknown Unqualified Model Routing No-Device Gate",
+            "QA evidence must record unknown unqualified model routing no-device gate coverage.",
+        ),
+        (
+            roadmap_text,
+            roadmap_relative,
+            "macOS unknown unqualified model routing",
+            "Roadmap smoke coverage queue must name unknown unqualified model routing coverage.",
+        ),
+    )
+    for haystack, relative, snippet, guidance in required_unknown_unqualified_gate_snippets:
+        if snippet not in haystack:
+            failures.append(f"{relative}: {guidance}")
+    required_qualified_provider_gate_snippets = (
+        (
+            no_device_text,
+            no_device_relative,
+            "AggregatingLlmBackendResidencyTests/testQualifiedModelMustBeReportedByThatProvider",
+            "Default no-device gate must run the qualified provider model routing rejection regression.",
+        ),
+        (
+            no_device_text,
+            no_device_relative,
+            "macOS qualified provider model routing rejection addendum",
+            "Default no-device summary must mention qualified provider model routing rejection coverage.",
+        ),
+        (
+            progress_text,
+            progress_relative,
+            "macOS Qualified Provider Model Routing Rejection No-Device Gate",
+            "Progress docs must record qualified provider model routing rejection no-device gate coverage.",
+        ),
+        (
+            qa_evidence_text,
+            qa_evidence_relative,
+            "macOS Qualified Provider Model Routing Rejection No-Device Gate",
+            "QA evidence must record qualified provider model routing rejection no-device gate coverage.",
+        ),
+        (
+            roadmap_text,
+            roadmap_relative,
+            "macOS qualified provider model routing rejection",
+            "Roadmap smoke coverage queue must name qualified provider model routing rejection coverage.",
+        ),
+    )
+    for haystack, relative, snippet, guidance in required_qualified_provider_gate_snippets:
+        if snippet not in haystack:
+            failures.append(f"{relative}: {guidance}")
 
     return failures
 
@@ -8195,6 +11935,22 @@ def macos_remote_qr_lease_guard_failures() -> list[str]:
             "isRelayRouteLeaseFreshForPairingQRCode",
             "Remote QR lease readiness and QR payload generation must share the same freshness check.",
         ),
+        (
+            "hasFreshCurrentRemoteRouteLease",
+            "Fresh saved remote QR leases must not be renewed unnecessarily before QR generation.",
+        ),
+        (
+            "acceptsRemoteRouteAllocation",
+            "Remote route allocation results must pass the lease monotonicity guard before storage or QR use.",
+        ),
+        (
+            "isAdvancingReplacement(of:",
+            "Remote route lease replacement must require advancing expiry and a fresh nonce.",
+        ),
+        (
+            "Remote route lease did not advance.",
+            "Rejected non-advancing remote route leases must surface a focused preparation issue.",
+        ),
     )
     for snippet, guidance in required_model_snippets:
         if snippet not in model_text:
@@ -8205,8 +11961,17 @@ def macos_remote_qr_lease_guard_failures() -> list[str]:
         ".routeLeaseRefreshFailed",
         "Remote pairing QR not generated: Remote route allocation response was invalid.",
         "Remote route ready: relay.example.test:43171",
+        "testCompanionAppModelReplacesReadyStaleRelayBeforeGeneratingAllocatedRouteQRCode",
         "testCompanionAppModelDoesNotReuseSavedLeaseForDifferentRelayRoute",
+        "testCompanionAppModelAcceptsAdvancingSavedBootstrapLeaseForStableRelayID",
+        "testCompanionAppModelRejectsNonAdvancingSavedBootstrapLeaseForStableRelayID",
+        "testCompanionAppModelRegeneratesGUIAllocatedQRCodeWithExpiredLease",
         "testCompanionAppModelRegeneratesGUIAllocatedQRCodeWithNearExpiredLease",
+        "relay-bootstrap-fresh",
+        "allocated-relay-expired",
+        "allocated-relay-fresh",
+        "nonce-renewed",
+        "expired-nonce",
         "near-expiry-nonce",
         "fresh-nonce",
         '"aetherlink.relay.lease_host"',
@@ -9443,6 +13208,22 @@ def no_device_quality_gate_guard_failures() -> list[str]:
     android_ui_path = ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/ui/ClientScreens.kt"
     compose_test_path = ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt"
     android_string_paths = sorted(ROOT.glob("apps/android/app/src/main/res/values*/strings.xml"))
+    pairing_parser_path = ROOT / (
+        "apps/android/core/pairing/src/main/java/com/localagentbridge/android/core/pairing/"
+        "RuntimePairingPayload.kt"
+    )
+    pairing_parser_test_path = ROOT / (
+        "apps/android/core/pairing/src/test/java/com/localagentbridge/android/core/pairing/"
+        "RuntimePairingPayloadParserTest.kt"
+    )
+    runtime_connection_manager_test_path = ROOT / (
+        "apps/android/core/transport/src/test/java/com/localagentbridge/android/core/transport/"
+        "RuntimeConnectionManagerTest.kt"
+    )
+    docs_progress_path = ROOT / "docs/progress.md"
+    docs_qa_evidence_path = ROOT / "docs/qa-evidence.md"
+    docs_roadmap_path = ROOT / "docs/roadmap.md"
+    relay_allocation_preflight_path = ROOT / "script/relay_allocation_preflight.py"
     runtime_mutation_test_path = ROOT / (
         "apps/android/app/src/test/java/com/localagentbridge/android/runtime/"
         "RuntimeClientChatSessionMutationFailureTest.kt"
@@ -9477,6 +13258,13 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         runtime_test_path,
         android_ui_path,
         compose_test_path,
+        pairing_parser_path,
+        pairing_parser_test_path,
+        runtime_connection_manager_test_path,
+        relay_allocation_preflight_path,
+        docs_progress_path,
+        docs_qa_evidence_path,
+        docs_roadmap_path,
         *android_string_paths,
     )
     for path in runtime_load_guard_files:
@@ -9487,6 +13275,687 @@ def no_device_quality_gate_guard_failures() -> list[str]:
     runtime_test_text = runtime_test_path.read_text(encoding="utf-8", errors="replace")
     android_ui_text = android_ui_path.read_text(encoding="utf-8", errors="replace")
     compose_test_text = compose_test_path.read_text(encoding="utf-8", errors="replace")
+    pairing_parser_text = pairing_parser_path.read_text(encoding="utf-8", errors="replace")
+    pairing_parser_test_text = pairing_parser_test_path.read_text(encoding="utf-8", errors="replace")
+    runtime_connection_manager_test_text = runtime_connection_manager_test_path.read_text(
+        encoding="utf-8",
+        errors="replace",
+    )
+    relay_allocation_preflight_text = relay_allocation_preflight_path.read_text(
+        encoding="utf-8",
+        errors="replace",
+    )
+    docs_progress_text = docs_progress_path.read_text(encoding="utf-8", errors="replace")
+    docs_qa_evidence_text = docs_qa_evidence_path.read_text(encoding="utf-8", errors="replace")
+    docs_roadmap_text = docs_roadmap_path.read_text(encoding="utf-8", errors="replace")
+    required_remote_route_identity_snippets = (
+        (
+            runtime_view_model_text,
+            runtime_view_model_path,
+            "RuntimeRouteRejectionReason.RemoteRouteIdentityMismatch",
+            "Android runtime connection mapping must detect mismatched saved remote-route identities.",
+        ),
+        (
+            runtime_view_model_text,
+            runtime_view_model_path,
+            '"route_diagnostic_remote_identity_mismatch"',
+            "Android runtime connection mapping must surface the remote identity mismatch diagnostic code.",
+        ),
+        (
+            runtime_view_model_text,
+            runtime_view_model_path,
+            '"route_diagnostic_p2p_failed_relay_pending"',
+            "Android runtime connection mapping must surface failed P2P routes without relay fallback as QR recovery.",
+        ),
+        (
+            android_ui_text,
+            android_ui_path,
+            '"route_diagnostic_remote_identity_mismatch"',
+            "Android route availability UI must render the remote identity mismatch diagnostic.",
+        ),
+        (
+            android_ui_text,
+            android_ui_path,
+            '"route_diagnostic_p2p_failed_relay_pending"',
+            "Android route availability UI must render the failed P2P/no-relay diagnostic.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "RuntimeRouteRejectionReason.RemoteRouteIdentityMismatch",
+            "Android focused route failure mapping test must cover remote route identity mismatch.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            '"route_diagnostic_remote_identity_mismatch"',
+            "Android focused route failure mapping test must assert the remote identity mismatch diagnostic.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            '"route_diagnostic_p2p_failed_relay_pending"',
+            "Android focused route failure mapping test must assert failed P2P/no-relay QR recovery.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_remote_route_identity_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_remote_route_binding_snippets = (
+        (
+            runtime_connection_manager_test_text,
+            runtime_connection_manager_test_path,
+            "mismatchedRemoteRouteIdentityIsRejectedBeforeConnectorAttempt",
+            "Android transport tests must reject mismatched prepared remote-route identities before connector use.",
+        ),
+        (
+            runtime_connection_manager_test_text,
+            runtime_connection_manager_test_path,
+            "remoteRouteMissingPinnedMetadataIsRejectedBeforeConnectorAttempt",
+            "Android transport tests must reject prepared remote routes missing pinned identity metadata before connector use.",
+        ),
+        (
+            runtime_connection_manager_test_text,
+            runtime_connection_manager_test_path,
+            'fingerprint = "other-fingerprint"',
+            "Android mismatched remote-route identity test must pin the wrong runtime fingerprint.",
+        ),
+        (
+            runtime_connection_manager_test_text,
+            runtime_connection_manager_test_path,
+            'routeToken = "other-route-token"',
+            "Android mismatched remote-route identity test must pin the wrong route token.",
+        ),
+        (
+            runtime_connection_manager_test_text,
+            runtime_connection_manager_test_path,
+            "val incompleteIdentity = PairedRuntimeIdentity",
+            "Android missing-metadata remote-route identity test must construct an incomplete pinned identity.",
+        ),
+        (
+            runtime_connection_manager_test_text,
+            runtime_connection_manager_test_path,
+            "RuntimeRouteRejectionReason.RemoteRouteIdentityMismatch",
+            "Android remote-route identity binding tests must assert identity-mismatch rejection diagnostics.",
+        ),
+        (
+            runtime_connection_manager_test_text,
+            runtime_connection_manager_test_path,
+            "assertEquals(emptyList<PreparedRemoteRuntimeRoute.PeerToPeer>(), peerCalls)",
+            "Android remote-route identity binding tests must prove peer connectors are not attempted.",
+        ),
+        (
+            runtime_connection_manager_test_text,
+            runtime_connection_manager_test_path,
+            'error("Direct TCP should not be used for this identity-only target")',
+            "Android remote-route identity binding tests must prove direct TCP is not used as a fallback.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            "RuntimeConnectionManagerTest.mismatchedRemoteRouteIdentityIsRejectedBeforeConnectorAttempt",
+            "Default no-device gate must run the mismatched remote-route identity binding regression.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            "RuntimeConnectionManagerTest.remoteRouteMissingPinnedMetadataIsRejectedBeforeConnectorAttempt",
+            "Default no-device gate must run the missing pinned remote-route metadata regression.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            "Android remote route identity binding addendum",
+            "Default no-device gate summary must mention Android remote route identity binding coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "both focused regressions, pinned runtime identity assertions, missing pinned metadata rejection, no-connector-attempt assertions, default no-device gate entries, exact summary phrase, current progress/QA evidence, and roadmap coverage",
+            "Progress docs must record the Android remote route identity binding no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring both focused regressions, pinned runtime identity assertions, missing pinned metadata rejection, no-connector-attempt assertions, default no-device gate entries, exact summary phrase, current progress/QA evidence, and roadmap coverage.",
+            "QA evidence must record the Android remote route identity binding no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "remote route identity binding",
+            "Roadmap smoke coverage queue must name remote route identity binding coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_remote_route_binding_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_remote_route_expiry_connector_guard_snippets = (
+        (
+            runtime_connection_manager_test_text,
+            runtime_connection_manager_test_path,
+            "remoteRouteSecurityContextRejectsMissingOrExpiredRouteMetadata",
+            "Android transport tests must reject remote route security contexts missing route ids, nonces, or expiry.",
+        ),
+        (
+            runtime_connection_manager_test_text,
+            runtime_connection_manager_test_path,
+            "expiredRemoteRoutesAreRejectedBeforeConnectorAttempt",
+            "Android transport tests must reject expired prepared remote routes before connector use.",
+        ),
+        (
+            runtime_connection_manager_test_text,
+            runtime_connection_manager_test_path,
+            'error("Direct TCP should not be used for this identity-only target")',
+            "Android expired remote route guard must prove direct TCP is not used as a fallback.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            "RuntimeConnectionManagerTest.remoteRouteSecurityContextRejectsMissingOrExpiredRouteMetadata",
+            "Default no-device gate must run the remote route security-context metadata regression.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            "RuntimeConnectionManagerTest.expiredRemoteRoutesAreRejectedBeforeConnectorAttempt",
+            "Default no-device gate must run the expired remote route connector guard regression.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            "Android remote route expiry connector guard addendum",
+            "Default no-device gate summary must mention Android remote route expiry connector guard coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "both focused regressions, the no-direct-TCP assertion, default no-device gate entries, exact summary phrase, current progress/QA evidence, and roadmap coverage",
+            "Progress docs must record the Android remote route expiry connector guard no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring both focused regressions, the no-direct-TCP assertion, default no-device gate entries, exact summary phrase, current progress/QA evidence, and roadmap coverage.",
+            "QA evidence must record the Android remote route expiry connector guard no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "remote route expiry connector guard",
+            "Roadmap smoke coverage queue must name remote route expiry connector guard coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_remote_route_expiry_connector_guard_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_remote_route_direct_transport_boundary_doc_snippets = (
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "focused regression, P2P/relay connector dispatch branches, direct TCP non-call assertion, default gate entry, exact summary phrase, progress, QA, and roadmap coverage",
+            "Progress docs must record the exact Android remote route direct transport boundary guardrail coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Android Remote Route Direct Transport Boundary No-Device Gate",
+            "Progress docs must record the Android remote route direct transport boundary no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring the focused regression, P2P/relay connector dispatch branches, direct TCP non-call assertion, default gate entry, exact summary phrase, progress, QA, and roadmap coverage.",
+            "QA evidence must record current static evidence for Android remote route direct transport boundary.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Android Remote Route Direct Transport Boundary No-Device Gate",
+            "QA evidence must record the Android remote route direct transport boundary no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "remote route direct transport boundary",
+            "Roadmap smoke coverage queue must name remote route direct transport boundary coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_remote_route_direct_transport_boundary_doc_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_model_residency_unload_behavior_doc_snippets = (
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Model-Residency Unload Behavior No-Device Gate",
+            "Progress docs must record the model-residency unload behavior no-device gate.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "focused SwiftPM regressions, default gate entry, exact summary phrase, current QA evidence, and roadmap coverage",
+            "Progress docs must record the exact model-residency unload behavior guardrail coverage.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Model-Residency Unload Behavior No-Device Gate",
+            "QA evidence must record the model-residency unload behavior no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring the focused SwiftPM regressions, default gate entry, exact summary phrase, current progress/QA evidence, and roadmap coverage.",
+            "QA evidence must record current static evidence for model-residency unload behavior.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "model-residency unload behavior",
+            "Roadmap smoke coverage queue must name model-residency unload behavior coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_model_residency_unload_behavior_doc_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_model_residency_foreground_completion_doc_snippets = (
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Model-Residency Foreground Completion Cleanup No-Device Gate",
+            "Progress docs must record the model-residency foreground completion cleanup no-device gate.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "focused SwiftPM regression, `.done` event assertion, in-flight generation cleanup assertion, default gate entry, exact summary phrase, current QA evidence, and roadmap coverage",
+            "Progress docs must record the exact model-residency foreground completion cleanup guardrail coverage.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Model-Residency Foreground Completion Cleanup No-Device Gate",
+            "QA evidence must record the model-residency foreground completion cleanup no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring the focused SwiftPM regression, `.done` event assertion, in-flight generation cleanup assertion, default gate entry, exact summary phrase, current progress/QA evidence, and roadmap coverage.",
+            "QA evidence must record current static evidence for model-residency foreground completion cleanup.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "model-residency foreground completion cleanup",
+            "Roadmap smoke coverage queue must name model-residency foreground completion cleanup coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_model_residency_foreground_completion_doc_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_accepted_pairing_incomplete_p2p_doc_snippets = (
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Android Accepted Pairing Incomplete P2P Route No-Device Gate",
+            "Progress docs must record the Android accepted-pairing incomplete P2P route no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Android Accepted Pairing Incomplete P2P Route No-Device Gate",
+            "QA evidence must record the Android accepted-pairing incomplete P2P route no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "accepted pairing incomplete P2P route",
+            "Roadmap smoke coverage queue must name accepted-pairing incomplete P2P route coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_accepted_pairing_incomplete_p2p_doc_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_relay_control_line_doc_snippets = (
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Relay Control-Line Framing No-Device Gate",
+            "Progress docs must record the relay control-line framing no-device gate.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Relay Readiness Runtime-Only Probe No-Device Gate",
+            "Progress docs must record the relay readiness runtime-only probe no-device gate.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "focused SwiftPM regressions, newline framing assertions, non-consuming runtime probe assertion, runtime-only readiness assertion, default gate entry, exact summary phrases, current QA evidence, and roadmap coverage",
+            "Progress docs must record the exact relay control-line/readiness guardrail coverage.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Relay Control-Line Framing No-Device Gate",
+            "QA evidence must record the relay control-line framing no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Relay Readiness Runtime-Only Probe No-Device Gate",
+            "QA evidence must record the relay readiness runtime-only probe no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring the focused SwiftPM regressions, newline framing assertions, non-consuming runtime probe assertion, runtime-only readiness assertion, default gate entry, exact summary phrases, current progress/QA evidence, and roadmap coverage.",
+            "QA evidence must record current static evidence for relay control-line/readiness coverage.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "relay control-line framing",
+            "Roadmap smoke coverage queue must name relay control-line framing coverage.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "relay readiness runtime-only probe",
+            "Roadmap smoke coverage queue must name relay readiness runtime-only probe coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_relay_control_line_doc_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_relay_preflight_opaque_echo_snippets = (
+        (
+            relay_allocation_preflight_text,
+            relay_allocation_preflight_path,
+            "payload[\"relay_id\"] == requested_route_token",
+            "relay allocation preflight must reject allocation responses that echo the raw route token as relay_id.",
+        ),
+        (
+            relay_allocation_preflight_text,
+            relay_allocation_preflight_path,
+            "echoed the requested route token as relay_id",
+            "relay allocation preflight must explain raw route-token relay_id echo rejection.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            "check_relay_preflight_rejects_raw_route_token_echo_guard",
+            "Default no-device gate must run the raw route-token relay_id echo rejection helper.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            "echoed-route-token",
+            "Default no-device gate must exercise a fake allocation response that echoes the requested route token.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            "relay preflight opaque-id echo rejection addendum",
+            "Default no-device gate summary must mention relay preflight opaque-id echo rejection coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Relay Preflight Opaque ID Echo Rejection No-Device Gate",
+            "Progress docs must record the relay preflight opaque-id echo rejection no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Relay Preflight Opaque ID Echo Rejection No-Device Gate",
+            "QA evidence must record the relay preflight opaque-id echo rejection no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "relay preflight opaque-id echo rejection",
+            "Roadmap smoke coverage queue must name relay preflight opaque-id echo rejection coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_relay_preflight_opaque_echo_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_relay_preflight_output_redaction_snippets = (
+        (
+            gate_text,
+            gate_path,
+            "\"requested_route_token\" not in payload",
+            "Default no-device gate must prove relay_allocation_preflight success JSON omits raw route tokens.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            'assert payload["relay_id"].startswith("rt1-"), payload',
+            "Default no-device gate must prove relay_allocation_preflight success JSON keeps opaque relay IDs.",
+        ),
+        (
+            relay_allocation_preflight_text,
+            relay_allocation_preflight_path,
+            '"has_relay_secret": bool(payload.get("relay_secret"))',
+            "Relay allocation preflight output must expose only a safe relay-secret presence boolean.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            '"relay_secret" not in payload',
+            "Default no-device gate must prove relay_allocation_preflight success JSON omits relay_secret values.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            'assert payload["has_relay_secret"] is True, payload',
+            "Default no-device gate must prove relay_allocation_preflight success JSON keeps only a safe secret-presence boolean.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            "\"normal-route\" not in json.dumps(payload)",
+            "Default no-device gate must prove normal relay preflight output omits the requested route token.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            "\"token-persisted-route\" not in json.dumps(payload)",
+            "Default no-device gate must prove token-required relay preflight output omits the requested route token.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            "\"token-relay-secret-should-not-persist\" not in json.dumps(payload)",
+            "Default no-device gate must prove token-required relay preflight output omits raw requested relay secrets.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            "relay preflight output redaction addendum",
+            "Default no-device gate summary must mention relay preflight output redaction coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "output-redaction assertions, raw route-token absence assertions, raw relay-secret absence assertion, safe secret-presence boolean assertion, opaque relay-id assertion, default no-device gate entry, exact summary phrase, current progress/QA evidence, and roadmap coverage",
+            "Progress docs must record the relay preflight output redaction no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring the output-redaction assertions, raw route-token absence assertions, raw relay-secret absence assertion, safe secret-presence boolean assertion, opaque relay-id assertion, default no-device gate entry, exact summary phrase, current progress/QA evidence, and roadmap coverage.",
+            "QA evidence must record the relay preflight output redaction no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "relay preflight output redaction",
+            "Roadmap smoke coverage queue must name relay preflight output redaction coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_relay_preflight_output_redaction_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_private_overlay_missing_scope_snippets = (
+        (
+            pairing_parser_text,
+            pairing_parser_path,
+            '"Private relay hosts require relay_scope=private_overlay"',
+            "Android parser must emit a focused missing private-overlay relay scope error.",
+        ),
+        (
+            pairing_parser_text,
+            pairing_parser_path,
+            "requiresPrivateOverlayRelayScope()",
+            "Android parser must distinguish private relay hosts before generic relay QR rejection.",
+        ),
+        (
+            pairing_parser_test_text,
+            pairing_parser_test_path,
+            "rejectsPrivateOverlayRelayHostsWithoutExplicitScopeWithFocusedError",
+            "Android parser tests must cover private relay hosts missing private_overlay scope.",
+        ),
+        (
+            pairing_parser_test_text,
+            pairing_parser_test_path,
+            "allowsPrivateOverlayRelayHostsOnlyWithExplicitScope",
+            "Android parser tests must prove private relay hosts remain allowed with explicit private_overlay scope.",
+        ),
+        (
+            pairing_parser_test_text,
+            pairing_parser_test_path,
+            '"100.64.1.5."',
+            "Android parser tests must cover trailing-dot CGNAT host normalization for private-overlay scope.",
+        ),
+        (
+            pairing_parser_test_text,
+            pairing_parser_test_path,
+            '"%5Bfd00::1%5D"',
+            "Android parser tests must cover ULA IPv6 private relay hosts.",
+        ),
+        (
+            runtime_view_model_text,
+            runtime_view_model_path,
+            '"route_diagnostic_private_overlay_scope_required"',
+            "Android QR parse error mapping must surface missing private-overlay scope as route recovery.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "privateOverlayRelayQrParseFailureReportsScopeRequired",
+            "Android ViewModel tests must cover the missing private-overlay scope diagnostic mapping.",
+        ),
+        (
+            android_ui_text,
+            android_ui_path,
+            '"route_diagnostic_private_overlay_scope_required"',
+            "Android route availability UI must render the missing private-overlay scope diagnostic.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            "RuntimeClientViewModelTest.privateOverlayRelayQrParseFailureReportsScopeRequired",
+            "Default no-device gate must run the private-overlay missing-scope ViewModel regression.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            "Android private-overlay QR missing-scope diagnostic addendum",
+            "Default no-device gate coverage summary must mention missing private-overlay QR scope diagnostics.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "parser focused regressions, exact parser error, diagnostic-code mapping, localized UI diagnostic resources, default no-device gate entry, exact summary phrase, current progress/QA evidence, and roadmap coverage",
+            "Progress docs must record current private-overlay QR missing-scope diagnostic evidence.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring the parser focused regressions, exact parser error, diagnostic-code mapping, localized UI diagnostic resources, default no-device gate entry, exact summary phrase, current progress/QA evidence, and roadmap coverage.",
+            "QA evidence must record current private-overlay QR missing-scope diagnostic evidence.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "private-overlay relay scope schema guard",
+            "Roadmap smoke coverage queue must name private-overlay relay scope schema guard coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_private_overlay_missing_scope_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_private_overlay_qr_artifact_snippets = (
+        (
+            gate_text,
+            gate_path,
+            "macos-compact-private-overlay-pairing-uri.txt",
+            "Default no-device gate must render the shared private-overlay QR fixture.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            "PRIVATE_OVERLAY_QR_FILE",
+            "Default no-device gate must create a private-overlay QR PNG artifact for verification.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            "--expected-relay-host 100.64.1.10",
+            "Default no-device gate must verify the CGNAT private-overlay relay host from the fixture.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            "--expected-relay-port 43171",
+            "Default no-device gate must verify the private-overlay relay port from the fixture.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            "private-overlay QR artifact addendum",
+            "Default no-device gate summary must mention private-overlay QR artifact coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Private Overlay QR Artifact No-Device Gate",
+            "Progress docs must record the private-overlay QR artifact no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Private Overlay QR Artifact No-Device Gate",
+            "QA evidence must record the private-overlay QR artifact no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "private-overlay QR artifact",
+            "Roadmap smoke coverage queue must name private-overlay QR artifact coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_private_overlay_qr_artifact_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    for string_path in android_string_paths:
+        string_text = string_path.read_text(encoding="utf-8", errors="replace")
+        if "route_diagnostic_remote_identity_mismatch" not in string_text:
+            failures.append(
+                f"{string_path.relative_to(ROOT)}: Missing remote route identity mismatch diagnostic resource."
+            )
+        if "route_diagnostic_p2p_failed_relay_pending" not in string_text:
+            failures.append(
+                f"{string_path.relative_to(ROOT)}: Missing failed P2P route without relay fallback diagnostic resource."
+            )
+        if "route_diagnostic_private_overlay_scope_required" not in string_text:
+            failures.append(
+                f"{string_path.relative_to(ROOT)}: Missing private-overlay relay scope diagnostic resource."
+            )
     required_runtime_load_view_model_snippets = (
         'showError("chat_history_load_failed", payload?.message)',
         "clearChatMessagesLoading(expectedSessionId)",
@@ -9539,6 +14008,34 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Approved-memory source review UI must keep a stable Compose test tag.",
         ),
         (
+            "MEMORY_ENTRY_SOURCE_HEADER_TEST_TAG",
+            "Approved-memory source review UI must expose stable header bounds.",
+        ),
+        (
+            "MEMORY_ENTRY_SOURCE_ORIGIN_TEST_TAG",
+            "Approved-memory source review UI must expose stable source origin bounds.",
+        ),
+        (
+            "MEMORY_ENTRY_SOURCE_COUNT_TEST_TAG",
+            "Approved-memory source review UI must expose stable source count bounds.",
+        ),
+        (
+            "MEMORY_ENTRY_SOURCE_RANGE_TEST_TAG",
+            "Approved-memory source review UI must expose stable source range bounds.",
+        ),
+        (
+            "MEMORY_ENTRY_SOURCE_TOGGLE_TEST_TAG",
+            "Approved-memory source review UI must expose stable source toggle bounds.",
+        ),
+        (
+            "MEMORY_ENTRY_SOURCE_TOGGLE_LABEL_TEST_TAG",
+            "Approved-memory source review UI must expose stable source toggle label bounds.",
+        ),
+        (
+            "memoryEntrySourceExcerptTestTag(index)",
+            "Approved-memory source review UI must expose stable expanded excerpt bounds.",
+        ),
+        (
             "memory_source_show_named",
             "Approved-memory source review UI must expose contextual accessibility labels.",
         ),
@@ -9566,9 +14063,21 @@ def no_device_quality_gate_guard_failures() -> list[str]:
     required_approved_memory_source_test_snippets = (
         "settingsMemoryRowsShowApprovedSourceMetadataWithoutFullTranscript",
         "settingsMemoryApprovedSourceMetadataLocalizesAcrossSupportedLanguages",
+        "settingsMemoryApprovedSourceMetadataStaysBoundedAtLargeFontAcrossSupportedLanguages",
+        "settingsMemoryApprovedSourceNarrowRootTestTag",
         "RuntimeMemoryEntrySource(",
         "Assistant: Third source should stay hidden.",
         "MEMORY_ENTRY_SOURCE_TEST_TAG",
+        "MEMORY_ENTRY_SOURCE_HEADER_TEST_TAG",
+        "MEMORY_ENTRY_SOURCE_ORIGIN_TEST_TAG",
+        "MEMORY_ENTRY_SOURCE_COUNT_TEST_TAG",
+        "MEMORY_ENTRY_SOURCE_RANGE_TEST_TAG",
+        "MEMORY_ENTRY_SOURCE_TOGGLE_TEST_TAG",
+        "MEMORY_ENTRY_SOURCE_TOGGLE_LABEL_TEST_TAG",
+        "assertBoundsInside(\"$languageTag approved memory source origin\", originBounds, headerBounds)",
+        "approved memory source origin should not overlap count",
+        "approved memory actions should stay below expanded approved source review metadata",
+        "memoryEntrySourceExcerptTestTag(2)",
     )
     for snippet in required_approved_memory_source_test_snippets:
         if snippet not in compose_test_text:
@@ -9643,6 +14152,10 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device quality gate must run the Android accepted-pairing incomplete relay fail-closed regression.",
         ),
         (
+            "RuntimeClientViewModelTest.acceptedPairingResultRejectsIncompleteP2pRouteInsteadOfDirectFallback",
+            "Default no-device quality gate must run the Android accepted-pairing incomplete P2P fail-closed regression.",
+        ),
+        (
             "RuntimeClientViewModelTest.acceptedPairingResultDropsQrDirectEndpointFromTrustedRuntimeStorage",
             "Default no-device quality gate must run the Android accepted-pairing direct endpoint trusted-storage cleanup regression.",
         ),
@@ -9671,8 +14184,12 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device quality gate must run the Android route UI stale last-known Compose regression.",
         ),
         (
-            "Android incomplete relay route material fails closed instead of falling back to direct endpoint",
+            "Android accepted-pairing incomplete relay route addendum",
             "Default no-device gate coverage summary must mention Android accepted-pairing incomplete relay fail-closed coverage.",
+        ),
+        (
+            "Android accepted-pairing incomplete P2P route addendum",
+            "Default no-device gate coverage summary must mention Android accepted-pairing incomplete P2P fail-closed coverage.",
         ),
         (
             "Android accepted pairing drops direct endpoint material before trusted runtime storage",
@@ -9727,6 +14244,10 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device quality gate must run the macOS client-auth domain-separated success regression.",
         ),
         (
+            "LocalRuntimeMessageRouterTests/testTrustedHelloIncludesVerifiableRuntimeProofWhenSignerIsAvailable",
+            "Default no-device quality gate must run the macOS trusted hello runtime-proof regression.",
+        ),
+        (
             "LocalRuntimeMessageRouterTests/testConnectionDidCloseClearsAuthenticatedSession",
             "Default no-device quality gate must run the macOS auth-session disconnect cleanup regression.",
         ),
@@ -9741,6 +14262,10 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         (
             "macOS superseded challenge nonce rejection",
             "Default no-device quality summary must mention macOS superseded challenge nonce rejection hardening.",
+        ),
+        (
+            "macOS trusted hello runtime proof addendum",
+            "Default no-device quality summary must mention macOS trusted hello runtime-proof coverage.",
         ),
         (
             "LocalRuntimeMessageRouterTests/testUnauthenticatedRuntimeCommandsRejectBeforeProtocolPayloadHandling",
@@ -9779,6 +14304,10 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device quality gate must run the macOS idle-timeout unload regression.",
         ),
         (
+            "AggregatingLlmBackendResidencyTests/testDoneEventClearsInFlightResidencyBeforeClientObservesCompletion",
+            "Default no-device quality gate must run the macOS model-residency foreground completion cleanup regression.",
+        ),
+        (
             "AggregatingLlmBackendResidencyTests/testManualUnloadClearsActiveResidentModelAndEmitsManualEvent",
             "Default no-device quality gate must run the macOS manual unload success regression.",
         ),
@@ -9795,8 +14324,36 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device quality gate must run the macOS unload-failure reporting regression.",
         ),
         (
+            "AggregatingLlmBackendResidencyTests/testUnknownUnqualifiedModelDoesNotFallbackToOllama",
+            "Default no-device quality gate must run the macOS unknown unqualified model fallback rejection regression.",
+        ),
+        (
+            "AggregatingLlmBackendResidencyTests/testQualifiedModelMustBeReportedByThatProvider",
+            "Default no-device quality gate must run the macOS qualified provider model routing rejection regression.",
+        ),
+        (
             "macOS model-switch unload, same-model unload suppression, idle-timeout unload, runtime-host-owned manual model unload, provider-specific unload-failure reporting, Ollama unload wire format, LM Studio unload wire format, and provider adapter structured unload-failure errors",
             "Default no-device quality summary must mention model-residency unload smoke coverage.",
+        ),
+        (
+            "model-residency unload behavior addendum",
+            "Default no-device quality summary must name model-residency unload behavior coverage as a distinct addendum.",
+        ),
+        (
+            "macOS model-residency foreground completion addendum",
+            "Default no-device quality summary must mention macOS model-residency foreground completion cleanup coverage.",
+        ),
+        (
+            "model-residency foreground completion cleanup addendum",
+            "Default no-device quality summary must name model-residency foreground completion cleanup coverage as a distinct addendum.",
+        ),
+        (
+            "macOS unknown unqualified model routing addendum",
+            "Default no-device quality summary must mention unknown unqualified model routing coverage.",
+        ),
+        (
+            "macOS qualified provider model routing rejection addendum",
+            "Default no-device quality summary must mention qualified provider model routing rejection coverage.",
         ),
         (
             "LocalRuntimeMessageRouterTests/testConnectionCloseCancelsActiveChatGenerationAndPersistsCancelledEvent",
@@ -9807,7 +14364,7 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate coverage summary must mention macOS connection-close generation cancellation.",
         ),
         (
-            "macOS QR-only pairing addendum: clean first-run Pairing hides Connection Recovery unless saved route diagnostics or a route-preparation issue exists",
+            "macOS QR-only pairing addendum: clean first-run Pairing hides Connection Recovery unless saved route diagnostics or a route-preparation issue exists, and does not expose setup only because automatic route preparation is unavailable",
             "Default no-device gate coverage summary must mention macOS clean first-run QR-only pairing.",
         ),
         (
@@ -9829,6 +14386,38 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         (
             "swift test --filter RelayServerCoreTests",
             "Default no-device quality gate must run the macOS relay line-framing regressions.",
+        ),
+        (
+            "RelayHandshakeTests/testServerLineFramingRequiresNewlineForRelayHandshake",
+            "Default no-device quality gate must run the exact relay handshake newline framing regression.",
+        ),
+        (
+            "RelayHandshakeTests/testServerLineFramingRequiresNewlineForAllocationRequest",
+            "Default no-device quality gate must run the exact relay allocation newline framing regression.",
+        ),
+        (
+            "RelayProbeTests/testServerLineFramingRequiresNewlineForProbeRequest",
+            "Default no-device quality gate must run the exact relay probe newline framing regression.",
+        ),
+        (
+            "RelayMatcherTests/testRuntimeWaitingProbeDoesNotConsumePendingRuntime",
+            "Default no-device quality gate must run the exact non-consuming relay readiness probe regression.",
+        ),
+        (
+            "RelayMatcherTests/testRuntimeWaitingProbeIgnoresWaitingClient",
+            "Default no-device quality gate must run the exact relay readiness runtime-only probe regression.",
+        ),
+        (
+            "relay control-line framing addendum",
+            "Default no-device gate coverage summary must mention exact relay control-line framing coverage.",
+        ),
+        (
+            "relay readiness runtime-only probe addendum",
+            "Default no-device gate coverage summary must mention runtime-only relay readiness coverage.",
+        ),
+        (
+            "Relay readiness requires a waiting runtime, not just any pending peer",
+            "Default no-device gate and docs must keep the runtime-only relay readiness invariant visible.",
         ),
         (
             "LocalRuntimeMessageRouterTests/testCompanionLogSanitizerRedactsProviderEndpointsAndSecrets",
@@ -9977,6 +14566,38 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         (
             "Android share-sheet import confirmation",
             "Default no-device gate coverage summary must mention Android share-sheet import confirmation coverage.",
+        ),
+        (
+            "ClientScreensNoDeviceComposeTest.sharedChatDraftImportSnackbarStaysBoundedAboveComposerAtLargeFontAcrossSupportedLanguages",
+            "Default no-device gate must run the Android share-sheet compact snackbar layout regression.",
+        ),
+        (
+            "Android share-sheet import compact snackbar layout",
+            "Default no-device gate coverage summary must mention Android share-sheet compact snackbar layout coverage.",
+        ),
+        (
+            "ClientScreensNoDeviceComposeTest.chatArchiveUndoSnackbarStaysBoundedAboveComposerAtLargeFontAcrossSupportedLanguages",
+            "Default no-device gate must run the Android archive undo compact snackbar layout regression.",
+        ),
+        (
+            "Android chat archive undo compact snackbar layout",
+            "Default no-device gate coverage summary must mention Android archive undo compact snackbar layout coverage.",
+        ),
+        (
+            "ClientScreensNoDeviceComposeTest.chatTopBarNewChatActionStaysBoundedAtLargeFontAcrossSupportedStates",
+            "Default no-device gate must run the Android chat top-bar New Chat compact layout regression.",
+        ),
+        (
+            "Android chat top-bar New Chat compact layout",
+            "Default no-device gate coverage summary must mention Android chat top-bar New Chat compact layout coverage.",
+        ),
+        (
+            "ClientScreensNoDeviceComposeTest.connectionStatusRouteNoticesStayBoundedAtLargeFontAcrossSupportedLanguages",
+            "Default no-device gate must run the Android Connection Status route notice compact layout regression.",
+        ),
+        (
+            "Android Connection Status route notice compact layout",
+            "Default no-device gate coverage summary must mention Android Connection Status route notice compact layout coverage.",
         ),
         (
             "Android explicit share-sheet MIME scope",
@@ -10219,8 +14840,16 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate must run the Android drawer previous-chat compact row layout regression.",
         ),
         (
+            "ClientScreensNoDeviceComposeTest.chatDrawerOverflowMenuActionsStayBoundedAtLargeFontAcrossSupportedLanguages",
+            "Default no-device gate must run the Android drawer overflow compact menu layout regression.",
+        ),
+        (
             "Android drawer chat row compact layout",
             "Default no-device gate coverage summary must mention Android drawer chat row compact layout.",
+        ),
+        (
+            "Android drawer overflow menu compact layout",
+            "Default no-device gate coverage summary must mention Android drawer overflow menu compact layout.",
         ),
         (
             "ClientScreensNoDeviceComposeTest.navigationDrawerChatSearchNoResultsStaysBoundedAtLargeFontAcrossSupportedLanguages",
@@ -10347,8 +14976,16 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate must run the Settings chat-history search refresh query regression.",
         ),
         (
+            "ClientScreensNoDeviceComposeTest.settingsChatHistorySearchRefreshHeaderStaysBoundedAtLargeFontAcrossSupportedLanguages",
+            "Default no-device gate must run the Android Settings chat-history search-refresh header compact layout regression.",
+        ),
+        (
             "Settings chat-history search refresh query forwarding",
             "Default no-device gate coverage summary must mention Settings chat-history search refresh query forwarding.",
+        ),
+        (
+            "Android Settings chat-history search-refresh header compact layout",
+            "Default no-device gate coverage summary must mention Android Settings chat-history search-refresh header compact layout.",
         ),
         (
             "Settings chat-history runtime search match metadata",
@@ -10395,8 +15032,16 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate must run the Android Settings auto-reconnect compact row layout regression.",
         ),
         (
+            "ClientScreensNoDeviceComposeTest.settingsDeveloperDiagnosticsToggleRowStaysBoundedAtLargeFontAcrossSupportedLanguages",
+            "Default no-device gate must run the Android Settings developer diagnostics toggle compact layout regression.",
+        ),
+        (
             "ClientScreensNoDeviceComposeTest.settingsEmbeddingModelRowsStayBoundedAtLargeFontAcrossSupportedLanguages",
             "Default no-device gate must run the Android Settings embedding model compact row layout regression.",
+        ),
+        (
+            "ClientScreensNoDeviceComposeTest.settingsScreenEmbeddingModelRowsStayBoundedWhenExpandedAtLargeFontAcrossSupportedLanguages",
+            "Default no-device gate must run the full SettingsScreen embedding model compact layout regression.",
         ),
         (
             "ClientScreensNoDeviceComposeTest.settingsChatHistoryRowActionsStayInsideNarrowLargeFontRowsAcrossSupportedLanguages",
@@ -10415,6 +15060,10 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate must run the Android discovered trusted-route row compact layout regression.",
         ),
         (
+            "ClientScreensNoDeviceComposeTest.settingsDiscoveryActionsStayBoundedAtLargeFontAcrossSupportedLanguages",
+            "Default no-device gate must run the Android Settings discovery actions compact layout regression.",
+        ),
+        (
             "ClientScreensNoDeviceComposeTest.settingsMemorySummaryDraftRowsStayBoundedAtLargeFontAcrossSupportedLanguages",
             "Default no-device gate must run the Android memory summary draft compact review layout regression.",
         ),
@@ -10425,6 +15074,18 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         (
             "ClientScreensNoDeviceComposeTest.settingsMemoryApprovedSourceMetadataLocalizesAcrossSupportedLanguages",
             "Default no-device gate must run the approved-memory source review localization regression.",
+        ),
+        (
+            "ClientScreensNoDeviceComposeTest.settingsMemoryApprovedSourceMetadataStaysBoundedAtLargeFontAcrossSupportedLanguages",
+            "Default no-device gate must run the Android Settings memory approved-source compact layout regression.",
+        ),
+        (
+            "ClientScreensNoDeviceComposeTest.settingsMemoryAddControlsStayBoundedAtLargeFontAcrossSupportedLanguages",
+            "Default no-device gate must run the Android Settings memory add controls compact layout regression.",
+        ),
+        (
+            "ClientScreensNoDeviceComposeTest.settingsMemoryEmptyStatesStayBoundedAtLargeFontAcrossSupportedLanguages",
+            "Default no-device gate must run the Android Settings memory empty-state compact layout regression.",
         ),
         (
             "ClientScreensNoDeviceComposeTest.settingsMemorySummaryLocalizesSavedAndPausedCountsAcrossSupportedLanguages",
@@ -10443,12 +15104,32 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate coverage summary must mention Android Settings memory compact long-content actions layout.",
         ),
         (
+            "Android Settings memory approved-source compact layout",
+            "Default no-device gate coverage summary must mention Android Settings memory approved-source compact layout.",
+        ),
+        (
+            "Android Settings memory add controls compact layout",
+            "Default no-device gate coverage summary must mention Android Settings memory add controls compact layout.",
+        ),
+        (
+            "Android Settings memory empty-state compact layout",
+            "Default no-device gate coverage summary must mention Android Settings memory empty-state compact layout.",
+        ),
+        (
             "Android Settings embedding model compact row layout",
             "Default no-device gate coverage summary must mention Android Settings embedding model compact row layout.",
         ),
         (
+            "Android SettingsScreen embedding model compact row layout",
+            "Default no-device gate coverage summary must mention Android SettingsScreen embedding model compact row layout.",
+        ),
+        (
             "Android Settings auto-reconnect compact row layout",
             "Default no-device gate coverage summary must mention Android Settings auto-reconnect compact row layout.",
+        ),
+        (
+            "Android Settings developer diagnostics toggle compact layout",
+            "Default no-device gate coverage summary must mention Android Settings developer diagnostics toggle compact layout.",
         ),
         (
             "Android Settings chat-history compact row actions",
@@ -10511,6 +15192,30 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate coverage summary must mention Android chat route availability notice compact layout.",
         ),
         (
+            "ClientScreensNoDeviceComposeTest.chatScreenRouteRefreshSavedNoticeStaysBoundedAboveComposerAtLargeFontAcrossSupportedLanguages",
+            "Default no-device gate must run the Android route-refresh saved notice compact layout regression.",
+        ),
+        (
+            "Android route-refresh saved notice compact layout",
+            "Default no-device gate coverage summary must mention Android route-refresh saved notice compact layout.",
+        ),
+        (
+            "ClientScreensNoDeviceComposeTest.settingsRouteRefreshSavedNoticeStaysBoundedAtLargeFontAcrossSupportedLanguages",
+            "Default no-device gate must run the Android Settings route-refresh saved notice compact layout regression.",
+        ),
+        (
+            "Android Settings route-refresh saved notice compact layout",
+            "Default no-device gate coverage summary must mention Android Settings route-refresh saved notice compact layout.",
+        ),
+        (
+            "Android Settings discovery actions compact layout",
+            "Default no-device gate coverage summary must mention Android Settings discovery actions compact layout.",
+        ),
+        (
+            "Android QR recovery diagnostics compact layout",
+            "Default no-device gate coverage summary must mention Android QR recovery diagnostics compact layout.",
+        ),
+        (
             "ClientScreensNoDeviceComposeTest.chatScreenBackendUnavailableBannerStaysBoundedAtLargeFontAcrossSupportedLanguages",
             "Default no-device gate must run the Android backend readiness banner bounded layout regression.",
         ),
@@ -10529,6 +15234,10 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         (
             "ClientScreensNoDeviceComposeTest.settingsQrPairingPanelStaysBoundedAtLargeFontAcrossSupportedLanguages",
             "Default no-device gate must run the Android Settings QR pairing panel compact first-run layout regression.",
+        ),
+        (
+            "ClientScreensNoDeviceComposeTest.settingsPendingPairingRouteStatusStaysBoundedAtLargeFontAcrossSupportedLanguages",
+            "Default no-device gate must run the Android Settings pending pairing route compact layout regression.",
         ),
         (
             "ClientScreensNoDeviceComposeTest.connectionStatusProviderRowsStayBoundedAtLargeFontAcrossSupportedLanguages",
@@ -10553,6 +15262,10 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         (
             "Android Settings QR pairing panel compact first-run layout",
             "Default no-device gate coverage summary must mention Android Settings QR pairing panel compact first-run layout.",
+        ),
+        (
+            "Android Settings pending pairing route compact layout",
+            "Default no-device gate coverage summary must mention Android Settings pending pairing route compact layout.",
         ),
         (
             "Android provider status compact diagnostic layout",
@@ -10589,6 +15302,14 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         (
             "Android uninstalled selected model install-or-choose guidance",
             "Default no-device gate coverage summary must mention Android uninstalled selected model install-or-choose guidance.",
+        ),
+        (
+            "ClientScreensNoDeviceComposeTest.chatEmptyStatesStayBoundedAtLargeFontAcrossSupportedLanguages",
+            "Default no-device gate must run the Android chat empty-state compact layout regression.",
+        ),
+        (
+            "Android chat empty-state compact layout",
+            "Default no-device gate coverage summary must mention Android chat empty-state compact layout.",
         ),
         (
             "Android Settings QR scan disabled reason",
@@ -10773,6 +15494,14 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         (
             "Android assistant identity marker",
             "Default no-device gate coverage summary must mention Android assistant identity marker coverage.",
+        ),
+        (
+            "ClientScreensNoDeviceComposeTest.chatScreenAssistantIdentityMarkerStaysLegibleAndSeparateAtLargeFontAcrossSupportedLanguages",
+            "Default no-device gate must run the Android assistant identity marker compact layout regression.",
+        ),
+        (
+            "Android assistant identity marker compact layout",
+            "Default no-device gate coverage summary must mention Android assistant identity marker compact layout coverage.",
         ),
         (
             "Android message copy accessibility labels",
@@ -11057,6 +15786,14 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         (
             "Android Settings private model access live-region summary",
             "Default no-device gate coverage summary must mention Android Settings private model access live-region summary.",
+        ),
+        (
+            "ClientScreensNoDeviceComposeTest.settingsCompanionOnlyPanelStaysBoundedAtLargeFontAcrossSupportedLanguages",
+            "Default no-device gate must run the Android Settings companion-only compact layout regression.",
+        ),
+        (
+            "Android Settings companion-only compact layout",
+            "Default no-device gate coverage summary must mention Android Settings companion-only compact layout.",
         ),
         (
             "Settings discovered route contextual action accessibility",
@@ -11611,6 +16348,18 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate must run the Android chat top-bar compact long model-name regression.",
         ),
         (
+            "ClientScreensNoDeviceComposeTest.chatTopBarActiveTitleStaysBoundedAtLargeFontAcrossSupportedLanguages",
+            "Default no-device gate must run the Android chat top-bar active-title compact layout regression.",
+        ),
+        (
+            "ClientScreensNoDeviceComposeTest.chatTopBarModelPickerStreamingDisabledStateStaysBoundedAtLargeFontAcrossSupportedLanguages",
+            "Default no-device gate must run the Android chat top-bar streaming-disabled model picker compact layout regression.",
+        ),
+        (
+            "ClientScreensNoDeviceComposeTest.chatTopBarModelPickerRowsStayBoundedAtLargeFontAcrossSupportedLanguages",
+            "Default no-device gate must run the Android model picker general row compact layout regression.",
+        ),
+        (
             "ClientScreensNoDeviceComposeTest.chatTopBarModelPickerVisionRecoveryRowsStayBoundedAtLargeFontOnNarrowSurface",
             "Default no-device gate must run the Android model picker vision recovery compact row layout regression.",
         ),
@@ -11629,6 +16378,18 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         (
             "Android chat top-bar compact long model name",
             "Default no-device gate coverage summary must mention Android chat top-bar compact long model-name coverage.",
+        ),
+        (
+            "Android chat top-bar active-title compact layout",
+            "Default no-device gate coverage summary must mention Android chat top-bar active-title compact layout.",
+        ),
+        (
+            "Android chat top-bar streaming-disabled model picker compact layout",
+            "Default no-device gate coverage summary must mention Android chat top-bar streaming-disabled model picker compact layout.",
+        ),
+        (
+            "Android model picker general row compact layout",
+            "Default no-device gate coverage summary must mention Android model picker general row compact layout.",
         ),
         (
             "Android model picker vision recovery compact row layout",
@@ -11691,12 +16452,28 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate must run the restored-QR bootstrap lease persistence regression.",
         ),
         (
+            "LocalRuntimeMessageRouterTests/testCompanionAppModelAcceptsAdvancingSavedBootstrapLeaseForStableRelayID",
+            "Default no-device gate must run the advancing saved bootstrap lease regression.",
+        ),
+        (
+            "LocalRuntimeMessageRouterTests/testCompanionAppModelRejectsNonAdvancingSavedBootstrapLeaseForStableRelayID",
+            "Default no-device gate must run the non-advancing saved bootstrap lease rejection regression.",
+        ),
+        (
             "LocalRuntimeMessageRouterTests/testCompanionAppModelDoesNotReuseSavedLeaseForDifferentRelayRoute",
             "Default no-device gate must run the stale saved relay lease route-binding regression.",
         ),
         (
             "LocalRuntimeMessageRouterTests/testCompanionAppModelRegeneratesBootstrapQRCodeWithExpiredSavedLease",
             "Default no-device gate must run the expired bootstrap lease QR regeneration regression.",
+        ),
+        (
+            "LocalRuntimeMessageRouterTests/testCompanionAppModelReplacesReadyStaleRelayBeforeGeneratingAllocatedRouteQRCode",
+            "Default no-device gate must run the ready stale GUI relay QR replacement regression.",
+        ),
+        (
+            "LocalRuntimeMessageRouterTests/testCompanionAppModelRegeneratesGUIAllocatedQRCodeWithExpiredLease",
+            "Default no-device gate must run the expired GUI relay lease QR regeneration regression.",
         ),
         (
             "LocalRuntimeMessageRouterTests/testCompanionAppModelRegeneratesGUIAllocatedQRCodeWithNearExpiredLease",
@@ -11731,12 +16508,108 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate coverage summary must mention near-expiry relay lease QR renewal.",
         ),
         (
+            "macOS stale GUI relay QR renewal addendum",
+            "Default no-device gate coverage summary must mention stale or expired GUI relay QR renewal.",
+        ),
+        (
+            "ready stale or expired GUI-allocated relay leases are replaced with fresh relay id, secret, expiry, and nonce before QR generation",
+            "Default no-device gate coverage summary must describe the stale GUI relay QR renewal contract.",
+        ),
+        (
+            "macOS runtime host accepts same-relay bootstrap lease renewal only when expiry advances and nonce changes",
+            "Default no-device gate coverage summary must mention macOS remote QR lease monotonicity.",
+        ),
+        (
             "macOS remote QR lease route binding",
             "Default no-device gate coverage summary must mention macOS saved relay lease route-binding coverage.",
         ),
         (
             "RuntimeClientViewModelTest.routeRefreshQrWithoutPublicKeyCanRefreshPinnedRuntimeRelayRoute",
             "Default no-device gate must run the Android QR route-refresh optional public-key regression.",
+        ),
+        (
+            "Android route-refresh QR optional-public-key relay update addendum",
+            "Default no-device gate coverage summary must mention Android QR route-refresh optional public-key relay coverage.",
+        ),
+        (
+            "RuntimeClientViewModelTest.routeRefreshQrWithoutPublicKeyCanRefreshPinnedRuntimeP2pRendezvousRoute",
+            "Default no-device gate must run the Android QR route-refresh optional public-key P2P regression.",
+        ),
+        (
+            "RuntimeClientViewModelTest.routeRefreshQrAddsRelayRouteToExistingTrustedRuntime",
+            "Default no-device gate must run the Android route-refresh QR relay add-route regression.",
+        ),
+        (
+            "Android route-refresh QR relay add-route addendum",
+            "Default no-device gate coverage summary must mention Android route-refresh QR relay add-route.",
+        ),
+        (
+            "RuntimeClientViewModelTest.routeRefreshQrDropsTrustedEndpointFallbackWhenRelayRouteIsSaved",
+            "Default no-device gate must run the Android route-refresh QR fixed-endpoint fallback removal regression.",
+        ),
+        (
+            "Android route-refresh QR fixed-endpoint fallback removal addendum",
+            "Default no-device gate coverage summary must mention Android route-refresh QR fixed-endpoint fallback removal.",
+        ),
+        (
+            "RuntimeClientViewModelTest.routeRefreshQrRejectsDirectRouteForExistingTrustedRuntime",
+            "Default no-device gate must run the Android route-refresh QR direct-only rejection regression.",
+        ),
+        (
+            "Android route-refresh QR direct-only rejection addendum",
+            "Default no-device gate coverage summary must mention Android route-refresh QR direct-only rejection.",
+        ),
+        (
+            "RuntimeClientViewModelTest.routeRefreshQrCanRotateRouteTokenForPinnedRuntimeIdentity",
+            "Default no-device gate must run the Android route-refresh QR route-token rotation regression.",
+        ),
+        (
+            "Android route-refresh QR route-token rotation addendum",
+            "Default no-device gate coverage summary must mention Android route-refresh QR route-token rotation.",
+        ),
+        (
+            "RuntimeClientViewModelTest.routeRefreshQrRejectsUntrustedOrMismatchedRuntimeIdentity",
+            "Default no-device gate must run the Android route-refresh QR pinned-identity rejection regression.",
+        ),
+        (
+            "Android route-refresh QR pinned-identity rejection addendum",
+            "Default no-device gate coverage summary must mention Android route-refresh QR pinned-identity rejection.",
+        ),
+        (
+            "RuntimeClientViewModelTest.expiredRouteRefreshQrIsNotSavedAsTrustedRuntimeRoute",
+            "Default no-device gate must run the Android expired route-refresh QR rejection regression.",
+        ),
+        (
+            "RuntimeClientViewModelTest.routeRefreshQrRejectsRelayRouteWithoutSecret",
+            "Default no-device gate must run the Android incomplete route-refresh QR relay-secret rejection regression.",
+        ),
+        (
+            "Android route-refresh QR expired-or-incomplete relay rejection addendum",
+            "Default no-device gate coverage summary must mention Android route-refresh QR expired-or-incomplete relay rejection.",
+        ),
+        (
+            "RuntimeClientViewModelTest.newPairingQrPreemptsActiveUntrustedConnection",
+            "Default no-device gate must run the Android new-QR active untrusted connection preemption regression.",
+        ),
+        (
+            "RuntimeClientViewModelTest.newPairingQrPreemptsActiveDifferentTrustedRuntimeConnection",
+            "Default no-device gate must run the Android new-QR different-runtime preemption regression.",
+        ),
+        (
+            "RuntimeClientViewModelTest.sameRuntimePairingQrDoesNotPreemptActiveTrustedConnection",
+            "Default no-device gate must run the Android same-runtime QR non-preemption regression.",
+        ),
+        (
+            "AppNavigationTest.pairingQrRawValueAcceptsCompactRelayPayloadsFromScanner",
+            "Default no-device gate must run the Android scanner compact relay QR raw-value regression.",
+        ),
+        (
+            "AppNavigationTest.pairingQrScannerClassifiesRawValuesBeforeConsumingCameraResult",
+            "Default no-device gate must run the Android scanner raw-value classification regression.",
+        ),
+        (
+            "RuntimeClientViewModelTest.productPairingQrParserRejectsIdentityOnlyQrWhenRemoteRouteIsRequired",
+            "Default no-device gate must run the Android product QR identity-only rejection parser regression.",
         ),
         (
             "RuntimeClientViewModelTest.trustRuntimeFromPairingQrRejectsIdentityOnlyQrInNormalScanPath",
@@ -11783,16 +16656,48 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate must run the Android relay probe response parser regression.",
         ),
         (
+            "RuntimeClientViewModelTest.duplicateCompactRelayQrScanSendsSinglePairingRequestOnActiveRelayConnection",
+            "Default no-device gate must run the duplicate compact relay QR idempotency regression.",
+        ),
+        (
+            "RuntimeRelayTcpClientTest.relayConnectTimesOutWhenReadyLineNeverArrives",
+            "Default no-device gate must run the Android relay TCP ready-line timeout regression.",
+        ),
+        (
             "RuntimeRelayTcpClientTest.relayConnectFailsWhenReadyLineRejectsRoute",
             "Default no-device gate must run the Android relay TCP handshake rejection regression.",
+        ),
+        (
+            "RuntimeRelayTcpClientTest.relayFrameCryptorBindsRouteNonceIntoKey",
+            "Default no-device gate must run the Android relay frame cryptor route-nonce key binding regression.",
+        ),
+        (
+            "RuntimeRelayTcpClientTest.relayFrameCryptorMatchesNonceBoundSharedCiphertextVectors",
+            "Default no-device gate must run the Android relay frame cryptor nonce-bound vector regression.",
+        ),
+        (
+            "Android relay frame cryptor nonce-bound vector addendum",
+            "Default no-device gate coverage summary must mention Android relay frame cryptor nonce-bound vector coverage.",
+        ),
+        (
+            "Android relay TCP ready timeout addendum",
+            "Default no-device gate coverage summary must mention Android relay TCP ready-line timeout coverage.",
         ),
         (
             "RuntimeRelayTcpClientTest.relayChannelEncryptsSentFramesAndDecryptsRuntimeResponses",
             "Default no-device gate must run the Android relay TCP real-channel ciphertext send/receive regression.",
         ),
         (
+            "RuntimeRelayTcpClientTest.relayClientSerializesEncryptionWithConcurrentSends",
+            "Default no-device gate must run the Android relay TCP concurrent encrypted-send regression.",
+        ),
+        (
             "Android RuntimeRelayTcpClient encrypts sent frame bodies and decrypts nonce-bound runtime responses on a real socket channel",
             "Default no-device gate coverage summary must mention Android relay TCP real-channel ciphertext coverage.",
+        ),
+        (
+            "Android relay concurrent encrypted send serialization addendum",
+            "Default no-device gate coverage summary must mention Android relay concurrent encrypted send serialization coverage.",
         ),
         (
             "RuntimeClientViewModelTest.trustedRelayConnectionFailureKeepsStoredRelayAndStopsAutoReconnectUntilUserRetries",
@@ -11807,6 +16712,10 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate must run the trusted relay reconnect discovery-suppression regression.",
         ),
         (
+            "RuntimeClientViewModelTest.trustedRuntimeRestoreDoesNotStartDiscoveryWhenP2pRouteIsAvailable",
+            "Default no-device gate must run the trusted P2P reconnect discovery-suppression regression.",
+        ),
+        (
             "RuntimeClientViewModelTest.runtimeMessagesDoNotResurrectSessionMissingFromLatestRuntimeSummary",
             "Default no-device gate must run the stale runtime-owned message sync regression.",
         ),
@@ -11815,12 +16724,44 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate must run the runtime lifecycle local-session collision regression.",
         ),
         (
+            "RuntimeClientViewModelTest.routeRefreshQrAfterAcceptedRelayPairingDoesNotOpenDuplicateRelayConnection",
+            "Default no-device gate must run the route-refresh QR duplicate relay connection regression.",
+        ),
+        (
+            "RuntimeClientViewModelTest.pendingPairingQrWithoutRemoteRouteDoesNotFallbackToSavedRelayRoute",
+            "Default no-device gate must run the pending route-less QR no saved relay fallback regression.",
+        ),
+        (
+            "RuntimeClientViewModelTest.diagnosticIdentityOnlyQrPlanStartsDiscoveryAndWaitsForRouteWhenRemoteRouteIsNotRequired",
+            "Default no-device gate must run the diagnostic identity-only discovery-wait regression.",
+        ),
+        (
             "Android QR route refresh public-key optional binding",
             "Default no-device gate coverage summary must mention Android QR route-refresh optional public-key coverage.",
         ),
         (
+            "Android relay QR idempotency addendum",
+            "Default no-device gate coverage summary must mention Android relay QR idempotency coverage.",
+        ),
+        (
+            "Android route-refresh QR active-connection reuse addendum",
+            "Default no-device gate coverage summary must mention Android route-refresh QR active-connection reuse coverage.",
+        ),
+        (
             "Android product QR remote-route requirement",
             "Default no-device gate coverage summary must mention Android product QR remote-route requirement coverage.",
+        ),
+        (
+            "Android pending route-less QR no saved relay fallback addendum",
+            "Default no-device gate coverage summary must mention pending route-less QR no saved relay fallback coverage.",
+        ),
+        (
+            "Android diagnostic identity-only discovery wait addendum",
+            "Default no-device gate coverage summary must mention diagnostic identity-only discovery-wait coverage.",
+        ),
+        (
+            "Android trusted P2P restore discovery-suppression addendum",
+            "Default no-device gate coverage summary must mention trusted P2P restore discovery-suppression coverage.",
         ),
         (
             "QR production relay bootstrap verifier",
@@ -11829,6 +16770,22 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         (
             "Android product QR bootstrap addendum",
             "Default no-device gate coverage summary must mention Android product QR bootstrap verification.",
+        ),
+        (
+            "Android product QR scanner policy addendum",
+            "Default no-device gate coverage summary must mention Android product QR scanner route-material policy.",
+        ),
+        (
+            "Android QR pairing preemption addendum",
+            "Default no-device gate coverage summary must mention Android QR pairing preemption coverage.",
+        ),
+        (
+            "Android remote route identity mismatch QR recovery",
+            "Default no-device gate coverage summary must mention Android remote route identity mismatch QR recovery.",
+        ),
+        (
+            "Android failed P2P route without saved relay fallback scans a fresh QR with relay or private overlay details",
+            "Default no-device gate coverage summary must mention Android failed P2P route QR recovery.",
         ),
         (
             "Android streaming chat input mutation guard",
@@ -11974,6 +16931,31 @@ def no_device_quality_gate_guard_failures() -> list[str]:
     for snippet, guidance in required_snippets:
         if snippet not in gate_text:
             failures.append(f"{gate_path.relative_to(ROOT)}: {guidance}")
+    required_stale_gui_qr_doc_snippets = {
+        docs_progress_path: (
+            "macOS Stale GUI Relay QR Renewal No-Device Gate",
+            "testCompanionAppModelReplacesReadyStaleRelayBeforeGeneratingAllocatedRouteQRCode",
+            "testCompanionAppModelRegeneratesGUIAllocatedQRCodeWithExpiredLease",
+            "focused SwiftPM regressions, stale/fresh relay material assertions, default no-device summary phrase, current progress/QA evidence, and roadmap coverage",
+        ),
+        docs_qa_evidence_path: (
+            "macOS Stale GUI Relay QR Renewal No-Device Gate",
+            "Focused evidence: `swift test --filter 'LocalRuntimeMessageRouterTests/testCompanionAppModelReplacesReadyStaleRelayBeforeGeneratingAllocatedRouteQRCode|LocalRuntimeMessageRouterTests/testCompanionAppModelRegeneratesGUIAllocatedQRCodeWithExpiredLease'` passed from the root SwiftPM package.",
+            "Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring the focused SwiftPM regressions, stale/fresh relay material assertions, default no-device summary phrase, current progress/QA evidence, and roadmap coverage.",
+            "ready-but-stale or expired GUI-allocated relay leases are replaced with fresh `relay_id`, `relay_secret`, `relay_expires_at`, and `relay_nonce` before QR payload generation.",
+        ),
+        docs_roadmap_path: (
+            "macOS stale GUI relay QR renewal",
+        ),
+    }
+    for path, snippets in required_stale_gui_qr_doc_snippets.items():
+        text = path.read_text(encoding="utf-8", errors="replace")
+        for snippet in snippets:
+            if snippet not in text:
+                failures.append(
+                    f"{path.relative_to(ROOT)}: Missing macOS stale GUI relay QR renewal "
+                    f"evidence snippet {snippet!r}."
+                )
 
     return failures
 
@@ -12325,6 +17307,89 @@ def runtime_auth_domain_separation_guard_failures() -> list[str]:
             f"{no_device_path.relative_to(ROOT)}: default no-device gate must report RuntimeDevServer relay "
             "unauthenticated command and untrusted hello smoke coverage."
         )
+    for snippet in (
+        "testUntrustedHelloReturnsPairingRequired",
+        "MessageType.hello",
+        "hello-untrusted",
+        "unknown-device",
+        '"pairing_required"',
+        "retryable",
+        ".bool(false)",
+    ):
+        if snippet not in path_texts[macos_router_test_path]:
+            failures.append(
+                f"{macos_router_test_path.relative_to(ROOT)}: LocalRuntimeMessageRouter untrusted-client "
+                f"unit regression must reject unknown-device hello without retry; missing {snippet}."
+            )
+    for snippet in (
+        "LocalRuntimeMessageRouterTests/testUntrustedHelloReturnsPairingRequired",
+        "untrusted-client rejection addendum",
+        "macOS untrusted hello unit rejection addendum",
+    ):
+        if snippet not in path_texts[no_device_path]:
+            failures.append(
+                f"{no_device_path.relative_to(ROOT)}: default no-device gate must directly run and report "
+                f"the LocalRuntimeMessageRouter untrusted-client rejection unit coverage; missing {snippet}."
+            )
+    for path, text in (
+        (progress_path, path_texts[progress_path]),
+        (qa_evidence_path, path_texts[qa_evidence_path]),
+    ):
+        for snippet in (
+            "macOS Untrusted Hello Unit Rejection No-Device Gate",
+            "LocalRuntimeMessageRouterTests/testUntrustedHelloReturnsPairingRequired",
+            "untrusted-client rejection addendum",
+            "macOS untrusted hello unit rejection addendum",
+            "focused SwiftPM regression, unknown-device hello payload, non-retryable pairing_required assertion, default gate entry, exact summary phrase, current QA evidence, and roadmap coverage",
+            "pairing_required",
+            "physical Android QR scan",
+        ):
+            if snippet not in text:
+                failures.append(
+                    f"{path.relative_to(ROOT)}: Docs must record no-device untrusted-client unit "
+                    f"rejection coverage and physical-device caveats; missing {snippet}."
+                )
+    for snippet in (
+        "testRepeatedInvalidPairingAttemptsInvalidateActiveSession",
+        "testExpiredAndNoActivePairingRequestsReturnStructuredRejections",
+        "PairingCoordinator(maxFailedAttempts: 2)",
+        "PairingRejectionReason.attemptsExceeded.rawValue",
+        "PairingRejectionReason.noActiveSession.rawValue",
+        "PairingRejectionReason.expired.rawValue",
+        "trustedDevices, []",
+    ):
+        if snippet not in path_texts[macos_router_test_path]:
+            failures.append(
+                f"{macos_router_test_path.relative_to(ROOT)}: LocalRuntimeMessageRouter pairing-abuse "
+                f"unit regressions must prove invalid, expired, and inactive pairing requests fail closed; missing {snippet}."
+            )
+    for snippet in (
+        "LocalRuntimeMessageRouterTests/testRepeatedInvalidPairingAttemptsInvalidateActiveSession",
+        "LocalRuntimeMessageRouterTests/testExpiredAndNoActivePairingRequestsReturnStructuredRejections",
+        "macOS pairing abuse structured rejection addendum",
+    ):
+        if snippet not in path_texts[no_device_path]:
+            failures.append(
+                f"{no_device_path.relative_to(ROOT)}: default no-device gate must directly run and report "
+                f"the macOS pairing-abuse structured rejection coverage; missing {snippet}."
+            )
+    for path, text in (
+        (progress_path, path_texts[progress_path]),
+        (qa_evidence_path, path_texts[qa_evidence_path]),
+    ):
+        for snippet in (
+            "macOS Pairing Abuse Structured Rejection No-Device Gate",
+            "LocalRuntimeMessageRouterTests/testRepeatedInvalidPairingAttemptsInvalidateActiveSession",
+            "LocalRuntimeMessageRouterTests/testExpiredAndNoActivePairingRequestsReturnStructuredRejections",
+            "macOS pairing abuse structured rejection addendum",
+            "pairing_required",
+            "physical Android QR scan",
+        ):
+            if snippet not in text:
+                failures.append(
+                    f"{path.relative_to(ROOT)}: Docs must record no-device macOS pairing-abuse "
+                    f"structured rejection coverage and physical-device caveats; missing {snippet}."
+                )
     for snippet in (
         "rawNonceSignature",
         "runRawNonceAuthRejectionCheck",
@@ -13709,8 +18774,13 @@ def route_refresh_relay_scope_guard_failures() -> list[str]:
     macos_router_path = ROOT / "apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift"
     macos_test_path = ROOT / "apps/macos/CompanionCore/Tests/LocalRuntimeMessageRouterTests.swift"
     runtime_dev_server_path = ROOT / "apps/macos/RuntimeDevServer/Sources/RuntimeDevServer.swift"
+    relay_peer_client_path = ROOT / "apps/macos/Transport/Sources/RelayPeerClient.swift"
+    relay_peer_client_test_path = ROOT / "apps/macos/Transport/Tests/RelayPeerClientTests.swift"
     runtime_mock_smoke_path = ROOT / "script/runtime_authenticated_mock_smoke.swift"
     no_device_path = ROOT / "script/check_no_device_quality.sh"
+    progress_path = ROOT / "docs/progress.md"
+    qa_evidence_path = ROOT / "docs/qa-evidence.md"
+    roadmap_path = ROOT / "docs/roadmap.md"
 
     for path in (
         protocol_schema_path,
@@ -13721,8 +18791,13 @@ def route_refresh_relay_scope_guard_failures() -> list[str]:
         macos_router_path,
         macos_test_path,
         runtime_dev_server_path,
+        relay_peer_client_path,
+        relay_peer_client_test_path,
         runtime_mock_smoke_path,
         no_device_path,
+        progress_path,
+        qa_evidence_path,
+        roadmap_path,
     ):
         if not path.exists():
             failures.append(f"{path.relative_to(ROOT)} is missing for route.refresh relay-scope guard.")
@@ -13736,8 +18811,13 @@ def route_refresh_relay_scope_guard_failures() -> list[str]:
     macos_router_text = macos_router_path.read_text(encoding="utf-8", errors="replace")
     macos_test_text = macos_test_path.read_text(encoding="utf-8", errors="replace")
     runtime_dev_server_text = runtime_dev_server_path.read_text(encoding="utf-8", errors="replace")
+    relay_peer_client_text = relay_peer_client_path.read_text(encoding="utf-8", errors="replace")
+    relay_peer_client_test_text = relay_peer_client_test_path.read_text(encoding="utf-8", errors="replace")
     runtime_mock_smoke_text = runtime_mock_smoke_path.read_text(encoding="utf-8", errors="replace")
     no_device_text = no_device_path.read_text(encoding="utf-8", errors="replace")
+    progress_text = progress_path.read_text(encoding="utf-8", errors="replace")
+    qa_evidence_text = qa_evidence_path.read_text(encoding="utf-8", errors="replace")
+    roadmap_text = roadmap_path.read_text(encoding="utf-8", errors="replace")
 
     for snippet in (
         '"p2p_class"',
@@ -13790,6 +18870,10 @@ def route_refresh_relay_scope_guard_failures() -> list[str]:
         "routeRefreshPayloadAllowsStableRelayIdAndSecretWithFreshNonceAndExpiry",
         "routeRefreshPayloadRejectsReusedRelayNonce",
         "routeRefreshPayloadRejectsNonAdvancingRelayExpiry",
+        "runtimeRouteRefreshLeaseDelayUsesRenewalWindow",
+        "runtimeRouteRefreshRetryDelayStaysInsideActiveLease",
+        "ROUTE_REFRESH_LEASE_MIN_DELAY_MS",
+        "ROUTE_REFRESH_RETRY_DELAY_MS",
         "authenticatedTrustedRelayRuntimeRetriesRouteRefreshWhenRuntimeReturnsReusedRelayNonce",
         "authenticatedTrustedRelayRuntimeRetriesRouteRefreshWhenRuntimeReturnsNonAdvancingRelayExpiry",
         "routeRefreshPayloadAddsFreshP2pRendezvousRouteToCurrentTrustedRuntime",
@@ -13848,21 +18932,346 @@ def route_refresh_relay_scope_guard_failures() -> list[str]:
         "testRouteRefreshAllowsPrivateOverlayAndUsbReverseScopedRelayMaterial",
         "testRouteRefreshReturnsFreshP2PRendezvousMaterialFromRuntimeProvider",
         "testRouteRefreshRejectsMalformedP2PRendezvousMaterialFromRuntimeProvider",
+        "testRouteRefreshFailureRedactsRelaySecretsAndProviderEndpoints",
         'relayScope: "public"',
         'routeRefreshResult(relayHost: "127.0.0.1", relayScope: "remote")',
         'routeRefreshResult(relayHost: "100.64.1.10", relayScope: "private_overlay")',
         'routeRefreshResult(relayHost: "127.0.0.1", relayScope: "usb_reverse")',
         'XCTAssertNil(message?.payload["relay_scope"])',
+        'XCTAssertFalse(payloadDescription.contains("relay-secret-1"))',
+        'XCTAssertFalse(payloadDescription.contains("provider.example.test"))',
+        'XCTAssertFalse(payloadDescription.contains("127.0.0.1"))',
     ):
         if snippet not in macos_test_text:
             failures.append(
                 f"{macos_test_path.relative_to(ROOT)}: Missing macOS route.refresh relay_scope "
                 f"fail-closed validation regression {snippet}."
             )
+    required_macos_route_refresh_failure_redaction_snippets = (
+        (
+            no_device_text,
+            no_device_path,
+            "LocalRuntimeMessageRouterTests/testRouteRefreshFailureRedactsRelaySecretsAndProviderEndpoints",
+            "Default no-device gate must run the macOS route.refresh failure redaction regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "macOS route.refresh failure redaction addendum",
+            "Default no-device gate summary must mention macOS route.refresh failure redaction coverage.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "route.refresh failures return fixed retryable recovery copy without relay secrets, route tokens, provider URLs, or backend endpoints",
+            "Default no-device gate summary must describe the fixed-copy no-leak route.refresh failure contract.",
+        ),
+        (
+            progress_text,
+            progress_path,
+            "focused SwiftPM regression, raw sensitive marker assertions, fixed retryable error copy, default no-device summary phrase, current progress/QA evidence, and roadmap coverage",
+            "Progress docs must record the macOS route.refresh failure redaction no-device gate.",
+        ),
+        (
+            qa_evidence_text,
+            qa_evidence_path,
+            "Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring the focused SwiftPM regression, raw sensitive marker assertions, fixed retryable error copy, default no-device summary phrase, current progress/QA evidence, and roadmap coverage.",
+            "QA evidence must record the macOS route.refresh failure redaction no-device gate.",
+        ),
+        (
+            roadmap_text,
+            roadmap_path,
+            "macOS route.refresh failure redaction",
+            "Roadmap smoke coverage queue must name macOS route.refresh failure redaction coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_macos_route_refresh_failure_redaction_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_authenticated_relay_route_refresh_schedule_retry_snippets = (
+        (
+            android_test_text,
+            android_test_path,
+            "authenticatedTrustedRuntimeSchedulesRouteRefreshBeforeLeaseExpiry",
+            "Android ViewModel tests must prove authenticated relay route.refresh is scheduled before relay lease expiry.",
+        ),
+        (
+            android_test_text,
+            android_test_path,
+            'error("Direct TCP should not be used for scheduled route-refresh relay reconnect")',
+            "Android authenticated relay route.refresh scheduling must stay on the relay route, not direct TCP.",
+        ),
+        (
+            android_test_text,
+            android_test_path,
+            "authenticatedTrustedRuntimeRetriesRouteRefreshErrorBeforeLeaseExpiry",
+            "Android ViewModel tests must prove authenticated relay route.refresh retryable errors retry before relay lease expiry.",
+        ),
+        (
+            android_test_text,
+            android_test_path,
+            'code = "route_refresh_unavailable"',
+            "Android authenticated relay route.refresh retry regression must cover retryable route_refresh_unavailable errors.",
+        ),
+        (
+            android_test_text,
+            android_test_path,
+            "advanceTimeBy(ROUTE_REFRESH_RETRY_DELAY_MS - 1)",
+            "Android authenticated relay route.refresh retry regression must prove retry does not fire before the retry window.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeClientViewModelTest.authenticatedTrustedRuntimeSchedulesRouteRefreshBeforeLeaseExpiry",
+            "Default no-device gate must run the Android authenticated relay route.refresh scheduling regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeClientViewModelTest.authenticatedTrustedRuntimeRetriesRouteRefreshErrorBeforeLeaseExpiry",
+            "Default no-device gate must run the Android authenticated relay route.refresh retry regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "Android authenticated relay route.refresh scheduling/retry addendum",
+            "Default no-device gate summary must mention Android authenticated relay route.refresh scheduling/retry coverage.",
+        ),
+        (
+            progress_text,
+            progress_path,
+            "Android Authenticated Relay Route Refresh Scheduling Retry No-Device Gate",
+            "Progress docs must record the Android authenticated relay route.refresh scheduling/retry no-device gate.",
+        ),
+        (
+            qa_evidence_text,
+            qa_evidence_path,
+            "Android Authenticated Relay Route Refresh Scheduling Retry No-Device Gate",
+            "QA evidence must record the Android authenticated relay route.refresh scheduling/retry no-device gate.",
+        ),
+        (
+            roadmap_text,
+            roadmap_path,
+            "Android authenticated relay route.refresh scheduling/retry",
+            "Roadmap smoke coverage queue must name Android authenticated relay route.refresh scheduling/retry coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_authenticated_relay_route_refresh_schedule_retry_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_route_refresh_relay_payload_acceptance_rejection_snippets = (
+        (
+            android_test_text,
+            android_test_path,
+            "routeRefreshPayloadAddsFreshRelayRouteToCurrentTrustedRuntime",
+            "Android ViewModel tests must prove authenticated route.refresh can store fresh relay material.",
+        ),
+        (
+            android_test_text,
+            android_test_path,
+            'assertEquals("fresh-relay.example.test", refreshed.relayHost)',
+            "Android route.refresh relay payload acceptance regression must assert the fresh relay host is stored.",
+        ),
+        (
+            android_test_text,
+            android_test_path,
+            'assertEquals("fresh-secret", refreshed.relaySecret)',
+            "Android route.refresh relay payload acceptance regression must assert the fresh relay secret is stored.",
+        ),
+        (
+            android_test_text,
+            android_test_path,
+            "routeRefreshPayloadRejectsExpiredOrIncompleteRelayMaterial",
+            "Android ViewModel tests must reject expired or incomplete authenticated route.refresh relay material.",
+        ),
+        (
+            android_test_text,
+            android_test_path,
+            "relayExpiresAtEpochMillis = 999L",
+            "Android route.refresh relay payload rejection must cover an expired relay lease.",
+        ),
+        (
+            android_test_text,
+            android_test_path,
+            "relaySecret = null",
+            "Android route.refresh relay payload rejection must cover missing relay_secret material.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeClientViewModelTest.routeRefreshPayloadAddsFreshRelayRouteToCurrentTrustedRuntime",
+            "Default no-device gate must run the Android authenticated route.refresh fresh relay payload acceptance regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeClientViewModelTest.routeRefreshPayloadRejectsExpiredOrIncompleteRelayMaterial",
+            "Default no-device gate must run the Android authenticated route.refresh expired/incomplete relay payload rejection regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "Android route.refresh relay payload acceptance/incomplete rejection addendum",
+            "Default no-device gate summary must mention Android route.refresh relay payload acceptance/incomplete rejection coverage.",
+        ),
+        (
+            progress_text,
+            progress_path,
+            "Android Route Refresh Relay Payload Acceptance Incomplete Rejection No-Device Gate",
+            "Progress docs must record the Android route.refresh relay payload acceptance/incomplete rejection no-device gate.",
+        ),
+        (
+            qa_evidence_text,
+            qa_evidence_path,
+            "Android Route Refresh Relay Payload Acceptance Incomplete Rejection No-Device Gate",
+            "QA evidence must record the Android route.refresh relay payload acceptance/incomplete rejection no-device gate.",
+        ),
+        (
+            roadmap_text,
+            roadmap_path,
+            "Android route.refresh relay payload acceptance/incomplete rejection",
+            "Roadmap smoke coverage queue must name Android route.refresh relay payload acceptance/incomplete rejection coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_route_refresh_relay_payload_acceptance_rejection_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_route_refresh_rejected_payload_retry_snippets = (
+        (
+            android_test_text,
+            android_test_path,
+            "authenticatedTrustedRuntimeRetriesRejectedRouteRefreshPayloadBeforeLeaseExpiry",
+            "Android ViewModel tests must retry authenticated route.refresh responses rejected by identity or route-material validation before relay lease expiry.",
+        ),
+        (
+            android_test_text,
+            android_test_path,
+            'runtimeDeviceId = "other-runtime"',
+            "Android rejected route.refresh payload retry regression must cover a mismatched runtime identity payload.",
+        ),
+        (
+            android_test_text,
+            android_test_path,
+            'assertEquals("relay.example.test", trustedStore.trusted?.relayHost)',
+            "Android rejected route.refresh payload retry regression must keep the current trusted relay route.",
+        ),
+        (
+            android_test_text,
+            android_test_path,
+            "assertNull(viewModel.state.value.error)",
+            "Android rejected route.refresh payload retry regression must avoid surfacing a user error while retrying inside the active lease.",
+        ),
+        (
+            android_test_text,
+            android_test_path,
+            "assertEquals(2, routeRefreshRequests.size)",
+            "Android rejected route.refresh payload retry regression must prove a retry request is sent.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeClientViewModelTest.authenticatedTrustedRuntimeRetriesRejectedRouteRefreshPayloadBeforeLeaseExpiry",
+            "Default no-device gate must run the Android rejected route.refresh payload retry regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "Android route.refresh rejected-payload retry addendum",
+            "Default no-device gate summary must mention Android route.refresh rejected-payload retry coverage.",
+        ),
+        (
+            progress_text,
+            progress_path,
+            "Android Route Refresh Rejected Payload Retry No-Device Gate",
+            "Progress docs must record the Android route.refresh rejected-payload retry no-device gate.",
+        ),
+        (
+            qa_evidence_text,
+            qa_evidence_path,
+            "Android Route Refresh Rejected Payload Retry No-Device Gate",
+            "QA evidence must record the Android route.refresh rejected-payload retry no-device gate.",
+        ),
+        (
+            roadmap_text,
+            roadmap_path,
+            "Android route.refresh rejected-payload retry",
+            "Roadmap smoke coverage queue must name Android route.refresh rejected-payload retry coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_route_refresh_rejected_payload_retry_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_route_refresh_p2p_noncanonical_rejection_snippets = (
+        (
+            android_test_text,
+            android_test_path,
+            "routeRefreshPayloadRejectsNonCanonicalP2pMaterial",
+            "Android ViewModel tests must reject noncanonical authenticated route.refresh P2P material.",
+        ),
+        (
+            android_test_text,
+            android_test_path,
+            'p2pRouteClass = " p2p_rendezvous"',
+            "Android route.refresh P2P noncanonical rejection must cover whitespace-mutated route classes.",
+        ),
+        (
+            android_test_text,
+            android_test_path,
+            'p2pRecordId = "fresh p2p record"',
+            "Android route.refresh P2P noncanonical rejection must cover whitespace-mutated record ids.",
+        ),
+        (
+            android_test_text,
+            android_test_path,
+            'p2pEncryptedBody = " fresh-p2p-body"',
+            "Android route.refresh P2P noncanonical rejection must cover whitespace-mutated encrypted bodies.",
+        ),
+        (
+            android_test_text,
+            android_test_path,
+            'p2pAntiReplayNonce = "fresh p2p nonce"',
+            "Android route.refresh P2P noncanonical rejection must cover whitespace-mutated anti-replay nonces.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeClientViewModelTest.routeRefreshPayloadRejectsNonCanonicalP2pMaterial",
+            "Default no-device gate must run the Android route.refresh P2P noncanonical rejection regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "Android route.refresh P2P noncanonical rejection addendum",
+            "Default no-device gate summary must mention Android route.refresh P2P noncanonical rejection coverage.",
+        ),
+        (
+            progress_text,
+            progress_path,
+            "Android Route Refresh P2P Noncanonical Rejection No-Device Gate",
+            "Progress docs must record the Android route.refresh P2P noncanonical rejection no-device gate.",
+        ),
+        (
+            qa_evidence_text,
+            qa_evidence_path,
+            "Android Route Refresh P2P Noncanonical Rejection No-Device Gate",
+            "QA evidence must record the Android route.refresh P2P noncanonical rejection no-device gate.",
+        ),
+        (
+            roadmap_text,
+            roadmap_path,
+            "Android route.refresh P2P noncanonical rejection",
+            "Roadmap smoke coverage queue must name Android route.refresh P2P noncanonical rejection coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_route_refresh_p2p_noncanonical_rejection_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
     for snippet in (
         "AETHERLINK_DEV_ROUTE_REFRESH_P2P",
         "DevelopmentP2PRouteMaterial",
         "p2pRouteProvider",
+        "activeRelayClientRetirer",
+        "retireAfterCurrentConnection",
         "smoke-p2p-record-1",
         "smoke-p2p-encrypted-body-1",
         "smoke-p2p-nonce-1",
@@ -13873,10 +19282,37 @@ def route_refresh_relay_scope_guard_failures() -> list[str]:
                 f"must be able to emit complete opaque P2P rendezvous material; missing {snippet}."
             )
     for snippet in (
+        "public func retireAfterCurrentConnection()",
+        "isRunning = false",
+        "reconnectWorkItem?.cancel()",
+        "return connection == nil",
+    ):
+        if snippet not in relay_peer_client_text:
+            failures.append(
+                f"{relay_peer_client_path.relative_to(ROOT)}: RelayPeerClient must expose a retirement "
+                f"path that suppresses future reconnects without cancelling the active connection; missing {snippet}."
+            )
+    for snippet in (
+        "testRelayPeerClientRetireKeepsCurrentConnectionAndSuppressesReconnect",
+        "client.retireAfterCurrentConnection()",
+        "retired-current-request",
+        "server.waitForHandshake(index: 1",
+        "statusRecorder.contains { status in",
+    ):
+        if snippet not in relay_peer_client_test_text:
+            failures.append(
+                f"{relay_peer_client_test_path.relative_to(ROOT)}: RelayPeerClient retirement lifecycle "
+                f"must be pinned by a focused reconnect-suppression regression; missing {snippet}."
+            )
+    for snippet in (
         "--expect-p2p-route-refresh",
         "expectP2PRouteRefresh",
         "AETHERLINK_DEV_ROUTE_REFRESH_P2P",
         "requireP2PRouteRefreshMaterial",
+        "initialRelayConfiguration",
+        "initialRelayExpiresAt",
+        "route.refresh did not advance the QR relay lease expiry",
+        "route.refresh reused the QR relay nonce",
         "RelayCiphertextBoundaryRecorder",
         "verifyRelayCiphertextBoundaryIfNeeded",
         "relayPlaintextBoundaryMarkers",
@@ -13896,6 +19332,13 @@ def route_refresh_relay_scope_guard_failures() -> list[str]:
         "RuntimeClientViewModelTest.routeRefreshPayloadAllowsStableRelayIdAndSecretWithFreshNonceAndExpiry",
         "RuntimeClientViewModelTest.routeRefreshPayloadRejectsReusedRelayNonce",
         "RuntimeClientViewModelTest.routeRefreshPayloadRejectsNonAdvancingRelayExpiry",
+        "RuntimeClientViewModelTest.runtimeRouteRefreshLeaseDelayUsesRenewalWindow",
+        "RuntimeClientViewModelTest.runtimeRouteRefreshRetryDelayStaysInsideActiveLease",
+        "RuntimeClientViewModelTest.authenticatedTrustedRuntimeSchedulesRouteRefreshBeforeLeaseExpiry",
+        "RuntimeClientViewModelTest.authenticatedTrustedRuntimeRetriesRouteRefreshErrorBeforeLeaseExpiry",
+        "RuntimeClientViewModelTest.routeRefreshPayloadAddsFreshRelayRouteToCurrentTrustedRuntime",
+        "RuntimeClientViewModelTest.routeRefreshPayloadRejectsExpiredOrIncompleteRelayMaterial",
+        "RuntimeClientViewModelTest.authenticatedTrustedRuntimeRetriesRejectedRouteRefreshPayloadBeforeLeaseExpiry",
         "RuntimeClientViewModelTest.authenticatedTrustedRelayRuntimeRetriesRouteRefreshWhenRuntimeReturnsReusedRelayNonce",
         "RuntimeClientViewModelTest.authenticatedTrustedRelayRuntimeRetriesRouteRefreshWhenRuntimeReturnsNonAdvancingRelayExpiry",
         "RuntimeClientViewModelTest.routeRefreshPayloadAddsFreshP2pRendezvousRouteToCurrentTrustedRuntime",
@@ -13916,19 +19359,68 @@ def route_refresh_relay_scope_guard_failures() -> list[str]:
         "route.refresh private-overlay and usb-reverse scoped relay material validation",
         "Android route.refresh rejects reused relay nonces or non-advancing relay leases before storage while allowing stable relay id/secret reuse",
         "Android authenticated route.refresh keeps the current relay route and schedules retry when refreshed relay material reuses the active nonce or lease",
+        "authenticated relay route.refresh stores fresh relay material and rejects expired or missing relay_secret material before trusted storage changes",
+        "authenticated relay route.refresh responses rejected by identity or route-material validation keep the current trusted relay route and retry inside the active lease",
+        "Android route.refresh renewal and retry delays stay inside the active remote-route lease window",
+        "authenticated relay sessions send route.refresh before lease expiry and retry retryable route.refresh errors inside the active lease",
         "authenticated route.refresh can carry complete opaque P2P rendezvous material without claiming real P2P traversal",
         "Android pending, trusted, and route.refresh P2P rendezvous records reject whitespace-mutated opaque route values",
         "Android route.refresh rejects reused or non-advancing P2P rendezvous records before storage",
         "Android authenticated route.refresh keeps the current P2P rendezvous route and schedules retry when refreshed P2P material reuses the active record or lease",
+        "Android remote route identity mismatch QR recovery",
         "authenticated relay smoke checks encrypted frame bodies for model, chat, attachment, cancel, history, and memory plaintext markers",
         "./script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh",
         "RuntimeDevServer route.refresh P2P smoke addendum",
+        "RuntimeDevServer route.refresh relay lease freshness smoke addendum",
+        "RelayPeerClientTests/testRelayPeerClientRetireKeepsCurrentConnectionAndSuppressesReconnect",
+        "relay client retirement addendum",
     ):
         if snippet not in no_device_text:
             failures.append(
                 f"{no_device_path.relative_to(ROOT)}: Default no-device gate must cover route.refresh "
                 f"relay material validation; missing {snippet}."
             )
+    required_route_refresh_timing_policy_doc_snippets = (
+        (
+            progress_text,
+            progress_path,
+            "Android Route Refresh Timing Policy No-Device Gate",
+            "Progress docs must record the Android route.refresh timing policy no-device gate.",
+        ),
+        (
+            qa_evidence_text,
+            qa_evidence_path,
+            "Android Route Refresh Timing Policy No-Device Gate",
+            "QA evidence must record the Android route.refresh timing policy no-device gate.",
+        ),
+        (
+            roadmap_text,
+            roadmap_path,
+            "route.refresh timing policy",
+            "Roadmap smoke coverage queue must name route.refresh timing policy coverage.",
+        ),
+        (
+            progress_text,
+            progress_path,
+            "macOS Relay Client Retirement No-Device Gate",
+            "Progress docs must record the macOS relay client retirement no-device gate.",
+        ),
+        (
+            qa_evidence_text,
+            qa_evidence_path,
+            "macOS Relay Client Retirement No-Device Gate",
+            "QA evidence must record the macOS relay client retirement no-device gate.",
+        ),
+        (
+            roadmap_text,
+            roadmap_path,
+            "relay client retirement",
+            "Roadmap smoke coverage queue must name relay client retirement coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_route_refresh_timing_policy_doc_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
 
     return failures
 
@@ -13994,6 +19486,19 @@ def runtime_mock_history_memory_smoke_guard_failures() -> list[str]:
         '"memory.summary.drafts.list"',
         '"smoke-memory-summary-drafts"',
         '"memory.summary.draft.approve"',
+        '"smoke-memory-summary-approve"',
+        '"smoke-memory-summary-after-approve"',
+        '"smoke-memory-summary-memory-list"',
+        '"smoke-memory-summary-delete"',
+        '"smoke-memory-summary-dismiss-seed"',
+        '"smoke-memory-summary-dismiss"',
+        '"smoke-memory-summary-after-dismiss"',
+        '"smoke-memory-summary-dismiss-memory-list"',
+        '"AETHERLINK_DEV_RUNTIME_MEMORY_JSONL_FILE"',
+        '"AETHERLINK_DEV_MEMORY_SUMMARY_MIN_INACTIVE_SECONDS"',
+        '"AETHERLINK_DEV_MEMORY_SUMMARY_MIN_MESSAGES"',
+        '"memory-summary:\\(summaryDraftID)"',
+        '"memory-summary:\\(dismissDraftID)"',
         '"smoke-memory-summary-approve-unavailable"',
         '"memory.summary.draft.dismiss"',
         '"smoke-memory-summary-dismiss-unavailable"',
@@ -14036,7 +19541,7 @@ def runtime_mock_history_memory_smoke_guard_failures() -> list[str]:
 
     for snippet in (
         "RuntimeDevServer history/title/session lifecycle/memory smoke addendum",
-        "authenticated relay smoke positively validates chat.sessions.list, chat.messages.list, chat.title.request, chat.session rename/archive/restore/delete, archived chat.send restore-required rejection, memory.upsert, memory.list, memory.delete, memory.summary.drafts.list, and memory.summary draft unavailable errors over RuntimeDevServer",
+        "authenticated relay smoke positively validates chat.sessions.list, chat.messages.list, chat.title.request, chat.session rename/archive/restore/delete, archived chat.send restore-required rejection, memory.upsert, memory.list, memory.delete, memory.summary.drafts.list, memory.summary.draft.approve, memory.summary.draft.dismiss, approved memory-summary memory.list visibility, dismissed draft hiding, dismissed draft no memory.list entry, and memory.summary draft unavailable errors over RuntimeDevServer",
         "RuntimeDevServer chat.sessions.list query search metadata smoke",
         "archived chat.send restore-required rejection",
         "RuntimeDevServer multi-device owner isolation smoke addendum",
@@ -14070,6 +19575,17 @@ def runtime_mock_history_memory_smoke_guard_failures() -> list[str]:
             "memory.upsert",
             "memory.delete",
             "memory.summary.drafts.list",
+            "memory.summary.draft.approve",
+            "memory.summary.draft.dismiss",
+            "approved memory-summary memory.list visibility",
+            "dismissed draft hiding",
+            "dismissed draft no memory.list entry",
+            "smoke-memory-summary-approve",
+            "smoke-memory-summary-after-approve",
+            "smoke-memory-summary-memory-list",
+            "smoke-memory-summary-dismiss",
+            "smoke-memory-summary-after-dismiss",
+            "smoke-memory-summary-dismiss-memory-list",
             "memory.summary draft unavailable errors",
             "smoke-memory-summary-drafts",
             "memory_summary_draft_unavailable",
@@ -14095,6 +19611,7 @@ def runtime_mock_model_residency_smoke_guard_failures() -> list[str]:
     no_device_path = ROOT / "script/check_no_device_quality.sh"
     progress_path = ROOT / "docs/progress.md"
     qa_evidence_path = ROOT / "docs/qa-evidence.md"
+    roadmap_path = ROOT / "docs/roadmap.md"
 
     for path in (
         runtime_dev_server_path,
@@ -14102,6 +19619,7 @@ def runtime_mock_model_residency_smoke_guard_failures() -> list[str]:
         no_device_path,
         progress_path,
         qa_evidence_path,
+        roadmap_path,
     ):
         if not path.exists():
             failures.append(f"{path.relative_to(ROOT)} is missing for RuntimeDevServer model-residency smoke guard.")
@@ -14112,6 +19630,7 @@ def runtime_mock_model_residency_smoke_guard_failures() -> list[str]:
     no_device_text = no_device_path.read_text(encoding="utf-8", errors="replace")
     progress_text = progress_path.read_text(encoding="utf-8", errors="replace")
     qa_evidence_text = qa_evidence_path.read_text(encoding="utf-8", errors="replace")
+    roadmap_text = roadmap_path.read_text(encoding="utf-8", errors="replace")
 
     for snippet in (
         "AETHERLINK_DEV_MOCK_AGGREGATE_RESIDENCY",
@@ -14171,12 +19690,19 @@ def runtime_mock_model_residency_smoke_guard_failures() -> list[str]:
     for snippet in (
         "RuntimeDevServer model-residency smoke addendum",
         "authenticated relay smoke validates aggregate mock model-switch unload, same-model unload suppression, missing-model rejection without unload, idle unload, and unload-failure runtime.health redaction through RuntimeDevServer",
+        "unload-failure health redaction addendum",
+        "RuntimeDevServer runtime.health exposes safe last_unload_failure provider/model/reason metadata while redacting raw provider errors, backend routes, route tokens, and relay secrets",
     ):
         if snippet not in no_device_text:
             failures.append(
                 f"{no_device_path.relative_to(ROOT)}: Default no-device gate must mention RuntimeDevServer "
                 f"model-residency smoke coverage; missing {snippet}."
             )
+
+    if "unload-failure health redaction" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap smoke coverage queue must name unload-failure health redaction coverage."
+        )
 
     for path, text in (
         (progress_path, progress_text),
@@ -14185,6 +19711,7 @@ def runtime_mock_model_residency_smoke_guard_failures() -> list[str]:
         for snippet in (
             "RuntimeDevServer Authenticated Model Residency Smoke",
             "RuntimeDevServer Model Residency Unload-Failure Health Smoke",
+            "Unload-Failure Health Redaction No-Device Gate",
             "./script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh",
             "AETHERLINK_DEV_MOCK_AGGREGATE_RESIDENCY",
             "AETHERLINK_DEV_MOCK_UNLOAD_FAILURES",
@@ -14195,6 +19722,8 @@ def runtime_mock_model_residency_smoke_guard_failures() -> list[str]:
             "idle unload",
             "unload-failure runtime.health redaction",
             "last_unload_failure",
+            "provider/model/reason",
+            "raw provider errors, backend routes, route tokens, and relay secrets",
             "live Ollama or LM Studio unload behavior",
             "physical Android QR scan",
         ):
@@ -14700,6 +20229,42 @@ def suggested_questions_removed_guard_failures() -> list[str]:
                         f"from active source, tests, resources, and schema; found {snippet!r}."
                     )
 
+    current_doc_paths = (
+        ROOT / "README.md",
+        ROOT / "apps/android/README.md",
+        ROOT / "apps/macos/README.md",
+        ROOT / "docs/architecture.md",
+        ROOT / "docs/connection-overlay.md",
+        ROOT / "docs/handoff.md",
+        ROOT / "docs/mvp-v0.1.md",
+        ROOT / "docs/protocol.md",
+        ROOT / "docs/roadmap.md",
+        ROOT / "docs/security.md",
+        ROOT / "examples/README.md",
+    )
+    current_ops_paths = []
+    for pattern in ("script/*.sh", "script/*.py", "script/*.swift"):
+        current_ops_paths.extend(ROOT.glob(pattern))
+    current_ops_exclusions = {
+        ROOT / "script/check_copy_hygiene.py",
+        ROOT / "script/check_no_device_quality.sh",
+    }
+    current_paths = sorted(
+        candidate
+        for candidate in {*current_doc_paths, *current_ops_paths}
+        if candidate.is_file() and candidate not in current_ops_exclusions
+    )
+    for path in current_paths:
+        relative = path.relative_to(ROOT)
+        for line_number, line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
+            for snippet in forbidden_snippets:
+                if snippet in line:
+                    failures.append(
+                        f"{relative}:{line_number}: removed suggested-question path must stay absent "
+                        f"from current docs and operational scripts; historical docs/progress.md "
+                        f"and docs/qa-evidence.md are the only docs allowed to retain {snippet!r}."
+                    )
+
     no_device_path = ROOT / "script/check_no_device_quality.sh"
     progress_path = ROOT / "docs/progress.md"
     qa_evidence_path = ROOT / "docs/qa-evidence.md"
@@ -14713,7 +20278,7 @@ def suggested_questions_removed_guard_failures() -> list[str]:
     qa_evidence_text = qa_evidence_path.read_text(encoding="utf-8", errors="replace")
     for snippet in (
         "suggested-question removal tombstone",
-        "active code/protocol paths forbid chat.suggestions and suggested-question UI symbols",
+        "active code/protocol/current docs/ops paths forbid chat.suggestions and suggested-question UI symbols",
     ):
         if snippet not in no_device_text:
             failures.append(
@@ -14728,7 +20293,7 @@ def suggested_questions_removed_guard_failures() -> list[str]:
         for snippet in (
             "Suggested Questions Tombstone Guard",
             "Historical suggested-question sections are retained only as history",
-            "active code/protocol paths are forbidden",
+            "active code/protocol/current docs/ops paths are forbidden",
         ):
             if snippet not in text:
                 failures.append(
@@ -14876,9 +20441,14 @@ def relay_opaque_id_guard_failures() -> list[str]:
             "testAllocationRegistryPersistsOpaqueRelayIDWithoutRawRouteToken",
         ),
         "script/check_no_device_quality.sh": (
-            "payload[\"relay_id\"] != payload[\"requested_route_token\"]",
+            "RelayAllocationTests/testAllocationDerivesOpaqueStableRelayIDFromRouteTokenAndRequestedSecret",
+            "RelayAllocationTests/testAllocationRegistryPersistsOpaqueRelayIDWithoutRawRouteToken",
+            "\"requested_route_token\" not in payload",
+            "\"normal-route\" not in json.dumps(payload)",
+            "\"token-persisted-route\" not in json.dumps(payload)",
             "payload[\"relay_id\"].startswith(\"rt1-\")",
             "raw route tokens out of allocation stores and relay logs",
+            "relay allocation opacity addendum",
         ),
         "docs/connection-overlay.md": (
             "opaque stable relay id derived from the route token",
@@ -14886,17 +20456,24 @@ def relay_opaque_id_guard_failures() -> list[str]:
         ),
         "docs/roadmap.md": (
             "allocation path now issues opaque relay ids derived from route tokens",
+            "relay allocation opacity",
         ),
         "docs/security.md": (
             "allocation responses now return opaque relay ids instead of raw route tokens",
         ),
         "docs/progress.md": (
             "AetherLinkRelay Opaque Relay ID Allocation Guard",
+            "AetherLinkRelay Opaque Relay ID Focused No-Device Gate",
+            "Relay Allocation Opacity No-Device Gate",
             "raw route tokens out of allocation stores and relay logs",
+            "focused SwiftPM regressions, opaque `rt1-` relay-id assertion, raw route-token absence assertions, default gate entry, exact summary phrase, current QA evidence, and roadmap coverage",
         ),
         "docs/qa-evidence.md": (
             "AetherLinkRelay Opaque Relay ID Allocation Guard",
+            "AetherLinkRelay Opaque Relay ID Focused No-Device Gate",
+            "Relay Allocation Opacity No-Device Gate",
             "raw route tokens out of allocation stores and relay logs",
+            "Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring the focused SwiftPM regressions, opaque `rt1-` relay-id assertion, raw route-token absence assertions, default gate entry, exact summary phrase, current progress/QA evidence, and roadmap coverage.",
         ),
     }
     for relative, snippets in required_files.items():
@@ -14925,21 +20502,32 @@ def relay_allocation_renewal_guard_failures() -> list[str]:
             "var isLoadable: Bool",
         ),
         "apps/macos/RelayServerCore/Tests/RelayAllocationTests.swift": (
+            "testRelayServerConfigurationUsesShortDefaultAllocationTTL",
             "testAllocationRegistryIgnoresNonAdvancingRenewalForStableRelayID",
             "testAllocationRegistryAcceptsAdvancingRenewalWithFreshNonce",
             "testAllocationRegistryLoadsDuplicatePersistedRelayIDsWithAdvancingTicket",
             "testAllocationRegistrySkipsMalformedPersistedTicketsOnLoad",
+            "testAllocationRegistryExpiresAndRemovesRelayIDs",
+            "testAllocationRegistryPersistsAndReloadsRelayIDs",
+            "testAllocationRegistryPrunesExpiredPersistedRelayIDs",
             "XCTAssertFalse(registry.store(reusedNonce))",
             "XCTAssertTrue(registry.store(renewed))",
+            "XCTAssertEqual(configuration.allocationTTLSeconds, 15 * 60)",
+            "XCTAssertFalse(persisted.contains(\"secret-that-must-not-be-persisted\"))",
             "writeAllocationTicketsJSON",
         ),
         "script/check_no_device_quality.sh": (
+            "RelayAllocationTests/testRelayServerConfigurationUsesShortDefaultAllocationTTL",
             "RelayAllocationTests/testAllocationRegistryIgnoresNonAdvancingRenewalForStableRelayID",
             "RelayAllocationTests/testAllocationRegistryAcceptsAdvancingRenewalWithFreshNonce",
             "RelayAllocationTests/testAllocationRegistryLoadsDuplicatePersistedRelayIDsWithAdvancingTicket",
             "RelayAllocationTests/testAllocationRegistrySkipsMalformedPersistedTicketsOnLoad",
+            "RelayAllocationTests/testAllocationRegistryExpiresAndRemovesRelayIDs",
+            "RelayAllocationTests/testAllocationRegistryPersistsAndReloadsRelayIDs",
+            "RelayAllocationTests/testAllocationRegistryPrunesExpiredPersistedRelayIDs",
             "ignores non-advancing renewals for stable relay IDs",
             "deduplicates persisted relay tickets and skips malformed ticket entries on load",
+            "relay allocation lease lifecycle addendum",
         ),
         "docs/connection-overlay.md": (
             "A renewal for an existing relay id must advance the lease expiry and use a fresh relay nonce",
@@ -14948,6 +20536,7 @@ def relay_allocation_renewal_guard_failures() -> list[str]:
         "docs/roadmap.md": (
             "allocation registry ignores non-advancing relay renewals",
             "deduplicates persisted relay tickets on load",
+            "short default allocation TTL, persists relay leases without secrets, removes expired relay ids, and prunes expired persisted tickets on load",
         ),
         "docs/security.md": (
             "non-advancing renewal attempts for the same relay id are ignored unless the lease expiry advances and the relay nonce changes",
@@ -14958,12 +20547,18 @@ def relay_allocation_renewal_guard_failures() -> list[str]:
             "non-advancing relay renewals cannot overwrite a fresher allocation ticket",
             "AetherLinkRelay Allocation Store Load Resilience Guard",
             "deduplicates persisted relay tickets and skips malformed ticket entries on load",
+            "AetherLinkRelay Allocation Lease Lifecycle No-Device Gate",
+            "persists relay leases without secrets, removes expired relay IDs, and prunes expired persisted tickets on load",
+            "focused SwiftPM regressions, short default TTL assertion, no-secret persistence assertion, expiry removal, persisted ticket pruning, default gate entry, exact summary phrase, current QA evidence, and roadmap coverage",
         ),
         "docs/qa-evidence.md": (
             "AetherLinkRelay Allocation Renewal Monotonicity Guard",
             "non-advancing relay renewals cannot overwrite a fresher allocation ticket",
             "AetherLinkRelay Allocation Store Load Resilience Guard",
             "deduplicates persisted relay tickets and skips malformed ticket entries on load",
+            "AetherLinkRelay Allocation Lease Lifecycle No-Device Gate",
+            "persists relay leases without secrets, removes expired relay IDs, and prunes expired persisted tickets on load",
+            "Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring the focused SwiftPM regressions, short default TTL assertion, no-secret persistence assertion, expiry removal, persisted ticket pruning, default gate entry, exact summary phrase, current progress/QA evidence, and roadmap coverage.",
         ),
     }
     for relative, snippets in required_files.items():
@@ -14984,7 +20579,16 @@ def app_icon_readability_guard_failures() -> list[str]:
     failures: list[str] = []
     icon_check_path = ROOT / "script/check_app_icons.py"
     no_device_path = ROOT / "script/check_no_device_quality.sh"
-    required_files = (icon_check_path, no_device_path)
+    docs_progress_path = ROOT / "docs/progress.md"
+    docs_qa_evidence_path = ROOT / "docs/qa-evidence.md"
+    docs_roadmap_path = ROOT / "docs/roadmap.md"
+    required_files = (
+        icon_check_path,
+        no_device_path,
+        docs_progress_path,
+        docs_qa_evidence_path,
+        docs_roadmap_path,
+    )
     for path in required_files:
         if not path.exists():
             failures.append(f"{path.relative_to(ROOT)}: missing app icon readability guard file.")
@@ -14992,6 +20596,9 @@ def app_icon_readability_guard_failures() -> list[str]:
 
     icon_check_text = icon_check_path.read_text(encoding="utf-8", errors="replace")
     no_device_text = no_device_path.read_text(encoding="utf-8", errors="replace")
+    docs_progress_text = docs_progress_path.read_text(encoding="utf-8", errors="replace")
+    docs_qa_evidence_text = docs_qa_evidence_path.read_text(encoding="utf-8", errors="replace")
+    docs_roadmap_text = docs_roadmap_path.read_text(encoding="utf-8", errors="replace")
     required_icon_check_snippets = (
         "def decode_png_rgba(",
         "def decode_png_rgba_data(",
@@ -15023,6 +20630,38 @@ def app_icon_readability_guard_failures() -> list[str]:
                 f"{no_device_path.relative_to(ROOT)}: Missing app icon no-device gate "
                 f"coverage snippet {snippet!r}."
             )
+    required_doc_snippets = {
+        docs_progress_path: (
+            "App Icon Small-Size Readability No-Device Preflight",
+            "Android resource-processing evidence",
+            "script/check_no_device_quality.sh` passed after the macOS QR-only pairing gate update and still runs `python3 script/check_app_icons.py` plus reports `Covered app icon addendum`",
+            "physical screenshot aesthetics",
+            "script/check_copy_hygiene.py` now requires the icon readability functions, full no-device gate evidence, current progress/QA evidence, Android resource-processing evidence, default no-device gate phrase, and the remaining launcher/Dock screenshot caveat.",
+        ),
+        docs_qa_evidence_path: (
+            "App Icon Small-Size Readability No-Device Preflight",
+            "Android resource evidence: `JAVA_HOME=\"/Applications/Android Studio.app/Contents/jbr/Contents/Home\" ./gradlew --no-daemon :app:processDebugResources -Pkotlin.incremental=false --console=plain` passed with the current launcher assets.",
+            "Gate evidence: `JAVA_HOME=\"/Applications/Android Studio.app/Contents/jbr/Contents/Home\" ANDROID_HOME=\"$HOME/Library/Android/sdk\" ./script/check_no_device_quality.sh` passed and reported `Covered app icon addendum: no-device Android launcher and macOS Dock small-size readability plus asset-chain validation.`",
+            "Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring the icon readability functions, full no-device gate evidence, current progress/QA evidence, Android resource-processing evidence, default no-device gate phrase, and the remaining launcher/Dock screenshot caveat.",
+            "physical screenshot aesthetics",
+        ),
+        docs_roadmap_path: (
+            "Capture launcher/dock screenshots on real devices",
+        ),
+    }
+    docs_text_by_path = {
+        docs_progress_path: docs_progress_text,
+        docs_qa_evidence_path: docs_qa_evidence_text,
+        docs_roadmap_path: docs_roadmap_text,
+    }
+    for path, snippets in required_doc_snippets.items():
+        text = docs_text_by_path[path]
+        for snippet in snippets:
+            if snippet not in text:
+                failures.append(
+                    f"{path.relative_to(ROOT)}: Missing app icon no-device evidence "
+                    f"snippet {snippet!r}."
+                )
 
     return failures
 

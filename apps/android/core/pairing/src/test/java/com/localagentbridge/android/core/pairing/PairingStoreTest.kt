@@ -61,6 +61,21 @@ class PairingStoreTest {
     }
 
     @Test
+    fun trustedRuntimeRejectsOversizedP2pRendezvousRoute() {
+        val oversizedValue = "r".repeat(OPAQUE_ROUTE_VALUE_MAX_CHARS + 1)
+        val oversizedBody = "b".repeat(OPAQUE_ROUTE_BODY_MAX_CHARS + 1)
+        val routes = listOf(
+            completeP2pRuntime().copy(p2pRecordId = oversizedValue),
+            completeP2pRuntime().copy(p2pEncryptedBody = oversizedBody),
+            completeP2pRuntime().copy(p2pAntiReplayNonce = oversizedValue),
+        )
+
+        routes.forEach { runtime ->
+            assertEquals(false, runtime.hasValidP2pRoute(nowEpochMillis = 1_000L))
+        }
+    }
+
+    @Test
     fun trustedRuntimeRejectsIncompleteRelayLease() {
         val runtime = trustedRuntime(host = null, port = null).copy(
             relayHost = "relay.example.test",
@@ -447,6 +462,47 @@ class PairingStoreTest {
                 prefs[stringPreferencesKey("runtime_p2p_route_class")] = "p2p_rendezvous"
                 prefs[stringPreferencesKey("runtime_p2p_record_id")] = "p2p record 1"
                 prefs[stringPreferencesKey("runtime_p2p_encrypted_body")] = "opaque-candidate-1"
+                prefs[longPreferencesKey("runtime_p2p_expires_at_epoch_millis")] = 4102444800000L
+                prefs[stringPreferencesKey("runtime_p2p_anti_replay_nonce")] = "nonce-p2p-1"
+                prefs[intPreferencesKey("runtime_p2p_protocol_version")] = 1
+            }
+
+        val trusted = store.trustedRuntime.first()
+        assertEquals("runtime-1", trusted?.deviceId)
+        assertEquals("runtime-fingerprint", trusted?.fingerprint)
+        assertNull(trusted?.p2pRouteClass)
+        assertNull(trusted?.p2pRecordId)
+        assertNull(trusted?.p2pEncryptedBody)
+        assertNull(trusted?.p2pExpiresAtEpochMillis)
+        assertNull(trusted?.p2pAntiReplayNonce)
+        assertNull(trusted?.p2pProtocolVersion)
+
+        val prefs = ApplicationProvider.getApplicationContext<android.content.Context>()
+            .localAgentBridgeDataStore
+            .data
+            .first()
+        assertNoStoredP2pRoute(prefs)
+
+        store.forgetRuntime()
+    }
+
+    @Test
+    fun pairingStoreDropsOversizedStoredP2pRendezvousRouteOnRead() = runTest {
+        val store = pairingStore()
+        store.forgetRuntime()
+
+        ApplicationProvider.getApplicationContext<android.content.Context>()
+            .localAgentBridgeDataStore
+            .edit { prefs ->
+                prefs[stringPreferencesKey("runtime_device_id")] = "runtime-1"
+                prefs[stringPreferencesKey("runtime_name")] = "AetherLink Runtime"
+                prefs[stringPreferencesKey("runtime_fingerprint")] = "runtime-fingerprint"
+                prefs[stringPreferencesKey("runtime_public_key")] = "runtime-public-key"
+                prefs[stringPreferencesKey("runtime_route_token")] = "route-token"
+                prefs[stringPreferencesKey("runtime_p2p_route_class")] = "p2p_rendezvous"
+                prefs[stringPreferencesKey("runtime_p2p_record_id")] = "p2p-record-1"
+                prefs[stringPreferencesKey("runtime_p2p_encrypted_body")] =
+                    "b".repeat(OPAQUE_ROUTE_BODY_MAX_CHARS + 1)
                 prefs[longPreferencesKey("runtime_p2p_expires_at_epoch_millis")] = 4102444800000L
                 prefs[stringPreferencesKey("runtime_p2p_anti_replay_nonce")] = "nonce-p2p-1"
                 prefs[intPreferencesKey("runtime_p2p_protocol_version")] = 1

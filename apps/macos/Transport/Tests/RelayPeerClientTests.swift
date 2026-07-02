@@ -76,6 +76,78 @@ final class RelayPeerClientTests: XCTestCase {
         XCTAssertEqual(disconnectRecorder.count, 1)
     }
 
+    func testRelayPeerClientRetireKeepsCurrentConnectionAndSuppressesReconnect() throws {
+        let server = try ControlledRelayServer()
+        defer { server.stop() }
+
+        let codec = ProtocolCodec()
+        let statusRecorder = RelayStatusRecorder()
+        let readyStatus = DispatchSemaphore(value: 0)
+        let requestHandled = DispatchSemaphore(value: 0)
+        let disconnectRecorder = RelayDisconnectRecorder()
+        let client = RelayPeerClient()
+        defer { client.stop() }
+        client.onDisconnect = { id in
+            disconnectRecorder.append(id)
+        }
+
+        let responseEnvelope = ProtocolEnvelope(
+            type: MessageType.runtimeHealth,
+            requestID: "retired-response",
+            payload: ["status": .string("retired-current-connection")]
+        )
+        client.start(
+            configuration: RelayPeerConfiguration(
+                host: "127.0.0.1",
+                port: server.port,
+                relayID: "relay-retire-test",
+                reconnectDelay: 0.1
+            ),
+            onStatusChange: { status in
+                statusRecorder.append(status)
+                if status == .ready {
+                    readyStatus.signal()
+                }
+            },
+            onMessage: { envelope, sink in
+                XCTAssertEqual(envelope.type, MessageType.modelsList)
+                XCTAssertEqual(envelope.requestID, "retired-current-request")
+                sink.send(responseEnvelope)
+                requestHandled.signal()
+            }
+        )
+
+        XCTAssertEqual(server.waitForHandshake(), "AETHERLINK_RELAY runtime relay-retire-test\n")
+        server.write("AETHERLINK_RELAY ready\n")
+        XCTAssertEqual(readyStatus.wait(timeout: .now() + 2), .success)
+
+        client.retireAfterCurrentConnection()
+        XCTAssertFalse(statusRecorder.contains(.stopped))
+
+        let requestEnvelope = ProtocolEnvelope(
+            type: MessageType.modelsList,
+            requestID: "retired-current-request"
+        )
+        server.writeFrameBody(try codec.encodeEnvelopeBody(requestEnvelope))
+        XCTAssertEqual(requestHandled.wait(timeout: .now() + 2), .success)
+
+        let responseBody = try XCTUnwrap(server.waitForFrameBody())
+        let decodedResponse = try codec.decodeEnvelope(responseBody)
+        XCTAssertEqual(decodedResponse.type, responseEnvelope.type)
+        XCTAssertEqual(decodedResponse.requestID, responseEnvelope.requestID)
+        XCTAssertEqual(decodedResponse.payload, responseEnvelope.payload)
+
+        server.closeAcceptedSocket()
+        XCTAssertEqual(disconnectRecorder.waitForCount(1), 1)
+        XCTAssertNil(server.waitForHandshake(index: 1, timeout: .now() + 0.5))
+        XCTAssertFalse(statusRecorder.contains { status in
+            if case .reconnecting = status {
+                return true
+            }
+            return false
+        })
+    }
+
     func testRelayPeerClientEncryptsRuntimeFramesWithRouteNonceBoundCipher() throws {
         let server = try ControlledRelayServer()
         defer { server.stop() }
@@ -157,7 +229,7 @@ private final class ControlledRelayServer {
     private let handshakeSemaphore = DispatchSemaphore(value: 0)
     private let lock = NSLock()
     private var acceptedSocket: Int32 = -1
-    private var handshake = [UInt8]()
+    private var handshakes = [[UInt8]]()
     private var stopped = false
 
     init() throws {
@@ -203,32 +275,18 @@ private final class ControlledRelayServer {
         self.port = UInt16(bigEndian: boundAddress.sin_port)
 
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            guard let self else { return }
-            let fd = Darwin.accept(socket, nil, nil)
-            guard fd >= 0 else { return }
-            let shouldClose = self.lock.withLock {
-                if self.stopped {
-                    return true
-                }
-                self.acceptedSocket = fd
-                return false
-            }
-            if shouldClose {
-                Darwin.close(fd)
-                return
-            }
-            var timeout = timeval(tv_sec: 2, tv_usec: 0)
-            setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
-            self.receiveHandshake(socket: fd)
+            self?.acceptConnections(socket: socket)
         }
     }
 
-    func waitForHandshake() -> String? {
-        guard handshakeSemaphore.wait(timeout: .now() + 2) == .success else {
-            return nil
+    func waitForHandshake(index: Int = 0, timeout: DispatchTime = .now() + 2) -> String? {
+        while lock.withLock({ handshakes.count <= index }) {
+            guard handshakeSemaphore.wait(timeout: timeout) == .success else {
+                return nil
+            }
         }
         return lock.withLock {
-            String(bytes: handshake, encoding: .utf8)
+            String(bytes: handshakes[index], encoding: .utf8)
         }
     }
 
@@ -283,16 +341,49 @@ private final class ControlledRelayServer {
         Darwin.close(sockets.listen)
     }
 
+    func closeAcceptedSocket() {
+        let accepted = lock.withLock {
+            let accepted = acceptedSocket
+            acceptedSocket = -1
+            return accepted
+        }
+        if accepted >= 0 {
+            Darwin.close(accepted)
+        }
+    }
+
+    private func acceptConnections(socket: Int32) {
+        while true {
+            let fd = Darwin.accept(socket, nil, nil)
+            guard fd >= 0 else { return }
+            let shouldClose = lock.withLock {
+                if stopped {
+                    return true
+                }
+                acceptedSocket = fd
+                return false
+            }
+            if shouldClose {
+                Darwin.close(fd)
+                return
+            }
+            var timeout = timeval(tv_sec: 2, tv_usec: 0)
+            setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
+            receiveHandshake(socket: fd)
+        }
+    }
+
     private func receiveHandshake(socket: Int32) {
+        var handshake = [UInt8]()
         while true {
             var byte: UInt8 = 0
             let count = Darwin.recv(socket, &byte, 1, 0)
             guard count == 1 else { return }
-            let isComplete = lock.withLock {
-                handshake.append(byte)
-                return byte == UInt8(ascii: "\n")
-            }
-            if isComplete {
+            handshake.append(byte)
+            if byte == UInt8(ascii: "\n") {
+                lock.withLock {
+                    handshakes.append(handshake)
+                }
                 handshakeSemaphore.signal()
                 return
             }
@@ -329,6 +420,12 @@ private final class RelayStatusRecorder: @unchecked Sendable {
     func contains(_ status: RelayPeerStatus) -> Bool {
         lock.withLock {
             statuses.contains(status)
+        }
+    }
+
+    func contains(_ predicate: (RelayPeerStatus) -> Bool) -> Bool {
+        lock.withLock {
+            statuses.contains(where: predicate)
         }
     }
 }

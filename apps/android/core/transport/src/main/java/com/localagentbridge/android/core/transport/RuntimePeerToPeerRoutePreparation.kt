@@ -25,7 +25,8 @@ fun RuntimePeerToPeerRoutePreparation.toPreparedPeerToPeerRouteOrNull(
 ): PreparedRemoteRuntimeRoute.PeerToPeer? {
     if (protocolVersion != CURRENT_P2P_RENDEZVOUS_PROTOCOL_VERSION) return null
     val routeRecordId = recordId.opaqueRouteRecordValueOrNull() ?: return null
-    val candidateMaterial = encryptedCandidateMaterial.opaqueRouteRecordValueOrNull() ?: return null
+    val candidateMaterial = encryptedCandidateMaterial
+        .opaqueRouteRecordValueOrNull(maxChars = OPAQUE_ROUTE_BODY_MAX_CHARS) ?: return null
     val expiresAt = expiresAtEpochMillis?.takeIf { it > nowEpochMillis } ?: return null
     val nonce = antiReplayNonce.opaqueRouteRecordValueOrNull() ?: return null
     return PreparedRemoteRuntimeRoute.PeerToPeer(
@@ -40,13 +41,18 @@ fun RuntimePeerToPeerRoutePreparation.toPreparedPeerToPeerRouteOrNull(
     )
 }
 
-private fun String?.opaqueRouteRecordValueOrNull(): String? {
+private fun String?.opaqueRouteRecordValueOrNull(
+    maxChars: Int = OPAQUE_ROUTE_VALUE_MAX_CHARS,
+): String? {
     val value = this ?: return null
     return value.takeIf {
         it.isNotEmpty() &&
+            it.length <= maxChars &&
             it == it.trim() &&
             it.none(Char::isWhitespace)
     }
 }
 
 const val CURRENT_P2P_RENDEZVOUS_PROTOCOL_VERSION = 1
+private const val OPAQUE_ROUTE_VALUE_MAX_CHARS = 512
+private const val OPAQUE_ROUTE_BODY_MAX_CHARS = 2048

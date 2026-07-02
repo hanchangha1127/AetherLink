@@ -471,7 +471,7 @@ private fun TrustedRuntime.hasCompleteP2pRoute(): Boolean {
     val expiresAt = p2pExpiresAtEpochMillis
     return p2pRouteClass == "p2p_rendezvous" &&
         isCanonicalOpaqueRouteValue(p2pRecordId) &&
-        isCanonicalOpaqueRouteValue(p2pEncryptedBody) &&
+        isCanonicalOpaqueRouteValue(p2pEncryptedBody, maxChars = OPAQUE_ROUTE_BODY_MAX_CHARS) &&
         expiresAt != null &&
         expiresAt > 0L &&
         isCanonicalOpaqueRouteValue(p2pAntiReplayNonce) &&

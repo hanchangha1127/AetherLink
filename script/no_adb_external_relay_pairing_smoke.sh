@@ -516,6 +516,7 @@ PORT="${PORT:-$(free_port)}"
 PAIRING_TTL_SECONDS="${PAIRING_TTL_SECONDS:-$(( TIMEOUT_SECONDS + 180 ))}"
 RUNTIME_PID=""
 RELAY_PID=""
+QR_ROUND_TRIP_VERIFIED=0
 
 write_summary() {
   local exit_status="${1:-0}"
@@ -533,7 +534,9 @@ write_summary() {
     "$RUNTIME_LOG" \
     "$RELAY_LOG" \
     "$PAIRING_URI_FILE" \
-    "$PAIRING_QR_FILE" <<'PY'
+    "$PAIRING_QR_FILE" \
+    "$QR_ROUND_TRIP_VERIFIED" \
+    "$ALLOW_DIRECT_FALLBACK" <<'PY'
 import datetime as dt
 import json
 import os
@@ -553,6 +556,8 @@ import sys
     relay_log,
     pairing_uri_file,
     pairing_qr_file,
+    qr_round_trip_verified,
+    allow_direct_fallback,
 ) = sys.argv[1:]
 
 def read(path):
@@ -584,6 +589,14 @@ summary = {
         "relay_log": relay_log if os.path.exists(relay_log) else None,
         "pairing_uri": pairing_uri_file if os.path.exists(pairing_uri_file) else None,
         "pairing_qr": pairing_qr_file if os.path.exists(pairing_qr_file) else None,
+    },
+    "coverage": {
+        "pairing_uri_artifact_present": os.path.exists(pairing_uri_file),
+        "pairing_qr_artifact_present": os.path.exists(pairing_qr_file),
+        "pairing_qr_round_trip_verified": qr_round_trip_verified == "1",
+        "relay_route_required": True,
+        "direct_endpoint_forbidden": allow_direct_fallback != "1",
+        "artifact_only_emit_mode": emit_only == "1",
     },
     "observed": {
         "runtime_waiting_for_peer": "relay status=waiting_for_peer" in runtime_text,
@@ -707,6 +720,7 @@ if [[ "$START_LOCAL_RELAY" == "1" ]]; then
   VERIFY_QR_ARGS+=(--allow-local-relay)
 fi
 ./script/verify_pairing_qr.swift "${VERIFY_QR_ARGS[@]}" >/dev/null
+QR_ROUND_TRIP_VERIFIED=1
 echo "Pairing QR PNG: $PAIRING_QR_FILE"
 if [[ "$OPEN_QR" == "1" ]]; then
   open "$PAIRING_QR_FILE" >/dev/null 2>&1 || true

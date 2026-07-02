@@ -54,6 +54,23 @@ class RuntimePeerToPeerRoutePreparationTest {
     }
 
     @Test
+    fun oversizedPeerToPeerRoutePreparationReturnsNull() {
+        val valid = RuntimePeerToPeerRoutePreparation(
+            recordId = "p2p-record-1",
+            encryptedCandidateMaterial = "opaque-candidate-material-1",
+            expiresAtEpochMillis = 4102444800000L,
+            antiReplayNonce = "nonce-1",
+            protocolVersion = CURRENT_P2P_RENDEZVOUS_PROTOCOL_VERSION,
+        )
+        val oversizedValue = "r".repeat(TEST_OPAQUE_ROUTE_VALUE_MAX_CHARS + 1)
+        val oversizedBody = "b".repeat(TEST_OPAQUE_ROUTE_BODY_MAX_CHARS + 1)
+
+        assertNull(valid.copy(recordId = oversizedValue).toPreparedPeerToPeerRouteOrNull(identity))
+        assertNull(valid.copy(encryptedCandidateMaterial = oversizedBody).toPreparedPeerToPeerRouteOrNull(identity))
+        assertNull(valid.copy(antiReplayNonce = oversizedValue).toPreparedPeerToPeerRouteOrNull(identity))
+    }
+
+    @Test
     fun peerToPeerRoutePreparationDoesNotCarryHostOrPortMaterial() {
         val preparationFields = RuntimePeerToPeerRoutePreparation::class.java.declaredFields
             .map { it.name.lowercase() }
@@ -120,3 +137,6 @@ class RuntimePeerToPeerRoutePreparationTest {
         routeToken = "route-token",
     )
 }
+
+private const val TEST_OPAQUE_ROUTE_VALUE_MAX_CHARS = 512
+private const val TEST_OPAQUE_ROUTE_BODY_MAX_CHARS = 2048

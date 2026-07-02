@@ -650,11 +650,14 @@
     <string name="route_diagnostic_direct_failed_remote_pending">ローカル経路が応答しませんでした。接続情報を含む最新の AetherLink Runtime QR をスキャンしてください。</string>
     <string name="route_diagnostic_remote_pending">リモート接続情報がありません。両方のデバイスが同じローカル経路を見られる場合のみ近距離検出が動作します。接続情報を含む最新 QR をスキャンしてください。</string>
     <string name="route_diagnostic_relay_failed">保存済み接続が応答しませんでした。AetherLink Runtime でリモート接続情報を準備してから、接続情報を含む最新 QR をスキャンしてください。</string>
+    <string name="route_diagnostic_p2p_failed_relay_pending">保存済みのプライベート経路が応答せず、保存済みリレー代替経路もありません。リレーまたはプライベートオーバーレイ接続情報を含む新しい QR をスキャンしてください。</string>
     <string name="route_diagnostic_relay_unreachable_from_device">このデバイスからリレー経路を開けませんでした。リレー、VPN、トンネル、またはプライベートオーバーレイを確認してから、新しい QR をスキャンしてください。</string>
     <string name="route_diagnostic_relay_auth_failed">保存済み接続情報を認証できませんでした。信頼済みランタイムから新しい QR をスキャンしてください。</string>
+    <string name="route_diagnostic_remote_identity_mismatch">保存済み接続情報は別のランタイムに属しています。信頼済みの AetherLink Runtime から新しい QR をスキャンしてください。</string>
     <string name="route_diagnostic_remote_route_expired">保存済み接続情報の有効期限が切れました。新しい接続情報を含む最新の AetherLink Runtime QR をスキャンしてください。</string>
     <string name="route_diagnostic_direct_qr_rejected">この QR には近距離専用の診断経路が含まれており、別ネットワークのペアリングには使用できません。</string>
     <string name="route_diagnostic_relay_qr_unreachable">この QR はこのデバイスから到達できない経路を指しています。両方のデバイスから到達できるリレー経路を使用してください。</string>
+    <string name="route_diagnostic_private_overlay_scope_required">この QR は private_overlay スコープのないプライベートリレーアドレスを使用しています。両方のデバイスから到達できるリレー、VPN、トンネル、またはプライベートオーバーレイから新しい QR を生成してください。</string>
     <string name="content_desc_error">エラー</string>
     <string name="content_desc_refresh">更新</string>
     <string name="content_desc_close">閉じる</string>

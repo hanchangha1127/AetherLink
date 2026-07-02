@@ -95,7 +95,7 @@ object RuntimePairingPayloadParser {
                 ?: query["route_secret"]
                 ?: query["rendezvous_secret"]
                 ?: query["rs"]
-            )?.takeIf { it.isNotBlank() }
+            ).optionalBoundedQrValue("Invalid relay secret")
         val rawRelayExpiresAt = query["relay_expires_at"]
             ?: query["remote_expires_at"]
             ?: query["route_expires_at"]
@@ -122,7 +122,10 @@ object RuntimePairingPayloadParser {
         val p2pRecordId = (query["p2p_record_id"] ?: query["prid"])
             .optionalOpaqueQrValue("Invalid P2P record id")
         val p2pEncryptedBody = (query["p2p_encrypted_body"] ?: query["peb"])
-            .optionalOpaqueQrValue("Invalid P2P encrypted body")
+            .optionalOpaqueQrValue(
+                "Invalid P2P encrypted body",
+                maxChars = OPAQUE_ROUTE_BODY_MAX_CHARS,
+            )
         val rawP2pExpiresAt = query["p2p_expires_at"] ?: query["px"]
         val p2pExpiresAtEpochMillis = rawP2pExpiresAt
             ?.takeIf { it.isNotBlank() }
@@ -171,6 +174,9 @@ object RuntimePairingPayloadParser {
         if (hasExplicitRelayField) {
             require(relayHost != null) { "Missing relay host" }
             require(isAllowedRemoteRelayScope(relayScope)) { "Invalid relay scope" }
+            if (relayHost.requiresPrivateOverlayRelayScope() && !relayScope.isPrivateOverlayScope()) {
+                throw IllegalArgumentException(PRIVATE_OVERLAY_RELAY_SCOPE_REQUIRED_QR_ERROR)
+            }
             require(
                 isEligibleRemoteRelayHost(relayHost, relayScope) ||
                     relayHost.isAllowedDebugLoopbackRelay(relayScope, allowDebugLoopbackRelay)
@@ -255,9 +261,21 @@ object RuntimePairingPayloadParser {
         return value
     }
 
-    private fun String?.optionalOpaqueQrValue(invalidMessage: String): String? {
+    private fun String?.optionalOpaqueQrValue(
+        invalidMessage: String,
+        maxChars: Int = OPAQUE_ROUTE_VALUE_MAX_CHARS,
+    ): String? {
         val value = this?.takeIf { it.isNotBlank() } ?: return null
-        require(isCanonicalOpaqueRouteValue(value)) { invalidMessage }
+        require(isCanonicalOpaqueRouteValue(value, maxChars = maxChars)) { invalidMessage }
+        return value
+    }
+
+    private fun String?.optionalBoundedQrValue(
+        invalidMessage: String,
+        maxChars: Int = OPAQUE_ROUTE_VALUE_MAX_CHARS,
+    ): String? {
+        val value = this?.takeIf { it.isNotBlank() } ?: return null
+        require(value.length <= maxChars) { invalidMessage }
         return value
     }
 
@@ -279,8 +297,15 @@ object RuntimePairingPayloadParser {
     private const val MIN_REASONABLE_EPOCH_MILLIS = 100_000_000_000L
 }
 
-fun isCanonicalOpaqueRouteValue(value: String?): Boolean {
+const val OPAQUE_ROUTE_VALUE_MAX_CHARS = 512
+const val OPAQUE_ROUTE_BODY_MAX_CHARS = 2048
+
+fun isCanonicalOpaqueRouteValue(
+    value: String?,
+    maxChars: Int = OPAQUE_ROUTE_VALUE_MAX_CHARS,
+): Boolean {
     return !value.isNullOrBlank() &&
+        value.length <= maxChars &&
         value == value.trim() &&
         value.none(Char::isWhitespace)
 }
@@ -349,6 +374,15 @@ private fun String.isPrivateOverlayRelayLiteral(): Boolean {
     return isPrivateOverlayIpv4Literal() || isPrivateOverlayIpv6Literal()
 }
 
+private fun String.requiresPrivateOverlayRelayScope(): Boolean {
+    val normalized = trim()
+        .removePrefix("[")
+        .removeSuffix("]")
+        .removeSuffix(".")
+        .lowercase()
+    return normalized.isPrivateOverlayRelayLiteral()
+}
+
 private fun String.isPrivateOverlayIpv4Literal(): Boolean {
     val octets = split('.')
     if (octets.size != 4) return false
@@ -392,6 +426,8 @@ private fun String.isAllowedDebugLoopbackRelay(
 
 private const val DEBUG_USB_REVERSE_RELAY_SCOPE = "usb_reverse"
 private const val PRIVATE_OVERLAY_RELAY_SCOPE = "private_overlay"
+private const val PRIVATE_OVERLAY_RELAY_SCOPE_REQUIRED_QR_ERROR =
+    "Private relay hosts require relay_scope=private_overlay"
 private const val LOCAL_DIRECT_DIAGNOSTIC_SCOPE = "local_diagnostic"
 private val ALLOWED_REMOTE_RELAY_SCOPES = setOf(
     "remote",

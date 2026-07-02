@@ -37,6 +37,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -85,6 +86,7 @@ import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
@@ -219,6 +221,37 @@ internal data class SharedChatDraft(
 )
 
 internal const val SHARED_CHAT_DRAFT_ANNOUNCEMENT_TEST_TAG = "shared_chat_draft_announcement"
+internal const val SHARED_CHAT_DRAFT_SNACKBAR_HOST_TEST_TAG = "shared_chat_draft_snackbar_host"
+internal val SHARED_CHAT_DRAFT_SNACKBAR_CHAT_BOTTOM_PADDING = 156.dp
+
+@Composable
+internal fun AetherLinkSnackbarHost(
+    hostState: SnackbarHostState,
+    modifier: Modifier = Modifier,
+) {
+    SnackbarHost(
+        hostState = hostState,
+        modifier = modifier,
+    ) { snackbarData ->
+        val actionLabel = snackbarData.visuals.actionLabel
+        Snackbar(
+            modifier = Modifier.fillMaxWidth(),
+            action = actionLabel?.let { label ->
+                {
+                    TextButton(
+                        onClick = snackbarData::performAction,
+                        contentPadding = PaddingValues(horizontal = 8.dp),
+                    ) {
+                        Text(label, maxLines = 1)
+                    }
+                }
+            },
+            actionOnNewLine = true,
+        ) {
+            Text(snackbarData.visuals.message)
+        }
+    }
+}
 
 internal fun Intent?.sharedChatDraftOrNull(): SharedChatDraft? {
     val intent = this ?: return null
@@ -449,6 +482,11 @@ private fun LocalAgentBridgeApp(
             val chatArchivedSnackbar = stringResource(R.string.chat_archived_snackbar)
             val qrScanCanceledSnackbar = stringResource(R.string.qr_scan_canceled_snackbar)
             val undoAction = stringResource(R.string.undo)
+            val snackbarHostBottomPadding = if (effectiveDestination == AppDestination.Chat) {
+                SHARED_CHAT_DRAFT_SNACKBAR_CHAT_BOTTOM_PADDING
+            } else {
+                0.dp
+            }
             val trimmedChatSearchQuery = chatSearchQuery.trim()
             val hasChatSearchQuery = trimmedChatSearchQuery.isNotEmpty()
             val hasAnyChatSessions = state.chatSessions.isNotEmpty()
@@ -623,7 +661,6 @@ private fun LocalAgentBridgeApp(
                                 val result = snackbarHostState.showSnackbar(
                                     message = chatArchivedSnackbar,
                                     actionLabel = undoAction,
-                                    withDismissAction = true,
                                 )
                                 if (result == SnackbarResult.ActionPerformed) {
                                     viewModel.unarchiveChatSession(archivedSessionId)
@@ -670,7 +707,14 @@ private fun LocalAgentBridgeApp(
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxHeight(),
-                        snackbarHost = { SnackbarHost(snackbarHostState) },
+                        snackbarHost = {
+                            AetherLinkSnackbarHost(
+                                hostState = snackbarHostState,
+                                modifier = Modifier
+                                    .testTag(SHARED_CHAT_DRAFT_SNACKBAR_HOST_TEST_TAG)
+                                    .padding(bottom = snackbarHostBottomPadding),
+                            )
+                        },
                         topBar = {
                             AetherLinkTopAppBar(
                                 state = state,
@@ -858,10 +902,12 @@ internal fun AetherLinkTopAppBar(
                             onStartNewChat()
                         },
                         enabled = newChatEnabled,
-                        modifier = Modifier.semantics {
-                            stateDescription = newChatStateDescription
-                            onClick(label = newChatActionLabel, action = null)
-                        },
+                        modifier = Modifier
+                            .testTag(CHAT_TOP_BAR_NEW_CHAT_ACTION_TEST_TAG)
+                            .semantics {
+                                stateDescription = newChatStateDescription
+                                onClick(label = newChatActionLabel, action = null)
+                            },
                     ) {
                         Icon(
                             imageVector = Icons.Filled.Edit,
@@ -1028,7 +1074,9 @@ internal fun ChatTopAppBarTitle(
         stringResource(R.string.chat_top_bar_active_title_summary, title)
     }
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(CHAT_TOP_BAR_TITLE_ROW_TEST_TAG),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
     ) {
@@ -1046,6 +1094,7 @@ internal fun ChatTopAppBarTitle(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier
                     .weight(1f)
+                    .testTag(CHAT_TOP_BAR_ACTIVE_TITLE_TEST_TAG)
                     .semantics {
                         contentDescription = activeChatTitleSummary ?: activeChatTitle
                         heading()
@@ -1172,6 +1221,7 @@ private fun ChatModelTopBarMenu(
             ),
             modifier = Modifier
                 .widthIn(max = 176.dp)
+                .testTag(CHAT_TOP_BAR_MODEL_PICKER_TEST_TAG)
                 .semantics {
                     contentDescription = modelPickerContentDescription
                     stateDescription = modelPickerStateDescription
@@ -1791,9 +1841,16 @@ internal const val DRAWER_CHAT_ROW_TITLE_TEST_TAG_PREFIX = "aetherlink_drawer_ch
 internal const val DRAWER_CHAT_ROW_SUBTITLE_TEST_TAG_PREFIX = "aetherlink_drawer_chat_row_subtitle_"
 internal const val DRAWER_CHAT_ROW_MODEL_TEST_TAG_PREFIX = "aetherlink_drawer_chat_row_model_"
 internal const val DRAWER_CHAT_ROW_OPTIONS_TEST_TAG_PREFIX = "aetherlink_drawer_chat_row_options_"
+internal const val DRAWER_CHAT_ROW_MENU_ITEM_TEST_TAG_PREFIX = "aetherlink_drawer_chat_row_menu_item_"
+internal const val DRAWER_CHAT_ROW_MENU_ITEM_LABEL_TEST_TAG_PREFIX =
+    "aetherlink_drawer_chat_row_menu_item_label_"
 internal const val CHAT_MODEL_SEARCH_TEST_TAG = "aetherlink_chat_model_search"
 internal const val CHAT_MODEL_SEARCH_CLEAR_TEST_TAG = "aetherlink_chat_model_search_clear"
 internal const val CHAT_MODEL_SEARCH_NO_RESULTS_TEST_TAG = "aetherlink_chat_model_search_no_results"
+internal const val CHAT_TOP_BAR_TITLE_ROW_TEST_TAG = "aetherlink_chat_top_bar_title_row"
+internal const val CHAT_TOP_BAR_ACTIVE_TITLE_TEST_TAG = "aetherlink_chat_top_bar_active_title"
+internal const val CHAT_TOP_BAR_MODEL_PICKER_TEST_TAG = "aetherlink_chat_top_bar_model_picker"
+internal const val CHAT_TOP_BAR_NEW_CHAT_ACTION_TEST_TAG = "aetherlink_chat_top_bar_new_chat_action"
 internal const val CHAT_MODEL_REFRESH_ROW_TEST_TAG = "aetherlink_chat_model_refresh_row"
 internal const val CHAT_MODEL_REFRESH_TEXT_TEST_TAG = "aetherlink_chat_model_refresh_text"
 internal const val CHAT_MODEL_REFRESH_LABEL_TEST_TAG = "aetherlink_chat_model_refresh_label"
@@ -1815,6 +1872,12 @@ internal fun drawerChatRowModelTestTag(sessionId: String): String =
 
 internal fun drawerChatRowOptionsTestTag(sessionId: String): String =
     "$DRAWER_CHAT_ROW_OPTIONS_TEST_TAG_PREFIX$sessionId"
+
+internal fun drawerChatRowMenuItemTestTag(sessionId: String, action: String): String =
+    "$DRAWER_CHAT_ROW_MENU_ITEM_TEST_TAG_PREFIX${sessionId}_$action"
+
+internal fun drawerChatRowMenuItemLabelTestTag(sessionId: String, action: String): String =
+    "$DRAWER_CHAT_ROW_MENU_ITEM_LABEL_TEST_TAG_PREFIX${sessionId}_$action"
 
 internal fun chatModelMenuItemTestTag(modelId: String): String = "$CHAT_MODEL_MENU_ITEM_TEST_TAG_PREFIX$modelId"
 
@@ -2299,6 +2362,10 @@ internal fun ChatSessionDrawerItem(
     val archiveActionContentDescription = stringResource(R.string.archive_chat_named, title)
     val restoreActionContentDescription = stringResource(R.string.restore_chat_named, title)
     val deleteActionContentDescription = stringResource(R.string.delete_chat_named, title)
+    val renameActionLabel = stringResource(R.string.rename_chat)
+    val archiveActionLabel = stringResource(R.string.archive_chat)
+    val restoreActionLabel = stringResource(R.string.restore_chat)
+    val deleteActionLabel = stringResource(R.string.delete_chat)
     val disabledStateDescription = if (enabled) {
         null
     } else {
@@ -2386,12 +2453,21 @@ internal fun ChatSessionDrawerItem(
                 ) {
                     if (onRename != null) {
                         DropdownMenuItem(
-                            text = { Text(stringResource(R.string.rename_chat)) },
-                            leadingIcon = { Icon(Icons.Filled.Edit, contentDescription = null) },
-                            modifier = Modifier.semantics {
-                                contentDescription = renameActionContentDescription
-                                onClick(label = renameActionContentDescription, action = null)
+                            text = {
+                                Text(
+                                    renameActionLabel,
+                                    modifier = Modifier.testTag(
+                                        drawerChatRowMenuItemLabelTestTag(session.id, "rename"),
+                                    ),
+                                )
                             },
+                            leadingIcon = { Icon(Icons.Filled.Edit, contentDescription = null) },
+                            modifier = Modifier
+                                .testTag(drawerChatRowMenuItemTestTag(session.id, "rename"))
+                                .semantics {
+                                    contentDescription = renameActionContentDescription
+                                    onClick(label = renameActionContentDescription, action = null)
+                                },
                             onClick = {
                                 isMenuExpanded = false
                                 onRename()
@@ -2400,12 +2476,21 @@ internal fun ChatSessionDrawerItem(
                     }
                     if (onArchive != null) {
                         DropdownMenuItem(
-                            text = { Text(stringResource(R.string.archive_chat)) },
-                            leadingIcon = { Icon(Icons.Filled.Archive, contentDescription = null) },
-                            modifier = Modifier.semantics {
-                                contentDescription = archiveActionContentDescription
-                                onClick(label = archiveActionContentDescription, action = null)
+                            text = {
+                                Text(
+                                    archiveActionLabel,
+                                    modifier = Modifier.testTag(
+                                        drawerChatRowMenuItemLabelTestTag(session.id, "archive"),
+                                    ),
+                                )
                             },
+                            leadingIcon = { Icon(Icons.Filled.Archive, contentDescription = null) },
+                            modifier = Modifier
+                                .testTag(drawerChatRowMenuItemTestTag(session.id, "archive"))
+                                .semantics {
+                                    contentDescription = archiveActionContentDescription
+                                    onClick(label = archiveActionContentDescription, action = null)
+                                },
                             onClick = {
                                 isMenuExpanded = false
                                 onArchive()
@@ -2414,12 +2499,21 @@ internal fun ChatSessionDrawerItem(
                     }
                     if (onRestore != null) {
                         DropdownMenuItem(
-                            text = { Text(stringResource(R.string.restore_chat)) },
-                            leadingIcon = { Icon(Icons.Filled.Unarchive, contentDescription = null) },
-                            modifier = Modifier.semantics {
-                                contentDescription = restoreActionContentDescription
-                                onClick(label = restoreActionContentDescription, action = null)
+                            text = {
+                                Text(
+                                    restoreActionLabel,
+                                    modifier = Modifier.testTag(
+                                        drawerChatRowMenuItemLabelTestTag(session.id, "restore"),
+                                    ),
+                                )
                             },
+                            leadingIcon = { Icon(Icons.Filled.Unarchive, contentDescription = null) },
+                            modifier = Modifier
+                                .testTag(drawerChatRowMenuItemTestTag(session.id, "restore"))
+                                .semantics {
+                                    contentDescription = restoreActionContentDescription
+                                    onClick(label = restoreActionContentDescription, action = null)
+                                },
                             onClick = {
                                 isMenuExpanded = false
                                 onRestore()
@@ -2428,12 +2522,21 @@ internal fun ChatSessionDrawerItem(
                     }
                     if (onDelete != null) {
                         DropdownMenuItem(
-                            text = { Text(stringResource(R.string.delete_chat)) },
-                            leadingIcon = { Icon(Icons.Filled.Delete, contentDescription = null) },
-                            modifier = Modifier.semantics {
-                                contentDescription = deleteActionContentDescription
-                                onClick(label = deleteActionContentDescription, action = null)
+                            text = {
+                                Text(
+                                    deleteActionLabel,
+                                    modifier = Modifier.testTag(
+                                        drawerChatRowMenuItemLabelTestTag(session.id, "delete"),
+                                    ),
+                                )
                             },
+                            leadingIcon = { Icon(Icons.Filled.Delete, contentDescription = null) },
+                            modifier = Modifier
+                                .testTag(drawerChatRowMenuItemTestTag(session.id, "delete"))
+                                .semantics {
+                                    contentDescription = deleteActionContentDescription
+                                    onClick(label = deleteActionContentDescription, action = null)
+                                },
                             onClick = {
                                 isMenuExpanded = false
                                 onDelete()

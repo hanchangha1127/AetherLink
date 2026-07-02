@@ -37,6 +37,8 @@ struct RuntimeDevServer {
         let pairingCoordinator = PairingCoordinator()
         let trustedDeviceStore = Self.trustedDeviceStore(environment: environment)
         let runtimeChatEventStore = Self.runtimeChatEventStore(environment: environment)
+        let runtimeMemoryStore = Self.runtimeMemoryStore(environment: environment)
+        let runtimeMemorySummaryPolicy = Self.runtimeMemorySummaryPolicy(environment: environment)
         let identity = Self.runtimeIdentity(environment: environment)
         let server = LocalPeerServer()
         let advertiser = BonjourAdvertiser()
@@ -64,6 +66,9 @@ struct RuntimeDevServer {
             runtimeDeviceID: identity.deviceID,
             runtimeKeyFingerprint: identity.fingerprint,
             initialAllocation: relayRouteAllocation,
+            activeRelayClientRetirer: relayClient.map { client in
+                { client.retireAfterCurrentConnection() }
+            },
             allocationProvider: {
                 Self.relayRouteAllocation(environment: environment, identity: identity)
             },
@@ -82,6 +87,8 @@ struct RuntimeDevServer {
             pairingCoordinator: pairingCoordinator,
             trustedDeviceStore: trustedDeviceStore,
             chatEventStore: runtimeChatEventStore,
+            memoryStore: runtimeMemoryStore,
+            memorySummaryPolicy: runtimeMemorySummaryPolicy,
             routeRefresher: routeRefresher,
             runtimeChallengeSigner: identity.signer,
             onPairingAccepted: { device in
@@ -172,6 +179,30 @@ struct RuntimeDevServer {
             databaseURL: URL(fileURLWithPath: sqlitePath),
             legacyJSONLFileURL: legacyJSONLFileURL
         )
+    }
+
+    private static func runtimeMemoryStore(environment: [String: String]) -> any RuntimeMemoryStore {
+        guard let path = environment["AETHERLINK_DEV_RUNTIME_MEMORY_JSONL_FILE"]?.takeIfNotEmpty else {
+            return JSONLRuntimeMemoryStore()
+        }
+        return JSONLRuntimeMemoryStore(fileURL: URL(fileURLWithPath: path))
+    }
+
+    private static func runtimeMemorySummaryPolicy(
+        environment: [String: String]
+    ) -> @Sendable (Int) -> RuntimeLongInactivityMemorySummarizationPolicy {
+        let minimumInactiveInterval = TimeInterval(
+            environment["AETHERLINK_DEV_MEMORY_SUMMARY_MIN_INACTIVE_SECONDS"] ?? ""
+        )
+        let minimumMessageCount = Int(environment["AETHERLINK_DEV_MEMORY_SUMMARY_MIN_MESSAGES"] ?? "")
+        return { maxCandidateCount in
+            RuntimeLongInactivityMemorySummarizationPolicy(
+                minimumInactiveInterval: minimumInactiveInterval
+                    ?? RuntimeLongInactivityMemorySummarizationPolicy.defaultMinimumInactiveInterval,
+                minimumMessageCount: minimumMessageCount ?? 6,
+                maxCandidateCount: maxCandidateCount
+            )
+        }
     }
 
     private static func developmentMockBackend(
@@ -701,12 +732,14 @@ private final class DevelopmentRuntimeRouteRefresher: RuntimeRouteRefreshing {
     private let relayDisconnectHandler: @Sendable (UUID) -> Void
     private let relayScopeProvider: (String) -> String?
     private var activeAllocation: CompanionRemoteRelayRouteAllocation?
+    private var activeRelayClientRetirer: (() -> Void)?
     private var refreshedRelayClients: [ObjectIdentifier: RelayPeerClient] = [:]
 
     init(
         runtimeDeviceID: String,
         runtimeKeyFingerprint: String,
         initialAllocation: CompanionRemoteRelayRouteAllocation?,
+        activeRelayClientRetirer: (() -> Void)?,
         allocationProvider: @escaping () -> CompanionRemoteRelayRouteAllocation?,
         p2pRouteProvider: @escaping () -> DevelopmentP2PRouteMaterial?,
         relayStatusHandler: @escaping @Sendable (RelayPeerStatus) -> Void,
@@ -717,6 +750,7 @@ private final class DevelopmentRuntimeRouteRefresher: RuntimeRouteRefreshing {
         self.runtimeDeviceID = runtimeDeviceID
         self.runtimeKeyFingerprint = runtimeKeyFingerprint
         self.activeAllocation = initialAllocation
+        self.activeRelayClientRetirer = activeRelayClientRetirer
         self.allocationProvider = allocationProvider
         self.p2pRouteProvider = p2pRouteProvider
         self.relayStatusHandler = relayStatusHandler
@@ -726,11 +760,6 @@ private final class DevelopmentRuntimeRouteRefresher: RuntimeRouteRefreshing {
     }
 
     func refreshRuntimeRoute() async throws -> RuntimeRouteRefreshResult? {
-        if let activeAllocation,
-           !Self.shouldRenew(lease: activeAllocation.lease),
-           let result = routeRefreshResult(for: activeAllocation) {
-            return result
-        }
         guard let allocation = allocationProvider() else {
             return nil
         }
@@ -744,15 +773,17 @@ private final class DevelopmentRuntimeRouteRefresher: RuntimeRouteRefreshing {
         refreshedRelayClients[clientID] = refreshedRelayClient
         refreshedRelayClient.onDisconnect = { [weak self] connectionID in
             self?.relayDisconnectHandler(connectionID)
-            Task { @MainActor [weak self] in
-                self?.refreshedRelayClients.removeValue(forKey: clientID)
-            }
         }
         refreshedRelayClient.start(
             configuration: configuration,
             onStatusChange: relayStatusHandler,
             onMessage: relayMessageHandler
         )
+        let previousRelayClientRetirer = activeRelayClientRetirer
+        activeRelayClientRetirer = { [weak refreshedRelayClient] in
+            refreshedRelayClient?.retireAfterCurrentConnection()
+        }
+        previousRelayClientRetirer?()
         return result
     }
 
@@ -781,13 +812,6 @@ private final class DevelopmentRuntimeRouteRefresher: RuntimeRouteRefreshing {
             p2pAntiReplayNonce: p2pRoute?.antiReplayNonce,
             p2pProtocolVersion: p2pRoute?.protocolVersion
         )
-    }
-
-    private static func shouldRenew(lease: CompanionRemoteRouteLease?) -> Bool {
-        guard let lease else {
-            return true
-        }
-        return lease.isExpired(renewalMarginSeconds: 60)
     }
 }
 

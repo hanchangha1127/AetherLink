@@ -412,6 +412,8 @@ internal const val MANUAL_QR_PAYLOAD_INPUT_TEST_TAG = "manual_qr_payload_input"
 internal const val MANUAL_QR_PAYLOAD_STATE_TEST_TAG = "manual_qr_payload_state"
 internal const val MANUAL_QR_PAYLOAD_SUBMIT_TEST_TAG = "manual_qr_payload_submit"
 internal const val MANUAL_QR_PAYLOAD_CANCEL_TEST_TAG = "manual_qr_payload_cancel"
+internal const val ROUTE_REFRESH_SAVED_NOTICE_TEST_TAG = "route_refresh_saved_notice"
+internal const val ROUTE_REFRESH_SAVED_NOTICE_TEXT_TEST_TAG = "route_refresh_saved_notice_text"
 
 @StringRes
 private fun manualPairingPayloadStateDescriptionRes(
@@ -439,6 +441,7 @@ private fun RouteRefreshSavedNotice(state: RuntimeUiState) {
     Surface(
         modifier = Modifier
             .fillMaxWidth()
+            .testTag(ROUTE_REFRESH_SAVED_NOTICE_TEST_TAG)
             .semantics {
                 contentDescription = notice
                 liveRegion = LiveRegionMode.Polite
@@ -459,6 +462,7 @@ private fun RouteRefreshSavedNotice(state: RuntimeUiState) {
             )
             Text(
                 text = notice,
+                modifier = Modifier.testTag(ROUTE_REFRESH_SAVED_NOTICE_TEXT_TEST_TAG),
                 style = MaterialTheme.typography.bodySmall,
                 fontWeight = FontWeight.Medium,
                 maxLines = 2,
@@ -483,6 +487,7 @@ private fun PendingPairingRouteStatus(state: RuntimeUiState) {
     Surface(
         modifier = Modifier
             .fillMaxWidth()
+            .testTag(SETTINGS_PENDING_PAIRING_ROUTE_STATUS_TEST_TAG)
             .semantics {
                 contentDescription = pendingAccessibilitySummary
                 liveRegion = LiveRegionMode.Polite
@@ -491,7 +496,9 @@ private fun PendingPairingRouteStatus(state: RuntimeUiState) {
         color = MaterialTheme.colorScheme.secondaryContainer,
     ) {
         Row(
-            modifier = Modifier.padding(14.dp),
+            modifier = Modifier
+                .padding(14.dp)
+                .testTag(SETTINGS_PENDING_PAIRING_ROUTE_ROW_TEST_TAG),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.Top,
         ) {
@@ -499,28 +506,35 @@ private fun PendingPairingRouteStatus(state: RuntimeUiState) {
                 Icons.Filled.Search,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onSecondaryContainer,
-                modifier = Modifier.size(22.dp),
+                modifier = Modifier
+                    .size(22.dp)
+                    .testTag(SETTINGS_PENDING_PAIRING_ROUTE_ICON_TEST_TAG),
             )
             Column(
                 verticalArrangement = Arrangement.spacedBy(4.dp),
-                modifier = Modifier.weight(1f),
+                modifier = Modifier
+                    .weight(1f)
+                    .testTag(SETTINGS_PENDING_PAIRING_ROUTE_TEXT_COLUMN_TEST_TAG),
             ) {
                 Text(
                     text = pendingTitle,
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    modifier = Modifier.testTag(SETTINGS_PENDING_PAIRING_ROUTE_TITLE_TEST_TAG),
                 )
                 Text(
                     text = pendingDetail,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    modifier = Modifier.testTag(SETTINGS_PENDING_PAIRING_ROUTE_DETAIL_TEST_TAG),
                 )
                 if (state.isDiscovering) {
                     LinearProgressIndicator(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(top = 6.dp),
+                            .padding(top = 6.dp)
+                            .testTag(SETTINGS_PENDING_PAIRING_ROUTE_PROGRESS_TEST_TAG),
                     )
                 }
             }
@@ -948,6 +962,7 @@ private fun RuntimeRouteNotice(
     Surface(
         modifier = Modifier
             .fillMaxWidth()
+            .testTag(RUNTIME_ROUTE_NOTICE_TEST_TAG)
             .semantics(mergeDescendants = true) {
                 contentDescription = accessibilitySummary
                 stateDescription = statusDescription
@@ -971,28 +986,38 @@ private fun RuntimeRouteNotice(
         contentColor = notice.contentColor(),
     ) {
         Row(
-            modifier = Modifier.padding(12.dp),
+            modifier = Modifier
+                .padding(12.dp)
+                .testTag(RUNTIME_ROUTE_NOTICE_ROW_TEST_TAG),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.Top,
         ) {
             Icon(
                 imageVector = notice.icon,
                 contentDescription = null,
-                modifier = Modifier.size(20.dp),
+                modifier = Modifier
+                    .size(20.dp)
+                    .testTag(RUNTIME_ROUTE_NOTICE_ICON_TEST_TAG),
                 tint = notice.contentColor(),
             )
             Column(
-                modifier = Modifier.weight(1f),
+                modifier = Modifier
+                    .weight(1f)
+                    .testTag(RUNTIME_ROUTE_NOTICE_TEXT_COLUMN_TEST_TAG),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag(RUNTIME_ROUTE_NOTICE_HEADER_TEST_TAG),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
                         text = title,
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag(RUNTIME_ROUTE_NOTICE_TITLE_TEST_TAG),
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = notice.contentColor(),
@@ -1005,12 +1030,14 @@ private fun RuntimeRouteNotice(
                     text = detailDescription,
                     style = MaterialTheme.typography.bodySmall,
                     color = notice.contentColor(),
+                    modifier = Modifier.testTag(RUNTIME_ROUTE_NOTICE_DETAIL_TEST_TAG),
                 )
                 if (recoverySteps != null) {
                     Text(
                         text = recoverySteps,
                         style = MaterialTheme.typography.bodySmall,
                         color = notice.contentColor().copy(alpha = 0.82f),
+                        modifier = Modifier.testTag(RUNTIME_ROUTE_NOTICE_RECOVERY_TEST_TAG),
                     )
                 }
                 if (actionLabel != null && actionHandler != null) {
@@ -1021,6 +1048,7 @@ private fun RuntimeRouteNotice(
                         color = notice.contentColor(),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.testTag(RUNTIME_ROUTE_NOTICE_ACTION_TEST_TAG),
                     )
                 }
             }
@@ -1044,7 +1072,9 @@ private fun RouteNoticeStatusPill(notice: RuntimeRouteNoticeState) {
     ) {
         Text(
             text = stringResource(notice.statusRes),
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+            modifier = Modifier
+                .padding(horizontal = 8.dp, vertical = 3.dp)
+                .testTag(RUNTIME_ROUTE_NOTICE_STATUS_TEST_TAG),
             style = MaterialTheme.typography.labelSmall,
             fontWeight = FontWeight.SemiBold,
             maxLines = 1,
@@ -2628,7 +2658,11 @@ private fun DeveloperDiagnosticsPanel(
         diagnosticsContentDescription,
     )
 
-    OutlinedCard(modifier = Modifier.fillMaxWidth()) {
+    OutlinedCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(DEVELOPER_DIAGNOSTICS_CARD_TAG),
+    ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -2649,18 +2683,22 @@ private fun DeveloperDiagnosticsPanel(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag(DEVELOPER_DIAGNOSTICS_TEXT_COLUMN_TAG),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
                     Text(
                         text = stringResource(R.string.developer_routes_title),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Medium,
+                        modifier = Modifier.testTag(DEVELOPER_DIAGNOSTICS_TITLE_TAG),
                     )
                     Text(
                         text = stringResource(R.string.developer_routes_detail),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.secondary,
+                        modifier = Modifier.testTag(DEVELOPER_DIAGNOSTICS_DETAIL_TAG),
                     )
                 }
                 Switch(
@@ -2895,7 +2933,11 @@ private fun DiscoveryPanel(
     }
     val stopDiscoveryActionLabel = stringResource(R.string.stop)
 
-    OutlinedCard(modifier = Modifier.fillMaxWidth()) {
+    OutlinedCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(SETTINGS_DISCOVERY_PANEL_TEST_TAG),
+    ) {
         Column(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -2904,13 +2946,18 @@ private fun DiscoveryPanel(
                 text = stringResource(R.string.discovered_runtimes),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Medium,
+                modifier = Modifier.testTag(SETTINGS_DISCOVERY_TITLE_TEST_TAG),
             )
             Text(
                 text = stringResource(R.string.discovery_detail),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.secondary,
+                modifier = Modifier.testTag(SETTINGS_DISCOVERY_DETAIL_TEST_TAG),
             )
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(
+                modifier = Modifier.testTag(SETTINGS_DISCOVERY_ACTIONS_TEST_TAG),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 Button(
                     onClick = {
                         hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
@@ -2919,6 +2966,7 @@ private fun DiscoveryPanel(
                     enabled = !state.isDiscovering,
                     modifier = Modifier
                         .fillMaxWidth()
+                        .testTag(SETTINGS_DISCOVERY_START_ACTION_TEST_TAG)
                         .semantics {
                             stateDescription = startDiscoveryStateDescription
                             onClick(label = startDiscoveryActionLabel, action = null)
@@ -2926,7 +2974,14 @@ private fun DiscoveryPanel(
                 ) {
                     Icon(Icons.Filled.Refresh, contentDescription = null)
                     Spacer(Modifier.width(8.dp))
-                    Text(startDiscoveryActionLabel)
+                    Text(
+                        text = startDiscoveryActionLabel,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .weight(1f, fill = false)
+                            .testTag(SETTINGS_DISCOVERY_START_LABEL_TEST_TAG),
+                    )
                 }
                 OutlinedButton(
                     onClick = {
@@ -2936,6 +2991,7 @@ private fun DiscoveryPanel(
                     enabled = state.isDiscovering,
                     modifier = Modifier
                         .fillMaxWidth()
+                        .testTag(SETTINGS_DISCOVERY_STOP_ACTION_TEST_TAG)
                         .semantics {
                             stateDescription = stopDiscoveryStateDescription
                             onClick(label = stopDiscoveryActionLabel, action = null)
@@ -2943,14 +2999,29 @@ private fun DiscoveryPanel(
                 ) {
                     Icon(Icons.Filled.Close, contentDescription = null)
                     Spacer(Modifier.width(8.dp))
-                    Text(stopDiscoveryActionLabel)
+                    Text(
+                        text = stopDiscoveryActionLabel,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .weight(1f, fill = false)
+                            .testTag(SETTINGS_DISCOVERY_STOP_LABEL_TEST_TAG),
+                    )
                 }
             }
             if (state.isDiscovering) {
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                LinearProgressIndicator(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag(SETTINGS_DISCOVERY_PROGRESS_TEST_TAG),
+                )
             }
             if (state.discoveredRuntimes.isEmpty()) {
-                EmptyState(text = stringResource(R.string.no_discovered_runtimes))
+                EmptyState(
+                    text = stringResource(R.string.no_discovered_runtimes),
+                    modifier = Modifier.testTag(SETTINGS_DISCOVERY_EMPTY_STATE_TEST_TAG),
+                    textModifier = Modifier.testTag(SETTINGS_DISCOVERY_EMPTY_TEXT_TEST_TAG),
+                )
             } else {
                 LazyColumn(
                     modifier = Modifier.heightIn(max = 220.dp),
@@ -3173,6 +3244,7 @@ private fun ChatEmptyState(
 
     Column(
         modifier = Modifier
+            .testTag(CHAT_EMPTY_STATE_TEST_TAG)
             .widthIn(max = 460.dp)
             .fillMaxWidth()
             .padding(horizontal = 20.dp),
@@ -3186,24 +3258,28 @@ private fun ChatEmptyState(
             modifier = Modifier.size(30.dp),
         )
         Column(
-            modifier = Modifier.semantics(mergeDescendants = true) {
-                heading()
-                contentDescription = emptyAccessibilitySummary
-                if (preferQrRouteRefresh) {
-                    liveRegion = LiveRegionMode.Polite
-                }
-            },
+            modifier = Modifier
+                .testTag(CHAT_EMPTY_STATE_TEXT_TEST_TAG)
+                .semantics(mergeDescendants = true) {
+                    heading()
+                    contentDescription = emptyAccessibilitySummary
+                    if (preferQrRouteRefresh) {
+                        liveRegion = LiveRegionMode.Polite
+                    }
+                },
             verticalArrangement = Arrangement.spacedBy(4.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(
                 text = emptyTitle,
+                modifier = Modifier.testTag(CHAT_EMPTY_STATE_TITLE_TEST_TAG),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
                 textAlign = TextAlign.Center,
             )
             Text(
                 text = emptyBody,
+                modifier = Modifier.testTag(CHAT_EMPTY_STATE_BODY_TEST_TAG),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.secondary,
                 textAlign = TextAlign.Center,
@@ -3233,15 +3309,18 @@ private fun ChatEmptyState(
                     }
                 },
                 enabled = !state.isConnecting,
-                modifier = Modifier.semantics {
-                    stateDescription = primaryActionStateDescription
-                    onClick(label = primaryActionLabel, action = null)
-                },
+                modifier = Modifier
+                    .testTag(CHAT_EMPTY_STATE_PRIMARY_ACTION_TEST_TAG)
+                    .semantics {
+                        stateDescription = primaryActionStateDescription
+                        onClick(label = primaryActionLabel, action = null)
+                    },
             ) {
                 Icon(Icons.Filled.Link, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
                 Text(
                     text = primaryActionLabel,
+                    modifier = Modifier.testTag(CHAT_EMPTY_STATE_PRIMARY_ACTION_LABEL_TEST_TAG),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -3598,22 +3677,26 @@ private fun MessageActionRow(
 
 @Composable
 private fun AssistantIdentityMarker(roleLabel: String) {
+    val assistantInitial = stringResource(R.string.role_assistant_initial)
+    val minMarkerWidth = if (assistantInitial.length > 1) 34.dp else 28.dp
     Box(
         modifier = Modifier
             .padding(top = 1.dp)
-            .size(28.dp)
+            .height(28.dp)
+            .widthIn(min = minMarkerWidth, max = 42.dp)
+            .semantics(mergeDescendants = true) {
+                contentDescription = roleLabel
+            }
+            .testTag(ASSISTANT_IDENTITY_MARKER_TEST_TAG)
             .background(
                 color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.82f),
                 shape = RoundedCornerShape(999.dp),
             )
-            .semantics(mergeDescendants = true) {
-                contentDescription = roleLabel
-            }
-            .testTag(ASSISTANT_IDENTITY_MARKER_TEST_TAG),
+            .padding(horizontal = 7.dp),
         contentAlignment = Alignment.Center,
     ) {
         Text(
-            text = stringResource(R.string.role_assistant_initial),
+            text = assistantInitial,
             color = MaterialTheme.colorScheme.onSecondaryContainer,
             style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.SemiBold,
@@ -4542,9 +4625,22 @@ private const val REASONING_SINGLE_PARAGRAPH_PREVIEW_CHARS = REASONING_PREVIEW_M
 internal const val CHAT_COMPOSER_CONTAINER_CORNER_RADIUS_DP = 28
 internal const val CHAT_COMPOSER_CONTAINER_ALPHA = 0.98f
 internal const val MARKDOWN_TABLE_CELL_WIDTH_DP = 152
+internal const val DEVELOPER_DIAGNOSTICS_CARD_TAG = "developer-diagnostics-card"
 internal const val DEVELOPER_DIAGNOSTICS_TOGGLE_ROW_TAG = "developer-diagnostics-toggle-row"
+internal const val DEVELOPER_DIAGNOSTICS_TEXT_COLUMN_TAG = "developer-diagnostics-text-column"
+internal const val DEVELOPER_DIAGNOSTICS_TITLE_TAG = "developer-diagnostics-title"
+internal const val DEVELOPER_DIAGNOSTICS_DETAIL_TAG = "developer-diagnostics-detail"
 internal const val DEVELOPER_DIAGNOSTICS_SWITCH_DISABLED_TAG = "developer-diagnostics-switch-disabled"
 internal const val DEVELOPER_DIAGNOSTICS_SWITCH_ENABLED_TAG = "developer-diagnostics-switch-enabled"
+internal const val SETTINGS_CHAT_HISTORY_HEADER_TEST_TAG = "aetherlink_settings_chat_history_header"
+internal const val SETTINGS_CHAT_HISTORY_HEADER_TITLE_TEST_TAG =
+    "aetherlink_settings_chat_history_header_title"
+internal const val SETTINGS_CHAT_HISTORY_HEADER_SUBTITLE_TEST_TAG =
+    "aetherlink_settings_chat_history_header_subtitle"
+internal const val SETTINGS_CHAT_HISTORY_REFRESH_ROW_TEST_TAG =
+    "aetherlink_settings_chat_history_refresh_row"
+internal const val SETTINGS_CHAT_HISTORY_REFRESH_ACTION_TEST_TAG =
+    "aetherlink_settings_chat_history_refresh_action"
 internal const val SETTINGS_CHAT_HISTORY_SEARCH_TEST_TAG = "aetherlink_settings_chat_history_search"
 internal const val SETTINGS_CHAT_HISTORY_BULK_EXPANDER_TEST_TAG = "settings_chat_history_bulk_expander"
 internal const val SETTINGS_CHAT_HISTORY_BULK_EXPANDER_LABEL_TEST_TAG =
@@ -5128,6 +5224,7 @@ private fun CompanionOnlyPanel() {
     Surface(
         modifier = Modifier
             .fillMaxWidth()
+            .testTag(SETTINGS_COMPANION_ONLY_PANEL_TEST_TAG)
             .semantics(mergeDescendants = true) {
                 contentDescription = summary
                 liveRegion = LiveRegionMode.Polite
@@ -5136,7 +5233,9 @@ private fun CompanionOnlyPanel() {
         color = MaterialTheme.colorScheme.primaryContainer,
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
+            modifier = Modifier
+                .padding(16.dp)
+                .testTag(SETTINGS_COMPANION_ONLY_CONTENT_TEST_TAG),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Text(
@@ -5144,11 +5243,13 @@ private fun CompanionOnlyPanel() {
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.onPrimaryContainer,
+                modifier = Modifier.testTag(SETTINGS_COMPANION_ONLY_TITLE_TEST_TAG),
             )
             Text(
                 text = detail,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onPrimaryContainer,
+                modifier = Modifier.testTag(SETTINGS_COMPANION_ONLY_DETAIL_TEST_TAG),
             )
         }
     }
@@ -5370,7 +5471,10 @@ internal fun EmbeddingModelPanel(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             if (showHeader) {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Column(
+                    modifier = Modifier.testTag(SETTINGS_CHAT_HISTORY_HEADER_TEST_TAG),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
                     Text(
                         text = stringResource(R.string.embedding_model_title),
                         style = MaterialTheme.typography.titleMedium,
@@ -5983,16 +6087,20 @@ internal fun ChatHistorySettingsPanel(
                         text = stringResource(R.string.chat_history_settings_title),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.testTag(SETTINGS_CHAT_HISTORY_HEADER_TITLE_TEST_TAG),
                     )
                     Text(
                         text = stringResource(R.string.chat_history_settings_subtitle),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.secondary,
+                        modifier = Modifier.testTag(SETTINGS_CHAT_HISTORY_HEADER_SUBTITLE_TEST_TAG),
                     )
                 }
             }
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(SETTINGS_CHAT_HISTORY_REFRESH_ROW_TEST_TAG),
                 horizontalArrangement = Arrangement.End,
             ) {
                 ChatHistoryRefreshButton(
@@ -6357,11 +6465,13 @@ private fun ChatHistoryRefreshButton(
             onRefreshChatHistory()
         },
         enabled = canRefreshChatHistory,
-        modifier = Modifier.semantics {
-            contentDescription = refreshContentDescription
-            stateDescription = refreshStateDescription
-            onClick(label = refreshContentDescription, action = null)
-        },
+        modifier = Modifier
+            .testTag(SETTINGS_CHAT_HISTORY_REFRESH_ACTION_TEST_TAG)
+            .semantics {
+                contentDescription = refreshContentDescription
+                stateDescription = refreshStateDescription
+                onClick(label = refreshContentDescription, action = null)
+            },
     ) {
         Icon(Icons.Filled.Refresh, contentDescription = null)
     }
@@ -6950,14 +7060,18 @@ internal fun MemoryPanel(
             }
             if (!actionsEnabled) {
                 Surface(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag(MEMORY_LOCK_NOTICE_TEST_TAG),
                     shape = RoundedCornerShape(8.dp),
                     color = MaterialTheme.colorScheme.surfaceVariant,
                     contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
                 ) {
                     Text(
                         text = actionsDisabledReason,
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                        modifier = Modifier
+                            .padding(horizontal = 12.dp, vertical = 10.dp)
+                            .testTag(MEMORY_LOCK_NOTICE_TEXT_TEST_TAG),
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
@@ -6975,6 +7089,7 @@ internal fun MemoryPanel(
                 maxLines = 4,
                 modifier = Modifier
                     .fillMaxWidth()
+                    .testTag(MEMORY_ADD_INPUT_TEST_TAG)
                     .semantics {
                         contentDescription = memoryAddContentDescription
                         stateDescription = memoryAddStateDescription
@@ -6990,6 +7105,7 @@ internal fun MemoryPanel(
                 enabled = canAdd,
                 modifier = Modifier
                     .fillMaxWidth()
+                    .testTag(MEMORY_ADD_ACTION_TEST_TAG)
                     .semantics {
                         stateDescription = memoryAddStateDescription
                         onClick(label = memoryAddActionLabel, action = null)
@@ -6997,12 +7113,19 @@ internal fun MemoryPanel(
             ) {
                 Icon(Icons.Filled.Add, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
-                Text(memoryAddActionLabel)
+                Text(
+                    text = memoryAddActionLabel,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.testTag(MEMORY_ADD_ACTION_LABEL_TEST_TAG),
+                )
             }
             if (actionsEnabled && showAddedMemoryNotice.value) {
                 Surface(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .testTag(MEMORY_ADDED_NOTICE_TEST_TAG)
                         .semantics {
                             contentDescription = memoryAddedNotice
                             liveRegion = LiveRegionMode.Polite
@@ -7013,7 +7136,9 @@ internal fun MemoryPanel(
                 ) {
                     Text(
                         text = memoryAddedNotice,
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                        modifier = Modifier
+                            .padding(horizontal = 12.dp, vertical = 10.dp)
+                            .testTag(MEMORY_ADDED_NOTICE_TEXT_TEST_TAG),
                         style = MaterialTheme.typography.bodySmall,
                         fontWeight = FontWeight.Medium,
                     )
@@ -7027,6 +7152,8 @@ internal fun MemoryPanel(
                         stringResource(memoryEmptyStateTextRes(actionsEnabled = actionsEnabled))
                     },
                     announceChanges = true,
+                    modifier = Modifier.testTag(MEMORY_EMPTY_STATE_TEST_TAG),
+                    textModifier = Modifier.testTag(MEMORY_EMPTY_STATE_TEXT_TEST_TAG),
                 )
             } else {
                 MemorySummary(summary = memorySummary)
@@ -7293,7 +7420,9 @@ private fun MemoryPanelHeader(
     hapticFeedback: HapticFeedback,
 ) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag(MEMORY_PANEL_HEADER_TEST_TAG),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.Top,
     ) {
@@ -7340,15 +7469,17 @@ private fun MemoryRefreshButton(
             onRefreshMemory()
         },
         enabled = actionsEnabled,
-        modifier = Modifier.semantics {
-            contentDescription = memoryRefreshContentDescription
-            stateDescription = if (actionsEnabled) {
-                memoryRefreshReadyStateDescription
-            } else {
-                actionsDisabledReason
-            }
-            onClick(label = memoryRefreshContentDescription, action = null)
-        },
+        modifier = Modifier
+            .testTag(MEMORY_REFRESH_ACTION_TEST_TAG)
+            .semantics {
+                contentDescription = memoryRefreshContentDescription
+                stateDescription = if (actionsEnabled) {
+                    memoryRefreshReadyStateDescription
+                } else {
+                    actionsDisabledReason
+                }
+                onClick(label = memoryRefreshContentDescription, action = null)
+            },
     ) {
         Icon(Icons.Filled.Refresh, contentDescription = null)
     }
@@ -7602,13 +7733,17 @@ private fun MemoryEntrySourceReview(
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(MEMORY_ENTRY_SOURCE_HEADER_TEST_TAG),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
                     text = sourceOrigin,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag(MEMORY_ENTRY_SOURCE_ORIGIN_TEST_TAG),
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
@@ -7616,6 +7751,7 @@ private fun MemoryEntrySourceReview(
                 )
                 Text(
                     text = sourceCount,
+                    modifier = Modifier.testTag(MEMORY_ENTRY_SOURCE_COUNT_TEST_TAG),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.secondary,
                     maxLines = 1,
@@ -7625,6 +7761,7 @@ private fun MemoryEntrySourceReview(
             sourceRange?.let {
                 Text(
                     text = it,
+                    modifier = Modifier.testTag(MEMORY_ENTRY_SOURCE_RANGE_TEST_TAG),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.secondary,
                 )
@@ -7634,11 +7771,13 @@ private fun MemoryEntrySourceReview(
                     hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.Toggle)
                     expanded.value = !expanded.value
                 },
-                modifier = Modifier.semantics {
-                    contentDescription = toggleContentDescription
-                    stateDescription = sourceStateDescription
-                    onClick(label = toggleLabel, action = null)
-                },
+                modifier = Modifier
+                    .testTag(MEMORY_ENTRY_SOURCE_TOGGLE_TEST_TAG)
+                    .semantics {
+                        contentDescription = toggleContentDescription
+                        stateDescription = sourceStateDescription
+                        onClick(label = toggleLabel, action = null)
+                    },
             ) {
                 Icon(
                     imageVector = if (expanded.value) {
@@ -7649,10 +7788,13 @@ private fun MemoryEntrySourceReview(
                     contentDescription = null,
                 )
                 Spacer(Modifier.width(6.dp))
-                Text(toggleLabel)
+                Text(
+                    toggleLabel,
+                    modifier = Modifier.testTag(MEMORY_ENTRY_SOURCE_TOGGLE_LABEL_TEST_TAG),
+                )
             }
             if (expanded.value) {
-                source.sourcePointers.take(2).forEach { pointer ->
+                source.sourcePointers.take(2).forEachIndexed { index, pointer ->
                     val roleLabel = stringResource(
                         if (pointer.role == "user") {
                             R.string.role_user
@@ -7662,6 +7804,7 @@ private fun MemoryEntrySourceReview(
                     )
                     Text(
                         text = stringResource(R.string.memory_summary_draft_source_excerpt, roleLabel, pointer.excerpt),
+                        modifier = Modifier.testTag(memoryEntrySourceExcerptTestTag(index)),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.secondary,
                         maxLines = 2,
@@ -7693,6 +7836,16 @@ internal const val CONNECTION_STATUS_REFRESH_ACTION_TEST_TAG = "connection_statu
 internal const val CONNECTION_STATUS_REFRESH_ACTION_LABEL_TEST_TAG = "connection_status_refresh_action_label"
 internal const val CONNECTION_STATUS_DISCONNECT_ACTION_TEST_TAG = "connection_status_disconnect_action"
 internal const val CONNECTION_STATUS_DISCONNECT_ACTION_LABEL_TEST_TAG = "connection_status_disconnect_action_label"
+internal const val RUNTIME_ROUTE_NOTICE_TEST_TAG = "runtime_route_notice"
+internal const val RUNTIME_ROUTE_NOTICE_ROW_TEST_TAG = "runtime_route_notice_row"
+internal const val RUNTIME_ROUTE_NOTICE_ICON_TEST_TAG = "runtime_route_notice_icon"
+internal const val RUNTIME_ROUTE_NOTICE_TEXT_COLUMN_TEST_TAG = "runtime_route_notice_text_column"
+internal const val RUNTIME_ROUTE_NOTICE_HEADER_TEST_TAG = "runtime_route_notice_header"
+internal const val RUNTIME_ROUTE_NOTICE_TITLE_TEST_TAG = "runtime_route_notice_title"
+internal const val RUNTIME_ROUTE_NOTICE_STATUS_TEST_TAG = "runtime_route_notice_status"
+internal const val RUNTIME_ROUTE_NOTICE_DETAIL_TEST_TAG = "runtime_route_notice_detail"
+internal const val RUNTIME_ROUTE_NOTICE_RECOVERY_TEST_TAG = "runtime_route_notice_recovery"
+internal const val RUNTIME_ROUTE_NOTICE_ACTION_TEST_TAG = "runtime_route_notice_action"
 internal const val CONNECTION_STATUS_RUNTIME_LINE_KEY = "runtime"
 internal const val CONNECTION_STATUS_PAIRING_LINE_KEY = "pairing"
 internal const val CONNECTION_STATUS_BACKEND_LINE_KEY = "backend"
@@ -7705,6 +7858,14 @@ internal const val ASSISTANT_REASONING_HEADER_TEST_TAG = "assistant_reasoning_he
 internal const val ASSISTANT_REASONING_LABEL_TEST_TAG = "assistant_reasoning_label"
 internal const val ASSISTANT_REASONING_TOGGLE_TEST_TAG = "assistant_reasoning_toggle"
 internal const val ASSISTANT_REASONING_BODY_TEST_TAG = "assistant_reasoning_body"
+internal const val CHAT_EMPTY_STATE_TEST_TAG = "chat_empty_state"
+internal const val CHAT_EMPTY_STATE_TEXT_TEST_TAG = "chat_empty_state_text"
+internal const val CHAT_EMPTY_STATE_TITLE_TEST_TAG = "chat_empty_state_title"
+internal const val CHAT_EMPTY_STATE_BODY_TEST_TAG = "chat_empty_state_body"
+internal const val CHAT_EMPTY_STATE_PRIMARY_ACTION_TEST_TAG =
+    "chat_empty_state_primary_action"
+internal const val CHAT_EMPTY_STATE_PRIMARY_ACTION_LABEL_TEST_TAG =
+    "chat_empty_state_primary_action_label"
 internal const val SETTINGS_PREFERENCES_PANEL_TEST_TAG = "settings_preferences_panel"
 internal const val SETTINGS_APPEARANCE_GROUP_TEST_TAG = "settings_appearance_group"
 internal const val SETTINGS_APPEARANCE_GROUP_LABEL_TEST_TAG = "settings_appearance_group_label"
@@ -7725,9 +7886,30 @@ internal const val EMBEDDING_MODEL_NONE_DETAIL_TEST_TAG = "embedding_model_none_
 internal const val SAVED_EMBEDDING_MODEL_ROW_TEST_TAG = "saved_embedding_model_row"
 internal const val SAVED_EMBEDDING_MODEL_LABEL_TEST_TAG = "saved_embedding_model_label"
 internal const val SAVED_EMBEDDING_MODEL_DETAIL_TEST_TAG = "saved_embedding_model_detail"
+internal const val MEMORY_PANEL_HEADER_TEST_TAG = "memory_panel_header"
+internal const val MEMORY_REFRESH_ACTION_TEST_TAG = "memory_refresh_action"
+internal const val MEMORY_LOCK_NOTICE_TEST_TAG = "memory_lock_notice"
+internal const val MEMORY_LOCK_NOTICE_TEXT_TEST_TAG = "memory_lock_notice_text"
+internal const val MEMORY_ADD_INPUT_TEST_TAG = "memory_add_input"
+internal const val MEMORY_ADD_ACTION_TEST_TAG = "memory_add_action"
+internal const val MEMORY_ADD_ACTION_LABEL_TEST_TAG = "memory_add_action_label"
+internal const val MEMORY_ADDED_NOTICE_TEST_TAG = "memory_added_notice"
+internal const val MEMORY_ADDED_NOTICE_TEXT_TEST_TAG = "memory_added_notice_text"
+internal const val MEMORY_EMPTY_STATE_TEST_TAG = "memory_empty_state"
+internal const val MEMORY_EMPTY_STATE_TEXT_TEST_TAG = "memory_empty_state_text"
 internal const val MEMORY_ENTRY_CONTENT_TEST_TAG = "memory_entry_content"
 internal const val MEMORY_ENTRY_ACTIONS_TEST_TAG = "memory_entry_actions"
 internal const val MEMORY_ENTRY_SOURCE_TEST_TAG = "memory_entry_source"
+internal const val MEMORY_ENTRY_SOURCE_HEADER_TEST_TAG = "memory_entry_source_header"
+internal const val MEMORY_ENTRY_SOURCE_ORIGIN_TEST_TAG = "memory_entry_source_origin"
+internal const val MEMORY_ENTRY_SOURCE_COUNT_TEST_TAG = "memory_entry_source_count"
+internal const val MEMORY_ENTRY_SOURCE_RANGE_TEST_TAG = "memory_entry_source_range"
+internal const val MEMORY_ENTRY_SOURCE_TOGGLE_TEST_TAG = "memory_entry_source_toggle"
+internal const val MEMORY_ENTRY_SOURCE_TOGGLE_LABEL_TEST_TAG = "memory_entry_source_toggle_label"
+internal const val MEMORY_ENTRY_SOURCE_EXCERPT_TEST_TAG_PREFIX = "memory_entry_source_excerpt_"
+
+internal fun memoryEntrySourceExcerptTestTag(index: Int): String =
+    "$MEMORY_ENTRY_SOURCE_EXCERPT_TEST_TAG_PREFIX$index"
 internal const val MEMORY_DELETE_CONFIRMATION_DIALOG_TEST_TAG =
     "memory_delete_confirmation_dialog"
 internal const val MEMORY_DELETE_CONFIRMATION_TITLE_TEST_TAG =
@@ -7946,6 +8128,8 @@ private fun ChatHistorySummary(
 private fun EmptyState(
     text: String,
     announceChanges: Boolean = false,
+    modifier: Modifier = Modifier,
+    textModifier: Modifier = Modifier,
 ) {
     val stateModifier = if (announceChanges) {
         Modifier.semantics(mergeDescendants = true) {
@@ -7956,13 +8140,15 @@ private fun EmptyState(
         Modifier
     }
     Surface(
-        modifier = stateModifier.fillMaxWidth(),
+        modifier = modifier
+            .then(stateModifier)
+            .fillMaxWidth(),
         shape = RoundedCornerShape(8.dp),
         color = MaterialTheme.colorScheme.surfaceVariant,
     ) {
         Text(
             text = text,
-            modifier = Modifier.padding(16.dp),
+            modifier = textModifier.padding(16.dp),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.secondary,
         )
@@ -8299,10 +8485,14 @@ internal fun routeAvailabilityCompactLabelRes(error: RuntimeUiError): Int {
     return when (error.diagnosticCode) {
         "route_diagnostic_relay_unreachable_from_device" -> R.string.route_diagnostic_relay_unreachable_from_device
         "route_diagnostic_relay_failed" -> R.string.route_diagnostic_relay_failed
+        "route_diagnostic_p2p_failed_relay_pending" -> R.string.route_diagnostic_p2p_failed_relay_pending
         "route_diagnostic_relay_auth_failed" -> R.string.route_diagnostic_relay_auth_failed
+        "route_diagnostic_remote_identity_mismatch" -> R.string.route_diagnostic_remote_identity_mismatch
         "route_diagnostic_remote_route_expired" -> R.string.route_diagnostic_remote_route_expired
         "route_diagnostic_direct_qr_rejected" -> R.string.route_diagnostic_direct_qr_rejected
         "route_diagnostic_relay_qr_unreachable" -> R.string.route_diagnostic_relay_qr_unreachable
+        "route_diagnostic_private_overlay_scope_required" ->
+            R.string.route_diagnostic_private_overlay_scope_required
         else -> when {
             error.code == "remote_route_unreachable_from_device" -> R.string.error_remote_route_unreachable_from_device
             error.code == "remote_route_unreachable" -> R.string.error_remote_route_unreachable
@@ -8344,10 +8534,13 @@ private val ROUTE_AVAILABILITY_DIAGNOSTIC_CODES = setOf(
     "route_diagnostic_remote_pending",
     "route_diagnostic_relay_unreachable_from_device",
     "route_diagnostic_relay_failed",
+    "route_diagnostic_p2p_failed_relay_pending",
     "route_diagnostic_relay_auth_failed",
+    "route_diagnostic_remote_identity_mismatch",
     "route_diagnostic_remote_route_expired",
     "route_diagnostic_direct_qr_rejected",
     "route_diagnostic_relay_qr_unreachable",
+    "route_diagnostic_private_overlay_scope_required",
 )
 
 private val RELAY_ROUTE_NEEDED_DIAGNOSTIC_CODES = setOf(
@@ -8356,10 +8549,13 @@ private val RELAY_ROUTE_NEEDED_DIAGNOSTIC_CODES = setOf(
     "route_diagnostic_remote_pending",
     "route_diagnostic_relay_unreachable_from_device",
     "route_diagnostic_relay_failed",
+    "route_diagnostic_p2p_failed_relay_pending",
     "route_diagnostic_relay_auth_failed",
+    "route_diagnostic_remote_identity_mismatch",
     "route_diagnostic_remote_route_expired",
     "route_diagnostic_direct_qr_rejected",
     "route_diagnostic_relay_qr_unreachable",
+    "route_diagnostic_private_overlay_scope_required",
 )
 
 private val QR_REFRESH_EMPTY_CHAT_ERROR_CODES = setOf(
@@ -8493,6 +8689,28 @@ internal const val PENDING_ATTACHMENT_CHIPS_TEST_TAG = "aetherlink_pending_attac
 internal const val PENDING_ATTACHMENT_CHIP_TEST_TAG_PREFIX = "aetherlink_pending_attachment_chip_"
 internal const val SETTINGS_QR_PAIRING_PANEL_TEST_TAG = "aetherlink_settings_qr_pairing_panel"
 internal const val SETTINGS_QR_PAIRING_SCAN_BUTTON_TEST_TAG = "aetherlink_settings_qr_pairing_scan_button"
+internal const val SETTINGS_PENDING_PAIRING_ROUTE_STATUS_TEST_TAG =
+    "aetherlink_settings_pending_pairing_route_status"
+internal const val SETTINGS_PENDING_PAIRING_ROUTE_ROW_TEST_TAG =
+    "aetherlink_settings_pending_pairing_route_row"
+internal const val SETTINGS_PENDING_PAIRING_ROUTE_ICON_TEST_TAG =
+    "aetherlink_settings_pending_pairing_route_icon"
+internal const val SETTINGS_PENDING_PAIRING_ROUTE_TEXT_COLUMN_TEST_TAG =
+    "aetherlink_settings_pending_pairing_route_text_column"
+internal const val SETTINGS_PENDING_PAIRING_ROUTE_TITLE_TEST_TAG =
+    "aetherlink_settings_pending_pairing_route_title"
+internal const val SETTINGS_PENDING_PAIRING_ROUTE_DETAIL_TEST_TAG =
+    "aetherlink_settings_pending_pairing_route_detail"
+internal const val SETTINGS_PENDING_PAIRING_ROUTE_PROGRESS_TEST_TAG =
+    "aetherlink_settings_pending_pairing_route_progress"
+internal const val SETTINGS_COMPANION_ONLY_PANEL_TEST_TAG =
+    "aetherlink_settings_companion_only_panel"
+internal const val SETTINGS_COMPANION_ONLY_CONTENT_TEST_TAG =
+    "aetherlink_settings_companion_only_content"
+internal const val SETTINGS_COMPANION_ONLY_TITLE_TEST_TAG =
+    "aetherlink_settings_companion_only_title"
+internal const val SETTINGS_COMPANION_ONLY_DETAIL_TEST_TAG =
+    "aetherlink_settings_companion_only_detail"
 internal const val SETTINGS_TRUSTED_RUNTIME_PANEL_TEST_TAG = "aetherlink_settings_trusted_runtime_panel"
 internal const val SETTINGS_TRUSTED_RUNTIME_HEADER_TEST_TAG = "aetherlink_settings_trusted_runtime_header"
 internal const val SETTINGS_TRUSTED_RUNTIME_ICON_TEST_TAG = "aetherlink_settings_trusted_runtime_icon"
@@ -8533,6 +8751,23 @@ internal const val SETTINGS_CHAT_HISTORY_SEARCH_SNIPPET_TEST_TAG_PREFIX =
 internal const val DISCOVERED_RUNTIME_ROW_TEST_TAG_PREFIX = "aetherlink_discovered_runtime_row_"
 internal const val DISCOVERED_RUNTIME_ACTION_TEST_TAG_PREFIX = "aetherlink_discovered_runtime_action_"
 internal const val DISCOVERED_RUNTIME_STATUS_TEST_TAG_PREFIX = "aetherlink_discovered_runtime_status_"
+internal const val SETTINGS_DISCOVERY_PANEL_TEST_TAG = "aetherlink_settings_discovery_panel"
+internal const val SETTINGS_DISCOVERY_TITLE_TEST_TAG = "aetherlink_settings_discovery_title"
+internal const val SETTINGS_DISCOVERY_DETAIL_TEST_TAG = "aetherlink_settings_discovery_detail"
+internal const val SETTINGS_DISCOVERY_ACTIONS_TEST_TAG = "aetherlink_settings_discovery_actions"
+internal const val SETTINGS_DISCOVERY_START_ACTION_TEST_TAG =
+    "aetherlink_settings_discovery_start_action"
+internal const val SETTINGS_DISCOVERY_START_LABEL_TEST_TAG =
+    "aetherlink_settings_discovery_start_label"
+internal const val SETTINGS_DISCOVERY_STOP_ACTION_TEST_TAG =
+    "aetherlink_settings_discovery_stop_action"
+internal const val SETTINGS_DISCOVERY_STOP_LABEL_TEST_TAG =
+    "aetherlink_settings_discovery_stop_label"
+internal const val SETTINGS_DISCOVERY_PROGRESS_TEST_TAG = "aetherlink_settings_discovery_progress"
+internal const val SETTINGS_DISCOVERY_EMPTY_STATE_TEST_TAG =
+    "aetherlink_settings_discovery_empty_state"
+internal const val SETTINGS_DISCOVERY_EMPTY_TEXT_TEST_TAG =
+    "aetherlink_settings_discovery_empty_text"
 internal const val PROVIDER_STATUS_ROW_TEST_TAG_PREFIX = "aetherlink_provider_status_row_"
 internal const val PROVIDER_STATUS_HEADER_TEST_TAG_PREFIX = "aetherlink_provider_status_header_"
 internal const val PROVIDER_STATUS_STATUS_TEST_TAG_PREFIX = "aetherlink_provider_status_status_"
@@ -8720,6 +8955,8 @@ internal fun chatEmptyTextRes(state: RuntimeUiState, preferQrRouteRefresh: Boole
             error?.diagnosticCode == "route_diagnostic_relay_unreachable_from_device" ||
                 error?.code == "remote_route_unreachable_from_device"
         ) -> R.string.route_diagnostic_relay_unreachable_from_device
+        preferQrRouteRefresh && error?.diagnosticCode == "route_diagnostic_p2p_failed_relay_pending" ->
+            R.string.route_diagnostic_p2p_failed_relay_pending
         preferQrRouteRefresh && (
             error?.diagnosticCode == "route_diagnostic_relay_failed" ||
                 error?.code == "remote_route_unreachable"
@@ -8732,6 +8969,8 @@ internal fun chatEmptyTextRes(state: RuntimeUiState, preferQrRouteRefresh: Boole
             error?.diagnosticCode == "route_diagnostic_relay_auth_failed" ||
                 error?.code == "remote_route_auth_failed"
         ) -> R.string.route_diagnostic_relay_auth_failed
+        preferQrRouteRefresh && error?.diagnosticCode == "route_diagnostic_remote_identity_mismatch" ->
+            R.string.route_diagnostic_remote_identity_mismatch
         preferQrRouteRefresh && (
             error?.diagnosticCode == "route_diagnostic_direct_qr_rejected" ||
                 error?.code == "pairing_direct_route_rejected"
@@ -9022,14 +9261,20 @@ private fun runtimeErrorDiagnosticLabel(error: RuntimeUiError): String? {
             stringResource(R.string.route_diagnostic_relay_unreachable_from_device)
         "route_diagnostic_relay_failed" ->
             stringResource(R.string.route_diagnostic_relay_failed)
+        "route_diagnostic_p2p_failed_relay_pending" ->
+            stringResource(R.string.route_diagnostic_p2p_failed_relay_pending)
         "route_diagnostic_relay_auth_failed" ->
             stringResource(R.string.route_diagnostic_relay_auth_failed)
+        "route_diagnostic_remote_identity_mismatch" ->
+            stringResource(R.string.route_diagnostic_remote_identity_mismatch)
         "route_diagnostic_remote_route_expired" ->
             stringResource(R.string.route_diagnostic_remote_route_expired)
         "route_diagnostic_direct_qr_rejected" ->
             stringResource(R.string.route_diagnostic_direct_qr_rejected)
         "route_diagnostic_relay_qr_unreachable" ->
             stringResource(R.string.route_diagnostic_relay_qr_unreachable)
+        "route_diagnostic_private_overlay_scope_required" ->
+            stringResource(R.string.route_diagnostic_private_overlay_scope_required)
         else -> null
     }
 }

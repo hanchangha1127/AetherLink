@@ -4204,7 +4204,7 @@ internal fun RuntimeConnectionFailure.toRuntimeUiError(): RuntimeUiError {
                     detail = message,
                     diagnosticCode = routeDiagnosticCode(),
                 )
-            } else if (hasUnavailableRemoteRoutePlaceholders()) {
+            } else if (hasMismatchedRemoteRoute() || hasUnavailableRemoteRoutePlaceholders()) {
                 runtimeUiError(
                     code = "remote_routes_unavailable",
                     detail = message,
@@ -4221,7 +4221,7 @@ internal fun RuntimeConnectionFailure.toRuntimeUiError(): RuntimeUiError {
         RuntimeConnectionFailureReason.RouteAttemptsFailed -> {
             val diagnosticCode = routeDiagnosticCode()
             runtimeUiError(
-                code = if (diagnosticCode == "route_diagnostic_relay_failed") {
+                code = if (diagnosticCode in REMOTE_ROUTE_UNREACHABLE_DIAGNOSTIC_CODES) {
                     "remote_route_unreachable"
                 } else {
                     "connection_failed"
@@ -4253,7 +4253,15 @@ private fun RuntimeConnectionFailure.hasExpiredRemoteRoute(): Boolean {
     }
 }
 
+private fun RuntimeConnectionFailure.hasMismatchedRemoteRoute(): Boolean {
+    return routeRejections.any {
+        it.reason == RuntimeRouteRejectionReason.RemoteRouteIdentityMismatch &&
+            (it.capability == RuntimeRouteCapability.PeerToPeer || it.capability == RuntimeRouteCapability.Relay)
+    }
+}
+
 private fun RuntimeConnectionFailure.routeDiagnosticCode(): String? {
+    val hasMismatchedRemoteRoute = hasMismatchedRemoteRoute()
     val hasExpiredRemoteRoute = hasExpiredRemoteRoute()
     val hasUnpreparedLocalDirect = routeRejections.any {
         it.capability == RuntimeRouteCapability.DirectTcp &&
@@ -4261,6 +4269,9 @@ private fun RuntimeConnectionFailure.routeDiagnosticCode(): String? {
     }
     val hasFailedDirectEndpoint = attemptFailures.any {
         it.route is RuntimeRouteCandidate.DirectTcp
+    }
+    val hasFailedPeerToPeerRoute = attemptFailures.any {
+        it.route is RuntimeRouteCandidate.PeerToPeer
     }
     val hasFailedRelayRoute = attemptFailures.any {
         it.route is RuntimeRouteCandidate.Relay
@@ -4274,10 +4285,14 @@ private fun RuntimeConnectionFailure.routeDiagnosticCode(): String? {
             it.reason == RuntimeRouteRejectionReason.RelayConnectorNotAvailable
     }
     return when {
+        hasMismatchedRemoteRoute ->
+            "route_diagnostic_remote_identity_mismatch"
         hasExpiredRemoteRoute ->
             "route_diagnostic_remote_route_expired"
         hasFailedRelayRoute ->
             "route_diagnostic_relay_failed"
+        hasFailedPeerToPeerRoute && hasRelayPlaceholder ->
+            "route_diagnostic_p2p_failed_relay_pending"
         hasFailedDirectEndpoint && hasPeerToPeerPlaceholder && hasRelayPlaceholder ->
             "route_diagnostic_direct_failed_remote_pending"
         hasUnpreparedLocalDirect && hasPeerToPeerPlaceholder && hasRelayPlaceholder ->
@@ -4287,6 +4302,11 @@ private fun RuntimeConnectionFailure.routeDiagnosticCode(): String? {
         else -> null
     }
 }
+
+private val REMOTE_ROUTE_UNREACHABLE_DIAGNOSTIC_CODES = setOf(
+    "route_diagnostic_relay_failed",
+    "route_diagnostic_p2p_failed_relay_pending",
+)
 
 private fun Throwable.connectionUiError(): RuntimeUiError {
     return when (this) {
@@ -4873,6 +4893,11 @@ internal fun pairingQrParseUiError(error: Throwable): RuntimeUiError {
             diagnosticCode = "route_diagnostic_relay_qr_unreachable",
             technicalDetail = error.message,
         )
+        PRIVATE_OVERLAY_RELAY_SCOPE_REQUIRED_QR_ERROR -> RuntimeUiError(
+            code = "pairing_relay_route_rejected",
+            diagnosticCode = "route_diagnostic_private_overlay_scope_required",
+            technicalDetail = error.message,
+        )
         else -> runtimeUiError("invalid_pairing_qr", error.message)
     }
 }
@@ -5420,6 +5445,8 @@ internal data class InlineReasoningDelta(
 
 private const val LOCAL_DIRECT_ENDPOINT_QR_ERROR = "Local direct endpoint QR routes are diagnostic-only"
 private const val RELAY_HOST_UNREACHABLE_QR_ERROR = "Relay host is not reachable for remote pairing"
+private const val PRIVATE_OVERLAY_RELAY_SCOPE_REQUIRED_QR_ERROR =
+    "Private relay hosts require relay_scope=private_overlay"
 private val LOCAL_MODEL_BACKEND_PORTS = setOf(11434, 1234)
 private val THINK_OPEN_TAG_REGEX = Regex("<\\s*(think|thinking)\\s*>", RegexOption.IGNORE_CASE)
 private val THINK_CLOSE_TAG_REGEX = Regex("<\\s*/\\s*(think|thinking)\\s*>", RegexOption.IGNORE_CASE)

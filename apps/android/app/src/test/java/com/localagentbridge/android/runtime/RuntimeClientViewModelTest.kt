@@ -46,6 +46,7 @@ import com.localagentbridge.android.core.pairing.TrustedRuntime
 import com.localagentbridge.android.core.transport.DiscoveredRuntime
 import com.localagentbridge.android.core.transport.PairedRuntimeIdentity
 import com.localagentbridge.android.core.transport.PreparedRemoteRuntimeRoute
+import com.localagentbridge.android.core.transport.RemoteRouteSecurityContext
 import com.localagentbridge.android.core.transport.RuntimeConnectionFailure
 import com.localagentbridge.android.core.transport.RuntimeConnectionFailureReason
 import com.localagentbridge.android.core.transport.RuntimeConnectionManager
@@ -4742,6 +4743,18 @@ class RuntimeClientViewModelTest {
     }
 
     @Test
+    fun privateOverlayRelayQrParseFailureReportsScopeRequired() {
+        val error = pairingQrParseUiError(
+            IllegalArgumentException("Private relay hosts require relay_scope=private_overlay"),
+        )
+
+        assertEquals("pairing_relay_route_rejected", error.code)
+        assertNull(error.detail)
+        assertEquals("Private relay hosts require relay_scope=private_overlay", error.technicalDetail)
+        assertEquals("route_diagnostic_private_overlay_scope_required", error.diagnosticCode)
+    }
+
+    @Test
     fun genericQrParseFailureStillReportsInvalidPairingQr() {
         val error = pairingQrParseUiError(
             IllegalArgumentException("Missing pairing nonce"),
@@ -5059,6 +5072,48 @@ class RuntimeClientViewModelTest {
         assertEquals("secret-new", refreshed?.relaySecret)
         assertEquals(4102444800000L, refreshed?.relayExpiresAtEpochMillis)
         assertEquals("nonce-route-new", refreshed?.relayNonce)
+    }
+
+    @Test
+    fun routeRefreshQrWithoutPublicKeyCanRefreshPinnedRuntimeP2pRendezvousRoute() {
+        val current = RuntimeTrustedRuntime(
+            deviceId = "runtime-1",
+            name = "AetherLink Runtime",
+            fingerprint = "runtime-fingerprint",
+            publicKeyBase64 = "runtime-public-key",
+            routeToken = "route-old",
+            endpointHint = null,
+        )
+        val payload = runtimePairingPayload(
+            runtimePublicKeyBase64 = null,
+            routeToken = "route-new",
+            host = null,
+            port = null,
+            p2pRouteClass = "p2p_rendezvous",
+            p2pRecordId = "p2p-record-new",
+            p2pEncryptedBody = "opaque-candidate-new",
+            p2pExpiresAtEpochMillis = 4102444800000L,
+            p2pAntiReplayNonce = "nonce-p2p-new",
+            p2pProtocolVersion = 1,
+        )
+
+        val refreshed = trustedRuntimeFromRouteRefreshQr(current, payload)
+
+        assertEquals("runtime-1", refreshed?.deviceId)
+        assertEquals("runtime-fingerprint", refreshed?.fingerprint)
+        assertEquals("runtime-public-key", refreshed?.publicKeyBase64)
+        assertEquals("route-new", refreshed?.routeToken)
+        assertNull(refreshed?.host)
+        assertNull(refreshed?.port)
+        assertNull(refreshed?.relayHost)
+        assertNull(refreshed?.relayPort)
+        assertNull(refreshed?.relaySecret)
+        assertEquals("p2p_rendezvous", refreshed?.p2pRouteClass)
+        assertEquals("p2p-record-new", refreshed?.p2pRecordId)
+        assertEquals("opaque-candidate-new", refreshed?.p2pEncryptedBody)
+        assertEquals(4102444800000L, refreshed?.p2pExpiresAtEpochMillis)
+        assertEquals("nonce-p2p-new", refreshed?.p2pAntiReplayNonce)
+        assertEquals(1, refreshed?.p2pProtocolVersion)
     }
 
     @Test
@@ -5686,6 +5741,54 @@ class RuntimeClientViewModelTest {
         )
 
         assertNull(trustedRuntimeFromRouteRefreshQr(current, payload))
+    }
+
+    @Test
+    fun routeRefreshQrRejectsExpiredOrIncompleteP2pRoute() {
+        val current = RuntimeTrustedRuntime(
+            deviceId = "runtime-1",
+            name = "AetherLink Runtime",
+            fingerprint = "runtime-fingerprint",
+            publicKeyBase64 = "runtime-public-key",
+            routeToken = "route-1",
+            endpointHint = null,
+        )
+        val expiredOrIncompleteP2pRoutes = listOf(
+            runtimePairingPayload(
+                host = null,
+                port = null,
+                p2pRouteClass = "p2p_rendezvous",
+                p2pRecordId = "p2p-record-1",
+                p2pEncryptedBody = "opaque-candidate-1",
+                p2pExpiresAtEpochMillis = 1L,
+                p2pAntiReplayNonce = "nonce-p2p-1",
+                p2pProtocolVersion = 1,
+            ),
+            runtimePairingPayload(
+                host = null,
+                port = null,
+                p2pRouteClass = "p2p_rendezvous",
+                p2pRecordId = "p2p-record-1",
+                p2pEncryptedBody = null,
+                p2pExpiresAtEpochMillis = 4102444800000L,
+                p2pAntiReplayNonce = "nonce-p2p-1",
+                p2pProtocolVersion = 1,
+            ),
+            runtimePairingPayload(
+                host = null,
+                port = null,
+                p2pRouteClass = "p2p_rendezvous",
+                p2pRecordId = "p2p-record-1",
+                p2pEncryptedBody = "opaque-candidate-1",
+                p2pExpiresAtEpochMillis = 4102444800000L,
+                p2pAntiReplayNonce = null,
+                p2pProtocolVersion = 1,
+            ),
+        )
+
+        expiredOrIncompleteP2pRoutes.forEach { payload ->
+            assertNull(trustedRuntimeFromRouteRefreshQr(current, payload))
+        }
     }
 
     @Test
@@ -6737,6 +6840,23 @@ class RuntimeClientViewModelTest {
             endpointHint = null,
         )
         val identity = identityOnlyTarget.identity ?: error("Expected identity")
+        val mismatchedIdentity = PairedRuntimeIdentity(
+            deviceId = "different-runtime",
+            name = "Different Runtime",
+        )
+        val preparedPeerToPeerRoute = RuntimeRouteCandidate.PeerToPeer(
+            identity = identity,
+            preparedRoute = PreparedRemoteRuntimeRoute.PeerToPeer(
+                identity = identity,
+                sessionId = "p2p-record-1",
+                encryptedCandidateMaterial = "opaque-candidate-material-1",
+                security = RemoteRouteSecurityContext(
+                    rendezvousToken = "p2p-token-1",
+                    expiresAtEpochMillis = 4_102_444_800_000L,
+                    antiReplayNonce = "p2p-nonce-1",
+                ),
+            ),
+        )
 
         val noRoute = RuntimeConnectionFailure(
             reason = RuntimeConnectionFailureReason.NoRoutesResolved,
@@ -6785,6 +6905,27 @@ class RuntimeClientViewModelTest {
                 )
             ),
         ).toRuntimeUiError()
+        val peerToPeerFailedWithoutRelay = RuntimeConnectionFailure(
+            reason = RuntimeConnectionFailureReason.RouteAttemptsFailed,
+            target = identityOnlyTarget,
+            routes = listOf(
+                preparedPeerToPeerRoute,
+                RuntimeRouteCandidate.Relay(identity),
+            ),
+            routeRejections = listOf(
+                RuntimeRouteRejection(
+                    route = RuntimeRouteCandidate.Relay(identity),
+                    capability = RuntimeRouteCapability.Relay,
+                    reason = RuntimeRouteRejectionReason.RelayConnectorNotAvailable,
+                ),
+            ),
+            attemptFailures = listOf(
+                RuntimeRouteAttemptFailure(
+                    route = preparedPeerToPeerRoute,
+                    cause = IllegalStateException("P2P rendezvous route did not establish a session"),
+                )
+            ),
+        ).toRuntimeUiError()
         val expiredRemoteRoute = RuntimeConnectionFailure(
             reason = RuntimeConnectionFailureReason.NoConnectableRoute,
             target = identityOnlyTarget,
@@ -6794,6 +6935,34 @@ class RuntimeClientViewModelTest {
                     route = RuntimeRouteCandidate.Relay(identity),
                     capability = RuntimeRouteCapability.Relay,
                     reason = RuntimeRouteRejectionReason.RemoteRouteExpired,
+                ),
+            ),
+        ).toRuntimeUiError()
+        val mismatchedRemoteRoute = RuntimeConnectionFailure(
+            reason = RuntimeConnectionFailureReason.NoConnectableRoute,
+            target = identityOnlyTarget,
+            routes = listOf(
+                RuntimeRouteCandidate.Relay(
+                    identity = identity,
+                    preparedRoute = PreparedRemoteRuntimeRoute.Relay(
+                        identity = mismatchedIdentity,
+                        relayId = "mismatched-relay",
+                        host = "relay.example.test",
+                        port = 443,
+                        relayFrameSecret = "mismatched-secret",
+                        security = RemoteRouteSecurityContext(
+                            rendezvousToken = "mismatched-token",
+                            expiresAtEpochMillis = 4_102_444_800_000L,
+                            antiReplayNonce = "mismatched-nonce",
+                        ),
+                    ),
+                ),
+            ),
+            routeRejections = listOf(
+                RuntimeRouteRejection(
+                    route = RuntimeRouteCandidate.Relay(identity),
+                    capability = RuntimeRouteCapability.Relay,
+                    reason = RuntimeRouteRejectionReason.RemoteRouteIdentityMismatch,
                 ),
             ),
         ).toRuntimeUiError()
@@ -6832,12 +7001,26 @@ class RuntimeClientViewModelTest {
         assertEquals("All connectable runtime routes failed", relayRouteFailed.technicalDetail)
         assertEquals("remote_route_unreachable", relayRouteFailed.code)
         assertEquals("route_diagnostic_relay_failed", relayRouteFailed.diagnosticCode)
+        assertNull(peerToPeerFailedWithoutRelay.detail)
+        assertEquals("All connectable runtime routes failed", peerToPeerFailedWithoutRelay.technicalDetail)
+        assertEquals("remote_route_unreachable", peerToPeerFailedWithoutRelay.code)
+        assertEquals(
+            "route_diagnostic_p2p_failed_relay_pending",
+            peerToPeerFailedWithoutRelay.diagnosticCode,
+        )
         assertNull(expiredRemoteRoute.detail)
         assertEquals("No connectable runtime route resolved for target", expiredRemoteRoute.technicalDetail)
         assertEquals("remote_route_expired", expiredRemoteRoute.code)
         assertEquals(
             "route_diagnostic_remote_route_expired",
             expiredRemoteRoute.diagnosticCode,
+        )
+        assertNull(mismatchedRemoteRoute.detail)
+        assertEquals("No connectable runtime route resolved for target", mismatchedRemoteRoute.technicalDetail)
+        assertEquals("remote_routes_unavailable", mismatchedRemoteRoute.code)
+        assertEquals(
+            "route_diagnostic_remote_identity_mismatch",
+            mismatchedRemoteRoute.diagnosticCode,
         )
         assertNull(remoteOnlyUnavailable.detail)
         assertEquals("No connectable runtime route resolved for target", remoteOnlyUnavailable.technicalDetail)

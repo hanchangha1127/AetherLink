@@ -82,7 +82,7 @@ def read_allocation(host, port, request_line, timeout):
     raise OSError(str(last_error) if last_error else "timed out")
 
 
-def parse_response(host, port, line):
+def parse_response(host, port, line, requested_route_token=""):
     if not line.startswith(RESPONSE_PREFIX):
         raise RuntimeError(f"Relay {host}:{port} did not return an allocation response: {line!r}")
     try:
@@ -95,6 +95,11 @@ def parse_response(host, port, line):
     if missing:
         raise RuntimeError(
             f"Relay {host}:{port} allocation response missing: {', '.join(missing)}"
+        )
+    if requested_route_token and payload["relay_id"] == requested_route_token:
+        raise RuntimeError(
+            f"Relay {host}:{port} echoed the requested route token as relay_id; "
+            "allocation relay IDs must be opaque"
         )
     try:
         expires_at = int(payload["relay_expires_at"])
@@ -111,7 +116,7 @@ def main():
         validate_args(args)
         requested_route_token, request_line = build_request(args)
         line = read_allocation(args.host, args.port, request_line, args.timeout)
-        payload = parse_response(args.host, args.port, line)
+        payload = parse_response(args.host, args.port, line, requested_route_token)
     except Exception as error:
         print(f"Could not allocate relay route from {args.host}:{args.port}: {error}", file=sys.stderr)
         return 1
@@ -121,7 +126,6 @@ def main():
             "host": args.host,
             "port": args.port,
             "preflight": not args.persist,
-            "requested_route_token": requested_route_token,
             "relay_id": payload["relay_id"],
             "relay_expires_at": int(payload["relay_expires_at"]),
             "relay_nonce": payload["relay_nonce"],

@@ -10,6 +10,1217 @@ This document separates current verification evidence from historical captures.
 - No-device evidence does not prove physical Android rendering, TalkBack/VoiceOver traversal, optical/camera QR scan reliability, live provider-backed chat/cancel, or real different-network runtime connectivity.
 - New `artifacts/*.png` and `artifacts/*.xml` files are ignored by default so stale generated captures are not accidentally committed.
 
+## 2026-07-02 Android Private-Overlay QR Missing-Scope Diagnostic No-Device Gate
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:pairing:testDebugUnitTest --tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.rejectsPrivateOverlayRelayHostsWithoutExplicitScopeWithFocusedError --tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.allowsPrivateOverlayRelayHostsOnlyWithExplicitScope -Pkotlin.incremental=false --console=plain` passed.
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.privateOverlayRelayQrParseFailureReportsScopeRequired -Pkotlin.incremental=false --console=plain` passed.
+- Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring the parser focused regressions, exact parser error, diagnostic-code mapping, localized UI diagnostic resources, default no-device gate entry, exact summary phrase, current progress/QA evidence, and roadmap coverage.
+- Syntax evidence: `bash -n script/check_no_device_quality.sh` (syntax only) passed and the default no-device summary continues to report `Covered Android private-overlay QR missing-scope diagnostic addendum: private, CGNAT, and ULA relay hosts without relay_scope=private_overlay map to latest-QR route recovery instead of generic invalid QR.`
+- Result: private, CGNAT, trailing-dot CGNAT, RFC1918, and ULA relay hosts without `relay_scope=private_overlay` fail with a focused parser error, while the same host family remains accepted with explicit private-overlay scope.
+- Result: Android maps that parser error to `pairing_relay_route_rejected` and `route_diagnostic_private_overlay_scope_required`, keeping route recovery on fresh QR material instead of generic invalid-pairing copy.
+- Guardrail: `script/check_copy_hygiene.py` fails if the focused parser/ViewModel regressions, exact parser error, diagnostic-code mapping, localized UI diagnostic resource, default gate entry, exact summary phrase, current docs evidence, or roadmap coverage is removed.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device parser/ViewModel/UI diagnostic wiring only. It does not prove physical Android QR scanning, production relay/P2P reachability, live provider-backed chat/cancel, phone reachability, or real different-network runtime connectivity.
+
+## 2026-07-02 Relay Preflight Output Redaction No-Device Gate
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh` passed and reported `relay preflight output redaction addendum`.
+- Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring the output-redaction assertions, raw route-token absence assertions, raw relay-secret absence assertion, safe secret-presence boolean assertion, opaque relay-id assertion, default no-device gate entry, exact summary phrase, current progress/QA evidence, and roadmap coverage.
+- Syntax evidence: `python3 -m py_compile script/relay_allocation_preflight.py script/check_copy_hygiene.py script/check_docs_hygiene.py` and `bash -n script/check_no_device_quality.sh` (syntax only) passed.
+- Result: successful relay allocation preflight JSON omits `requested_route_token`, omits `relay_secret`, keeps only safe `has_relay_secret=true`, omits raw requested route token strings such as `normal-route` and `token-persisted-route`, omits the raw requested secret `token-relay-secret-should-not-persist`, and still returns opaque `rt1-` relay IDs.
+- Guardrail: `script/check_copy_hygiene.py` fails if the normal or token-required persisted allocation output redaction assertions, raw route-token absence checks, raw relay-secret absence assertion, safe secret-presence boolean assertion, opaque relay-id assertion, default gate entry, exact summary phrase, current docs evidence, or roadmap coverage is removed.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device relay allocation preflight output redaction only. It does not prove production relay deployment, physical Android pairing, optical QR scanning, phone reachability, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+## 2026-07-02 Android Remote Route Identity Binding No-Device Gate
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:transport:testDebugUnitTest --tests com.localagentbridge.android.core.transport.RuntimeConnectionManagerTest.mismatchedRemoteRouteIdentityIsRejectedBeforeConnectorAttempt --tests com.localagentbridge.android.core.transport.RuntimeConnectionManagerTest.remoteRouteMissingPinnedMetadataIsRejectedBeforeConnectorAttempt -Pkotlin.incremental=false --console=plain` passed.
+- Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring both focused regressions, pinned runtime identity assertions, missing pinned metadata rejection, no-connector-attempt assertions, default no-device gate entries, exact summary phrase, current progress/QA evidence, and roadmap coverage.
+- Syntax evidence: `bash -n script/check_no_device_quality.sh` (syntax only) passed and the default no-device summary continues to report `Covered Android remote route identity binding addendum: prepared P2P or relay route material must match the trusted runtime identity before any connector attempt.`
+- Result: prepared remote P2P/relay route material is rejected before connector use when it is bound to the wrong runtime identity or lacks pinned identity metadata, and the connection manager does not fall through to direct TCP.
+- Guardrail: `script/check_copy_hygiene.py` fails if either focused regression, the pinned identity assertions, missing pinned metadata rejection, connector non-use assertions, default gate entry, exact summary phrase, current docs evidence, or roadmap coverage is removed.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device Android core transport identity binding for prepared remote routes only. It does not prove production NAT traversal, physical Android pairing, optical QR scanning, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+## 2026-07-02 Android Remote Route Expiry Connector Guard No-Device Gate
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:transport:testDebugUnitTest --tests com.localagentbridge.android.core.transport.RuntimeConnectionManagerTest.remoteRouteSecurityContextRejectsMissingOrExpiredRouteMetadata --tests com.localagentbridge.android.core.transport.RuntimeConnectionManagerTest.expiredRemoteRoutesAreRejectedBeforeConnectorAttempt -Pkotlin.incremental=false --console=plain` passed.
+- Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring both focused regressions, the no-direct-TCP assertion, default no-device gate entries, exact summary phrase, current progress/QA evidence, and roadmap coverage.
+- Syntax evidence: `bash -n script/check_no_device_quality.sh` (syntax only) passed and the default no-device summary continues to report `Covered Android remote route expiry connector guard addendum: prepared remote route security material must be complete and unexpired before any P2P or relay connector attempt.`
+- Result: incomplete or expired prepared remote route material fails before any P2P or relay connector attempt and does not fall through to direct TCP.
+- Guardrail: `script/check_copy_hygiene.py` fails if either focused regression, the no-direct-TCP assertion, default gate entry, exact summary phrase, current docs evidence, or roadmap coverage is removed.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device Android core transport filtering for expired or incomplete remote route material only. It does not prove production NAT traversal, physical Android pairing, optical QR scanning, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+## 2026-07-02 macOS Route Refresh Failure Redaction No-Device Gate
+
+- Focused evidence: `swift test --filter LocalRuntimeMessageRouterTests/testRouteRefreshFailureRedactsRelaySecretsAndProviderEndpoints` passed from the root SwiftPM package.
+- Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring the focused SwiftPM regression, raw sensitive marker assertions, fixed retryable error copy, default no-device summary phrase, current progress/QA evidence, and roadmap coverage.
+- Syntax evidence: `bash -n script/check_no_device_quality.sh` (syntax only) passed and the default no-device summary continues to report `Covered macOS route.refresh failure redaction addendum: route.refresh failures return fixed retryable recovery copy without relay secrets, route tokens, provider URLs, or backend endpoints.`
+- Result: route.refresh failures return fixed retryable recovery copy without leaking relay secrets, route tokens, provider URLs, backend endpoints, or backend ports to the client-visible error payload.
+- Guardrail: `script/check_copy_hygiene.py` fails if the focused regression, sensitive marker assertions, fixed retryable error copy, default summary phrase, current docs evidence, or roadmap coverage are removed.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves macOS SwiftPM/no-device route.refresh failure redaction only. It does not prove physical Android QR scanning, live provider-backed chat/cancel, production relay/P2P traversal, or real different-network runtime connectivity.
+
+## 2026-07-02 macOS Stale GUI Relay QR Renewal No-Device Gate
+
+- Focused evidence: `swift test --filter 'LocalRuntimeMessageRouterTests/testCompanionAppModelReplacesReadyStaleRelayBeforeGeneratingAllocatedRouteQRCode|LocalRuntimeMessageRouterTests/testCompanionAppModelRegeneratesGUIAllocatedQRCodeWithExpiredLease'` passed from the root SwiftPM package.
+- Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring the focused SwiftPM regressions, stale/fresh relay material assertions, default no-device summary phrase, current progress/QA evidence, and roadmap coverage.
+- Syntax evidence: `bash -n script/check_no_device_quality.sh` (syntax only) passed and the default no-device summary continues to report `Covered macOS stale GUI relay QR renewal addendum: ready stale or expired GUI-allocated relay leases are replaced with fresh relay id, secret, expiry, and nonce before QR generation.`
+- Result: ready-but-stale or expired GUI-allocated relay leases are replaced with fresh `relay_id`, `relay_secret`, `relay_expires_at`, and `relay_nonce` before QR payload generation.
+- Guardrail: `script/check_copy_hygiene.py` fails if the focused regressions, stale/fresh relay assertions, default summary phrase, current docs evidence, or roadmap coverage are removed.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves macOS SwiftPM/no-device GUI QR route-material renewal only. It does not prove physical Android QR scanning, production relay allocation, live provider-backed chat/cancel, production P2P traversal, or real different-network runtime connectivity.
+
+## 2026-07-02 macOS QR-Only Clean First-Run Pairing No-Device Gate
+
+- Focused evidence: `swift test --filter AetherLinkLocalizationTests/testRouteDiagnosticsPanelStaysHiddenOnCleanFirstRunAndPairingHidesSetup` passed from the root SwiftPM package.
+- Gate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh` passed and reported `Covered macOS QR-only pairing addendum`.
+- Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring the shared visibility helper, rejecting the older pairing-only fallback that exposed setup merely because automatic route preparation was unavailable, requiring the focused SwiftPM regression, default no-device summary phrase, current progress/QA evidence, and the roadmap QR-only pairing item.
+- Syntax evidence: `bash -n script/check_no_device_quality.sh` (syntax only) passed and the default no-device summary continues to report `Covered macOS QR-only pairing addendum: clean first-run Pairing hides Connection Recovery unless saved route diagnostics or a route-preparation issue exists, and does not expose setup only because automatic route preparation is unavailable.`
+- Result: macOS clean first-run Pairing and Status still hide Connection Recovery setup, while saved route diagnostics or route-preparation issues still reveal the recovery panel.
+- Guardrail: `script/check_copy_hygiene.py` fails if Pairing stops reusing route-diagnostics visibility, the older pairing-only fallback returns, the focused regression is removed, current docs evidence is removed, or the roadmap QR-only pairing item is dropped.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves macOS SwiftPM/source policy only. It does not prove physical Android recovery flows, optical QR scanning, live provider-backed chat/cancel, production relay/P2P traversal, or real different-network runtime connectivity.
+
+## 2026-07-02 App Icon Small-Size Readability No-Device Preflight
+
+- Focused evidence: `python3 script/check_app_icons.py` passed with the current AetherLink source/preview PNGs, Android density launcher PNGs, round launcher PNGs, adaptive foreground PNG, and PNG-backed macOS `AppIcon.icns` chunks.
+- Android resource evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew --no-daemon :app:processDebugResources -Pkotlin.incremental=false --console=plain` passed with the current launcher assets.
+- Gate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh` passed and reported `Covered app icon addendum: no-device Android launcher and macOS Dock small-size readability plus asset-chain validation.`
+- Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring the icon readability functions, full no-device gate evidence, current progress/QA evidence, Android resource-processing evidence, default no-device gate phrase, and the remaining launcher/Dock screenshot caveat.
+- Syntax evidence: `bash -n script/check_no_device_quality.sh` (syntax only) passed and the default no-device summary continues to report `Covered app icon addendum: no-device Android launcher and macOS Dock small-size readability plus asset-chain validation.`
+- Result: the no-device icon preflight still rejects blank, mostly transparent, mostly white, low-contrast, off-center, or edge-light Android launcher assets and PNG-backed macOS ICNS chunks before the next real launcher/Dock screenshot pass.
+- Guardrail: `script/check_copy_hygiene.py` fails if the readability functions, full no-device gate evidence, Android resource-processing evidence, current docs evidence, default no-device gate phrase, or launcher/Dock screenshot caveat are removed.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves source/script/resource-processing evidence only. It does not prove Android launcher rendering on physical hardware, OEM icon masks, macOS Dock rendering, human small-screen perception, app-store metadata, or physical screenshot aesthetics.
+
+## 2026-07-02 Relay Control-Line Framing No-Device Gate And Relay Readiness Runtime-Only Probe No-Device Gate
+
+- Focused evidence: `swift test --filter 'RelayHandshakeTests/testServerLineFramingRequiresNewlineForRelayHandshake|RelayHandshakeTests/testServerLineFramingRequiresNewlineForAllocationRequest|RelayProbeTests/testServerLineFramingRequiresNewlineForProbeRequest|RelayMatcherTests/testRuntimeWaitingProbeDoesNotConsumePendingRuntime|RelayMatcherTests/testRuntimeWaitingProbeIgnoresWaitingClient'` passed from the root SwiftPM package.
+- Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring the focused SwiftPM regressions, newline framing assertions, non-consuming runtime probe assertion, runtime-only readiness assertion, default gate entry, exact summary phrases, current progress/QA evidence, and roadmap coverage.
+- Syntax evidence: `bash -n script/check_no_device_quality.sh` (syntax only) passed and the no-device summary continues to report `Covered relay control-line framing addendum: relay handshake, allocation, and probe control lines require trailing newlines, and readiness probes do not consume waiting runtimes.` plus `Covered relay readiness runtime-only probe addendum: Relay readiness requires a waiting runtime, not just any pending peer.`
+- Result: relay control-line framing now has current no-device evidence proving relay handshake, allocation, and probe control lines require newline framing, while relay readiness runtime-only probe coverage proves readiness probes do not consume waiting runtimes and ignore waiting clients.
+- Guardrail: `script/check_copy_hygiene.py` fails if the focused SwiftPM regressions, exact summary phrases, current docs evidence, or roadmap coverage are removed.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves SwiftPM/no-device relay parser and matcher behavior only. It does not prove production relay deployment, physical Android pairing, optical QR scanning, live provider-backed chat/cancel, production P2P traversal, or real different-network runtime connectivity.
+
+## 2026-07-02 AetherLinkRelay Allocation Lease Lifecycle No-Device Gate
+
+- Focused evidence: `swift test --filter 'RelayAllocationTests/testRelayServerConfigurationUsesShortDefaultAllocationTTL|RelayAllocationTests/testAllocationRegistryExpiresAndRemovesRelayIDs|RelayAllocationTests/testAllocationRegistryPersistsAndReloadsRelayIDs|RelayAllocationTests/testAllocationRegistryPrunesExpiredPersistedRelayIDs'` passed from the root SwiftPM package.
+- Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring the focused SwiftPM regressions, short default TTL assertion, no-secret persistence assertion, expiry removal, persisted ticket pruning, default gate entry, exact summary phrase, current progress/QA evidence, and roadmap coverage.
+- Syntax evidence: `bash -n script/check_no_device_quality.sh` (syntax only) passed and the no-device summary continues to report `Covered relay allocation lease lifecycle addendum: AetherLinkRelay uses a short default allocation TTL, persists relay leases without secrets, removes expired relay IDs, and prunes expired persisted tickets on load.`
+- Result: relay allocation lease lifecycle now has current no-device evidence proving short default TTL, expired relay removal, secret-free lease persistence/reload, and expired persisted-ticket pruning stay in the default gate.
+- Guardrail: `script/check_copy_hygiene.py` fails if the focused SwiftPM regressions, short TTL assertion, no-secret persistence assertion, exact summary phrase, current docs evidence, or roadmap coverage are removed.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves SwiftPM/no-device development relay allocation-store lifecycle behavior only. It does not prove production relay allocation, physical Android pairing, optical QR scanning, live provider-backed chat/cancel, production P2P traversal, or real different-network runtime connectivity.
+
+## 2026-07-02 macOS Untrusted Hello Unit Rejection No-Device Gate
+
+- Focused evidence: `swift test --filter LocalRuntimeMessageRouterTests/testUntrustedHelloReturnsPairingRequired` passed from the root SwiftPM package.
+- Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring the focused SwiftPM regression, unknown-device hello payload, non-retryable pairing_required assertion, default gate entry, exact summary phrase, current QA evidence, and roadmap coverage.
+- Syntax evidence: `bash -n script/check_no_device_quality.sh` (syntax only) passed and the no-device summary now reports `Covered macOS untrusted hello unit rejection addendum: LocalRuntimeMessageRouter returns non-retryable pairing_required for unknown-device hello before trusted auth or runtime command access.`
+- Result: macOS untrusted hello unit rejection now has current no-device evidence proving unknown-device hello is rejected with non-retryable `pairing_required` before trusted auth or runtime command access.
+- Guardrail: `script/check_copy_hygiene.py` fails if the focused SwiftPM regression, unknown-device hello payload, non-retryable `pairing_required` assertion, distinct summary phrase, current docs evidence, or roadmap coverage are removed.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves SwiftPM/no-device router rejection only. It does not prove physical Android QR scanning, live provider-backed chat/cancel, production relay/P2P traversal, or real different-network runtime connectivity.
+
+## 2026-07-02 Unload-Failure Health Redaction No-Device Gate
+
+- Focused evidence: `./script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh` passed.
+- Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring the focused RuntimeDevServer relay smoke, dev mock unload-failure injection, `last_unload_failure` provider/model/reason assertion, raw provider errors, backend routes, route tokens, and relay secrets redaction, exact summary phrase, current progress/QA evidence, and roadmap coverage.
+- Syntax evidence: `bash -n script/check_no_device_quality.sh` (syntax only) passed and the no-device summary now reports `Covered unload-failure health redaction addendum: RuntimeDevServer runtime.health exposes safe last_unload_failure provider/model/reason metadata while redacting raw provider errors, backend routes, route tokens, and relay secrets.`
+- Result: unload-failure health redaction now has current no-device evidence proving RuntimeDevServer `runtime.health` exposes safe `last_unload_failure` provider/model/reason metadata without leaking raw provider errors, backend routes, route tokens, or relay secrets.
+- Guardrail: `script/check_copy_hygiene.py` fails if the RuntimeDevServer smoke markers, dev mock unload-failure injection, `last_unload_failure` assertion, distinct summary phrase, current docs evidence, or roadmap coverage are removed.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device RuntimeDevServer mock relay health redaction only. It does not prove live Ollama or LM Studio unload behavior, macOS UI rendering with real runtime events, physical Android QR scanning, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+## 2026-07-02 Model-Residency Foreground Completion Cleanup No-Device Gate
+
+- Focused evidence: `swift test --filter AggregatingLlmBackendResidencyTests/testDoneEventClearsInFlightResidencyBeforeClientObservesCompletion` passed from the root SwiftPM package.
+- Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring the focused SwiftPM regression, `.done` event assertion, in-flight generation cleanup assertion, default gate entry, exact summary phrase, current progress/QA evidence, and roadmap coverage.
+- Syntax evidence: `bash -n script/check_no_device_quality.sh` (syntax only) passed and the no-device summary now reports `Covered model-residency foreground completion cleanup addendum: chat .done events are observed only after aggregate model residency clears in-flight generation state.`
+- Result: model-residency foreground completion cleanup now has current no-device evidence proving aggregate residency in-flight generation state is cleared before a client observes chat completion.
+- Guardrail: `script/check_copy_hygiene.py` fails if the focused SwiftPM regression, `.done` event assertion, in-flight generation cleanup assertion, distinct summary phrase, current docs evidence, or roadmap coverage are removed.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves SwiftPM/no-device aggregate residency completion ordering only. It does not prove live Ollama or LM Studio process behavior, macOS UI rendering with real runtime events, physical Android QR scanning, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+## 2026-07-02 Relay Allocation Opacity No-Device Gate
+
+- Focused evidence: `swift test --filter 'RelayAllocationTests/testAllocationDerivesOpaqueStableRelayIDFromRouteTokenAndRequestedSecret|RelayAllocationTests/testAllocationRegistryPersistsOpaqueRelayIDWithoutRawRouteToken'` passed from the root SwiftPM package.
+- Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring the focused SwiftPM regressions, opaque `rt1-` relay-id assertion, raw route-token absence assertions, default gate entry, exact summary phrase, current progress/QA evidence, and roadmap coverage.
+- Syntax evidence: `bash -n script/check_no_device_quality.sh` (syntax only) passed and the no-device summary now reports `Covered relay allocation opacity addendum: allocation responses, persisted stores, and relay logs use opaque stable relay IDs without exposing raw route tokens.`
+- Result: relay allocation opacity now has current no-device evidence proving allocation responses and persisted stores use opaque stable relay IDs without returning, embedding, or persisting raw route tokens.
+- Guardrail: `script/check_copy_hygiene.py` fails if the focused SwiftPM regressions, opaque `rt1-` relay-id assertion, raw route-token absence assertions, distinct summary phrase, current docs evidence, or roadmap coverage are removed.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves SwiftPM/no-device relay allocation opacity only. It does not prove production relay deployment, physical Android QR scanning, physical pairing, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+## 2026-07-02 Duplicate Relay QR Idempotency No-Device Gate
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.duplicateCompactRelayQrScanSendsSinglePairingRequestOnActiveRelayConnection -Pkotlin.incremental=false --console=plain --rerun-tasks` passed.
+- Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring the focused ViewModel regression, direct TCP non-use assertion, single relay connection assertion, single pairing request assertion, default gate entry, exact summary phrase, current progress/QA evidence, and roadmap coverage.
+- Syntax evidence: `bash -n script/check_no_device_quality.sh` (syntax only) passed and the no-device summary now reports `Covered duplicate relay QR idempotency addendum: duplicate compact relay QR scans send one pairing request on one active relay connection without falling back to direct TCP.`
+- Result: duplicate relay QR idempotency now has current no-device evidence proving repeated scans of the same compact relay QR do not open direct TCP, do not start a second relay connection, and do not send a second pairing request.
+- Guardrail: `script/check_copy_hygiene.py` fails if the focused ViewModel regression, direct TCP non-use assertion, single relay connection assertion, single pairing request assertion, distinct summary phrase, current docs evidence, or roadmap coverage are removed.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device ViewModel duplicate relay QR handling only. It does not prove optical QR scanning on hardware, physical Android pairing, live provider-backed chat/cancel, production relay reachability, or real different-network runtime connectivity.
+
+## 2026-07-02 Model-Residency Unload Behavior No-Device Gate
+
+- Focused evidence: `swift test --filter 'OllamaBackendTests/testUnloadModelPostsEmptyChatWithKeepAliveZero|LMStudioBackendTests/testUnloadModelPostsLoadedInstanceID|AggregatingLlmBackendResidencyTests/testSwitchingModelsUnloadsPreviousInactiveModel|AggregatingLlmBackendResidencyTests/testRepeatedSameModelDoesNotUnloadBetweenChats|AggregatingLlmBackendResidencyTests/testIdlePolicyUnloadsActiveModelAfterDelay'` passed from the root SwiftPM package.
+- Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring the focused SwiftPM regressions, default gate entry, exact summary phrase, current progress/QA evidence, and roadmap coverage.
+- Syntax evidence: `bash -n script/check_no_device_quality.sh` (syntax only) passed and the no-device summary now reports `Covered model-residency unload behavior addendum: macOS model-switch unload, same-model unload suppression, idle-timeout unload, Ollama unload wire format, and LM Studio unload wire format stay in the default no-device gate.`
+- Result: model-residency unload behavior now has current no-device evidence proving model-switch unload, same-model unload suppression, idle-timeout unload, Ollama unload wire format, and LM Studio unload wire format remain in the default gate under the roadmap item name.
+- Guardrail: `script/check_copy_hygiene.py` fails if the focused SwiftPM regressions, distinct summary phrase, current docs evidence, or roadmap coverage are removed.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves SwiftPM/no-device unload behavior coverage only. It does not prove live Ollama or LM Studio process behavior, macOS UI rendering with real runtime events, physical Android QR scanning, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+## 2026-07-02 Physical External Relay Different-Network Confirmation No-Device Gate
+
+- Focused evidence: `AETHERLINK_DIFFERENT_NETWORK_CONFIRMED=0 ADB=/bin/true script/check_physical_external_relay_pairing.sh --relay-host 0.0.0.0 --require-different-network-confirmation --json <tmp>/summary.json --log <tmp>/run.log` exited 2 before writing summary/log artifacts.
+- Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring the wrapper option, operator confirmation message, no-device behavior test, no-artifact assertion, exact no-device summary phrase, progress, QA, and roadmap coverage.
+- Syntax evidence: `bash -n script/check_no_device_quality.sh` (syntax only) passed and the no-device summary still reports `Covered physical external-relay different-network confirmation gate addendum: unconfirmed required different-network physical QA exits before smoke execution or artifact writes.`
+- Result: different-network confirmation coverage now has current no-device evidence proving a required different-network physical QA run cannot be mistaken for cross-network evidence until the operator explicitly confirms the phone is on a different network.
+- Guardrail: `script/check_copy_hygiene.py` fails if the wrapper stop, operator message, no-artifact assertion, distinct summary phrase, or current docs/roadmap evidence are removed.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device wrapper honesty only. It does not prove an attached phone, optical QR scanning, external relay reachability from the phone, physical pairing, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+## 2026-07-02 Android Remote Route Direct Transport Boundary No-Device Gate
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:transport:testDebugUnitTest --tests com.localagentbridge.android.core.transport.RuntimeConnectionManagerTest.futurePeerToPeerAndRelayRoutesAreNotAttemptedByDirectTcp -Pkotlin.incremental=false --console=plain --rerun-tasks` passed.
+- Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring the focused regression, P2P/relay connector dispatch branches, direct TCP non-call assertion, default gate entry, exact summary phrase, progress, QA, and roadmap coverage.
+- Syntax evidence: `bash -n script/check_no_device_quality.sh` (syntax only) passed and the no-device summary still reports `Covered Android remote route direct transport boundary addendum: prepared P2P or relay routes never fall through to direct TCP when the dedicated connector is unavailable.`
+- Result: remote route direct transport boundary coverage now has current no-device evidence proving prepared P2P or relay candidates fail through their dedicated connector path, not by falling back to the direct TCP connector.
+- Guardrail: `script/check_copy_hygiene.py` fails if the focused regression, source dispatch branches, direct TCP non-call assertion, exact summary phrase, or current docs/roadmap evidence are removed.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device Android core transport routing boundaries only. It does not prove production NAT traversal, physical Android pairing, camera reliability, live provider-backed chat/cancel, or real different-network connectivity.
+
+## 2026-07-02 Physical External Relay Summary No-Device Gate
+
+- Focused evidence: `ADB=/bin/true script/check_physical_external_relay_pairing.sh --relay-host 0.0.0.0 --serial no-device-serial-1 --json <tmp>/summary.json --log <tmp>/run.log` exited 2 and wrote the expected failure summary.
+- Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring the summary guard, probe coverage assertions, child probe summary assertions, distinct no-device summary phrase, progress/QA evidence, and roadmap coverage.
+- Syntax evidence: `bash -n script/check_no_device_quality.sh` (syntax only) passed and the no-device summary now reports `Covered physical external-relay summary addendum: invalid-host no-device summaries keep endpoint and route probe coverage false, child probe summaries explicit, and recovery caveats present.`
+- Result: physical external-relay summary coverage now has current no-device gate evidence proving invalid-host failure summaries do not claim endpoint reachability, route readiness, or child probe artifacts that were never produced.
+- Guardrail: `script/check_copy_hygiene.py` fails if the summary-contract guard, false coverage assertions, child probe summary assertions, distinct summary phrase, or current docs/roadmap evidence are removed.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device physical-wrapper summary integrity only. It does not prove an attached phone, optical QR scanning, external relay reachability from the phone, route-id readiness on a real relay, physical pairing, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+## 2026-07-02 Android Relay Concurrent Encrypted Send Serialization No-Device Gate
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:transport:testDebugUnitTest --tests com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest.relayClientSerializesEncryptionWithConcurrentSends -Pkotlin.incremental=false --console=plain --rerun-tasks` passed.
+- Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring the focused regression, 48-frame concurrent dispatch, `.awaitAll()`, all-request-id decryptability assertion, default gate entry, exact no-device summary phrase, progress, QA, and roadmap coverage.
+- Syntax evidence: `bash -n script/check_no_device_quality.sh` (syntax only) passed and the no-device summary now reports `Covered Android relay concurrent encrypted send serialization addendum: RuntimeRelayTcpClient serializes concurrent encrypted sends without corrupting nonce-bound relay frames.`
+- Result: Android relay concurrent encrypted send serialization now has current no-device gate evidence proving 48 concurrent `RuntimeRelayTcpClient` sends over a real localhost relay socket are serialized so each nonce-bound encrypted frame arrives decryptable without corrupting the stream.
+- Guardrail: `script/check_copy_hygiene.py` fails if the focused regression, concurrency stress markers, all-request-id assertion, distinct summary phrase, or current docs/roadmap evidence are removed.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device Android relay TCP concurrent encrypted-send serialization only. It does not prove physical Android pairing, camera reliability, production relay/P2P reachability, live provider-backed chat/cancel, or real different-network connectivity.
+
+## 2026-07-02 Physical External Relay Requested Serial Evidence Binding No-Device Gate
+
+- Focused evidence: `ADB=/bin/true script/check_physical_external_relay_pairing.sh --relay-host 0.0.0.0 --serial no-device-serial-1 --json <tmp>/summary.json --log <tmp>/run.log` exited 2 and wrote the expected failure summary.
+- Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring the requested serial JSON assertions, distinct no-device summary phrase, progress/QA evidence, and roadmap coverage.
+- Syntax evidence: `bash -n script/check_no_device_quality.sh` (syntax only) passed and the no-device summary now reports `Covered physical external-relay requested serial evidence binding addendum: invalid-host no-device summaries preserve requested adb serial, keep observed adb serial absent, and record the redacted --serial command evidence.`
+- Result: physical external-relay requested-serial evidence binding now has current no-device gate evidence proving invalid-host failure summaries preserve the requested ADB serial without claiming an observed device serial.
+- Guardrail: `script/check_copy_hygiene.py` fails if the wrapper no-device assertions, distinct summary phrase, or current docs/roadmap evidence are removed.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device physical-wrapper evidence binding only. It does not prove an attached phone, optical QR scanning, external relay reachability from the phone, physical pairing, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+## 2026-07-02 Android Route Refresh QR Active-Connection Reuse No-Device Gate
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshQrAfterAcceptedRelayPairingDoesNotOpenDuplicateRelayConnection -Pkotlin.incremental=false --console=plain --rerun-tasks` passed.
+- Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring the focused ViewModel regression, duplicate-dial assertion, refreshed relay material assertion, default no-device gate entry, no-device summary phrase, progress, QA, and roadmap coverage.
+- Syntax evidence: `bash -n script/check_no_device_quality.sh` (syntax only) passed and the no-device summary now reports `Covered Android route-refresh QR active-connection reuse addendum: route-refresh QR scans update saved relay material while reusing the active relay connection and avoiding duplicate relay dials.`
+- Result: route-refresh QR active-connection reuse now has current no-device gate evidence proving a latest QR can refresh saved relay material without opening a second relay connection.
+- Guardrail: `script/check_copy_hygiene.py` fails if the focused regression, `relayConnectionAttempts == 1` assertion, refreshed relay material assertion, default gate entry, summary phrase, or current docs/roadmap evidence is removed.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device ViewModel route-refresh behavior only. It does not prove physical Android QR scan, live auth over a real phone connection, production relay reachability, live provider-backed chat/cancel, or real different-network connectivity.
+
+## 2026-07-02 Android Route Refresh QR Optional-Public-Key Relay Update No-Device Gate
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshQrWithoutPublicKeyCanRefreshPinnedRuntimeRelayRoute -Pkotlin.incremental=false --console=plain --rerun-tasks` passed.
+- Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring the focused ViewModel regression, refreshed relay id/secret/nonce markers, pinned public-key preservation, default no-device gate entry, no-device summary phrase, progress, QA, and roadmap coverage.
+- Syntax evidence: `bash -n script/check_no_device_quality.sh` (syntax only) passed and the no-device summary now reports `Covered Android route-refresh QR optional-public-key relay update addendum: route-refresh QR without runtime_public_key can update complete relay route material for an already pinned runtime while preserving the pinned public key.`
+- Result: route-refresh QR relay conversion now has current no-device gate evidence proving a latest QR can refresh complete relay route material for an already pinned runtime without repeating the runtime public key.
+- Guardrail: `script/check_copy_hygiene.py` fails if the focused regression, relay refresh markers, pinned public-key assertion, default gate entry, summary phrase, or current docs/roadmap evidence is removed.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device Android route-refresh QR trusted-state conversion only. It does not prove physical Android QR scan, live auth over a real phone connection, production relay reachability, live provider-backed chat/cancel, or real different-network connectivity.
+
+## 2026-07-02 Android Route Refresh QR Optional-Public-Key P2P Update No-Device Gate
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshQrWithoutPublicKeyCanRefreshPinnedRuntimeP2pRendezvousRoute -Pkotlin.incremental=false --console=plain --rerun-tasks` passed.
+- Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring the focused ViewModel regression, refreshed P2P record/body/nonce markers, pinned public-key preservation, relay-material clearing, default no-device gate entry, no-device summary phrase, progress, QA, and roadmap coverage.
+- Syntax evidence: `bash -n script/check_no_device_quality.sh` (syntax only) passed and the no-device summary now reports `Covered Android route-refresh QR optional-public-key P2P update addendum: route-refresh QR without runtime_public_key can update complete p2p_rendezvous material for an already pinned runtime while preserving the pinned public key.`
+- Result: route-refresh QR P2P conversion now has current no-device gate evidence proving a latest QR can refresh complete opaque P2P route material for an already pinned runtime without repeating the runtime public key.
+- Guardrail: `script/check_copy_hygiene.py` fails if the focused regression, P2P refresh markers, pinned public-key assertion, default gate entry, summary phrase, or current docs/roadmap evidence is removed.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device Android route-refresh QR trusted-state conversion only. It does not prove physical Android QR scan, live auth over a real phone connection, production P2P/NAT traversal, live provider-backed chat/cancel, or real different-network connectivity.
+
+## 2026-07-02 Android Route Refresh QR Expired-Or-Incomplete P2P Rejection No-Device Gate
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshQrRejectsExpiredOrIncompleteP2pRoute -Pkotlin.incremental=false --console=plain --rerun-tasks` passed.
+- Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring the focused ViewModel regression, expired P2P lease marker, missing encrypted-body marker, missing anti-replay nonce marker, default no-device gate entry, no-device summary phrase, progress, QA, and roadmap coverage.
+- Syntax evidence: `bash -n script/check_no_device_quality.sh` (syntax only) passed and the no-device summary now reports `Covered Android route-refresh QR expired-or-incomplete P2P rejection addendum: expired P2P route-refresh QR records and incomplete p2p_rendezvous material fail closed before trusted storage changes.`
+- Result: route-refresh QR P2P validation now has current no-device gate evidence proving expired or incomplete `p2p_rendezvous` QR material returns no trusted runtime mutation before storage changes.
+- Guardrail: `script/check_copy_hygiene.py` fails if the focused regression, P2P expiry/incomplete markers, default gate entry, summary phrase, or current docs/roadmap evidence is removed.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device Android route-refresh QR validation only. It does not prove physical Android QR scan, live auth over a real phone connection, production P2P/NAT traversal, live provider-backed chat/cancel, or real different-network connectivity.
+
+## 2026-07-02 Android Route Refresh QR P2P Add-Route No-Device Gate
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshQrAddsP2pRendezvousRouteToExistingTrustedRuntime -Pkotlin.incremental=false --console=plain --rerun-tasks` passed.
+- Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring the focused ViewModel regression, P2P class/body/nonce assertions, pinned public-key preservation, direct endpoint removal, default no-device gate entry, no-device summary phrase, progress, QA, and roadmap coverage.
+- Syntax evidence: `bash -n script/check_no_device_quality.sh` (syntax only) passed and the no-device summary now reports `Covered Android route-refresh QR P2P add-route addendum: fresh P2P route-refresh QR material adds complete p2p_rendezvous record/body/lease/nonce material to an existing trusted runtime while dropping stale direct endpoints.`
+- Result: route-refresh QR P2P conversion now has current no-device gate evidence proving complete `p2p_rendezvous` QR material can update an existing trusted runtime while preserving the pinned runtime identity and removing stale fixed endpoint material.
+- Guardrail: `script/check_copy_hygiene.py` fails if the focused regression, P2P storage assertions, pinned identity assertion, endpoint removal assertion, default gate entry, summary phrase, or current docs/roadmap evidence is removed.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device Android route-refresh QR conversion only. It does not prove physical Android QR scan, live auth over a real phone connection, production P2P/NAT traversal, live provider-backed chat/cancel, or real different-network connectivity.
+
+## 2026-07-02 Android Route Refresh P2P Noncanonical Rejection No-Device Gate
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshPayloadRejectsNonCanonicalP2pMaterial -Pkotlin.incremental=false --console=plain --rerun-tasks` passed.
+- Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring the focused ViewModel regression, whitespace-mutated P2P class, record id, encrypted body, anti-replay nonce markers, default no-device gate entry, no-device summary phrase, progress, QA, and roadmap coverage.
+- Syntax evidence: `bash -n script/check_no_device_quality.sh` (syntax only) passed and the no-device summary now reports `Covered Android route.refresh P2P noncanonical rejection addendum: authenticated route.refresh rejects whitespace-mutated P2P class, record id, encrypted body, and anti-replay nonce before trusted storage changes.`
+- Result: authenticated P2P `route.refresh` payload validation now has current no-device gate evidence proving noncanonical P2P route material is rejected before trusted runtime storage changes.
+- Guardrail: `script/check_copy_hygiene.py` fails if the focused regression, noncanonical P2P markers, default gate entry, summary phrase, or current docs/roadmap evidence is removed.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device Android route-refresh payload validation only. It does not prove physical Android QR scan, live auth over a real phone connection, production P2P/NAT traversal, live provider-backed chat/cancel, or real different-network connectivity.
+
+## 2026-07-02 Android Pairing P2P QR Direct-Endpoint Suppression No-Device Gate
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.pairingRuntimeTargetIgnoresDirectEndpointWhenP2pQrAlsoHasIt -Pkotlin.incremental=false --console=plain --rerun-tasks` passed.
+- Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring the focused ViewModel regression, P2P rendezvous route-material marker, QR-bound runtime identity assertion, endpoint-hint omission assertion, default no-device gate entry, no-device summary phrase, progress, QA, and roadmap coverage.
+- Syntax evidence: `bash -n script/check_no_device_quality.sh` (syntax only) passed and the no-device summary now reports `Covered Android pairing P2P QR direct-endpoint suppression addendum: P2P-backed pairing QR targets ignore stray fixed host/port hints and stay identity/P2P-route-bound before trust creation.`
+- Result: P2P-backed pairing QR target construction now has default no-device gate coverage proving a QR payload with complete opaque `p2p_rendezvous` material plus stray `host`/`port` keeps the QR-bound runtime identity and omits direct endpoint hints before trust creation.
+- Guardrail: `script/check_copy_hygiene.py` fails if the focused regression, P2P route-material marker, runtime identity assertion, endpoint-hint omission assertion, default gate entry, summary phrase, or current docs/roadmap evidence is removed.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device Android P2P-backed pairing target planning only. It does not implement production NAT traversal, signaling, hole punching, physical Android QR scan, live auth over a real phone connection, live provider-backed chat/cancel, or real different-network connectivity.
+
+## 2026-07-02 Android Pairing Relay QR Direct-Endpoint Suppression No-Device Gate
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.pairingRuntimeTargetIgnoresDirectEndpointWhenRelayQrAlsoHasIt -Pkotlin.incremental=false --console=plain --rerun-tasks` passed.
+- Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring the focused ViewModel regression, QR-bound runtime identity assertion, endpoint-hint omission assertion, default no-device gate entry, no-device summary phrase, progress, QA, and roadmap coverage.
+- Syntax evidence: `bash -n script/check_no_device_quality.sh` (syntax only) passed and the no-device summary now reports `Covered Android pairing relay QR direct-endpoint suppression addendum: relay-backed pairing QR targets ignore stray fixed host/port hints and stay identity/relay-bound before trust creation.`
+- Result: relay-backed pairing QR target construction now has default no-device gate coverage proving a QR payload with complete relay material plus stray `host`/`port` keeps the QR-bound runtime identity and omits direct endpoint hints before trust creation.
+- Guardrail: `script/check_copy_hygiene.py` fails if the focused regression, runtime identity assertion, endpoint-hint omission assertion, default gate entry, summary phrase, or current docs/roadmap evidence is removed.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device Android relay-backed pairing target planning only. It does not prove physical Android QR scan, optical camera reliability, live auth over a real phone connection, live provider-backed chat/cancel, production relay allocation, or real different-network connectivity.
+
+## 2026-07-02 macOS Qualified Provider Model Routing Rejection No-Device Gate
+
+- Focused evidence: `swift test --filter AggregatingLlmBackendResidencyTests/testQualifiedModelMustBeReportedByThatProvider` passed.
+- Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring the focused aggregate backend regression, no-route assertion for the mismatched provider backend, default no-device gate entry, no-device summary phrase, progress, QA, and roadmap coverage.
+- Syntax evidence: `bash -n script/check_no_device_quality.sh` (syntax only) passed and the no-device summary now reports `Covered macOS qualified provider model routing rejection addendum: provider-qualified chat model ids must be reported by that exact local provider before runtime routing.`
+- Result: qualified provider model routing now has default no-device gate coverage proving `lm_studio:qwen-local` returns `model_not_installed` at the LM Studio boundary and does not route into LM Studio unless that exact provider reports the local chat model.
+- Guardrail: `script/check_copy_hygiene.py` fails if the focused regression, no-route assertion, default gate entry, summary phrase, or current docs/roadmap evidence is removed.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device aggregate backend routing only. It does not prove physical Android QR scan, live auth over a real phone connection, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+## 2026-07-02 macOS Trusted Hello Runtime Proof No-Device Gate
+
+- Focused evidence: `swift test --filter LocalRuntimeMessageRouterTests/testTrustedHelloIncludesVerifiableRuntimeProofWhenSignerIsAvailable` passed.
+- Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring the focused router regression, fingerprint/signature assertions, nonce replay rejection, default no-device gate entry, no-device summary phrase, protocol docs, progress, QA, and roadmap coverage.
+- Syntax evidence: `bash -n script/check_no_device_quality.sh` (syntax only) passed and the no-device summary now reports `Covered macOS trusted hello runtime proof addendum: trusted hello auth.challenge includes a verifiable runtime_signature and runtime_key_fingerprint when a runtime signer is available.`
+- Result: macOS trusted hello runtime-proof emission now has default no-device gate coverage proving `auth.challenge` carries the runtime key fingerprint plus a runtime signature that verifies for the issued nonce and fails for a different nonce.
+- Guardrail: `script/check_copy_hygiene.py` fails if the focused regression, fingerprint/signature assertions, nonce replay rejection, default gate entry, summary phrase, protocol docs, or current docs/roadmap evidence are removed.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device macOS router auth-challenge proof emission only. It does not prove physical Android QR scan, client-side runtime proof verification on hardware, live auth over a real phone connection, Keychain behavior in a live app session, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+## 2026-07-02 Android Relay Frame Cryptor Nonce-Bound Vector No-Device Gate
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:transport:testDebugUnitTest --tests com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest.relayFrameCryptorBindsRouteNonceIntoKey --tests com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest.relayFrameCryptorMatchesNonceBoundSharedCiphertextVectors -Pkotlin.incremental=false --console=plain --rerun-tasks` passed.
+- Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring the focused core transport regressions, wrong-nonce decrypt rejection, fixed nonce-bound ciphertext vector, default no-device gate entries, no-device summary phrase, progress, QA, and roadmap coverage.
+- Syntax evidence: `bash -n script/check_no_device_quality.sh` (syntax only) passed and the no-device summary now reports `Covered Android relay frame cryptor nonce-bound vector addendum: fixed ciphertext vectors bind relay_secret and relay_nonce, and mismatched route nonces cannot decrypt relay frames.`
+- Result: Android relay frame cryptor behavior now has default no-device gate coverage proving the same `relay_secret` with a different QR route nonce cannot decrypt relay frame bodies and the nonce-bound ciphertext vectors stay stable across Android/shared relay implementations.
+- Guardrail: `script/check_copy_hygiene.py` fails if either focused regression, wrong-nonce decrypt assertion, fixed ciphertext vector, default gate entry, summary phrase, or current docs/roadmap evidence is removed.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device Android relay frame cryptor behavior only. It does not prove physical Android QR scan, live relay reachability from a phone, production relay deployment, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+## 2026-07-02 Android Accepted-Pairing Runtime Identity Mismatch Rejection No-Device Gate
+
+- Focused evidence: `bash -lc 'JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.acceptedPairingResultRejectsMismatchedRuntimeIdentity -Pkotlin.incremental=false --console=plain'` passed.
+- Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring the production mismatch checks, focused ViewModel regression, device-id/fingerprint/public-key mismatch cases, default no-device gate entry, no-device summary phrase, progress, QA, and roadmap coverage.
+- Syntax evidence: `bash -n script/check_no_device_quality.sh` (syntax only) passed and the no-device summary now reports `Covered Android accepted-pairing runtime identity mismatch rejection addendum: accepted pairing creates trust only when result device id, fingerprint, and public key match the pending QR identity.`
+- Result: accepted pairing identity validation now has default no-device gate coverage proving mismatched result device id, runtime fingerprint, or runtime public key returns no trusted runtime instead of creating trust from a QR-bound pending identity.
+- Guardrail: `script/check_copy_hygiene.py` fails if the production mismatch checks, focused regression, mismatch cases, default gate entry, summary phrase, or current docs/roadmap evidence are removed.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device Android accepted-pairing identity validation only. It does not prove physical Android QR scan, optical camera reliability, live auth over a real phone connection, live relay reachability, or real different-network runtime connectivity.
+
+## 2026-07-02 Android Bonjour Discovery Identity Metadata Boundary No-Device Gate
+
+- Focused evidence: `bash -lc 'JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.discoveredRuntimeSelectionRequiresTrustedIdentityMetadata --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.discoveredRuntimeSelectionCanUsePendingPairingIdentityBeforeTrustIsSaved --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRouteCandidatesDoNotAutoUseMetadataLessDiscoveryForTrustedIdentity --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRouteCandidatesUseRouteTokenBeforeLegacyIdentityMetadata --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRouteCandidatesIgnoreRouteTokenMismatchEvenWhenLegacyIdentityMatches --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedDiscoveredRuntimeConnectionTargetRequiresMatchingDiscoveryIdentity --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedDiscoveredRuntimeConnectionTargetRejectsMetadataLessDiscovery --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRouteCandidatesIgnoreDiscoveredEndpointWithMismatchedIdentityMetadata --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRouteCandidatesIgnoreSelectedBonjourEndpointWithMismatchedIdentityMetadata --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRouteCandidatesRejectMetadataLessSelectedBonjourEndpoint --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRouteCandidatesRejectSelectedBonjourEndpointMissingCurrentDiscoveryMetadata -Pkotlin.incremental=false --console=plain'` passed.
+- Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring the focused ViewModel regressions, default no-device gate entries, no-device summary phrase, progress, QA, and roadmap coverage.
+- Syntax evidence: `bash -n script/check_no_device_quality.sh` (syntax only) passed and the no-device summary now reports `Covered Android Bonjour discovery identity metadata boundary addendum: trusted Bonjour/local discovery routes require matching route-token or pinned identity metadata, while metadata-less or mismatched discoveries remain non-trusted diagnostics.`
+- Result: Bonjour/local discovery route planning now has default no-device gate coverage proving trusted routes require matching route-token or pinned identity metadata, route-token mismatches win over legacy identity metadata, and selected Bonjour rows without current matching discovery metadata fail closed.
+- Guardrail: `script/check_copy_hygiene.py` fails if the focused regressions, default gate entries, summary phrase, or current docs/roadmap evidence are removed.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device Android local-discovery route planning only. It does not prove physical Android QR scan, live Bonjour availability on a real network, live relay reachability, or real different-network runtime connectivity.
+
+## 2026-07-02 LM Studio Vision Image Native/Fallback Request Shape No-Device Gate
+
+- Focused evidence: `swift test --filter 'LMStudioBackendTests/testChatWithImageAttachmentUsesNativeImageInput|LMStudioBackendTests/testChatWithImageAttachmentFallsBackToOpenAICompatibleVisionContentWhenNativeRejects'` passed.
+- Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring both focused LM Studio backend regressions, the native-before-fallback path assertion, default no-device gate entries, no-device summary phrase, progress, QA, and roadmap coverage.
+- Syntax evidence: `bash -n script/check_no_device_quality.sh` (syntax only) passed and the no-device summary now reports `Covered LM Studio vision image native/fallback request shape addendum: LM Studio image attachments use native /api/v1/chat image input first, then OpenAI-compatible vision content when the native request is rejected.`
+- Result: LM Studio vision image request shaping now has default no-device gate coverage proving the runtime-owned adapter tries native `/api/v1/chat` image input first and sends OpenAI-compatible `image_url` content only as fallback after native rejection.
+- Guardrail: `script/check_copy_hygiene.py` fails if either focused regression, the native-before-fallback path assertion, default gate entry, summary phrase, or current docs/roadmap evidence is removed.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device SwiftPM adapter request shaping only. It does not prove physical Android file picking, live LM Studio availability, model-quality output, or real different-network runtime connectivity.
+
+## 2026-07-02 Android Direct Model-Provider Route Block No-Device Gate
+
+- Focused evidence: `bash -lc 'JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRouteCandidatesRejectDirectModelProviderPortsFromSelectedAndDiscoveredRoutes -Pkotlin.incremental=false --console=plain'` passed.
+- Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring the focused ViewModel regression, default no-device gate entry, no-device summary phrase, progress, QA, and roadmap coverage.
+- Syntax evidence: `bash -n script/check_no_device_quality.sh` (syntax only) passed and the no-device summary now reports `Covered Android direct model-provider route block addendum: selected, discovered, USB reverse, and emulator direct routes reject Ollama and LM Studio backend ports before any client-side TCP connection.`
+- Result: direct route-candidate planning now has default no-device gate coverage proving selected, discovered, USB reverse, and emulator direct routes refuse Ollama `11434` and LM Studio `1234` backend ports before the Android client can attempt a direct TCP connection.
+- Guardrail: `script/check_copy_hygiene.py` fails if the focused regression, default gate entry, summary phrase, or current docs/roadmap evidence is removed.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device Android route-candidate planning only. It does not prove physical Android QR scan, live relay reachability, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+## 2026-07-02 Android Chat-History Confirmation Compact Dialog No-Device Gate Refresh
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:compileDebugKotlin :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatHistoryConfirmationDialogsStayBoundedAtLargeFontAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain` passed.
+- Result: the current no-device UI guard proves archive-all, permanently-delete-archived, and single archived-chat delete confirmation dialogs keep localized two-step destructive action labels bounded at compact width and 1.5 font scale across all supported Android app languages.
+- Static evidence: `script/check_copy_hygiene.py` already requires the `CHAT_HISTORY_CONFIRMATION_*` tags, `.widthIn(max = 360.dp)`, the focused multilingual bounds regression, the default no-device gate entry, and the coverage phrase `Android chat-history confirmation compact dialog layout`.
+- Device evidence: this pass did not use a physical Android phone, so it remains no-device Compose/JVM evidence only.
+- Caveat: this does not prove physical Android screenshots, touch ergonomics, TalkBack traversal on a real device, launcher icon rendering, or live QR/device pairing.
+
+## 2026-07-02 Android Trusted Relay Reconnect Scope Eligibility No-Device Gate
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedRuntimeRelayReconnectIgnoresLoopbackRelayRoute --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedRuntimeRelayReconnectAllowsDebugUsbReverseRelayRoute --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedRuntimeRelayReconnectAllowsPrivateOverlayRelayRoute --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedRuntimeRelayReconnectRejectsScopeLessPrivateRelayRoute -Pkotlin.incremental=false --console=plain` passed.
+- Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring all four focused ViewModel regressions, explicit relay scopes, prepared host assertions, no-route fail-closed assertions, default no-device gate entries, no-device summary phrase, progress, QA, and roadmap coverage.
+- Syntax evidence: `bash -n script/check_no_device_quality.sh` (syntax only) passed and the no-device summary now reports `Covered Android trusted relay reconnect scope eligibility addendum: trusted reconnect rejects scope-less loopback/private saved relay routes while allowing explicit usb_reverse and private_overlay scopes.`
+- Result: saved trusted relay reconnect planning now has default no-device gate coverage proving scope-less loopback/private relay hosts fail closed, while explicitly scoped debug USB reverse and private overlay routes remain eligible.
+- Guardrail: `script/check_copy_hygiene.py` fails if any focused regression, relay-scope marker, host assertion, fail-closed assertion, default gate entry, summary phrase, or current docs/roadmap evidence is removed.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device Android saved relay scope eligibility route planning only. It does not prove physical Android QR scan, optical camera reliability, live auth over a real phone connection, live provider-backed chat/cancel, production relay allocation, or real different-network connectivity.
+
+## 2026-07-02 Android Pending Relay QR Planning Eligibility No-Device Gate
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRemoteRoutePlannerUsesInjectedClockForPendingPairingRelayLease --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.pairingRuntimeTargetUsesRelayQrWithoutLocalEndpoint --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.pendingPairingRelayQrOverridesSavedRelayRoute -Pkotlin.incremental=false --console=plain` passed.
+- Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring all three focused ViewModel regressions, endpoint-hint omission, QR relay host/secret precedence assertions, default no-device gate entries, no-device summary phrase, progress, QA, and roadmap coverage.
+- Syntax evidence: `bash -n script/check_no_device_quality.sh` (syntax only) passed and the no-device summary now reports `Covered Android pending relay QR planning eligibility addendum: pending pairing relay QR material creates identity-only targets without direct endpoints, respects relay lease expiry, and overrides saved relay routes while pairing.`
+- Result: pending relay QR planning now has default no-device gate coverage proving QR route material can create an identity-only pairing target without direct endpoints, expires through the planner clock, and takes precedence over saved trusted relay routes while pairing.
+- Guardrail: `script/check_copy_hygiene.py` fails if any focused regression, endpoint-hint omission, QR relay host/secret precedence assertion, default gate entry, summary phrase, or current docs/roadmap evidence is removed.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device Android pending relay QR planning only. It does not prove physical Android QR scan, optical camera reliability, live auth over a real phone connection, live provider-backed chat/cancel, production relay allocation, or real different-network connectivity.
+
+## 2026-07-02 Android Saved Relay Reconnect Pinned-Identity Rejection No-Device Gate
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedRuntimeRelayReconnectRejectsMismatchedPinnedIdentity -Pkotlin.incremental=false --console=plain` passed.
+- Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring the focused ViewModel regression, mismatched fingerprint marker, mismatched public-key marker, no-route assertions, default no-device gate entry, no-device summary phrase, progress, QA, and roadmap coverage.
+- Syntax evidence: `bash -n script/check_no_device_quality.sh` (syntax only) passed and the no-device summary now reports `Covered Android saved relay reconnect pinned-identity rejection addendum: trusted reconnect refuses saved relay route planning when the pinned runtime fingerprint or public key mismatches.`
+- Result: saved relay reconnect planning now has default no-device gate coverage proving mismatched pinned runtime fingerprints or public keys produce no prepared relay route before connector-level route handling.
+- Guardrail: `script/check_copy_hygiene.py` fails if the focused regression, mismatched fingerprint marker, mismatched public-key marker, no-route assertions, default gate entry, summary phrase, or current docs/roadmap evidence is removed.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device Android saved relay reconnect route-planning identity rejection only. It does not prove physical Android QR scan, optical camera reliability, live auth over a real phone connection, live provider-backed chat/cancel, production relay allocation, or real different-network connectivity.
+
+## 2026-07-02 Android Accepted-Pairing Relay Secret Restore Boundary No-Device Gate
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.acceptedPairingResultPreservesRelaySecretForTrustedRuntimeRestore -Pkotlin.incremental=false --console=plain` passed.
+- Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring the focused ViewModel regression, relay secret assertion, relay nonce assertion, relay lease assertion, default no-device gate entry, no-device summary phrase, progress, QA, and roadmap coverage.
+- Syntax evidence: `bash -n script/check_no_device_quality.sh` (syntax only) passed and the no-device summary now reports `Covered Android accepted-pairing relay secret restore boundary addendum: accepted relay pairing preserves complete relay host/id/secret/lease/nonce material for trusted runtime restore.`
+- Result: accepted relay pairing now has default no-device gate coverage proving complete relay host, port, id, secret, lease, and nonce material survives into trusted runtime restore state.
+- Guardrail: `script/check_copy_hygiene.py` fails if the focused regression, relay secret assertion, relay nonce assertion, relay lease assertion, default gate entry, summary phrase, or current docs/roadmap evidence is removed.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device Android accepted-pairing relay material preservation only. It does not prove physical Android QR scan, optical camera reliability, live auth over a real phone connection, live provider-backed chat/cancel, production relay allocation, or real different-network connectivity.
+
+## 2026-07-02 Android Initial Pairing QR Expired P2P Record Rejection No-Device Gate
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.expiredP2pQrIsNotSavedAsTrustedRuntime -Pkotlin.incremental=false --console=plain` passed.
+- Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring the focused ViewModel regression, expired P2P record marker, complete nonce marker, default no-device gate entry, no-device summary phrase, progress, QA, and roadmap coverage.
+- Syntax evidence: `bash -n script/check_no_device_quality.sh` (syntax only) passed and the no-device summary now reports `Covered Android initial pairing QR expired P2P record rejection addendum: accepted pairing refuses to create trusted runtime storage from already-expired P2P rendezvous QR material.`
+- Result: initial accepted pairing now has default no-device gate coverage proving already-expired opaque P2P rendezvous QR material fails closed before trusted runtime storage is created.
+- Guardrail: `script/check_copy_hygiene.py` fails if the focused regression, expired P2P record marker, complete nonce marker, default gate entry, summary phrase, or current docs/roadmap evidence is removed.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device Android accepted-pairing expired P2P QR validation only. It does not implement production NAT traversal, signaling, hole punching, physical Android QR scan, live provider-backed chat/cancel, or real different-network connectivity.
+
+## 2026-07-02 Android Initial Pairing QR Expired Relay Lease Rejection No-Device Gate
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.expiredRelayQrIsNotSavedAsTrustedRuntime -Pkotlin.incremental=false --console=plain` passed.
+- Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring the focused ViewModel regression, expired relay lease marker, no-trusted-runtime assertion, default no-device gate entry, no-device summary phrase, progress, QA, and roadmap coverage.
+- Syntax evidence: `bash -n script/check_no_device_quality.sh` (syntax only) passed and the no-device summary now reports `Covered Android initial pairing QR expired relay lease rejection addendum: accepted pairing refuses to create trusted runtime storage from already-expired relay QR material.`
+- Result: initial accepted pairing now has default no-device gate coverage proving already-expired QR relay lease material fails closed before trusted runtime storage is created.
+- Guardrail: `script/check_copy_hygiene.py` fails if the focused regression, expired relay lease marker, no-trusted-runtime assertion, default gate entry, summary phrase, or current docs/roadmap evidence is removed.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device Android accepted-pairing expired relay QR validation only. It does not prove physical Android QR scan, optical camera reliability, live auth over a real phone connection, live provider-backed chat/cancel, production relay allocation, or real different-network connectivity.
+
+## 2026-07-02 Android Saved Relay Lease Reconnect Eligibility No-Device Gate
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedRuntimeRelayReconnectUsesStoredQrLeaseMetadata --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRemoteRoutePlannerUsesInjectedClockForSavedRelayLease --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedRuntimeRelayReconnectRejectsExpiredSavedRelayLease --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedRuntimeRelayReconnectRejectsIncompleteSavedRelayLease --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.autoReconnectTrustedRuntimeTargetUsesSavedRelayRouteWithoutManualEndpoint -Pkotlin.incremental=false --console=plain` passed.
+- Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring the focused ViewModel regressions, relay frame-secret preservation, injected-clock lease marker, expired lease marker, incomplete nonce marker, default no-device gate entries, no-device summary phrase, progress, QA, and roadmap coverage.
+- Syntax evidence: `bash -n script/check_no_device_quality.sh` (syntax only) passed and the no-device summary now reports `Covered Android saved relay lease reconnect eligibility addendum: trusted reconnect uses complete saved QR relay lease metadata without manual endpoints and rejects expired or incomplete saved relay leases before route planning.`
+- Result: saved relay reconnect planning now has default no-device gate coverage proving complete QR relay lease metadata can reconnect without manual endpoints, while expired or incomplete saved relay leases fail closed before route planning.
+- Guardrail: `script/check_copy_hygiene.py` fails if any focused regression, relay frame-secret assertion, injected-clock lease marker, expired lease marker, incomplete nonce marker, default gate entry, summary phrase, or current docs/roadmap evidence is removed.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device Android saved relay reconnect planning only. It does not prove physical Android QR scan, optical camera reliability, live auth over a real phone connection, live provider-backed chat/cancel, production relay allocation, or real different-network connectivity.
+
+## 2026-07-02 Android Trusted Remote-Route Target Endpoint-Hint Suppression No-Device Gate
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedRuntimeConnectionTargetOmitsDirectEndpointWhenRelayRouteIsSaved --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedRuntimeConnectionTargetOmitsDirectEndpointWhenP2pRouteIsSaved -Pkotlin.incremental=false --console=plain` passed.
+- Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring both focused ViewModel regressions, relay and P2P route-material markers, endpoint-hint null assertion, default no-device gate entries, no-device summary phrase, progress, QA, and roadmap coverage.
+- Syntax evidence: `bash -n script/check_no_device_quality.sh` (syntax only) passed and the no-device summary now reports `Covered Android trusted remote-route target endpoint-hint suppression addendum: trusted reconnect targets with saved relay or P2P route material omit stale direct endpoint hints before route planning.`
+- Result: trusted reconnect target construction now has default no-device gate coverage proving saved relay and P2P route material suppress stale direct endpoint hints before route planning.
+- Guardrail: `script/check_copy_hygiene.py` fails if either focused regression, relay/P2P route-material marker, endpoint-hint null assertion, default gate entry, summary phrase, or current docs/roadmap evidence is removed.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device Android trusted target construction only. It does not prove physical Android QR scan, optical camera reliability, live auth over a real phone connection, live provider-backed chat/cancel, production P2P traversal, or real different-network connectivity.
+
+## 2026-07-02 Android Route Refresh QR Relay Add-Route No-Device Gate
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshQrAddsRelayRouteToExistingTrustedRuntime -Pkotlin.incremental=false --console=plain` passed.
+- Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring the focused ViewModel regression, relay host/secret assertions, pinned public-key preservation, fixed-host cleanup, default no-device gate entry, no-device summary phrase, progress, QA, and roadmap coverage.
+- Syntax evidence: `bash -n script/check_no_device_quality.sh` (syntax only) passed and the no-device summary now reports `Covered Android route-refresh QR relay add-route addendum: fresh relay route-refresh QR material adds complete relay host/id/secret/lease/nonce material to an existing trusted runtime while preserving pinned runtime identity.`
+- Result: latest route-refresh QR relay material now has default no-device gate coverage proving it can add complete relay route fields to an existing trusted runtime while preserving pinned identity and dropping fixed endpoint material.
+- Guardrail: `script/check_copy_hygiene.py` fails if the focused regression, relay host/secret assertions, pinned public-key assertion, fixed-host cleanup, default gate entry, summary phrase, or current docs/roadmap evidence is removed.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device Android ViewModel route-refresh QR relay material conversion only. It does not prove physical Android QR scan, optical camera reliability, live auth over a real phone connection, live provider-backed chat/cancel, or real different-network connectivity.
+
+## 2026-07-02 Android Route Refresh Rejected Payload Retry No-Device Gate
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.authenticatedTrustedRuntimeRetriesRejectedRouteRefreshPayloadBeforeLeaseExpiry -Pkotlin.incremental=false --console=plain` passed.
+- Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring the focused ViewModel regression, mismatched runtime payload marker, current relay retention assertion, no-user-error assertion, retry-count assertion, default no-device gate entry, no-device summary phrase, progress, QA, and roadmap coverage.
+- Syntax evidence: `bash -n script/check_no_device_quality.sh` (syntax only) passed and the no-device summary now reports `Covered Android route.refresh rejected-payload retry addendum: authenticated relay route.refresh responses rejected by identity or route-material validation keep the current trusted relay route and retry inside the active lease.`
+- Result: rejected authenticated `route.refresh` payloads now have default no-device gate coverage proving they do not overwrite the current trusted relay route, do not surface a user error while retrying inside the active lease, and schedule a second route-refresh request.
+- Guardrail: `script/check_copy_hygiene.py` fails if the focused regression, mismatched runtime payload marker, current relay retention assertion, no-user-error assertion, retry-count assertion, default gate entry, summary phrase, or current docs/roadmap evidence is removed.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device Android authenticated `route.refresh` rejected-payload retry behavior only. It does not prove production `route.refresh` enablement, physical Android QR scan, optical camera reliability, live auth over a real phone connection, live provider-backed chat/cancel, or real different-network connectivity.
+
+## 2026-07-02 Android Route Refresh Relay Payload Acceptance Incomplete Rejection No-Device Gate
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshPayloadAddsFreshRelayRouteToCurrentTrustedRuntime --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshPayloadRejectsExpiredOrIncompleteRelayMaterial -Pkotlin.incremental=false --console=plain` passed.
+- Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring both focused ViewModel regressions, fresh relay host/secret assertions, expired relay lease marker, missing `relaySecret = null` marker, default no-device gate entries, no-device summary phrase, progress, QA, and roadmap coverage.
+- Syntax evidence: `bash -n script/check_no_device_quality.sh` (syntax only) passed and the no-device summary now reports `Covered Android route.refresh relay payload acceptance/incomplete rejection addendum: authenticated relay route.refresh stores fresh relay material and rejects expired or missing relay_secret material before trusted storage changes.`
+- Result: authenticated `route.refresh` relay payload conversion now has default no-device gate coverage proving fresh relay material is stored while expired or missing-`relay_secret` material fails closed before trusted runtime route storage changes.
+- Guardrail: `script/check_copy_hygiene.py` fails if either focused regression, fresh relay host/secret assertions, expired relay lease marker, missing `relaySecret = null` marker, default gate entries, summary phrase, or current docs/roadmap evidence is removed.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device Android authenticated `route.refresh` relay payload conversion only. It does not prove production `route.refresh` enablement, physical Android QR scan, optical camera reliability, live auth over a real phone connection, live provider-backed chat/cancel, or real different-network connectivity.
+
+## 2026-07-02 Android Authenticated Relay Route Refresh Scheduling Retry No-Device Gate
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.authenticatedTrustedRuntimeSchedulesRouteRefreshBeforeLeaseExpiry --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.authenticatedTrustedRuntimeRetriesRouteRefreshErrorBeforeLeaseExpiry -Pkotlin.incremental=false --console=plain` passed.
+- Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring both focused ViewModel regressions, scheduled relay no-direct-TCP assertion, retryable `route_refresh_unavailable` marker, retry-window assertion, default no-device gate entries, no-device summary phrase, progress, QA, and roadmap coverage.
+- Syntax evidence: `bash -n script/check_no_device_quality.sh` (syntax only) passed and the no-device summary now reports `Covered Android authenticated relay route.refresh scheduling/retry addendum: authenticated relay sessions send route.refresh before lease expiry and retry retryable route.refresh errors inside the active lease.`
+- Result: authenticated relay route-refresh scheduling/retry now has default no-device gate coverage proving relay sessions send `route.refresh` before lease expiry and retry retryable `route_refresh_unavailable` errors inside the active lease without falling back to direct TCP.
+- Guardrail: `script/check_copy_hygiene.py` fails if either focused regression, the relay no-direct-TCP assertion, retryable error marker, retry-window assertion, default gate entries, summary phrase, or current docs/roadmap evidence is removed.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device Android ViewModel authenticated relay route-refresh scheduling/retry behavior only. It does not prove production `route.refresh` enablement, physical Android QR scan, optical camera reliability, live auth over a real phone connection, live provider-backed chat/cancel, or real different-network connectivity.
+
+## 2026-07-02 Android Route Refresh QR Expired-Or-Incomplete Relay Rejection No-Device Gate
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.expiredRouteRefreshQrIsNotSavedAsTrustedRuntimeRoute --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshQrRejectsRelayRouteWithoutSecret -Pkotlin.incremental=false --console=plain` passed.
+- Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring the focused expired-QR regression, expired lease value, focused missing-`relay_secret` regression, default no-device gate entries, no-device summary phrase, progress, QA, and roadmap coverage.
+- Syntax evidence: `bash -n script/check_no_device_quality.sh` (syntax only) passed and the no-device summary now reports `Covered Android route-refresh QR expired-or-incomplete relay rejection addendum: expired route-refresh QR leases and relay routes missing relay_secret fail closed before trusted storage changes.`
+- Result: route-refresh QR relay validation now has default no-device gate coverage proving expired relay leases and missing `relay_secret` fail closed before trusted runtime route storage changes.
+- Guardrail: `script/check_copy_hygiene.py` fails if either focused regression, the expired relay lease value, missing `relay_secret` payload, default gate entries, summary phrase, or current docs/roadmap evidence is removed.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device Android ViewModel route-refresh QR validation only. It does not prove physical Android QR scan, optical camera reliability, live auth over a real phone connection, live provider-backed chat/cancel, or real different-network connectivity.
+
+## 2026-07-02 Android Route Refresh QR Pinned-Identity Rejection No-Device Gate
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshQrRejectsUntrustedOrMismatchedRuntimeIdentity -Pkotlin.incremental=false --console=plain` passed.
+- Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring the focused ViewModel regression, untrusted-scan assertion, mismatched runtime-device assertion, mismatched public-key assertion, default no-device gate entry, no-device summary phrase, progress, QA, and roadmap coverage.
+- Syntax evidence: `bash -n script/check_no_device_quality.sh` (syntax only) passed and the no-device summary now reports `Covered Android route-refresh QR pinned-identity rejection addendum: route-refresh QR must match an existing trusted runtime identity and public key before route storage changes.`
+- Result: route-refresh QR identity binding now has default no-device gate coverage proving untrusted scans, mismatched runtime device ids, and mismatched public keys fail closed before trusted route storage changes.
+- Guardrail: `script/check_copy_hygiene.py` fails if the focused regression, untrusted-scan assertion, mismatched runtime-device assertion, mismatched public-key assertion, default gate entry, summary phrase, or current docs/roadmap evidence is removed.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device Android ViewModel route-refresh identity binding only. It does not prove physical Android QR scan, optical camera reliability, live auth over a real phone connection, live provider-backed chat/cancel, or real different-network connectivity.
+
+## 2026-07-02 Android Route Refresh QR Route-Token Rotation No-Device Gate
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshQrCanRotateRouteTokenForPinnedRuntimeIdentity -Pkotlin.incremental=false --console=plain` passed.
+- Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring the focused ViewModel regression, route-token assertion, relay id/secret assertions, default no-device gate entry, no-device summary phrase, progress, QA, and roadmap coverage.
+- Syntax evidence: `bash -n script/check_no_device_quality.sh` (syntax only) passed and the no-device summary now reports `Covered Android route-refresh QR route-token rotation addendum: latest QR can rotate route tokens and relay material for the same pinned runtime identity.`
+- Result: valid latest QR repair now has default no-device gate coverage proving the pinned runtime identity can keep trust while route token, relay id, relay secret, lease, and nonce advance.
+- Guardrail: `script/check_copy_hygiene.py` fails if the focused regression, route-token assertion, relay id/secret assertions, default gate entry, summary phrase, or current docs/roadmap evidence is removed.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device Android ViewModel route-refresh mapping only. It does not prove physical Android QR scan, optical camera reliability, live auth over a real phone connection, live provider-backed chat/cancel, or real different-network connectivity.
+
+## 2026-07-02 Android Route Refresh QR Direct-Only Rejection No-Device Gate
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshQrRejectsDirectRouteForExistingTrustedRuntime -Pkotlin.incremental=false --console=plain` passed.
+- Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring the focused ViewModel regression, direct-host payload, relay omission, fail-closed assertion, default no-device gate entry, no-device summary phrase, progress, QA, and roadmap coverage.
+- Syntax evidence: `bash -n script/check_no_device_quality.sh` (syntax only) passed and the no-device summary now reports `Covered Android route-refresh QR direct-only rejection addendum: direct-only route-refresh QR cannot replace an existing trusted remote route with fixed host/port material.`
+- Result: direct-only route-refresh QR payloads now have default no-device gate coverage proving they fail closed instead of updating trusted runtime route storage with fixed host/port material.
+- Guardrail: `script/check_copy_hygiene.py` fails if the focused regression, direct-host payload, relay omission, fail-closed assertion, default gate entry, summary phrase, or current docs/roadmap evidence is removed.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device Android ViewModel route-refresh mapping only. It does not prove physical Android QR scan, optical camera reliability, live auth over a real phone connection, live provider-backed chat/cancel, or real different-network connectivity.
+
+## 2026-07-02 Android Route Refresh QR Fixed-Endpoint Fallback Removal No-Device Gate
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshQrDropsTrustedEndpointFallbackWhenRelayRouteIsSaved -Pkotlin.incremental=false --console=plain` passed.
+- Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring the focused ViewModel regression, host/port clearing assertions, default no-device gate entry, no-device summary phrase, progress, QA, and roadmap coverage.
+- Syntax evidence: `bash -n script/check_no_device_quality.sh` (syntax only) passed and the no-device summary now reports `Covered Android route-refresh QR fixed-endpoint fallback removal addendum: fresh relay route-refresh QR material drops stale trusted direct host/port fallback.`
+- Result: fresh relay route-refresh QR material now has default no-device gate coverage proving it clears stale trusted direct host/port fallback instead of preserving fixed endpoint reconnect state.
+- Guardrail: `script/check_copy_hygiene.py` fails if the focused regression, host/port clearing assertions, default gate entry, summary phrase, or current docs/roadmap evidence is removed.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device Android ViewModel route-refresh mapping only. It does not prove physical Android QR scan, optical camera reliability, live auth over a real phone connection, live provider-backed chat/cancel, or real different-network connectivity.
+
+## 2026-07-02 macOS Unknown Unqualified Model Routing No-Device Gate
+
+- Focused evidence: `swift test --filter AggregatingLlmBackendResidencyTests/testUnknownUnqualifiedModelDoesNotFallbackToOllama` passed.
+- Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring the focused aggregate backend regression, default no-device gate entry, no-device summary phrase, progress, QA, and roadmap coverage.
+- Syntax evidence: `bash -n script/check_no_device_quality.sh` (syntax only) passed and the no-device summary now reports `Covered macOS unknown unqualified model routing addendum: runtime-host model routing rejects unknown unqualified model ids instead of falling back to Ollama or another default provider.`
+- Result: unknown unqualified runtime model names now have default no-device gate coverage proving they return `model_not_installed` at the aggregate backend boundary instead of routing to Ollama as an implicit default.
+- Guardrail: `script/check_copy_hygiene.py` fails if the focused regression, default gate entry, summary phrase, or current docs/roadmap evidence is removed.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device aggregate backend routing only. It does not prove physical Android QR scan, live auth over a real phone connection, live provider-backed chat/cancel, or real different-network connectivity.
+
+## 2026-07-02 macOS Runtime Identity Fallback Signing No-Device Gate
+
+- Focused evidence: `swift test --filter RuntimeIdentityKeyStoreTests/testFileStoreSignsVerifiableAuthChallenge` passed.
+- Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring the focused signing regression, verification call, nonce-replay assertion, default no-device gate entry, no-device summary phrase, security docs, progress, QA, and roadmap coverage.
+- Syntax evidence: `bash -n script/check_no_device_quality.sh` (syntax only) passed and the no-device summary now reports `Covered macOS runtime identity fallback signing addendum: file-backed runtime identity fallback signs nonce-bound auth challenges with the persisted public-key fingerprint.`
+- Result: file-backed macOS runtime identity fallback now has default no-device gate coverage proving it signs auth challenges with the persisted public-key fingerprint and rejects the generated signature when replayed against a different nonce.
+- Guardrail: `script/check_copy_hygiene.py` fails if the focused signing regression, no-device gate entry, summary phrase, security docs, or current docs/roadmap evidence is removed.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device macOS fallback signing behavior only. It does not prove Keychain behavior in a live app session, physical Android QR scan, live auth over a real phone connection, live provider-backed chat/cancel, or real different-network connectivity.
+
+## 2026-07-02 Android Trusted P2P Restore Discovery Suppression No-Device Gate
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedRuntimeRestoreDoesNotStartDiscoveryWhenP2pRouteIsAvailable -Pkotlin.incremental=false --console=plain` passed.
+- Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring the focused test, no-device gate entry, no-device summary phrase, progress, QA, and roadmap coverage.
+- Syntax evidence: `bash -n script/check_no_device_quality.sh` (syntax only) passed and the no-device summary now reports `Covered Android trusted P2P restore discovery-suppression addendum: saved opaque P2P routes suppress Bonjour/local discovery and reconnect from prepared route material without endpoint hints.`
+- Result: saved trusted opaque P2P rendezvous route material now has default no-device gate coverage proving it suppresses Bonjour/local discovery and reconnects from prepared route material without endpoint hints.
+- Guardrail: `script/check_copy_hygiene.py` fails if the focused regression, default gate entry, summary phrase, or docs/roadmap evidence is removed.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device ViewModel route-selection behavior only. It does not prove physical Android QR scan, camera reliability, real P2P NAT traversal, live provider-backed chat/cancel, or real different-network connectivity.
+
+## 2026-07-02 Shared Route Material Schema Size Bound No-Device Gate
+
+- Focused evidence: `python3 script/check_protocol_schema.py` passed after adding shared `opaqueRouteValue`, `opaqueRouteSecret`, and `opaqueRouteBody` checks for pairing QR and authenticated `route.refresh` payloads.
+- Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring the shared schemas, protocol checker, protocol docs, no-device summary phrase, progress, QA, and roadmap coverage for route-material size bounds.
+- Syntax evidence: `bash -n script/check_no_device_quality.sh` (syntax only) passed and the no-device summary now reports `Covered shared route material schema size-bound addendum: pairing QR and route.refresh schemas cap opaque route ids, tokens, secrets, nonces, and P2P encrypted bodies before parser or runtime handling.`
+- Result: shared decoded pairing QR payloads and `route.refresh` payloads now cap opaque route ids/tokens/secrets/nonces at 512 characters and opaque P2P encrypted bodies at 2048 characters before parser or runtime handling.
+- Guardrail: `script/check_protocol_schema.py` fails if those schema defs or field refs drift, and `script/check_copy_hygiene.py` fails if the shared schema/documentation/no-device contract is removed.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves shared schema/static contract coverage only. It does not prove physical Android QR scan, camera reliability, production P2P signaling, live provider-backed chat/cancel, or real different-network connectivity.
+
+## 2026-07-02 Suggested Questions Tombstone Current Docs/Ops Guard
+
+- Focused evidence: `python3 script/check_copy_hygiene.py` passed after expanding the suggested-question tombstone scan.
+- Static evidence: `rg -n "chat\\.suggestions|SuggestedQuestions|useSuggestedQuestion|isLoadingSuggestions|assistantSuggestions|suggested_question|suggested_questions|generating_suggestions" README.md apps/android/README.md apps/macos/README.md docs/architecture.md docs/connection-overlay.md docs/handoff.md docs/mvp-v0.1.md docs/protocol.md docs/roadmap.md docs/security.md examples/README.md script --glob '!script/check_copy_hygiene.py' --glob '!script/check_no_device_quality.sh'` returned no matches.
+- Syntax evidence: `bash -n script/check_no_device_quality.sh` (syntax only) passed and the no-device summary now reports `Covered suggested-question removal tombstone addendum: active code/protocol/current docs/ops paths forbid chat.suggestions and suggested-question UI symbols.`
+- Result: current README/architecture/protocol/security/roadmap/handoff docs and operational scripts are now covered by the same removal guard as active code, resources, tests, and protocol schema.
+- Guardrail: Historical suggested-question sections are retained only as history. For current implementation, active code/protocol/current docs/ops paths are forbidden from carrying the removed protocol path or suggested-question UI symbols.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves static tombstone coverage only. It does not prove physical Android QR scan, camera reliability, production relay/P2P reachability, live provider-backed chat/cancel, or real different-network connectivity.
+
+## 2026-07-02 Android Opaque Route Material Size Bound No-Device Gate
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:pairing:testDebugUnitTest --tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.rejectsOversizedOpaqueRouteQrValues --tests com.localagentbridge.android.core.pairing.PairingStoreTest.trustedRuntimeRejectsOversizedP2pRendezvousRoute --tests com.localagentbridge.android.core.pairing.PairingStoreTest.pairingStoreDropsOversizedStoredP2pRendezvousRouteOnRead -Pkotlin.incremental=false --console=plain` passed.
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:transport:testDebugUnitTest --tests com.localagentbridge.android.core.transport.RuntimePeerToPeerRoutePreparationTest.oversizedPeerToPeerRoutePreparationReturnsNull -Pkotlin.incremental=false --console=plain` passed.
+- Gate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh` passed and reported `Android opaque route material size-bound addendum`.
+- Result: Android now caps opaque QR route values at 512 characters and opaque route bodies at 2048 characters before parser acceptance, trusted P2P route restore, or P2P route preparation.
+- Result: oversized route tokens, relay ids/secrets/nonces, P2P record ids, P2P encrypted bodies, and P2P anti-replay nonces are rejected or dropped before becoming route material.
+- Guardrail: `script/check_copy_hygiene.py` requires the size-bound constants, parser/store/transport regressions, default no-device summary phrase, and current docs/roadmap evidence.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device Android QR/parser/storage/route-preparation boundaries only. It does not prove physical Android QR scan, camera reliability, production P2P signaling, live provider-backed chat/cancel, or real different-network connectivity.
+
+## 2026-07-02 macOS Pairing Abuse Structured Rejection No-Device Gate
+
+- Focused evidence: `swift test --filter 'LocalRuntimeMessageRouterTests/testRepeatedInvalidPairingAttemptsInvalidateActiveSession|LocalRuntimeMessageRouterTests/testExpiredAndNoActivePairingRequestsReturnStructuredRejections'` passed.
+- Gate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh` passed and reported `macOS pairing abuse structured rejection addendum`.
+- Result: the default no-device gate now directly runs the macOS router regressions that prove repeated invalid pairing attempts return structured lockout, invalidate the active pairing session, leave trusted devices empty, and that expired or inactive pairing requests return structured non-trusting rejections.
+- Guardrail: `script/check_copy_hygiene.py` requires the focused regressions, the no-device gate entry, the default summary phrase, and current docs/roadmap evidence.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device macOS pairing-abuse router gate wiring only. It does not prove physical Android QR scan, camera reliability, production relay/P2P reachability, live provider-backed chat/cancel, or real different-network connectivity.
+
+## 2026-07-02 macOS P2P QR Canonical Generation No-Device Gate
+
+- Focused evidence: `swift test --filter LocalRuntimeMessageRouterTests/testPairingQRCodePayloadIncludesP2PRendezvousRecordWhenPresent` passed.
+- Gate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh` passed and reported `macOS P2P QR canonical generation addendum`.
+- Result: the default no-device gate now directly runs the canonical macOS P2P QR regression, proving pairing QR payloads emit complete `p2p_rendezvous` material while keeping relay and direct endpoint aliases absent.
+- Guardrail: `script/check_copy_hygiene.py` requires the canonical P2P QR generation regression in the default gate, the default summary phrase, and current docs/roadmap evidence.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device macOS QR payload construction and gate wiring only. It does not prove real P2P NAT traversal, production signaling, physical Android QR scan, live provider-backed chat/cancel, or real different-network connectivity.
+
+## 2026-07-02 macOS Untrusted Hello Unit Rejection No-Device Gate
+
+- Focused evidence: `swift test --filter LocalRuntimeMessageRouterTests/testUntrustedHelloReturnsPairingRequired` passed.
+- Gate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh` passed and reported `untrusted-client rejection addendum`.
+- Result: the default no-device gate now directly runs `LocalRuntimeMessageRouterTests/testUntrustedHelloReturnsPairingRequired`, proving `LocalRuntimeMessageRouter` returns non-retryable `pairing_required` for `unknown-device` hello instead of starting trusted auth or exposing runtime commands.
+- Guardrail: `script/check_copy_hygiene.py` requires the focused regression, the no-device gate entry, the default summary phrase, and current docs/roadmap evidence.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device macOS router trust-boundary gate wiring only. It does not prove physical Android QR scan, camera reliability, production relay/P2P reachability, live provider-backed chat/cancel, or real different-network connectivity.
+
+## 2026-07-02 Android Diagnostic Identity-Only Discovery Wait No-Device Gate
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.diagnosticIdentityOnlyQrPlanStartsDiscoveryAndWaitsForRouteWhenRemoteRouteIsNotRequired -Pkotlin.incremental=false --console=plain` passed.
+- Gate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh` passed and reported `Android diagnostic identity-only discovery wait addendum`.
+- Result: the default no-device gate now runs `RuntimeClientViewModelTest.diagnosticIdentityOnlyQrPlanStartsDiscoveryAndWaitsForRouteWhenRemoteRouteIsNotRequired`, proving diagnostic identity-only QR planning creates no connection target, keeps pending pairing visible, starts discovery, and waits for a discovered route.
+- Guardrail: `script/check_copy_hygiene.py` requires the focused regression, its discovery-start and wait-for-route assertions, the no-target assertion, the default gate entry, the default summary phrase, and current docs/roadmap evidence.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device Android diagnostic route-planning gate wiring only. It does not prove physical Android pairing, camera reliability, production relay/P2P reachability, live provider-backed chat/cancel, or real different-network connectivity.
+
+## 2026-07-02 Android Pending Route-Less QR No Saved Relay Fallback No-Device Gate
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.pendingPairingQrWithoutRemoteRouteDoesNotFallbackToSavedRelayRoute -Pkotlin.incremental=false --console=plain` passed.
+- Gate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh` passed and reported `Android pending route-less QR no saved relay fallback addendum`.
+- Result: the default no-device gate now runs `RuntimeClientViewModelTest.pendingPairingQrWithoutRemoteRouteDoesNotFallbackToSavedRelayRoute`, proving a newly scanned pending QR with identity but no remote route material does not borrow `saved-relay.example.test` material from an existing trusted runtime.
+- Guardrail: `script/check_copy_hygiene.py` requires the focused regression, the saved relay fixture, the fail-closed empty route assertion, the default gate entry, the default summary phrase, and current docs/roadmap evidence.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device Android route-planner gate wiring only. It does not prove physical Android pairing, camera reliability, production relay/P2P reachability, live provider-backed chat/cancel, or real different-network connectivity.
+
+## 2026-07-02 Android Relay Concurrent Encryption No-Device Gate
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:transport:testDebugUnitTest --tests com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest.relayClientSerializesEncryptionWithConcurrentSends -Pkotlin.incremental=false --console=plain` passed.
+- Gate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh` passed and reported `Android relay concurrent encryption addendum`.
+- Result: the default no-device gate now runs `RuntimeRelayTcpClientTest.relayClientSerializesEncryptionWithConcurrentSends`, proving 48 concurrent `RuntimeRelayTcpClient` sends over a real localhost relay socket are serialized so each nonce-bound encrypted frame arrives decryptable without corrupting the stream.
+- Guardrail: `script/check_copy_hygiene.py` requires the focused regression, the 48-frame concurrent dispatch, the all-request-id decryptability assertion, the default gate entry, the default summary phrase, and current docs/roadmap evidence.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device Android relay TCP concurrent encrypted-send gate wiring only. It does not prove physical Android pairing, camera reliability, production relay/P2P reachability, live provider-backed chat/cancel, or real different-network connectivity.
+
+## 2026-07-02 Android Relay Reachability Probe Input No-Device Gate
+
+- Focused evidence: `script/android_relay_reachability_probe.sh --host https://relay.example.test --port 43171` exited 2 with `--host must be a host or IP address, not a URL.`
+- Focused evidence: `script/android_relay_reachability_probe.sh --host relay.example.test --port 0` exited 2 with `--port must be an integer in 1..65535.`
+- Focused evidence: `script/android_relay_reachability_probe.sh --host relay.example.test --port 43171 --relay-id "relay 1"` exited 2 with `--relay-id must be a non-empty relay token without whitespace.`
+- Gate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh` passed and reported `Android relay reachability probe input guard addendum`.
+- Result: the default no-device gate now runs `check_android_relay_reachability_probe_input_guard`, proving the physical relay probe rejects URL-shaped relay hosts, invalid ports, and malformed relay IDs before ADB/device access.
+- Guardrail: `script/check_copy_hygiene.py` requires the helper's validation checks, the exact negative probe commands, the default gate function, the default summary phrase, and current docs/roadmap evidence.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device relay probe input validation only. It does not prove physical Android relay reachability, camera reliability, production relay/P2P reachability, live provider-backed chat/cancel, or real different-network connectivity.
+
+## 2026-07-02 Android Relay TCP Ready Timeout No-Device Gate
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:transport:testDebugUnitTest --tests com.localagentbridge.android.core.transport.RuntimeRelayTcpClientTest.relayConnectTimesOutWhenReadyLineNeverArrives -Pkotlin.incremental=false --console=plain` passed.
+- Gate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh` passed and reported `Android relay TCP ready timeout addendum`.
+- Result: the default no-device gate now runs `RuntimeRelayTcpClientTest.relayConnectTimesOutWhenReadyLineNeverArrives`, proving an accepted TCP socket that never emits the relay ready line fails within the route timeout instead of waiting indefinitely.
+- Guardrail: `script/check_copy_hygiene.py` requires the focused regression, the stalled-relay fake socket, the short client timeout, the elapsed-time assertion, the default gate entry, the default summary phrase, and current docs/roadmap evidence.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device Android relay TCP ready-line timeout gate wiring only. It does not prove physical Android pairing, camera reliability, production relay/P2P reachability, live provider-backed chat/cancel, or real different-network connectivity.
+
+## 2026-07-02 Android Identity-Only No-Route Transport Boundary No-Device Gate
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:transport:testDebugUnitTest --tests com.localagentbridge.android.core.transport.RuntimeConnectionManagerTest.identityOnlyTargetResolvesRoutesButNoConnectableRoute -Pkotlin.incremental=false --console=plain` passed.
+- Gate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh` passed and reported `Android identity-only no-route transport boundary addendum`.
+- Result: the default no-device gate now runs `RuntimeConnectionManagerTest.identityOnlyTargetResolvesRoutesButNoConnectableRoute`, proving an identity-only trusted target reports local/P2P/relay diagnostics, fails with `NoConnectableRoute`, rejects direct TCP as not prepared, and never calls the direct TCP connector.
+- Guardrail: `script/check_copy_hygiene.py` requires the focused regression, the `NoConnectableRoute` failure, the `DirectTcpEndpointNotPrepared` rejection, the no-direct-call assertion, the default gate entry, the default summary phrase, and current docs/roadmap evidence.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device Android core transport identity-only no-route gate wiring only. It does not prove physical Android pairing, camera reliability, production relay/P2P reachability, live provider-backed chat/cancel, or real different-network connectivity.
+
+## 2026-07-02 AetherLinkRelay Opaque Relay ID Focused No-Device Gate
+
+- Focused evidence: `swift test --filter 'RelayAllocationTests/testAllocationDerivesOpaqueStableRelayIDFromRouteTokenAndRequestedSecret|RelayAllocationTests/testAllocationRegistryPersistsOpaqueRelayIDWithoutRawRouteToken'` passed.
+- Gate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh` passed and ran the focused relay allocation opacity regressions.
+- Result: the default no-device gate now runs the focused relay allocation opacity regressions that prove stable `rt1-` relay IDs are derived from route tokens without returning or persisting raw route-token material.
+- Guardrail: `script/check_copy_hygiene.py` requires both exact no-device filter names, the existing `relay opaque-id addendum` contract, and current progress/QA evidence.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves focused no-device relay allocation opacity gate wiring only. It does not prove physical Android QR scan, camera reliability, production relay reachability, live provider-backed chat/cancel, or real different-network connectivity.
+
+## 2026-07-02 Android Route-Token Remote Preparation No-Device Gate
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:transport:testDebugUnitTest --tests com.localagentbridge.android.core.transport.RuntimeConnectionManagerTest.remoteRoutePreparerCanUsePairingRouteTokenWithoutDirectTcpEndpoint -Pkotlin.incremental=false --console=plain` passed.
+- Gate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh` passed and ran the route-token remote preparation regression.
+- Result: the default no-device gate now runs `RuntimeConnectionManagerTest.remoteRoutePreparerCanUsePairingRouteTokenWithoutDirectTcpEndpoint`, proving a paired runtime route token can produce P2P and relay route candidates without direct host/port endpoint material.
+- Guardrail: `script/check_copy_hygiene.py` requires the focused regression, the P2P `sessionId` route-token assertion, the relay `relayId` route-token assertion, the default gate entry, the default summary `Android route-token remote preparation addendum`, and current docs/roadmap evidence.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device route-token preparation plumbing only. It does not prove physical Android QR scan, camera reliability, production relay/P2P reachability, live provider-backed chat/cancel, or real different-network connectivity.
+
+## 2026-07-02 macOS Relay Client Retirement No-Device Gate
+
+- Focused evidence: `swift test --filter RelayPeerClientTests/testRelayPeerClientRetireKeepsCurrentConnectionAndSuppressesReconnect` passed.
+- Gate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh` passed and reported `relay client retirement addendum`.
+- Result: the default no-device gate now runs the existing relay-client retirement regression, proving `retireAfterCurrentConnection()` keeps the active relay session usable for in-flight frames while suppressing a second stale-nonce relay handshake after the socket closes.
+- Guardrail: `script/check_copy_hygiene.py` requires the exact no-device test filter, the existing `relay client retirement addendum` summary phrase, and current docs/roadmap evidence.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves macOS relay client behavior and gate wiring only. It does not prove physical Android QR scan, camera reliability, production relay reachability, live provider-backed chat/cancel, or real different-network connectivity.
+
+## 2026-07-02 Private Overlay QR Artifact No-Device Gate
+
+- Focused evidence: `PRIVATE_OVERLAY_QR_WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/aetherlink-no-device-qr.private-overlay.XXXXXX")"; ./script/render_pairing_qr.swift --input shared/protocol/fixtures/macos-compact-private-overlay-pairing-uri.txt --output "$PRIVATE_OVERLAY_QR_WORK_DIR/private-overlay-pairing-qr.png"; ./script/verify_pairing_qr.swift --image "$PRIVATE_OVERLAY_QR_WORK_DIR/private-overlay-pairing-qr.png" --expected shared/protocol/fixtures/macos-compact-private-overlay-pairing-uri.txt --require-relay-route --require-production-bootstrap --expected-relay-host 100.64.1.10 --expected-relay-port 43171 --forbid-direct-endpoint` passed.
+- Gate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh` passed and reported `private-overlay QR artifact addendum`.
+- Result: the default no-device gate now renders the shared compact private-overlay relay QR fixture to PNG and verifies the decoded URI requires production bootstrap fields, a complete relay route, CGNAT private-overlay scope, and no direct endpoint.
+- Guardrail: `script/check_copy_hygiene.py` requires the fixture render/verify block, expected host/port checks, default summary `private-overlay QR artifact addendum`, and current docs/roadmap evidence.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device QR artifact rendering and verifier policy for the shared private-overlay fixture only. It does not prove physical Android pairing, optical QR scanning, production private-overlay reachability, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+## 2026-07-02 Android Prepared Relay Route Ordering No-Device Gate
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:transport:testDebugUnitTest --tests com.localagentbridge.android.core.transport.RuntimeConnectionManagerTest.preparedRelayRouteIsAttemptedBeforeStaleEndpointHint --tests com.localagentbridge.android.core.transport.RuntimeConnectionManagerTest.preparedRelayRoutePrecedesFreshDiscoveryRoute --tests com.localagentbridge.android.core.transport.RuntimeConnectionManagerTest.freshDiscoveryRouteFallbacksWhenPreparedRelayRouteFails -Pkotlin.incremental=false --console=plain` passed.
+- Gate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh` passed and reported `Android prepared relay route ordering addendum`.
+- Result: the default no-device gate now pins that Android core transport tries prepared relay route material before stale trusted endpoints and fresh discovery, while retaining fresh discovery as fallback after relay failure.
+- Guardrail: `script/check_copy_hygiene.py` requires the focused route-ordering regressions, default gate entries, default summary `Android prepared relay route ordering addendum`, and current docs/roadmap evidence.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device Android core transport route ordering only. It does not prove physical Android pairing, optical QR scanning, live provider-backed chat/cancel, production relay/P2P traversal, or real different-network runtime connectivity.
+
+## 2026-07-02 Android Route Refresh Timing Policy No-Device Gate
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRouteRefreshLeaseDelayUsesRenewalWindow --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRouteRefreshRetryDelayStaysInsideActiveLease -Pkotlin.incremental=false --console=plain` passed.
+- Gate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh` passed and reported `Android route.refresh timing policy addendum`.
+- Result: the default no-device gate now pins that Android route-refresh renewal and retry delays are bounded inside the active remote-route lease window.
+- Guardrail: `script/check_copy_hygiene.py` requires the timing helper regressions, default gate entries, default summary `Android route.refresh timing policy addendum`, and current docs/roadmap evidence.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device route-refresh timing policy only. It does not prove production `route.refresh` enablement, physical Android pairing, optical QR scanning, live provider-backed chat/cancel, production relay/P2P traversal, or real different-network runtime connectivity.
+
+## 2026-07-02 Android Accepted Pairing Incomplete P2P Route No-Device Gate
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.acceptedPairingResultRejectsIncompleteP2pRouteInsteadOfDirectFallback -Pkotlin.incremental=false --console=plain` passed.
+- Gate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh` passed and reported `Android accepted-pairing incomplete P2P route addendum`.
+- Result: the default no-device gate now pins that accepted pairing rejects incomplete P2P rendezvous route material instead of preserving any diagnostic direct endpoint fallback.
+- Guardrail: `script/check_copy_hygiene.py` requires the incomplete P2P fail-closed implementation, focused regression, invalid P2P protocol-version case, default gate entry, default summary `Android accepted-pairing incomplete P2P route addendum`, and current docs/roadmap evidence.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device accepted-pairing P2P route-material validation only. It does not implement production NAT traversal, signaling, hole punching, physical Android pairing, optical QR scanning, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+## 2026-07-02 Android P2P Connector Dispatch No-Device Gate
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:transport:testDebugUnitTest --tests com.localagentbridge.android.core.transport.RuntimeConnectionManagerTest.remoteRoutePreparerCanConnectIdentityOnlyTargetThroughPeerToPeerConnector -Pkotlin.incremental=false --console=plain` passed.
+- Gate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh` passed and reported `Android P2P connector dispatch addendum`.
+- Result: the default no-device gate now runs `RuntimeConnectionManagerTest.remoteRoutePreparerCanConnectIdentityOnlyTargetThroughPeerToPeerConnector`.
+- Guardrail: `script/check_copy_hygiene.py` requires the focused regression, its no-direct TCP assertion, default gate entry, default summary `Android P2P connector dispatch addendum`, and current docs/roadmap evidence.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device connector dispatch only. It does not implement production NAT traversal, signaling, hole punching, physical Android pairing, optical QR scanning, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+## 2026-07-02 Relay Preflight Output Redaction No-Device Gate
+
+- Static evidence: `python3 -m py_compile script/relay_allocation_preflight.py script/check_copy_hygiene.py script/check_docs_hygiene.py` and `bash -n script/check_no_device_quality.sh` (syntax only) passed.
+- Gate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh` passed and reported `relay preflight output redaction addendum`.
+- Result: `script/relay_allocation_preflight.py` successful JSON output no longer includes `requested_route_token`.
+- Guardrail: `script/check_copy_hygiene.py` requires the no-device assertions that normal and token-required persisted allocation preflight output omit both `requested_route_token` and the raw requested route token string.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device relay allocation preflight output redaction only. It does not prove production relay deployment, physical Android pairing, optical QR scanning, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+## 2026-07-02 Relay Preflight Opaque ID Echo Rejection No-Device Gate
+
+- Static evidence: `python3 -m py_compile script/relay_allocation_preflight.py script/check_copy_hygiene.py script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `python3 script/check_copy_hygiene.py` passed.
+- Gate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh` passed and ran `check_relay_preflight_rejects_raw_route_token_echo_guard`; the default gate reports `relay preflight opaque-id echo rejection addendum`.
+- Result: `script/relay_allocation_preflight.py` now rejects relay allocation responses where `relay_id` echoes the requested raw route token.
+- Guardrail: `script/check_copy_hygiene.py` requires the preflight rejection logic, focused error text, fake allocation endpoint helper, default no-device summary `relay preflight opaque-id echo rejection addendum`, and current docs/roadmap evidence.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device relay allocation response validation only. It does not prove production relay deployment, physical Android pairing, optical QR scanning, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+## 2026-07-02 Relay Control-Line Framing No-Device Gate
+
+- Focused evidence: `swift test --filter 'RelayHandshakeTests/testServerLineFramingRequiresNewlineForRelayHandshake|RelayHandshakeTests/testServerLineFramingRequiresNewlineForAllocationRequest|RelayProbeTests/testServerLineFramingRequiresNewlineForProbeRequest|RelayMatcherTests/testRuntimeWaitingProbeDoesNotConsumePendingRuntime|RelayMatcherTests/testRuntimeWaitingProbeIgnoresWaitingClient'` passed.
+- Gate wiring evidence: `bash -n script/check_no_device_quality.sh` passed as syntax only; the aggregate no-device gate was not rerun in this pass. The gate now reports `relay control-line framing addendum` and `relay readiness runtime-only probe addendum` when run.
+- Result: the default no-device gate now pins that relay handshake, allocation, and probe control lines require trailing newlines, that readiness probes do not consume waiting runtimes, and that relay readiness requires a waiting runtime, not just any pending peer.
+- Guardrail: `script/check_copy_hygiene.py` requires the exact focused relay regressions in `script/check_no_device_quality.sh`, requires `relay control-line framing addendum`, requires `relay readiness runtime-only probe addendum`, and requires current docs/roadmap evidence.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device relay control-plane framing and runtime-only probe matcher behavior only. It does not prove production relay deployment, physical Android pairing, optical QR scanning, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+## 2026-07-02 Android Remote Route Direct Transport Boundary No-Device Gate
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:transport:testDebugUnitTest --tests com.localagentbridge.android.core.transport.RuntimeConnectionManagerTest.futurePeerToPeerAndRelayRoutesAreNotAttemptedByDirectTcp -Pkotlin.incremental=false --console=plain` passed.
+- Gate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh` passed and reported `Android remote route direct transport boundary addendum`.
+- Result: the default no-device gate now pins that prepared P2P and relay routes use their dedicated connector path or fail without calling the direct TCP connector.
+- Guardrail: `script/check_copy_hygiene.py` requires the focused regression in `script/check_no_device_quality.sh`, requires `Android remote route direct transport boundary addendum`, and requires the P2P/relay connector dispatch plus direct TCP non-call assertion.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device Android core transport routing boundaries only. It does not prove production NAT traversal, physical Android pairing, optical QR scanning, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+## 2026-07-02 macOS Stale GUI Relay QR Renewal No-Device Gate
+
+- Focused evidence: `swift test --filter 'LocalRuntimeMessageRouterTests/testCompanionAppModelReplacesReadyStaleRelayBeforeGeneratingAllocatedRouteQRCode|LocalRuntimeMessageRouterTests/testCompanionAppModelRegeneratesGUIAllocatedQRCodeWithExpiredLease'` passed.
+- Gate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh` passed and reported `macOS stale GUI relay QR renewal addendum`.
+- Result: the default no-device gate now pins that ready stale or expired GUI-allocated relay leases are replaced with fresh `relay_id`, `relay_secret`, `relay_expires_at`, and `relay_nonce` before QR payload generation.
+- Guardrail: `script/check_copy_hygiene.py` requires both focused regressions in `script/check_no_device_quality.sh`, requires `macOS stale GUI relay QR renewal addendum`, and requires the stale/fresh relay material snippets in the macOS tests.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device macOS QR lease renewal logic only. It does not prove production NAT traversal, physical Android pairing, optical QR scanning, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+## 2026-07-02 macOS Route Refresh Failure Redaction No-Device Gate
+
+- Focused evidence: `swift test --filter LocalRuntimeMessageRouterTests/testRouteRefreshFailureRedactsRelaySecretsAndProviderEndpoints` passed.
+- Gate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh` passed and reported `macOS route.refresh failure redaction addendum`.
+- Result: the default no-device gate now pins that macOS route-refresh failures return fixed retryable recovery copy without relay secrets, route tokens, provider URLs, localhost backend URLs, LAN backend endpoints, or provider ports.
+- Guardrail: `script/check_copy_hygiene.py` requires the focused regression in `script/check_no_device_quality.sh`, requires `macOS route.refresh failure redaction addendum`, and requires the current docs evidence.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device macOS route-refresh error redaction only. It does not prove production NAT traversal, physical Android pairing, optical QR scanning, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+## 2026-07-02 Android Remote Route Expiry Connector Guard No-Device Gate
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:transport:testDebugUnitTest --tests com.localagentbridge.android.core.transport.RuntimeConnectionManagerTest.remoteRouteSecurityContextRejectsMissingOrExpiredRouteMetadata --tests com.localagentbridge.android.core.transport.RuntimeConnectionManagerTest.expiredRemoteRoutesAreRejectedBeforeConnectorAttempt -Pkotlin.incremental=false --console=plain` passed.
+- Gate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh` passed and reported `Android remote route expiry connector guard addendum`.
+- Result: the default no-device gate now pins that prepared remote route security material must be complete and unexpired before any P2P or relay connector attempt.
+- Guardrail: `script/check_copy_hygiene.py` requires both focused regressions in `script/check_no_device_quality.sh`, requires `Android remote route expiry connector guard addendum`, and requires the current docs evidence.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device core transport filtering for expired or incomplete remote route material only. It does not prove production NAT traversal, physical Android pairing, optical QR scanning, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+## 2026-07-02 Android Remote Route Identity Binding No-Device Gate
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:transport:testDebugUnitTest --tests com.localagentbridge.android.core.transport.RuntimeConnectionManagerTest.mismatchedRemoteRouteIdentityIsRejectedBeforeConnectorAttempt --tests com.localagentbridge.android.core.transport.RuntimeConnectionManagerTest.remoteRouteMissingPinnedMetadataIsRejectedBeforeConnectorAttempt -Pkotlin.incremental=false --console=plain` passed.
+- Gate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh` passed and reported `Android remote route identity binding addendum`.
+- Result: the default no-device gate now pins that prepared remote P2P/relay route material is rejected before connector use when it is bound to the wrong runtime identity or lacks pinned identity metadata.
+- Guardrail: `script/check_copy_hygiene.py` requires both focused regressions in `script/check_no_device_quality.sh`, requires `Android remote route identity binding addendum`, and requires the current docs evidence.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device core transport route filtering only. It does not prove production NAT traversal, physical Android pairing, optical QR scanning, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+## 2026-07-02 macOS Pairing QR Payload Shape No-Device Gate
+
+- Focused evidence: `swift test --filter 'LocalRuntimeMessageRouterTests/testPairingQRCodePayloadCanOmitEndpointHints|LocalRuntimeMessageRouterTests/testPairingQRCodePayloadIncludesRelaySecretWhenPresent|LocalRuntimeMessageRouterTests/testCompactPairingQRCodePayloadUsesShortAliasesForCameraScanning'` passed.
+- Gate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh` passed and reported `macOS pairing QR payload shape addendum`.
+- Result: the default no-device gate now pins that canonical macOS QR payloads can omit diagnostic endpoint hints, include relay secrets when route material is present, and emit compact camera QR payloads with short aliases.
+- Guardrail: `script/check_copy_hygiene.py` requires the macOS QR payload field snippets, the focused regressions in `script/check_no_device_quality.sh`, requires `macOS pairing QR payload shape addendum`, and requires the current docs evidence.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves macOS QR payload construction and default gate coverage only. It does not prove physical Android optical scanning, real-device pairing, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+## 2026-07-02 AetherLinkRelay Allocation Lease Lifecycle No-Device Gate
+
+- Focused evidence: `swift test --filter 'RelayAllocationTests/testRelayServerConfigurationUsesShortDefaultAllocationTTL|RelayAllocationTests/testAllocationRegistryExpiresAndRemovesRelayIDs|RelayAllocationTests/testAllocationRegistryPersistsAndReloadsRelayIDs|RelayAllocationTests/testAllocationRegistryPrunesExpiredPersistedRelayIDs'` passed.
+- Result: the default no-device gate now pins that AetherLinkRelay uses a short default allocation TTL, persists relay leases without secrets, removes expired relay IDs, and prunes expired persisted tickets on load.
+- Guardrail: `script/check_copy_hygiene.py` requires the lifecycle regressions in `script/check_no_device_quality.sh`, requires `relay allocation lease lifecycle addendum`, and requires the lifecycle evidence in current docs.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves development relay allocation-store lifecycle behavior only. It does not prove physical Android pairing, production relay allocation, production NAT traversal, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+## 2026-07-02 macOS Model Residency Foreground Completion No-Device Gate
+
+- Focused evidence: `swift test --filter AggregatingLlmBackendResidencyTests/testDoneEventClearsInFlightResidencyBeforeClientObservesCompletion` passed.
+- Result: the default no-device gate now pins that terminal chat `.done` events clear in-flight model-residency state before a client observes completion.
+- Guardrail: `script/check_copy_hygiene.py` requires the foreground completion regression in `script/check_no_device_quality.sh` and requires the default coverage phrase `macOS model-residency foreground completion addendum`.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device aggregate backend completion ordering only. It does not prove live Ollama or LM Studio unload behavior, physical Android pairing, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+## 2026-07-02 Android QR Pairing Preemption No-Device Gate
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.newPairingQrPreemptsActiveUntrustedConnection --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.newPairingQrPreemptsActiveDifferentTrustedRuntimeConnection --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.sameRuntimePairingQrDoesNotPreemptActiveTrustedConnection -Pkotlin.incremental=false --console=plain` passed.
+- Result: the default no-device gate now pins the QR preemption contract: a new QR may replace an untrusted or different-runtime active connection, while a same-runtime QR must not preempt the active trusted session.
+- Guardrail: `script/check_copy_hygiene.py` requires all three preemption regressions in `script/check_no_device_quality.sh` and requires the default coverage phrase `Android QR pairing preemption addendum`.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device ViewModel decision logic only. It does not prove optical QR scanning, physical Android pairing, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+## 2026-07-02 Android Product QR Scanner Policy Gate
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.AppNavigationTest.pairingQrRawValueAcceptsCompactRelayPayloadsFromScanner --tests com.localagentbridge.android.AppNavigationTest.pairingQrScannerClassifiesRawValuesBeforeConsumingCameraResult --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.productPairingQrParserRejectsIdentityOnlyQrWhenRemoteRouteIsRequired --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustRuntimeFromPairingQrRejectsIdentityOnlyQrInNormalScanPath -Pkotlin.incremental=false --console=plain` passed.
+- Result: the default no-device gate now names the scanner raw-value and camera-result classification regressions that accept route-capable compact relay QR while rejecting identity-only or expired product QR before the scanner result is consumed.
+- Guardrail: `script/check_copy_hygiene.py` requires the focused scanner/parser regressions in `script/check_no_device_quality.sh` and requires the default coverage phrase `Android product QR scanner policy addendum`.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves parser/scanner policy in JVM no-device tests only. It does not prove optical camera reliability, physical Android pairing, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+## 2026-07-02 Android Relay QR Idempotency No-Device Gate
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.duplicateCompactRelayQrScanSendsSinglePairingRequestOnActiveRelayConnection --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshQrAfterAcceptedRelayPairingDoesNotOpenDuplicateRelayConnection --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.compactRelayQrPairingResultPersistsTrustedRelayAndClearsPendingRoute -Pkotlin.incremental=false --console=plain` passed.
+- Result: the default no-device gate now runs the duplicate compact relay QR idempotency regression and the route-refresh QR active-connection reuse regression instead of relying only on historical physical smoke evidence.
+- Guardrail: `script/check_copy_hygiene.py` pins both test names in `RuntimeClientViewModelTest.kt`, requires both in `script/check_no_device_quality.sh`, and requires the default coverage phrase `Android relay QR idempotency addendum`.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device ViewModel behavior and default gate coverage only. It does not prove optical QR scanning, physical Android pairing, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+## 2026-07-02 Physical External Relay Different-Network Confirmation Gate
+
+- Focused evidence: `AETHERLINK_DIFFERENT_NETWORK_CONFIRMED=0 ADB=/bin/true script/check_physical_external_relay_pairing.sh --relay-host 0.0.0.0 --require-different-network-confirmation --json <tmp>/summary.json --log <tmp>/run.log` exited 2 before starting the physical smoke.
+- Result: the wrapper refuses a required different-network physical QA run until the operator sets `AETHERLINK_DIFFERENT_NETWORK_CONFIRMED=1` after putting the phone on a different network.
+- Result: the default no-device gate now proves that the unconfirmed run prints the operator-confirmation message and stops before writing QA summary/log artifacts, preventing local or placeholder runs from looking like physical different-network evidence.
+- Guardrail: `script/check_copy_hygiene.py` pins the wrapper option/message, the no-device behavior test, the no-artifact assertion, and the default coverage phrase `physical external-relay different-network confirmation gate`.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves the safety stop only. It does not prove real external relay reachability from a phone, optical QR scanning, physical pairing, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+## 2026-07-02 No-ADB QR Smoke Machine-Readable Coverage
+
+- Focused evidence: `script/no_adb_external_relay_pairing_smoke.sh --relay-host 127.0.0.1 --relay-port <free-port> --start-local-relay --emit-only --timeout 30 --work-dir <tmp>` generated `summary.json`, `pairing-uri.txt`, and `pairing-qr.png`, then verified QR PNG round-trip decode.
+- Result: the no-ADB external-relay summary now records machine-readable coverage booleans for pairing URI artifact presence, QR PNG artifact presence, QR PNG round-trip verification, relay-route requirement, direct-endpoint-forbidden mode, and artifact-only emit mode.
+- Guardrail: `script/check_no_device_quality.sh` reads the generated `summary.json` during the default local emit-only QR smoke and asserts those booleans plus the artifact-only/local-relay caveats; `script/check_copy_hygiene.py` pins both the summary fields and the default gate assertions.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves QR artifact contract and summary plumbing only. It does not prove optical camera scanning, physical Android pairing, live provider-backed chat/cancel, or real different-network relay reachability.
+
+## 2026-07-02 Physical External Relay Requested Serial Evidence Binding
+
+- Focused evidence: `ADB=/bin/true script/check_physical_external_relay_pairing.sh --relay-host 0.0.0.0 --serial no-device-serial-1 --json <tmp>/summary.json --log <tmp>/run.log` returned status 2 and wrote a failure summary before any device probing.
+- Result: the no-device invalid-host path now proves `android_device.requested_adb_serial` is preserved as `no-device-serial-1`, `android_device.observed_adb_serial` stays absent, and the redacted command keeps the `--serial no-device-serial-1` evidence while still omitting allocation-token values.
+- Guardrail: `script/check_no_device_quality.sh` runs this summary-contract check by default and reports `physical external-relay requested serial evidence binding`; `script/check_copy_hygiene.py` pins the JSON assertions and coverage phrase.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves physical QA evidence plumbing only. It does not prove a real attached phone, external relay reachability from the phone, optical QR scanning, physical haptics, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+## 2026-07-02 Android Chat Route Availability Relay Auth Compact Layout
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenRouteAvailabilityNoticeStaysBoundedAtLargeFontAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain` passed.
+- Static evidence: `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`, `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check -- apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt script/check_copy_hygiene.py docs/qa-evidence.md docs/progress.md docs/roadmap.md` passed before the aggregate gate.
+- Gate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh` passed and reported `Android chat route availability notice compact layout`.
+- Result: the populated Chat route-availability compact regression now includes relay authentication failure (`remote_route_auth_failed` / `route_diagnostic_relay_auth_failed`) in addition to relay failure, private-overlay scope, remote identity mismatch, and failed P2P-without-relay-fallback cases.
+- Guardrail: copy hygiene requires the relay-auth-failed case in `ClientScreensNoDeviceComposeTest.chatScreenRouteAvailabilityNoticeStaysBoundedAtLargeFontAcrossSupportedLanguages`, so the existing default no-device route-availability compact test cannot silently lose this QR-first recovery state.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this is no-device Compose/JVM evidence. Physical Android rendering, hardware TalkBack traversal, optical QR scan, live provider-backed chat/cancel, and real different-network reachability remain separate verification gaps.
+
+## 2026-07-02 Android Settings Developer Diagnostics Toggle Compact Layout
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsDeveloperDiagnosticsToggleRowStaysBoundedAtLargeFontAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain` passed.
+- Static evidence: `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`, `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/ui/ClientScreens.kt apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/qa-evidence.md docs/progress.md docs/roadmap.md` passed before the aggregate gate.
+- Gate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh` passed and reported `Android Settings developer diagnostics toggle compact layout`.
+- Result: Settings `Connection troubleshooting` developer diagnostics toggle now has compact large-font coverage at 260 dp and 1.5 font scale across English, Korean, Japanese, Simplified Chinese, and French.
+- Result: the regression verifies the localized title/detail, off-state switch semantics, card, toggle row, text column, and switch remain bounded without overlap before diagnostic endpoint controls are expanded.
+- Guardrail: copy hygiene requires the Settings developer diagnostics toggle test tags, compact regression, root/list tags, bounds/overlap assertions, default no-device gate entry, and no-device coverage phrase `Android Settings developer diagnostics toggle compact layout`.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this is no-device Compose/JVM evidence. Physical Android rendering, hardware TalkBack traversal, screenshot aesthetics, optical QR scan, live provider-backed chat/cancel, launcher icon readability, and real different-network reachability remain separate verification gaps.
+
+## 2026-07-02 Android Settings Companion-Only Compact Layout
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsCompanionOnlyPanelStaysBoundedAtLargeFontAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain` passed.
+- Static evidence: `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`, `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/ui/ClientScreens.kt apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/qa-evidence.md docs/progress.md docs/roadmap.md` passed before the aggregate gate.
+- Gate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh` passed and reported `Android Settings companion-only compact layout`.
+- Result: Settings private model access companion-only panel now has compact large-font coverage at 260 dp and 1.5 font scale across English, Korean, Japanese, Simplified Chinese, and French.
+- Result: the regression verifies the localized live-region summary and title/detail remain bounded inside the panel content without overlap.
+- Guardrail: copy hygiene requires the Settings companion-only panel test tags, compact regression, root/list tags, bounds/overlap assertions, default no-device gate entry, and no-device coverage phrase `Android Settings companion-only compact layout`.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this is no-device Compose/JVM evidence. Physical Android rendering, hardware TalkBack traversal, screenshot aesthetics, optical QR scan, live provider-backed chat/cancel, launcher icon readability, and real different-network reachability remain separate verification gaps.
+
+## 2026-07-02 Android Settings Pending Pairing Route Compact Layout
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsPendingPairingRouteStatusStaysBoundedAtLargeFontAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain` passed.
+- Static evidence: `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`, `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/ui/ClientScreens.kt apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/qa-evidence.md docs/progress.md docs/roadmap.md` passed before the aggregate gate.
+- Gate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh` passed and reported `Android Settings pending pairing route compact layout`.
+- Result: Settings pending pairing route status now has compact large-font coverage for the route-incomplete QR state at 260 dp and 1.5 font scale across English, Korean, Japanese, Simplified Chinese, and French.
+- Result: the regression verifies the localized live-region summary, QR-scanned title/detail, status row, icon/text column, and active discovery progress indicator remain bounded inside the status card without overlap.
+- Guardrail: copy hygiene requires the Settings pending pairing route status test tags, compact regression, root/list tags, bounds/overlap assertions, default no-device gate entry, and no-device coverage phrase `Android Settings pending pairing route compact layout`.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this is no-device Compose/JVM evidence. Physical Android rendering, hardware TalkBack traversal, screenshot aesthetics, optical QR scan, live provider-backed chat/cancel, launcher icon readability, and real different-network reachability remain separate verification gaps.
+
+## 2026-07-02 Android Settings Discovery Actions Compact Layout
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsDiscoveryActionsStayBoundedAtLargeFontAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain` passed.
+- Static evidence: `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`, `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/ui/ClientScreens.kt apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/qa-evidence.md docs/progress.md docs/roadmap.md` passed before the aggregate gate.
+- Gate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh` passed and reported `Android Settings discovery actions compact layout`.
+- Result: Settings troubleshooting discovery actions now have compact large-font coverage inside the real Settings discovery panel at 260 dp and 1.5 font scale across English, Korean, Japanese, Simplified Chinese, and French.
+- Result: the regression verifies idle and running discovery states keep the localized title/detail, start and stop action labels, progress indicator, and empty discovered-runtime state bounded without overlap.
+- Guardrail: copy hygiene requires the Settings discovery panel/action test tags, wrapped start/stop labels, compact regression, root/list tags, bounds/overlap assertions, default no-device gate entry, and no-device coverage phrase `Android Settings discovery actions compact layout`.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this is no-device Compose/JVM evidence. Physical Android rendering, hardware TalkBack traversal, screenshot aesthetics, optical QR scan, live provider-backed chat/cancel, launcher icon readability, and real different-network reachability remain separate verification gaps.
+
+## 2026-07-02 Android Chat Top-Bar Streaming Model Picker Compact Layout
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatTopBarModelPickerStreamingDisabledStateStaysBoundedAtLargeFontAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain` passed.
+- Static evidence: `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`, `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check -- apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/qa-evidence.md docs/progress.md docs/roadmap.md` passed before the aggregate gate.
+- Gate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh` passed and reported `Android chat top-bar streaming-disabled model picker compact layout`.
+- Result: the closed Chat model picker now has compact large-font coverage for the streaming-disabled state at 300 dp and 1.45 font scale across English, Korean, Japanese, Simplified Chinese, and French.
+- Result: the regression verifies the localized wait-state semantics remain disabled, the model picker stays bounded and compact inside the top-bar row, and it does not overlap the active chat title.
+- Guardrail: copy hygiene requires the streaming-disabled compact regression, narrow-root tag, bounds/overlap assertions, default no-device gate entry, and no-device coverage phrase `Android chat top-bar streaming-disabled model picker compact layout`.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this is no-device Compose/JVM evidence. Physical Android rendering, hardware TalkBack traversal, screenshot aesthetics, optical QR scan, live provider-backed chat/cancel, launcher icon readability, and real different-network reachability remain separate verification gaps.
+
+## 2026-07-02 Android Settings Route-Refresh Saved Notice Compact Layout
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsRouteRefreshSavedNoticeStaysBoundedAtLargeFontAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain` passed.
+- Static evidence: `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`, `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check -- apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/qa-evidence.md docs/progress.md docs/roadmap.md` passed before the aggregate gate.
+- Gate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh` passed and reported `Android Settings route-refresh saved notice compact layout`.
+- Result: Settings route-refresh saved notices now have compact large-font coverage inside the real Settings QR pairing panel at 260 dp and 1.5 font scale across English, Korean, Japanese, Simplified Chinese, and French.
+- Result: the regression verifies the localized latest-QR saved notice remains a polite live region, keeps its text bounded inside the notice and panel, stays below the Scan QR button, and does not overlap that QR action.
+- Guardrail: copy hygiene requires the Settings route-refresh saved notice compact regression, root/list tags, bounds/overlap assertions, default no-device gate entry, and no-device coverage phrase `Android Settings route-refresh saved notice compact layout`.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this is no-device Compose/JVM evidence. Physical Android rendering, hardware TalkBack traversal, screenshot aesthetics, optical QR scan, live provider-backed chat/cancel, launcher icon readability, and real different-network reachability remain separate verification gaps.
+
+## 2026-07-02 Android Connection Status Route Notice Compact Layout
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.connectionStatusRouteNoticesStayBoundedAtLargeFontAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain` passed.
+- Static evidence: `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`, `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/ui/ClientScreens.kt apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/qa-evidence.md docs/progress.md docs/roadmap.md` passed before the aggregate gate.
+- Gate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh` passed and reported `Android Connection Status route notice compact layout`.
+- Result: Connection Status route notices now have compact large-font coverage at 260 dp and 1.5 font scale across English, Korean, Japanese, Simplified Chinese, and French.
+- Result: the regression verifies saved relay routes keep the `Connect trusted route` action bounded, while missing-relay-secret and trusted-last-known-only recovery paths keep `Scan latest QR` guidance/action bounded and route clicks to the QR recovery callback instead of connect.
+- Guardrail: copy hygiene requires the route-notice tags, compact regression, bounds/click assertions, default no-device gate entry, and no-device coverage phrase `Android Connection Status route notice compact layout`.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this is no-device Compose/JVM evidence. Physical Android rendering, hardware TalkBack traversal, screenshot aesthetics, optical QR scan, live provider-backed chat/cancel, launcher icon readability, and real different-network reachability remain separate verification gaps.
+
+## 2026-07-02 Android Chat Top-Bar New Chat Compact Layout
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatTopBarNewChatActionStaysBoundedAtLargeFontAcrossSupportedStates -Pkotlin.incremental=false --console=plain` passed.
+- Static evidence: `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`, `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/MainActivity.kt apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/qa-evidence.md docs/progress.md docs/roadmap.md` passed before the aggregate gate.
+- Gate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh` passed and reported `Android chat top-bar New Chat compact layout`.
+- Result: the Chat top-bar New Chat action now has compact large-font coverage at 300 dp and 1.45 font scale across English, Korean, Japanese, Simplified Chinese, and French.
+- Result: the regression verifies ready, streaming-disabled, and pairing-required states keep the localized action/state semantics, keep the action inside the compact top bar, avoid overlap with the title row/model picker, preserve a compact touch target, and dispatch only when enabled.
+- Guardrail: copy hygiene requires the top-bar New Chat action tag, compact regression, bounds/click assertions, default no-device gate entry, and no-device coverage phrase `Android chat top-bar New Chat compact layout`.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this is no-device Compose/JVM evidence. Physical Android rendering, hardware TalkBack traversal, screenshot aesthetics, optical QR scan, live provider-backed chat/cancel, launcher icon readability, and real different-network reachability remain separate verification gaps.
+
+## 2026-07-02 Android Chat Archive Undo Snackbar Compact Layout
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatArchiveUndoSnackbarStaysBoundedAboveComposerAtLargeFontAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain` passed.
+- Static evidence: `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`, `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/MainActivity.kt apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/qa-evidence.md docs/progress.md docs/roadmap.md` passed before the aggregate gate.
+- Gate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh` passed and reported `Android chat archive undo compact snackbar layout`.
+- Result: the Chat archive feedback snackbar now has compact large-font coverage at 300 dp and 1.45 font scale across English, Korean, Japanese, Simplified Chinese, and French.
+- Result: the regression verifies the localized archive message and localized `Undo` action stay inside the shared snackbar host, do not overlap each other, and render above the docked Chat composer without overlapping it.
+- Guardrail: copy hygiene requires the archive undo snackbar runtime contract, compact regression, archive snackbar root tag, bounds checks, default no-device gate entry, and no-device coverage phrase `Android chat archive undo compact snackbar layout`.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this is no-device Compose/JVM evidence. Physical Android rendering, hardware TalkBack traversal, screenshot aesthetics, optical QR scan, live provider-backed chat/cancel, launcher icon readability, and real different-network reachability remain separate verification gaps.
+
+## 2026-07-02 Android Settings Memory Empty-State Compact Layout
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsMemoryEmptyStatesStayBoundedAtLargeFontAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain` passed.
+- Static evidence: `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`, `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/ui/ClientScreens.kt apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/qa-evidence.md docs/progress.md docs/roadmap.md` passed before the aggregate gate.
+- Gate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh` passed and reported `Android Settings memory empty-state compact layout`.
+- Result: Settings Memory empty states now have compact large-font coverage at 300 dp and 1.5 font scale across English, Korean, Japanese, Simplified Chinese, and French.
+- Result: the regression verifies disconnected, connected-empty, and streaming-lock empty states keep live-region semantics, stay bounded inside the compact panel, keep text inside the empty-state surface, and do not overlap add controls or lock notices.
+- Guardrail: copy hygiene requires the new compact regression, Memory empty-state tags, bounds checks, default no-device gate entry, and no-device coverage phrase `Android Settings memory empty-state compact layout`.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this is no-device Compose/JVM evidence. Physical Android rendering, hardware TalkBack traversal, screenshot aesthetics, optical QR scan, live provider-backed chat/cancel, launcher icon readability, and real different-network reachability remain separate verification gaps.
+
+## 2026-07-02 Android Chat Top-Bar Active Title Compact Layout
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatTopBarActiveTitleStaysBoundedAtLargeFontAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain` passed.
+- Static evidence: `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`, `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/MainActivity.kt apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/qa-evidence.md docs/progress.md docs/roadmap.md` passed before the aggregate gate.
+- Gate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh` passed and reported `Android chat top-bar active-title compact layout`.
+- Result: closed Chat top-bar active titles now have compact large-font coverage at 300 dp and 1.45 font scale across English, Korean, Japanese, Simplified Chinese, and French.
+- Result: the regression verifies a long localized active chat title remains inside the title row, keeps a usable ellipsis area, and does not overlap the compact long-name model picker.
+- Guardrail: copy hygiene requires the new compact regression, top-bar title/model-picker tags, bounds checks, default no-device gate entry, and no-device coverage phrase `Android chat top-bar active-title compact layout`.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this is no-device Compose/JVM evidence. Physical Android rendering, hardware TalkBack traversal, screenshot aesthetics, optical QR scan, live provider-backed chat/cancel, launcher icon readability, and real different-network reachability remain separate verification gaps.
+
+## 2026-07-02 Android Route-Refresh Saved Notice Compact Layout
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenRouteRefreshSavedNoticeStaysBoundedAboveComposerAtLargeFontAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain` passed.
+- Static evidence: `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`, `python3 script/check_copy_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/ui/ClientScreens.kt apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py` passed before the aggregate gate.
+- Gate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh` passed and reported `Android route-refresh saved notice compact layout`.
+- Result: Chat route-refresh saved notices now have compact large-font coverage at 300 dp and 1.45 font scale across English, Korean, Japanese, Simplified Chinese, and French.
+- Result: the regression verifies the localized latest-QR saved notice remains a polite live region, stays bounded inside the Chat surface, keeps text inside the announced notice surface, and does not overlap the docked composer.
+- Guardrail: copy hygiene requires the new compact regression, route-refresh saved notice tags, bounds checks, default no-device gate entry, and no-device coverage phrase `Android route-refresh saved notice compact layout`.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this is no-device Compose/JVM evidence. Physical Android rendering, hardware TalkBack traversal, screenshot aesthetics, real QR refresh on a phone, optical QR scan, live provider-backed chat/cancel, launcher icon readability, and real different-network reachability remain separate verification gaps.
+
+## 2026-07-02 Android Share-Sheet Import Snackbar Compact Layout
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.sharedChatDraftImportSnackbarStaysBoundedAboveComposerAtLargeFontAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain` passed.
+- Static evidence: `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`, `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/MainActivity.kt apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/qa-evidence.md docs/progress.md docs/roadmap.md` passed before the aggregate gate.
+- Gate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh` passed and reported `Android share-sheet import compact snackbar layout`.
+- Result: visible share-sheet import confirmation snackbars now have compact large-font coverage at 300 dp and 1.45 font scale across English, Korean, Japanese, Simplified Chinese, and French.
+- Result: the regression verifies text-only, file-only, and mixed share import messages stay bounded inside the real snackbar host and do not overlap the docked Chat composer.
+- Guardrail: copy hygiene requires the new compact regression, the shared snackbar host tag, Chat snackbar bottom padding, bounds checks, default no-device gate entry, and no-device coverage phrase `Android share-sheet import compact snackbar layout`.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this is no-device Compose/JVM evidence. Physical Android rendering, hardware TalkBack traversal, screenshot aesthetics, real share-sheet delivery on a phone, optical QR scan, live provider-backed chat/cancel, launcher icon readability, and real different-network reachability remain separate verification gaps.
+
+## 2026-07-02 Android Settings Chat History Search-Refresh Header Compact Layout
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsChatHistorySearchRefreshHeaderStaysBoundedAtLargeFontAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain` passed.
+- Static evidence: `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`, `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/ui/ClientScreens.kt apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/qa-evidence.md docs/progress.md docs/roadmap.md` passed before the aggregate gate.
+- Gate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh` passed and reported `Android Settings chat-history search-refresh header compact layout`.
+- Result: Settings Chat history search/refresh header controls now have compact large-font coverage at 300 dp and 1.5 font scale across English, Korean, Japanese, Simplified Chinese, and French.
+- Result: the regression verifies the header title/subtitle, refresh action, search field, and runtime-search result summary stay inside the compact surface without overlapping, covers disconnected and connected refresh states, and proves refresh forwards the trimmed current search query.
+- Guardrail: copy hygiene requires the new compact regression, Chat history header/refresh/search test tags, bounds checks, default no-device gate entry, and no-device coverage phrase `Android Settings chat-history search-refresh header compact layout`.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this is no-device Compose/JVM evidence. Physical Android rendering, hardware TalkBack traversal, screenshot aesthetics on a real phone, optical QR scan, live provider-backed chat/cancel, launcher icon readability, and real different-network reachability remain separate verification gaps.
+
+## 2026-07-02 Android Settings Memory Add Controls Compact Layout
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsMemoryAddControlsStayBoundedAtLargeFontAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain` passed.
+- Static evidence: `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`, `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/ui/ClientScreens.kt apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/qa-evidence.md docs/progress.md docs/roadmap.md` passed before the aggregate gate.
+- Gate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh` passed and reported `Android Settings memory add controls compact layout`.
+- Result: Settings Memory add/refresh controls now have compact large-font coverage at 300 dp and 1.5 font scale across English, Korean, Japanese, Simplified Chinese, and French.
+- Result: the regression verifies the header refresh action, disconnected lock notice, add input, add button label, and added-memory live notice stay inside their compact containers without overlapping across disconnected, connected-empty, connected-ready, and add-success states.
+- Guardrail: copy hygiene requires the new compact regression, Memory add/refresh/notice test tags, bounds checks, default no-device gate entry, and no-device coverage phrase `Android Settings memory add controls compact layout`.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this is no-device Compose/JVM evidence. Physical Android rendering, hardware TalkBack traversal, screenshot aesthetics on a real phone, optical QR scan, live provider-backed chat/cancel, launcher icon readability, and real different-network reachability remain separate verification gaps.
+
+## 2026-07-02 Android Chat Empty-State Compact Layout
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatEmptyStatesStayBoundedAtLargeFontAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain` passed.
+- Static evidence: `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`, `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/ui/ClientScreens.kt apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/qa-evidence.md docs/progress.md docs/roadmap.md` passed before the aggregate gate.
+- Gate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh` passed and reported `Android chat empty-state compact layout`.
+- Result: no-selected-model, uninstalled selected-model, and latest-QR route-recovery Chat empty states now have compact large-font coverage at 300 dp and 1.5 font scale across English, Korean, Japanese, Simplified Chinese, and French.
+- Result: the regression verifies title/body bounds, title/body separation, empty-state/composer separation, absent central CTA for connected model-selection states, and bounded latest-QR action/label layout.
+- Guardrail: copy hygiene requires the new compact regression, empty-state container/text/title/body/action test tags, bounds checks, default no-device gate entry, and no-device coverage phrase `Android chat empty-state compact layout`.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this is no-device Compose/JVM evidence. Physical Android rendering, hardware TalkBack traversal, screenshot aesthetics on a real phone, optical QR scan, live provider-backed chat/cancel, launcher icon readability, and real different-network reachability remain separate verification gaps.
+
+## 2026-07-02 Android Settings Memory Approved Source Compact Layout
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsMemoryApprovedSourceMetadataStaysBoundedAtLargeFontAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain` passed.
+- Static evidence: `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`, `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/ui/ClientScreens.kt apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/qa-evidence.md docs/progress.md docs/roadmap.md` passed before the aggregate gate.
+- Gate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh` passed and reported `Android Settings memory approved-source compact layout`.
+- Result: approved runtime memory source metadata now has compact large-font coverage at 320 dp and 1.5 font scale across English, Korean, Japanese, Simplified Chinese, and French.
+- Result: the regression verifies source origin, source count, source range, source toggle, toggle label, two expanded source excerpts, and the action row stay inside their compact containers without overlapping.
+- Guardrail: copy hygiene requires the new approved-source compact regression, source metadata test tags, expanded excerpt test tags, bounds checks, default no-device gate entry, and no-device coverage phrase `Android Settings memory approved-source compact layout`.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this is no-device Compose/JVM evidence. Physical Android rendering, hardware TalkBack traversal, screenshot aesthetics on a real phone, optical QR scan, live provider-backed chat/cancel, launcher icon readability, and real different-network reachability remain separate verification gaps.
+
+## 2026-07-02 Android Drawer Overflow Menu Compact Layout
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatDrawerOverflowMenuActionsStayBoundedAtLargeFontAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain` passed.
+- Static evidence: `python3 -m py_compile script/check_copy_hygiene.py`, `python3 script/check_copy_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/MainActivity.kt apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/qa-evidence.md docs/progress.md docs/roadmap.md` passed before the aggregate gate.
+- Gate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh` passed and reported `Android drawer overflow menu compact layout`.
+- Result: the opened previous-chat drawer overflow menu now has direct compact large-font coverage for `Rename chat`, `Archive chat`, `Restore chat`, and `Delete chat` at 300 dp and 1.45 font scale across English, Korean, Japanese, Simplified Chinese, and French.
+- Result: the regression verifies visible localized menu labels stay inside their items, items stay inside the compact root, adjacent items do not overlap, and contextual accessibility labels/click-action labels remain localized with the chat title.
+- Guardrail: copy hygiene requires the drawer overflow compact regression, item and label test tags, visible-label precomputation before popup content, bounds checks, default no-device gate entry, and no-device coverage phrase `Android drawer overflow menu compact layout`.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this is no-device Compose/JVM evidence. Physical Android rendering, hardware TalkBack traversal, screenshot aesthetics on a real phone, optical QR scan, live provider-backed chat/cancel, launcher icon readability, and real different-network reachability remain separate verification gaps.
+
+## 2026-07-02 Android Model Picker General Row Compact Layout
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatTopBarModelPickerRowsStayBoundedAtLargeFontAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain` passed.
+- Static evidence: `python3 -m py_compile script/check_copy_hygiene.py`, `python3 script/check_copy_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check -- apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py` passed before the aggregate gate.
+- Gate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh` passed and reported `Android model picker general row compact layout`.
+- Result: the opened Chat top-bar model picker now has direct compact large-font coverage for normal selected, running, and uninstalled local chat-model rows at 320 dp and 1.45 font scale across English, Korean, Japanese, Simplified Chinese, and French.
+- Result: the regression verifies each row, long model name, localized provider/status line, and uninstalled `Install model` action stay inside their row and do not overlap the status line.
+- Guardrail: copy hygiene requires the general-row compact regression, row ancestor bounds checks, install action bounds check, default no-device gate entry, and no-device coverage phrase `Android model picker general row compact layout`.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this is no-device Compose/JVM evidence. Physical Android rendering, hardware TalkBack traversal, screenshot aesthetics on a real phone, optical QR scan, live provider-backed chat/cancel, launcher icon readability, and real different-network reachability remain separate verification gaps.
+
+## 2026-07-02 Android SettingsScreen Embedding Model Expanded Compact Layout
+
+- Focused evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsScreenEmbeddingModelRowsStayBoundedWhenExpandedAtLargeFontAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain` passed after adding a full `SettingsScreen` regression that scrolls to and expands the Memory indexing model section.
+- Static evidence: `python3 -m py_compile script/check_copy_hygiene.py`, `python3 script/check_copy_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check -- apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py` passed before the aggregate gate.
+- Gate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh` passed and reported `Android SettingsScreen embedding model compact row layout`.
+- Result: Android Settings now has parent-screen coverage proving the real `SettingsScreen` lazy list can scroll to the collapsed Memory indexing model section, expand it, and keep the none option, installed selected embedding model, uninstalled embedding model, and saved-missing recovery row bounded at 260 dp and 1.5 font scale across English, Korean, Japanese, Simplified Chinese, and French.
+- Guardrail: copy hygiene requires the full `SettingsScreen` regression, the lazy-list scroll-to-section pattern, row status/detail bounds assertions, default no-device gate entry, and no-device coverage phrase `Android SettingsScreen embedding model compact row layout`.
+- Device evidence: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this is no-device Compose/JVM evidence. Physical Android rendering, hardware TalkBack traversal, screenshot aesthetics on a real phone, optical QR scan, live provider-backed chat/cancel, launcher icon readability, and real different-network reachability remain separate verification gaps.
+
+## 2026-07-02 Android QR Recovery Diagnostics Compact Layout
+
+- Android evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenRouteAvailabilityNoticeStaysBoundedAtLargeFontAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain` passed.
+- Script evidence: `python3 script/check_android_string_parity.py`, `python3 script/check_copy_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), and `git diff --check` passed.
+- Gate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh` passed and now reports `Android QR recovery diagnostics compact layout`.
+- Result: route availability notices now have compact large-font regression coverage for missing private-overlay scope, mismatched saved remote-route identity, and failed P2P route without saved relay fallback QR recovery diagnostics.
+- Result: the focused Compose regression checks the production compact-label mapping, localized notice accessibility summary, scan-latest-QR action, notice bounds, body bounds, action bounds, and body/action separation across English, Korean, Japanese, Simplified Chinese, and French.
+- Guardrail: the default no-device gate already runs the focused route availability notice regression and now reports `Android QR recovery diagnostics compact layout`; `script/check_copy_hygiene.py` pins the diagnostic cases and guard phrase.
+- Device evidence: the Android phone remains disconnected, so this pass is explicitly no-device.
+- Caveat: this proves Android Compose route-notice layout only. It does not prove physical Android rendering, TalkBack traversal on hardware, optical QR scan reliability, physical reconnect behavior, live provider-backed chat/cancel, production relay allocation, production P2P traversal, or real different-network runtime connectivity.
+
+## 2026-07-02 Android Assistant Identity Marker Compact Layout
+
+- Android evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.chatScreenAssistantIdentityMarkerStaysLegibleAndSeparateAtLargeFontAcrossSupportedLanguages -Pkotlin.incremental=false --console=plain` passed.
+- Script evidence: `python3 script/check_android_string_parity.py`, `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, and `git diff --check` passed.
+- Gate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh` passed and now reports `Android assistant identity marker compact layout`.
+- Result: assistant message identity markers now keep one-glyph localized initials compact while giving the French `IA` label a wider adaptive pill at large font scale.
+- Result: the focused Compose regression verifies marker bounds, assistant message bounds, and non-overlap across English, Korean, Japanese, Simplified Chinese, and French on a narrow chat surface.
+- Guardrail: the default no-device gate now runs the focused Compose regression and reports `Android assistant identity marker compact layout`; `script/check_copy_hygiene.py` pins the adaptive width implementation and guard phrase.
+- Device evidence: the Android phone remains disconnected, so this pass is explicitly no-device.
+- Caveat: this proves Android Compose layout behavior only. It does not prove physical Android rendering, TalkBack traversal on hardware, optical QR scan reliability, physical haptics, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+## 2026-07-02 Android Private Overlay QR Missing-Scope Diagnostic
+
+- Android evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:pairing:testDebugUnitTest --tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.rejectsPrivateOverlayRelayHostsWithoutExplicitScopeWithFocusedError --tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.allowsPrivateOverlayRelayHostsOnlyWithExplicitScope -Pkotlin.incremental=false --console=plain` passed, and `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.privateOverlayRelayQrParseFailureReportsScopeRequired -Pkotlin.incremental=false --console=plain` passed.
+- Script evidence: `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), `python3 script/check_android_string_parity.py`, `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, and `git diff --check` passed.
+- Gate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh` passed and now reports `Android private-overlay QR missing-scope diagnostic`.
+- Result: private IPv4, CGNAT, and ULA IPv6 relay hosts without exact `relay_scope=private_overlay` now surface a focused missing-scope parser error instead of the generic relay-unreachable QR parse error.
+- Result: Android maps that parser error to `route_diagnostic_private_overlay_scope_required`, so route notices and QR recovery copy ask for a fresh QR from a relay, VPN, tunnel, or private overlay both devices can reach.
+- Guardrail: the default no-device gate now includes `RuntimeClientViewModelTest.privateOverlayRelayQrParseFailureReportsScopeRequired`, and `script/check_copy_hygiene.py` pins the parser error, diagnostic code, focused tests, localized resources, and no-device coverage phrase.
+- Device evidence: the Android phone remains disconnected, so this pass is explicitly no-device.
+- Caveat: this proves Android parser, app-layer mapping, and resources only. It does not prove physical QR scan, camera reliability, hardware accessibility traversal, physical reconnect behavior, live provider-backed chat/cancel, production relay allocation, production P2P traversal, or real different-network connectivity.
+
+## 2026-07-02 Android P2P Failure QR Recovery Without Relay Fallback
+
+- Android evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeConnectionFailureMapsRouteMissingReasonsToFocusedUiErrors -Pkotlin.incremental=false --console=plain` passed after adding the failed P2P route with relay-placeholder fallback case.
+- Script evidence: `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), `python3 script/check_copy_hygiene.py`, `python3 script/check_android_string_parity.py`, and `git diff --check` passed.
+- Gate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh` passed and now reports `Android failed P2P route without saved relay fallback scans a fresh QR with relay or private overlay details`.
+- Result: a prepared P2P route that fails while relay fallback is only an unavailable placeholder now maps to `remote_route_unreachable` plus `route_diagnostic_p2p_failed_relay_pending`, so the app asks for a fresh QR with relay or private-overlay connection details.
+- Guardrail: the default no-device gate already runs `RuntimeClientViewModelTest.runtimeConnectionFailureMapsRouteMissingReasonsToFocusedUiErrors` and now reports `Android failed P2P route without saved relay fallback scans a fresh QR with relay or private overlay details`; `script/check_copy_hygiene.py` pins the diagnostic key, focused regression, and resources.
+- Device evidence: the Android phone remains disconnected, so this pass is explicitly no-device.
+- Caveat: this proves Android app-layer mapping and resources only. It does not prove physical QR scan, camera reliability, hardware accessibility traversal, physical reconnect behavior, live provider-backed chat/cancel, production relay allocation, production P2P traversal, or real different-network connectivity.
+
+## 2026-07-02 Android Remote Route Identity-Mismatch QR Recovery
+
+- Android evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeConnectionFailureMapsRouteMissingReasonsToFocusedUiErrors -Pkotlin.incremental=false --console=plain` passed after adding the mismatched saved relay route case.
+- Script evidence: `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`, `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, and `git diff --check` passed.
+- Gate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh` passed and now reports `Android remote route identity mismatch QR recovery`.
+- Result: a P2P or relay route rejected with `RemoteRouteIdentityMismatch` now maps to `remote_routes_unavailable` plus `route_diagnostic_remote_identity_mismatch`, so the app shows latest-QR recovery copy instead of a generic no-connectable-route failure.
+- Guardrail: the default no-device gate already runs `RuntimeClientViewModelTest.runtimeConnectionFailureMapsRouteMissingReasonsToFocusedUiErrors` and now reports `Android remote route identity mismatch QR recovery`; `script/check_copy_hygiene.py` pins the diagnostic key and recovery copy.
+- Device evidence: the Android phone remains disconnected, so this pass is explicitly no-device.
+- Caveat: this proves Android app-layer mapping and resources only. It does not prove physical QR scan, camera reliability, hardware accessibility traversal, physical reconnect behavior, live provider-backed chat/cancel, production relay allocation, production P2P traversal, or real different-network connectivity.
+
+## 2026-07-02 RuntimeDevServer Memory-Summary Draft And Route-Refresh Freshness Smoke
+
+- Swift evidence: `swift test --filter 'LocalRuntimeMessageRouterTests/testMemorySummaryDraftsListReturnsOwnerScopedActiveVisibleDraftsOnly|LocalRuntimeMessageRouterTests/testMemorySummaryDraftApproveWritesIdempotentOwnerScopedMemoryAndHidesApprovedDraft|LocalRuntimeMessageRouterTests/testMemorySummaryDraftDismissHidesOwnerScopedDraftWithoutWritingMemory|LocalRuntimeMessageRouterTests/testCompanionAppModelAcceptsAdvancingSavedBootstrapLeaseForStableRelayID|LocalRuntimeMessageRouterTests/testCompanionAppModelRejectsNonAdvancingSavedBootstrapLeaseForStableRelayID'`, `swift build --package-path apps/macos --product RuntimeDevServer`, and `swift test --package-path apps/macos --filter RelayPeerClientTests` passed for the router-owned memory-summary protocol behavior, route lease monotonicity, and relay client refresh support.
+- Smoke evidence: `swiftc -typecheck script/runtime_authenticated_mock_smoke.swift` and `./script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh` passed after adding the RuntimeDevServer memory-summary decision success path and route.refresh relay lease freshness assertions.
+- Script evidence: `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`, `python3 script/check_copy_hygiene.py`, `python3 script/check_docs_hygiene.py`, and `git diff --check` passed.
+- Gate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh` passed and now reports the updated RuntimeDevServer history/title/session lifecycle/memory smoke addendum.
+- Result: RuntimeDevServer smoke now isolates runtime memory with `AETHERLINK_DEV_RUNTIME_MEMORY_JSONL_FILE`, lowers the dev-only memory-summary eligibility policy, lists current drafts for smoke chats, approves one through `memory.summary.draft.approve` request id `smoke-memory-summary-approve`, confirms the approved draft is hidden from later draft lists through `smoke-memory-summary-after-approve`, verifies approved memory-summary memory.list visibility through `smoke-memory-summary-memory-list`, dismisses another draft through `smoke-memory-summary-dismiss`, verifies dismissed draft hiding through `smoke-memory-summary-after-dismiss`, and confirms the dismissed draft no memory.list entry through `smoke-memory-summary-dismiss-memory-list`.
+- Result: authenticated `route.refresh` in the RuntimeDevServer relay smoke now must advance the QR relay lease expiry and use a fresh relay nonce while allowing stable relay id/secret reuse.
+- Result: RuntimeDevServer retires the superseded relay client after refreshed allocation, preserving the active session while preventing the old relay nonce from reconnecting and racing the refreshed route.
+- Result: `RelayPeerClientTests.testRelayPeerClientRetireKeepsCurrentConnectionAndSuppressesReconnect` proves the retired relay client can still process the active session's protocol frames but does not open a second relay handshake after that socket closes.
+- Device evidence: the Android phone remains disconnected, so this pass is explicitly no-device.
+- Caveat: this proves the authenticated RuntimeDevServer protocol path, not physical Android QR scan, camera reliability, hardware accessibility traversal, live provider-generated memory summaries, physical relay reachability, production relay allocation, or real different-network connectivity.
+
+## 2026-07-02 macOS Remote QR Lease Monotonicity Guard
+
+- Swift evidence: `swift test --filter 'LocalRuntimeMessageRouterTests/testCompanionAppModelAcceptsAdvancingSavedBootstrapLeaseForStableRelayID|LocalRuntimeMessageRouterTests/testCompanionAppModelRejectsNonAdvancingSavedBootstrapLeaseForStableRelayID'` and the broader bootstrap lease filter with restored/expired/refresh regressions passed after hardening runtime-host allocator result acceptance.
+- Script evidence: `bash -n script/check_no_device_quality.sh` (syntax only), `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`, `python3 script/check_copy_hygiene.py`, and `python3 script/check_docs_hygiene.py` passed.
+- Gate evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh` passed and now runs the focused remote QR lease monotonicity regressions.
+- Result: macOS runtime host accepts same-relay bootstrap lease renewal only when expiry advances and nonce changes; a reused-nonce allocator response keeps the existing saved lease and does not emit a regressed remote QR.
+- Result: fresh saved remote QR leases are not renewed unnecessarily before QR generation.
+- Guardrail: `script/check_no_device_quality.sh` now runs the focused monotonicity regressions and reports `macOS runtime host accepts same-relay bootstrap lease renewal only when expiry advances and nonce changes`; `script/check_copy_hygiene.py` pins the source, tests, no-device gate, and docs contract.
+- Device evidence: the Android phone remains disconnected, so this pass is explicitly no-device.
+- Caveat: this proves runtime-host route-lease monotonicity only. It does not prove physical Android camera QR scanning, pairing on hardware, real phone relay reachability, production relay allocation, production P2P traversal, live provider-backed chat/cancel, or production private-overlay traversal.
+
 ## 2026-07-02 AetherLinkRelay Allocation Store Load Resilience Guard
 
 - Swift evidence: `swift test --filter 'RelayAllocationTests/testAllocationRegistryLoadsDuplicatePersistedRelayIDsWithAdvancingTicket|RelayAllocationTests/testAllocationRegistrySkipsMalformedPersistedTicketsOnLoad'` and `swift test --filter RelayAllocationTests` passed after hardening persisted allocation-store loading.
@@ -1306,7 +2517,7 @@ This document separates current verification evidence from historical captures.
 - Gate evidence: `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`, `bash -n script/check_no_device_quality.sh` (syntax only), `python3 script/check_copy_hygiene.py`, and `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh` passed.
 - Result: accepted-pairing trusted-runtime creation now fails closed when pending pairing contains partial relay material, so an incomplete relay route cannot silently persist a trusted direct endpoint fallback.
 - Result: direct-only diagnostic pairing remains covered as a positive path when no relay material is present.
-- Guardrail: the default no-device gate now runs `RuntimeClientViewModelTest.acceptedPairingResultRejectsIncompleteRelayRouteInsteadOfDirectFallback` and reports `Android incomplete relay route material fails closed instead of falling back to direct endpoint`.
+- Guardrail: the default no-device gate now runs `RuntimeClientViewModelTest.acceptedPairingResultRejectsIncompleteRelayRouteInsteadOfDirectFallback` and reports `Android accepted-pairing incomplete relay route addendum`.
 - Subagent evidence: a GPT-5.5 read-only audit identified the accepted-pairing helper as the remaining fail-open path. GPT-5.3-Codex-Spark was not used.
 - Caveat: this is no-device Android JVM/source/script evidence. It does not prove physical Android rendering, optical/camera QR scan reliability, physical device reconnect, real device haptics, live provider-backed chat/cancel, or real different-network runtime connectivity.
 

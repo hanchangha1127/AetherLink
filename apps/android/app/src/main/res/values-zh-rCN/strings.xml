@@ -650,11 +650,14 @@
     <string name="route_diagnostic_direct_failed_remote_pending">本地路径未响应。请扫描包含连接信息的最新 AetherLink Runtime 二维码。</string>
     <string name="route_diagnostic_remote_pending">缺少远程连接信息。只有两个设备都能看到同一本地路径时，附近发现才会工作；请扫描包含连接信息的最新二维码。</string>
     <string name="route_diagnostic_relay_failed">已保存的连接没有响应。请先在 AetherLink Runtime 中准备远程连接信息，然后扫描包含连接信息的最新二维码。</string>
+    <string name="route_diagnostic_p2p_failed_relay_pending">已保存的私有路由没有响应，并且没有保存中继备用路由。请扫描包含中继或私有覆盖网络连接信息的新二维码。</string>
     <string name="route_diagnostic_relay_unreachable_from_device">此设备无法打开中继路由。请检查中继、VPN、隧道或私有覆盖网络，然后扫描新的二维码。</string>
     <string name="route_diagnostic_relay_auth_failed">无法认证已保存的连接信息。请从受信任的运行时扫描新的二维码。</string>
+    <string name="route_diagnostic_remote_identity_mismatch">已保存的连接信息属于另一个运行时。请从受信任的 AetherLink Runtime 扫描新的二维码。</string>
     <string name="route_diagnostic_remote_route_expired">已保存的连接信息已过期。请扫描包含新连接信息的最新 AetherLink Runtime 二维码。</string>
     <string name="route_diagnostic_direct_qr_rejected">此二维码包含仅限近距离使用的诊断路径，不能用于跨网络配对。</string>
     <string name="route_diagnostic_relay_qr_unreachable">此 QR 指向本设备无法访问的路径。请使用两台设备都可访问的中继路由。</string>
+    <string name="route_diagnostic_private_overlay_scope_required">此 QR 使用了缺少 private_overlay 范围的私有中继地址。请从两台设备都可访问的中继、VPN、隧道或私有覆盖网络生成新的二维码。</string>
     <string name="content_desc_error">错误</string>
     <string name="content_desc_refresh">刷新</string>
     <string name="content_desc_close">关闭</string>

@@ -634,6 +634,40 @@ class RuntimePairingPayloadParserTest {
     }
 
     @Test
+    fun rejectsOversizedOpaqueRouteQrValues() {
+        val oversizedValue = "r".repeat(OPAQUE_ROUTE_VALUE_MAX_CHARS + 1)
+        val oversizedBody = "b".repeat(OPAQUE_ROUTE_BODY_MAX_CHARS + 1)
+        val identityBase = "aetherlink://pair?version=1&pairing_nonce=nonce-1&pairing_code=123456" +
+            "&runtime_device_id=runtime-1&runtime_name=AetherLink+Runtime" +
+            "&runtime_key_fingerprint=fp-1&route_token=route-1"
+        val relayBase = identityBase +
+            "&relay_host=relay.example.test&relay_port=443&relay_id=relay-1" +
+            "&relay_secret=secret-1&relay_expires_at=4102444800000" +
+            "&relay_nonce=nonce-route-1"
+        val p2pBase = identityBase +
+            "&p2p_class=p2p_rendezvous&p2p_record_id=p2p-record-1" +
+            "&p2p_encrypted_body=opaque-candidate-1&p2p_expires_at=4102444800000" +
+            "&p2p_anti_replay_nonce=nonce-p2p-1&p2p_protocol_version=1"
+
+        listOf(
+            identityBase.replace("route_token=route-1", "route_token=$oversizedValue"),
+            relayBase.replace("relay_id=relay-1", "relay_id=$oversizedValue"),
+            relayBase.replace("relay_secret=secret-1", "relay_secret=$oversizedValue"),
+            relayBase.replace("relay_nonce=nonce-route-1", "relay_nonce=$oversizedValue"),
+            p2pBase.replace("p2p_record_id=p2p-record-1", "p2p_record_id=$oversizedValue"),
+            p2pBase.replace("p2p_encrypted_body=opaque-candidate-1", "p2p_encrypted_body=$oversizedBody"),
+            p2pBase.replace("p2p_anti_replay_nonce=nonce-p2p-1", "p2p_anti_replay_nonce=$oversizedValue"),
+        ).forEach { payload ->
+            try {
+                RuntimePairingPayloadParser.parse(payload)
+                fail("Expected oversized opaque route QR value to throw")
+            } catch (_: IllegalArgumentException) {
+                // Expected.
+            }
+        }
+    }
+
+    @Test
     fun rejectsIncompleteRelayAliasFamiliesFromQrPayload() {
         listOf(
             "remote_host=relay.example.test&remote_port=443&remote_id=relay-1" +
@@ -688,10 +722,39 @@ class RuntimePairingPayloadParserTest {
     }
 
     @Test
+    fun rejectsPrivateOverlayRelayHostsWithoutExplicitScopeWithFocusedError() {
+        listOf(
+            "10.0.0.5",
+            "100.64.1.5",
+            "100.64.1.5.",
+            "172.20.1.5",
+            "192.168.50.10",
+            "%5Bfd00::1%5D",
+        ).forEach { relayHost ->
+            try {
+                RuntimePairingPayloadParser.parse(
+                    "aetherlink://pair?version=1&pairing_nonce=nonce-1&pairing_code=123456" +
+                        "&runtime_device_id=runtime-1&runtime_name=AetherLink+Runtime" +
+                        "&runtime_key_fingerprint=fp-1&relay_host=$relayHost" +
+                        "&relay_port=443&relay_id=relay-1&relay_secret=secret-1" +
+                        "&relay_expires_at=4102444800000&relay_nonce=nonce-route-1"
+                )
+                fail("Expected private relay host $relayHost to require private_overlay scope")
+            } catch (error: IllegalArgumentException) {
+                assertEquals(
+                    "Private relay hosts require relay_scope=private_overlay",
+                    error.message,
+                )
+            }
+        }
+    }
+
+    @Test
     fun allowsPrivateOverlayRelayHostsOnlyWithExplicitScope() {
         listOf(
             "10.0.0.5",
             "100.64.1.5",
+            "100.64.1.5.",
             "172.20.1.5",
             "192.168.50.10",
             "%5Bfd00::1%5D",

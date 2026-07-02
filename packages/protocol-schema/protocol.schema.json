@@ -171,6 +171,23 @@
       "type": "string",
       "minLength": 1
     },
+    "opaqueRouteValue": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^\\S+$"
+    },
+    "opaqueRouteSecret": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "opaqueRouteBody": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048,
+      "pattern": "^\\S+$"
+    },
     "helloPayload": {
       "type": "object",
       "required": ["device_id", "device_name", "client_capabilities"],
@@ -419,16 +436,16 @@
             "runtime_key_fingerprint": { "$ref": "#/$defs/nonEmptyString" },
             "relay_host": { "$ref": "#/$defs/nonEmptyString" },
             "relay_port": { "type": "integer", "minimum": 1, "maximum": 65535 },
-            "relay_id": { "$ref": "#/$defs/nonEmptyString" },
-            "relay_secret": { "$ref": "#/$defs/nonEmptyString" },
+            "relay_id": { "$ref": "#/$defs/opaqueRouteValue" },
+            "relay_secret": { "$ref": "#/$defs/opaqueRouteSecret" },
             "relay_expires_at": { "type": "integer", "minimum": 1 },
-            "relay_nonce": { "$ref": "#/$defs/nonEmptyString" },
+            "relay_nonce": { "$ref": "#/$defs/opaqueRouteValue" },
             "relay_scope": { "enum": ["remote", "private_overlay", "usb_reverse"] },
             "p2p_class": { "const": "p2p_rendezvous" },
-            "p2p_record_id": { "$ref": "#/$defs/nonEmptyString" },
-            "p2p_encrypted_body": { "$ref": "#/$defs/nonEmptyString" },
+            "p2p_record_id": { "$ref": "#/$defs/opaqueRouteValue" },
+            "p2p_encrypted_body": { "$ref": "#/$defs/opaqueRouteBody" },
             "p2p_expires_at": { "type": "integer", "minimum": 1 },
-            "p2p_anti_replay_nonce": { "$ref": "#/$defs/nonEmptyString" },
+            "p2p_anti_replay_nonce": { "$ref": "#/$defs/opaqueRouteValue" },
             "p2p_protocol_version": { "const": 1 }
           },
           "additionalProperties": false

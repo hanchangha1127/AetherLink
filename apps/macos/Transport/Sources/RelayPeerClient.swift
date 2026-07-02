@@ -105,6 +105,18 @@ public final class RelayPeerClient: RelayPeerTransport, @unchecked Sendable {
         updateStatus(.stopped, handler: result.handler)
     }
 
+    public func retireAfterCurrentConnection() {
+        let shouldReportStopped = lock.withLock {
+            isRunning = false
+            reconnectWorkItem?.cancel()
+            reconnectWorkItem = nil
+            return connection == nil
+        }
+        if shouldReportStopped {
+            updateStatus(.stopped)
+        }
+    }
+
     private func connect(
         configuration: RelayPeerConfiguration,
         onMessage: @escaping LocalPeerMessageHandler

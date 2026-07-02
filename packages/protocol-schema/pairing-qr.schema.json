@@ -121,9 +121,9 @@
     "fingerprint": { "$ref": "#/$defs/noWhitespaceString" },
     "cert_fingerprint": { "$ref": "#/$defs/noWhitespaceString" },
     "rf": { "$ref": "#/$defs/noWhitespaceString" },
-    "route_token": { "$ref": "#/$defs/noWhitespaceString" },
-    "discovery_token": { "$ref": "#/$defs/noWhitespaceString" },
-    "rt": { "$ref": "#/$defs/noWhitespaceString" },
+    "route_token": { "$ref": "#/$defs/opaqueRouteValue" },
+    "discovery_token": { "$ref": "#/$defs/opaqueRouteValue" },
+    "rt": { "$ref": "#/$defs/opaqueRouteValue" },
     "host": {
       "description": "Development diagnostic local-direct route hint only. Product clients must not use this as the normal QR pairing route.",
       "$ref": "#/$defs/nonEmptyString"
@@ -165,41 +165,17 @@
     "rp": {
       "$ref": "#/$defs/portValue"
     },
-    "relay_id": {
-      "type": "string",
-      "minLength": 1,
-      "pattern": "^\\S+$"
-    },
-    "remote_id": {
-      "type": "string",
-      "minLength": 1,
-      "pattern": "^\\S+$"
-    },
-    "route_id": {
-      "type": "string",
-      "minLength": 1,
-      "pattern": "^\\S+$"
-    },
-    "rendezvous_id": {
-      "type": "string",
-      "minLength": 1,
-      "pattern": "^\\S+$"
-    },
-    "network_id": {
-      "type": "string",
-      "minLength": 1,
-      "pattern": "^\\S+$"
-    },
-    "ri": {
-      "type": "string",
-      "minLength": 1,
-      "pattern": "^\\S+$"
-    },
-    "relay_secret": { "$ref": "#/$defs/nonEmptyString" },
-    "remote_secret": { "$ref": "#/$defs/nonEmptyString" },
-    "route_secret": { "$ref": "#/$defs/nonEmptyString" },
-    "rendezvous_secret": { "$ref": "#/$defs/nonEmptyString" },
-    "rs": { "$ref": "#/$defs/nonEmptyString" },
+    "relay_id": { "$ref": "#/$defs/opaqueRouteValue" },
+    "remote_id": { "$ref": "#/$defs/opaqueRouteValue" },
+    "route_id": { "$ref": "#/$defs/opaqueRouteValue" },
+    "rendezvous_id": { "$ref": "#/$defs/opaqueRouteValue" },
+    "network_id": { "$ref": "#/$defs/opaqueRouteValue" },
+    "ri": { "$ref": "#/$defs/opaqueRouteValue" },
+    "relay_secret": { "$ref": "#/$defs/opaqueRouteSecret" },
+    "remote_secret": { "$ref": "#/$defs/opaqueRouteSecret" },
+    "route_secret": { "$ref": "#/$defs/opaqueRouteSecret" },
+    "rendezvous_secret": { "$ref": "#/$defs/opaqueRouteSecret" },
+    "rs": { "$ref": "#/$defs/opaqueRouteSecret" },
     "relay_expires_at": {
       "$ref": "#/$defs/epochMillisValue"
     },
@@ -215,11 +191,11 @@
     "rx": {
       "$ref": "#/$defs/epochMillisValue"
     },
-    "relay_nonce": { "$ref": "#/$defs/noWhitespaceString" },
-    "remote_nonce": { "$ref": "#/$defs/noWhitespaceString" },
-    "route_nonce": { "$ref": "#/$defs/noWhitespaceString" },
-    "rendezvous_nonce": { "$ref": "#/$defs/noWhitespaceString" },
-    "rrn": { "$ref": "#/$defs/noWhitespaceString" },
+    "relay_nonce": { "$ref": "#/$defs/opaqueRouteValue" },
+    "remote_nonce": { "$ref": "#/$defs/opaqueRouteValue" },
+    "route_nonce": { "$ref": "#/$defs/opaqueRouteValue" },
+    "rendezvous_nonce": { "$ref": "#/$defs/opaqueRouteValue" },
+    "rrn": { "$ref": "#/$defs/opaqueRouteValue" },
     "p2p_class": {
       "description": "P2P rendezvous record class. This is opaque route-preparation material, not host/port reachability or proof that NAT traversal is implemented.",
       "const": "p2p_rendezvous"
@@ -228,42 +204,18 @@
       "description": "Compact alias for p2p_class.",
       "const": "p2p_rendezvous"
     },
-    "p2p_record_id": {
-      "type": "string",
-      "minLength": 1,
-      "pattern": "^\\S+$"
-    },
-    "prid": {
-      "type": "string",
-      "minLength": 1,
-      "pattern": "^\\S+$"
-    },
-    "p2p_encrypted_body": {
-      "type": "string",
-      "minLength": 1,
-      "pattern": "^\\S+$"
-    },
-    "peb": {
-      "type": "string",
-      "minLength": 1,
-      "pattern": "^\\S+$"
-    },
+    "p2p_record_id": { "$ref": "#/$defs/opaqueRouteValue" },
+    "prid": { "$ref": "#/$defs/opaqueRouteValue" },
+    "p2p_encrypted_body": { "$ref": "#/$defs/opaqueRouteBody" },
+    "peb": { "$ref": "#/$defs/opaqueRouteBody" },
     "p2p_expires_at": {
       "$ref": "#/$defs/epochMillisValue"
     },
     "px": {
       "$ref": "#/$defs/epochMillisValue"
     },
-    "p2p_anti_replay_nonce": {
-      "type": "string",
-      "minLength": 1,
-      "pattern": "^\\S+$"
-    },
-    "pn": {
-      "type": "string",
-      "minLength": 1,
-      "pattern": "^\\S+$"
-    },
+    "p2p_anti_replay_nonce": { "$ref": "#/$defs/opaqueRouteValue" },
+    "pn": { "$ref": "#/$defs/opaqueRouteValue" },
     "p2p_protocol_version": {
       "$ref": "#/$defs/p2pProtocolVersionValue"
     },
@@ -351,6 +303,23 @@
     "noWhitespaceString": {
       "type": "string",
       "minLength": 1,
+      "pattern": "^\\S+$"
+    },
+    "opaqueRouteValue": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "pattern": "^\\S+$"
+    },
+    "opaqueRouteSecret": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "opaqueRouteBody": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2048,
       "pattern": "^\\S+$"
     },
     "portValue": {

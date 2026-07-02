@@ -650,11 +650,14 @@
     <string name="route_diagnostic_direct_failed_remote_pending">La route locale ne répond pas. Scannez le dernier QR AetherLink Runtime avec les informations de connexion.</string>
     <string name="route_diagnostic_remote_pending">Les informations de connexion distante manquent. La découverte proche fonctionne seulement si les deux appareils voient le même chemin local; scannez le dernier QR avec les informations de connexion.</string>
     <string name="route_diagnostic_relay_failed">La connexion enregistrée ne répond pas. Préparez les informations de connexion distante dans AetherLink Runtime, puis scannez le dernier QR avec les informations de connexion.</string>
+    <string name="route_diagnostic_p2p_failed_relay_pending">La route privée enregistrée ne répond pas, et aucun relais de secours n’est enregistré. Scannez un nouveau QR avec des informations de relais ou d’overlay privé.</string>
     <string name="route_diagnostic_relay_unreachable_from_device">Cet appareil n’a pas pu ouvrir la route de relais. Vérifiez le relais, le VPN, le tunnel ou l’overlay privé, puis scannez un nouveau QR.</string>
     <string name="route_diagnostic_relay_auth_failed">Les informations de connexion enregistrées n’ont pas pu être authentifiées. Scannez un nouveau QR depuis le runtime de confiance.</string>
+    <string name="route_diagnostic_remote_identity_mismatch">Les informations de connexion enregistrées appartiennent à un autre runtime. Scannez un nouveau QR depuis AetherLink Runtime de confiance.</string>
     <string name="route_diagnostic_remote_route_expired">Les informations de connexion enregistrées ont expiré. Scannez le dernier QR AetherLink Runtime avec de nouvelles informations de connexion.</string>
     <string name="route_diagnostic_direct_qr_rejected">Ce QR contient une route de diagnostic de proximité et ne peut pas jumeler à travers différents réseaux.</string>
     <string name="route_diagnostic_relay_qr_unreachable">Ce QR pointe vers une route inaccessible depuis cet appareil. Utilisez une route de relais accessible depuis les deux appareils.</string>
+    <string name="route_diagnostic_private_overlay_scope_required">Ce QR utilise une adresse de relais privée sans portée private_overlay. Générez un nouveau QR depuis un relais, VPN, tunnel ou overlay privé accessible aux deux appareils.</string>
     <string name="content_desc_error">Erreur</string>
     <string name="content_desc_refresh">Actualiser</string>
     <string name="content_desc_close">Fermer</string>

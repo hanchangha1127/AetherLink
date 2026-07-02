@@ -16,6 +16,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
     private let trustedDeviceStore: TrustedDeviceStore
     private let chatEventStore: any RuntimeChatEventStore
     private let memoryStore: any RuntimeMemoryStore
+    private let memorySummaryPolicy: @Sendable (Int) -> RuntimeLongInactivityMemorySummarizationPolicy
     private let routeRefresher: (any RuntimeRouteRefreshing)?
     private let runtimeChallengeSigner: (any RuntimeChallengeSigning)?
     private let onPairingAccepted: (@Sendable (TrustedDevice) -> Void)?
@@ -34,6 +35,9 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         trustedDeviceStore: TrustedDeviceStore = TrustedDeviceStore(),
         chatEventStore: any RuntimeChatEventStore = RuntimeChatEventStoreDefaults.productionStore(),
         memoryStore: any RuntimeMemoryStore = JSONLRuntimeMemoryStore(),
+        memorySummaryPolicy: @escaping @Sendable (Int) -> RuntimeLongInactivityMemorySummarizationPolicy = {
+            RuntimeLongInactivityMemorySummarizationPolicy(maxCandidateCount: $0)
+        },
         routeRefresher: (any RuntimeRouteRefreshing)? = nil,
         runtimeChallengeSigner: (any RuntimeChallengeSigning)? = nil,
         onPairingAccepted: (@Sendable (TrustedDevice) -> Void)? = nil
@@ -44,6 +48,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         self.trustedDeviceStore = trustedDeviceStore
         self.chatEventStore = chatEventStore
         self.memoryStore = memoryStore
+        self.memorySummaryPolicy = memorySummaryPolicy
         self.routeRefresher = routeRefresher
         self.runtimeChallengeSigner = runtimeChallengeSigner
         self.onPairingAccepted = onPairingAccepted
@@ -1214,7 +1219,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         ownerDeviceID: String?,
         limit: Int
     ) throws -> [RuntimeLongInactivityMemorySummarizationDraft] {
-        let policy = RuntimeLongInactivityMemorySummarizationPolicy(maxCandidateCount: limit)
+        let policy = memorySummaryPolicy(limit)
         let drafts = try chatEventStore.listLongInactivityMemorySummarizationDrafts(
             ownerDeviceID: ownerDeviceID,
             policy: policy
@@ -1241,7 +1246,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             let expectedSessionID = rawExpectedSessionID.flatMap { $0.isEmpty ? nil : $0 }
             let expectedSourceMessageCount = optionalInt("expected_source_message_count", in: envelope.payload)
-            let policy = RuntimeLongInactivityMemorySummarizationPolicy(maxCandidateCount: 50)
+            let policy = memorySummaryPolicy(50)
             let drafts = try chatEventStore.listLongInactivityMemorySummarizationDrafts(
                 ownerDeviceID: ownerDeviceID,
                 policy: policy
@@ -1288,7 +1293,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             let expectedSessionID = rawExpectedSessionID.flatMap { $0.isEmpty ? nil : $0 }
             let expectedSourceMessageCount = optionalInt("expected_source_message_count", in: envelope.payload)
-            let policy = RuntimeLongInactivityMemorySummarizationPolicy(maxCandidateCount: 50)
+            let policy = memorySummaryPolicy(50)
             let drafts = try chatEventStore.listLongInactivityMemorySummarizationDrafts(
                 ownerDeviceID: ownerDeviceID,
                 policy: policy

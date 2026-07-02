@@ -650,11 +650,14 @@
     <string name="route_diagnostic_direct_failed_remote_pending">The local route did not answer. Scan the latest AetherLink Runtime QR with connection details.</string>
     <string name="route_diagnostic_remote_pending">Remote connection details are missing. Nearby discovery works only when both devices can see the same local route; scan the latest QR with connection details.</string>
     <string name="route_diagnostic_relay_failed">Saved connection did not answer. Prepare remote connection details in AetherLink Runtime, then scan the latest QR with connection details.</string>
+    <string name="route_diagnostic_p2p_failed_relay_pending">Saved private route did not answer, and no relay fallback is saved. Scan a fresh QR with relay or private overlay connection details.</string>
     <string name="route_diagnostic_relay_unreachable_from_device">This device could not open the relay route. Check the relay, VPN, tunnel, or private overlay, then scan a fresh QR.</string>
     <string name="route_diagnostic_relay_auth_failed">Saved connection details could not be authenticated. Scan a fresh QR from the trusted runtime.</string>
+    <string name="route_diagnostic_remote_identity_mismatch">Saved connection details belong to a different runtime. Scan a fresh QR from the trusted AetherLink Runtime.</string>
     <string name="route_diagnostic_remote_route_expired">Saved connection details expired. Scan the latest AetherLink Runtime QR with fresh connection details.</string>
     <string name="route_diagnostic_direct_qr_rejected">This QR contains a nearby-only diagnostics route and cannot pair across networks.</string>
     <string name="route_diagnostic_relay_qr_unreachable">This QR points to a route this device cannot reach. Use a relay route reachable from both devices.</string>
+    <string name="route_diagnostic_private_overlay_scope_required">This QR uses a private relay address without private-overlay scope. Generate a fresh QR from a relay, VPN, tunnel, or private overlay both devices can reach.</string>
     <string name="content_desc_error">Error</string>
     <string name="content_desc_refresh">Refresh</string>
     <string name="content_desc_close">Close</string>

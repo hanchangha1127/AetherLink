@@ -132,6 +132,7 @@ let smokeSessionID = "smoke-session-\(UUID().uuidString)"
 let smokeTitleSessionID = "\(smokeSessionID)-title"
 let smokeLifecycleSessionID = "\(smokeSessionID)-lifecycle"
 let smokeResidencySessionID = "\(smokeSessionID)-residency"
+let smokeSummaryDismissSessionID = "\(smokeSessionID)-summary-dismiss"
 let smokeOwnerIsolationSessionAID = "\(smokeSessionID)-owner-a"
 let smokeOwnerIsolationSessionBID = "\(smokeSessionID)-owner-b"
 let smokeDocumentAttachmentText = "Smoke attachment body proves authenticated relay attachment handling."
@@ -681,6 +682,9 @@ func requireInt(_ object: [String: Any], _ key: String, context: String) throws 
     if let value = object[key] as? Int64 {
         return Int(value)
     }
+    if let value = object[key] as? Double, value.rounded() == value {
+        return Int(value)
+    }
     throw SmokeFailure.message("\(context) expected integer for \(key), got \(String(describing: object[key]))")
 }
 
@@ -852,6 +856,8 @@ func refreshRelayRoute(
     runtimeDeviceID: String,
     runtimeKeyFingerprint: String,
     expectedEndpoint: RelayEndpoint,
+    initialRelayConfiguration: RelayConfiguration?,
+    initialRelayExpiresAt: Int64?,
     expectP2PRouteRefresh: Bool
 ) throws -> RelayConfiguration {
     print("Checking route.refresh relay renewal...")
@@ -878,13 +884,26 @@ func refreshRelayRoute(
     guard let relayPortValue = UInt16(exactly: relayPort) else {
         throw SmokeFailure.message("route.refresh returned invalid relay port: \(response)")
     }
+    let relayID = try requireString(routePayload, "relay_id", context: "route.refresh")
+    let relaySecret = try requireString(routePayload, "relay_secret", context: "route.refresh")
     let relayNonce = try requireString(routePayload, "relay_nonce", context: "route.refresh")
+    if let initialRelayConfiguration, let initialRelayExpiresAt {
+        guard relayExpiresAt > initialRelayExpiresAt else {
+            throw SmokeFailure.message("route.refresh did not advance the QR relay lease expiry: initial=\(initialRelayExpiresAt) refreshed=\(relayExpiresAt)")
+        }
+        guard relayNonce != initialRelayConfiguration.relayNonce else {
+            throw SmokeFailure.message("route.refresh reused the QR relay nonce: \(relayNonce)")
+        }
+        if relayID == initialRelayConfiguration.relayID && relaySecret == initialRelayConfiguration.relaySecret {
+            print("route.refresh kept stable relay id/secret while advancing the relay lease.")
+        }
+    }
     if expectP2PRouteRefresh {
         try requireP2PRouteRefreshMaterial(routePayload, context: "route.refresh")
     }
     return RelayConfiguration(
-        relayID: try requireString(routePayload, "relay_id", context: "route.refresh"),
-        relaySecret: try requireString(routePayload, "relay_secret", context: "route.refresh"),
+        relayID: relayID,
+        relaySecret: relaySecret,
         relayNonce: relayNonce,
         host: relayHost,
         port: relayPortValue
@@ -1635,6 +1654,12 @@ func startServer(
         .deletingLastPathComponent()
         .appendingPathComponent("runtime-chat-events.jsonl")
         .path
+    environment["AETHERLINK_DEV_RUNTIME_MEMORY_JSONL_FILE"] = trustedDevicesFile
+        .deletingLastPathComponent()
+        .appendingPathComponent("runtime-memory-events.jsonl")
+        .path
+    environment["AETHERLINK_DEV_MEMORY_SUMMARY_MIN_INACTIVE_SECONDS"] = "0"
+    environment["AETHERLINK_DEV_MEMORY_SUMMARY_MIN_MESSAGES"] = "2"
     environment["AETHERLINK_DEV_RUNTIME_PUBLIC_KEY"] = "aetherlink-smoke-runtime-public-key"
     environment["AETHERLINK_DEV_RUNTIME_KEY_FINGERPRINT"] = "aetherlink-smoke-runtime-fingerprint"
     if expectP2PRouteRefresh {
@@ -1721,7 +1746,18 @@ func relayPlaintextBoundaryMarkers() -> [String] {
         "memory.summary.drafts.list",
         "memory.summary.draft.approve",
         "memory.summary.draft.dismiss",
+        "AETHERLINK_DEV_RUNTIME_MEMORY_JSONL_FILE",
+        "AETHERLINK_DEV_MEMORY_SUMMARY_MIN_INACTIVE_SECONDS",
+        "AETHERLINK_DEV_MEMORY_SUMMARY_MIN_MESSAGES",
         "smoke-memory-summary-drafts",
+        "smoke-memory-summary-approve",
+        "smoke-memory-summary-after-approve",
+        "smoke-memory-summary-memory-list",
+        "smoke-memory-summary-delete",
+        "smoke-memory-summary-dismiss-seed",
+        "smoke-memory-summary-dismiss",
+        "smoke-memory-summary-after-dismiss",
+        "smoke-memory-summary-dismiss-memory-list",
         "smoke-memory-summary-approve-unavailable",
         "smoke-memory-summary-dismiss-unavailable",
         "memory_summary_draft_unavailable",
@@ -2571,11 +2607,31 @@ func runAuthenticatedHistoryAndMemoryChecks(client: TCPClient) throws {
         throw SmokeFailure.message("memory.delete did not remove the smoke memory entry: \(memoryAfterDeleteResponse)")
     }
 
+    try client.send(envelope(
+        "chat.send",
+        requestID: "smoke-memory-summary-dismiss-seed",
+        payload: [
+            "session_id": smokeSummaryDismissSessionID,
+            "model": "dev-mock",
+            "messages": [
+                ["role": "user", "content": "Capture dismiss-only smoke summary."]
+            ]
+        ]
+    ))
+    let dismissSeedText = try readStoppedChatStream(
+        client: client,
+        requestID: "smoke-memory-summary-dismiss-seed",
+        context: "memory.summary.draft.dismiss seed chat"
+    )
+    guard dismissSeedText.contains("Mock streaming response.") else {
+        throw SmokeFailure.message("memory summary dismiss seed chat did not stream mock text: \(dismissSeedText)")
+    }
+
     let summaryDraftsResponse = try sendAndRead(
         client,
         type: "memory.summary.drafts.list",
         requestID: "smoke-memory-summary-drafts",
-        payload: ["limit": 5]
+        payload: ["limit": 10]
     )
     try requireType(summaryDraftsResponse, "memory.summary.drafts.list", context: "memory.summary.drafts.list")
     try requireRequestID(
@@ -2589,8 +2645,207 @@ func runAuthenticatedHistoryAndMemoryChecks(client: TCPClient) throws {
         key: "drafts",
         context: "memory.summary.drafts.list"
     )
-    guard summaryDrafts.isEmpty else {
-        throw SmokeFailure.message("memory.summary.drafts.list should be empty in the fresh smoke store: \(summaryDraftsResponse)")
+    guard let summaryDraft = summaryDrafts.first(where: {
+        ($0["session"] as? [String: Any])?["session_id"] as? String == smokeSessionID
+    }) else {
+        throw SmokeFailure.message("memory.summary.drafts.list did not include \(smokeSessionID): \(summaryDraftsResponse)")
+    }
+    let summaryDraftID = try requireString(summaryDraft, "id", context: "memory.summary.drafts.list draft")
+    let summaryDraftSourceMessageCount = try requireInt(
+        summaryDraft,
+        "source_message_count",
+        context: "memory.summary.drafts.list draft"
+    )
+    guard summaryDraftSourceMessageCount >= 2,
+          let summaryDraftSession = summaryDraft["session"] as? [String: Any],
+          summaryDraftSession["session_id"] as? String == smokeSessionID,
+          summaryDraftSession["model"] as? String == "dev-mock",
+          (summaryDraft["summary_preview"] as? String)?.contains("Say hello from the smoke test.") == true
+    else {
+        throw SmokeFailure.message("memory.summary.drafts.list returned an incomplete smoke draft: \(summaryDraft)")
+    }
+    guard let dismissDraft = summaryDrafts.first(where: {
+        ($0["session"] as? [String: Any])?["session_id"] as? String == smokeSummaryDismissSessionID
+    }) else {
+        throw SmokeFailure.message("memory.summary.drafts.list did not include \(smokeSummaryDismissSessionID): \(summaryDraftsResponse)")
+    }
+    let dismissDraftID = try requireString(dismissDraft, "id", context: "memory.summary.drafts.list dismiss draft")
+    let dismissDraftSourceMessageCount = try requireInt(
+        dismissDraft,
+        "source_message_count",
+        context: "memory.summary.drafts.list dismiss draft"
+    )
+    guard dismissDraftSourceMessageCount >= 2,
+          let dismissDraftSession = dismissDraft["session"] as? [String: Any],
+          dismissDraftSession["session_id"] as? String == smokeSummaryDismissSessionID,
+          dismissDraftSession["model"] as? String == "dev-mock",
+          (dismissDraft["summary_preview"] as? String)?.contains("Capture dismiss-only smoke summary.") == true
+    else {
+        throw SmokeFailure.message("memory.summary.drafts.list returned an incomplete dismiss smoke draft: \(dismissDraft)")
+    }
+
+    let approvedSummaryContent = "Smoke summary approval keeps the runtime memory path authenticated."
+    let summaryApproveResponse = try sendAndRead(
+        client,
+        type: "memory.summary.draft.approve",
+        requestID: "smoke-memory-summary-approve",
+        payload: [
+            "draft_id": summaryDraftID,
+            "expected_session_id": smokeSessionID,
+            "expected_source_message_count": summaryDraftSourceMessageCount,
+            "content": approvedSummaryContent,
+            "enabled": true
+        ]
+    )
+    try requireType(summaryApproveResponse, "memory.summary.draft.approve", context: "memory.summary.draft.approve")
+    try requireRequestID(
+        summaryApproveResponse,
+        "smoke-memory-summary-approve",
+        context: "memory.summary.draft.approve"
+    )
+    let summaryApprovePayload = try payload(summaryApproveResponse, context: "memory.summary.draft.approve")
+    let summaryMemoryEntryID = "memory-summary:\(summaryDraftID)"
+    guard summaryApprovePayload["draft_id"] as? String == summaryDraftID,
+          summaryApprovePayload["status"] as? String == "approved",
+          let approvedEntry = summaryApprovePayload["entry"] as? [String: Any],
+          approvedEntry["id"] as? String == summaryMemoryEntryID,
+          approvedEntry["content"] as? String == approvedSummaryContent,
+          approvedEntry["enabled"] as? Bool == true,
+          let approvedSource = approvedEntry["source"] as? [String: Any],
+          let approvedSourceSession = approvedSource["session"] as? [String: Any],
+          approvedSourceSession["session_id"] as? String == smokeSessionID
+    else {
+        throw SmokeFailure.message("memory.summary.draft.approve returned an unexpected payload: \(summaryApproveResponse)")
+    }
+
+    let summaryAfterApproveResponse = try sendAndRead(
+        client,
+        type: "memory.summary.drafts.list",
+        requestID: "smoke-memory-summary-after-approve",
+        payload: ["limit": 5]
+    )
+    try requireType(
+        summaryAfterApproveResponse,
+        "memory.summary.drafts.list",
+        context: "memory.summary.drafts.list after approve"
+    )
+    try requireRequestID(
+        summaryAfterApproveResponse,
+        "smoke-memory-summary-after-approve",
+        context: "memory.summary.drafts.list after approve"
+    )
+    let summaryAfterApprovePayload = try payload(
+        summaryAfterApproveResponse,
+        context: "memory.summary.drafts.list after approve"
+    )
+    let draftsAfterApprove = try requireDictionaryArray(
+        summaryAfterApprovePayload,
+        key: "drafts",
+        context: "memory.summary.drafts.list after approve"
+    )
+    guard !draftsAfterApprove.contains(where: { $0["id"] as? String == summaryDraftID }) else {
+        throw SmokeFailure.message("Approved memory summary draft stayed visible: \(summaryAfterApproveResponse)")
+    }
+    guard draftsAfterApprove.contains(where: { $0["id"] as? String == dismissDraftID }) else {
+        throw SmokeFailure.message("Unapproved memory summary dismiss draft disappeared too early: \(summaryAfterApproveResponse)")
+    }
+
+    let summaryMemoryEntries = try listMemoryEntries(
+        client: client,
+        requestID: "smoke-memory-summary-memory-list"
+    )
+    guard summaryMemoryEntries.contains(where: {
+        $0["id"] as? String == summaryMemoryEntryID
+            && $0["content"] as? String == approvedSummaryContent
+            && $0["enabled"] as? Bool == true
+    }) else {
+        throw SmokeFailure.message("memory.list did not include approved memory summary entry: \(summaryMemoryEntries)")
+    }
+
+    let summaryDismissResponse = try sendAndRead(
+        client,
+        type: "memory.summary.draft.dismiss",
+        requestID: "smoke-memory-summary-dismiss",
+        payload: [
+            "draft_id": dismissDraftID,
+            "expected_session_id": smokeSummaryDismissSessionID,
+            "expected_source_message_count": dismissDraftSourceMessageCount
+        ]
+    )
+    try requireType(summaryDismissResponse, "memory.summary.draft.dismiss", context: "memory.summary.draft.dismiss")
+    try requireRequestID(
+        summaryDismissResponse,
+        "smoke-memory-summary-dismiss",
+        context: "memory.summary.draft.dismiss"
+    )
+    let summaryDismissPayload = try payload(summaryDismissResponse, context: "memory.summary.draft.dismiss")
+    guard summaryDismissPayload["draft_id"] as? String == dismissDraftID,
+          summaryDismissPayload["status"] as? String == "dismissed",
+          summaryDismissPayload["dismissed_at"] is String
+    else {
+        throw SmokeFailure.message("memory.summary.draft.dismiss returned an unexpected payload: \(summaryDismissResponse)")
+    }
+
+    let summaryAfterDismissResponse = try sendAndRead(
+        client,
+        type: "memory.summary.drafts.list",
+        requestID: "smoke-memory-summary-after-dismiss",
+        payload: ["limit": 10]
+    )
+    try requireType(
+        summaryAfterDismissResponse,
+        "memory.summary.drafts.list",
+        context: "memory.summary.drafts.list after dismiss"
+    )
+    try requireRequestID(
+        summaryAfterDismissResponse,
+        "smoke-memory-summary-after-dismiss",
+        context: "memory.summary.drafts.list after dismiss"
+    )
+    let summaryAfterDismissPayload = try payload(
+        summaryAfterDismissResponse,
+        context: "memory.summary.drafts.list after dismiss"
+    )
+    let draftsAfterDismiss = try requireDictionaryArray(
+        summaryAfterDismissPayload,
+        key: "drafts",
+        context: "memory.summary.drafts.list after dismiss"
+    )
+    guard !draftsAfterDismiss.contains(where: { $0["id"] as? String == summaryDraftID || $0["id"] as? String == dismissDraftID }) else {
+        throw SmokeFailure.message("Approved or dismissed memory summary draft stayed visible: \(summaryAfterDismissResponse)")
+    }
+
+    let summaryDismissMemoryEntries = try listMemoryEntries(
+        client: client,
+        requestID: "smoke-memory-summary-dismiss-memory-list"
+    )
+    let dismissedSummaryMemoryEntryID = "memory-summary:\(dismissDraftID)"
+    guard !summaryDismissMemoryEntries.contains(where: {
+        $0["id"] as? String == dismissedSummaryMemoryEntryID
+    }) else {
+        throw SmokeFailure.message("memory.list included dismissed summary memory entry: \(summaryDismissMemoryEntries)")
+    }
+
+    let summaryMemoryDeleteResponse = try sendAndRead(
+        client,
+        type: "memory.delete",
+        requestID: "smoke-memory-summary-delete",
+        payload: ["id": summaryMemoryEntryID]
+    )
+    try requireType(summaryMemoryDeleteResponse, "memory.delete", context: "memory.summary memory.delete")
+    try requireRequestID(
+        summaryMemoryDeleteResponse,
+        "smoke-memory-summary-delete",
+        context: "memory.summary memory.delete"
+    )
+    let summaryMemoryDeletePayload = try payload(
+        summaryMemoryDeleteResponse,
+        context: "memory.summary memory.delete"
+    )
+    guard summaryMemoryDeletePayload["id"] as? String == summaryMemoryEntryID,
+          summaryMemoryDeletePayload["deleted_at"] is String
+    else {
+        throw SmokeFailure.message("memory.delete did not remove the approved memory summary entry: \(summaryMemoryDeleteResponse)")
     }
 
     let missingDraftID = "smoke-missing-memory-summary-draft"
@@ -3551,6 +3806,8 @@ func main() throws {
                 runtimeDeviceID: runtimeDeviceID,
                 runtimeKeyFingerprint: pairingInfoRuntimeKeyFingerprint,
                 expectedEndpoint: expectedEndpoint,
+                initialRelayConfiguration: parsedPairingURI.relayConfiguration,
+                initialRelayExpiresAt: parsedPairingURI.relayExpiresAt,
                 expectP2PRouteRefresh: options.expectP2PRouteRefresh
             )
         }
