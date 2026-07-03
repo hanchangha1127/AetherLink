@@ -17,6 +17,7 @@ import com.localagentbridge.android.core.protocol.ChatStoredMessagePayload
 import com.localagentbridge.android.core.protocol.ErrorPayload
 import com.localagentbridge.android.core.protocol.MemoryEntryPayload
 import com.localagentbridge.android.core.protocol.MemoryEntrySourcePayload
+import com.localagentbridge.android.core.protocol.MemoryListRequestPayload
 import com.localagentbridge.android.core.protocol.MemoryListResultPayload
 import com.localagentbridge.android.core.protocol.MemorySummaryDraftApprovePayload
 import com.localagentbridge.android.core.protocol.MemorySummaryDraftApproveResultPayload
@@ -39,6 +40,7 @@ import com.localagentbridge.android.core.protocol.RuntimeHealthPayload
 import com.localagentbridge.android.core.protocol.RuntimeModelResidencyPayload
 import com.localagentbridge.android.core.protocol.RuntimeModelResidencyUnloadFailurePayload
 import com.localagentbridge.android.core.pairing.DeviceIdentity
+import com.localagentbridge.android.core.pairing.OPAQUE_ROUTE_BODY_MAX_CHARS
 import com.localagentbridge.android.core.pairing.RelaySecretStore
 import com.localagentbridge.android.core.pairing.RuntimePairingPayload
 import com.localagentbridge.android.core.pairing.RuntimePairingPayloadParser
@@ -2544,6 +2546,112 @@ class RuntimeClientViewModelTest {
 
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
+    fun routeRefreshQrAfterAcceptedP2pPairingDoesNotOpenDuplicatePeerConnection() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        var viewModel: RuntimeClientViewModel? = null
+        try {
+            val pairingUri = "aetherlink://pair?v=1&n=nonce-p2p-accepted&c=135790" +
+                "&rid=runtime-p2p-accepted&rn=AetherLink%20Runtime&rf=runtime-fingerprint" +
+                "&rk=runtime-public-key&rt=route-p2p-accepted" +
+                "&pc=p2p_rendezvous&prid=p2p-accepted&peb=opaque-accepted" +
+                "&px=4102444800000&pn=nonce-p2p-accepted&pv=1"
+            val routeRefreshUri = "aetherlink://pair?v=1&n=nonce-p2p-refresh&c=246810" +
+                "&rid=runtime-p2p-accepted&rn=AetherLink%20Runtime&rf=runtime-fingerprint" +
+                "&rk=runtime-public-key&rt=route-p2p-refreshed" +
+                "&pc=p2p_rendezvous&prid=p2p-refreshed&peb=opaque-refreshed" +
+                "&px=4102444800000&pn=nonce-p2p-refreshed&pv=1"
+            val channel = ScriptedRuntimeProtocolChannel()
+            val trustedRuntimeStore = FakeEmittingTrustedRuntimeStore(null)
+            val localStore = FakeRuntimeLocalDataStore(
+                initialData = PersistedRuntimeData(trustedRuntimeAutoReconnectEnabled = true),
+            )
+            var directConnectionAttempts = 0
+            var relayConnectionAttempts = 0
+            var peerToPeerConnectionAttempts = 0
+            viewModel = RuntimeClientViewModel(
+                application = Application(),
+                dependencies = RuntimeClientViewModelDependencies(
+                    json = json,
+                    transportClient = RuntimeTransportClient(),
+                    transportConnector = RuntimeTransportConnector { _, _, _ ->
+                        directConnectionAttempts += 1
+                        error("Direct TCP should not be used for P2P QR pairing or refresh")
+                    },
+                    peerToPeerConnector = RuntimePeerToPeerConnector { route, _ ->
+                        peerToPeerConnectionAttempts += 1
+                        assertEquals("p2p-accepted", route.sessionId)
+                        assertEquals("opaque-accepted", route.encryptedCandidateMaterial)
+                        assertEquals("nonce-p2p-accepted", route.security.antiReplayNonce)
+                        channel
+                    },
+                    relayConnector = RuntimeRelayConnector { _, _ ->
+                        relayConnectionAttempts += 1
+                        error("Relay should not be used for P2P QR pairing or refresh")
+                    },
+                    discovery = EmptyRuntimeDiscoverySource,
+                    trustedRuntimeStore = trustedRuntimeStore,
+                    deviceIdentityProvider = FakeDeviceIdentityProvider(testDeviceIdentity()),
+                    localDataStore = localStore,
+                    lifecycleCallbacksRegistrar = NoopRuntimeLifecycleCallbacksRegistrar,
+                    currentTimeMillis = { 1_000L },
+                ),
+            )
+
+            viewModel.trustRuntimeFromPairingQr(pairingUri)
+            advanceUntilIdle()
+
+            val pairingRequest = channel.sentEnvelopes.single { it.type == MessageType.PairingRequest }
+            channel.enqueue(
+                ProtocolEnvelope(
+                    type = MessageType.PairingResult,
+                    requestId = pairingRequest.requestId,
+                    payload = json.encodeToJsonElement(
+                        PairingResultPayload.serializer(),
+                        PairingResultPayload(
+                            accepted = true,
+                            runtimeDeviceIdV2 = "runtime-p2p-accepted",
+                            runtimePublicKey = "runtime-public-key",
+                            runtimeKeyFingerprint = "runtime-fingerprint",
+                            trustedDeviceId = "client-1",
+                            message = "trusted",
+                        ),
+                    ).jsonObject,
+                )
+            )
+            advanceUntilIdle()
+
+            viewModel.trustRuntimeFromPairingQr(routeRefreshUri)
+            advanceUntilIdle()
+
+            val trusted = requireNotNull(trustedRuntimeStore.trusted)
+            assertEquals(0, directConnectionAttempts)
+            assertEquals(0, relayConnectionAttempts)
+            assertEquals(1, peerToPeerConnectionAttempts)
+            assertTrue(channel.isConnected)
+            assertEquals("route-p2p-refreshed", trusted.routeToken)
+            assertNull(trusted.relayHost)
+            assertNull(trusted.relaySecret)
+            assertEquals("p2p_rendezvous", trusted.p2pRouteClass)
+            assertEquals("p2p-refreshed", trusted.p2pRecordId)
+            assertEquals("opaque-refreshed", trusted.p2pEncryptedBody)
+            assertEquals(4102444800000L, trusted.p2pExpiresAtEpochMillis)
+            assertEquals("nonce-p2p-refreshed", trusted.p2pAntiReplayNonce)
+            assertEquals(1, trusted.p2pProtocolVersion)
+            val state = viewModel.state.value
+            assertEquals("p2p-refreshed", state.trustedRuntime?.p2pRecordId)
+            assertEquals(RuntimeActiveRouteKind.PeerToPeer, state.activeRouteKind)
+            assertTrue(state.isConnected)
+            assertNull(state.error)
+        } finally {
+            viewModel?.clearForTest()
+            advanceUntilIdle()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
     fun invalidPairingQrDoesNotEnableTrustedRuntimeAutoReconnect() = runTest {
         val mainDispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(mainDispatcher)
@@ -4702,6 +4810,17 @@ class RuntimeClientViewModelTest {
     }
 
     @Test
+    fun relayProbeKnownParserAllowsRuntimeReconnectRace() {
+        assertTrue("AETHERLINK_RELAY probe known=1 runtime_waiting=1\n".isRelayProbeKnown())
+        assertTrue("AETHERLINK_RELAY probe known=1 runtime_waiting=0\n".isRelayProbeKnown())
+        assertTrue("AETHERLINK_RELAY probe allocated=true runtime_waiting=false\n".isRelayProbeKnown())
+        assertFalse("AETHERLINK_RELAY probe known=0 runtime_waiting=1\n".isRelayProbeKnown())
+        assertFalse("AETHERLINK_RELAY ready\n".isRelayProbeKnown())
+        assertFalse("AETHERLINK_RELAY probe ready\n".isRelayProbeKnown())
+        assertFalse("AETHERLINK_RELAY probe unknown\n".isRelayProbeKnown())
+    }
+
+    @Test
     fun releasePairingParserRejectsMacosLocalDiagnosticQrRoute() {
         val result = parseRuntimePairingQrPayload(
             rawValue = "aetherlink://pair?version=1&pairing_nonce=nonce-1&pairing_code=123456" +
@@ -5279,6 +5398,7 @@ class RuntimeClientViewModelTest {
 
     @Test
     fun routeRefreshPayloadAddsFreshP2pRendezvousRouteToCurrentTrustedRuntime() {
+        val maxSizedP2pEncryptedBody = maxSizedOpaqueP2pEncryptedBody()
         val current = RuntimeTrustedRuntime(
             deviceId = "runtime-1",
             name = "AetherLink Runtime",
@@ -5300,7 +5420,7 @@ class RuntimeClientViewModelTest {
                 runtimeKeyFingerprint = "runtime-fingerprint",
                 p2pRouteClass = "p2p_rendezvous",
                 p2pRecordId = "fresh-p2p-record",
-                p2pEncryptedBody = "fresh-p2p-body",
+                p2pEncryptedBody = maxSizedP2pEncryptedBody,
                 p2pExpiresAtEpochMillis = 4_102_444_800_000L,
                 p2pAntiReplayNonce = "fresh-p2p-nonce",
                 p2pProtocolVersion = 1,
@@ -5318,7 +5438,8 @@ class RuntimeClientViewModelTest {
         assertNull(refreshed.relayPort)
         assertEquals("p2p_rendezvous", refreshed.p2pRouteClass)
         assertEquals("fresh-p2p-record", refreshed.p2pRecordId)
-        assertEquals("fresh-p2p-body", refreshed.p2pEncryptedBody)
+        assertEquals(OPAQUE_ROUTE_BODY_MAX_CHARS, maxSizedP2pEncryptedBody.length)
+        assertEquals(maxSizedP2pEncryptedBody, refreshed.p2pEncryptedBody)
         assertEquals(4_102_444_800_000L, refreshed.p2pExpiresAtEpochMillis)
         assertEquals("fresh-p2p-nonce", refreshed.p2pAntiReplayNonce)
         assertEquals(1, refreshed.p2pProtocolVersion)
@@ -5789,6 +5910,31 @@ class RuntimeClientViewModelTest {
         expiredOrIncompleteP2pRoutes.forEach { payload ->
             assertNull(trustedRuntimeFromRouteRefreshQr(current, payload))
         }
+    }
+
+    @Test
+    fun routeRefreshQrRejectsP2pRouteWithRelayScopeOnly() {
+        val current = RuntimeTrustedRuntime(
+            deviceId = "runtime-1",
+            name = "AetherLink Runtime",
+            fingerprint = "runtime-fingerprint",
+            publicKeyBase64 = "runtime-public-key",
+            routeToken = "route-1",
+            endpointHint = null,
+        )
+        val payload = runtimePairingPayload(
+            host = null,
+            port = null,
+            relayScope = "remote",
+            p2pRouteClass = "p2p_rendezvous",
+            p2pRecordId = "p2p-record-1",
+            p2pEncryptedBody = "opaque-candidate-1",
+            p2pExpiresAtEpochMillis = 4102444800000L,
+            p2pAntiReplayNonce = "nonce-p2p-1",
+            p2pProtocolVersion = 1,
+        )
+
+        assertNull(trustedRuntimeFromRouteRefreshQr(current, payload))
     }
 
     @Test
@@ -7965,6 +8111,80 @@ class RuntimeClientViewModelTest {
 
     @OptIn(ExperimentalCoroutinesApi::class)
     @Test
+    fun refreshRuntimeMemorySendsTrimmedQueryAndRedactsSearchMetadataFromDeviceStorage() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel()),
+                redactRuntimeOwnedLocalDataOnSave = true,
+            )
+            val initialMemoryListRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.MemoryList }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.MemoryList,
+                    serializer = MemoryListResultPayload.serializer(),
+                    payload = MemoryListResultPayload(entries = emptyList()),
+                    requestId = initialMemoryListRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            val summaryDraftRequestCountBeforeQuery = fixture.channel.sentEnvelopes.count {
+                it.type == MessageType.MemorySummaryDraftsList
+            }
+            fixture.viewModel.refreshRuntimeMemory(query = "  relay recovery  ")
+            advanceUntilIdle()
+
+            val queryRequest = fixture.channel.sentEnvelopes.last { it.type == MessageType.MemoryList }
+            val queryPayload = json.decodeFromJsonElement(
+                MemoryListRequestPayload.serializer(),
+                queryRequest.payload,
+            )
+            assertEquals("relay recovery", queryPayload.query)
+            assertEquals(
+                summaryDraftRequestCountBeforeQuery,
+                fixture.channel.sentEnvelopes.count { it.type == MessageType.MemorySummaryDraftsList },
+            )
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.MemoryList,
+                    serializer = MemoryListResultPayload.serializer(),
+                    payload = MemoryListResultPayload(
+                        entries = listOf(
+                            MemoryEntryPayload(
+                                id = "memory-runtime-search",
+                                content = "Use the latest QR route recovery steps.",
+                                enabled = true,
+                                createdAt = "2026-06-25T00:00:00Z",
+                                updatedAt = "2026-06-25T00:01:00Z",
+                                search = ChatSessionSearchPayload(
+                                    rank = 1,
+                                    snippet = "Relay recovery source matched the memory entry.",
+                                    matchedFields = listOf("content", "source_excerpt", "content"),
+                                ),
+                            ),
+                        ),
+                    ),
+                    requestId = queryRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            val runtimeEntry = fixture.viewModel.state.value.memoryEntries.single()
+            assertEquals("Use the latest QR route recovery steps.", runtimeEntry.content)
+            assertEquals(1, runtimeEntry.searchRank)
+            assertEquals("Relay recovery source matched the memory entry.", runtimeEntry.searchSnippet)
+            assertEquals(listOf("content", "source_excerpt"), runtimeEntry.searchMatchedFields)
+            assertTrue(fixture.localStore.data.memoryEntries.isEmpty())
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
     fun runtimeMemorySummaryDraftsListRendersReviewStateWithoutDeviceStorage() = runTest {
         val mainDispatcher = StandardTestDispatcher(testScheduler)
         Dispatchers.setMain(mainDispatcher)
@@ -8592,6 +8812,71 @@ class RuntimeClientViewModelTest {
             assertEquals(100, queryPayload.limit)
             assertTrue(queryPayload.includeArchived)
             assertEquals("relay route", queryPayload.query)
+        } finally {
+            Dispatchers.resetMain()
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun refreshRuntimeChatHistorySendsSelectedEmbeddingModelOnlyForSearchQuery() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        try {
+            val selectedEmbeddingModel = embeddingModel()
+            val fixture = createAuthenticatedRuntimeClientFixture(
+                models = listOf(textChatModel(), selectedEmbeddingModel),
+                selectedEmbeddingModelId = selectedEmbeddingModel.id,
+                redactRuntimeOwnedLocalDataOnSave = true,
+            )
+            val initialChatSessionsRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatSessionsList
+            }
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatSessionsList,
+                    serializer = ChatSessionsListResultPayload.serializer(),
+                    payload = ChatSessionsListResultPayload(sessions = emptyList()),
+                    requestId = initialChatSessionsRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            fixture.viewModel.refreshRuntimeChatHistory()
+            advanceUntilIdle()
+
+            val refreshRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatSessionsList
+            }
+            val refreshPayload = json.decodeFromJsonElement(
+                ChatSessionsListRequestPayload.serializer(),
+                refreshRequest.payload,
+            )
+            assertNull(refreshPayload.query)
+            assertNull(refreshPayload.embeddingModelId)
+
+            fixture.channel.enqueue(
+                envelope(
+                    type = MessageType.ChatSessionsList,
+                    serializer = ChatSessionsListResultPayload.serializer(),
+                    payload = ChatSessionsListResultPayload(sessions = emptyList()),
+                    requestId = refreshRequest.requestId,
+                ),
+            )
+            advanceUntilIdle()
+
+            fixture.viewModel.refreshRuntimeChatHistory(query = "  relay route  ")
+            advanceUntilIdle()
+
+            val queryRequest = fixture.channel.sentEnvelopes.last {
+                it.type == MessageType.ChatSessionsList
+            }
+            val queryPayload = json.decodeFromJsonElement(
+                ChatSessionsListRequestPayload.serializer(),
+                queryRequest.payload,
+            )
+            assertEquals("relay route", queryPayload.query)
+            assertEquals(selectedEmbeddingModel.id, queryPayload.embeddingModelId)
         } finally {
             Dispatchers.resetMain()
         }
@@ -11632,11 +11917,12 @@ class RuntimeClientViewModelTest {
         Dispatchers.setMain(mainDispatcher)
         try {
             val channel = ScriptedRuntimeProtocolChannel()
+            val maxSizedP2pEncryptedBody = maxSizedOpaqueP2pEncryptedBody()
             val trustedStore = FakeEmittingTrustedRuntimeStore(
                 trustedRuntimeForViewModelTests().copy(
                     p2pRouteClass = "p2p_rendezvous",
                     p2pRecordId = "p2p-record-1",
-                    p2pEncryptedBody = "opaque-candidate-material-1",
+                    p2pEncryptedBody = maxSizedP2pEncryptedBody,
                     p2pExpiresAtEpochMillis = 4_102_444_800_000L,
                     p2pAntiReplayNonce = "p2p-nonce-1",
                     p2pProtocolVersion = 1,
@@ -11683,7 +11969,8 @@ class RuntimeClientViewModelTest {
             val relayRoute = requireNotNull(capturedRelayRoute)
             assertEquals(listOf("p2p", "relay"), routeAttempts)
             assertEquals("p2p-record-1", peerToPeerRoute.sessionId)
-            assertEquals("opaque-candidate-material-1", peerToPeerRoute.encryptedCandidateMaterial)
+            assertEquals(OPAQUE_ROUTE_BODY_MAX_CHARS, maxSizedP2pEncryptedBody.length)
+            assertEquals(maxSizedP2pEncryptedBody, peerToPeerRoute.encryptedCandidateMaterial)
             assertEquals("p2p-nonce-1", peerToPeerRoute.security.antiReplayNonce)
             assertEquals("relay-1", relayRoute.relayId)
             assertEquals("secret-1", relayRoute.relayFrameSecret)
@@ -13688,12 +13975,13 @@ class RuntimeClientViewModelTest {
     fun persistedRuntimeDataStoresPendingP2pRendezvousRouteUntilShorterRecordExpiry() {
         val now = 1_000L
         val p2pExpiresAt = now + 90_000L
+        val maxSizedP2pEncryptedBody = maxSizedOpaqueP2pEncryptedBody()
         val payload = runtimePairingPayload(
             host = "192.168.1.10",
             port = 43170,
             p2pRouteClass = "p2p_rendezvous",
             p2pRecordId = "p2p-record-1",
-            p2pEncryptedBody = "opaque-candidate-1",
+            p2pEncryptedBody = maxSizedP2pEncryptedBody,
             p2pExpiresAtEpochMillis = p2pExpiresAt,
             p2pAntiReplayNonce = "nonce-p2p-1",
             p2pProtocolVersion = 1,
@@ -13713,7 +14001,8 @@ class RuntimeClientViewModelTest {
         assertNull(pending?.port)
         assertEquals("p2p_rendezvous", restored?.p2pRouteClass)
         assertEquals("p2p-record-1", restored?.p2pRecordId)
-        assertEquals("opaque-candidate-1", restored?.p2pEncryptedBody)
+        assertEquals(OPAQUE_ROUTE_BODY_MAX_CHARS, maxSizedP2pEncryptedBody.length)
+        assertEquals(maxSizedP2pEncryptedBody, restored?.p2pEncryptedBody)
         assertEquals(p2pExpiresAt, restored?.p2pExpiresAtEpochMillis)
         assertEquals("nonce-p2p-1", restored?.p2pAntiReplayNonce)
         assertEquals(1, restored?.p2pProtocolVersion)
@@ -14540,6 +14829,9 @@ class RuntimeClientViewModelTest {
             relayScope = "remote",
         )
     }
+
+    private fun maxSizedOpaqueP2pEncryptedBody(): String =
+        "p".repeat(OPAQUE_ROUTE_BODY_MAX_CHARS)
 
     private fun testDeviceIdentity(): DeviceIdentity {
         val keyPair = KeyPairGenerator.getInstance("EC")

@@ -164,6 +164,7 @@ enum class RuntimeRouteRejectionReason {
     PeerToPeerConnectorNotAvailable,
     RelayConnectorNotAvailable,
     RemoteRouteIdentityMismatch,
+    RemoteRouteUsesPairingRouteToken,
     RemoteRouteExpired,
 }
 
@@ -191,6 +192,8 @@ private fun RuntimeRouteCandidate.connectabilityRejection(
                 )
             if (!prepared.isBoundTo(identity, targetIdentity)) {
                 RuntimeRouteRejectionReason.RemoteRouteIdentityMismatch
+            } else if (prepared.usesPairingRouteTokenAsRouteMaterial(identity, targetIdentity)) {
+                RuntimeRouteRejectionReason.RemoteRouteUsesPairingRouteToken
             } else if (prepared.security.isExpired(nowEpochMillis)) {
                 RuntimeRouteRejectionReason.RemoteRouteExpired
             } else if (peerToPeerConnector != null) {
@@ -208,6 +211,8 @@ private fun RuntimeRouteCandidate.connectabilityRejection(
                 )
             if (!prepared.isBoundTo(identity, targetIdentity)) {
                 RuntimeRouteRejectionReason.RemoteRouteIdentityMismatch
+            } else if (prepared.usesPairingRouteTokenAsRouteMaterial(identity, targetIdentity)) {
+                RuntimeRouteRejectionReason.RemoteRouteUsesPairingRouteToken
             } else if (prepared.security.isExpired(nowEpochMillis)) {
                 RuntimeRouteRejectionReason.RemoteRouteExpired
             } else if (relayConnector != null) {
@@ -447,6 +452,28 @@ private fun PreparedRemoteRuntimeRoute.isBoundTo(
 ): Boolean {
     return identity.includesPinnedIdentity(candidateIdentity) &&
         (targetIdentity == null || identity.includesPinnedIdentity(targetIdentity))
+}
+
+private fun PreparedRemoteRuntimeRoute.usesPairingRouteTokenAsRouteMaterial(
+    candidateIdentity: PairedRuntimeIdentity,
+    targetIdentity: PairedRuntimeIdentity?,
+): Boolean {
+    val routeTokens = listOfNotNull(
+        identity.routeToken,
+        candidateIdentity.routeToken,
+        targetIdentity?.routeToken,
+    ).toSet()
+    if (routeTokens.isEmpty()) return false
+    return when (this) {
+        is PreparedRemoteRuntimeRoute.PeerToPeer ->
+            routeTokens.any { token ->
+                sessionId == token || security.rendezvousToken == token
+            }
+        is PreparedRemoteRuntimeRoute.Relay ->
+            routeTokens.any { token ->
+                relayId == token || security.rendezvousToken == token
+            }
+    }
 }
 
 private fun PairedRuntimeIdentity.includesPinnedIdentity(pinned: PairedRuntimeIdentity): Boolean {

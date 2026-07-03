@@ -919,6 +919,7 @@ private final class DevMockBackend: LlmBackend, @unchecked Sendable {
     private let additionalModels: [(id: String, name: String, capabilities: [String])]
     private let chunkDelayNanoseconds: UInt64
     private let unloadEventFile: String?
+    private let chatRequestAuditFile: String?
     private let unloadFailureTargets: Set<String>
     private let lock = NSLock()
     private var tasks: [String: Task<Void, Never>] = [:]
@@ -940,6 +941,7 @@ private final class DevMockBackend: LlmBackend, @unchecked Sendable {
         let delayMilliseconds = UInt64(environment["AETHERLINK_DEV_MOCK_CHUNK_DELAY_MS"] ?? "") ?? 350
         chunkDelayNanoseconds = max(1, delayMilliseconds) * 1_000_000
         unloadEventFile = environment["AETHERLINK_DEV_MOCK_UNLOAD_EVENT_FILE"]?.takeIfNotEmpty
+        chatRequestAuditFile = environment["AETHERLINK_DEV_MOCK_CHAT_REQUEST_AUDIT_FILE"]?.takeIfNotEmpty
         unloadFailureTargets = Set(
             (environment["AETHERLINK_DEV_MOCK_UNLOAD_FAILURES"] ?? "")
                 .split(separator: ",")
@@ -1033,7 +1035,8 @@ private final class DevMockBackend: LlmBackend, @unchecked Sendable {
     }
 
     func chat(request: ChatRequest) -> AsyncThrowingStream<ChatStreamEvent, Error> {
-        AsyncThrowingStream { continuation in
+        recordChatRequestAudit(request)
+        return AsyncThrowingStream { continuation in
             let task = Task { [weak self] in
                 let hasAttachmentContext = request.messages.contains { message in
                     !message.attachments.isEmpty
@@ -1083,6 +1086,40 @@ private final class DevMockBackend: LlmBackend, @unchecked Sendable {
     private func remove(_ generationID: String) {
         lock.withLock {
             tasks[generationID] = nil
+        }
+    }
+
+    private func recordChatRequestAudit(_ request: ChatRequest) {
+        guard let chatRequestAuditFile else { return }
+        let object: [String: Any] = [
+            "provider": provider.rawValue,
+            "generation_id": request.generationID,
+            "session_id": request.sessionID,
+            "model": request.model,
+            "messages": request.messages.map { message in
+                [
+                    "role": message.role,
+                    "content": message.content
+                ]
+            }
+        ]
+        guard JSONSerialization.isValidJSONObject(object),
+              let data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+        else {
+            return
+        }
+        var line = data
+        line.append(0x0A)
+        lock.withLock {
+            let url = URL(fileURLWithPath: chatRequestAuditFile)
+            if FileManager.default.fileExists(atPath: chatRequestAuditFile),
+               let handle = try? FileHandle(forWritingTo: url) {
+                _ = try? handle.seekToEnd()
+                _ = try? handle.write(contentsOf: line)
+                _ = try? handle.close()
+            } else {
+                try? line.write(to: url, options: .atomic)
+            }
         }
     }
 }

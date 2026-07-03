@@ -85,6 +85,280 @@
         }
       },
       "then": { "$ref": "#/$defs/privateOverlayScopeRequired" }
+    },
+    {
+      "description": "Relay route material must use one relay alias family: canonical relay_* fields, remote_* fields, route_* fields, rendezvous_* fields, or compact rh/rp/ri/rs/rx/rrn fields, not a mix.",
+      "not": {
+        "anyOf": [
+          {
+            "allOf": [
+              {
+                "anyOf": [
+                  { "required": ["relay_host"] },
+                  { "required": ["relay_port"] },
+                  { "required": ["relay_id"] },
+                  { "required": ["relay_secret"] },
+                  { "required": ["relay_expires_at"] },
+                  { "required": ["relay_nonce"] }
+                ]
+              },
+              {
+                "anyOf": [
+                  { "required": ["remote_host"] },
+                  { "required": ["remote_port"] },
+                  { "required": ["remote_id"] },
+                  { "required": ["remote_secret"] },
+                  { "required": ["remote_expires_at"] },
+                  { "required": ["remote_nonce"] }
+                ]
+              }
+            ]
+          },
+          {
+            "allOf": [
+              {
+                "anyOf": [
+                  { "required": ["relay_host"] },
+                  { "required": ["relay_port"] },
+                  { "required": ["relay_id"] },
+                  { "required": ["relay_secret"] },
+                  { "required": ["relay_expires_at"] },
+                  { "required": ["relay_nonce"] }
+                ]
+              },
+              {
+                "anyOf": [
+                  { "required": ["route_host"] },
+                  { "required": ["route_port"] },
+                  { "required": ["route_id"] },
+                  { "required": ["route_secret"] },
+                  { "required": ["route_expires_at"] },
+                  { "required": ["route_nonce"] }
+                ]
+              }
+            ]
+          },
+          {
+            "allOf": [
+              {
+                "anyOf": [
+                  { "required": ["relay_host"] },
+                  { "required": ["relay_port"] },
+                  { "required": ["relay_id"] },
+                  { "required": ["relay_secret"] },
+                  { "required": ["relay_expires_at"] },
+                  { "required": ["relay_nonce"] }
+                ]
+              },
+              {
+                "anyOf": [
+                  { "required": ["rendezvous_host"] },
+                  { "required": ["rendezvous_port"] },
+                  { "required": ["rendezvous_id"] },
+                  { "required": ["rendezvous_secret"] },
+                  { "required": ["rendezvous_expires_at"] },
+                  { "required": ["rendezvous_nonce"] }
+                ]
+              }
+            ]
+          },
+          {
+            "allOf": [
+              {
+                "anyOf": [
+                  { "required": ["relay_host"] },
+                  { "required": ["relay_port"] },
+                  { "required": ["relay_id"] },
+                  { "required": ["relay_secret"] },
+                  { "required": ["relay_expires_at"] },
+                  { "required": ["relay_nonce"] }
+                ]
+              },
+              {
+                "anyOf": [
+                  { "required": ["rh"] },
+                  { "required": ["rp"] },
+                  { "required": ["ri"] },
+                  { "required": ["rs"] },
+                  { "required": ["rx"] },
+                  { "required": ["rrn"] }
+                ]
+              }
+            ]
+          },
+          {
+            "allOf": [
+              {
+                "anyOf": [
+                  { "required": ["remote_host"] },
+                  { "required": ["remote_port"] },
+                  { "required": ["remote_id"] },
+                  { "required": ["remote_secret"] },
+                  { "required": ["remote_expires_at"] },
+                  { "required": ["remote_nonce"] }
+                ]
+              },
+              {
+                "anyOf": [
+                  { "required": ["route_host"] },
+                  { "required": ["route_port"] },
+                  { "required": ["route_id"] },
+                  { "required": ["route_secret"] },
+                  { "required": ["route_expires_at"] },
+                  { "required": ["route_nonce"] }
+                ]
+              }
+            ]
+          },
+          {
+            "allOf": [
+              {
+                "anyOf": [
+                  { "required": ["remote_host"] },
+                  { "required": ["remote_port"] },
+                  { "required": ["remote_id"] },
+                  { "required": ["remote_secret"] },
+                  { "required": ["remote_expires_at"] },
+                  { "required": ["remote_nonce"] }
+                ]
+              },
+              {
+                "anyOf": [
+                  { "required": ["rendezvous_host"] },
+                  { "required": ["rendezvous_port"] },
+                  { "required": ["rendezvous_id"] },
+                  { "required": ["rendezvous_secret"] },
+                  { "required": ["rendezvous_expires_at"] },
+                  { "required": ["rendezvous_nonce"] }
+                ]
+              }
+            ]
+          },
+          {
+            "allOf": [
+              {
+                "anyOf": [
+                  { "required": ["remote_host"] },
+                  { "required": ["remote_port"] },
+                  { "required": ["remote_id"] },
+                  { "required": ["remote_secret"] },
+                  { "required": ["remote_expires_at"] },
+                  { "required": ["remote_nonce"] }
+                ]
+              },
+              {
+                "anyOf": [
+                  { "required": ["rh"] },
+                  { "required": ["rp"] },
+                  { "required": ["ri"] },
+                  { "required": ["rs"] },
+                  { "required": ["rx"] },
+                  { "required": ["rrn"] }
+                ]
+              }
+            ]
+          },
+          {
+            "allOf": [
+              {
+                "anyOf": [
+                  { "required": ["route_host"] },
+                  { "required": ["route_port"] },
+                  { "required": ["route_id"] },
+                  { "required": ["route_secret"] },
+                  { "required": ["route_expires_at"] },
+                  { "required": ["route_nonce"] }
+                ]
+              },
+              {
+                "anyOf": [
+                  { "required": ["rendezvous_host"] },
+                  { "required": ["rendezvous_port"] },
+                  { "required": ["rendezvous_id"] },
+                  { "required": ["rendezvous_secret"] },
+                  { "required": ["rendezvous_expires_at"] },
+                  { "required": ["rendezvous_nonce"] }
+                ]
+              }
+            ]
+          },
+          {
+            "allOf": [
+              {
+                "anyOf": [
+                  { "required": ["route_host"] },
+                  { "required": ["route_port"] },
+                  { "required": ["route_id"] },
+                  { "required": ["route_secret"] },
+                  { "required": ["route_expires_at"] },
+                  { "required": ["route_nonce"] }
+                ]
+              },
+              {
+                "anyOf": [
+                  { "required": ["rh"] },
+                  { "required": ["rp"] },
+                  { "required": ["ri"] },
+                  { "required": ["rs"] },
+                  { "required": ["rx"] },
+                  { "required": ["rrn"] }
+                ]
+              }
+            ]
+          },
+          {
+            "allOf": [
+              {
+                "anyOf": [
+                  { "required": ["rendezvous_host"] },
+                  { "required": ["rendezvous_port"] },
+                  { "required": ["rendezvous_id"] },
+                  { "required": ["rendezvous_secret"] },
+                  { "required": ["rendezvous_expires_at"] },
+                  { "required": ["rendezvous_nonce"] }
+                ]
+              },
+              {
+                "anyOf": [
+                  { "required": ["rh"] },
+                  { "required": ["rp"] },
+                  { "required": ["ri"] },
+                  { "required": ["rs"] },
+                  { "required": ["rx"] },
+                  { "required": ["rrn"] }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "description": "P2P rendezvous route material must use either canonical p2p_* fields or compact pc/prid/peb/px/pn/pv fields, not both.",
+      "not": {
+        "allOf": [
+          {
+            "anyOf": [
+              { "required": ["p2p_class"] },
+              { "required": ["p2p_record_id"] },
+              { "required": ["p2p_encrypted_body"] },
+              { "required": ["p2p_expires_at"] },
+              { "required": ["p2p_anti_replay_nonce"] },
+              { "required": ["p2p_protocol_version"] }
+            ]
+          },
+          {
+            "anyOf": [
+              { "required": ["pc"] },
+              { "required": ["prid"] },
+              { "required": ["peb"] },
+              { "required": ["px"] },
+              { "required": ["pn"] },
+              { "required": ["pv"] }
+            ]
+          }
+        ]
+      }
     }
   ],
   "properties": {
@@ -233,9 +507,9 @@
       "enum": ["remote", "private_overlay", "usb_reverse"]
     },
     "route_scope": {
-      "description": "Development-only route scope. `local_diagnostic` allows explicit local-direct QR diagnostics; product QR pairing should use remote relay/P2P route material instead.",
+      "description": "Alias for relay_scope on route_* relay material. `local_diagnostic` is accepted only for explicit local-direct QR diagnostics; product QR pairing should use remote relay/P2P route material instead.",
       "type": "string",
-      "enum": ["usb_reverse", "local_diagnostic"]
+      "enum": ["remote", "private_overlay", "usb_reverse", "local_diagnostic"]
     },
     "rsc": {
       "description": "Compact alias for route_scope/relay_scope.",
@@ -314,7 +588,8 @@
     "opaqueRouteSecret": {
       "type": "string",
       "minLength": 1,
-      "maxLength": 512
+      "maxLength": 512,
+      "pattern": "^\\S+$"
     },
     "opaqueRouteBody": {
       "type": "string",
@@ -433,6 +708,12 @@
             "remote_scope": { "const": "private_overlay" }
           },
           "required": ["remote_scope"]
+        },
+        {
+          "properties": {
+            "route_scope": { "const": "private_overlay" }
+          },
+          "required": ["route_scope"]
         },
         {
           "properties": {

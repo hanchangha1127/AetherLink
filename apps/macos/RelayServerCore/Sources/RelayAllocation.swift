@@ -66,6 +66,9 @@ public struct RelayAllocationRequest: Equatable, Sendable {
                 }
                 isPreflight = true
             } else {
+                guard !looksLikeUnknownOption(value) else {
+                    throw RelayAllocationError.invalidFormat
+                }
                 guard requestedRelaySecret == nil else {
                     throw RelayAllocationError.invalidFormat
                 }
@@ -102,6 +105,26 @@ public struct RelayAllocationRequest: Equatable, Sendable {
     private static func isPreflightOption(_ value: String) -> Bool {
         value == "preflight=1" || value == "preflight=true"
     }
+
+    private static func looksLikeUnknownOption(_ value: String) -> Bool {
+        guard let separator = value.firstIndex(of: "=") else {
+            return false
+        }
+        let key = String(value[..<separator])
+        return rejectedRequestMetadataKeys.contains(key)
+    }
+
+    private static let rejectedRequestMetadataKeys: Set<String> = [
+        "backend_url",
+        "provider_url",
+        "requested_route_token",
+        "relay_secret_debug",
+        "route_token",
+        "relay_id",
+        "relay_secret",
+        "relay_expires_at",
+        "relay_nonce",
+    ]
 }
 
 public struct RelayAllocation: Codable, Equatable, Sendable {
@@ -123,7 +146,9 @@ public struct RelayAllocation: Codable, Equatable, Sendable {
         else {
             throw RelayAllocationError.invalidRelayID
         }
-        guard !relaySecret.isEmpty else {
+        guard !relaySecret.isEmpty,
+              relaySecret.rangeOfCharacter(from: .whitespacesAndNewlines) == nil
+        else {
             throw RelayAllocationError.invalidRelaySecret
         }
         guard relayExpiresAtEpochMillis > 0 else {
@@ -179,15 +204,47 @@ public struct RelayAllocation: Codable, Equatable, Sendable {
         guard let data = json.data(using: .utf8) else {
             throw RelayAllocationError.invalidResponseFormat
         }
+        let object: Any
+        do {
+            object = try JSONSerialization.jsonObject(with: data)
+        } catch {
+            throw RelayAllocationError.invalidResponseFormat
+        }
+        guard let payload = object as? [String: Any] else {
+            throw RelayAllocationError.invalidResponseFormat
+        }
+        guard Set(payload.keys).isSubset(of: allowedResponseFieldNames) else {
+            throw RelayAllocationError.unexpectedResponseMetadata
+        }
         return try JSONDecoder().decode(RelayAllocation.self, from: data)
     }
 
-    private enum CodingKeys: String, CodingKey {
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        try self.init(
+            relayID: container.decode(String.self, forKey: .relayID),
+            relaySecret: container.decode(String.self, forKey: .relaySecret),
+            relayExpiresAtEpochMillis: container.decode(Int64.self, forKey: .relayExpiresAtEpochMillis),
+            relayNonce: container.decode(String.self, forKey: .relayNonce)
+        )
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(relayID, forKey: .relayID)
+        try container.encode(relaySecret, forKey: .relaySecret)
+        try container.encode(relayExpiresAtEpochMillis, forKey: .relayExpiresAtEpochMillis)
+        try container.encode(relayNonce, forKey: .relayNonce)
+    }
+
+    private enum CodingKeys: String, CodingKey, CaseIterable {
         case relayID = "relay_id"
         case relaySecret = "relay_secret"
         case relayExpiresAtEpochMillis = "relay_expires_at"
         case relayNonce = "relay_nonce"
     }
+
+    private static let allowedResponseFieldNames = Set(CodingKeys.allCases.map(\.stringValue))
 }
 
 public enum RelayAllocationError: Error, Equatable, Sendable {
@@ -198,6 +255,7 @@ public enum RelayAllocationError: Error, Equatable, Sendable {
     case invalidExpiration
     case invalidNonce
     case invalidResponseFormat
+    case unexpectedResponseMetadata
     case invalidAllocationToken
     case unauthorizedAllocation
 }
@@ -302,11 +360,13 @@ private struct RelayAllocationTicket: Codable, Equatable, Sendable {
     let relayID: String
     let relayExpiresAtEpochMillis: Int64
     let relayNonce: String
+    private let hasUnexpectedMetadata: Bool
 
     init(_ allocation: RelayAllocation) {
         self.relayID = allocation.relayID
         self.relayExpiresAtEpochMillis = allocation.relayExpiresAtEpochMillis
         self.relayNonce = allocation.relayNonce
+        self.hasUnexpectedMetadata = false
     }
 
     func isAdvancingReplacement(of existing: RelayAllocationTicket) -> Bool {
@@ -315,17 +375,51 @@ private struct RelayAllocationTicket: Codable, Equatable, Sendable {
     }
 
     var isLoadable: Bool {
-        !relayID.isEmpty &&
+        !hasUnexpectedMetadata &&
+            !relayID.isEmpty &&
             relayID.rangeOfCharacter(from: .whitespacesAndNewlines) == nil &&
             relayExpiresAtEpochMillis > 0 &&
             !relayNonce.isEmpty &&
             relayNonce.rangeOfCharacter(from: .whitespacesAndNewlines) == nil
     }
 
-    private enum CodingKeys: String, CodingKey {
+    init(from decoder: Decoder) throws {
+        let metadataContainer = try decoder.container(keyedBy: AnyCodingKey.self)
+        let allowedKeys = Set(CodingKeys.allCases.map(\.stringValue))
+        hasUnexpectedMetadata = !Set(metadataContainer.allKeys.map(\.stringValue)).isSubset(of: allowedKeys)
+
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        relayID = try container.decode(String.self, forKey: .relayID)
+        relayExpiresAtEpochMillis = try container.decode(Int64.self, forKey: .relayExpiresAtEpochMillis)
+        relayNonce = try container.decode(String.self, forKey: .relayNonce)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(relayID, forKey: .relayID)
+        try container.encode(relayExpiresAtEpochMillis, forKey: .relayExpiresAtEpochMillis)
+        try container.encode(relayNonce, forKey: .relayNonce)
+    }
+
+    private enum CodingKeys: String, CodingKey, CaseIterable {
         case relayID = "relay_id"
         case relayExpiresAtEpochMillis = "relay_expires_at"
         case relayNonce = "relay_nonce"
+    }
+}
+
+private struct AnyCodingKey: CodingKey {
+    let stringValue: String
+    let intValue: Int?
+
+    init?(stringValue: String) {
+        self.stringValue = stringValue
+        self.intValue = nil
+    }
+
+    init?(intValue: Int) {
+        self.stringValue = "\(intValue)"
+        self.intValue = intValue
     }
 }
 

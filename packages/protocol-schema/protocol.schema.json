@@ -180,13 +180,24 @@
     "opaqueRouteSecret": {
       "type": "string",
       "minLength": 1,
-      "maxLength": 512
+      "maxLength": 512,
+      "pattern": "^\\S+$"
     },
     "opaqueRouteBody": {
       "type": "string",
       "minLength": 1,
       "maxLength": 2048,
       "pattern": "^\\S+$"
+    },
+    "privateOverlayRelayHost": {
+      "description": "Private IPv4, CGNAT, and ULA IPv6 relay literals are only valid when authenticated route refresh explicitly marks a user-managed private overlay.",
+      "anyOf": [
+        { "pattern": "^10\\." },
+        { "pattern": "^100\\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\\." },
+        { "pattern": "^172\\.(1[6-9]|2[0-9]|3[01])\\." },
+        { "pattern": "^192\\.168\\." },
+        { "pattern": "^(\\[)?f[c-d]" }
+      ]
     },
     "helloPayload": {
       "type": "object",
@@ -394,6 +405,22 @@
             "runtime_device_id",
             "runtime_key_fingerprint"
           ],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "relay_host": { "$ref": "#/$defs/privateOverlayRelayHost" }
+                },
+                "required": ["relay_host"]
+              },
+              "then": {
+                "properties": {
+                  "relay_scope": { "const": "private_overlay" }
+                },
+                "required": ["relay_scope"]
+              }
+            }
+          ],
           "anyOf": [
             {
               "required": [
@@ -551,7 +578,8 @@
           "properties": {
             "limit": { "type": "integer", "minimum": 0, "maximum": 200 },
             "include_archived": { "type": "boolean", "default": false },
-            "query": { "$ref": "#/$defs/nonEmptyString" }
+            "query": { "$ref": "#/$defs/nonEmptyString" },
+            "embedding_model_id": { "$ref": "#/$defs/nonEmptyString" }
           },
           "additionalProperties": false
         },
@@ -686,14 +714,27 @@
       "additionalProperties": false
     },
     "chatSessionRenamePayload": {
-      "type": "object",
-      "required": ["session_id", "title"],
-      "properties": {
-        "session_id": { "$ref": "#/$defs/nonEmptyString" },
-        "title": { "$ref": "#/$defs/nonEmptyString" },
-        "renamed_at": { "type": "string", "format": "date-time" }
-      },
-      "additionalProperties": false
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["session_id", "title"],
+          "properties": {
+            "session_id": { "$ref": "#/$defs/nonEmptyString" },
+            "title": { "$ref": "#/$defs/nonEmptyString" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["session_id", "title", "renamed_at"],
+          "properties": {
+            "session_id": { "$ref": "#/$defs/nonEmptyString" },
+            "title": { "$ref": "#/$defs/nonEmptyString" },
+            "renamed_at": { "type": "string", "format": "date-time" }
+          },
+          "additionalProperties": false
+        }
+      ]
     },
     "chatSessionArchivePayload": {
       "oneOf": [
@@ -757,7 +798,8 @@
         "enabled": { "type": "boolean" },
         "created_at": { "type": "string", "format": "date-time" },
         "updated_at": { "type": "string", "format": "date-time" },
-        "source": { "$ref": "#/$defs/memoryEntrySource" }
+        "source": { "$ref": "#/$defs/memoryEntrySource" },
+        "search": { "$ref": "#/$defs/chatSessionSearch" }
       },
       "additionalProperties": false
     },
@@ -789,7 +831,13 @@
     },
     "memoryListPayload": {
       "oneOf": [
-        { "$ref": "#/$defs/emptyPayload" },
+        {
+          "type": "object",
+          "properties": {
+            "query": { "$ref": "#/$defs/nonEmptyString" }
+          },
+          "additionalProperties": false
+        },
         {
           "type": "object",
           "required": ["entries"],
@@ -981,6 +1029,7 @@
         "code": {
           "enum": [
             "unknown_message_type",
+            "unexpected_message_direction",
             "invalid_payload",
             "not_connected",
             "pairing_required",

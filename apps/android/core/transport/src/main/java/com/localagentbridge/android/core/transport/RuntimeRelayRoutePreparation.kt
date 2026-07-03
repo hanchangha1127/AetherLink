@@ -25,15 +25,15 @@ fun RuntimeRelayRoutePreparation.toPreparedRelayRouteOrNull(
     identity: PairedRuntimeIdentity,
     nowEpochMillis: Long = System.currentTimeMillis(),
 ): PreparedRemoteRuntimeRoute.Relay? {
-    val routeHost = host?.takeIf { it.isNotBlank() } ?: return null
+    val routeHost = host.canonicalRelayHostOrNull() ?: return null
     if (!relayScope.isAllowedPreparedRelayScope()) return null
     if (!routeHost.isAllowedPreparedRelayHost(relayScope)) return null
     val routePort = port?.takeIf { it in 1..65535 } ?: return null
-    val routeRelayId = relayId?.takeIf { it.isNotBlank() }
-        ?: return null
-    val frameSecret = relayFrameSecret?.takeIf { it.isNotBlank() } ?: return null
+    val routeRelayId = relayId.opaqueRelayRouteValueOrNull() ?: return null
+    if (routeRelayId == identity.routeToken) return null
+    val frameSecret = relayFrameSecret.opaqueRelayRouteValueOrNull() ?: return null
     val expiresAt = expiresAtEpochMillis?.takeIf { it > nowEpochMillis } ?: return null
-    val nonce = antiReplayNonce?.takeIf { it.isNotBlank() } ?: return null
+    val nonce = antiReplayNonce.opaqueRelayRouteValueOrNull() ?: return null
     return PreparedRemoteRuntimeRoute.Relay(
         identity = identity,
         relayId = routeRelayId,
@@ -46,6 +46,27 @@ fun RuntimeRelayRoutePreparation.toPreparedRelayRouteOrNull(
             antiReplayNonce = nonce,
         ),
     )
+}
+
+private fun String?.canonicalRelayHostOrNull(): String? {
+    val value = this ?: return null
+    return value.takeIf {
+        it.isNotBlank() &&
+            it == it.trim() &&
+            it.none(Char::isWhitespace) &&
+            !it.contains("://") &&
+            it.none { char -> char == '/' || char == '?' || char == '#' || char == '@' }
+    }
+}
+
+private fun String?.opaqueRelayRouteValueOrNull(): String? {
+    val value = this ?: return null
+    return value.takeIf {
+        it.isNotBlank() &&
+            it.length <= OPAQUE_RELAY_ROUTE_VALUE_MAX_CHARS &&
+            it == it.trim() &&
+            it.none(Char::isWhitespace)
+    }
 }
 
 private fun String.isAllowedPreparedRelayHost(relayScope: String?): Boolean {
@@ -149,3 +170,4 @@ private val ALLOWED_PREPARED_RELAY_SCOPES = setOf(
     PRIVATE_OVERLAY_RELAY_SCOPE,
     DEBUG_USB_REVERSE_RELAY_SCOPE,
 )
+private const val OPAQUE_RELAY_ROUTE_VALUE_MAX_CHARS = 512

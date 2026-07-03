@@ -82,6 +82,49 @@ class RuntimePeerToPeerRoutePreparationTest {
     }
 
     @Test
+    fun peerToPeerRoutePreparationDoesNotCarryRelayOrRouteTokenFamilyMaterial() {
+        val forbiddenRouteFamilyTokens = listOf("host", "port", "relay", "routetoken", "framesecret")
+        val routeFamilyFields = RuntimePeerToPeerRoutePreparation::class.java.declaredFields
+            .map { it.name.lowercase() } +
+            PreparedRemoteRuntimeRoute.PeerToPeer::class.java.declaredFields.map { it.name.lowercase() }
+
+        forbiddenRouteFamilyTokens.forEach { token ->
+            assertTrue(
+                "P2P route material must not carry $token fields: $routeFamilyFields",
+                routeFamilyFields.none { field -> field.contains(token) },
+            )
+        }
+
+        val route = RuntimePeerToPeerRoutePreparation(
+            recordId = "p2p-record-isolation",
+            encryptedCandidateMaterial = "opaque-candidate-material-1",
+            expiresAtEpochMillis = 4102444800000L,
+            antiReplayNonce = "nonce-1",
+            protocolVersion = CURRENT_P2P_RENDEZVOUS_PROTOCOL_VERSION,
+        ).toPreparedPeerToPeerRouteOrNull(identity)
+
+        assertNotNull(route)
+        requireNotNull(route)
+        assertEquals("p2p-record-isolation", route.sessionId)
+        assertEquals("p2p-record-isolation", route.security.rendezvousToken)
+        assertTrue(route.sessionId != identity.routeToken)
+        assertTrue(route.security.rendezvousToken != identity.routeToken)
+    }
+
+    @Test
+    fun peerToPeerRoutePreparationRejectsPairedRouteTokenAsRecordId() {
+        val route = RuntimePeerToPeerRoutePreparation(
+            recordId = identity.routeToken,
+            encryptedCandidateMaterial = "opaque-candidate-material-1",
+            expiresAtEpochMillis = 4102444800000L,
+            antiReplayNonce = "nonce-1",
+            protocolVersion = CURRENT_P2P_RENDEZVOUS_PROTOCOL_VERSION,
+        ).toPreparedPeerToPeerRouteOrNull(identity)
+
+        assertNull(route)
+    }
+
+    @Test
     fun peerToPeerRoutePreparerUsesInjectedClockForRecordExpiration() {
         val preparation = RuntimePeerToPeerRoutePreparation(
             recordId = "p2p-record-1",

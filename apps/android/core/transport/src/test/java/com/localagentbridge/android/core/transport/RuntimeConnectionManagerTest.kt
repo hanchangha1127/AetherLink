@@ -362,7 +362,7 @@ class RuntimeConnectionManagerTest {
     }
 
     @Test
-    fun remoteRoutePreparerCanUsePairingRouteTokenWithoutDirectTcpEndpoint() {
+    fun remoteRoutePreparerRejectsRoutesThatReusePairingRouteTokenMaterial() {
         val identity = pairedIdentity(routeToken = "pairing-route-token")
         val preparer = RuntimeRemoteRoutePreparer { pairedRuntime ->
             listOf(
@@ -371,23 +371,63 @@ class RuntimeConnectionManagerTest {
                     sessionId = requireNotNull(pairedRuntime.routeToken),
                     security = securityContext(pairedRuntime.routeToken),
                 ),
+                PreparedRemoteRuntimeRoute.PeerToPeer(
+                    identity = pairedRuntime,
+                    sessionId = "p2p-record-1",
+                    security = securityContext(pairedRuntime.routeToken),
+                ),
                 PreparedRemoteRuntimeRoute.Relay(
                     identity = pairedRuntime,
-                    relayId = "relay-${pairedRuntime.routeToken}",
+                    relayId = requireNotNull(pairedRuntime.routeToken),
                     host = "relay.example.test",
                     port = 443,
-                    security = securityContext("relay-${pairedRuntime.routeToken}"),
+                    security = securityContext(pairedRuntime.routeToken),
+                ),
+                PreparedRemoteRuntimeRoute.Relay(
+                    identity = pairedRuntime,
+                    relayId = "relay-record-1",
+                    host = "relay.example.test",
+                    port = 443,
+                    security = securityContext(pairedRuntime.routeToken),
                 ),
             )
         }
-
-        val preparedRoutes = preparer.prepareRemoteRoutes(identity)
-
-        assertEquals(
-            listOf(RuntimeRouteCapability.PeerToPeer, RuntimeRouteCapability.Relay),
-            preparedRoutes.map { it.capability },
+        val peerCalls = mutableListOf<PreparedRemoteRuntimeRoute.PeerToPeer>()
+        val relayCalls = mutableListOf<PreparedRemoteRuntimeRoute.Relay>()
+        val manager = RuntimeConnectionManager(
+            connector = RuntimeTransportConnector { _, _, _ ->
+                error("Direct TCP should not be used for route-token material rejection")
+            },
+            routeResolver = RuntimeRouteResolver { emptyList() },
+            remoteRoutePreparer = preparer,
+            peerToPeerConnector = RuntimePeerToPeerConnector { route, _ ->
+                peerCalls += route
+                TestRuntimeProtocolChannel
+            },
+            relayConnector = RuntimeRelayConnector { route, _ ->
+                relayCalls += route
+                TestRuntimeProtocolChannel
+            },
         )
-        assertTrue(preparedRoutes.all { it.identity == identity })
+
+        val failure = assertThrows(RuntimeConnectionFailure::class.java) {
+            runBlocking {
+                manager.connect(RuntimeConnectionTarget(identity = identity))
+            }
+        }
+
+        assertEquals(RuntimeConnectionFailureReason.NoConnectableRoute, failure.reason)
+        assertEquals(
+            listOf(
+                RuntimeRouteRejectionReason.RemoteRouteUsesPairingRouteToken,
+                RuntimeRouteRejectionReason.RemoteRouteUsesPairingRouteToken,
+                RuntimeRouteRejectionReason.RemoteRouteUsesPairingRouteToken,
+                RuntimeRouteRejectionReason.RemoteRouteUsesPairingRouteToken,
+            ),
+            failure.routeRejections.map { it.reason },
+        )
+        assertEquals(emptyList<PreparedRemoteRuntimeRoute.PeerToPeer>(), peerCalls)
+        assertEquals(emptyList<PreparedRemoteRuntimeRoute.Relay>(), relayCalls)
     }
 
     @Test
@@ -463,8 +503,8 @@ class RuntimeConnectionManagerTest {
                 listOf(
                     PreparedRemoteRuntimeRoute.PeerToPeer(
                         identity = pairedRuntime,
-                        sessionId = "p2p-${pairedRuntime.routeToken}",
-                        security = securityContext("p2p-${pairedRuntime.routeToken}"),
+                        sessionId = "p2p-record-1",
+                        security = securityContext("p2p-record-1"),
                     )
                 )
             },
@@ -478,7 +518,9 @@ class RuntimeConnectionManagerTest {
         manager.connect(RuntimeConnectionTarget(identity = identity), timeoutMillis = 900)
 
         assertEquals(emptyList<ConnectCall>(), directCalls)
-        assertEquals("p2p-route-token", peerCalls.single().sessionId)
+        assertEquals("p2p-record-1", peerCalls.single().sessionId)
+        assertTrue(peerCalls.single().sessionId != identity.routeToken)
+        assertTrue(peerCalls.single().security.rendezvousToken != identity.routeToken)
         assertEquals(identity, peerCalls.single().identity)
     }
 

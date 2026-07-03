@@ -10,11 +10,12 @@ ALLOCATION_TTL_SECONDS="${AETHERLINK_RELAY_ALLOCATION_TTL_SECONDS:-}"
 REQUIRE_ALLOCATION=1
 DRY_RUN=0
 EPHEMERAL_ALLOCATIONS=0
+SUMMARY_JSON=""
 
 usage() {
   cat <<'USAGE'
 Usage:
-  script/run_allocation_relay.sh [--host <bind-host>] [--port <port>] [--allocation-token <token>] [--allocation-ttl-seconds <seconds>] [--allocation-store <path>] [--ephemeral-allocations] [--allow-legacy] [--dry-run]
+  script/run_allocation_relay.sh [--host <bind-host>] [--port <port>] [--allocation-token <token>] [--allocation-ttl-seconds <seconds>] [--allocation-store <path>] [--ephemeral-allocations] [--allow-legacy] [--dry-run] [--summary-json <path>]
 
 Starts the AetherLink development relay. By default it requires route allocation,
 which is the path used by QR pairing across different networks.
@@ -102,6 +103,14 @@ while [[ $# -gt 0 ]]; do
       DRY_RUN=1
       shift
       ;;
+    --summary-json)
+      if [[ $# -lt 2 ]]; then
+        echo "--summary-json requires a value." >&2
+        exit 2
+      fi
+      SUMMARY_JSON="$2"
+      shift 2
+      ;;
     -h|--help)
       usage
       exit 0
@@ -155,7 +164,77 @@ fi
 
 cd "$ROOT_DIR"
 
+if [[ -n "$SUMMARY_JSON" && "$SUMMARY_JSON" != /* ]]; then
+  SUMMARY_JSON="$ROOT_DIR/$SUMMARY_JSON"
+fi
+
+write_dry_run_summary() {
+  local exit_status="$1"
+  if [[ -z "$SUMMARY_JSON" ]]; then
+    return 0
+  fi
+  mkdir -p "$(dirname "$SUMMARY_JSON")"
+  python3 - "$SUMMARY_JSON" "$exit_status" "$HOST" "$PORT" "$REQUIRE_ALLOCATION" "$EPHEMERAL_ALLOCATIONS" "$ALLOCATION_STORE" "$ALLOCATION_TOKEN" "$ALLOCATION_TTL_SECONDS" <<'PY'
+import json
+import sys
+
+(
+    summary_path,
+    exit_status,
+    host,
+    port,
+    require_allocation,
+    ephemeral_allocations,
+    allocation_store,
+    allocation_token,
+    allocation_ttl_seconds,
+) = sys.argv[1:10]
+
+allocation_required = require_allocation == "1"
+summary = {
+    "exit_status": int(exit_status),
+    "mode": {
+        "dry_run": True,
+        "allow_legacy": not allocation_required,
+    },
+    "relay": {
+        "bind_host": host,
+        "bind_port": int(port),
+        "development_relay_started": False,
+    },
+    "allocation": {
+        "required": allocation_required,
+        "token_present": bool(allocation_token),
+        "token_redacted": bool(allocation_token),
+        "store_mode": (
+            "ephemeral"
+            if ephemeral_allocations == "1"
+            else ("custom" if allocation_store else "default")
+        ),
+        "ttl_seconds_present": bool(allocation_ttl_seconds),
+    },
+    "coverage": {
+        "relay_wrapper_dry_run_summary": True,
+        "development_relay_started": False,
+        "production_relay": False,
+        "trusted_device_relay_reachability": False,
+        "trusted_device_pairing": False,
+        "optical_qr_scan": False,
+    },
+    "caveats": [
+        "dry_run_not_relay_process_proof",
+        "not_production_relay_proof",
+        "not_trusted_device_reachability_proof",
+    ],
+}
+with open(summary_path, "w", encoding="utf-8") as handle:
+    json.dump(summary, handle, indent=2, sort_keys=True)
+    handle.write("\n")
+PY
+}
+
 if [[ "$DRY_RUN" == "1" ]]; then
+  write_dry_run_summary 0
   echo "AetherLink relay dry run"
   echo "Bind address: $HOST:$PORT"
   if [[ "$REQUIRE_ALLOCATION" == "1" ]]; then
@@ -200,9 +279,6 @@ if [[ "$EPHEMERAL_ALLOCATIONS" == "1" ]]; then
 elif [[ -n "$ALLOCATION_STORE" ]]; then
   ARGS+=(--allocation-store "$ALLOCATION_STORE")
 fi
-if [[ -n "$ALLOCATION_TOKEN" ]]; then
-  ARGS+=(--allocation-token "$ALLOCATION_TOKEN")
-fi
 if [[ -n "$ALLOCATION_TTL_SECONDS" ]]; then
   ARGS+=(--allocation-ttl-seconds "$ALLOCATION_TTL_SECONDS")
 fi
@@ -233,4 +309,7 @@ fi
 echo "Use a public, VPN, tunnel, or overlay address that both paired devices can reach."
 echo "Preflight that advertised address with: script/run_different_network_dev_runtime.sh --relay-host <public-or-vpn-host> --relay-port $PORT --preflight-only"
 
+if [[ -n "$ALLOCATION_TOKEN" ]]; then
+  export AETHERLINK_RELAY_ALLOCATION_TOKEN="$ALLOCATION_TOKEN"
+fi
 exec "${ARGS[@]}"

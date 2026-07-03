@@ -1,5 +1,16 @@
 import Foundation
 
+let relayControlLineRelayIDMaxCharacters = 512
+
+private let relayControlLineRelayIDForbiddenCharacters = CharacterSet(charactersIn: "/\\?#@:")
+
+func isCanonicalRelayControlLineID(_ relayID: String) -> Bool {
+    !relayID.isEmpty &&
+        relayID.count <= relayControlLineRelayIDMaxCharacters &&
+        relayID.rangeOfCharacter(from: .whitespacesAndNewlines) == nil &&
+        relayID.rangeOfCharacter(from: relayControlLineRelayIDForbiddenCharacters) == nil
+}
+
 public enum RelayRole: String, Sendable {
     case runtime
     case client
@@ -14,7 +25,7 @@ public struct RelayHandshake: Equatable, Sendable {
     public let relayID: String
 
     public init(role: RelayRole, relayID: String) throws {
-        guard !relayID.isEmpty, relayID.rangeOfCharacter(from: .whitespacesAndNewlines) == nil else {
+        guard isCanonicalRelayControlLineID(relayID) else {
             throw RelayHandshakeError.invalidRelayID
         }
         self.role = role

@@ -45,6 +45,7 @@ import java.io.InputStream
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
+import java.net.SocketTimeoutException
 import java.nio.ByteBuffer
 import java.security.KeyPairGenerator
 import java.security.MessageDigest
@@ -267,6 +268,8 @@ class RuntimeClientViewModelRelayIntegrationTest {
         Dispatchers.setMain(mainDispatcher)
         val relaySecret = "trusted-overlay-relay-secret"
         val relayNonce = "trusted-overlay-relay-nonce"
+        val refreshedRelayNonce = "trusted-overlay-relay-nonce-refreshed"
+        val refreshedRelayExpiresAt = 4102448400000L
         val relayId = "trusted-overlay-relay-id"
         val runtimeIdentity = testRuntimeIdentityMaterial()
         FakeAuthenticatedRelayRuntimeServer(
@@ -274,6 +277,8 @@ class RuntimeClientViewModelRelayIntegrationTest {
             relayId = relayId,
             relaySecret = relaySecret,
             relayNonce = relayNonce,
+            refreshedRelayNonce = refreshedRelayNonce,
+            refreshedRelayExpiresAtEpochMillis = refreshedRelayExpiresAt,
             runtimeIdentity = runtimeIdentity,
         ).use { relay ->
             var viewModel: RuntimeClientViewModel? = null
@@ -344,6 +349,7 @@ class RuntimeClientViewModelRelayIntegrationTest {
                 )
                 val routeRefreshEnvelope = awaitFuture(relay.routeRefreshRequest)
                 val healthEnvelope = awaitFuture(relay.healthRequest)
+                val refreshedTrusted = awaitFuture(trustedRuntimeStore.trustedRuntimeWritten)
                 val connectedState = awaitActiveRouteKind(viewModel, RuntimeActiveRouteKind.Relay)
                 val healthyState = awaitRuntimeStatus(viewModel, "ok")
 
@@ -362,8 +368,209 @@ class RuntimeClientViewModelRelayIntegrationTest {
                 assertEquals("100.64.2.20", connectedState.trustedRuntime?.relayHost)
                 assertEquals("private_overlay", connectedState.trustedRuntime?.relayScope)
                 assertEquals(RuntimeActiveRouteKind.Relay, connectedState.activeRouteKind)
+                assertEquals("100.64.2.20", refreshedTrusted.relayHost)
+                assertEquals(443, refreshedTrusted.relayPort)
+                assertEquals(relayId, refreshedTrusted.relayId)
+                assertEquals(relaySecret, refreshedTrusted.relaySecret)
+                assertEquals(refreshedRelayExpiresAt, refreshedTrusted.relayExpiresAtEpochMillis)
+                assertEquals(refreshedRelayNonce, refreshedTrusted.relayNonce)
+                assertEquals("private_overlay", refreshedTrusted.relayScope)
                 assertEquals("100.64.2.20", trustedRuntimeStore.trusted?.relayHost)
+                assertEquals(refreshedRelayExpiresAt, trustedRuntimeStore.trusted?.relayExpiresAtEpochMillis)
+                assertEquals(refreshedRelayNonce, trustedRuntimeStore.trusted?.relayNonce)
                 assertEquals("private_overlay", trustedRuntimeStore.trusted?.relayScope)
+                assertEquals(refreshedRelayExpiresAt, viewModel.state.value.trustedRuntime?.relayExpiresAtEpochMillis)
+                assertEquals(refreshedRelayNonce, viewModel.state.value.trustedRuntime?.relayNonce)
+                assertNull(relay.closedWithoutServerError())
+            } finally {
+                viewModel?.stopForTest()
+                Thread.sleep(100)
+                advanceUntilIdle()
+                Dispatchers.resetMain()
+            }
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun trustedRelayReconnectRejectsInvalidRuntimeProofBeforeAuthResponse() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        val relaySecret = "trusted-invalid-proof-relay-secret"
+        val relayNonce = "trusted-invalid-proof-relay-nonce"
+        val relayId = "trusted-invalid-proof-relay-id"
+        val runtimeIdentity = testRuntimeIdentityMaterial()
+        FakeInvalidRuntimeProofRelayServer(
+            json = json,
+            relayId = relayId,
+            relaySecret = relaySecret,
+            relayNonce = relayNonce,
+            runtimeIdentity = runtimeIdentity,
+        ).use { relay ->
+            var viewModel: RuntimeClientViewModel? = null
+            try {
+                val trustedRuntimeStore = FakeTrustedRuntimeStore(
+                    initialRuntime = TrustedRuntime(
+                        deviceId = "runtime-invalid-proof",
+                        name = "AetherLink Runtime",
+                        fingerprint = runtimeIdentity.fingerprint,
+                        publicKeyBase64 = runtimeIdentity.publicKeyBase64,
+                        routeToken = "route-invalid-proof",
+                        host = null,
+                        port = null,
+                        relayHost = "100.64.2.21",
+                        relayPort = 443,
+                        relayId = relayId,
+                        relaySecret = relaySecret,
+                        relayExpiresAtEpochMillis = 4102444800000L,
+                        relayNonce = relayNonce,
+                        relayScope = "private_overlay",
+                    ),
+                )
+                val localStore = FakeRuntimeLocalDataStore(
+                    initialData = PersistedRuntimeData(trustedRuntimeAutoReconnectEnabled = true),
+                )
+                var directConnectionAttempts = 0
+                val socketFactory = RuntimeRelaySocketFactory { route, timeoutMillis ->
+                    assertEquals("100.64.2.21", route.host)
+                    assertEquals(443, route.port)
+                    assertEquals(relayId, route.relayId)
+                    assertEquals(relaySecret, route.relayFrameSecret)
+                    assertEquals(relayNonce, route.security.antiReplayNonce)
+                    Socket().apply {
+                        tcpNoDelay = true
+                        soTimeout = timeoutMillis
+                        connect(InetSocketAddress("127.0.0.1", relay.port), timeoutMillis)
+                    }
+                }
+                viewModel = RuntimeClientViewModel(
+                    application = Application(),
+                    dependencies = RuntimeClientViewModelDependencies(
+                        json = json,
+                        transportClient = RuntimeTransportClient(),
+                        transportConnector = RuntimeTransportConnector { _, _, _ ->
+                            directConnectionAttempts += 1
+                            error("Direct TCP must not be used for invalid runtime proof relay reconnect")
+                        },
+                        relayConnector = RuntimeRelayTcpClient(socketFactory = socketFactory),
+                        discovery = EmptyRuntimeDiscoverySource,
+                        trustedRuntimeStore = trustedRuntimeStore,
+                        deviceIdentityProvider = FakeDeviceIdentityProvider(testDeviceIdentity()),
+                        localDataStore = localStore,
+                        lifecycleCallbacksRegistrar = NoopRuntimeLifecycleCallbacksRegistrar,
+                        authenticatedRouteRefreshEnabled = true,
+                        currentTimeMillis = { 1_000L },
+                    ),
+                )
+
+                val helloEnvelope = awaitFuture(relay.helloRequest)
+                val postChallengeEnvelope = awaitFuture(relay.postChallengeRequest)
+                val errorState = awaitRuntimeError(viewModel, "runtime_authentication_failed")
+
+                assertEquals(0, directConnectionAttempts)
+                assertTrue(relay.handshakeLine.get(1, TimeUnit.SECONDS).endsWith(" $relayId"))
+                assertEquals(MessageType.Hello, helloEnvelope.type)
+                assertNull(
+                    "Android must not send auth.response or runtime.health after invalid runtime proof",
+                    postChallengeEnvelope,
+                )
+                assertEquals("runtime_authentication_failed", errorState.error?.code)
+                assertNull(relay.closedWithoutServerError())
+            } finally {
+                viewModel?.stopForTest()
+                Thread.sleep(100)
+                advanceUntilIdle()
+                Dispatchers.resetMain()
+            }
+        }
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun trustedRelayReconnectRejectsRuntimeFingerprintMismatchBeforeAuthResponse() = runTest {
+        val mainDispatcher = StandardTestDispatcher(testScheduler)
+        Dispatchers.setMain(mainDispatcher)
+        val relaySecret = "trusted-fingerprint-mismatch-relay-secret"
+        val relayNonce = "trusted-fingerprint-mismatch-relay-nonce"
+        val relayId = "trusted-fingerprint-mismatch-relay-id"
+        val runtimeIdentity = testRuntimeIdentityMaterial()
+        FakeInvalidRuntimeProofRelayServer(
+            json = json,
+            relayId = relayId,
+            relaySecret = relaySecret,
+            relayNonce = relayNonce,
+            runtimeIdentity = runtimeIdentity,
+            challengeFingerprint = "wrong-runtime-fingerprint",
+            signatureNonce = "trusted-auth-nonce",
+        ).use { relay ->
+            var viewModel: RuntimeClientViewModel? = null
+            try {
+                val trustedRuntimeStore = FakeTrustedRuntimeStore(
+                    initialRuntime = TrustedRuntime(
+                        deviceId = "runtime-fingerprint-mismatch",
+                        name = "AetherLink Runtime",
+                        fingerprint = runtimeIdentity.fingerprint,
+                        publicKeyBase64 = runtimeIdentity.publicKeyBase64,
+                        routeToken = "route-fingerprint-mismatch",
+                        host = null,
+                        port = null,
+                        relayHost = "100.64.2.22",
+                        relayPort = 443,
+                        relayId = relayId,
+                        relaySecret = relaySecret,
+                        relayExpiresAtEpochMillis = 4102444800000L,
+                        relayNonce = relayNonce,
+                        relayScope = "private_overlay",
+                    ),
+                )
+                val localStore = FakeRuntimeLocalDataStore(
+                    initialData = PersistedRuntimeData(trustedRuntimeAutoReconnectEnabled = true),
+                )
+                var directConnectionAttempts = 0
+                val socketFactory = RuntimeRelaySocketFactory { route, timeoutMillis ->
+                    assertEquals("100.64.2.22", route.host)
+                    assertEquals(443, route.port)
+                    assertEquals(relayId, route.relayId)
+                    assertEquals(relaySecret, route.relayFrameSecret)
+                    assertEquals(relayNonce, route.security.antiReplayNonce)
+                    Socket().apply {
+                        tcpNoDelay = true
+                        soTimeout = timeoutMillis
+                        connect(InetSocketAddress("127.0.0.1", relay.port), timeoutMillis)
+                    }
+                }
+                viewModel = RuntimeClientViewModel(
+                    application = Application(),
+                    dependencies = RuntimeClientViewModelDependencies(
+                        json = json,
+                        transportClient = RuntimeTransportClient(),
+                        transportConnector = RuntimeTransportConnector { _, _, _ ->
+                            directConnectionAttempts += 1
+                            error("Direct TCP must not be used for runtime fingerprint mismatch relay reconnect")
+                        },
+                        relayConnector = RuntimeRelayTcpClient(socketFactory = socketFactory),
+                        discovery = EmptyRuntimeDiscoverySource,
+                        trustedRuntimeStore = trustedRuntimeStore,
+                        deviceIdentityProvider = FakeDeviceIdentityProvider(testDeviceIdentity()),
+                        localDataStore = localStore,
+                        lifecycleCallbacksRegistrar = NoopRuntimeLifecycleCallbacksRegistrar,
+                        authenticatedRouteRefreshEnabled = true,
+                        currentTimeMillis = { 1_000L },
+                    ),
+                )
+
+                val helloEnvelope = awaitFuture(relay.helloRequest)
+                val postChallengeEnvelope = awaitFuture(relay.postChallengeRequest)
+                val errorState = awaitRuntimeError(viewModel, "runtime_authentication_failed")
+
+                assertEquals(0, directConnectionAttempts)
+                assertTrue(relay.handshakeLine.get(1, TimeUnit.SECONDS).endsWith(" $relayId"))
+                assertEquals(MessageType.Hello, helloEnvelope.type)
+                assertNull(
+                    "Android must not send auth.response or runtime.health after runtime fingerprint mismatch",
+                    postChallengeEnvelope,
+                )
+                assertEquals("runtime_authentication_failed", errorState.error?.code)
                 assertNull(relay.closedWithoutServerError())
             } finally {
                 viewModel?.stopForTest()
@@ -411,6 +618,22 @@ class RuntimeClientViewModelRelayIntegrationTest {
             advanceUntilIdle()
             val state = viewModel.state.value
             if (state.runtimeStatus == expected) return state
+            Thread.sleep(10)
+        }
+        advanceUntilIdle()
+        return viewModel.state.value
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    private fun TestScope.awaitRuntimeError(
+        viewModel: RuntimeClientViewModel,
+        expected: String,
+    ): RuntimeUiState {
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(4)
+        while (System.nanoTime() < deadline) {
+            advanceUntilIdle()
+            val state = viewModel.state.value
+            if (state.error?.code == expected) return state
             Thread.sleep(10)
         }
         advanceUntilIdle()
@@ -492,11 +715,121 @@ class RuntimeClientViewModelRelayIntegrationTest {
         }
     }
 
+    private class FakeInvalidRuntimeProofRelayServer(
+        private val json: Json,
+        private val relayId: String,
+        private val relaySecret: String,
+        private val relayNonce: String,
+        private val runtimeIdentity: RuntimeIdentityMaterial,
+        private val challengeFingerprint: String = runtimeIdentity.fingerprint,
+        private val signatureNonce: String = "replayed-auth-nonce",
+    ) : Closeable {
+        private val codec = ProtocolCodec(json)
+        private val server = ServerSocket(0)
+        private val serverError = CompletableFuture<Throwable?>()
+        val port: Int = server.localPort
+        val handshakeLine: CompletableFuture<String> = CompletableFuture()
+        val helloRequest: CompletableFuture<ProtocolEnvelope> = CompletableFuture()
+        val postChallengeRequest: CompletableFuture<ProtocolEnvelope?> = CompletableFuture()
+        private val releaseConnection: CompletableFuture<Unit> = CompletableFuture()
+        private val worker = thread(start = true, isDaemon = true) {
+            runCatching {
+                server.accept().use { socket ->
+                    socket.soTimeout = 750
+                    val input = socket.getInputStream()
+                    val output = socket.getOutputStream()
+                    val handshake = input.readAsciiLine()
+                    handshakeLine.complete(handshake)
+                    require(handshake == "AETHERLINK_RELAY client $relayId") {
+                        "Unexpected relay handshake: $handshake"
+                    }
+                    output.write("AETHERLINK_RELAY ready\n".toByteArray(Charsets.UTF_8))
+                    output.flush()
+
+                    val cryptor = TestRelayFrameBodyCryptor(relaySecret, relayNonce)
+                    val hello = readEncryptedEnvelope(input, cryptor)
+                    helloRequest.complete(hello)
+                    val helloPayload = json.decodeFromJsonElement(
+                        HelloPayload.serializer(),
+                        hello.payload,
+                    )
+                    val challengeNonce = "trusted-auth-nonce"
+                    writeEncryptedEnvelope(
+                        output = output,
+                        cryptor = cryptor,
+                        envelope = ProtocolEnvelope(
+                            type = MessageType.AuthChallenge,
+                            requestId = hello.requestId,
+                            payload = json.encodeToJsonElement(
+                                AuthChallengePayload.serializer(),
+                                AuthChallengePayload(
+                                    deviceId = helloPayload.deviceId,
+                                    nonce = challengeNonce,
+                                    runtimeKeyFingerprint = challengeFingerprint,
+                                    runtimeSignature = runtimeIdentity.signChallenge(
+                                        deviceId = helloPayload.deviceId,
+                                        nonce = signatureNonce,
+                                    ),
+                                ),
+                            ).jsonObject,
+                        ),
+                    )
+
+                    val nextRequest = try {
+                        readEncryptedEnvelope(input, cryptor)
+                    } catch (_: SocketTimeoutException) {
+                        null
+                    }
+                    postChallengeRequest.complete(nextRequest)
+                    releaseConnection.get(4, TimeUnit.SECONDS)
+                }
+                serverError.complete(null)
+            }.onFailure { error ->
+                handshakeLine.completeExceptionally(error)
+                helloRequest.completeExceptionally(error)
+                postChallengeRequest.completeExceptionally(error)
+                serverError.complete(error)
+            }
+        }
+
+        private fun readEncryptedEnvelope(
+            input: InputStream,
+            cryptor: TestRelayFrameBodyCryptor,
+        ): ProtocolEnvelope {
+            val encryptedBody = codec.readFrameBody(input)
+            return codec.decode(cryptor.decryptClientFrameBody(encryptedBody))
+        }
+
+        private fun writeEncryptedEnvelope(
+            output: java.io.OutputStream,
+            cryptor: TestRelayFrameBodyCryptor,
+            envelope: ProtocolEnvelope,
+        ) {
+            output.write(codec.encodeFrameBody(cryptor.encryptRuntimeFrameBody(codec.encodeBody(envelope))))
+            output.flush()
+        }
+
+        fun closedWithoutServerError(): Throwable? {
+            releaseConnection.complete(Unit)
+            val error = serverError.get(2, TimeUnit.SECONDS)
+            worker.join(1_000)
+            return error
+        }
+
+        override fun close() {
+            releaseConnection.complete(Unit)
+            runCatching { server.close() }
+            worker.join(1_000)
+        }
+    }
+
     private class FakeAuthenticatedRelayRuntimeServer(
         private val json: Json,
         private val relayId: String,
         private val relaySecret: String,
         private val relayNonce: String,
+        private val refreshedRelayNonce: String,
+        private val refreshedRelayExpiresAtEpochMillis: Long,
         private val runtimeIdentity: RuntimeIdentityMaterial,
     ) : Closeable {
         private val codec = ProtocolCodec(json)
@@ -586,8 +919,8 @@ class RuntimeClientViewModelRelayIntegrationTest {
                                                 relayPort = 443,
                                                 relayId = relayId,
                                                 relaySecret = relaySecret,
-                                                relayExpiresAtEpochMillis = 4102444800000L,
-                                                relayNonce = relayNonce,
+                                                relayExpiresAtEpochMillis = refreshedRelayExpiresAtEpochMillis,
+                                                relayNonce = refreshedRelayNonce,
                                                 relayScope = "private_overlay",
                                             ),
                                         ).jsonObject,

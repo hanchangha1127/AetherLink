@@ -245,6 +245,9 @@ data class RuntimeMemoryEntry(
     val createdAtMillis: Long,
     val updatedAtMillis: Long,
     val source: RuntimeMemoryEntrySource? = null,
+    val searchRank: Int? = null,
+    val searchSnippet: String? = null,
+    val searchMatchedFields: List<String> = emptyList(),
 )
 
 data class RuntimeMemoryEntrySource(

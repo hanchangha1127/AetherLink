@@ -11,6 +11,7 @@ SERIAL=""
 TIMEOUT_SECONDS=5
 JSON_PATH=""
 INCLUDE_NETWORK_SUMMARY=0
+RELAY_PROBE_SELF_TEST="${AETHERLINK_RELAY_PROBE_SELF_TEST:-0}"
 
 usage() {
   cat <<'USAGE'
@@ -242,6 +243,7 @@ PY
 PROBE_MODE="tcp_connect"
 RAW_PROBE_STATUS=0
 PROBE_READY=0
+PROBE_OUTPUT=""
 
 set +e
 if [[ -n "$RELAY_ID" ]]; then
@@ -262,6 +264,20 @@ else
   PROBE_STATUS=$RAW_PROBE_STATUS
 fi
 set -e
+
+sanitize_probe_output() {
+  python3 - "$RELAY_ID" "$PROBE_OUTPUT" <<'PY'
+import sys
+
+relay_id = sys.argv[1]
+output = sys.argv[2]
+if relay_id:
+    output = output.replace(relay_id, "<relay-id>")
+print(output, end="")
+PY
+}
+
+SAFE_PROBE_OUTPUT="$(sanitize_probe_output)"
 
 END_NS="$(python3 - <<'PY'
 import time
@@ -292,9 +308,10 @@ write_json() {
     "$PROBE_MODE" \
     "$RELAY_ID" \
     "$PROBE_READY" \
-    "$DURATION_MS" \
-    "$PROBE_OUTPUT" \
-    "$NETWORK_SUMMARY" <<'PY'
+	    "$DURATION_MS" \
+	    "$SAFE_PROBE_OUTPUT" \
+	    "$NETWORK_SUMMARY" \
+	    "$RELAY_PROBE_SELF_TEST" <<'PY'
 import json
 import os
 import sys
@@ -315,12 +332,18 @@ import sys
     duration_ms,
     probe_output,
     network_summary,
+    relay_probe_self_test,
 ) = sys.argv[1:]
+redaction_self_test = relay_probe_self_test == "1"
 
 caveats = [
     "route_probe_not_pairing_or_authentication",
     "adb_probe_not_optical_qr_scan",
+    "not_production_session_key_exchange_proof",
+    "not_production_end_to_end_transport_encryption_proof",
 ]
+if redaction_self_test:
+    caveats.append("android_relay_probe_redaction_self_test_not_phone_reachability_proof")
 if not relay_id:
     caveats.append("tcp_connect_only_not_relay_room_readiness")
 if host_class in {"local", "link_local", "private_or_cgnat"}:
@@ -330,14 +353,18 @@ if int(probe_status) != 0:
 
 summary = {
     "generated_at": started_at,
+    "evidence": {
+        "source": "fake_adb_redaction_self_test" if redaction_self_test else "android_device_network_probe",
+        "self_test": redaction_self_test,
+    },
     "device": {
-        "adb_serial": serial,
+        "adb_serial": None if redaction_self_test else serial,
     },
     "relay": {
         "host": host,
         "port": int(port),
         "host_class": host_class,
-        "relay_id": relay_id or None,
+        "relay_id_present": bool(relay_id),
     },
     "probe": {
         "transport": probe_mode,
@@ -351,6 +378,14 @@ summary = {
         "output": probe_output.strip() or None,
     },
     "network_summary": network_summary.strip() or None,
+    "coverage": {
+        "android_relay_probe_redaction_self_test": redaction_self_test,
+        "live_android_relay_probe_verified": (not redaction_self_test) and int(probe_status) == 0,
+        "live_android_route_probe_verified": (not redaction_self_test) and bool(relay_id) and probe_ready == "1",
+        "production_relay": False,
+        "production_session_key_exchange": False,
+        "production_end_to_end_transport_encryption": False,
+    },
     "caveats": caveats,
 }
 
@@ -366,8 +401,10 @@ PY
 write_json
 
 if [[ "$PROBE_STATUS" -eq 0 ]]; then
-  if [[ -n "$RELAY_ID" ]]; then
-    echo "OK: Android device $SERIAL sees relay route $RELAY_ID ready at $HOST:$PORT."
+  if [[ "$RELAY_PROBE_SELF_TEST" == "1" ]]; then
+    echo "OK: Android relay reachability probe redaction self-test generated seeded route-ready evidence; not phone reachability proof."
+  elif [[ -n "$RELAY_ID" ]]; then
+    echo "OK: Android device $SERIAL sees relay route ready at $HOST:$PORT."
   else
     echo "OK: Android device $SERIAL can open TCP to $HOST:$PORT."
   fi
@@ -378,12 +415,12 @@ if [[ "$PROBE_STATUS" -eq 0 ]]; then
 fi
 
 if [[ -n "$RELAY_ID" ]]; then
-  echo "Android device $SERIAL could not verify relay route $RELAY_ID at $HOST:$PORT within ${TIMEOUT_SECONDS}s." >&2
+  echo "Android device $SERIAL could not verify relay route at $HOST:$PORT within ${TIMEOUT_SECONDS}s." >&2
 else
   echo "Android device $SERIAL could not open TCP to $HOST:$PORT within ${TIMEOUT_SECONDS}s." >&2
 fi
-if [[ -n "$PROBE_OUTPUT" ]]; then
-  echo "$PROBE_OUTPUT" >&2
+if [[ -n "$SAFE_PROBE_OUTPUT" ]]; then
+  echo "$SAFE_PROBE_OUTPUT" >&2
 fi
 if [[ "$HOST_CLASS" == "private_or_cgnat" || "$HOST_CLASS" == "link_local" || "$HOST_CLASS" == "local" ]]; then
   echo "Endpoint class '$HOST_CLASS' is usually not reachable from an unrelated network unless a VPN, tunnel, or private overlay makes it reachable." >&2

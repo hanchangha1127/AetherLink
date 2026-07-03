@@ -214,6 +214,7 @@ data class ChatSessionsListRequestPayload(
     val limit: Int? = null,
     @SerialName("include_archived") val includeArchived: Boolean = false,
     val query: String? = null,
+    @SerialName("embedding_model_id") val embeddingModelId: String? = null,
 )
 
 @Serializable
@@ -294,6 +295,11 @@ data class ChatSessionLifecyclePayload(
 )
 
 @Serializable
+data class MemoryListRequestPayload(
+    val query: String? = null,
+)
+
+@Serializable
 data class MemoryListResultPayload(
     val entries: List<MemoryEntryPayload>,
 )
@@ -306,6 +312,7 @@ data class MemoryEntryPayload(
     @SerialName("created_at") val createdAt: String? = null,
     @SerialName("updated_at") val updatedAt: String? = null,
     val source: MemoryEntrySourcePayload? = null,
+    val search: ChatSessionSearchPayload? = null,
 )
 
 @Serializable

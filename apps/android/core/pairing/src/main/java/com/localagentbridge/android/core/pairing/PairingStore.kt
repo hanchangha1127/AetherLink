@@ -30,12 +30,16 @@ class PairingStore(
         context.localAgentBridgeDataStore.data.collect { prefs ->
             val loaded = loadTrustedRuntime(prefs)
             if (
+                loaded.shouldRemoveStoredRouteToken ||
                 loaded.shouldRemoveStoredRelayRoute ||
                 loaded.shouldRemoveStoredP2pRoute ||
                 loaded.shouldRemoveStoredDirectEndpoint ||
                 loaded.relaySecretRefToPersist != null
             ) {
                 context.localAgentBridgeDataStore.edit { editPrefs ->
+                    if (loaded.shouldRemoveStoredRouteToken) {
+                        editPrefs.removeRouteTokenKeys()
+                    }
                     if (loaded.shouldRemoveStoredRelayRoute) {
                         loaded.relaySecretRefsToRemove.forEach(relaySecretStore::removeSecret)
                         editPrefs.removeRelayRouteKeys()
@@ -76,7 +80,9 @@ class PairingStore(
                 shouldRemoveStoredDirectEndpoint = hasStoredDirectEndpoint,
             )
         val publicKeyBase64 = prefs[Keys.runtimePublicKey] ?: prefs[LegacyKeys.runtimePublicKey]
-        val routeToken = prefs[Keys.runtimeRouteToken] ?: prefs[LegacyKeys.runtimeRouteToken]
+        val rawRouteToken = prefs[Keys.runtimeRouteToken] ?: prefs[LegacyKeys.runtimeRouteToken]
+        val routeToken = rawRouteToken?.takeIf(::isCanonicalOpaqueRouteValue)
+        val shouldRemoveStoredRouteToken = rawRouteToken != null && routeToken == null
         val relayHost = prefs[Keys.runtimeRelayHost]
         val relayPort = prefs[Keys.runtimeRelayPort]
         val relayId = prefs[Keys.runtimeRelayId]
@@ -128,6 +134,7 @@ class PairingStore(
             }
             LoadedTrustedRuntime(
                 trustedWithoutInvalidP2p,
+                shouldRemoveStoredRouteToken = shouldRemoveStoredRouteToken,
                 shouldRemoveStoredRelayRoute = false,
                 shouldRemoveStoredP2pRoute = shouldRemoveStoredP2pRoute,
                 shouldRemoveStoredDirectEndpoint = hasStoredDirectEndpoint,
@@ -136,6 +143,7 @@ class PairingStore(
         } else {
             LoadedTrustedRuntime(
                 trustedWithoutInvalidP2p.withoutRelayRoute(),
+                shouldRemoveStoredRouteToken = shouldRemoveStoredRouteToken,
                 shouldRemoveStoredRelayRoute = hasStoredRelayRoute,
                 shouldRemoveStoredP2pRoute = shouldRemoveStoredP2pRoute,
                 shouldRemoveStoredDirectEndpoint = hasStoredDirectEndpoint,
@@ -155,11 +163,11 @@ class PairingStore(
             } else {
                 prefs.remove(Keys.runtimePublicKey)
             }
-            val routeToken = runtime.routeToken
-            if (!routeToken.isNullOrBlank()) {
+            val routeToken = runtime.routeToken?.takeIf(::isCanonicalOpaqueRouteValue)
+            if (routeToken != null) {
                 prefs[Keys.runtimeRouteToken] = routeToken
             } else {
-                prefs.remove(Keys.runtimeRouteToken)
+                prefs.removeRouteTokenKeys()
             }
             prefs.removeDirectEndpointKeys()
             val relayHost = runtime.relayHost
@@ -274,6 +282,11 @@ class PairingStore(
         remove(LegacyKeys.runtimePort)
     }
 
+    private fun MutablePreferences.removeRouteTokenKeys() {
+        remove(Keys.runtimeRouteToken)
+        remove(LegacyKeys.runtimeRouteToken)
+    }
+
     private fun MutablePreferences.removeRelayRouteKeys() {
         remove(Keys.runtimeRelayHost)
         remove(Keys.runtimeRelayPort)
@@ -333,6 +346,7 @@ class PairingStore(
 
     private data class LoadedTrustedRuntime(
         val trustedRuntime: TrustedRuntime?,
+        val shouldRemoveStoredRouteToken: Boolean = false,
         val shouldRemoveStoredRelayRoute: Boolean,
         val shouldRemoveStoredP2pRoute: Boolean = false,
         val shouldRemoveStoredDirectEndpoint: Boolean = false,
@@ -456,15 +470,16 @@ internal fun TrustedRuntime.hasExpiredP2pRoute(
 private fun TrustedRuntime.hasCompleteRelayRoute(): Boolean {
     val expiresAt = relayExpiresAtEpochMillis
     return !relayHost.isNullOrBlank() &&
+        isCanonicalRelayHostValue(relayHost) &&
         isAllowedRemoteRelayScope(relayScope) &&
         (isEligibleRemoteRelayHost(relayHost, relayScope) || relayHost.isDebugUsbReverseRelayRoute(relayScope)) &&
         relayPort != null &&
         relayPort in 1..65535 &&
-        !relayId.isNullOrBlank() &&
-        !relaySecret.isNullOrBlank() &&
+        isCanonicalOpaqueRouteValue(relayId) &&
+        isCanonicalOpaqueRouteValue(relaySecret) &&
         expiresAt != null &&
         expiresAt > 0L &&
-        !relayNonce.isNullOrBlank()
+        isCanonicalOpaqueRouteValue(relayNonce)
 }
 
 private fun TrustedRuntime.hasCompleteP2pRoute(): Boolean {
@@ -503,6 +518,7 @@ private fun TrustedRuntime.withoutP2pRoute(): TrustedRuntime {
 
 private fun String.isDebugUsbReverseRelayRoute(relayScope: String?): Boolean {
     if (relayScope != DEBUG_USB_REVERSE_RELAY_SCOPE) return false
+    if (!isCanonicalRelayHostValue(this)) return false
     val normalized = trim()
         .removePrefix("[")
         .removeSuffix("]")

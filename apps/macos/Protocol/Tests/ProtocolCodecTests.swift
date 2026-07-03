@@ -12,6 +12,62 @@ final class ProtocolCodecTests: XCTestCase {
         XCTAssertEqual(decoded.requestID, envelope.requestID)
     }
 
+    func testModelInfoCodablePreservesProviderAndEmbeddingMetadata() throws {
+        let modifiedAt = Date(timeIntervalSince1970: 1_720_000_000)
+        let model = ModelInfo(
+            id: "ollama:nomic-embed-text",
+            name: "Nomic Embed Text",
+            backend: "ollama",
+            provider: "ollama",
+            modelKind: "embedding",
+            capabilities: ["embedding", "retrieval"],
+            providerModelID: "nomic-embed-text",
+            qualifiedID: "ollama:nomic-embed-text",
+            sizeBytes: 274_000_000,
+            modifiedAt: modifiedAt,
+            installed: true,
+            running: false,
+            source: "local",
+            remoteModel: "nomic-embed-text",
+            contextWindowTokens: 8_192
+        )
+
+        let encoded = try JSONEncoder().encode(model)
+        let decodedObject = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+
+        XCTAssertEqual(decodedObject["backend"] as? String, "ollama")
+        XCTAssertEqual(decodedObject["provider"] as? String, "ollama")
+        XCTAssertEqual(decodedObject["model_kind"] as? String, "embedding")
+        XCTAssertEqual(decodedObject["capabilities"] as? [String], ["embedding", "retrieval"])
+        XCTAssertEqual(decodedObject["provider_model_id"] as? String, "nomic-embed-text")
+        XCTAssertEqual(decodedObject["qualified_id"] as? String, "ollama:nomic-embed-text")
+        XCTAssertEqual(decodedObject["context_window_tokens"] as? Int, 8_192)
+
+        let decoded = try JSONDecoder().decode(ModelInfo.self, from: encoded)
+
+        XCTAssertEqual(decoded, model)
+    }
+
+    func testModelInfoCodableDefaultsMissingCapabilitiesToEmptyList() throws {
+        let legacyPayload = Data("""
+        {
+          "id": "legacy-chat",
+          "name": "Legacy Chat",
+          "installed": true,
+          "running": false,
+          "source": "local"
+        }
+        """.utf8)
+
+        let decoded = try JSONDecoder().decode(ModelInfo.self, from: legacyPayload)
+
+        XCTAssertEqual(decoded.id, "legacy-chat")
+        XCTAssertEqual(decoded.capabilities, [])
+        XCTAssertNil(decoded.modelKind)
+        XCTAssertNil(decoded.providerModelID)
+        XCTAssertNil(decoded.qualifiedID)
+    }
+
     func testRelayFrameCipherRoundTripUsesCiphertextBody() throws {
         let codec = ProtocolCodec()
         let envelope = ProtocolEnvelope(

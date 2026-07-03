@@ -48,6 +48,8 @@ object RuntimePairingPayloadParser {
         }
 
         val query = parseQuery(uri.rawQuery)
+        query.requireSingleRelayAliasFamily()
+        query.requireSingleP2pAliasFamily()
         val version = query["version"] ?: query["v"]
         val pairingNonce = (query["pairing_nonce"] ?: query["nonce"] ?: query["n"])
             .requiredOpaqueQrValue("Missing pairing nonce", "Invalid pairing nonce")
@@ -95,7 +97,7 @@ object RuntimePairingPayloadParser {
                 ?: query["route_secret"]
                 ?: query["rendezvous_secret"]
                 ?: query["rs"]
-            ).optionalBoundedQrValue("Invalid relay secret")
+            ).optionalOpaqueQrValue("Invalid relay secret")
         val rawRelayExpiresAt = query["relay_expires_at"]
             ?: query["remote_expires_at"]
             ?: query["route_expires_at"]
@@ -171,8 +173,12 @@ object RuntimePairingPayloadParser {
         if (hasDirectEndpointField && !hasExplicitRemoteRouteField && !keepDiagnosticDirectEndpoint) {
             throw IllegalArgumentException("Local direct endpoint QR routes are diagnostic-only")
         }
+        if (relayScope != null && !hasExplicitRelayField && !keepDiagnosticDirectEndpoint) {
+            throw IllegalArgumentException("Relay scope requires relay route material")
+        }
         if (hasExplicitRelayField) {
             require(relayHost != null) { "Missing relay host" }
+            require(isCanonicalRelayHostValue(relayHost)) { "Invalid relay host" }
             require(isAllowedRemoteRelayScope(relayScope)) { "Invalid relay scope" }
             if (relayHost.requiresPrivateOverlayRelayScope() && !relayScope.isPrivateOverlayScope()) {
                 throw IllegalArgumentException(PRIVATE_OVERLAY_RELAY_SCOPE_REQUIRED_QR_ERROR)
@@ -246,6 +252,20 @@ object RuntimePairingPayloadParser {
             .toMap()
     }
 
+    private fun Map<String, String>.requireSingleRelayAliasFamily() {
+        val activeFamilies = RELAY_ROUTE_ALIAS_FAMILIES.filter { (_, fields) ->
+            fields.any(::containsKey)
+        }
+        require(activeFamilies.size <= 1) { "Mixed relay alias families" }
+    }
+
+    private fun Map<String, String>.requireSingleP2pAliasFamily() {
+        val activeFamilies = P2P_ROUTE_ALIAS_FAMILIES.filter { (_, fields) ->
+            fields.any(::containsKey)
+        }
+        require(activeFamilies.size <= 1) { "Mixed P2P alias families" }
+    }
+
     private fun String.uriQueryDecode(): String =
         URLDecoder.decode(replace("+", "%2B"), StandardCharsets.UTF_8.name())
 
@@ -270,15 +290,6 @@ object RuntimePairingPayloadParser {
         return value
     }
 
-    private fun String?.optionalBoundedQrValue(
-        invalidMessage: String,
-        maxChars: Int = OPAQUE_ROUTE_VALUE_MAX_CHARS,
-    ): String? {
-        val value = this?.takeIf { it.isNotBlank() } ?: return null
-        require(value.length <= maxChars) { invalidMessage }
-        return value
-    }
-
     private fun String?.normalizedRuntimeName(): String =
         this
             ?.decodeLegacyNamePlus()
@@ -295,6 +306,69 @@ object RuntimePairingPayloadParser {
     private const val RUNTIME_NAME_MAX_CHARS = 80
     private const val MILLIS_PER_SECOND = 1_000L
     private const val MIN_REASONABLE_EPOCH_MILLIS = 100_000_000_000L
+
+    private val RELAY_ROUTE_ALIAS_FAMILIES = mapOf(
+        "canonical" to setOf(
+            "relay_host",
+            "relay_port",
+            "relay_id",
+            "network_id",
+            "relay_secret",
+            "relay_expires_at",
+            "relay_nonce",
+        ),
+        "remote" to setOf(
+            "remote_host",
+            "remote_port",
+            "remote_id",
+            "remote_secret",
+            "remote_expires_at",
+            "remote_nonce",
+        ),
+        "route" to setOf(
+            "route_host",
+            "route_port",
+            "route_id",
+            "route_secret",
+            "route_expires_at",
+            "route_nonce",
+        ),
+        "rendezvous" to setOf(
+            "rendezvous_host",
+            "rendezvous_port",
+            "rendezvous_id",
+            "rendezvous_secret",
+            "rendezvous_expires_at",
+            "rendezvous_nonce",
+        ),
+        "compact" to setOf(
+            "rh",
+            "rp",
+            "ri",
+            "rs",
+            "rx",
+            "rrn",
+        ),
+    )
+
+    private val P2P_ROUTE_ALIAS_FAMILIES = mapOf(
+        "canonical" to setOf(
+            "p2p_class",
+            "p2p_record_id",
+            "p2p_encrypted_body",
+            "p2p_expires_at",
+            "p2p_anti_replay_nonce",
+            "p2p_protocol_version",
+        ),
+        "compact" to setOf(
+            "pc",
+            "prid",
+            "peb",
+            "px",
+            "pn",
+            "pv",
+        ),
+    )
 }
 
 const val OPAQUE_ROUTE_VALUE_MAX_CHARS = 512
@@ -310,7 +384,17 @@ fun isCanonicalOpaqueRouteValue(
         value.none(Char::isWhitespace)
 }
 
+fun isCanonicalRelayHostValue(host: String?): Boolean {
+    val value = host ?: return false
+    return value.isNotBlank() &&
+        value == value.trim() &&
+        value.none(Char::isWhitespace) &&
+        !value.contains("://") &&
+        value.none { char -> char == '/' || char == '?' || char == '#' || char == '@' }
+}
+
 fun isEligibleRemoteRelayHost(host: String, relayScope: String? = null): Boolean {
+    if (!isCanonicalRelayHostValue(host)) return false
     val normalized = host.trim()
         .removePrefix("[")
         .removeSuffix("]")
@@ -413,6 +497,7 @@ private fun String.isAllowedDebugLoopbackRelay(
 ): Boolean {
     if (!allowDebugLoopbackRelay) return false
     if (relayScope != DEBUG_USB_REVERSE_RELAY_SCOPE) return false
+    if (!isCanonicalRelayHostValue(this)) return false
     val normalized = trim()
         .removePrefix("[")
         .removeSuffix("]")

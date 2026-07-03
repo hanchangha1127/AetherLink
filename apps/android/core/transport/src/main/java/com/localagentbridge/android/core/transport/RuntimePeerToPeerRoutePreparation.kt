@@ -25,6 +25,7 @@ fun RuntimePeerToPeerRoutePreparation.toPreparedPeerToPeerRouteOrNull(
 ): PreparedRemoteRuntimeRoute.PeerToPeer? {
     if (protocolVersion != CURRENT_P2P_RENDEZVOUS_PROTOCOL_VERSION) return null
     val routeRecordId = recordId.opaqueRouteRecordValueOrNull() ?: return null
+    if (routeRecordId == identity.routeToken) return null
     val candidateMaterial = encryptedCandidateMaterial
         .opaqueRouteRecordValueOrNull(maxChars = OPAQUE_ROUTE_BODY_MAX_CHARS) ?: return null
     val expiresAt = expiresAtEpochMillis?.takeIf { it > nowEpochMillis } ?: return null

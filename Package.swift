@@ -99,6 +99,11 @@ let package = Package(
             path: "apps/macos/TrustedDevices/Tests"
         ),
         .testTarget(
+            name: "PairingTests",
+            dependencies: ["Pairing"],
+            path: "apps/macos/Pairing/Tests"
+        ),
+        .testTarget(
             name: "OllamaBackendTests",
             dependencies: ["OllamaBackend"],
             path: "apps/macos/OllamaBackend/Tests"

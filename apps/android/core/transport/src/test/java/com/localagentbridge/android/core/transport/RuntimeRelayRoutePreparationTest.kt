@@ -85,6 +85,70 @@ class RuntimeRelayRoutePreparationTest {
     }
 
     @Test
+    fun relayRoutePreparationRejectsNonCanonicalRelayHostMaterial() {
+        val valid = RuntimeRelayRoutePreparation(
+            host = "relay.example.test",
+            port = 443,
+            relayId = "relay-1",
+            relayFrameSecret = "secret-1",
+            expiresAtEpochMillis = 4102444800000L,
+            antiReplayNonce = "nonce-1",
+        )
+
+        listOf(
+            " relay.example.test",
+            "relay.example.test ",
+            "relay example.test",
+            "https://relay.example.test",
+            "relay.example.test/path",
+            "relay.example.test?route=1",
+            "relay.example.test#fragment",
+            "user@relay.example.test",
+        ).forEach { host ->
+            assertNull(
+                "Expected non-canonical relay host $host to be rejected",
+                valid.copy(host = host).toPreparedRelayRouteOrNull(identity),
+            )
+        }
+    }
+
+    @Test
+    fun relayRoutePreparationRejectsWhitespaceMutatedRelaySecrets() {
+        val valid = RuntimeRelayRoutePreparation(
+            host = "relay.example.test",
+            port = 443,
+            relayId = "relay-1",
+            relayFrameSecret = "secret-1",
+            expiresAtEpochMillis = 4102444800000L,
+            antiReplayNonce = "nonce-1",
+        )
+
+        assertNull(valid.copy(relayId = " relay-1").toPreparedRelayRouteOrNull(identity))
+        assertNull(valid.copy(relayId = "relay 1").toPreparedRelayRouteOrNull(identity))
+        assertNull(valid.copy(relayFrameSecret = " secret-1").toPreparedRelayRouteOrNull(identity))
+        assertNull(valid.copy(relayFrameSecret = "secret 1").toPreparedRelayRouteOrNull(identity))
+        assertNull(valid.copy(antiReplayNonce = " nonce-1").toPreparedRelayRouteOrNull(identity))
+        assertNull(valid.copy(antiReplayNonce = "nonce 1").toPreparedRelayRouteOrNull(identity))
+    }
+
+    @Test
+    fun relayRoutePreparationRejectsOversizedOpaqueRouteMaterial() {
+        val valid = RuntimeRelayRoutePreparation(
+            host = "relay.example.test",
+            port = 443,
+            relayId = "relay-1",
+            relayFrameSecret = "secret-1",
+            expiresAtEpochMillis = 4102444800000L,
+            antiReplayNonce = "nonce-1",
+        )
+        val oversizedOpaqueValue = "r".repeat(TEST_OPAQUE_RELAY_ROUTE_VALUE_MAX_CHARS + 1)
+
+        assertNull(valid.copy(relayId = oversizedOpaqueValue).toPreparedRelayRouteOrNull(identity))
+        assertNull(valid.copy(relayFrameSecret = oversizedOpaqueValue).toPreparedRelayRouteOrNull(identity))
+        assertNull(valid.copy(antiReplayNonce = oversizedOpaqueValue).toPreparedRelayRouteOrNull(identity))
+    }
+
+    @Test
     fun relayRoutePreparationAllowsPrivateOverlayScopeForOverlayPrivateHosts() {
         val valid = RuntimeRelayRoutePreparation(
             host = "100.64.1.5",
@@ -143,6 +207,20 @@ class RuntimeRelayRoutePreparationTest {
             host = "relay.example.test",
             port = 443,
             relayId = null,
+            relayFrameSecret = "secret-1",
+            expiresAtEpochMillis = 4102444800000L,
+            antiReplayNonce = "nonce-1",
+        ).toPreparedRelayRouteOrNull(identity)
+
+        assertNull(route)
+    }
+
+    @Test
+    fun relayRoutePreparationRejectsPairedRouteTokenAsRelayId() {
+        val route = RuntimeRelayRoutePreparation(
+            host = "relay.example.test",
+            port = 443,
+            relayId = identity.routeToken,
             relayFrameSecret = "secret-1",
             expiresAtEpochMillis = 4102444800000L,
             antiReplayNonce = "nonce-1",
@@ -224,3 +302,5 @@ class RuntimeRelayRoutePreparationTest {
         routeToken = "route-token",
     )
 }
+
+private const val TEST_OPAQUE_RELAY_ROUTE_VALUE_MAX_CHARS = 512

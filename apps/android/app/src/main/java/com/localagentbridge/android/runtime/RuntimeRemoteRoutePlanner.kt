@@ -1,7 +1,9 @@
 package com.localagentbridge.android.runtime
 
 import com.localagentbridge.android.core.pairing.RuntimePairingPayload
+import com.localagentbridge.android.core.pairing.OPAQUE_ROUTE_BODY_MAX_CHARS
 import com.localagentbridge.android.core.pairing.isAllowedRemoteRelayScope
+import com.localagentbridge.android.core.pairing.isCanonicalRelayHostValue
 import com.localagentbridge.android.core.pairing.isCanonicalOpaqueRouteValue
 import com.localagentbridge.android.core.pairing.isEligibleRemoteRelayHost
 import com.localagentbridge.android.core.transport.PairedRuntimeIdentity
@@ -63,7 +65,8 @@ internal fun RuntimeTrustedRuntime?.hasRelayRoute(
 ): Boolean {
     val host = this?.relayHost?.takeIf { it.isNotBlank() } ?: return false
     val expiresAt = relayExpiresAtEpochMillis
-    return isAllowedRemoteRelayScope(relayScope) &&
+    return isCanonicalRelayHostValue(host) &&
+        isAllowedRemoteRelayScope(relayScope) &&
         (isEligibleRemoteRelayHost(host, relayScope) || isDebugUsbReverseRelayRoute(host, relayScope)) &&
         relayPort != null &&
         relayPort in 1..65535 &&
@@ -147,7 +150,8 @@ internal fun RuntimePairingPayload.hasRelayRoute(
 ): Boolean {
     val expiresAt = relayExpiresAtEpochMillis
     val host = relayHost?.takeIf { it.isNotBlank() } ?: return false
-    return isAllowedRemoteRelayScope(relayScope) &&
+    return isCanonicalRelayHostValue(host) &&
+        isAllowedRemoteRelayScope(relayScope) &&
         (isEligibleRemoteRelayHost(host, relayScope) || isDebugUsbReverseRelayRoute(host, relayScope)) &&
         relayPort != null &&
         relayPort in 1..65535 &&
@@ -185,7 +189,8 @@ internal fun RuntimePairingPayload.hasAnyPeerToPeerRouteMaterial(): Boolean {
 private fun RuntimeTrustedRuntime.hasCompleteRelayRoute(): Boolean {
     val expiresAt = relayExpiresAtEpochMillis
     val host = relayHost?.takeIf { it.isNotBlank() } ?: return false
-    return isAllowedRemoteRelayScope(relayScope) &&
+    return isCanonicalRelayHostValue(host) &&
+        isAllowedRemoteRelayScope(relayScope) &&
         (isEligibleRemoteRelayHost(host, relayScope) || isDebugUsbReverseRelayRoute(host, relayScope)) &&
         relayPort != null &&
         relayPort in 1..65535 &&
@@ -200,7 +205,7 @@ private fun RuntimeTrustedRuntime.hasCompletePeerToPeerRoute(): Boolean {
     val expiresAt = p2pExpiresAtEpochMillis
     return p2pRouteClass == "p2p_rendezvous" &&
         isCanonicalOpaqueRouteValue(p2pRecordId) &&
-        isCanonicalOpaqueRouteValue(p2pEncryptedBody) &&
+        isCanonicalOpaqueRouteValue(p2pEncryptedBody, maxChars = OPAQUE_ROUTE_BODY_MAX_CHARS) &&
         expiresAt != null &&
         expiresAt > 0L &&
         isCanonicalOpaqueRouteValue(p2pAntiReplayNonce) &&
@@ -209,6 +214,7 @@ private fun RuntimeTrustedRuntime.hasCompletePeerToPeerRoute(): Boolean {
 
 private fun isDebugUsbReverseRelayRoute(host: String, relayScope: String?): Boolean {
     if (relayScope != "usb_reverse") return false
+    if (!isCanonicalRelayHostValue(host)) return false
     val normalizedHost = host.trim()
         .removePrefix("[")
         .removeSuffix("]")
@@ -227,7 +233,7 @@ internal fun RuntimePairingPayload.hasExpiredRemoteRoute(
     val p2pExpired = p2pExpiresAtEpochMillis?.let { expiresAt ->
         p2pRouteClass == "p2p_rendezvous" &&
             isCanonicalOpaqueRouteValue(p2pRecordId) &&
-            isCanonicalOpaqueRouteValue(p2pEncryptedBody) &&
+            isCanonicalOpaqueRouteValue(p2pEncryptedBody, maxChars = OPAQUE_ROUTE_BODY_MAX_CHARS) &&
             isCanonicalOpaqueRouteValue(p2pAntiReplayNonce) &&
             p2pProtocolVersion == 1 &&
             expiresAt <= nowEpochMillis
@@ -283,7 +289,7 @@ internal fun RuntimePairingPayload.hasPeerToPeerRoute(
     val expiresAt = p2pExpiresAtEpochMillis
     return p2pRouteClass == "p2p_rendezvous" &&
         isCanonicalOpaqueRouteValue(p2pRecordId) &&
-        isCanonicalOpaqueRouteValue(p2pEncryptedBody) &&
+        isCanonicalOpaqueRouteValue(p2pEncryptedBody, maxChars = OPAQUE_ROUTE_BODY_MAX_CHARS) &&
         expiresAt != null &&
         expiresAt > nowEpochMillis &&
         isCanonicalOpaqueRouteValue(p2pAntiReplayNonce) &&

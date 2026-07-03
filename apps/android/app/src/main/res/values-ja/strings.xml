@@ -495,6 +495,14 @@
     <string name="embedding_model_connect_first">メモリ インデックスモデルを選ぶ前に、信頼済みランタイムに接続してください。</string>
     <string name="memory_title">メモリ</string>
     <string name="memory_subtitle">今後のチャットのために信頼済みランタイムに保存されるメモです。</string>
+    <string name="memory_search_label">メモリを検索</string>
+    <string name="clear_memory_search_named">%1$s のメモリ検索をクリア</string>
+    <string name="no_memory_search_results">一致するメモリはありません。</string>
+    <string name="memory_search_result_summary">%1$s に一致するメモリを表示しています。</string>
+    <string name="memory_search_field_content">メモリ</string>
+    <string name="memory_search_field_source">ソース</string>
+    <string name="memory_search_field_source_range">ソース範囲</string>
+    <string name="memory_search_field_source_excerpt">ソース抜粋</string>
     <string name="memory_add_label">メモリを追加</string>
     <string name="memory_add_placeholder">記憶する好み、プロジェクト情報、または指示</string>
     <string name="memory_add">メモリを追加</string>

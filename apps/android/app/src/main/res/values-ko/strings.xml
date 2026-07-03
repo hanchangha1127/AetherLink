@@ -495,6 +495,14 @@
     <string name="embedding_model_connect_first">임베딩 모델을 선택하기 전에 신뢰된 런타임에 연결하세요.</string>
     <string name="memory_title">메모리</string>
     <string name="memory_subtitle">향후 채팅을 위해 신뢰된 런타임에 저장되는 메모입니다.</string>
+    <string name="memory_search_label">메모리 검색</string>
+    <string name="clear_memory_search_named">%1$s 검색어로 된 메모리 검색 지우기</string>
+    <string name="no_memory_search_results">일치하는 메모리가 없습니다.</string>
+    <string name="memory_search_result_summary">%1$s 검색어와 일치하는 메모리를 표시 중입니다.</string>
+    <string name="memory_search_field_content">메모리</string>
+    <string name="memory_search_field_source">출처</string>
+    <string name="memory_search_field_source_range">출처 범위</string>
+    <string name="memory_search_field_source_excerpt">출처 발췌</string>
     <string name="memory_add_label">메모리 추가</string>
     <string name="memory_add_placeholder">기억할 선호도, 프로젝트 정보 또는 지시사항</string>
     <string name="memory_add">메모리 추가</string>

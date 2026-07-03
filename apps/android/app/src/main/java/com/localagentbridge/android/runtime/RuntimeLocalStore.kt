@@ -9,6 +9,7 @@ import com.localagentbridge.android.core.protocol.ChatStoredMessagePayload
 import com.localagentbridge.android.core.protocol.MemoryEntryPayload
 import com.localagentbridge.android.core.protocol.MemoryEntrySourcePayload
 import com.localagentbridge.android.core.pairing.AndroidKeystoreRelaySecretStore
+import com.localagentbridge.android.core.pairing.OPAQUE_ROUTE_BODY_MAX_CHARS
 import com.localagentbridge.android.core.pairing.RelaySecretStore
 import com.localagentbridge.android.core.pairing.RuntimePairingPayload
 import com.localagentbridge.android.core.pairing.isCanonicalOpaqueRouteValue
@@ -145,6 +146,9 @@ data class PersistedMemoryEntry(
     val createdAtMillis: Long,
     val updatedAtMillis: Long,
     val source: PersistedMemoryEntrySource? = null,
+    val runtimeSearchRank: Int? = null,
+    val runtimeSearchSnippet: String? = null,
+    val runtimeSearchMatchedFields: List<String> = emptyList(),
 )
 
 @Serializable
@@ -265,6 +269,11 @@ internal fun PersistedRuntimeData.sanitized(): PersistedRuntimeData {
                 id = it.id.trim(),
                 content = it.content.trim(),
                 source = it.source?.sanitizedOrNull(),
+                runtimeSearchRank = it.runtimeSearchRank?.takeIf { rank -> rank > 0 },
+                runtimeSearchSnippet = it.runtimeSearchSnippet?.trim()?.takeIf(String::isNotBlank),
+                runtimeSearchMatchedFields = it.runtimeSearchMatchedFields
+                    .mapNotNull { field -> field.trim().takeIf(String::isNotBlank) }
+                    .distinct(),
             )
         }
         .filter { it.id.isNotBlank() && it.content.isNotBlank() }
@@ -452,7 +461,8 @@ private fun PersistedPendingPairingRoute.sanitizedOrNull(): PersistedPendingPair
     val cleanRelayNonce = relayNonce?.trim()?.takeIf(String::isNotBlank)
     val cleanP2pRouteClass = p2pRouteClass?.takeIf(::isCanonicalOpaqueRouteValue)
     val cleanP2pRecordId = p2pRecordId?.takeIf(::isCanonicalOpaqueRouteValue)
-    val cleanP2pEncryptedBody = p2pEncryptedBody?.takeIf(::isCanonicalOpaqueRouteValue)
+    val cleanP2pEncryptedBody = p2pEncryptedBody
+        ?.takeIf { isCanonicalOpaqueRouteValue(it, maxChars = OPAQUE_ROUTE_BODY_MAX_CHARS) }
     val cleanP2pExpiresAt = p2pExpiresAtEpochMillis?.takeIf { it > 0L }
     val cleanP2pAntiReplayNonce = p2pAntiReplayNonce?.takeIf(::isCanonicalOpaqueRouteValue)
     val hasRelayField = listOf(
@@ -1210,6 +1220,9 @@ internal fun runtimeMemoryEntries(data: PersistedRuntimeData): List<RuntimeMemor
             createdAtMillis = entry.createdAtMillis,
             updatedAtMillis = entry.updatedAtMillis,
             source = entry.source?.toRuntimeMemoryEntrySource(),
+            searchRank = entry.runtimeSearchRank,
+            searchSnippet = entry.runtimeSearchSnippet,
+            searchMatchedFields = entry.runtimeSearchMatchedFields,
         )
     }
 }
@@ -1337,6 +1350,12 @@ private fun MemoryEntryPayload.toPersistedMemoryEntry(
     val updatedAt = updatedAt?.let(::parseTimestampMillis)
         ?: existing?.updatedAtMillis
         ?: createdAt
+    val searchRank = search?.rank?.takeIf { it > 0 }
+    val searchSnippet = search?.snippet?.trim()?.takeIf(String::isNotBlank)
+    val searchMatchedFields = search?.matchedFields
+        ?.mapNotNull { it.trim().takeIf(String::isNotBlank) }
+        ?.distinct()
+        .orEmpty()
     return PersistedMemoryEntry(
         id = id,
         content = content.trim(),
@@ -1344,6 +1363,9 @@ private fun MemoryEntryPayload.toPersistedMemoryEntry(
         createdAtMillis = createdAt,
         updatedAtMillis = updatedAt,
         source = source?.toPersistedMemoryEntrySource() ?: existing?.source,
+        runtimeSearchRank = searchRank,
+        runtimeSearchSnippet = searchSnippet,
+        runtimeSearchMatchedFields = searchMatchedFields,
     )
 }
 

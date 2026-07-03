@@ -3,12 +3,15 @@ import Foundation
 import Network
 
 public struct RelayPeerConfiguration: Equatable, Sendable {
+    public static let defaultControlLineTimeout: TimeInterval = 45
+
     public var host: String
     public var port: UInt16
     public var relayID: String
     public var relaySecret: String?
     public var relayNonce: String?
     public var reconnectDelay: TimeInterval
+    public var controlLineTimeout: TimeInterval
 
     public init(
         host: String,
@@ -18,15 +21,37 @@ public struct RelayPeerConfiguration: Equatable, Sendable {
         relayNonce: String? = nil,
         reconnectDelay: TimeInterval = 2
     ) {
+        self.init(
+            host: host,
+            port: port,
+            relayID: relayID,
+            relaySecret: relaySecret,
+            relayNonce: relayNonce,
+            reconnectDelay: reconnectDelay,
+            controlLineTimeout: Self.defaultControlLineTimeout
+        )
+    }
+
+    public init(
+        host: String,
+        port: UInt16,
+        relayID: String,
+        relaySecret: String? = nil,
+        relayNonce: String? = nil,
+        reconnectDelay: TimeInterval = 2,
+        controlLineTimeout: TimeInterval
+    ) {
         precondition(!host.isEmpty, "Relay host must not be empty")
         precondition(!relayID.isEmpty, "Relay id must not be empty")
         precondition(relayNonce?.isEmpty != true, "Relay nonce must not be empty")
+        precondition(controlLineTimeout > 0, "Relay control-line timeout must be positive")
         self.host = host
         self.port = port
         self.relayID = relayID
         self.relaySecret = relaySecret
         self.relayNonce = relayNonce
         self.reconnectDelay = reconnectDelay
+        self.controlLineTimeout = controlLineTimeout
     }
 
     public func withRelayNonce(_ relayNonce: String?) -> RelayPeerConfiguration {
@@ -36,7 +61,8 @@ public struct RelayPeerConfiguration: Equatable, Sendable {
             relayID: relayID,
             relaySecret: relaySecret,
             relayNonce: relayNonce?.isEmpty == false ? relayNonce : nil,
-            reconnectDelay: reconnectDelay
+            reconnectDelay: reconnectDelay,
+            controlLineTimeout: controlLineTimeout
         )
     }
 }
@@ -141,13 +167,24 @@ public final class RelayPeerClient: RelayPeerTransport, @unchecked Sendable {
             case .ready:
                 guard let self else { return }
                 sink.sendRelayHandshake(relayID: configuration.relayID)
-                Self.receiveRegistrationStatus(connection: connection) { status in
-                    switch status {
-                    case .registered:
+                Self.receiveRegistrationStatus(
+                    connection: connection,
+                    timeout: configuration.controlLineTimeout
+                ) { result in
+                    switch result {
+                    case .status(.registered):
                         self.updateStatus(.waitingForPeer)
-                        Self.receiveRegistrationStatus(connection: connection) { status in
-                            guard status == .ready else {
-                                self.updateStatus(.failed("Relay did not return ready after registration."))
+                        Self.receiveRegistrationStatus(
+                            connection: connection,
+                            timeout: configuration.controlLineTimeout
+                        ) { result in
+                            guard result == .status(.ready) else {
+                                switch result {
+                                case .timedOut:
+                                    self.updateStatus(.failed("Relay ready line timed out after registration."))
+                                default:
+                                    self.updateStatus(.failed("Relay did not return ready after registration."))
+                                }
                                 connection.cancel()
                                 return
                             }
@@ -158,15 +195,18 @@ public final class RelayPeerClient: RelayPeerTransport, @unchecked Sendable {
                                 onMessage: onMessage
                             )
                         }
-                    case .ready:
+                    case .status(.ready):
                         self.updateStatus(.ready)
                         Self.receiveNextFrame(
                             connection: connection,
                             peer: sink,
                             onMessage: onMessage
                         )
-                    case nil:
+                    case .invalid:
                         self.updateStatus(.failed("Relay did not accept runtime registration."))
+                        connection.cancel()
+                    case .timedOut:
+                        self.updateStatus(.failed("Relay registration timed out before ready."))
                         connection.cancel()
                     }
                 }
@@ -257,18 +297,29 @@ public final class RelayPeerClient: RelayPeerTransport, @unchecked Sendable {
         case ready
     }
 
+    private enum RelayRegistrationReadResult: Equatable, Sendable {
+        case status(RelayRegistrationStatus)
+        case invalid
+        case timedOut
+    }
+
     private static func receiveRegistrationStatus(
         connection: NWConnection,
-        completion: @escaping @Sendable (RelayRegistrationStatus?) -> Void
+        timeout: TimeInterval,
+        completion: @escaping @Sendable (RelayRegistrationReadResult) -> Void
     ) {
+        let gate = RelayRegistrationReadGate()
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + timeout) {
+            gate.resolve(.timedOut, completion: completion)
+        }
         receiveLine(connection: connection) { line in
             switch line {
             case "AETHERLINK_RELAY registered":
-                completion(.registered)
+                gate.resolve(.status(.registered), completion: completion)
             case "AETHERLINK_RELAY ready":
-                completion(.ready)
+                gate.resolve(.status(.ready), completion: completion)
             default:
-                completion(nil)
+                gate.resolve(.invalid, completion: completion)
             }
         }
     }
@@ -297,6 +348,25 @@ public final class RelayPeerClient: RelayPeerTransport, @unchecked Sendable {
             }
             nextBuffer.append(byte)
             receiveLine(connection: connection, buffer: nextBuffer, completion: completion)
+        }
+    }
+
+    private final class RelayRegistrationReadGate: @unchecked Sendable {
+        private let lock = NSLock()
+        private var isResolved = false
+
+        func resolve(
+            _ result: RelayRegistrationReadResult,
+            completion: @escaping @Sendable (RelayRegistrationReadResult) -> Void
+        ) {
+            let shouldComplete = lock.withLock {
+                guard !isResolved else { return false }
+                isResolved = true
+                return true
+            }
+            if shouldComplete {
+                completion(result)
+            }
         }
     }
 

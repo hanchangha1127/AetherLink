@@ -495,6 +495,14 @@
     <string name="embedding_model_connect_first">Connectez-vous au runtime de confiance avant de choisir un modèle d’indexation de la mémoire.</string>
     <string name="memory_title">Mémoire</string>
     <string name="memory_subtitle">Notes stockées sur le runtime de confiance pour les futurs chats.</string>
+    <string name="memory_search_label">Rechercher dans la mémoire</string>
+    <string name="clear_memory_search_named">Effacer la recherche de mémoire pour %1$s</string>
+    <string name="no_memory_search_results">Aucune mémoire correspondante.</string>
+    <string name="memory_search_result_summary">Affichage des mémoires correspondant à %1$s.</string>
+    <string name="memory_search_field_content">Mémoire</string>
+    <string name="memory_search_field_source">Source</string>
+    <string name="memory_search_field_source_range">Plage source</string>
+    <string name="memory_search_field_source_excerpt">Extrait source</string>
     <string name="memory_add_label">Ajouter une mémoire</string>
     <string name="memory_add_placeholder">Préférence, détail de projet ou instruction à mémoriser</string>
     <string name="memory_add">Ajouter la mémoire</string>

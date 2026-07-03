@@ -85,6 +85,16 @@ final class RelayAllocationTests: XCTestCase {
         XCTAssertNil(request.allocationToken)
     }
 
+    func testParsesAllocationRequestWithBase64RequestedRelaySecret() throws {
+        let request = try RelayAllocationRequest.parse(
+            "AETHERLINK_RELAY allocate route-token-1 secret+with/symbols= allocation_token=allocation-token-1\n"
+        )
+
+        XCTAssertEqual(request.routeToken, "route-token-1")
+        XCTAssertEqual(request.requestedRelaySecret, "secret+with/symbols=")
+        XCTAssertEqual(request.allocationToken, "allocation-token-1")
+    }
+
     func testParsesAllocationRequestWithAllocationToken() throws {
         let request = try RelayAllocationRequest.parse(
             "AETHERLINK_RELAY allocate route-token-1 secret-1 allocation_token=allocation-token-1\n"
@@ -151,6 +161,44 @@ final class RelayAllocationTests: XCTestCase {
         XCTAssertFalse(RelayAllocationRequest.isAllocationLine("AETHERLINK_RELAY runtime relay-1\n"))
     }
 
+    func testRejectsBlankAllocationTokenAndRelaySecret() {
+        XCTAssertThrowsError(
+            try RelayAllocationRequest.parse("AETHERLINK_RELAY allocate route-token-1 allocation_token=\n")
+        ) { error in
+            XCTAssertEqual(error as? RelayAllocationError, .invalidAllocationToken)
+        }
+        XCTAssertThrowsError(
+            try RelayAllocationRequest.parse("AETHERLINK_RELAY allocate route-token-1 auth=\n")
+        ) { error in
+            XCTAssertEqual(error as? RelayAllocationError, .invalidAllocationToken)
+        }
+        XCTAssertThrowsError(
+            try RelayAllocationRequest(routeToken: "route-token-1", requestedRelaySecret: "")
+        ) { error in
+            XCTAssertEqual(error as? RelayAllocationError, .invalidRelaySecret)
+        }
+        XCTAssertThrowsError(
+            try RelayAllocationRequest(routeToken: "route-token-1", requestedRelaySecret: "secret value")
+        ) { error in
+            XCTAssertEqual(error as? RelayAllocationError, .invalidRelaySecret)
+        }
+    }
+
+    func testRejectsUnexpectedAllocationRequestMetadata() {
+        for line in [
+            "AETHERLINK_RELAY allocate route-token-1 backend_url=http://127.0.0.1:11434/api/tags allocation_token=allocation-token-1\n",
+            "AETHERLINK_RELAY allocate route-token-1 provider_url=https://provider.example.test/v1/models allocation_token=allocation-token-1\n",
+            "AETHERLINK_RELAY allocate route-token-1 requested_route_token=leaked-route-token allocation_token=allocation-token-1\n",
+            "AETHERLINK_RELAY allocate route-token-1 relay_secret_debug=leaked-relay-secret allocation_token=allocation-token-1\n"
+        ] {
+            XCTAssertThrowsError(
+                try RelayAllocationRequest.parse(line)
+            ) { error in
+                XCTAssertEqual(error as? RelayAllocationError, .invalidFormat)
+            }
+        }
+    }
+
     func testAllocationResponseRoundTripsAsLine() throws {
         let allocation = try RelayAllocation(
             relayID: "relay-1",
@@ -163,6 +211,41 @@ final class RelayAllocationTests: XCTestCase {
         let parsed = try RelayAllocation.parseResponseLine(line)
 
         XCTAssertEqual(parsed, allocation)
+    }
+
+    func testRejectsInvalidAllocationResponseLineFields() {
+        XCTAssertThrowsError(
+            try RelayAllocation.parseResponseLine(allocationResponseLine(relayID: "relay 1"))
+        ) { error in
+            XCTAssertEqual(error as? RelayAllocationError, .invalidRelayID)
+        }
+        XCTAssertThrowsError(
+            try RelayAllocation.parseResponseLine(allocationResponseLine(relaySecret: "secret value"))
+        ) { error in
+            XCTAssertEqual(error as? RelayAllocationError, .invalidRelaySecret)
+        }
+        XCTAssertThrowsError(
+            try RelayAllocation.parseResponseLine(allocationResponseLine(relayExpiresAtEpochMillis: 0))
+        ) { error in
+            XCTAssertEqual(error as? RelayAllocationError, .invalidExpiration)
+        }
+        XCTAssertThrowsError(
+            try RelayAllocation.parseResponseLine(allocationResponseLine(relayNonce: "nonce value"))
+        ) { error in
+            XCTAssertEqual(error as? RelayAllocationError, .invalidNonce)
+        }
+    }
+
+    func testRejectsUnexpectedAllocationResponseLineMetadata() {
+        let line = """
+        \(RelayAllocation.responsePrefix){"relay_id":"rt1-response","relay_secret":"secret-1","relay_expires_at":4102444800000,"relay_nonce":"nonce-1","requested_route_token":"leaked-route-token","backend_url":"http://127.0.0.1:11434/api/tags","provider_url":"https://provider.example.test/v1/models","allocation_token":"leaked-allocation-token","relay_secret_debug":"leaked-relay-secret"}
+        """
+
+        XCTAssertThrowsError(
+            try RelayAllocation.parseResponseLine(line)
+        ) { error in
+            XCTAssertEqual(error as? RelayAllocationError, .unexpectedResponseMetadata)
+        }
     }
 
     func testAllocationDerivesOpaqueStableRelayIDFromRouteTokenAndRequestedSecret() throws {
@@ -351,6 +434,36 @@ final class RelayAllocationTests: XCTestCase {
         XCTAssertFalse(registry.isValid(relayID: "relay-bad-nonce", now: Date(timeIntervalSince1970: 10)))
     }
 
+    func testAllocationRegistrySkipsPersistedTicketsWithUnexpectedMetadata() throws {
+        let storeURL = try temporaryAllocationStoreURL()
+        try writeAllocationTicketsJSON(
+            [
+                [
+                    "relay_id": "relay-with-metadata",
+                    "relay_expires_at": 20_000,
+                    "relay_nonce": "nonce-with-metadata",
+                    "relay_secret": "leaked-relay-secret",
+                    "requested_route_token": "leaked-route-token",
+                    "backend_url": "http://127.0.0.1:11434/api/tags",
+                    "provider_url": "https://provider.example.test/v1/models",
+                    "allocation_token": "leaked-allocation-token"
+                ],
+                [
+                    "relay_id": "relay-loadable",
+                    "relay_expires_at": 20_000,
+                    "relay_nonce": "nonce-loadable"
+                ]
+            ],
+            to: storeURL
+        )
+
+        let registry = RelayAllocationRegistry(persistenceURL: storeURL)
+
+        XCTAssertEqual(registry.count(now: Date(timeIntervalSince1970: 10)), 1)
+        XCTAssertFalse(registry.isValid(relayID: "relay-with-metadata", now: Date(timeIntervalSince1970: 10)))
+        XCTAssertTrue(registry.isValid(relayID: "relay-loadable", now: Date(timeIntervalSince1970: 10)))
+    }
+
     func testAllocationRegistryExpiresAndRemovesRelayIDs() throws {
         let registry = RelayAllocationRegistry()
         let allocation = try RelayAllocation(
@@ -419,6 +532,17 @@ final class RelayAllocationTests: XCTestCase {
             try? FileManager.default.removeItem(at: directory)
         }
         return directory.appendingPathComponent("allocations.json")
+    }
+
+    private func allocationResponseLine(
+        relayID: String = "relay-1",
+        relaySecret: String = "secret-1",
+        relayExpiresAtEpochMillis: Int64 = 4_102_444_800_000,
+        relayNonce: String = "nonce-1"
+    ) -> String {
+        """
+        \(RelayAllocation.responsePrefix){"relay_id":"\(relayID)","relay_secret":"\(relaySecret)","relay_expires_at":\(relayExpiresAtEpochMillis),"relay_nonce":"\(relayNonce)"}
+        """
     }
 
     private func writeAllocationTicketsJSON(_ tickets: [[String: Any]], to url: URL) throws {

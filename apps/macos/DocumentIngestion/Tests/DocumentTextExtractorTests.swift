@@ -274,6 +274,41 @@ final class DocumentTextExtractorTests: XCTestCase {
         }
     }
 
+    func testRejectsArchiveExtractionWhenResourcePolicyLimitIsExceeded() throws {
+        let fileURL = try makeArchive(
+            extension: "docx",
+            entries: [
+                "word/document.xml": "<document><body><p><r><t>Oversized archive entry text</t></r></p></body></document>"
+            ]
+        )
+        let extractor = DocumentTextExtractor(
+            resourcePolicy: DocumentIngestionResourcePolicy(maxArchiveEntryBytes: 16)
+        )
+
+        XCTAssertThrowsError(try extractor.extractText(from: fileURL)) { error in
+            guard case let DocumentIngestionError.resourceLimitExceeded(resource, limit, actual) = error else {
+                return XCTFail("Expected resourceLimitExceeded, got \(error)")
+            }
+            XCTAssertEqual(resource, "archive entry word/document.xml")
+            XCTAssertEqual(limit, 16)
+            XCTAssertGreaterThan(actual, limit)
+        }
+    }
+
+    func testRejectsExtractedTextWhenResourcePolicyLimitIsExceeded() throws {
+        let fileURL = try writeText("one two three four", extension: "txt")
+        let extractor = DocumentTextExtractor(
+            resourcePolicy: DocumentIngestionResourcePolicy(maxExtractedTextCharacters: 8)
+        )
+
+        XCTAssertThrowsError(try extractor.extractText(from: fileURL)) { error in
+            XCTAssertEqual(
+                error as? DocumentIngestionError,
+                .resourceLimitExceeded(resource: "extracted text", limit: 8, actual: 18)
+            )
+        }
+    }
+
     private func writeText(_ text: String, extension pathExtension: String) throws -> URL {
         let fileURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)

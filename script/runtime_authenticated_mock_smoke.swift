@@ -133,9 +133,11 @@ let smokeTitleSessionID = "\(smokeSessionID)-title"
 let smokeLifecycleSessionID = "\(smokeSessionID)-lifecycle"
 let smokeResidencySessionID = "\(smokeSessionID)-residency"
 let smokeSummaryDismissSessionID = "\(smokeSessionID)-summary-dismiss"
+let smokeCompactionSessionID = "\(smokeSessionID)-compaction"
 let smokeOwnerIsolationSessionAID = "\(smokeSessionID)-owner-a"
 let smokeOwnerIsolationSessionBID = "\(smokeSessionID)-owner-b"
 let smokeDocumentAttachmentText = "Smoke attachment body proves authenticated relay attachment handling."
+let smokeFilePayloadLabel = "smoke-file-payload-boundary.txt"
 let smokeImageAttachmentPrompt = "Describe this smoke image."
 let smokeImageAttachmentName = "smoke-vision-gate.png"
 let smokeImageAttachmentBase64 = "iVBORw0KGgo="
@@ -143,6 +145,11 @@ let smokeVisionModelID = "dev-mock-vision"
 let smokeUnloadFailureModelID = "dev-mock-unload-failure"
 let smokePulledModelID = "dev-pulled"
 let smokePulledModelPrompt = "Say hello from the pulled smoke model."
+let smokeModelCommandPayload = "smoke-model-command-payload-canary"
+let smokeBackendCredentialCanary = "Authorization: Bearer smoke-backend-credential-canary"
+let smokeBackendAPIKeyCanary = "AETHERLINK_SMOKE_BACKEND_API_KEY=smoke-backend-api-key-canary"
+let smokeBackendURLCanary = "https://provider.example.invalid/v1/chat/completions"
+let smokeEmbeddingSearchHintModelID = "ollama:nomic-embed-text"
 
 final class ServerOutput {
     private let lock = NSLock()
@@ -248,10 +255,17 @@ struct ParsedPairingURI {
     var pairingCode: String
     var pairingNonce: String
     var runtimeDeviceID: String
+    var runtimeKeyFingerprint: String
+    var runtimePublicKeyBase64: String
     var relayConfiguration: RelayConfiguration?
     var relayExpiresAt: Int64?
     var hasDirectHost: Bool
     var hasDirectPort: Bool
+}
+
+struct RuntimeProofExpectation {
+    var publicKeyBase64: String
+    var keyFingerprint: String
 }
 
 final class RelayCiphertextBoundaryRecorder {
@@ -731,6 +745,16 @@ func parsePairingURI(_ value: String) throws -> ParsedPairingURI {
         names: ["runtime_device_id", "mac_device_id", "device_id", "rid"],
         context: "pairing URI"
     )
+    let runtimeKeyFingerprint = try requireQueryValue(
+        query,
+        names: ["runtime_key_fingerprint", "fingerprint", "cert_fingerprint", "rf"],
+        context: "pairing URI"
+    )
+    let runtimePublicKeyBase64 = try requireQueryValue(
+        query,
+        names: ["runtime_public_key", "mac_public_key", "public_key", "rk"],
+        context: "pairing URI"
+    )
     let hasDirectHost = queryValue(query, names: ["host", "runtime_host", "h"]) != nil
     let hasDirectPort = queryValue(query, names: ["port", "runtime_port", "p"]) != nil
 
@@ -783,6 +807,8 @@ func parsePairingURI(_ value: String) throws -> ParsedPairingURI {
         pairingCode: pairingCode,
         pairingNonce: pairingNonce,
         runtimeDeviceID: runtimeDeviceID,
+        runtimeKeyFingerprint: runtimeKeyFingerprint,
+        runtimePublicKeyBase64: runtimePublicKeyBase64,
         relayConfiguration: relayConfiguration,
         relayExpiresAt: relayExpiresAt,
         hasDirectHost: hasDirectHost,
@@ -823,6 +849,50 @@ func requireModelList(_ response: [String: Any], context: String) throws -> [[St
     return modelList
 }
 
+func requireAuthenticatedModelListBoundary(_ modelList: [[String: Any]], context: String) throws {
+    let forbiddenModelKeys = [
+        "remote_host",
+        "remoteHost",
+        "backend_url",
+        "backendUrl",
+        "provider_url",
+        "providerUrl",
+        "base_url",
+        "baseUrl",
+        "endpoint",
+        "url",
+        "route_host",
+        "route_port",
+        "relay_host",
+        "relay_port",
+        "relay_secret",
+        "route_token"
+    ]
+    for model in modelList {
+        try assertNoBackendLeak(model, context: "\(context) model")
+        let keys = Set(model.keys)
+        let leakedKeys = forbiddenModelKeys.filter { keys.contains($0) }
+        guard leakedKeys.isEmpty else {
+            throw SmokeFailure.message("\(context) exposed backend or route key(s) \(leakedKeys): \(model)")
+        }
+        let id = try requireString(model, "id", context: "\(context) model")
+        let provider = try requireString(model, "provider", context: "\(context) model \(id)")
+        let providerModelID = try requireString(model, "provider_model_id", context: "\(context) model \(id)")
+        let qualifiedID = try requireString(model, "qualified_id", context: "\(context) model \(id)")
+        guard qualifiedID == "\(provider):\(providerModelID)" else {
+            throw SmokeFailure.message(
+                "\(context) model \(id) had non-runtime-qualified model id \(qualifiedID), provider=\(provider), provider_model_id=\(providerModelID)"
+            )
+        }
+        if model["backend"] as? String != provider {
+            throw SmokeFailure.message("\(context) model \(id) backend/provider mismatch: \(model)")
+        }
+        if model["source"] as? String == "cloud" {
+            throw SmokeFailure.message("\(context) model \(id) exposed a cloud suggestion in mock RuntimeDevServer smoke: \(model)")
+        }
+    }
+}
+
 func assertNoBackendLeak(_ value: Any, context: String, keyPath: [String] = []) throws {
     if let dictionary = value as? [String: Any] {
         for (key, child) in dictionary {
@@ -861,6 +931,30 @@ func refreshRelayRoute(
     expectP2PRouteRefresh: Bool
 ) throws -> RelayConfiguration {
     print("Checking route.refresh relay renewal...")
+    let malformedRouteRefresh = try sendAndRead(
+        client,
+        type: "route.refresh",
+        requestID: "smoke-route-refresh-unknown-metadata",
+        payload: [
+            "relay_secret": "future-relay-secret",
+            "relay_nonce": "future-relay-nonce",
+            "p2p_record_id": "future-p2p-record",
+            "backend_url": smokeBackendURLCanary,
+            "provider_url": "https://provider.example.invalid/v1",
+            "route_token": "future-route-token",
+            "requested_route_token": "future-requested-route-token",
+            "workspace_id": "workspace-1",
+            "permission_grant": "future permission grant",
+            "source_path": "/Users/example/project/notes.md",
+            "source_control_status": "modified"
+        ]
+    )
+    try requireErrorCode(
+        malformedRouteRefresh,
+        "invalid_payload",
+        requestID: "smoke-route-refresh-unknown-metadata",
+        context: "route.refresh unknown metadata"
+    )
     let response = try sendAndRead(client, type: "route.refresh", requestID: "smoke-route-refresh")
     try requireType(response, "route.refresh", context: "route.refresh")
     try requireRequestID(response, "smoke-route-refresh", context: "route.refresh")
@@ -940,7 +1034,88 @@ func rawNonceSignature(privateKey: P256.Signing.PrivateKey, nonce: String) throw
     return try privateKey.signature(for: digest).derRepresentation.base64EncodedString()
 }
 
-func trustedHelloNonce(client: TCPClient, deviceID: String, requestID: String) throws -> String {
+func runtimePublicKeyFingerprint(publicKeyBase64: String, context: String) throws -> String {
+    guard let publicKeyData = Data(base64Encoded: publicKeyBase64),
+          (try? P256.Signing.PublicKey(derRepresentation: publicKeyData)) != nil
+    else {
+        throw SmokeFailure.message("\(context) had invalid DER/base64 runtime_public_key")
+    }
+    return SHA256.hash(data: publicKeyData)
+        .map { String(format: "%02x", $0) }
+        .joined()
+}
+
+func requireRuntimePublicKeyFingerprint(
+    publicKeyBase64: String,
+    expectedFingerprint: String,
+    context: String
+) throws {
+    let actual = try runtimePublicKeyFingerprint(publicKeyBase64: publicKeyBase64, context: context)
+    guard actual == expectedFingerprint else {
+        throw SmokeFailure.message(
+            "\(context) runtime_public_key fingerprint mismatch: expected \(expectedFingerprint), got \(actual)"
+        )
+    }
+}
+
+func verifyRuntimeAuthChallengeSignature(
+    publicKeyBase64: String,
+    deviceID: String,
+    nonce: String,
+    signatureBase64: String
+) -> Bool {
+    guard let publicKeyData = Data(base64Encoded: publicKeyBase64),
+          let signatureData = Data(base64Encoded: signatureBase64),
+          let publicKey = try? P256.Signing.PublicKey(derRepresentation: publicKeyData),
+          let signature = try? P256.Signing.ECDSASignature(derRepresentation: signatureData)
+    else {
+        return false
+    }
+    let message = "AetherLink runtime auth challenge v1\n\(deviceID)\n\(nonce)"
+    return publicKey.isValidSignature(
+        signature,
+        for: SHA256.hash(data: Data(message.utf8))
+    )
+}
+
+func requireRuntimeAuthChallengeProof(
+    _ challengePayload: [String: Any],
+    deviceID: String,
+    nonce: String,
+    expected: RuntimeProofExpectation,
+    context: String
+) throws {
+    let runtimeKeyFingerprint = try requireString(challengePayload, "runtime_key_fingerprint", context: context)
+    let runtimeSignature = try requireString(challengePayload, "runtime_signature", context: context)
+    guard runtimeKeyFingerprint == expected.keyFingerprint else {
+        throw SmokeFailure.message(
+            "\(context) runtime_key_fingerprint mismatch: expected \(expected.keyFingerprint), got \(runtimeKeyFingerprint)"
+        )
+    }
+    guard verifyRuntimeAuthChallengeSignature(
+        publicKeyBase64: expected.publicKeyBase64,
+        deviceID: deviceID,
+        nonce: nonce,
+        signatureBase64: runtimeSignature
+    ) else {
+        throw SmokeFailure.message("\(context) runtime_signature was not valid for device_id and nonce")
+    }
+    guard !verifyRuntimeAuthChallengeSignature(
+        publicKeyBase64: expected.publicKeyBase64,
+        deviceID: deviceID,
+        nonce: "different-nonce",
+        signatureBase64: runtimeSignature
+    ) else {
+        throw SmokeFailure.message("\(context) runtime_signature replayed against a different nonce")
+    }
+}
+
+func trustedHelloNonce(
+    client: TCPClient,
+    deviceID: String,
+    requestID: String,
+    runtimeProof: RuntimeProofExpectation? = nil
+) throws -> String {
     let challenge = try sendAndRead(
         client,
         type: "hello",
@@ -953,7 +1128,17 @@ func trustedHelloNonce(client: TCPClient, deviceID: String, requestID: String) t
     )
     try requireType(challenge, "auth.challenge", context: requestID)
     let challengePayload = try payload(challenge, context: requestID)
-    return try requireString(challengePayload, "nonce", context: requestID)
+    let nonce = try requireString(challengePayload, "nonce", context: requestID)
+    if let runtimeProof {
+        try requireRuntimeAuthChallengeProof(
+            challengePayload,
+            deviceID: deviceID,
+            nonce: nonce,
+            expected: runtimeProof,
+            context: requestID
+        )
+    }
+    return nonce
 }
 
 func requireAcceptedAuthResponse(
@@ -971,20 +1156,54 @@ func requireAcceptedAuthResponse(
     }
 }
 
+func requireAcceptedPairingRuntimeIdentity(
+    _ response: [String: Any],
+    expectedRuntimeDeviceID: String,
+    expectedRuntimeProof: RuntimeProofExpectation,
+    requestID: String,
+    context: String
+) throws {
+    try requireType(response, "pairing.result", context: context)
+    try requireRequestID(response, requestID, context: context)
+    let pairingPayload = try payload(response, context: context)
+    try requireBool(pairingPayload, "accepted", true, context: context)
+    guard pairingPayload["runtime_device_id"] as? String == expectedRuntimeDeviceID else {
+        throw SmokeFailure.message(
+            "\(context) runtime_device_id did not match QR identity: expected \(expectedRuntimeDeviceID), got \(String(describing: pairingPayload["runtime_device_id"]))"
+        )
+    }
+    guard pairingPayload["runtime_key_fingerprint"] as? String == expectedRuntimeProof.keyFingerprint else {
+        throw SmokeFailure.message(
+            "\(context) runtime_key_fingerprint did not match QR identity: expected \(expectedRuntimeProof.keyFingerprint), got \(String(describing: pairingPayload["runtime_key_fingerprint"]))"
+        )
+    }
+    let runtimePublicKeyBase64 = try requireString(pairingPayload, "runtime_public_key", context: context)
+    guard runtimePublicKeyBase64 == expectedRuntimeProof.publicKeyBase64 else {
+        throw SmokeFailure.message("\(context) runtime_public_key did not match QR identity")
+    }
+    try requireRuntimePublicKeyFingerprint(
+        publicKeyBase64: runtimePublicKeyBase64,
+        expectedFingerprint: expectedRuntimeProof.keyFingerprint,
+        context: context
+    )
+}
+
 func authenticateFreshClient(
     host: String,
     port: UInt16,
     relay: RelayConfiguration?,
     deviceID: String,
     privateKey: P256.Signing.PrivateKey,
-    requestPrefix: String
+    requestPrefix: String,
+    runtimeProof: RuntimeProofExpectation? = nil
 ) throws -> TCPClient {
     let client = try connectWithRetry(host: host, port: port, relay: relay)
     do {
         let nonce = try trustedHelloNonce(
             client: client,
             deviceID: deviceID,
-            requestID: "\(requestPrefix)-hello"
+            requestID: "\(requestPrefix)-hello",
+            runtimeProof: runtimeProof
         )
         let signature = try clientAuthSignature(privateKey: privateKey, deviceID: deviceID, nonce: nonce)
         let authResponse = try sendAndRead(
@@ -1021,6 +1240,54 @@ func runRejectedPairingChecks(
 ) throws {
     print("Checking rejected pairing request does not trust the device...")
     let invalidCode = pairingCode == "000000" ? "999999" : "000000"
+    do {
+        let client = try connectWithRetry(host: host, port: port, relay: relay)
+        defer { client.close() }
+        let response = try sendAndRead(
+            client,
+            type: "pairing.request",
+            requestID: "smoke-pair-unknown-metadata",
+            payload: [
+                "pairing_nonce": pairingNonce,
+                "pairing_code": pairingCode,
+                "device_id": deviceID,
+                "device_name": "AetherLink Pairing Unknown Metadata Smoke",
+                "public_key": publicKeyBase64,
+                "accepted": true,
+                "runtime_device_id": "forged-runtime",
+                "runtime_key_fingerprint": "forged-runtime-fingerprint",
+                "trusted_device_id": "forged-trusted-device",
+                "backend_url": smokeBackendURLCanary,
+                "backend_credentials": "future-backend-token",
+                "provider_url": "https://provider.example.invalid/v1",
+                "route_token": "future-route-token",
+                "relay_secret": "future-relay-secret",
+                "requested_route_token": "future-requested-route-token",
+                "workspace_id": "workspace-1",
+                "permission_grant": "future permission grant",
+                "source_path": "/Users/example/project/notes.md",
+                "source_control_status": "modified"
+            ]
+        )
+        try requireErrorCode(
+            response,
+            "invalid_payload",
+            requestID: "smoke-pair-unknown-metadata",
+            context: "pairing.request unknown metadata"
+        )
+        let healthAfterMalformedPairing = try sendAndRead(
+            client,
+            type: "runtime.health",
+            requestID: "smoke-pair-unknown-metadata-health"
+        )
+        try requireErrorCode(
+            healthAfterMalformedPairing,
+            "authentication_required",
+            requestID: "smoke-pair-unknown-metadata-health",
+            context: "runtime.health after malformed pairing.request"
+        )
+    }
+
     do {
         let client = try connectWithRetry(host: host, port: port, relay: relay)
         defer { client.close() }
@@ -1082,6 +1349,99 @@ func runRejectedPairingChecks(
             context: "hello after rejected pairing"
         )
     }
+}
+
+func runPreAuthUnknownMetadataChecks(
+    host: String,
+    port: UInt16,
+    relay: RelayConfiguration?,
+    deviceID: String,
+    privateKey: P256.Signing.PrivateKey
+) throws {
+    print("Checking pre-auth unknown metadata rejection...")
+    let client = try connectWithRetry(host: host, port: port, relay: relay)
+    defer { client.close() }
+
+    let malformedHello = try sendAndRead(
+        client,
+        type: "hello",
+        requestID: "smoke-hello-unknown-metadata",
+        payload: [
+            "device_id": deviceID,
+            "device_name": "Smoke Test Client",
+            "client_capabilities": ["chat", "streaming", "attachments"],
+            "nonce": "client-supplied-nonce",
+            "signature": "client-supplied-signature",
+            "runtime_signature": "forged-runtime-signature",
+            "backend_url": smokeBackendURLCanary,
+            "provider_url": "https://provider.example.invalid/v1",
+            "route_token": "future-route-token",
+            "relay_secret": "future-relay-secret",
+            "workspace_id": "workspace-1",
+            "permission_grant": "future permission grant"
+        ]
+    )
+    try requireErrorCode(
+        malformedHello,
+        "invalid_payload",
+        requestID: "smoke-hello-unknown-metadata",
+        context: "hello unknown metadata"
+    )
+
+    let healthAfterMalformedHello = try sendAndRead(
+        client,
+        type: "runtime.health",
+        requestID: "smoke-hello-unknown-metadata-health"
+    )
+    try requireErrorCode(
+        healthAfterMalformedHello,
+        "authentication_required",
+        requestID: "smoke-hello-unknown-metadata-health",
+        context: "runtime.health after malformed hello"
+    )
+
+    let nonce = try trustedHelloNonce(
+        client: client,
+        deviceID: deviceID,
+        requestID: "smoke-auth-unknown-metadata-hello"
+    )
+    let signature = try clientAuthSignature(privateKey: privateKey, deviceID: deviceID, nonce: nonce)
+    let malformedAuth = try sendAndRead(
+        client,
+        type: "auth.response",
+        requestID: "smoke-auth-unknown-metadata",
+        payload: [
+            "device_id": deviceID,
+            "nonce": nonce,
+            "signature": signature,
+            "accepted": true,
+            "runtime_signature": "forged-runtime-signature",
+            "backend_url": smokeBackendURLCanary,
+            "provider_url": "https://provider.example.invalid/v1",
+            "route_token": "future-route-token",
+            "relay_secret": "future-relay-secret",
+            "workspace_id": "workspace-1",
+            "permission_grant": "future permission grant"
+        ]
+    )
+    try requireErrorCode(
+        malformedAuth,
+        "invalid_payload",
+        requestID: "smoke-auth-unknown-metadata",
+        context: "auth.response unknown metadata"
+    )
+
+    let healthAfterMalformedAuth = try sendAndRead(
+        client,
+        type: "runtime.health",
+        requestID: "smoke-auth-unknown-metadata-health"
+    )
+    try requireErrorCode(
+        healthAfterMalformedAuth,
+        "authentication_required",
+        requestID: "smoke-auth-unknown-metadata-health",
+        context: "runtime.health after malformed auth.response"
+    )
 }
 
 func runInvalidPairingIdentityCheck(
@@ -1165,7 +1525,9 @@ func pairTrustedDevice(
     deviceID: String,
     deviceName: String,
     publicKeyBase64: String,
-    requestID: String
+    requestID: String,
+    expectedRuntimeDeviceID: String? = nil,
+    expectedRuntimeProof: RuntimeProofExpectation? = nil
 ) throws {
     let pairingClient = try connectWithRetry(host: host, port: port, relay: relay)
     do {
@@ -1185,6 +1547,15 @@ func pairTrustedDevice(
         try requireRequestID(pairResponse, requestID, context: "pairing.request")
         let pairPayload = try payload(pairResponse, context: "pairing.request")
         try requireBool(pairPayload, "accepted", true, context: "pairing.request")
+        if let expectedRuntimeDeviceID, let expectedRuntimeProof {
+            try requireAcceptedPairingRuntimeIdentity(
+                pairResponse,
+                expectedRuntimeDeviceID: expectedRuntimeDeviceID,
+                expectedRuntimeProof: expectedRuntimeProof,
+                requestID: requestID,
+                context: "accepted pairing.result runtime identity"
+            )
+        }
         pairingClient.close()
     } catch {
         pairingClient.close()
@@ -1264,7 +1635,8 @@ func runRawNonceAuthRejectionCheck(
     port: UInt16,
     relay: RelayConfiguration?,
     deviceID: String,
-    privateKey: P256.Signing.PrivateKey
+    privateKey: P256.Signing.PrivateKey,
+    runtimeProof: RuntimeProofExpectation? = nil
 ) throws {
     print("Checking raw nonce auth signature rejection...")
     let client = try connectWithRetry(host: host, port: port, relay: relay)
@@ -1272,7 +1644,8 @@ func runRawNonceAuthRejectionCheck(
     let nonce = try trustedHelloNonce(
         client: client,
         deviceID: deviceID,
-        requestID: "smoke-auth-raw-nonce-hello"
+        requestID: "smoke-auth-raw-nonce-hello",
+        runtimeProof: runtimeProof
     )
     let signature = try rawNonceSignature(privateKey: privateKey, nonce: nonce)
     let response = try sendAndRead(
@@ -1310,7 +1683,8 @@ func runAuthReplayAndSupersededChallengeChecks(
     port: UInt16,
     relay: RelayConfiguration?,
     deviceID: String,
-    privateKey: P256.Signing.PrivateKey
+    privateKey: P256.Signing.PrivateKey,
+    runtimeProof: RuntimeProofExpectation? = nil
 ) throws {
     print("Checking auth replay and superseded challenge rejection...")
     do {
@@ -1319,7 +1693,8 @@ func runAuthReplayAndSupersededChallengeChecks(
         let nonce = try trustedHelloNonce(
             client: client,
             deviceID: deviceID,
-            requestID: "smoke-auth-replay-hello"
+            requestID: "smoke-auth-replay-hello",
+            runtimeProof: runtimeProof
         )
         let signature = try clientAuthSignature(privateKey: privateKey, deviceID: deviceID, nonce: nonce)
         let authPayload: [String: Any] = [
@@ -1367,12 +1742,14 @@ func runAuthReplayAndSupersededChallengeChecks(
         let staleNonce = try trustedHelloNonce(
             client: client,
             deviceID: deviceID,
-            requestID: "smoke-auth-superseded-hello-1"
+            requestID: "smoke-auth-superseded-hello-1",
+            runtimeProof: runtimeProof
         )
         let freshNonce = try trustedHelloNonce(
             client: client,
             deviceID: deviceID,
-            requestID: "smoke-auth-superseded-hello-2"
+            requestID: "smoke-auth-superseded-hello-2",
+            runtimeProof: runtimeProof
         )
         guard staleNonce != freshNonce else {
             throw SmokeFailure.message("superseded auth smoke expected distinct challenge nonces")
@@ -1619,11 +1996,13 @@ func canonicalModelName(_ name: String) -> String {
 func startServer(
     port: UInt16,
     trustedDevicesFile: URL,
+    runtimeIdentityFile: URL,
     backendMode: BackendMode,
     relay: RelayConfiguration?,
     bootstrapRelay: RelayEndpoint?,
     expectP2PRouteRefresh: Bool,
-    mockUnloadEventFile: URL?
+    mockUnloadEventFile: URL?,
+    mockChatRequestAuditFile: URL?
 ) throws -> Process {
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
@@ -1636,12 +2015,14 @@ func startServer(
         environment["AETHERLINK_DEV_MOCK_AGGREGATE_RESIDENCY"] = "1"
         environment["AETHERLINK_DEV_MOCK_RESIDENCY_IDLE_MS"] = "3000"
         environment["AETHERLINK_DEV_MOCK_UNLOAD_EVENT_FILE"] = mockUnloadEventFile?.path
+        environment["AETHERLINK_DEV_MOCK_CHAT_REQUEST_AUDIT_FILE"] = mockChatRequestAuditFile?.path
         environment["AETHERLINK_DEV_MOCK_UNLOAD_FAILURES"] = "ollama|\(smokeUnloadFailureModelID)"
     case .realOllama:
         environment["LOCAL_AGENT_BRIDGE_MOCK_BACKEND"] = nil
         environment["AETHERLINK_DEV_MOCK_AGGREGATE_RESIDENCY"] = nil
         environment["AETHERLINK_DEV_MOCK_RESIDENCY_IDLE_MS"] = nil
         environment["AETHERLINK_DEV_MOCK_UNLOAD_EVENT_FILE"] = nil
+        environment["AETHERLINK_DEV_MOCK_CHAT_REQUEST_AUDIT_FILE"] = nil
         environment["AETHERLINK_DEV_MOCK_UNLOAD_FAILURES"] = nil
     }
     environment["AETHERLINK_DEV_PAIRING"] = "1"
@@ -1660,8 +2041,9 @@ func startServer(
         .path
     environment["AETHERLINK_DEV_MEMORY_SUMMARY_MIN_INACTIVE_SECONDS"] = "0"
     environment["AETHERLINK_DEV_MEMORY_SUMMARY_MIN_MESSAGES"] = "2"
-    environment["AETHERLINK_DEV_RUNTIME_PUBLIC_KEY"] = "aetherlink-smoke-runtime-public-key"
-    environment["AETHERLINK_DEV_RUNTIME_KEY_FINGERPRINT"] = "aetherlink-smoke-runtime-fingerprint"
+    environment["AETHERLINK_DEV_RUNTIME_IDENTITY_FILE"] = runtimeIdentityFile.path
+    environment["AETHERLINK_DEV_RUNTIME_PUBLIC_KEY"] = nil
+    environment["AETHERLINK_DEV_RUNTIME_KEY_FINGERPRINT"] = nil
     if expectP2PRouteRefresh {
         environment["AETHERLINK_DEV_ROUTE_REFRESH_P2P"] = "1"
         environment["AETHERLINK_DEV_ROUTE_REFRESH_P2P_CLASS"] = expectedP2PRouteRefresh.routeClass
@@ -1730,6 +2112,12 @@ func relayPlaintextBoundaryMarkers() -> [String] {
         "Could not authenticate this device.",
         "runtime.health",
         "models.list",
+        "dev-mock-alt",
+        "lm_studio:dev-mock-alt",
+        "provider_model_id",
+        "qualified_id",
+        "capabilities",
+        "vision",
         "models.pull",
         "chat.send",
         "chat.cancel",
@@ -1750,16 +2138,55 @@ func relayPlaintextBoundaryMarkers() -> [String] {
         "AETHERLINK_DEV_MEMORY_SUMMARY_MIN_INACTIVE_SECONDS",
         "AETHERLINK_DEV_MEMORY_SUMMARY_MIN_MESSAGES",
         "smoke-memory-summary-drafts",
+        "smoke-memory-summary-approve-stale",
         "smoke-memory-summary-approve",
         "smoke-memory-summary-after-approve",
         "smoke-memory-summary-memory-list",
         "smoke-memory-summary-delete",
+        "smoke-sessions-invalid-allowed-types",
+        "smoke-messages-invalid-limit-type",
+        "smoke-memory-list-invalid-query-type",
+        "smoke-memory-upsert-invalid-enabled-type",
+        "smoke-memory-upsert-invalid-enabled",
+        "smoke-memory-summary-drafts-invalid-limit-type",
+        "smoke-memory-source-forgery",
+        "smoke-memory-upsert-unknown-metadata",
+        "smoke-memory-upsert-unknown-list",
+        "smoke-pair-unknown-metadata",
+        "smoke-pair-unknown-metadata-health",
+        "smoke-hello-unknown-metadata",
+        "smoke-hello-unknown-metadata-health",
+        "smoke-auth-unknown-metadata",
+        "smoke-auth-unknown-metadata-health",
+        "AetherLink Pairing Unknown Metadata Smoke",
+        "forged-runtime",
+        "forged-runtime-fingerprint",
+        "forged-trusted-device",
+        "smoke-memory-source-preserving-edit",
+        "smoke-memory-source-preserving-list",
+        "smoke-forged-source-memory",
+        "smoke-forged-draft",
+        "Client tries to forge source metadata.",
+        "smoke-upsert-unknown-metadata",
+        "smoke-response-only-memory-entry",
+        "Client tries to smuggle memory upsert metadata.",
+        "response-only memory entry",
+        "future-backend-token",
+        "future-route-token",
+        "future-relay-secret",
+        "future-requested-route-token",
+        "workspace-1",
+        "future permission grant",
+        "/Users/example/project/notes.md",
+        "Edited approved smoke summary keeps source audit metadata.",
         "smoke-memory-summary-dismiss-seed",
+        "smoke-memory-summary-dismiss-stale",
         "smoke-memory-summary-dismiss",
         "smoke-memory-summary-after-dismiss",
         "smoke-memory-summary-dismiss-memory-list",
         "smoke-memory-summary-approve-unavailable",
         "smoke-memory-summary-dismiss-unavailable",
+        "memory_summary_draft_stale",
         "memory_summary_draft_unavailable",
         "smoke-missing-memory-summary-draft",
         "smoke-auth-raw-nonce",
@@ -1773,11 +2200,179 @@ func relayPlaintextBoundaryMarkers() -> [String] {
         "B cannot rename A",
         "smoke-sessions-search-metadata",
         "hello smoke test",
+        smokeEmbeddingSearchHintModelID,
+        "AETHERLINK_DEV_MOCK_CHAT_REQUEST_AUDIT_FILE",
+        "smoke-chat-compaction-relay",
+        "smoke-chat-compaction-messages",
+        "Runtime conversation summary:",
+        "Source span: client-visible conversation turns",
+        "relay compaction source span turn 1",
+        "relay compaction source span turn 7",
+        "smoke-memory-route",
+        "smoke-memory-list-search-metadata",
+        "smoke-tested concise",
+        "\"query\"",
+        "\"search\"",
+        "\"snippet\"",
+        "memory.search",
+        "tool.call",
+        "tool.result",
+        "tool.run",
+        "skills.run",
+        "mcp.tool.call",
+        "web_search.query",
+        "python.run",
+        "python.exec",
+        "projects.sessions.list",
+        "automation.runs.create",
+        "permission.request",
+        "approval.prompt",
+        "audit.events.list",
+        "file.read",
+        "file.write",
+        "file.index",
+        "terminal.exec",
+        "terminal.kill",
+        "network.request",
+        "network.open",
+        "backend.call",
+        "backend.configure",
+        "embeddings.create",
+        "retrieval.query",
+        "index.build",
+        "research.brief.create",
+        "citation.sources.list",
+        "source_control.status",
+        "p2p.session.open",
+        "rendezvous.records.publish",
+        "bootstrap.records.lookup",
+        "dht.records.put",
+        "nat.candidates.gather",
+        "stun.binding.request",
+        "turn.relay.allocate",
+        "session.key.exchange",
+        "key_exchange.begin",
+        "encrypted_session.open",
+        "anti_replay.window.commit",
+        "transport.handshake",
+        "transport.rekey",
+        "crypto.session.open",
+        "crypto.key.rotate",
+        "route.candidates.exchange",
+        "route.diagnostics.report",
+        "route.allocation.status",
+        "route.failure.report",
+        "smoke-future-memory-search",
+        "smoke-future-tool-call",
+        "smoke-future-tool-result",
+        "smoke-future-tool-run",
+        "smoke-future-skills-run",
+        "smoke-future-mcp-tool-call",
+        "smoke-future-web-search-query",
+        "smoke-future-python-run",
+        "smoke-future-python-exec",
+        "smoke-future-projects-sessions-list",
+        "smoke-future-automation-runs-create",
+        "smoke-future-permission-request",
+        "smoke-future-approval-prompt",
+        "smoke-future-audit-events-list",
+        "smoke-future-file-read",
+        "smoke-future-file-write",
+        "smoke-future-file-index",
+        "smoke-future-terminal-exec",
+        "smoke-future-terminal-kill",
+        "smoke-future-network-request",
+        "smoke-future-network-open",
+        "smoke-future-backend-call",
+        "smoke-future-backend-configure",
+        "smoke-future-embeddings-create",
+        "smoke-future-retrieval-query",
+        "smoke-future-index-build",
+        "smoke-future-research-brief-create",
+        "smoke-future-citation-sources-list",
+        "smoke-future-source-control-status",
+        "smoke-future-p2p-session-open",
+        "smoke-future-rendezvous-records-publish",
+        "smoke-future-bootstrap-records-lookup",
+        "smoke-future-dht-records-put",
+        "smoke-future-nat-candidates-gather",
+        "smoke-future-stun-binding-request",
+        "smoke-future-turn-relay-allocate",
+        "smoke-future-session-key-exchange",
+        "smoke-future-key-exchange-begin",
+        "smoke-future-encrypted-session-open",
+        "smoke-future-anti-replay-window-commit",
+        "smoke-future-transport-handshake",
+        "smoke-future-transport-rekey",
+        "smoke-future-crypto-session-open",
+        "smoke-future-crypto-key-rotate",
+        "smoke-future-route-candidates-exchange",
+        "smoke-future-route-diagnostics-report",
+        "smoke-future-route-allocation-status",
+        "smoke-future-route-failure-report",
+        "future advanced memory search namespace smoke",
+        "future generic tool namespace smoke",
+        "future tool result namespace smoke",
+        "future tool run namespace smoke",
+        "future runtime namespace smoke",
+        "future python tool namespace smoke",
+        "future project workspace namespace smoke",
+        "future automation scheduler namespace smoke",
+        "future runtime permission namespace smoke",
+        "future mobile approval namespace smoke",
+        "future audit event namespace smoke",
+        "future file read namespace smoke",
+        "future file write namespace smoke",
+        "future file index namespace smoke",
+        "future terminal exec namespace smoke",
+        "future terminal kill namespace smoke",
+        "future network request namespace smoke",
+        "future network open namespace smoke",
+        "future backend call namespace smoke",
+        "future backend configure namespace smoke",
+        "future embeddings create namespace smoke",
+        "future retrieval query namespace smoke",
+        "future index build namespace smoke",
+        "future research brief namespace smoke",
+        "future citation sources namespace smoke",
+        "future source control status namespace smoke",
+        "future p2p session namespace smoke",
+        "future rendezvous record namespace smoke",
+        "future bootstrap lookup namespace smoke",
+        "future dht record namespace smoke",
+        "future nat candidate namespace smoke",
+        "future stun binding namespace smoke",
+        "future turn relay namespace smoke",
+        "future session key exchange namespace smoke",
+        "future key exchange transcript namespace smoke",
+        "future encrypted session namespace smoke",
+        "future anti replay namespace smoke",
+        "future transport handshake namespace smoke",
+        "future transport rekey namespace smoke",
+        "future crypto session namespace smoke",
+        "future crypto key rotation namespace smoke",
+        "future route candidate namespace smoke",
+        "future route diagnostics namespace smoke",
+        "future route allocation status namespace smoke",
+        "future route failure report namespace smoke",
+        smokeBackendCredentialCanary,
+        smokeBackendAPIKeyCanary,
+        smokeBackendURLCanary,
+        smokeModelCommandPayload,
+        smokeFilePayloadLabel,
+        "backend_credentials",
+        "backend_url",
+        "api_key",
+        "model_command",
+        "file_payload_label",
+        "model_command_payload",
         "matched_fields",
         "Say hello from the smoke test.",
         smokePulledModelPrompt,
+        smokeModelCommandPayload,
         "smoke-chat-pulled-model",
         "Summarize the attached smoke note.",
+        smokeFilePayloadLabel,
         smokeImageAttachmentPrompt,
         smokeImageAttachmentName,
         smokeImageAttachmentBase64,
@@ -1810,13 +2405,103 @@ func relayPlaintextBoundaryMarkers() -> [String] {
         smokeVisionModelID,
         smokeUnloadFailureModelID,
         smokePulledModelID
+    ] + routeRefreshRelayPlaintextBoundaryMarkers()
+}
+
+func routeRefreshRelayPlaintextBoundaryMarkers() -> [String] {
+    return [
+        "route.refresh",
+        "smoke-route-refresh",
+        "runtime_device_id",
+        "runtime_key_fingerprint",
+        "aetherlink-dev-runtime",
+        "aetherlink-smoke-runtime-fingerprint",
+        "route_token",
+        "dev-aetherlink-route",
+        "relay_host",
+        "relay_port",
+        "relay_id",
+        "relay_secret",
+        "relay_nonce",
+        "relay_expires_at",
+        "relay_scope",
+        "p2p_class",
+        "p2p_record_id",
+        "p2p_encrypted_body",
+        "p2p_anti_replay_nonce",
+        "p2p_protocol_version",
+        "p2p_expires_at",
+        expectedP2PRouteRefresh.routeClass,
+        expectedP2PRouteRefresh.recordID,
+        expectedP2PRouteRefresh.encryptedBody,
+        expectedP2PRouteRefresh.antiReplayNonce,
     ]
 }
 
-func verifyRelayCiphertextBoundaryIfNeeded() throws {
+func pairingBootstrapRelayPlaintextBoundaryMarkers(
+    pairingInfo: [String: Any],
+    parsedPairingURI: ParsedPairingURI,
+    primaryDevicePublicKeyBase64: String,
+    consumedPairingDevicePublicKeyBase64: String
+) throws -> [String] {
+    var markers = [
+        "pairing_code",
+        "pairing_nonce",
+        "device_id",
+        "device_name",
+        "device_public_key",
+        "runtime_public_key",
+        "aetherlink-smoke-runtime-public-key",
+        parsedPairingURI.pairingCode,
+        parsedPairingURI.pairingNonce,
+        parsedPairingURI.runtimeDeviceID,
+        primaryDevicePublicKeyBase64,
+        consumedPairingDevicePublicKeyBase64,
+        "AetherLink Auth Smoke",
+        "AetherLink Auth Smoke B",
+        "AetherLink Consumed Pairing Smoke",
+    ]
+    for key in [
+        "pairing_code",
+        "pairing_nonce",
+        "runtime_device_id",
+        "runtime_key_fingerprint",
+        "runtime_public_key",
+        "route_token",
+        "relay_id",
+        "relay_secret",
+        "relay_nonce",
+        "relay_expires_at",
+        "relay_scope"
+    ] {
+        if let stringValue = pairingInfo[key] as? String {
+            markers.append(stringValue)
+        } else if let intValue = pairingInfo[key] as? Int {
+            markers.append(String(intValue))
+        } else if let int64Value = pairingInfo[key] as? Int64 {
+            markers.append(String(int64Value))
+        } else if let doubleValue = pairingInfo[key] as? Double, doubleValue.rounded() == doubleValue {
+            markers.append(String(Int64(doubleValue)))
+        }
+    }
+    return uniqueNonEmptyMarkers(markers)
+}
+
+func uniqueNonEmptyMarkers(_ markers: [String]) -> [String] {
+    var seen = Set<String>()
+    var result: [String] = []
+    for marker in markers where !marker.isEmpty && seen.insert(marker).inserted {
+        result.append(marker)
+    }
+    return result
+}
+
+func verifyRelayCiphertextBoundaryIfNeeded(extraPlaintextMarkers: [String] = []) throws {
     guard RelayCiphertextBoundary.enabled else { return }
     print("Checking relay ciphertext boundary...")
-    try RelayCiphertextBoundary.requireNoPlaintextMarkers(relayPlaintextBoundaryMarkers())
+    try RelayCiphertextBoundary.requireNoPlaintextMarkers(
+        uniqueNonEmptyMarkers(relayPlaintextBoundaryMarkers() + extraPlaintextMarkers)
+    )
 }
 
 func mockUnloadEvents(from fileURL: URL) throws -> [String] {
@@ -2148,18 +2833,67 @@ func requireSearchMetadata(
     }
 }
 
+func requireNoEmbeddingModelHintEcho(
+    _ value: Any,
+    embeddingModelID: String,
+    context: String,
+    keyPath: [String] = []
+) throws {
+    if let dictionary = value as? [String: Any] {
+        for (key, child) in dictionary {
+            let childPath = keyPath + [key]
+            if key == "embedding_model_id" {
+                throw SmokeFailure.message(
+                    "\(context) echoed embedding_model_id at \(childPath.joined(separator: ".")): \(dictionary)"
+                )
+            }
+            try requireNoEmbeddingModelHintEcho(
+                child,
+                embeddingModelID: embeddingModelID,
+                context: context,
+                keyPath: childPath
+            )
+        }
+        return
+    }
+    if let array = value as? [Any] {
+        for (index, child) in array.enumerated() {
+            try requireNoEmbeddingModelHintEcho(
+                child,
+                embeddingModelID: embeddingModelID,
+                context: context,
+                keyPath: keyPath + ["[\(index)]"]
+            )
+        }
+        return
+    }
+    if let string = value as? String, string == embeddingModelID {
+        throw SmokeFailure.message(
+            "\(context) echoed embedding_model_id value at \(keyPath.joined(separator: ".")): \(string)"
+        )
+    }
+}
+
 func listChatSessions(
     client: TCPClient,
     requestID: String,
     includeArchived: Bool = false,
-    query: String? = nil
+    query: String? = nil,
+    embeddingModelID: String? = nil
 ) throws -> [[String: Any]] {
     var requestPayload: [String: Any] = [
         "include_archived": includeArchived,
         "limit": 20
     ]
-    if let query, !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+    let trimmedQuery = query?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let trimmedEmbeddingModelID = embeddingModelID?.trimmingCharacters(in: .whitespacesAndNewlines)
+    var sentEmbeddingModelID: String?
+    if let query, let trimmedQuery, !trimmedQuery.isEmpty {
         requestPayload["query"] = query
+        if let trimmedEmbeddingModelID, !trimmedEmbeddingModelID.isEmpty {
+            requestPayload["embedding_model_id"] = trimmedEmbeddingModelID
+            sentEmbeddingModelID = trimmedEmbeddingModelID
+        }
     }
     let response = try sendAndRead(
         client,
@@ -2167,6 +2901,13 @@ func listChatSessions(
         requestID: requestID,
         payload: requestPayload
     )
+    if let sentEmbeddingModelID {
+        try requireNoEmbeddingModelHintEcho(
+            response,
+            embeddingModelID: sentEmbeddingModelID,
+            context: requestID
+        )
+    }
     try requireType(response, "chat.sessions.list", context: requestID)
     try requireRequestID(response, requestID, context: requestID)
     let listPayload = try payload(response, context: requestID)
@@ -2192,8 +2933,18 @@ func listChatMessages(client: TCPClient, requestID: String, sessionID: String) t
     return try requireDictionaryArray(messagesPayload, key: "messages", context: requestID)
 }
 
-func listMemoryEntries(client: TCPClient, requestID: String) throws -> [[String: Any]] {
-    let response = try sendAndRead(client, type: "memory.list", requestID: requestID)
+func listMemoryEntries(client: TCPClient, requestID: String, query: String? = nil) throws -> [[String: Any]] {
+    var requestPayload: [String: Any] = [:]
+    let trimmedQuery = query?.trimmingCharacters(in: .whitespacesAndNewlines)
+    if let query, let trimmedQuery, !trimmedQuery.isEmpty {
+        requestPayload["query"] = query
+    }
+    let response = try sendAndRead(
+        client,
+        type: "memory.list",
+        requestID: requestID,
+        payload: requestPayload
+    )
     try requireType(response, "memory.list", context: requestID)
     try requireRequestID(response, requestID, context: requestID)
     let memoryPayload = try payload(response, context: requestID)
@@ -2221,6 +2972,49 @@ func requireEmptyMessages(_ messages: [[String: Any]], context: String) throws {
     }
 }
 
+func mockChatRequestAuditEntries(fileURL: URL) throws -> [[String: Any]] {
+    guard FileManager.default.fileExists(atPath: fileURL.path) else {
+        throw SmokeFailure.message("Mock chat request audit file is missing: \(fileURL.path)")
+    }
+    let text = try String(contentsOf: fileURL, encoding: .utf8)
+    return try text
+        .split(separator: "\n")
+        .enumerated()
+        .map { index, line in
+            guard let data = String(line).data(using: .utf8),
+                  let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+            else {
+                throw SmokeFailure.message("Mock chat request audit line \(index + 1) was not a JSON object: \(line)")
+            }
+            return object
+        }
+}
+
+func mockChatRequestAuditEntry(
+    fileURL: URL,
+    sessionID: String,
+    context: String
+) throws -> [String: Any] {
+    let entries = try mockChatRequestAuditEntries(fileURL: fileURL)
+    let matchingEntries = entries.filter { $0["session_id"] as? String == sessionID }
+    guard let entry = matchingEntries.last else {
+        throw SmokeFailure.message("\(context) did not record a mock backend request for \(sessionID): \(entries)")
+    }
+    return entry
+}
+
+func mockChatRequestAuditMessages(
+    fileURL: URL,
+    sessionID: String,
+    context: String
+) throws -> [[String: Any]] {
+    let entry = try mockChatRequestAuditEntry(fileURL: fileURL, sessionID: sessionID, context: context)
+    guard let messages = entry["messages"] as? [[String: Any]] else {
+        throw SmokeFailure.message("\(context) mock backend request audit entry had no messages array: \(entry)")
+    }
+    return messages
+}
+
 func runAuthenticatedTitleAndSessionLifecycleChecks(client: TCPClient) throws {
     print("Checking authenticated chat title and session lifecycle...")
     try client.send(envelope(
@@ -2242,6 +3036,41 @@ func runAuthenticatedTitleAndSessionLifecycleChecks(client: TCPClient) throws {
     guard seedText.contains("Mock streaming response.") else {
         throw SmokeFailure.message("lifecycle seed chat did not stream mock text: \(seedText)")
     }
+
+    let titleUnknownMetadataResponse = try sendAndRead(
+        client,
+        type: "chat.title.request",
+        requestID: "smoke-title-unknown-metadata",
+        payload: [
+            "session_id": smokeTitleSessionID,
+            "model": "dev-mock",
+            "locale": "en",
+            "messages": [
+                ["role": "user", "content": "Create a session for lifecycle smoke."],
+                ["role": "assistant", "content": "Mock streaming response."]
+            ],
+            "title": "client supplied title",
+            "project_id": "future project metadata",
+            "workspace_id": "future workspace metadata",
+            "retrieval_context": "future retrieval metadata",
+            "permission_grant": "future permission grant",
+            "backend_url": smokeBackendURLCanary,
+            "backend_credentials": smokeBackendCredentialCanary,
+            "provider_url": "http://127.0.0.1:1234/v1",
+            "route_token": "future route token",
+            "relay_secret": "future relay secret",
+            "requested_route_token": "future requested route token",
+            "source_path": "/Users/example/project/title.md",
+            "source_control_status": "modified",
+            "tool_results": [],
+        ]
+    )
+    try requireErrorCode(
+        titleUnknownMetadataResponse,
+        "invalid_payload",
+        requestID: "smoke-title-unknown-metadata",
+        context: "chat.title.request unknown metadata"
+    )
 
     let titleResponse = try sendAndRead(
         client,
@@ -2464,8 +3293,99 @@ func runAuthenticatedTitleAndSessionLifecycleChecks(client: TCPClient) throws {
     }
 }
 
-func runAuthenticatedHistoryAndMemoryChecks(client: TCPClient) throws {
+func runAuthenticatedCompactionSmoke(client: TCPClient, chatRequestAuditFile: URL) throws {
+    print("Checking RuntimeDevServer chat.send context compaction over relay...")
+    var messagePayloads: [[String: String]] = []
+    for index in 1...18 {
+        messagePayloads.append([
+            "role": index.isMultiple(of: 2) ? "assistant" : "user",
+            "content": "relay compaction source span turn \(index) " + String(repeating: "C", count: 1_600)
+        ])
+    }
+    guard let firstVisibleContent = messagePayloads.first?["content"],
+          let retainedVisibleContent = messagePayloads.dropFirst(6).first?["content"]
+    else {
+        throw SmokeFailure.message("Compaction smoke did not build enough visible message payloads")
+    }
+
+    try client.send(envelope(
+        "chat.send",
+        requestID: "smoke-chat-compaction-relay",
+        payload: [
+            "session_id": smokeCompactionSessionID,
+            "model": "dev-mock",
+            "messages": messagePayloads
+        ]
+    ))
+    let compactionStreamedText = try readStoppedChatStream(
+        client: client,
+        requestID: "smoke-chat-compaction-relay",
+        context: "smoke-chat-compaction-relay"
+    )
+    guard compactionStreamedText.contains("Mock streaming response.") else {
+        throw SmokeFailure.message("compaction chat stream did not contain mock response: \(compactionStreamedText)")
+    }
+
+    let auditMessages = try mockChatRequestAuditMessages(
+        fileURL: chatRequestAuditFile,
+        sessionID: smokeCompactionSessionID,
+        context: "smoke-chat-compaction-relay"
+    )
+    let auditContents = auditMessages.compactMap { $0["content"] as? String }
+    let summaryMessages = auditContents.filter { $0.hasPrefix("Runtime conversation summary:") }
+    guard summaryMessages.count == 1,
+          let summaryMessage = summaryMessages.first,
+          summaryMessage.contains("Source span: client-visible conversation turns 1-6 of 18.")
+    else {
+        throw SmokeFailure.message("mock backend audit did not include one source-span compaction summary: \(auditMessages)")
+    }
+    guard !auditContents.contains(firstVisibleContent),
+          auditContents.contains(retainedVisibleContent)
+    else {
+        throw SmokeFailure.message("mock backend audit did not compact older turns while retaining recent turns: \(auditMessages)")
+    }
+
+    let visibleMessages = try listChatMessages(
+        client: client,
+        requestID: "smoke-chat-compaction-messages",
+        sessionID: smokeCompactionSessionID
+    )
+    let visibleContents = visibleMessages.compactMap { $0["content"] as? String }
+    guard visibleContents.contains(firstVisibleContent),
+          visibleContents.contains(retainedVisibleContent),
+          visibleContents.contains(where: { $0.contains("Mock streaming response.") })
+    else {
+        throw SmokeFailure.message("visible compaction session history did not keep original user-visible turns: \(visibleMessages)")
+    }
+    guard !visibleContents.contains(where: { $0.hasPrefix("Runtime conversation summary:") }),
+          !visibleContents.contains(where: { $0.contains("Source span: client-visible conversation turns") })
+    else {
+        throw SmokeFailure.message("visible compaction session history leaked backend-only compaction context: \(visibleMessages)")
+    }
+}
+
+func runAuthenticatedHistoryAndMemoryChecks(client: TCPClient, chatRequestAuditFile: URL) throws {
     print("Checking authenticated chat history and runtime memory...")
+    let invalidSessionListTypes = try sendAndRead(
+        client,
+        type: "chat.sessions.list",
+        requestID: "smoke-sessions-invalid-allowed-types",
+        payload: [
+            "limit": "10",
+            "include_archived": "true",
+            "query": 42,
+            "embedding_model_id": [
+                "id": smokeEmbeddingSearchHintModelID
+            ]
+        ]
+    )
+    try requireErrorCode(
+        invalidSessionListTypes,
+        "invalid_payload",
+        requestID: "smoke-sessions-invalid-allowed-types",
+        context: "chat.sessions.list invalid allowed payload types"
+    )
+
     let sessionsResponse = try sendAndRead(
         client,
         type: "chat.sessions.list",
@@ -2493,7 +3413,8 @@ func runAuthenticatedHistoryAndMemoryChecks(client: TCPClient) throws {
         client: client,
         requestID: "smoke-sessions-search-metadata",
         includeArchived: true,
-        query: "hello smoke test"
+        query: "hello smoke test",
+        embeddingModelID: smokeEmbeddingSearchHintModelID
     )
     guard searchedSessions.first?["session_id"] as? String == smokeSessionID else {
         throw SmokeFailure.message("chat.sessions.list query did not rank \(smokeSessionID) first: \(searchedSessions)")
@@ -2509,6 +3430,27 @@ func runAuthenticatedHistoryAndMemoryChecks(client: TCPClient) throws {
         snippetContains: "Say hello from the smoke test.",
         matchedField: "transcript",
         context: "chat.sessions.list query search metadata"
+    )
+    guard searchedSmokeSession["model"] as? String == "dev-mock" else {
+        throw SmokeFailure.message(
+            "chat.sessions.list embedding_model_id hint changed the chat model summary: \(searchedSmokeSession)"
+        )
+    }
+
+    let invalidMessagesLimit = try sendAndRead(
+        client,
+        type: "chat.messages.list",
+        requestID: "smoke-messages-invalid-limit-type",
+        payload: [
+            "session_id": smokeSessionID,
+            "limit": "20"
+        ]
+    )
+    try requireErrorCode(
+        invalidMessagesLimit,
+        "invalid_payload",
+        requestID: "smoke-messages-invalid-limit-type",
+        context: "chat.messages.list invalid limit type"
     )
 
     let messagesResponse = try sendAndRead(
@@ -2540,6 +3482,8 @@ func runAuthenticatedHistoryAndMemoryChecks(client: TCPClient) throws {
         throw SmokeFailure.message("chat.messages.list did not include the smoke assistant response: \(messagesResponse)")
     }
 
+    try runAuthenticatedCompactionSmoke(client: client, chatRequestAuditFile: chatRequestAuditFile)
+
     let memoryID = "smoke-memory-route"
     let memoryUpsertResponse = try sendAndRead(
         client,
@@ -2562,11 +3506,44 @@ func runAuthenticatedHistoryAndMemoryChecks(client: TCPClient) throws {
         throw SmokeFailure.message("memory.upsert returned an unexpected entry: \(memoryUpsertResponse)")
     }
 
+    let invalidMemoryUpsertResponse = try sendAndRead(
+        client,
+        type: "memory.upsert",
+        requestID: "smoke-memory-upsert-invalid-enabled-type",
+        payload: [
+            "id": "smoke-memory-upsert-invalid-enabled",
+            "content": "This memory should not be created.",
+            "enabled": "false"
+        ]
+    )
+    try requireErrorCode(
+        invalidMemoryUpsertResponse,
+        "invalid_payload",
+        requestID: "smoke-memory-upsert-invalid-enabled-type",
+        context: "memory.upsert invalid enabled type"
+    )
+
+    let invalidMemoryListQuery = try sendAndRead(
+        client,
+        type: "memory.list",
+        requestID: "smoke-memory-list-invalid-query-type",
+        payload: ["query": 42]
+    )
+    try requireErrorCode(
+        invalidMemoryListQuery,
+        "invalid_payload",
+        requestID: "smoke-memory-list-invalid-query-type",
+        context: "memory.list invalid query type"
+    )
+
     let memoryListResponse = try sendAndRead(client, type: "memory.list", requestID: "smoke-memory-list")
     try requireType(memoryListResponse, "memory.list", context: "memory.list")
     try requireRequestID(memoryListResponse, "smoke-memory-list", context: "memory.list")
     let memoryListPayload = try payload(memoryListResponse, context: "memory.list")
     let memoryEntries = try requireDictionaryArray(memoryListPayload, key: "entries", context: "memory.list")
+    guard !memoryEntries.contains(where: { $0["id"] as? String == "smoke-memory-upsert-invalid-enabled" }) else {
+        throw SmokeFailure.message("memory.upsert invalid enabled type created an entry: \(memoryListResponse)")
+    }
     guard memoryEntries.contains(where: {
         $0["id"] as? String == memoryID
             && $0["content"] as? String == "Prefers smoke-tested concise answers."
@@ -2574,6 +3551,25 @@ func runAuthenticatedHistoryAndMemoryChecks(client: TCPClient) throws {
     }) else {
         throw SmokeFailure.message("memory.list did not include the smoke memory entry: \(memoryListResponse)")
     }
+
+    let searchedMemoryEntries = try listMemoryEntries(
+        client: client,
+        requestID: "smoke-memory-list-search-metadata",
+        query: " smoke-tested concise "
+    )
+    guard searchedMemoryEntries.count == 1,
+          let searchedMemoryEntry = searchedMemoryEntries.first,
+          searchedMemoryEntry["id"] as? String == memoryID
+    else {
+        throw SmokeFailure.message("memory.list query did not isolate the smoke memory entry: \(searchedMemoryEntries)")
+    }
+    try requireSearchMetadata(
+        searchedMemoryEntry,
+        expectedRank: 1,
+        snippetContains: "Prefers smoke-tested concise answers.",
+        matchedField: "content",
+        context: "memory.list query search metadata"
+    )
 
     let memoryDeleteResponse = try sendAndRead(
         client,
@@ -2626,6 +3622,19 @@ func runAuthenticatedHistoryAndMemoryChecks(client: TCPClient) throws {
     guard dismissSeedText.contains("Mock streaming response.") else {
         throw SmokeFailure.message("memory summary dismiss seed chat did not stream mock text: \(dismissSeedText)")
     }
+
+    let invalidSummaryDraftLimitResponse = try sendAndRead(
+        client,
+        type: "memory.summary.drafts.list",
+        requestID: "smoke-memory-summary-drafts-invalid-limit-type",
+        payload: ["limit": "10"]
+    )
+    try requireErrorCode(
+        invalidSummaryDraftLimitResponse,
+        "invalid_payload",
+        requestID: "smoke-memory-summary-drafts-invalid-limit-type",
+        context: "memory.summary.drafts.list invalid limit type"
+    )
 
     let summaryDraftsResponse = try sendAndRead(
         client,
@@ -2685,6 +3694,25 @@ func runAuthenticatedHistoryAndMemoryChecks(client: TCPClient) throws {
     }
 
     let approvedSummaryContent = "Smoke summary approval keeps the runtime memory path authenticated."
+    let staleSummaryApproveResponse = try sendAndRead(
+        client,
+        type: "memory.summary.draft.approve",
+        requestID: "smoke-memory-summary-approve-stale",
+        payload: [
+            "draft_id": summaryDraftID,
+            "expected_session_id": smokeSessionID,
+            "expected_source_message_count": summaryDraftSourceMessageCount + 1,
+            "content": approvedSummaryContent,
+            "enabled": true
+        ]
+    )
+    try requireErrorCode(
+        staleSummaryApproveResponse,
+        "memory_summary_draft_stale",
+        requestID: "smoke-memory-summary-approve-stale",
+        context: "memory.summary.draft.approve stale expected metadata"
+    )
+
     let summaryApproveResponse = try sendAndRead(
         client,
         type: "memory.summary.draft.approve",
@@ -2761,6 +3789,147 @@ func runAuthenticatedHistoryAndMemoryChecks(client: TCPClient) throws {
     }) else {
         throw SmokeFailure.message("memory.list did not include approved memory summary entry: \(summaryMemoryEntries)")
     }
+
+    let sourceForgeryResponse = try sendAndRead(
+        client,
+        type: "memory.upsert",
+        requestID: "smoke-memory-source-forgery",
+        payload: [
+            "id": "smoke-forged-source-memory",
+            "content": "Client tries to forge source metadata.",
+            "enabled": true,
+            "source": [
+                "kind": "forged",
+                "draft_id": "smoke-forged-draft"
+            ]
+        ]
+    )
+    try requireErrorCode(
+        sourceForgeryResponse,
+        "invalid_payload",
+        requestID: "smoke-memory-source-forgery",
+        context: "memory.upsert client-supplied source metadata"
+    )
+
+    let upsertUnknownMetadataResponse = try sendAndRead(
+        client,
+        type: "memory.upsert",
+        requestID: "smoke-memory-upsert-unknown-metadata",
+        payload: [
+            "id": "smoke-upsert-unknown-metadata",
+            "content": "Client tries to smuggle memory upsert metadata.",
+            "enabled": true,
+            "entry": [
+                "id": "smoke-response-only-memory-entry",
+                "content": "response-only memory entry",
+                "enabled": true
+            ],
+            "source": [
+                "kind": "forged",
+                "draft_id": "smoke-forged-draft"
+            ],
+            "backend_url": smokeBackendURLCanary,
+            "backend_credentials": "future-backend-token",
+            "provider_url": "https://provider.example.invalid/v1",
+            "route_token": "future-route-token",
+            "relay_secret": "future-relay-secret",
+            "requested_route_token": "future-requested-route-token",
+            "workspace_id": "workspace-1",
+            "permission_grant": "future permission grant",
+            "source_path": "/Users/example/project/notes.md",
+            "source_control_status": "modified"
+        ]
+    )
+    try requireErrorCode(
+        upsertUnknownMetadataResponse,
+        "invalid_payload",
+        requestID: "smoke-memory-upsert-unknown-metadata",
+        context: "memory.upsert unknown metadata"
+    )
+    let entriesAfterUpsertUnknownMetadata = try listMemoryEntries(
+        client: client,
+        requestID: "smoke-memory-upsert-unknown-list"
+    )
+    guard !entriesAfterUpsertUnknownMetadata.contains(where: {
+        $0["id"] as? String == "smoke-upsert-unknown-metadata"
+    }) else {
+        throw SmokeFailure.message(
+            "memory.upsert unknown metadata created an entry: \(entriesAfterUpsertUnknownMetadata)"
+        )
+    }
+
+    let editedApprovedSummaryContent = "Edited approved smoke summary keeps source audit metadata."
+    let sourcePreservingEditResponse = try sendAndRead(
+        client,
+        type: "memory.upsert",
+        requestID: "smoke-memory-source-preserving-edit",
+        payload: [
+            "id": summaryMemoryEntryID,
+            "content": editedApprovedSummaryContent,
+            "enabled": false
+        ]
+    )
+    try requireType(
+        sourcePreservingEditResponse,
+        "memory.upsert",
+        context: "memory.upsert source-preserving edit"
+    )
+    try requireRequestID(
+        sourcePreservingEditResponse,
+        "smoke-memory-source-preserving-edit",
+        context: "memory.upsert source-preserving edit"
+    )
+    let sourcePreservingEditPayload = try payload(
+        sourcePreservingEditResponse,
+        context: "memory.upsert source-preserving edit"
+    )
+    guard let editedApprovedEntry = sourcePreservingEditPayload["entry"] as? [String: Any],
+          editedApprovedEntry["id"] as? String == summaryMemoryEntryID,
+          editedApprovedEntry["content"] as? String == editedApprovedSummaryContent,
+          editedApprovedEntry["enabled"] as? Bool == false,
+          let editedApprovedSource = editedApprovedEntry["source"] as? [String: Any],
+          editedApprovedSource["draft_id"] as? String == summaryDraftID,
+          let editedApprovedSourceSession = editedApprovedSource["session"] as? [String: Any],
+          editedApprovedSourceSession["session_id"] as? String == smokeSessionID
+    else {
+        throw SmokeFailure.message("memory.upsert did not preserve approved summary source metadata: \(sourcePreservingEditResponse)")
+    }
+
+    let sourcePreservingEntries = try listMemoryEntries(
+        client: client,
+        requestID: "smoke-memory-source-preserving-list"
+    )
+    guard sourcePreservingEntries.contains(where: { entry in
+        guard entry["id"] as? String == summaryMemoryEntryID,
+              entry["content"] as? String == editedApprovedSummaryContent,
+              entry["enabled"] as? Bool == false,
+              let source = entry["source"] as? [String: Any],
+              source["draft_id"] as? String == summaryDraftID,
+              let session = source["session"] as? [String: Any]
+        else {
+            return false
+        }
+        return session["session_id"] as? String == smokeSessionID
+    }) else {
+        throw SmokeFailure.message("memory.list did not preserve approved summary source metadata after edit: \(sourcePreservingEntries)")
+    }
+
+    let staleSummaryDismissResponse = try sendAndRead(
+        client,
+        type: "memory.summary.draft.dismiss",
+        requestID: "smoke-memory-summary-dismiss-stale",
+        payload: [
+            "draft_id": dismissDraftID,
+            "expected_session_id": smokeSummaryDismissSessionID,
+            "expected_source_message_count": dismissDraftSourceMessageCount + 1
+        ]
+    )
+    try requireErrorCode(
+        staleSummaryDismissResponse,
+        "memory_summary_draft_stale",
+        requestID: "smoke-memory-summary-dismiss-stale",
+        context: "memory.summary.draft.dismiss stale expected metadata"
+    )
 
     let summaryDismissResponse = try sendAndRead(
         client,
@@ -2884,6 +4053,428 @@ func runAuthenticatedHistoryAndMemoryChecks(client: TCPClient) throws {
     )
 }
 
+func runAuthenticatedFutureNamespaceRejectionChecks(client: TCPClient) throws {
+    print("Checking authenticated future runtime namespace rejection...")
+    let futureCommands: [(type: String, requestID: String, payload: [String: Any])] = [
+        (
+            "skills.run",
+            "smoke-future-skills-run",
+            ["input": "future runtime namespace smoke"]
+        ),
+        (
+            "mcp.tool.call",
+            "smoke-future-mcp-tool-call",
+            ["tool": "future.runtime.namespace.smoke"]
+        ),
+        (
+            "web_search.query",
+            "smoke-future-web-search-query",
+            [
+                "query": "future runtime namespace smoke",
+                "backend_url": smokeBackendURLCanary,
+                "backend_credentials": smokeBackendCredentialCanary,
+                "api_key": smokeBackendAPIKeyCanary,
+            ]
+        ),
+        (
+            "tool.call",
+            "smoke-future-tool-call",
+            [
+                "tool": "future generic tool namespace smoke",
+                "backend_url": smokeBackendURLCanary,
+                "backend_credentials": smokeBackendCredentialCanary,
+                "model_command": smokeModelCommandPayload,
+                "file_payload_label": smokeFilePayloadLabel,
+            ]
+        ),
+        (
+            "tool.result",
+            "smoke-future-tool-result",
+            ["result": "future tool result namespace smoke"]
+        ),
+        (
+            "tool.run",
+            "smoke-future-tool-run",
+            ["input": "future tool run namespace smoke"]
+        ),
+        (
+            "python.run",
+            "smoke-future-python-run",
+            ["code": "future python tool namespace smoke"]
+        ),
+        (
+            "python.exec",
+            "smoke-future-python-exec",
+            ["script": "future python tool namespace smoke"]
+        ),
+        (
+            "projects.sessions.list",
+            "smoke-future-projects-sessions-list",
+            ["project_id": "future project workspace namespace smoke"]
+        ),
+        (
+            "automation.runs.create",
+            "smoke-future-automation-runs-create",
+            ["automation_id": "future automation scheduler namespace smoke"]
+        ),
+        (
+            "permission.request",
+            "smoke-future-permission-request",
+            ["scope": "future runtime permission namespace smoke"]
+        ),
+        (
+            "approval.prompt",
+            "smoke-future-approval-prompt",
+            ["prompt": "future mobile approval namespace smoke"]
+        ),
+        (
+            "audit.events.list",
+            "smoke-future-audit-events-list",
+            ["query": "future audit event namespace smoke"]
+        ),
+        (
+            "file.read",
+            "smoke-future-file-read",
+            ["path": smokeFilePayloadLabel, "purpose": "future file read namespace smoke"]
+        ),
+        (
+            "file.write",
+            "smoke-future-file-write",
+            ["path": smokeFilePayloadLabel, "content": "future file write namespace smoke"]
+        ),
+        (
+            "file.index",
+            "smoke-future-file-index",
+            ["source": smokeFilePayloadLabel, "index": "future file index namespace smoke"]
+        ),
+        (
+            "terminal.exec",
+            "smoke-future-terminal-exec",
+            ["command": "future terminal exec namespace smoke"]
+        ),
+        (
+            "terminal.kill",
+            "smoke-future-terminal-kill",
+            ["process": "future terminal kill namespace smoke"]
+        ),
+        (
+            "network.request",
+            "smoke-future-network-request",
+            [
+                "url": smokeBackendURLCanary,
+                "credential": smokeBackendCredentialCanary,
+                "purpose": "future network request namespace smoke",
+            ]
+        ),
+        (
+            "network.open",
+            "smoke-future-network-open",
+            [
+                "url": smokeBackendURLCanary,
+                "label": "future network open namespace smoke",
+            ]
+        ),
+        (
+            "backend.call",
+            "smoke-future-backend-call",
+            [
+                "backend_url": smokeBackendURLCanary,
+                "backend_credentials": smokeBackendCredentialCanary,
+                "model_command": smokeModelCommandPayload,
+                "operation": "future backend call namespace smoke",
+            ]
+        ),
+        (
+            "backend.configure",
+            "smoke-future-backend-configure",
+            [
+                "backend_url": smokeBackendURLCanary,
+                "api_key": smokeBackendAPIKeyCanary,
+                "operation": "future backend configure namespace smoke",
+            ]
+        ),
+        (
+            "embeddings.create",
+            "smoke-future-embeddings-create",
+            [
+                "input": "future embeddings create namespace smoke",
+                "model_id": smokeEmbeddingSearchHintModelID,
+            ]
+        ),
+        (
+            "retrieval.query",
+            "smoke-future-retrieval-query",
+            [
+                "query": "future retrieval query namespace smoke",
+                "embedding_model_id": smokeEmbeddingSearchHintModelID,
+            ]
+        ),
+        (
+            "index.build",
+            "smoke-future-index-build",
+            [
+                "source": smokeFilePayloadLabel,
+                "model_id": smokeEmbeddingSearchHintModelID,
+                "operation": "future index build namespace smoke",
+            ]
+        ),
+        (
+            "research.brief.create",
+            "smoke-future-research-brief-create",
+            [
+                "prompt": "future research brief namespace smoke",
+                "source": smokeFilePayloadLabel,
+            ]
+        ),
+        (
+            "citation.sources.list",
+            "smoke-future-citation-sources-list",
+            [
+                "query": "future citation sources namespace smoke",
+                "backend_url": smokeBackendURLCanary,
+            ]
+        ),
+        (
+            "source_control.status",
+            "smoke-future-source-control-status",
+            [
+                "workspace": smokeFilePayloadLabel,
+                "operation": "future source control status namespace smoke",
+            ]
+        ),
+        (
+            "p2p.session.open",
+            "smoke-future-p2p-session-open",
+            [
+                "session": "future p2p session namespace smoke",
+                "model_command": smokeModelCommandPayload,
+                "file_payload_label": smokeFilePayloadLabel,
+            ]
+        ),
+        (
+            "rendezvous.records.publish",
+            "smoke-future-rendezvous-records-publish",
+            ["record": "future rendezvous record namespace smoke"]
+        ),
+        (
+            "bootstrap.records.lookup",
+            "smoke-future-bootstrap-records-lookup",
+            ["lookup": "future bootstrap lookup namespace smoke"]
+        ),
+        (
+            "dht.records.put",
+            "smoke-future-dht-records-put",
+            ["record": "future dht record namespace smoke"]
+        ),
+        (
+            "nat.candidates.gather",
+            "smoke-future-nat-candidates-gather",
+            ["candidate": "future nat candidate namespace smoke"]
+        ),
+        (
+            "stun.binding.request",
+            "smoke-future-stun-binding-request",
+            ["request": "future stun binding namespace smoke"]
+        ),
+        (
+            "turn.relay.allocate",
+            "smoke-future-turn-relay-allocate",
+            ["allocation": "future turn relay namespace smoke"]
+        ),
+        (
+            "session.key.exchange",
+            "smoke-future-session-key-exchange",
+            ["handshake": "future session key exchange namespace smoke"]
+        ),
+        (
+            "key_exchange.begin",
+            "smoke-future-key-exchange-begin",
+            ["transcript": "future key exchange transcript namespace smoke"]
+        ),
+        (
+            "encrypted_session.open",
+            "smoke-future-encrypted-session-open",
+            ["session": "future encrypted session namespace smoke"]
+        ),
+        (
+            "anti_replay.window.commit",
+            "smoke-future-anti-replay-window-commit",
+            ["window": "future anti replay namespace smoke"]
+        ),
+        (
+            "transport.handshake",
+            "smoke-future-transport-handshake",
+            ["handshake": "future transport handshake namespace smoke"]
+        ),
+        (
+            "transport.rekey",
+            "smoke-future-transport-rekey",
+            ["rekey": "future transport rekey namespace smoke"]
+        ),
+        (
+            "crypto.session.open",
+            "smoke-future-crypto-session-open",
+            ["session": "future crypto session namespace smoke"]
+        ),
+        (
+            "crypto.key.rotate",
+            "smoke-future-crypto-key-rotate",
+            ["key_rotation": "future crypto key rotation namespace smoke"]
+        ),
+    ]
+    for command in futureCommands {
+        let response = try sendAndRead(
+            client,
+            type: command.type,
+            requestID: command.requestID,
+            payload: command.payload
+        )
+        try requireErrorCode(
+            response,
+            "unknown_message_type",
+            requestID: command.requestID,
+            context: "authenticated future namespace \(command.type)"
+        )
+    }
+}
+
+func runAuthenticatedResponseOnlyMessageDirectionChecks(client: TCPClient) throws {
+    print("Checking authenticated response-only message direction rejection...")
+    let responseOnlyMessages: [(type: String, requestID: String, payload: [String: Any])] = [
+        (
+            "auth.challenge",
+            "smoke-response-only-auth-challenge",
+            [
+                "device_id": "forged-device",
+                "nonce": "forged-nonce",
+                "runtime_device_id": "forged-runtime",
+            ]
+        ),
+        (
+            "pairing.result",
+            "smoke-response-only-pairing-result",
+            [
+                "accepted": true,
+                "runtime_device_id": "forged-runtime",
+                "runtime_public_key": "forged-public-key",
+            ]
+        ),
+        (
+            "models.result",
+            "smoke-response-only-models-result",
+            [
+                "models": [],
+                "backend_url": smokeBackendURLCanary,
+            ]
+        ),
+        (
+            "chat.delta",
+            "smoke-response-only-chat-delta",
+            [
+                "delta": "forged assistant delta",
+                "backend_credentials": smokeBackendCredentialCanary,
+            ]
+        ),
+        (
+            "chat.done",
+            "smoke-response-only-chat-done",
+            [
+                "finish_reason": "stop",
+                "model_command": smokeModelCommandPayload,
+            ]
+        ),
+        (
+            "chat.title.result",
+            "smoke-response-only-chat-title-result",
+            [
+                "session_id": "forged-session",
+                "title": "Forged Title",
+            ]
+        ),
+        (
+            "error",
+            "smoke-response-only-error",
+            [
+                "code": "invalid_payload",
+                "message": "forged runtime error",
+                "retryable": false,
+            ]
+        ),
+    ]
+    for message in responseOnlyMessages {
+        let response = try sendAndRead(
+            client,
+            type: message.type,
+            requestID: message.requestID,
+            payload: message.payload
+        )
+        try requireErrorCode(
+            response,
+            "unexpected_message_direction",
+            requestID: message.requestID,
+            context: "authenticated response-only message direction \(message.type)"
+        )
+    }
+}
+
+func runAuthenticatedFutureMemoryNamespaceRejectionChecks(client: TCPClient) throws {
+    print("Checking authenticated future memory namespace rejection...")
+    let response = try sendAndRead(
+        client,
+        type: "memory.search",
+        requestID: "smoke-future-memory-search",
+        payload: [
+            "query": "future advanced memory search namespace smoke"
+        ]
+    )
+    try requireErrorCode(
+        response,
+        "unknown_message_type",
+        requestID: "smoke-future-memory-search",
+        context: "authenticated future memory namespace memory.search"
+    )
+}
+
+func runAuthenticatedFutureRouteNamespaceRejectionChecks(client: TCPClient) throws {
+    print("Checking authenticated future route namespace rejection...")
+    let futureRouteCommands: [(type: String, requestID: String, payload: [String: Any])] = [
+        (
+            "route.candidates.exchange",
+            "smoke-future-route-candidates-exchange",
+            ["candidate": "future route candidate namespace smoke"]
+        ),
+        (
+            "route.diagnostics.report",
+            "smoke-future-route-diagnostics-report",
+            ["summary": "future route diagnostics namespace smoke"]
+        ),
+        (
+            "route.allocation.status",
+            "smoke-future-route-allocation-status",
+            ["relay_id": "future route allocation status namespace smoke"]
+        ),
+        (
+            "route.failure.report",
+            "smoke-future-route-failure-report",
+            ["diagnostic": "future route failure report namespace smoke"]
+        ),
+    ]
+    for command in futureRouteCommands {
+        let response = try sendAndRead(
+            client,
+            type: command.type,
+            requestID: command.requestID,
+            payload: command.payload
+        )
+        try requireErrorCode(
+            response,
+            "unknown_message_type",
+            requestID: command.requestID,
+            context: "authenticated future route namespace \(command.type)"
+        )
+    }
+}
+
 func runMultiDeviceOwnerIsolationChecks(
     host: String,
     port: UInt16,
@@ -2891,7 +4482,8 @@ func runMultiDeviceOwnerIsolationChecks(
     deviceAID: String,
     privateKeyA: P256.Signing.PrivateKey,
     deviceBID: String,
-    privateKeyB: P256.Signing.PrivateKey
+    privateKeyB: P256.Signing.PrivateKey,
+    runtimeProof: RuntimeProofExpectation? = nil
 ) throws {
     print("Checking multi-device owner isolation...")
     let memoryID = "smoke-owner-shared-memory"
@@ -2905,7 +4497,8 @@ func runMultiDeviceOwnerIsolationChecks(
             relay: relay,
             deviceID: deviceAID,
             privateKey: privateKeyA,
-            requestPrefix: "smoke-owner-a"
+            requestPrefix: "smoke-owner-a",
+            runtimeProof: runtimeProof
         )
         defer { clientA.close() }
         let memoryAUpsert = try sendAndRead(
@@ -2952,7 +4545,8 @@ func runMultiDeviceOwnerIsolationChecks(
             relay: relay,
             deviceID: deviceBID,
             privateKey: privateKeyB,
-            requestPrefix: "smoke-owner-b"
+            requestPrefix: "smoke-owner-b",
+            runtimeProof: runtimeProof
         )
         defer { clientB.close() }
         let memoryBEmpty = try listMemoryEntries(client: clientB, requestID: "smoke-owner-b-memory-empty")
@@ -3090,7 +4684,8 @@ func runMultiDeviceOwnerIsolationChecks(
             relay: relay,
             deviceID: deviceAID,
             privateKey: privateKeyA,
-            requestPrefix: "smoke-owner-a-recheck"
+            requestPrefix: "smoke-owner-a-recheck",
+            runtimeProof: runtimeProof
         )
         defer { clientA.close() }
         let memoryAAfterBDelete = try listMemoryEntries(client: clientA, requestID: "smoke-owner-a-memory-after-b-delete")
@@ -3124,8 +4719,37 @@ func runMultiDeviceOwnerIsolationChecks(
     }
 }
 
-func runMockBackendChecks(client: TCPClient, port: UInt16, unloadEventFile: URL) throws {
+func runMockBackendChecks(
+    client: TCPClient,
+    port: UInt16,
+    unloadEventFile: URL,
+    chatRequestAuditFile: URL
+) throws {
     print("Checking runtime.health...")
+    let malformedHealth = try sendAndRead(
+        client,
+        type: "runtime.health",
+        requestID: "smoke-health-unknown-metadata",
+        payload: [
+            "status": "ok",
+            "backend_url": smokeBackendURLCanary,
+            "backend_credentials": "future-backend-token",
+            "provider_url": "https://provider.example.invalid/v1",
+            "route_token": "future-route-token",
+            "relay_secret": "future-relay-secret",
+            "requested_route_token": "future-requested-route-token",
+            "workspace_id": "workspace-1",
+            "permission_grant": "future permission grant",
+            "source_path": "/Users/example/project/notes.md",
+            "source_control_status": "modified"
+        ]
+    )
+    try requireErrorCode(
+        malformedHealth,
+        "invalid_payload",
+        requestID: "smoke-health-unknown-metadata",
+        context: "runtime.health unknown metadata"
+    )
     let health = try sendAndRead(client, type: "runtime.health", requestID: "smoke-health")
     try requireType(health, "runtime.health", context: "runtime.health")
     let healthPayload = try payload(health, context: "runtime.health")
@@ -3137,9 +4761,35 @@ func runMockBackendChecks(client: TCPClient, port: UInt16, unloadEventFile: URL)
     }
 
     print("Checking models.list...")
+    let malformedModelsList = try sendAndRead(
+        client,
+        type: "models.list",
+        requestID: "smoke-models-list-unknown-metadata",
+        payload: [
+            "models": [],
+            "backend_url": smokeBackendURLCanary,
+            "backend_credentials": "future-backend-token",
+            "provider_url": "https://provider.example.invalid/v1",
+            "route_token": "future-route-token",
+            "relay_secret": "future-relay-secret",
+            "requested_route_token": "future-requested-route-token",
+            "workspace_id": "workspace-1",
+            "permission_grant": "future permission grant",
+            "source_path": "/Users/example/project/notes.md",
+            "source_control_status": "modified",
+            "model_command": "direct-provider-list"
+        ]
+    )
+    try requireErrorCode(
+        malformedModelsList,
+        "invalid_payload",
+        requestID: "smoke-models-list-unknown-metadata",
+        context: "models.list unknown metadata"
+    )
     let models = try sendAndRead(client, type: "models.list", requestID: "smoke-models")
     try requireType(models, "models.list", context: "models.list")
     let modelList = try requireModelList(models, context: "models.list")
+    try requireAuthenticatedModelListBoundary(modelList, context: "authenticated models.list")
     guard modelList.contains(where: { $0["id"] as? String == "dev-mock" }) else {
         throw SmokeFailure.message("models.list did not include dev-mock: \(models)")
     }
@@ -3187,6 +4837,7 @@ func runMockBackendChecks(client: TCPClient, port: UInt16, unloadEventFile: URL)
     let modelsAfterPull = try sendAndRead(client, type: "models.list", requestID: "smoke-models-after-pull")
     try requireType(modelsAfterPull, "models.list", context: "models.list after pull")
     let modelListAfterPull = try requireModelList(modelsAfterPull, context: "models.list after pull")
+    try requireAuthenticatedModelListBoundary(modelListAfterPull, context: "authenticated models.list after pull")
     guard modelListAfterPull.contains(where: {
         $0["id"] as? String == pulledModel
             && $0["installed"] as? Bool == true
@@ -3250,7 +4901,7 @@ func runMockBackendChecks(client: TCPClient, port: UInt16, unloadEventFile: URL)
                         [
                             "type": "document",
                             "mime_type": "text/plain",
-                            "name": "smoke-note.md",
+                            "name": smokeFilePayloadLabel,
                             "data_base64": Data(smokeDocumentAttachmentText.utf8).base64EncodedString()
                         ]
                     ]
@@ -3397,7 +5048,7 @@ func runMockBackendChecks(client: TCPClient, port: UInt16, unloadEventFile: URL)
     }
 
     try runAuthenticatedModelResidencyChecks(client: client, unloadEventFile: unloadEventFile)
-    try runAuthenticatedHistoryAndMemoryChecks(client: client)
+    try runAuthenticatedHistoryAndMemoryChecks(client: client, chatRequestAuditFile: chatRequestAuditFile)
     try runAuthenticatedTitleAndSessionLifecycleChecks(client: client)
 
     print("OK: authenticated mock E2E smoke passed on local diagnostic port \(port).")
@@ -3582,7 +5233,9 @@ func main() throws {
 
     let output = ServerOutput()
     let trustedDevicesFile = temporaryDirectory.appendingPathComponent("trusted-devices.json")
+    let runtimeIdentityFile = temporaryDirectory.appendingPathComponent("runtime-identity.json")
     let mockUnloadEventFile = temporaryDirectory.appendingPathComponent("mock-unload-events.log")
+    let mockChatRequestAuditFile = temporaryDirectory.appendingPathComponent("mock-chat-request-audit.jsonl")
     let ownerDeviceBID = "aetherlink-auth-smoke-device-b"
     let ownerDeviceBPrivateKey = P256.Signing.PrivateKey()
     let ownerDeviceBPublicKeyBase64 = ownerDeviceBPrivateKey.publicKey.derRepresentation.base64EncodedString()
@@ -3599,11 +5252,13 @@ func main() throws {
     let server = try startServer(
         port: port,
         trustedDevicesFile: trustedDevicesFile,
+        runtimeIdentityFile: runtimeIdentityFile,
         backendMode: options.backendMode,
         relay: relayConfiguration,
         bootstrapRelay: bootstrapRelayEndpoint,
         expectP2PRouteRefresh: options.expectP2PRouteRefresh,
-        mockUnloadEventFile: options.backendMode == .mock ? mockUnloadEventFile : nil
+        mockUnloadEventFile: options.backendMode == .mock ? mockUnloadEventFile : nil,
+        mockChatRequestAuditFile: options.backendMode == .mock ? mockChatRequestAuditFile : nil
     )
     let outputPipe = Pipe()
     server.standardOutput = outputPipe
@@ -3640,12 +5295,24 @@ func main() throws {
     let pairingInfoNonce = try requireString(pairingInfo, "pairing_nonce", context: "dev pairing info")
     let pairingInfoRuntimeDeviceID = try requireString(pairingInfo, "runtime_device_id", context: "dev pairing info")
     let pairingInfoRuntimeKeyFingerprint = try requireString(pairingInfo, "runtime_key_fingerprint", context: "dev pairing info")
+    let pairingInfoRuntimePublicKeyBase64 = try requireString(pairingInfo, "runtime_public_key", context: "dev pairing info")
     guard pairingInfoCode == pairingCode,
           pairingInfoNonce == pairingNonce,
-          pairingInfoRuntimeDeviceID == runtimeDeviceID
+          pairingInfoRuntimeDeviceID == runtimeDeviceID,
+          parsedPairingURI.runtimeKeyFingerprint == pairingInfoRuntimeKeyFingerprint,
+          parsedPairingURI.runtimePublicKeyBase64 == pairingInfoRuntimePublicKeyBase64
     else {
         throw SmokeFailure.message("Development pairing URI did not match pairing info: uri=\(pairingURI) info=\(pairingInfo)")
     }
+    try requireRuntimePublicKeyFingerprint(
+        publicKeyBase64: pairingInfoRuntimePublicKeyBase64,
+        expectedFingerprint: pairingInfoRuntimeKeyFingerprint,
+        context: "development pairing runtime identity"
+    )
+    let runtimeProof = RuntimeProofExpectation(
+        publicKeyBase64: pairingInfoRuntimePublicKeyBase64,
+        keyFingerprint: pairingInfoRuntimeKeyFingerprint
+    )
     if let legacyRuntimeDeviceID = pairingInfo["mac_device_id"] as? String,
        legacyRuntimeDeviceID != runtimeDeviceID {
         throw SmokeFailure.message("Development pairing legacy runtime id did not match canonical runtime_device_id: \(pairingInfo)")
@@ -3746,7 +5413,17 @@ func main() throws {
         deviceID: deviceID,
         deviceName: "AetherLink Auth Smoke",
         publicKeyBase64: publicKeyBase64,
-        requestID: "smoke-pair"
+        requestID: "smoke-pair",
+        expectedRuntimeDeviceID: runtimeDeviceID,
+        expectedRuntimeProof: runtimeProof
+    )
+
+    try runPreAuthUnknownMetadataChecks(
+        host: "127.0.0.1",
+        port: port,
+        relay: clientRelayConfiguration,
+        deviceID: deviceID,
+        privateKey: privateKey
     )
 
     try runConsumedPairingReuseCheck(
@@ -3764,7 +5441,8 @@ func main() throws {
         port: port,
         relay: clientRelayConfiguration,
         deviceID: deviceID,
-        privateKey: privateKey
+        privateKey: privateKey,
+        runtimeProof: runtimeProof
     )
 
     try runAuthReplayAndSupersededChallengeChecks(
@@ -3772,7 +5450,8 @@ func main() throws {
         port: port,
         relay: clientRelayConfiguration,
         deviceID: deviceID,
-        privateKey: privateKey
+        privateKey: privateKey,
+        runtimeProof: runtimeProof
     )
 
     try runUnauthenticatedAndUntrustedRejectionChecks(
@@ -3789,7 +5468,8 @@ func main() throws {
             relay: clientRelayConfiguration,
             deviceID: deviceID,
             privateKey: privateKey,
-            requestPrefix: "smoke"
+            requestPrefix: "smoke",
+            runtimeProof: runtimeProof
         )
         defer { client.close() }
 
@@ -3812,9 +5492,19 @@ func main() throws {
             )
         }
 
+        try runAuthenticatedResponseOnlyMessageDirectionChecks(client: client)
+        try runAuthenticatedFutureNamespaceRejectionChecks(client: client)
+        try runAuthenticatedFutureMemoryNamespaceRejectionChecks(client: client)
+        try runAuthenticatedFutureRouteNamespaceRejectionChecks(client: client)
+
         switch options.backendMode {
         case .mock:
-            try runMockBackendChecks(client: client, port: port, unloadEventFile: mockUnloadEventFile)
+            try runMockBackendChecks(
+                client: client,
+                port: port,
+                unloadEventFile: mockUnloadEventFile,
+                chatRequestAuditFile: mockChatRequestAuditFile
+            )
         case .realOllama:
             try runRealOllamaChecks(client: client, port: port, allowUnavailable: options.allowUnavailable)
         }
@@ -3828,7 +5518,8 @@ func main() throws {
             deviceAID: deviceID,
             privateKeyA: privateKey,
             deviceBID: ownerDeviceBID,
-            privateKeyB: ownerDeviceBPrivateKey
+            privateKeyB: ownerDeviceBPrivateKey,
+            runtimeProof: runtimeProof
         )
     }
 
@@ -3839,7 +5530,8 @@ func main() throws {
         relay: clientRelayConfiguration,
         deviceID: deviceID,
         privateKey: privateKey,
-        requestPrefix: "smoke-reconnect"
+        requestPrefix: "smoke-reconnect",
+        runtimeProof: runtimeProof
     )
     defer { reconnectClient.close() }
     let reconnectHealth = try sendAndRead(
@@ -3856,7 +5548,14 @@ func main() throws {
         client: reconnectClient,
         trustedDevicesFile: trustedDevicesFile
     )
-    try verifyRelayCiphertextBoundaryIfNeeded()
+    try verifyRelayCiphertextBoundaryIfNeeded(
+        extraPlaintextMarkers: try pairingBootstrapRelayPlaintextBoundaryMarkers(
+            pairingInfo: pairingInfo,
+            parsedPairingURI: parsedPairingURI,
+            primaryDevicePublicKeyBase64: publicKeyBase64,
+            consumedPairingDevicePublicKeyBase64: consumedPairingDevicePublicKeyBase64
+        )
+    )
 }
 
 do {

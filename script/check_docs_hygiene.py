@@ -366,6 +366,20 @@ FILE_CONTRACTS = (
         ),
         "docs/protocol.md must state that normal product QR scans require runtime public key, route token, and remote route material while identity-only QR remains diagnostic/compatibility only.",
     ),
+    DocsFileContract(
+        "roadmap-no-device-live-proof-split",
+        "docs/roadmap.md",
+        (
+            re.compile(r"\bContinue expanding smoke tests while separating no-device gate coverage from live proof gaps\b", re.IGNORECASE),
+            re.compile(r"\bNamed no-device/default-gate coverage currently includes\b", re.IGNORECASE),
+            re.compile(r"\bLive/physical proof that remains separate\b", re.IGNORECASE),
+            re.compile(r"\bphysical Android QR scan\b", re.IGNORECASE),
+            re.compile(r"\blive provider-backed chat/cancel\b", re.IGNORECASE),
+            re.compile(r"\bproduction relay allocation\b", re.IGNORECASE),
+            re.compile(r"\breal different-network runtime connectivity\b", re.IGNORECASE),
+        ),
+        "docs/roadmap.md must separate named no-device/default-gate coverage from live physical or production proof gaps.",
+    ),
 )
 
 

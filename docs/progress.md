@@ -1,6 +1,6 @@
 # AetherLink Progress And Forward Plan
 
-Last updated: 2026-07-02 KST.
+Last updated: 2026-07-03 KST.
 
 This document records what has been implemented so far and what should happen next. It is intentionally broader than the original v0.1 MVP because recent work has moved the prototype toward a more complete product shape.
 
@@ -27,10 +27,2190 @@ The concrete remote 1:1 connection architecture is now tracked in [connection-ov
 ## Current Workstream Coordination Notes
 
 - Do not use GPT-5.3-Codex-Spark for this workstream. Use GPT-5.5/inherited-model subagents only when delegation is useful.
-- During the latest no-device relay allocation opacity, Android route-token remote preparation, prepared relay route ordering, private-overlay QR artifact, relay-client retirement, Android remote route direct transport boundary gate pass, Android relay concurrent encrypted send serialization gate pass, pending route-less QR no saved relay fallback, diagnostic identity-only discovery wait, macOS untrusted-client rejection, macOS P2P QR canonical generation, macOS pairing-abuse structured rejection, Android opaque route material size-bound gate pass, shared route-material schema size-bound gate pass, Android trusted P2P restore discovery-suppression gate pass, macOS runtime identity fallback signing gate pass, macOS unknown unqualified model routing gate pass, Android chat-history confirmation compact dialog layout gate pass, Android trusted relay reconnect scope eligibility gate pass, Android pending relay QR planning eligibility gate pass, Android pairing relay QR direct-endpoint suppression gate pass, Android pairing P2P QR direct-endpoint suppression gate pass, Android accepted-pairing relay secret restore boundary gate pass, Android initial pairing QR expired P2P record rejection gate pass, Android initial pairing QR expired relay lease rejection gate pass, Android saved relay reconnect pinned-identity rejection gate pass, Android saved relay lease reconnect eligibility gate pass, Android trusted remote-route target endpoint-hint suppression gate pass, Android route-refresh QR relay add-route gate pass, Android route-refresh QR P2P add-route gate pass, Android route-refresh QR optional-public-key relay update gate pass, Android route-refresh QR optional-public-key P2P update gate pass, Android route-refresh QR active-connection reuse gate pass, physical external-relay summary gate pass, physical external-relay requested serial evidence binding gate pass, physical external-relay different-network confirmation gate pass, Android route-refresh QR fixed-endpoint fallback removal gate pass, Android route-refresh QR direct-only rejection gate pass, Android route-refresh QR route-token rotation gate pass, Android route-refresh QR pinned-identity rejection gate pass, Android route-refresh QR expired-or-incomplete relay rejection gate pass, Android route-refresh QR expired-or-incomplete P2P rejection gate pass, Android authenticated relay route.refresh scheduling/retry gate pass, Android route.refresh relay payload acceptance/incomplete rejection gate pass, Android route.refresh rejected-payload retry gate pass, and Android route.refresh P2P noncanonical rejection gate pass, GPT-5.5 read-only explorers were used for candidate selection where agent capacity was available; the trusted relay reconnect scope eligibility pass attempted GPT-5.5 delegation but hit the current agent thread limit. No GPT-5.3-Codex-Spark subagent was used.
+- During the latest no-device relay allocation opacity, Android route-token remote material isolation, prepared relay route ordering, private-overlay QR artifact, relay-client retirement, Android remote route direct transport boundary gate pass, Android relay concurrent encrypted send serialization gate pass, pending route-less QR no saved relay fallback, diagnostic identity-only discovery wait, macOS untrusted-client rejection, macOS P2P QR canonical generation, macOS pairing-abuse structured rejection, Android opaque route material size-bound gate pass, shared route-material schema size-bound gate pass, Android trusted P2P restore discovery-suppression gate pass, macOS runtime identity fallback signing gate pass, macOS unknown unqualified model routing gate pass, Android chat-history confirmation compact dialog layout gate pass, Android trusted relay reconnect scope eligibility gate pass, Android pending relay QR planning eligibility gate pass, Android pairing relay QR direct-endpoint suppression gate pass, Android pairing P2P QR direct-endpoint suppression gate pass, Android accepted-pairing relay secret restore boundary gate pass, Android initial pairing QR expired P2P record rejection gate pass, Android initial pairing QR expired relay lease rejection gate pass, Android saved relay reconnect pinned-identity rejection gate pass, Android saved relay lease reconnect eligibility gate pass, Android trusted remote-route target endpoint-hint suppression gate pass, Android route-refresh QR relay add-route gate pass, Android route-refresh QR P2P add-route gate pass, Android route-refresh QR optional-public-key relay update gate pass, Android route-refresh QR optional-public-key P2P update gate pass, Android route-refresh QR active-connection reuse gate pass, physical external-relay summary gate pass, physical external-relay requested serial evidence binding gate pass, physical external-relay different-network confirmation gate pass, Android route-refresh QR fixed-endpoint fallback removal gate pass, Android route-refresh QR direct-only rejection gate pass, Android route-refresh QR route-token rotation gate pass, Android route-refresh QR pinned-identity rejection gate pass, Android route-refresh QR expired-or-incomplete relay rejection gate pass, Android route-refresh QR expired-or-incomplete P2P rejection gate pass, Android authenticated relay route.refresh scheduling/retry gate pass, Android route.refresh relay payload acceptance/incomplete rejection gate pass, Android route.refresh rejected-payload retry gate pass, and Android route.refresh P2P noncanonical rejection gate pass, GPT-5.5 read-only explorers were used for candidate selection where agent capacity was available; the trusted relay reconnect scope eligibility pass attempted GPT-5.5 delegation but hit the current agent thread limit. No GPT-5.3-Codex-Spark subagent was used.
 - The user will handle commits and pushes unless they explicitly ask otherwise.
 
 ## Implemented So Far
+
+### 2026-07-03 Memory Summary Drafts List Invalid Allowed Type Runtime Rejection No-Device Gate
+
+- Scope: continue runtime-owned memory-summary review hardening while the Android phone is disconnected. `memory.summary.drafts.list` already rejected unknown payload keys, but the optional allowed `limit` field still needed to fail closed when a client sent malformed values.
+- Result: Memory Summary Drafts List Invalid Allowed Type Runtime Rejection No-Device Gate: `memory.summary.drafts.list` now parses `limit` with the strict request integer helper before runtime chat or memory store dispatch.
+- Result: `testMemorySummaryDraftsListRejectsInvalidAllowedPayloadTypesBeforeStoreDispatch` proves string and fractional `limit` values return non-retryable `invalid_payload` and leave both `RecordingRuntimeChatEventStore.sessionListRequests` and `RecordingRuntimeMemoryStore.listRequests` empty.
+- Result: `script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh` now sends `smoke-memory-summary-drafts-invalid-limit-type` over the authenticated RuntimeDevServer relay path and requires `invalid_payload` before continuing through normal draft listing.
+- Boundary: this does not add approved-memory writes, draft approval, direct-store metadata, backend/provider routing, workspace context, permission grants, source paths, or source-control state. It keeps `memory.summary.drafts.list` a runtime-owned read for owner-scoped review drafts with schema-matching value types.
+- Guardrail: `script/check_copy_hygiene.py` pins the strict request helper, focused Swift regression, RuntimeDevServer smoke marker, protocol docs, no-device gate entry, roadmap, progress, and QA evidence.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer was used during this pass while the main thread implemented the strict `memory.summary.drafts.list` limit slice.
+- Caveat: this is no-device source/unit/schema/smoke evidence only. It does not prove physical Android QR scanning, optical camera scan reliability, live memory-summary review from hardware, production relay deployment, production P2P/rendezvous traversal, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `swift test --package-path apps/macos --filter 'LocalRuntimeMessageRouterTests/testMemorySummaryDraftsListRejectsInvalidAllowedPayloadTypesBeforeStoreDispatch|LocalRuntimeMessageRouterTests/testMemorySummaryDraftsListRejectsUnknownPayloadMetadataBeforeStoreDispatch|LocalRuntimeMessageRouterTests/testMemorySummaryDraftsListReturnsOwnerScopedActiveVisibleDraftsOnly'`
+- `swiftc -typecheck script/runtime_authenticated_mock_smoke.swift`
+- `./script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_protocol_schema.py script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift apps/macos/CompanionCore/Tests/LocalRuntimeMessageRouterTests.swift script/runtime_authenticated_mock_smoke.swift script/check_copy_hygiene.py script/check_no_device_quality.sh docs/protocol.md docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-03 Memory Upsert Invalid Allowed Type Runtime Rejection No-Device Gate
+
+- Scope: continue runtime memory hardening while the Android phone is disconnected. `memory.upsert` already rejected unknown payload keys, but the optional allowed `id` and `enabled` fields still needed to fail closed when a client sent malformed values.
+- Result: Memory Upsert Invalid Allowed Type Runtime Rejection No-Device Gate: `memory.upsert` now parses `id` with the strict request string helper and `enabled` with the strict request boolean helper before runtime memory store mutation.
+- Result: `testMemoryUpsertRejectsInvalidAllowedPayloadTypesBeforeStoreMutation` proves numeric `id`, string `enabled`, and numeric `enabled` values return non-retryable `invalid_payload` and leave `RecordingRuntimeMemoryStore.upsertRequests` empty.
+- Result: `script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh` now sends `smoke-memory-upsert-invalid-enabled-type` over the authenticated RuntimeDevServer relay path, requires `invalid_payload`, and verifies the rejected entry is absent from the next normal `memory.list`.
+- Boundary: this does not add client-controlled source metadata, search metadata, direct-store routing, backend/provider routing, workspace context, or permission grants. It keeps `memory.upsert` a runtime-owned memory mutation with schema-matching value types.
+- Guardrail: `script/check_copy_hygiene.py` pins the strict request helpers, focused Swift regression, RuntimeDevServer smoke marker, protocol docs, no-device gate entry, roadmap, progress, and QA evidence.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer was used during this pass and identified `memory.summary.drafts.list` invalid `limit` handling as the next follow-up after this strict-upsert slice.
+- Caveat: this is no-device source/unit/schema/smoke evidence only. It does not prove physical Android QR scanning, optical camera scan reliability, live memory mutation from hardware, production relay deployment, production P2P/rendezvous traversal, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `swift test --package-path apps/macos --filter 'LocalRuntimeMessageRouterTests/testMemoryUpsertRejectsInvalidAllowedPayloadTypesBeforeStoreMutation|LocalRuntimeMessageRouterTests/testMemoryUpsertRejectsUnknownPayloadMetadataBeforeStoreMutation|LocalRuntimeMessageRouterTests/testMemoryUpsertRejectsClientSuppliedSourceMetadataAndPreservesRuntimeSource'`
+- `swiftc -typecheck script/runtime_authenticated_mock_smoke.swift`
+- `./script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_protocol_schema.py script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift apps/macos/CompanionCore/Tests/LocalRuntimeMessageRouterTests.swift script/runtime_authenticated_mock_smoke.swift script/check_copy_hygiene.py script/check_no_device_quality.sh docs/protocol.md docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-03 Memory List Invalid Allowed Type Runtime Rejection No-Device Gate
+
+- Scope: continue runtime memory hardening while the Android phone is disconnected. `memory.list` already rejected unknown payload keys, but the optional allowed `query` field still needed to fail closed when a client sent malformed non-string values.
+- Result: Memory List Invalid Allowed Type Runtime Rejection No-Device Gate: `memory.list` now parses `query` with the strict request string helper before runtime memory store dispatch.
+- Result: `testMemoryListRejectsInvalidAllowedPayloadTypesBeforeStoreDispatch` proves numeric, boolean, and object `query` values return non-retryable `invalid_payload` and leave `RecordingRuntimeMemoryStore.listRequests` empty.
+- Result: `script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh` now sends `smoke-memory-list-invalid-query-type` over the authenticated RuntimeDevServer relay path and requires `invalid_payload` before continuing through normal memory list/search checks.
+- Boundary: this does not add semantic memory search, client-side direct-store routing, embedding selection, backend/provider routing, workspace context, or permission grants. It keeps `memory.list` a runtime-owned owner-scoped memory query with schema-matching value types.
+- Guardrail: `script/check_copy_hygiene.py` pins the strict request helper, focused Swift regression, RuntimeDevServer smoke marker, protocol docs, no-device gate entry, roadmap, progress, and QA evidence.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer identified malformed allowed `memory.list` query values as the next no-device payload-boundary gap.
+- Caveat: this is no-device source/unit/schema/smoke evidence only. It does not prove physical Android QR scanning, optical camera scan reliability, live memory refresh from hardware, production relay deployment, production P2P/rendezvous traversal, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `swift test --package-path apps/macos --filter 'LocalRuntimeMessageRouterTests/testMemoryListRejectsInvalidAllowedPayloadTypesBeforeStoreDispatch|LocalRuntimeMessageRouterTests/testMemoryListRejectsUnknownPayloadMetadataBeforeStoreDispatch|LocalRuntimeMessageRouterTests/testMemoryListQueryFiltersRuntimeOwnedMemoryWithSearchMetadata'`
+- `swiftc -typecheck script/runtime_authenticated_mock_smoke.swift`
+- `./script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_protocol_schema.py script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift apps/macos/CompanionCore/Tests/LocalRuntimeMessageRouterTests.swift script/runtime_authenticated_mock_smoke.swift script/check_copy_hygiene.py script/check_no_device_quality.sh docs/protocol.md docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-03 Chat Messages List Invalid Allowed Type Runtime Rejection No-Device Gate
+
+- Scope: continue runtime chat-history hardening while the Android phone is disconnected. `chat.messages.list` already rejected unknown payload keys, but the optional allowed `limit` field still needed to fail closed when a client sent malformed values such as a string or fractional number.
+- Result: Chat Messages List Invalid Allowed Type Runtime Rejection No-Device Gate: `chat.messages.list` now parses `limit` with the strict request integer helper before runtime chat store dispatch.
+- Result: `testChatMessagesListRejectsInvalidAllowedPayloadTypesBeforeStoreDispatch` proves string and fractional `limit` values return non-retryable `invalid_payload` and leave `SearchHintRecordingRuntimeChatEventStore.messageRequests` empty.
+- Result: `script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh` now sends `smoke-messages-invalid-limit-type` over the authenticated RuntimeDevServer relay path and requires `invalid_payload` before continuing through normal transcript history checks.
+- Boundary: this does not add project-scoped transcript reads, client-side store routing, direct backend routing, semantic retrieval, or direct-store metadata. It keeps `chat.messages.list` a runtime-owned transcript query with schema-matching value types.
+- Guardrail: `script/check_copy_hygiene.py` pins the strict request helper, focused Swift regression, RuntimeDevServer smoke marker, protocol docs, no-device gate entry, roadmap, progress, and QA evidence.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer identified malformed allowed `chat.messages.list` limit values as the next no-device payload-boundary gap.
+- Caveat: this is no-device source/unit/schema/smoke evidence only. It does not prove physical Android QR scanning, optical camera scan reliability, live transcript refresh from hardware, production relay deployment, production P2P/rendezvous traversal, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `swift test --package-path apps/macos --filter 'LocalRuntimeMessageRouterTests/testChatMessagesListRejectsInvalidAllowedPayloadTypesBeforeStoreDispatch|LocalRuntimeMessageRouterTests/testChatMessagesListRejectsUnknownPayloadMetadataBeforeStoreDispatch|LocalRuntimeMessageRouterTests/testRuntimeChatHistoryHandlersReturnEmptyForNonPositiveLimitsWithoutReadingStore'`
+- `swiftc -typecheck script/runtime_authenticated_mock_smoke.swift`
+- `./script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_protocol_schema.py script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift apps/macos/CompanionCore/Tests/LocalRuntimeMessageRouterTests.swift script/runtime_authenticated_mock_smoke.swift script/check_copy_hygiene.py script/check_no_device_quality.sh docs/protocol.md docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-03 Chat Sessions List Invalid Allowed Type Runtime Rejection No-Device Gate
+
+- Scope: continue runtime chat-history hardening while the Android phone is disconnected. `chat.sessions.list` already rejected unknown payload keys, but allowed optional keys still need to fail closed when a client sends malformed values such as a string `limit`, fractional `limit`, string `include_archived`, non-string `query`, or non-string `embedding_model_id`.
+- Result: Chat Sessions List Invalid Allowed Type Runtime Rejection No-Device Gate: `chat.sessions.list` now parses `limit`, `include_archived`, `query`, and `embedding_model_id` with strict request-type helpers before runtime chat store dispatch.
+- Result: `testChatSessionsListRejectsInvalidAllowedPayloadTypesBeforeStoreDispatch` proves malformed allowed fields return non-retryable `invalid_payload` and leave `SearchHintRecordingRuntimeChatEventStore.searchRequests` empty.
+- Result: `script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh` now sends `smoke-sessions-invalid-allowed-types` over the authenticated RuntimeDevServer relay path and requires `invalid_payload` before continuing through normal session history and memory checks.
+- Boundary: this does not add project-scoped chat history, client-side store routing, direct backend routing, semantic retrieval, or client-controlled embedding behavior. It keeps `chat.sessions.list` a runtime-owned chat store query with schema-matching value types.
+- Guardrail: `script/check_copy_hygiene.py` pins the strict request helpers, focused Swift regression, RuntimeDevServer smoke marker, protocol docs, no-device gate entry, roadmap, progress, and QA evidence.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer identified malformed allowed `chat.sessions.list` fields as the next no-device payload-boundary gap.
+- Caveat: this is no-device source/unit/schema/smoke evidence only. It does not prove physical Android QR scanning, optical camera scan reliability, live history refresh from hardware, production relay deployment, production P2P/rendezvous traversal, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `swift test --package-path apps/macos --filter 'LocalRuntimeMessageRouterTests/testChatSessionsListRejectsInvalidAllowedPayloadTypesBeforeStoreDispatch|LocalRuntimeMessageRouterTests/testChatSessionsListRejectsUnknownPayloadMetadataBeforeStoreDispatch|LocalRuntimeMessageRouterTests/testChatSessionsListEmbeddingModelHintStaysSearchOnly'`
+- `swiftc -typecheck script/runtime_authenticated_mock_smoke.swift`
+- `./script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_protocol_schema.py script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift apps/macos/CompanionCore/Tests/LocalRuntimeMessageRouterTests.swift script/runtime_authenticated_mock_smoke.swift script/check_copy_hygiene.py script/check_no_device_quality.sh docs/protocol.md docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-03 Chat Title Request Unknown Metadata Runtime Rejection No-Device Gate
+
+- Scope: continue active runtime title-generation hardening while the Android phone is disconnected. `chat.title.request` is a runtime-mediated backend call, so mobile payloads must not silently carry response-only `title`, project IDs, workspace IDs, retrieval context, permission grants, backend URLs, backend credentials, provider URLs, route tokens, relay secrets, requested route tokens, source paths, source-control state, tool results, or direct-provider metadata before backend title generation.
+- Result: Chat Title Request Unknown Metadata Runtime Rejection No-Device Gate: `chat.title.request` uses the shared active chat request payload allowlist, accepting only `session_id`, `model`, `locale`, and `messages`.
+- Result: `testChatTitleRequestRejectsUnknownPayloadMetadataBeforeBackendDispatch` proves a malformed title payload returns `invalid_payload`, leaves `backend.listModelsCallCount` at zero, never calls backend title generation, and writes no runtime title event.
+- Result: `script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh` now sends `smoke-title-unknown-metadata` over the authenticated RuntimeDevServer relay path, requires `invalid_payload`, and then continues through the normal `chat.title.request` lifecycle smoke.
+- Result: `script/check_protocol_schema.py` now verifies `chatTitleRequestPayload` stays limited to `session_id`, `model`, `locale`, and `messages` with `additionalProperties: false`.
+- Boundary: this does not implement client-supplied title results, project/workspace title generation, retrieval-augmented title generation, tool-result title generation, direct provider routing, permission grants, or direct model-provider access. It keeps title generation runtime-owned and backend-mediated.
+- Guardrail: `script/check_copy_hygiene.py` pins the shared request allowlist, focused Swift regression, RuntimeDevServer smoke marker, schema contract, protocol docs, no-device gate entry, roadmap, progress, and QA evidence.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer confirmed `chat.title.request` was already fail-closed in code but lacked a named unknown-metadata no-device gate.
+- Caveat: this is no-device source/unit/schema/smoke evidence only. It does not prove physical Android QR scanning, optical camera scan reliability, live title generation from hardware, production relay deployment, production P2P/rendezvous traversal, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `swift test --package-path apps/macos --filter 'LocalRuntimeMessageRouterTests/testChatTitleRequestRejectsUnknownPayloadMetadataBeforeBackendDispatch|LocalRuntimeMessageRouterTests/testChatTitleRequestReturnsStructuredTitle|LocalRuntimeMessageRouterTests/testChatTitleRequestWithoutAssistantMessageReturnsInvalidPayload'`
+- `swiftc -typecheck script/runtime_authenticated_mock_smoke.swift`
+- `./script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_protocol_schema.py script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- apps/macos/CompanionCore/Tests/LocalRuntimeMessageRouterTests.swift script/runtime_authenticated_mock_smoke.swift script/check_protocol_schema.py script/check_copy_hygiene.py script/check_no_device_quality.sh docs/protocol.md docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-03 Response-Only Message Direction Rejection No-Device Gate
+
+- Scope: continue runtime protocol hardening while the Android phone is disconnected. `auth.challenge`, `pairing.result`, `models.result`, `chat.delta`, `chat.done`, `chat.title.result`, and `error` are runtime-to-client response frame types, so clients must not be able to send them back into AetherLink Runtime as request frames that look like accepted pairing, auth challenges, model lists, streamed assistant output, title results, or runtime errors.
+- Result: Response-Only Message Direction Rejection No-Device Gate: `LocalRuntimeMessageRouter` now returns `unexpected_message_direction` for client-sent response-only protocol types instead of letting known reverse-direction frames fall through the generic unknown-message path.
+- Result: `testResponseOnlyMessageTypesReturnDirectionProtocolError` proves `auth.challenge`, `pairing.result`, `models.result`, `chat.delta`, `chat.done`, `chat.title.result`, and `error` return non-retryable `unexpected_message_direction` with the original request id.
+- Result: `script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh` now sends `smoke-response-only-auth-challenge`, `smoke-response-only-pairing-result`, `smoke-response-only-models-result`, `smoke-response-only-chat-delta`, `smoke-response-only-chat-done`, `smoke-response-only-chat-title-result`, and `smoke-response-only-error` over an authenticated RuntimeDevServer relay session and requires `unexpected_message_direction`.
+- Result: RuntimeDevServer authenticated relay smoke rejects `auth.challenge`, `pairing.result`, `models.result`, `chat.delta`, `chat.done`, `chat.title.result`, and `error` when a client sends response-only protocol frames back to the runtime.
+- Result: `packages/protocol-schema/protocol.schema.json`, `script/check_protocol_schema.py`, and `docs/protocol.md` now include `unexpected_message_direction` as a named protocol error code for known message types sent in the wrong direction.
+- Boundary: this does not implement client-supplied pairing results, client-supplied auth challenges, client-supplied model result overrides, client-driven assistant stream frames, client-authored title results, or client-authored runtime errors. It keeps those frame families runtime-owned outputs only.
+- Guardrail: `script/check_copy_hygiene.py` pins the router direction-error path, focused Swift regression, RuntimeDevServer smoke markers, protocol error code, no-device summary phrase, roadmap, progress, and QA evidence.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer confirmed the response-only protocol types were not previously pinned by a named no-device gate.
+- Caveat: this is no-device source/unit/schema/smoke evidence only. It does not prove physical Android QR scanning, optical camera scan reliability, live hardware pairing/auth from a phone, production relay deployment, production P2P/rendezvous traversal, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `swift test --package-path apps/macos --filter 'LocalRuntimeMessageRouterTests/testResponseOnlyMessageTypesReturnDirectionProtocolError|LocalRuntimeMessageRouterTests/testUnknownMessageTypeReturnsProtocolError|LocalRuntimeMessageRouterTests/testTrustedHelloAndAuthResponseAuthenticatesConnection'`
+- `swiftc -typecheck script/runtime_authenticated_mock_smoke.swift`
+- `./script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_protocol_schema.py script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift apps/macos/CompanionCore/Tests/LocalRuntimeMessageRouterTests.swift script/runtime_authenticated_mock_smoke.swift script/check_protocol_schema.py script/check_copy_hygiene.py script/check_no_device_quality.sh packages/protocol-schema/protocol.schema.json docs/protocol.md docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-03 Pre-Auth Unknown Metadata Rejection No-Device Gate
+
+- Scope: continue runtime pairing/auth boundary hardening while the Android phone is disconnected. `pairing.request`, `hello`, and `auth.response` are active pre-runtime-command messages, so mobile payloads must not silently carry response-only pairing/auth fields, forged runtime identity/proof fields, backend URLs, backend credentials, provider URLs, route tokens, relay secrets, requested route tokens, workspace IDs, permission grants, source paths, source-control state, or direct-provider metadata before trust, challenge, or authentication mutation.
+- Result: Pre-Auth Unknown Metadata Rejection No-Device Gate: `LocalRuntimeMessageRouter` now enforces strict request payload key allowlists for `pairing.request`, `hello`, and `auth.response` before trusted-device writes, auth challenge creation, or authenticated-session mutation.
+- Result: `testPairingRequestRejectsUnknownPayloadMetadataBeforeTrusting`, `testHelloRejectsUnknownPayloadMetadataBeforeChallengeCreation`, and `testAuthResponseRejectsUnknownPayloadMetadataBeforeAuthentication` prove malformed payloads return `invalid_payload`, leave trusted-device storage empty or the connection unauthenticated, and still allow later valid same-session pairing/auth flows.
+- Result: `script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh` now sends `smoke-pair-unknown-metadata`, `smoke-hello-unknown-metadata`, and `smoke-auth-unknown-metadata` over the RuntimeDevServer relay path, requires `invalid_payload`, and proves follow-up runtime commands still require authentication.
+- Result: `script/check_protocol_schema.py` now verifies the closed request schemas for `pairingRequestPayload`, `helloPayload`, and the request branch of `authResponsePayload`.
+- Boundary: this does not add client-supplied runtime identity updates, client-chosen auth nonces, client-supplied runtime proofs, backend/provider routing, permission grants, workspace-scoped pairing, or direct provider access. It keeps pairing and auth as runtime-owned trust and challenge-response operations.
+- Guardrail: `script/check_copy_hygiene.py` pins the runtime allowlists, focused Swift regressions, RuntimeDevServer smoke markers, closed schema, protocol docs, no-device gate entry, roadmap, progress, and QA evidence.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer confirmed `pairing.request`, `hello`, and `auth.response` as active pre-auth payload-boundary gaps.
+- Caveat: this is no-device source/unit/schema/smoke evidence only. It does not prove physical Android QR scanning, optical camera scan reliability, live hardware pairing/auth from a phone, production relay deployment, production P2P/rendezvous traversal, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `swift test --package-path apps/macos --filter 'LocalRuntimeMessageRouterTests/testPairingRequestRejectsUnknownPayloadMetadataBeforeTrusting|LocalRuntimeMessageRouterTests/testPairingRequestStoresTrustedDeviceAndReturnsAccepted|LocalRuntimeMessageRouterTests/testHelloRejectsUnknownPayloadMetadataBeforeChallengeCreation|LocalRuntimeMessageRouterTests/testAuthResponseRejectsUnknownPayloadMetadataBeforeAuthentication|LocalRuntimeMessageRouterTests/testTrustedHelloAndAuthResponseAuthenticatesConnection'`
+- `swiftc -typecheck script/runtime_authenticated_mock_smoke.swift`
+- `./script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift apps/macos/CompanionCore/Tests/LocalRuntimeMessageRouterTests.swift script/runtime_authenticated_mock_smoke.swift script/check_protocol_schema.py script/check_copy_hygiene.py script/check_no_device_quality.sh docs/protocol.md docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-03 Empty Runtime Request Unknown Metadata Rejection No-Device Gate
+
+- Scope: continue active runtime command hardening while the Android phone is disconnected. `runtime.health`, `models.list`, and `route.refresh` request payloads are schema-defined as empty, so mobile payloads must not silently carry response-only status, models, route material, backend URLs, backend credentials, provider URLs, route tokens, relay secrets, requested route tokens, workspace IDs, permission grants, source paths, source-control state, model commands, or direct-provider metadata before runtime backend or route-refresh dispatch.
+- Result: Empty Runtime Request Unknown Metadata Rejection No-Device Gate: `LocalRuntimeMessageRouter` now validates empty request payloads for `runtime.health`, `models.list`, and `route.refresh` before backend health/model-list calls or route-refresh provider calls.
+- Result: `testRuntimeHealthRejectsUnknownPayloadMetadataBeforeBackendDispatch`, `testModelsListRejectsUnknownPayloadMetadataBeforeBackendDispatch`, and `testRouteRefreshRejectsUnknownPayloadMetadataBeforeRuntimeProviderDispatch` prove malformed payloads return `invalid_payload` and leave backend health/model-list calls or route-refresh provider calls at zero.
+- Result: `script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh` now sends `smoke-health-unknown-metadata`, `smoke-models-list-unknown-metadata`, and `smoke-route-refresh-unknown-metadata` over the authenticated RuntimeDevServer relay path, requires `invalid_payload`, and then continues through the normal `runtime.health`, `models.list`, and `route.refresh` checks.
+- Result: `script/check_protocol_schema.py` now verifies that `emptyPayload` remains an object with `maxProperties: 0` and that `runtimeHealthPayload`, `modelsListPayload`, and `routeRefreshPayload` keep an empty request branch.
+- Boundary: this does not implement client-supplied health status, model list overrides, route-material upload, workspace-scoped runtime requests, direct backend/provider calls, permission grants, model commands, or production overlay/session control. It keeps these active commands as authenticated runtime-owned status, model-list, and route-refresh operations.
+- Guardrail: `script/check_copy_hygiene.py` pins the runtime empty-payload helper, focused Swift regressions, RuntimeDevServer smoke markers, schema contract, protocol docs, no-device gate entry, roadmap, progress, and QA evidence.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer confirmed `runtime.health`, `models.list`, and `route.refresh` as active empty-request payload-boundary gaps.
+- Caveat: this is no-device source/unit/schema/smoke evidence only. It does not prove physical Android QR scanning, optical camera scan reliability, live provider-backed model listing/chat from hardware, production relay deployment, production P2P/rendezvous traversal, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `swift test --package-path apps/macos --filter 'LocalRuntimeMessageRouterTests/testRuntimeHealthRejectsUnknownPayloadMetadataBeforeBackendDispatch|LocalRuntimeMessageRouterTests/testRuntimeHealthResponseUsesRuntimeHealthType|LocalRuntimeMessageRouterTests/testModelsListRejectsUnknownPayloadMetadataBeforeBackendDispatch|LocalRuntimeMessageRouterTests/testModelsListReturnsModelsWithoutExposingOllamaURL|LocalRuntimeMessageRouterTests/testModelsListBackendErrorUsesProtocolErrorCodeWithoutBackendURL|LocalRuntimeMessageRouterTests/testRouteRefreshRejectsUnknownPayloadMetadataBeforeRuntimeProviderDispatch|LocalRuntimeMessageRouterTests/testRouteRefreshReturnsFreshRelayMaterialFromRuntimeProvider'`
+- `swiftc -typecheck script/runtime_authenticated_mock_smoke.swift`
+- `./script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift apps/macos/CompanionCore/Tests/LocalRuntimeMessageRouterTests.swift script/runtime_authenticated_mock_smoke.swift script/check_protocol_schema.py script/check_copy_hygiene.py script/check_no_device_quality.sh docs/protocol.md docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-03 Memory Upsert Unknown Metadata Runtime Rejection No-Device Gate
+
+- Scope: continue runtime-owned memory mutation hardening while the Android phone is disconnected. `memory.upsert` is an active runtime memory store mutation, so mobile payloads must not silently carry response-only `entry`, runtime-derived `source`, backend URLs, backend credentials, provider URLs, route tokens, relay secrets, requested route tokens, workspace IDs, permission grants, source paths, source-control state, search metadata, or direct-store metadata before the runtime writes memory.
+- Result: Memory Upsert Unknown Metadata Runtime Rejection No-Device Gate: `LocalRuntimeMessageRouter` now enforces a strict `memory.upsert` request payload key allowlist before parsing `content` and before runtime memory store mutation.
+- Result: `testMemoryUpsertRejectsUnknownPayloadMetadataBeforeStoreMutation` proves a `memory.upsert` payload carrying response-only `entry`, runtime-derived `source`, `backend_url`, `backend_credentials`, `provider_url`, `route_token`, `relay_secret`, `requested_route_token`, `workspace_id`, `permission_grant`, `source_path`, and `source_control_status` returns `invalid_payload` and leaves `store.upsertRequests` empty.
+- Result: `script/runtime_authenticated_mock_smoke.swift` now sends `smoke-memory-upsert-unknown-metadata` over the authenticated RuntimeDevServer relay path, requires `invalid_payload`, and then verifies `memory.list` does not contain the rejected entry id.
+- Result: `script/check_protocol_schema.py` now verifies that the request branch of `memoryUpsertPayload` remains limited to `id`, `content`, and `enabled` with `additionalProperties: false`, while the response branch keeps `entry`.
+- Boundary: this does not implement client-supplied memory entries, workspace-scoped memory mutation, source-indexed memory mutation, search-index mutation, direct backend/provider memory control, provider routing, or permission grants. It keeps upsert as an authenticated runtime-owned memory store mutation.
+- Guardrail: `script/check_copy_hygiene.py` pins the runtime allowlist, focused Swift regression, RuntimeDevServer smoke markers, closed schema, protocol docs, no-device gate entry, roadmap, progress, and QA evidence.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer confirmed `memory.upsert` as the next active memory payload-boundary gap.
+- Caveat: this is no-device source/unit/schema/smoke evidence only. It does not prove physical Android QR scanning, live memory editing from hardware, production relay deployment, production P2P/rendezvous traversal, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `swift test --package-path apps/macos --filter 'LocalRuntimeMessageRouterTests/testMemoryUpsertRejectsUnknownPayloadMetadataBeforeStoreMutation|LocalRuntimeMessageRouterTests/testMemoryUpsertRejectsClientSuppliedSourceMetadataAndPreservesRuntimeSource|LocalRuntimeMessageRouterTests/testRuntimeMemoryMessagesMutateRuntimeStore'`
+- `swiftc -typecheck script/runtime_authenticated_mock_smoke.swift`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift apps/macos/CompanionCore/Tests/LocalRuntimeMessageRouterTests.swift script/runtime_authenticated_mock_smoke.swift script/check_protocol_schema.py script/check_copy_hygiene.py script/check_no_device_quality.sh docs/protocol.md docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-03 Memory Summary Draft Decision Unknown Metadata Runtime Rejection No-Device Gate
+
+- Scope: continue runtime-owned memory-summary review mutation hardening while the Android phone is disconnected. `memory.summary.draft.approve` and `memory.summary.draft.dismiss` are active runtime review decision commands, so mobile payloads must not silently carry response-only `status`, `entry`, `dismissed_at`, backend URLs, route tokens, relay secrets, workspace IDs, permission grants, source paths, source-control state, source metadata, or direct-store metadata before the runtime recomputes drafts or mutates memory/dismiss state.
+- Result: Memory Summary Draft Decision Unknown Metadata Runtime Rejection No-Device Gate: `LocalRuntimeMessageRouter` now enforces strict request payload key allowlists for `memory.summary.draft.approve` and `memory.summary.draft.dismiss` before parsing request fields, before runtime chat-store draft recomputation, and before runtime memory-store mutation.
+- Result: `testMemorySummaryDraftApproveRejectsUnknownPayloadMetadataBeforeStoreMutation` proves an approve payload carrying response-only `status` and `entry` plus backend/route/workspace/source metadata returns `invalid_payload`, leaves `chatStore.sessionListRequests` empty, and leaves `memoryStore.upsertRequests` empty.
+- Result: `testMemorySummaryDraftDismissRejectsUnknownPayloadMetadataBeforeStoreMutation` proves a dismiss payload carrying response-only `status` and `dismissed_at` plus backend/route/workspace/source metadata returns `invalid_payload`, leaves `chatStore.sessionListRequests` empty, and leaves `memoryStore.dismissMemorySummaryDraftRequests` empty.
+- Result: `script/check_protocol_schema.py` now verifies that approve request fields stay limited to `content`, `draft_id`, `enabled`, `expected_session_id`, and `expected_source_message_count`, and dismiss request fields stay limited to `draft_id`, `expected_session_id`, and `expected_source_message_count`.
+- Boundary: this does not implement workspace-scoped memory-summary decisions, source-indexed decisions, direct backend/provider summary generation, provider routing, permission grants, or LLM-generated summaries. It keeps approve/dismiss as authenticated runtime-owned deterministic review decisions.
+- Guardrail: `script/check_copy_hygiene.py` pins the runtime allowlists, focused Swift regressions, closed schema, protocol docs, no-device gate entries, roadmap, progress, and QA evidence.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer confirmed approve/dismiss as the next active memory-summary decision payload-boundary gap.
+- Caveat: this is no-device source/unit/schema evidence only. It does not prove physical Android QR scanning, live draft approval/dismissal from hardware, production relay deployment, production P2P/rendezvous traversal, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `swift test --package-path apps/macos --filter 'LocalRuntimeMessageRouterTests/testMemorySummaryDraftApproveRejectsUnknownPayloadMetadataBeforeStoreMutation|LocalRuntimeMessageRouterTests/testMemorySummaryDraftDismissRejectsUnknownPayloadMetadataBeforeStoreMutation|LocalRuntimeMessageRouterTests/testMemorySummaryDraftApproveWritesIdempotentOwnerScopedMemoryAndHidesApprovedDraft|LocalRuntimeMessageRouterTests/testMemorySummaryDraftDismissHidesOwnerScopedDraftWithoutWritingMemory'`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift apps/macos/CompanionCore/Tests/LocalRuntimeMessageRouterTests.swift packages/protocol-schema/protocol.schema.json script/check_protocol_schema.py script/check_copy_hygiene.py script/check_no_device_quality.sh docs/protocol.md docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-03 Memory Summary Drafts List Unknown Metadata Runtime Rejection No-Device Gate
+
+- Scope: continue runtime-owned memory-summary review hardening while the Android phone is disconnected. `memory.summary.drafts.list` is an active runtime chat/memory store read, so mobile payloads must not silently carry response-only `drafts`, backend URLs, route tokens, relay secrets, workspace IDs, permission grants, source paths, source-control state, or direct-store metadata before the runtime reads summary candidates or dismissed/approved memory state.
+- Result: Memory Summary Drafts List Unknown Metadata Runtime Rejection No-Device Gate: `LocalRuntimeMessageRouter` now enforces a strict `memory.summary.drafts.list` request payload key allowlist before parsing `limit` and before runtime chat or memory store dispatch.
+- Result: `testMemorySummaryDraftsListRejectsUnknownPayloadMetadataBeforeStoreDispatch` proves a `memory.summary.drafts.list` payload carrying `drafts`, `backend_url`, `provider_url`, `route_token`, `relay_secret`, `requested_route_token`, `workspace_id`, `permission_grant`, `source_path`, and `source_control_status` returns `invalid_payload` and leaves both `chatStore.sessionListRequests` and `memoryStore.listRequests` empty.
+- Result: `script/check_protocol_schema.py` now verifies that the request branch of `memorySummaryDraftsListPayload` remains limited to `limit` with `additionalProperties: false`, while the response branch keeps `drafts`.
+- Boundary: this does not implement workspace-scoped memory-summary review, source-indexed review, direct backend/provider summary generation, provider routing, permission grants, or LLM-generated summaries. It keeps draft listing as an authenticated runtime-owned deterministic review read.
+- Guardrail: `script/check_copy_hygiene.py` pins the runtime allowlist, focused Swift regression, closed schema, protocol docs, no-device gate entry, roadmap, progress, and QA evidence.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer identified this active memory-summary draft listing path as the next analogous payload-boundary gap.
+- Caveat: this is no-device source/unit/schema evidence only. It does not prove physical Android QR scanning, live draft review from hardware, production relay deployment, production P2P/rendezvous traversal, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `swift test --package-path apps/macos --filter 'LocalRuntimeMessageRouterTests/testMemorySummaryDraftsListReturnsOwnerScopedActiveVisibleDraftsOnly|LocalRuntimeMessageRouterTests/testMemorySummaryDraftsListRejectsUnknownPayloadMetadataBeforeStoreDispatch'`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift apps/macos/CompanionCore/Tests/LocalRuntimeMessageRouterTests.swift packages/protocol-schema/protocol.schema.json script/check_protocol_schema.py script/check_copy_hygiene.py script/check_no_device_quality.sh docs/protocol.md docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-03 Memory List Unknown Metadata Runtime Rejection No-Device Gate
+
+- Scope: continue runtime-owned memory read hardening while the Android phone is disconnected. `memory.list` is an active runtime memory store read, so mobile payloads must not silently carry response-only `entries`, backend URLs, route tokens, relay secrets, workspace IDs, permission grants, source paths, source-control state, or direct-store metadata before the runtime reads memory.
+- Result: Memory List Unknown Metadata Runtime Rejection No-Device Gate: `LocalRuntimeMessageRouter` now enforces a strict `memory.list` request payload key allowlist before parsing `query` and before runtime memory store dispatch.
+- Result: `testMemoryListRejectsUnknownPayloadMetadataBeforeStoreDispatch` proves a `memory.list` payload carrying `entries`, `backend_url`, `provider_url`, `route_token`, `relay_secret`, `requested_route_token`, `workspace_id`, `permission_grant`, `source_path`, and `source_control_status` returns `invalid_payload` and leaves `store.listRequests` empty.
+- Result: `script/check_protocol_schema.py` now verifies that the request branch of `memoryListPayload` remains limited to `query` with `additionalProperties: false`, while the response branch keeps `entries`.
+- Boundary: this does not implement workspace-scoped memory reads, source-indexed memory reads, direct backend/provider memory control, provider routing, permission grants, or a separate `memory.search` command. It keeps memory listing as an authenticated runtime-owned memory store query.
+- Guardrail: `script/check_copy_hygiene.py` pins the runtime allowlist, focused Swift regression, closed schema, protocol docs, no-device gate entry, roadmap, progress, and QA evidence.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer cross-checked this active memory list path and identified `memory.summary.drafts.list` as the next analogous payload-boundary gap.
+- Caveat: this is no-device source/unit/schema evidence only. It does not prove physical Android QR scanning, live memory listing from hardware, production relay deployment, production P2P/rendezvous traversal, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `swift test --package-path apps/macos --filter 'LocalRuntimeMessageRouterTests/testMemoryListRejectsUnknownPayloadMetadataBeforeStoreDispatch|LocalRuntimeMessageRouterTests/testMemoryListQueryFiltersRuntimeOwnedMemoryWithSearchMetadata|LocalRuntimeMessageRouterTests/testRuntimeMemoryMessagesMutateRuntimeStore'`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift apps/macos/CompanionCore/Tests/LocalRuntimeMessageRouterTests.swift packages/protocol-schema/protocol.schema.json script/check_protocol_schema.py script/check_copy_hygiene.py script/check_no_device_quality.sh docs/protocol.md docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-03 Memory Delete Unknown Metadata Runtime Rejection No-Device Gate
+
+- Scope: continue runtime-owned memory mutation hardening while the Android phone is disconnected. `memory.delete` is an active runtime memory store mutation, so mobile payloads must not silently carry `deleted_at`, backend URLs, route tokens, relay secrets, workspace IDs, permission grants, source paths, source-control state, or direct-store metadata before the runtime writes a tombstone.
+- Result: Memory Delete Unknown Metadata Runtime Rejection No-Device Gate: `LocalRuntimeMessageRouter` now enforces a strict `memory.delete` request payload key allowlist before parsing `id` and before runtime memory store mutation.
+- Result: `testMemoryDeleteRejectsUnknownPayloadMetadataBeforeStoreMutation` proves a `memory.delete` payload carrying `deleted_at`, `backend_url`, `provider_url`, `route_token`, `relay_secret`, `requested_route_token`, `workspace_id`, `permission_grant`, `source_path`, and `source_control_status` returns `invalid_payload` and leaves `store.deleteRequests` empty.
+- Result: `script/check_protocol_schema.py` now verifies that the request branch of `memoryDeletePayload` remains limited to `id` with `additionalProperties: false`, while the acknowledgement branch keeps runtime-generated `deleted_at`.
+- Boundary: this does not implement client-supplied delete timestamps, workspace-scoped memory deletion, source-indexed memory deletion, direct backend/provider memory control, provider routing, or permission grants. It keeps delete as an authenticated runtime-owned memory store mutation.
+- Guardrail: `script/check_copy_hygiene.py` pins the runtime allowlist, focused Swift regression, closed schema, protocol docs, no-device gate entry, roadmap, progress, and QA evidence.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer cross-checked this active memory delete path.
+- Caveat: this is no-device source/unit/schema evidence only. It does not prove physical Android QR scanning, live memory deletion from hardware, production relay deployment, production P2P/rendezvous traversal, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `swift test --package-path apps/macos --filter 'LocalRuntimeMessageRouterTests/testRuntimeMemoryMessagesMutateRuntimeStore|LocalRuntimeMessageRouterTests/testMemoryDeleteRejectsUnknownPayloadMetadataBeforeStoreMutation'`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift apps/macos/CompanionCore/Tests/LocalRuntimeMessageRouterTests.swift packages/protocol-schema/protocol.schema.json script/check_protocol_schema.py script/check_copy_hygiene.py script/check_no_device_quality.sh docs/protocol.md docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-03 Chat Session Rename Unknown Metadata Runtime Rejection No-Device Gate
+
+- Scope: continue runtime-owned chat title mutation hardening while the Android phone is disconnected. `chat.session.rename` is an active runtime title-store mutation, so mobile payloads must not silently carry `renamed_at`, backend URLs, route tokens, relay secrets, workspace IDs, permission grants, source paths, source-control state, or direct-store metadata before the runtime writes a title event.
+- Result: Chat Session Rename Unknown Metadata Runtime Rejection No-Device Gate: `LocalRuntimeMessageRouter` now enforces a strict `chat.session.rename` request payload key allowlist before parsing `session_id`/`title` and before runtime title store mutation.
+- Result: `testChatSessionRenameRejectsUnknownPayloadMetadataBeforeTitleStoreMutation` proves a `chat.session.rename` payload carrying `renamed_at`, `backend_url`, `provider_url`, `route_token`, `relay_secret`, `requested_route_token`, `workspace_id`, `permission_grant`, `source_path`, and `source_control_status` returns `invalid_payload` and leaves `store.events` empty.
+- Result: `packages/protocol-schema/protocol.schema.json` now splits `chatSessionRenamePayload` into a request branch that accepts only `session_id` and `title`, plus an acknowledgement branch that includes runtime-generated `renamed_at`; `script/check_protocol_schema.py` verifies that split.
+- Boundary: this does not implement client-supplied rename timestamps, workspace-scoped title mutation, source-indexed title mutation, direct backend/provider title control, provider routing, or permission grants. It keeps rename as an authenticated runtime-owned title mutation.
+- Guardrail: `script/check_copy_hygiene.py` pins the runtime allowlist, focused Swift regression, closed schema, protocol docs, no-device gate entry, roadmap, progress, and QA evidence.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer cross-checked this active chat session rename path.
+- Caveat: this is no-device source/unit/schema evidence only. It does not prove physical Android QR scanning, live rename from hardware, production relay deployment, production P2P/rendezvous traversal, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `swift test --filter 'LocalRuntimeMessageRouterTests/testRuntimeChatSessionRenameStoresRuntimeTitle|LocalRuntimeMessageRouterTests/testChatSessionRenameRejectsUnknownPayloadMetadataBeforeTitleStoreMutation'`
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+
+### 2026-07-03 Chat Session Lifecycle Unknown Metadata Runtime Rejection No-Device Gate
+
+- Scope: continue runtime-owned chat history mutation hardening while the Android phone is disconnected. `chat.session.archive`, `chat.session.restore`, and `chat.session.delete` are active runtime chat store mutations, so mobile payloads must not silently carry backend URLs, route tokens, relay secrets, workspace IDs, permission grants, source paths, source-control state, or direct-store metadata before the runtime mutates lifecycle state.
+- Result: Chat Session Lifecycle Unknown Metadata Runtime Rejection No-Device Gate: `LocalRuntimeMessageRouter` now enforces a strict lifecycle payload key allowlist before parsing `session_id` and before runtime chat store mutation.
+- Result: `testChatSessionLifecycleRejectsUnknownPayloadMetadataBeforeStoreMutation` proves a `chat.session.archive` payload carrying `backend_url`, `provider_url`, `route_token`, `relay_secret`, `requested_route_token`, `workspace_id`, `permission_grant`, `source_path`, and `source_control_status` returns `invalid_payload` and leaves both `store.mutationRequests` and `store.events` empty.
+- Result: `script/check_protocol_schema.py` now verifies that `chatSessionLifecycleRequestPayload` remains limited to `session_id` with `additionalProperties: false`.
+- Boundary: this does not implement workspace-scoped lifecycle mutation, source-indexed lifecycle mutation, direct backend/provider lifecycle control, provider routing, or permission grants. It keeps archive/restore/delete as authenticated runtime-owned chat store mutations.
+- Guardrail: `script/check_copy_hygiene.py` pins the runtime allowlist, focused Swift regression, closed schema, protocol docs, no-device gate entry, roadmap, progress, and QA evidence.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer cross-checked this active chat session lifecycle path.
+- Caveat: this is no-device source/unit/schema evidence only. It does not prove physical Android QR scanning, live archive/restore/delete from hardware, production relay deployment, production P2P/rendezvous traversal, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `swift test --filter 'LocalRuntimeMessageRouterTests/testRuntimeChatSessionLifecycleMessagesMutateRuntimeStore|LocalRuntimeMessageRouterTests/testChatSessionLifecycleRejectsUnknownPayloadMetadataBeforeStoreMutation'`
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+
+### 2026-07-03 Chat Messages List Unknown Metadata Runtime Rejection No-Device Gate
+
+- Scope: continue runtime-owned chat history boundary hardening while the Android phone is disconnected. `chat.messages.list` is an active runtime chat store read, so mobile payloads must not silently carry backend URLs, route tokens, relay secrets, workspace IDs, permission grants, source paths, source-control state, or direct-store metadata before the runtime reads a transcript.
+- Result: Chat Messages List Unknown Metadata Runtime Rejection No-Device Gate: `LocalRuntimeMessageRouter` now enforces a strict `chat.messages.list` payload key allowlist before parsing `session_id`/`limit` and before runtime chat store dispatch.
+- Result: `testChatMessagesListRejectsUnknownPayloadMetadataBeforeStoreDispatch` proves a `chat.messages.list` payload carrying `backend_url`, `provider_url`, `route_token`, `relay_secret`, `requested_route_token`, `workspace_id`, `permission_grant`, `source_path`, and `source_control_status` returns `invalid_payload` and leaves `store.messageRequests` empty.
+- Result: `script/check_protocol_schema.py` now verifies that the request branch of `chatMessagesListPayload` remains limited to `session_id` and `limit` with `additionalProperties: false`.
+- Boundary: this does not implement workspace-scoped transcript reads, source-indexed transcript reads, direct backend/provider history reads, provider routing, or permission grants. It keeps transcript listing as an authenticated runtime-owned chat store query for one session.
+- Guardrail: `script/check_copy_hygiene.py` pins the runtime allowlist, focused Swift regression, closed schema, protocol docs, no-device gate entry, roadmap, progress, and QA evidence.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer cross-checked this active `chat.messages.list` path.
+- Caveat: this is no-device source/unit/schema evidence only. It does not prove physical Android QR scanning, live transcript refresh from hardware, live provider-backed chat/cancel, production relay deployment, production P2P/rendezvous traversal, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `swift test --filter 'LocalRuntimeMessageRouterTests/testRuntimeChatHistoryMessagesAreAuthenticatedAndReturnedFromStore|LocalRuntimeMessageRouterTests/testChatMessagesListRejectsUnknownPayloadMetadataBeforeStoreDispatch|LocalRuntimeMessageRouterTests/testRuntimeChatHistoryHandlersReturnEmptyForNonPositiveLimitsWithoutReadingStore'`
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+
+### 2026-07-03 Chat Sessions List Unknown Metadata Runtime Rejection No-Device Gate
+
+- Scope: continue runtime-owned chat history boundary hardening while the Android phone is disconnected. `chat.sessions.list` is an active runtime chat store read, so mobile payloads must not silently carry backend URLs, route tokens, relay secrets, workspace IDs, permission grants, source paths, source-control state, or direct-store metadata before the runtime reads the chat store.
+- Result: Chat Sessions List Unknown Metadata Runtime Rejection No-Device Gate: `LocalRuntimeMessageRouter` now enforces a strict `chat.sessions.list` payload key allowlist before parsing search/window options and before runtime chat store dispatch.
+- Result: `testChatSessionsListRejectsUnknownPayloadMetadataBeforeStoreDispatch` proves a `chat.sessions.list` payload carrying `backend_url`, `provider_url`, `route_token`, `relay_secret`, `requested_route_token`, `workspace_id`, `permission_grant`, `source_path`, and `source_control_status` returns `invalid_payload` and leaves `store.searchRequests` empty.
+- Result: `script/check_protocol_schema.py` now verifies that the request branch of `chatSessionsListPayload` remains limited to `limit`, `include_archived`, `query`, and `embedding_model_id` with `additionalProperties: false`.
+- Boundary: this does not implement workspace-scoped history, source-indexed history, direct backend/provider history reads, provider routing, or permission grants. It keeps session listing as an authenticated runtime-owned chat store query.
+- Guardrail: `script/check_copy_hygiene.py` pins the runtime allowlist, focused Swift regression, closed schema, protocol docs, no-device gate entry, roadmap, progress, and QA evidence.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 read-only explorers identified and cross-checked this active `chat.sessions.list` path.
+- Caveat: this is no-device source/unit/schema evidence only. It does not prove physical Android QR scanning, live history refresh from hardware, live provider-backed chat/cancel, production relay deployment, production P2P/rendezvous traversal, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `swift test --filter 'LocalRuntimeMessageRouterTests/testChatSessionsListEmbeddingModelHintStaysSearchOnly|LocalRuntimeMessageRouterTests/testChatSessionsListRejectsUnknownPayloadMetadataBeforeStoreDispatch|LocalRuntimeMessageRouterTests/testChatSessionsListQueryFiltersRuntimeOwnedSummaries'`
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+
+### 2026-07-03 Chat Cancel Unknown Metadata Runtime Rejection No-Device Gate
+
+- Scope: continue local-runtime boundary hardening while the Android phone is disconnected. `chat.cancel` is an active runtime command with cancellation side effects, so mobile payloads must not silently carry backend URLs, route tokens, relay secrets, workspace IDs, permission grants, source-control state, or provider-specific cancel metadata before the runtime attempts cancellation.
+- Result: Chat Cancel Unknown Metadata Runtime Rejection No-Device Gate: `LocalRuntimeMessageRouter` now enforces a strict `chat.cancel` payload key allowlist before reading `target_request_id` and before backend cancel dispatch.
+- Result: `testChatCancelRejectsUnknownPayloadMetadataBeforeBackendDispatch` proves a `chat.cancel` payload carrying `backend_url`, `route_token`, `relay_secret`, `workspace_id`, `permission_grant`, and `source_control_status` returns `invalid_payload` and leaves `backend.cancelledGenerationIDs` empty.
+- Result: `script/check_protocol_schema.py` now verifies that the request branch of `chatCancelPayload` remains limited to `target_request_id` with `additionalProperties: false`.
+- Boundary: this does not implement provider-specific cancellation routing, direct backend cancellation, workspace-aware cancellation, source-control cancellation context, or permission grants. It keeps cancellation targeted at runtime-owned in-flight request ids.
+- Guardrail: `script/check_copy_hygiene.py` pins the runtime allowlist, focused Swift regression, closed schema, protocol docs, no-device gate entry, roadmap, progress, and QA evidence.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer was launched for candidate selection while this focused active-path guard was implemented locally.
+- Caveat: this is no-device source/unit/schema evidence only. It does not prove physical Android QR scanning, live cancel from hardware, live provider-backed streaming cancellation, production relay deployment, production P2P/rendezvous traversal, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `swift test --filter 'LocalRuntimeMessageRouterTests/testChatCancelReturnsCancelAcknowledgement|LocalRuntimeMessageRouterTests/testChatCancelRejectsUnknownPayloadMetadataBeforeBackendDispatch|LocalRuntimeMessageRouterTests/testChatCancelUnknownGenerationReturnsProtocolError'`
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+
+### 2026-07-03 Models Pull Unknown Metadata Runtime Rejection No-Device Gate
+
+- Scope: continue local-runtime boundary hardening while the Android phone is disconnected. `models.pull` is an active runtime command with provider side effects, so mobile payloads must not silently carry backend URLs, provider URLs, route tokens, relay secrets, requested route tokens, workspace IDs, permission grants, or direct-provider route material before the runtime starts a pull.
+- Result: Models Pull Unknown Metadata Runtime Rejection No-Device Gate: `LocalRuntimeMessageRouter` now enforces a strict `models.pull` payload key allowlist before reading `model` and before backend pull dispatch.
+- Result: `testModelsPullRejectsUnknownPayloadMetadataBeforeBackendDispatch` proves a `models.pull` payload carrying `backend_url`, `provider_url`, `route_token`, `relay_secret`, `requested_route_token`, `workspace_id`, and `permission_grant` returns `invalid_payload` and leaves `backend.pulledModelNames` empty.
+- Result: `script/check_protocol_schema.py` now verifies that the request branch of `modelsPullPayload` remains limited to `model` and `backend` with `additionalProperties: false`.
+- Boundary: this does not implement mobile-selected provider endpoints, provider credential transport, workspace-aware pulls, runtime route injection, or permission grants. It keeps provider routing and credential configuration on the runtime host.
+- Guardrail: `script/check_copy_hygiene.py` pins the runtime allowlist, focused Swift regression, closed schema, protocol docs, no-device gate entry, roadmap, progress, and QA evidence.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer selected `models.pull` as the next concrete active schema/runtime gap.
+- Caveat: this is no-device source/unit/schema evidence only. It does not prove physical Android QR scanning, live model installation on hardware, live provider-backed chat/cancel, production relay deployment, production P2P/rendezvous traversal, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `swift test --filter 'LocalRuntimeMessageRouterTests/testModelsPullReturnsSuccessWithoutExposingOllamaURL|LocalRuntimeMessageRouterTests/testModelsPullRejectsUnknownPayloadMetadataBeforeBackendDispatch'`
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+
+### 2026-07-03 Chat Send Top-Level Payload Metadata Runtime Rejection No-Device Gate
+
+- Scope: continue v0.8 workspace/RAG privacy boundary work while the Android phone is disconnected. `chat.send.payload` is an active protocol path, but project/workspace trusted-source semantics are still future work, so the top-level payload must not silently carry project IDs, workspace IDs, retrieval context, permission grants, backend URLs, route material, tool results, or trusted-source metadata.
+- Result: Chat Send Top-Level Payload Metadata Runtime Rejection No-Device Gate: `LocalRuntimeMessageRouter` now enforces a strict chat request payload key allowlist before reading `session_id`, `model`, `locale`, or `messages` and before backend dispatch.
+- Result: `testChatSendRejectsTopLevelPayloadMetadataBeforeBackendDispatch` proves a `chat.send` payload carrying `project_id`, `workspace_id`, `retrieval_context`, `permission_grant`, and `backend_url` returns `invalid_payload` and does not reach backend dispatch.
+- Result: `script/check_protocol_schema.py` now verifies that `chatSendPayload` remains limited to `session_id`, `model`, `locale`, and `messages` with `additionalProperties: false`.
+- Boundary: this does not implement project/workspace trusted-source metadata, retrieval context injection, permission grants, tool results, or direct backend routing. It keeps the active `chat.send` payload narrow until those permission and audit semantics exist.
+- Guardrail: `script/check_copy_hygiene.py` pins the runtime allowlist, focused Swift regression, closed schema, protocol docs, no-device gate entry, roadmap, progress, and QA evidence.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer confirmed top-level `chat.send.payload` unknown metadata was not already rejected and is separate from the message/attachment metadata guards.
+- Caveat: this is no-device source/unit/schema evidence only. It does not prove physical Android QR scanning, live chat entry on hardware, live provider-backed chat/cancel, production project/RAG trusted-source workflows, production relay deployment, production P2P/rendezvous traversal, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `swift test --filter 'LocalRuntimeMessageRouterTests/testChatSendRejectsTopLevelPayloadMetadataBeforeBackendDispatch|LocalRuntimeMessageRouterTests/testChatSendRejectsMessageSourceMetadataBeforeBackendDispatch|LocalRuntimeMessageRouterTests/testChatSendRejectsAttachmentSourceMetadataBeforeBackendDispatch'`
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+
+### 2026-07-03 Chat Send Message Metadata Runtime Rejection No-Device Gate
+
+- Scope: continue v0.8 workspace/RAG privacy boundary work while the Android phone is disconnected. `chat.send.messages[]` is an active protocol path, but project/workspace trusted-source semantics are still future work, so chat message objects must not silently carry source paths, workspace IDs, source-control state, backend URLs, runtime memory context, tool results, route material, or trusted-source metadata.
+- Result: Chat Send Message Metadata Runtime Rejection No-Device Gate: `LocalRuntimeMessageRouter` now enforces a strict chat message key allowlist before reading role/content/attachments and before backend dispatch.
+- Result: `testChatSendRejectsMessageSourceMetadataBeforeBackendDispatch` proves a chat message carrying `source_path`, `workspace_id`, `source_control_status`, `backend_url`, and `trusted_source` returns `invalid_payload` and does not reach backend dispatch.
+- Result: `script/check_protocol_schema.py` now verifies that `chatMessage` remains limited to `role`, `content`, and `attachments` with `additionalProperties: false`.
+- Boundary: this does not implement project/workspace trusted-source metadata, retrieval context injection, permission grants, tool results, or direct backend routing. It keeps the active chat turn carrier narrow until those permission and audit semantics exist.
+- Guardrail: `script/check_copy_hygiene.py` pins the runtime allowlist, focused Swift regression, closed schema, protocol docs, no-device gate entry, roadmap, progress, and QA evidence.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer confirmed this active `chat.send.messages[]` path was not already rejected and is separate from the attachment metadata guard.
+- Caveat: this is no-device source/unit/schema evidence only. It does not prove physical Android QR scanning, live chat entry on hardware, live provider-backed chat/cancel, production project/RAG trusted-source workflows, production relay deployment, production P2P/rendezvous traversal, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `swift test --filter 'LocalRuntimeMessageRouterTests/testChatSendRejectsMessageSourceMetadataBeforeBackendDispatch|LocalRuntimeMessageRouterTests/testChatSendRejectsAttachmentSourceMetadataBeforeBackendDispatch'`
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+
+### 2026-07-03 Attachment Source Metadata Runtime Rejection No-Device Gate
+
+- Scope: continue v0.8 workspace/RAG privacy boundary work while the Android phone is disconnected. `chat.send.messages[].attachments[]` is an active protocol path, but project/workspace trusted-source semantics are still future work, so attachments must not silently carry source paths, workspace IDs, source-control state, backend URLs, route material, or trusted-source metadata.
+- Result: Attachment Source Metadata Runtime Rejection No-Device Gate: `LocalRuntimeMessageRouter` now enforces a strict attachment key allowlist before constructing `ChatAttachment`, matching the protocol schema's closed `chatAttachment` contract.
+- Result: `testChatSendRejectsAttachmentSourceMetadataBeforeBackendDispatch` proves a document attachment carrying `source_path`, `workspace_id`, `source_control_status`, and `backend_url` returns `invalid_payload` and does not reach backend dispatch.
+- Result: `script/check_protocol_schema.py` now verifies that `chatAttachment` remains limited to `type`, `mime_type`, `name`, `data_base64`, and `text` with `additionalProperties: false`.
+- Boundary: this does not implement project/workspace trusted-source metadata, file indexing, source-control integration, or RAG. It keeps the active attachment carrier narrow until those permission and audit semantics exist.
+- Guardrail: `script/check_copy_hygiene.py` pins the runtime allowlist, focused Swift regression, closed schema, protocol docs, no-device gate entry, roadmap, progress, and QA evidence.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer identified this active attachment path as a stronger roadmap gap than adding another future namespace guard.
+- Caveat: this is no-device source/unit/schema evidence only. It does not prove physical Android QR scanning, live attachment picking on hardware, live provider-backed chat/cancel, production project/RAG trusted-source workflows, production relay deployment, production P2P/rendezvous traversal, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `swift test --filter LocalRuntimeMessageRouterTests/testChatSendRejectsAttachmentSourceMetadataBeforeBackendDispatch`
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+
+### 2026-07-03 Protocol Reserved RAG/Research Namespace No-Device Gate
+
+- Scope: continue Immediate Queue 5/6 while the Android phone is disconnected. Runtime-side embedding generation, semantic retrieval, project/file indexing, research briefs/notebooks, source citations, trusted-source controls, and source-control context are still future work, so the active protocol should not grow `embeddings.`, `retrieval.`, `index.`, `research.`, `citation.`, or `source_control.` messages yet.
+- Result: Protocol Reserved RAG/Research Namespace No-Device Gate: `script/check_protocol_schema.py` now reserves `embeddings.`, `retrieval.`, `index.`, `research.`, `citation.`, and `source_control.` from the active protocol enum alongside the existing future runtime namespaces.
+- Result: RuntimeDevServer Reserved RAG/Research Namespace Rejection No-Device Gate: RuntimeDevServer authenticated relay smoke rejects `embeddings.create`, `retrieval.query`, `index.build`, `research.brief.create`, `citation.sources.list`, and `source_control.status` with `unknown_message_type`.
+- Boundary: these reserved messages are distinct from current `models.list` embedding model metadata, deterministic lexical `memory.list` query filtering, and the current `chat.sessions.list` `embedding_model_id` search hint.
+- Guardrail: relay ciphertext boundary markers now include the future RAG/research message names, request IDs, representative payload strings, embedding model hint, file-label canary, and backend URL canary where relevant. This keeps unsupported future retrieval, indexing, research, citation, and source-control request details inside encrypted relay frame bodies.
+- Guardrail: `script/check_copy_hygiene.py` pins the schema prefixes, RuntimeDevServer smoke, no-device summary phrase, protocol docs, connection overlay boundary, roadmap, progress, and QA evidence.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer confirmed `embeddings.`, `retrieval.`, `index.`, `research.`, `citation.`, and `source_control.` as the next concrete RAG/research namespace gap.
+- Caveat: this is no-device protocol/schema/authenticated-smoke evidence only. It does not implement embedding generation, semantic retrieval, indexing, research notebooks, citations, trusted-source controls, source-control integration, physical Android QR scanning, live provider-backed chat/cancel, production relay deployment, production P2P/rendezvous traversal, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `python3 script/check_protocol_schema.py`
+- `swiftc -typecheck script/runtime_authenticated_mock_smoke.swift`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `./script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh`
+
+### 2026-07-03 Protocol Reserved Runtime Action Namespace No-Device Gate
+
+- Scope: continue Immediate Queue 5/6 while the Android phone is disconnected. Runtime-owned file operations, terminal/process controls, network access, and backend/provider configuration calls are still future permission-broker work, so the active protocol should not grow `file.`, `terminal.`, `network.`, or `backend.` messages yet.
+- Result: Protocol Reserved Runtime Action Namespace No-Device Gate: `script/check_protocol_schema.py` now reserves `file.`, `terminal.`, `network.`, and `backend.` from the active protocol enum alongside the existing future runtime namespaces.
+- Result: RuntimeDevServer Reserved Runtime Action Namespace Rejection No-Device Gate: RuntimeDevServer authenticated relay smoke rejects `file.read`, `file.write`, `file.index`, `terminal.exec`, `terminal.kill`, `network.request`, `network.open`, `backend.call`, and `backend.configure` with `unknown_message_type`.
+- Guardrail: relay ciphertext boundary markers now include the future runtime action message names, request IDs, and representative payload strings, plus file-label, backend URL, backend credential, backend API key, and model-command canaries where relevant. This keeps unsupported future file, terminal, network, and backend request details inside encrypted relay frame bodies.
+- Boundary: the reserved `file.` namespace is distinct from current `chat.send` attachments, and reserved `backend.` is distinct from current `models.list`, `models.pull`, and `chat.send` model selection.
+- Guardrail: `script/check_copy_hygiene.py` pins the schema prefixes, RuntimeDevServer smoke, no-device summary phrase, protocol docs, roadmap, progress, and QA evidence.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer confirmed `file.`, `terminal.`, `network.`, and `backend.` as the next concrete runtime-action namespace gap.
+- Caveat: this is no-device protocol/schema/authenticated-smoke evidence only. It does not implement file/workspace permissions, terminal execution, network requests, backend configuration, approval UI, audit-log browsing, physical Android QR scanning, live provider-backed chat/cancel, production relay deployment, production P2P/rendezvous traversal, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `python3 script/check_protocol_schema.py`
+- `swiftc -typecheck script/runtime_authenticated_mock_smoke.swift`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `./script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh`
+
+### 2026-07-03 Protocol Generic Tool And Permission/Approval/Audit Namespace No-Device Gate
+
+- Scope: continue Immediate Queue 5/6 while the Android phone is disconnected. Generic runtime tool execution, production permission broker prompts, mobile approval surfaces, and audit-log control flows are still future work, so the active protocol should not grow `tool.`, `permission.`, `approval.`, or `audit.` messages yet.
+- Result: Protocol Generic Tool Namespace No-Device Gate: `script/check_protocol_schema.py` now has a dedicated `tool.*` self-check using `ALLOWED_TOOL_TYPES = frozenset()` and rejects `tool.call`, `tool.result`, and `tool.run` unless they become explicitly designed active messages.
+- Result: Protocol Reserved Permission/Approval/Audit Namespace No-Device Gate: `script/check_protocol_schema.py` now reserves `permission.`, `approval.`, and `audit.` from the active protocol enum alongside the existing future runtime namespaces.
+- Result: RuntimeDevServer Generic Tool Namespace Rejection No-Device Gate: RuntimeDevServer authenticated relay smoke rejects `tool.call`, `tool.result`, and `tool.run` with `unknown_message_type`.
+- Result: RuntimeDevServer Reserved Permission/Approval/Audit Namespace Rejection No-Device Gate: RuntimeDevServer authenticated relay smoke rejects `permission.request`, `approval.prompt`, and `audit.events.list` with `unknown_message_type`.
+- Guardrail: relay ciphertext boundary markers now include the future generic tool, permission, approval, and audit message names, request IDs, and representative payload strings so unsupported control-plane request details stay inside encrypted relay frame bodies. `script/check_copy_hygiene.py` pins the schema guard, RuntimeDevServer smoke, no-device summary phrase, protocol docs, roadmap, progress, and QA evidence.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer identified the missing generic `tool.*` guard as the most code-grounded next no-device slice.
+- Caveat: this is no-device protocol/schema/authenticated-smoke evidence only. It does not implement runtime generic tools, permission prompts, mobile approval UI, audit-log browsing, physical Android QR scanning, live provider-backed chat/cancel, production relay deployment, production P2P/rendezvous traversal, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `python3 script/check_protocol_schema.py`
+- `swiftc -typecheck script/runtime_authenticated_mock_smoke.swift`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `./script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh`
+
+### 2026-07-03 Protocol Reserved Transport/Crypto Namespace No-Device Gate
+
+- Scope: continue Immediate Queue 5/6 while the Android phone is disconnected. Production E2E transport encryption, transport handshakes, rekey, crypto-session setup, and key rotation are still future work, so the active protocol should not grow `transport.` or `crypto.` messages yet.
+- Result: `script/check_protocol_schema.py` now reserves `transport.` and `crypto.` from the active protocol enum, alongside the existing encrypted-session namespace reservations.
+- Result: RuntimeDevServer authenticated relay smoke rejects `transport.handshake`, `transport.rekey`, `crypto.session.open`, and `crypto.key.rotate` with `unknown_message_type`.
+- Guardrail: the relay ciphertext boundary marker list includes the future transport/crypto message names, request IDs, and representative payload strings so unsupported future transport-control request details stay inside encrypted relay frame bodies. `script/check_copy_hygiene.py` pins the schema guard, RuntimeDevServer smoke, no-device summary phrase, protocol docs, roadmap, progress, and QA evidence.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer was used to inspect whether `transport.` and `crypto.` remained a useful guard gap after the encrypted-session namespace pass.
+- Caveat: this is no-device protocol/schema/authenticated-smoke evidence only. It does not implement production E2E transport encryption, production session-key exchange, replay-resistant session setup, key rotation, physical Android QR scanning, live provider-backed chat/cancel, production P2P/rendezvous traversal, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `python3 script/check_protocol_schema.py`
+- `swiftc -typecheck script/runtime_authenticated_mock_smoke.swift`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `./script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh`
+
+### 2026-07-03 Protocol Reserved Encrypted Session Namespace No-Device Gate
+
+- Scope: continue Immediate Queue 5/6 while the Android phone is disconnected. The roadmap still leaves production session-key exchange, production end-to-end transport encryption, replay-resistant session setup, key rotation, and encrypted-session failure recovery as future work. The active protocol should therefore not grow `session.`, `key_exchange.`, `encrypted_session.`, or `anti_replay.` messages before that design exists.
+- Result: `script/check_protocol_schema.py` now reserves `session.`, `key_exchange.`, `encrypted_session.`, and `anti_replay.` from the active protocol enum, alongside the existing tools/search/project/private-overlay reservations.
+- Result: RuntimeDevServer authenticated relay smoke rejects `session.key.exchange`, `key_exchange.begin`, `encrypted_session.open`, and `anti_replay.window.commit` with `unknown_message_type`.
+- Guardrail: the relay ciphertext boundary marker list includes the future encrypted-session message names, request IDs, and representative payload strings so unsupported future handshake/replay request details stay inside encrypted relay frame bodies. `script/check_copy_hygiene.py` pins the schema guard, RuntimeDevServer smoke, no-device summary phrase, protocol docs, roadmap, progress, and QA evidence.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer was used to inspect the current reserved-namespace gap.
+- Caveat: this is no-device protocol/schema/authenticated-smoke evidence only. It does not implement production session-key exchange, production end-to-end transport encryption, replay-resistant session setup, key rotation, physical Android QR scanning, live provider-backed chat/cancel, production P2P/rendezvous traversal, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `python3 script/check_protocol_schema.py`
+- `swiftc -typecheck script/runtime_authenticated_mock_smoke.swift`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `./script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh`
+
+### 2026-07-03 Relay Ciphertext Sensitive-Class Canary No-Device Gate
+
+- Scope: continue Immediate Queue 5/6 while the Android phone is disconnected. The private-overlay roadmap says relay/signaling infrastructure must not see AI protocol payloads, model lists, prompts, files, memory, backend credentials, backend URLs, or model commands. The RuntimeDevServer relay smoke already checked selected model/chat/attachment/history/memory/route markers, but the backend credential, backend URL, model-command, and file-label classes needed explicit canary names.
+- Result: `script/runtime_authenticated_mock_smoke.swift` now adds explicit encrypted-frame markers for `Authorization: Bearer smoke-backend-credential-canary`, `AETHERLINK_SMOKE_BACKEND_API_KEY=smoke-backend-api-key-canary`, `https://provider.example.invalid/v1/chat/completions`, `smoke-model-command-payload-canary`, and `smoke-file-payload-boundary.txt`.
+- Result: the same marker list now also pins representative model-list response fields and values, including `dev-mock-alt`, `lm_studio:dev-mock-alt`, `provider_model_id`, `qualified_id`, `capabilities`, and `vision`.
+- Result: the future rejected `web_search.query` request carries representative backend URL and credential canaries, the future rejected `p2p.session.open` request carries representative model-command and file-label canaries, and the authenticated attachment smoke uses the file-label canary as its document attachment name. If the development relay ever forwards plaintext frame bodies, the relay ciphertext boundary check now fails on those sensitive classes.
+- Guardrail: `script/check_no_device_quality.sh` reports `relay ciphertext sensitive-class canary addendum`, including encrypted frame-body checks for backend credential, backend URL, model command payload, prompt, file payload label, model-list response, and memory plaintext markers. `script/check_copy_hygiene.py` pins the canary constants, payload field names, model-list response markers, no-device summary phrase, progress, QA, and roadmap coverage.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer was used to inspect the current ciphertext marker gap.
+- Caveat: this is no-device RuntimeDevServer relay-smoke/source evidence only. It does not prove production relay deployment, production session-key exchange, production end-to-end transport encryption, physical Android QR scanning, live phone pairing, live provider-backed chat/cancel, production P2P/rendezvous traversal, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `swiftc -typecheck script/runtime_authenticated_mock_smoke.swift`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `./script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh`
+
+### 2026-07-03 Relay Probe/Physical Wrapper Production Proof-Boundary Summary No-Device Gate
+
+- Scope: continue Immediate Queue 5/6 while the Android phone is disconnected. No-ADB QR and different-network preflight summaries already exposed production proof-boundary fields; Android relay reachability probe and physical external-relay wrapper summaries needed the same long-lived artifact language.
+- Result: `script/android_relay_reachability_probe.sh` summary JSON now records `coverage.production_relay=false`, `coverage.production_session_key_exchange=false`, and `coverage.production_end_to_end_transport_encryption=false`, with explicit session-key and E2E transport caveats.
+- Result: `script/check_physical_external_relay_pairing.sh` summary JSON now records the same production proof-boundary booleans even for successful physical-wrapper runs, because the wrapper proves development relay reachability/pairing evidence rather than production relay, production session-key exchange, or production E2E transport encryption.
+- Guardrail: `script/check_no_device_quality.sh` asserts those fields in the fake-ADB Android relay probe redaction self-test, invalid-host physical wrapper summary, URL-host redaction summary, and seeded physical wrapper probe-summary self-test. `script/check_copy_hygiene.py` pins the summary fields, no-device assertions, summary phrase, progress, QA, and roadmap coverage.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer confirmed `production_relay=false` as the remaining proof-boundary gap after the session-key and E2E fields were added.
+- Caveat: this is no-device summary/source/self-test evidence only. It does not prove production relay deployment, production session-key exchange, production end-to-end transport encryption, physical Android QR scanning, live phone pairing, live provider-backed chat/cancel, production P2P/rendezvous traversal, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `bash -n script/android_relay_reachability_probe.sh script/check_physical_external_relay_pairing.sh script/check_no_device_quality.sh`
+- focused fake-ADB Android relay probe redaction self-test via `check_android_relay_reachability_probe_route_material_redaction_guard`
+- focused physical external-relay summary guard via `check_physical_external_relay_summary_guard`
+- focused physical external-relay URL host redaction guard via `check_physical_external_relay_url_host_redaction_guard`
+- focused physical external-relay probe-summary redaction self-test via `check_physical_external_relay_probe_summary_redaction_guard`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+
+### 2026-07-03 Protocol Reserved Private Overlay Namespace No-Device Gate
+
+- Scope: continue Immediate Queue 5/6 while the Android phone is disconnected. The roadmap calls for future paired-device P2P sessions, rendezvous/bootstrap/DHT assist, NAT traversal, STUN-like discovery, and TURN-style relay fallback, but those control-plane messages must not become active before production signaling, replay protection, permission/audit semantics, and session key binding are designed.
+- Result: `script/check_protocol_schema.py` now reserves `p2p.`, `rendezvous.`, `bootstrap.`, `dht.`, `nat.`, `stun.`, and `turn.` in the active protocol enum guard, alongside the existing future tools/search/Python/projects/automation namespaces.
+- Result: RuntimeDevServer authenticated relay smoke rejects `p2p.session.open`, `rendezvous.records.publish`, `bootstrap.records.lookup`, `dht.records.put`, `nat.candidates.gather`, `stun.binding.request`, and `turn.relay.allocate` with `unknown_message_type` before any production private-overlay control path exists.
+- Companion gate: RuntimeDevServer Reserved Private Overlay Namespace Rejection No-Device Gate.
+- Guardrail: the relay ciphertext boundary marker list includes the future private-overlay message names, request IDs, and representative payload strings so unsupported future control-plane details stay inside encrypted relay frame bodies. `script/check_copy_hygiene.py` pins the schema guard, RuntimeDevServer smoke, no-device summary phrase, protocol docs, roadmap, progress, and QA evidence.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer identified future private-overlay namespace reservation as the best next no-device roadmap slice.
+- Caveat: this is no-device protocol/schema/authenticated-smoke evidence only. It does not implement production P2P sessions, rendezvous, bootstrap/DHT discovery, NAT traversal, STUN, TURN, production session-key exchange, production end-to-end transport encryption, physical Android QR scanning, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `swiftc -typecheck script/runtime_authenticated_mock_smoke.swift`
+- `python3 script/check_protocol_schema.py`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `./script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh`
+
+### 2026-07-03 RuntimeDevServer Future Route Allocation/Failure Namespace Rejection No-Device Gate
+
+- Scope: continue Immediate Queue 5/6 while the Android phone is disconnected. Protocol docs already reserve future route diagnostics, remote candidate exchange, encrypted relay allocation status, and route failure reporting while keeping `route.refresh` as the only active `route.*` message. The authenticated RuntimeDevServer relay smoke only exercised two of those reserved names.
+- Result: RuntimeDevServer authenticated relay smoke rejects `route.candidates.exchange`, `route.diagnostics.report`, `route.allocation.status`, and `route.failure.report` with `unknown_message_type` after the supported `route.refresh` smoke succeeds.
+- Result: the relay ciphertext boundary marker list now includes all four future route message names, request IDs, and representative payload strings so unsupported future route request details stay inside encrypted relay frame bodies.
+- Guardrail: `script/check_protocol_schema.py` now includes `route.allocation.status` and `route.failure.report` in its synthetic future route namespace self-check. `script/check_copy_hygiene.py` pins the expanded RuntimeDevServer smoke, schema self-check, no-device summary phrase, roadmap inventory, and current docs evidence.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer checked the existing route namespace smoke anchors.
+- Caveat: this is no-device authenticated relay smoke/schema evidence only. It does not implement production route diagnostics, remote candidate exchange, relay allocation status, route failure reporting, NAT traversal, signaling, production relay/P2P traversal, physical Android QR scanning, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `swiftc -typecheck script/runtime_authenticated_mock_smoke.swift`
+- `python3 script/check_protocol_schema.py`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+
+### 2026-07-03 No-Device Production Session Proof-Boundary Summary Gate
+
+- Scope: continue Immediate Queue 5/6 while the Android phone is disconnected. The no-ADB QR and different-network preflight summaries already separated runtime-host, trusted-device, optical QR, external-network, and production-relay proof, but they did not explicitly state that no-device development relay summaries are not production session-key exchange or production end-to-end transport encryption evidence.
+- Result: `script/no_adb_external_relay_pairing_smoke.sh` and `script/run_different_network_dev_runtime.sh --summary-json` now record `coverage.production_session_key_exchange=false` and `coverage.production_end_to_end_transport_encryption=false`.
+- Guardrail: both summary paths now include `not_production_session_key_exchange_proof` and `not_production_end_to_end_transport_encryption_proof` caveats. `script/check_no_device_quality.sh` asserts those booleans and caveats across no-ADB emit-only, print-uri, unverified self-test, manual-confirmation, timeout, and different-network preflight summaries.
+- Guardrail: `script/check_copy_hygiene.py` now requires the summary fields, caveats, no-device assertions, default summary phrase, current progress/QA evidence, and roadmap coverage.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer identified this proof-boundary gap.
+- Caveat: this is no-device summary/source evidence only. It does not implement or prove production relay allocation, production session-key exchange, production end-to-end transport encryption, physical Android QR scanning, live phone pairing, camera QR reliability, live provider-backed chat/cancel, production P2P/rendezvous traversal, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `bash -n script/no_adb_external_relay_pairing_smoke.sh script/run_different_network_dev_runtime.sh script/check_no_device_quality.sh`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- focused summary checks for `script/no_adb_external_relay_pairing_smoke.sh --self-test-unverified-qr-summary`
+- focused preflight summary checks for `script/run_different_network_dev_runtime.sh --preflight-only --summary-json`
+
+### 2026-07-03 macOS Pairing QR Relay-Scope Allowlist No-Device Gate
+
+- Scope: continue Immediate Queue 5/6 while the Android phone is disconnected. Android pairing QR parsing and protocol schemas already reject unknown relay scopes, but macOS `PairingCoordinator` could still place unsupported `relayScope` values directly into `relay_scope`, `route_scope`, or compact `rsc` before Android rejected the QR.
+- Result: `PairingCoordinator.beginPairing` now validates scope before storing the session or generating QR payloads. Relay routes emit only `remote`, `private_overlay`, or `usb_reverse`; diagnostic direct endpoints default to `local_diagnostic` and reject other requested route scopes; unsupported or case-mutated values are omitted before QR payload generation.
+- Guardrail: `Package.swift` now exposes a focused `PairingTests` target. `PairingCoordinatorTests` verifies unsupported relay scopes are omitted from canonical and compact QR payloads, allowed relay scopes are preserved, and direct endpoint QR payloads keep `local_diagnostic` as the only default route scope.
+- Guardrail: `script/check_no_device_quality.sh` now runs `swift test --filter PairingCoordinatorTests`, and `script/check_copy_hygiene.py` requires the allowlist helper, focused tests, no-device gate entry, default summary phrase, current progress/QA evidence, and roadmap coverage.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer confirmed the Pairing target/test target anchors and the Android/schema relay-scope contract.
+- Caveat: this is no-device SwiftPM/source evidence. It does not prove physical Android QR scanning, live phone pairing, camera QR reliability, live provider-backed chat/cancel, production relay deployment, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `swift test --filter PairingCoordinatorTests`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+
+### 2026-07-03 Relay Wrapper Dry-Run Summary Proof-Boundary No-Device Gate
+
+- Scope: continue Immediate Queue 5/6 while the Android phone is disconnected. `script/run_allocation_relay.sh --dry-run` already redacted allocation-token output, but it did not write machine-readable proof-boundary evidence that no relay process, production relay, trusted-device reachability, pairing, or optical QR scan had been verified.
+- Result: `script/run_allocation_relay.sh` now supports `--summary-json` for dry-run output. The summary records the bind host/port, allocation-required state, safe token presence/redaction booleans, allocation store mode, and false live/proof coverage fields without writing the raw allocation token.
+- Guardrail: `script/check_no_device_quality.sh` now extends `check_relay_wrapper_dry_run_allocation_token_redaction_guard` to assert `development_relay_started=false`, `production_relay=false`, `trusted_device_relay_reachability=false`, `trusted_device_pairing=false`, `optical_qr_scan=false`, `token_redacted=true`, and the caveats `dry_run_not_relay_process_proof`, `not_production_relay_proof`, and `not_trusted_device_reachability_proof`.
+- Guardrail: `script/check_copy_hygiene.py` now requires the wrapper `--summary-json` path, dry-run summary fields, no-device guard assertions, default summary phrase, current progress/QA evidence, and roadmap coverage.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this is no-device wrapper dry-run evidence. It does not prove a relay process was started, production relay deployment, physical Android relay reachability, optical QR scanning, live phone pairing, saved-route reconnect, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `script/run_allocation_relay.sh --host 0.0.0.0 --port 43171 --allocation-token no-device-dry-run-token --dry-run --summary-json <temp>`
+- `bash -n script/run_allocation_relay.sh script/check_no_device_quality.sh`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+
+### 2026-07-03 No-ADB External Relay URL Host Input Redaction No-Device Gate
+
+- Scope: continue Immediate Queue 5/6 while the Android phone is disconnected. The no-ADB external-relay QR smoke already rejected URL-shaped `--relay-host` input, but the default no-device gate did not pin that rejection as a redaction boundary for provider/backend URLs, route-token query material, or relay-secret markers.
+- Result: `script/check_no_device_quality.sh` now runs `check_no_adb_external_relay_url_host_redaction_guard`, which passes a URL-shaped no-ADB relay host containing provider/backend/route-token/relay-secret markers and verifies the script exits before artifact generation with only the safe `--relay-host must be a host or IP address, not a URL.` message.
+- Guardrail: `script/check_copy_hygiene.py` now requires the no-device guard, seeded URL-shaped input, safe rejection message, current progress/QA evidence, and roadmap coverage.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer identified this no-ADB URL host input-redaction gap.
+- Caveat: this is no-device input-redaction evidence. It does not prove physical Android relay reachability, optical QR scanning, live phone pairing, saved-route reconnect, production relay deployment, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `script/no_adb_external_relay_pairing_smoke.sh --relay-host 'https://provider.example.test:11434/v1/models?route_token=leaked-route-token&relay_secret=leaked-relay-secret' --relay-port 43171 --emit-only`
+- `bash -n script/no_adb_external_relay_pairing_smoke.sh script/check_no_device_quality.sh`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+
+### 2026-07-03 macOS Dock Capture Dry-Run Summary No-Device Gate
+
+- Scope: continue Immediate Queue 3/6 while the Android phone is disconnected. The macOS Dock screenshot helper was documented as the physical capture path, but it only had a side-effectful path that builds, launches, toggles Dock autohide when needed, and captures the desktop.
+- Result: `script/capture_macos_dock_icon.sh` now supports `--dry-run --summary-json`. The dry-run path writes machine-readable summary evidence for the expected output and bundle paths without building, launching, changing Dock settings, or creating a screenshot.
+- Guardrail: `script/check_no_device_quality.sh` now runs `check_macos_dock_capture_dry_run_summary_guard`, which asserts `macos_dock_capture_dry_run=true`, `macos_dock_capture_verified=false`, `macos_dock_screenshot_artifact_present=false`, `physical_macos_dock_screenshot=false`, `dock_autohide_changed=false`, and the caveat `dry_run_not_macos_dock_screenshot_proof`.
+- Guardrail: `script/check_copy_hygiene.py` now requires the capture script to remain tracked with the dry-run/summary contract, requires the default no-device guard and summary phrase, and pins current progress/QA/roadmap coverage.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this is no-device helper-contract evidence only. It does not prove macOS Dock rendering, human small-size perception, app-store metadata, Android launcher rendering, optical QR scanning, live phone pairing, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `script/capture_macos_dock_icon.sh --dry-run --output <temp>/aetherlink-macos-dock-visible.png --summary-json <temp>/summary.json`
+- focused `check_macos_dock_capture_dry_run_summary_guard`
+
+### 2026-07-03 Android Pairing Failure Artifact Redaction No-Device Gate
+
+- Scope: continue Immediate Queue 1/6 and 6 while the Android phone is disconnected. `script/android_pairing_deeplink_smoke.sh` already sanitized stored `am-start.txt`, but failed pairing paths still saved raw `*-activity.txt`, raw `*-logcat.txt`, and raw filtered logcat tails that could preserve pairing URI, runtime identity, relay route material, or allocation-token values inside long-lived QA artifacts and physical-wrapper logs.
+- Result: `script/android_pairing_deeplink_smoke.sh` now uses `sanitize_android_qa_text_for_route_material` for Android failure artifacts. `dump_android_artifacts` sanitizes saved activity and logcat text files before reporting their paths, filtered stderr logcat output reads the sanitized logcat, and `diagnose_android_logcat` still preserves structured failure diagnosis such as `Runtime connection failed code=remote_route_unreachable diagnostic=route_diagnostic_relay_failed`.
+- Guardrail: `script/check_no_device_quality.sh` now runs `check_android_pairing_failure_artifact_redaction_guard`, which feeds fake activity/logcat lines through `--self-test-sanitize-android-qa-artifacts` and verifies raw pairing, route, relay, runtime-key, compact alias, and allocation-token markers are absent while diagnosis strings remain. `script/check_copy_hygiene.py` pins the sanitizer helper, file-sanitization calls, no-device guard, current progress/QA evidence, and roadmap coverage.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer confirmed the scope and marker set for this failure-artifact redaction pass.
+- Caveat: this is no-device sanitizer evidence. It does not prove what every real Android build logs on failure, physical Android relay reachability, optical QR scanning, live phone pairing, saved-route reconnect, production relay deployment, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `script/android_pairing_deeplink_smoke.sh --self-test-sanitize-android-qa-artifacts`
+- `bash -n script/android_pairing_deeplink_smoke.sh script/check_no_device_quality.sh`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- script/android_pairing_deeplink_smoke.sh script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-03 Android Pairing Deeplink Allocation-Token Argv Redaction No-Device Gate
+
+- Scope: continue Immediate Queue 1/6 and 6 while the Android phone is disconnected. `script/android_pairing_deeplink_smoke.sh` still had local relay and preflight paths that could pass allocation tokens through child process argv, and the physical external-relay wrapper could forward `--allocation-token` into the child smoke argv.
+- Result: `script/android_pairing_deeplink_smoke.sh` now passes allocation tokens to `AetherLinkRelay` and `relay_allocation_preflight.py` through `AETHERLINK_RELAY_ALLOCATION_TOKEN` / `AETHERLINK_BOOTSTRAP_RELAY_ALLOCATION_TOKEN` environment variables instead of argv. `script/check_physical_external_relay_pairing.sh` also forwards allocation tokens to the child smoke through environment variables instead of adding `--allocation-token` to the child command.
+- Guardrail: `script/check_no_device_quality.sh` now runs `check_android_pairing_deeplink_allocation_token_argv_redaction_guard`, which uses a fake ADB device only long enough to start the local relay path and inspect the `AetherLinkRelay` child command line. `script/check_copy_hygiene.py` rejects the old argv append paths and pins the script, wrapper, no-device guard, current progress/QA evidence, and roadmap coverage.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer returned a separate follow-up candidate for failure logcat/activity artifact redaction.
+- Caveat: this is no-device process-argv and wrapper hygiene evidence. It does not prove physical Android relay reachability, optical QR scanning, live phone pairing, saved-route reconnect, production relay deployment, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `bash -n script/android_pairing_deeplink_smoke.sh script/check_physical_external_relay_pairing.sh script/check_no_device_quality.sh`
+- focused fake-ADB local relay argv inspection for `script/android_pairing_deeplink_smoke.sh`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- script/android_pairing_deeplink_smoke.sh script/check_physical_external_relay_pairing.sh script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-03 Physical External Relay URL Host Input Redaction No-Device Gate
+
+- Scope: continue Immediate Queue 1/6 while the Android phone is disconnected. The physical external-relay wrapper accepted `--relay-host` before child smoke validation, so URL-shaped values containing route-token or relay-secret query material could be persisted in wrapper summary/log evidence.
+- Result: `script/check_physical_external_relay_pairing.sh` now validates relay-host input before launching the child pairing smoke. URL/path/query/user-info host values exit with a safe `<invalid-host>` label, and summary `relay.host`, redacted command evidence, wrapper log, stdout, and stderr omit the raw invalid URL and seeded route material.
+- Guardrail: `script/check_no_device_quality.sh` now runs `check_physical_external_relay_url_host_redaction_guard`, which seeds provider/backend/route-token/relay-secret markers and asserts they are absent from summary, log, stdout, and stderr. `script/check_copy_hygiene.py` pins the wrapper validation helper, no-device guard, exact coverage phrase, current progress/QA evidence, and roadmap coverage.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer identified this physical-wrapper input-redaction gap.
+- Caveat: this is no-device wrapper input-redaction evidence. It does not prove physical Android relay reachability, optical QR scanning, live phone pairing, saved-route reconnect, production relay deployment, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `bash -n script/check_physical_external_relay_pairing.sh script/check_no_device_quality.sh`
+- focused URL-host redaction run for `script/check_physical_external_relay_pairing.sh`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- script/check_physical_external_relay_pairing.sh script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-03 Android Pairing Deeplink Am-Start Sanitizer Self-Test Proof Boundary No-Device Gate
+
+- Scope: continue Immediate Queue 1/6 while the Android phone is disconnected. `script/android_pairing_deeplink_smoke.sh --self-test-sanitize-am-start-log` feeds seeded `am start -W`-looking text through the sanitizer without touching ADB, so its output needs an in-band marker that it is not an Android intent delivery or phone pairing proof.
+- Result: the hidden sanitizer self-test now emits `am_start_sanitizer_self_test_not_android_intent_or_phone_pairing_proof` before the sanitized `am start` text. Normal physical smoke `am-start.txt` artifacts remain unchanged and only receive sanitized Android command output.
+- Guardrail: `script/check_no_device_quality.sh` asserts the marker appears, the redacted `dat=aetherlink://pair?<redacted>` marker remains, and seeded pairing/route material stays absent. `script/check_copy_hygiene.py` pins the marker constant, no-device assertion, current progress/QA evidence, and roadmap coverage.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer identified this hidden sanitizer self-test proof-boundary gap.
+- Caveat: this is no-device sanitizer self-test evidence. It does not prove physical Android intent delivery, optical QR scanning, live phone pairing, production relay deployment, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `script/android_pairing_deeplink_smoke.sh --self-test-sanitize-am-start-log`
+- `bash -n script/android_pairing_deeplink_smoke.sh script/check_no_device_quality.sh`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- script/android_pairing_deeplink_smoke.sh script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-03 Android Relay Reachability Probe Self-Test Proof Boundary No-Device Gate
+
+- Scope: continue Immediate Queue 5/6 while the Android phone is disconnected. `check_android_relay_reachability_probe_route_material_redaction_guard` uses fake ADB to seed route-ready output for redaction coverage, so the generated child `summary.json` must identify itself as fake-ADB self-test evidence rather than live phone reachability proof.
+- Result: `script/android_relay_reachability_probe.sh` now writes `evidence.source=fake_adb_redaction_self_test`, `evidence.self_test=true`, `coverage.android_relay_probe_redaction_self_test=true`, and false live Android relay/route proof fields when `AETHERLINK_RELAY_PROBE_SELF_TEST=1` is set. The same self-test keeps `device.adb_serial` absent and adds `android_relay_probe_redaction_self_test_not_phone_reachability_proof`.
+- Guardrail: `script/check_no_device_quality.sh` now runs the fake-ADB redaction guard with `AETHERLINK_RELAY_PROBE_SELF_TEST=1`, asserts the self-test source, absent observed serial, false live proof fields, redaction caveat, and self-test stdout wording. `script/check_copy_hygiene.py` pins the probe fields, no-device assertions, current progress/QA evidence, and roadmap coverage.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer identified this standalone fake-ADB probe artifact proof-boundary gap.
+- Caveat: this is no-device fake-ADB redaction evidence. It does not prove physical Android relay reachability, optical QR scanning, live phone pairing, production relay deployment, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `bash -n script/android_relay_reachability_probe.sh script/check_no_device_quality.sh`
+- focused fake-ADB `script/android_relay_reachability_probe.sh` route-material redaction self-test with `AETHERLINK_RELAY_PROBE_SELF_TEST=1`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- script/android_relay_reachability_probe.sh script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-03 Physical External Relay Probe-Summary Self-Test Proof Boundary No-Device Gate
+
+- Scope: continue Immediate Queue 1/6 while the Android phone is disconnected. `script/check_physical_external_relay_pairing.sh --self-test-redact-probe-summary` seeds endpoint and route probe artifacts to test redaction, so its route-ready booleans must not be read as physical external-relay proof.
+- Result: the physical wrapper summary now records `coverage.probe_summary_redaction_self_test`, `coverage.live_android_device_probe_verified`, and `coverage.physical_external_relay_verified`, plus top-level `self_test_success` and `physical_external_relay_success`. The seeded redaction self-test keeps `self_test_success=true` while keeping live Android probe proof, physical external-relay proof, physical external-relay success, and observed ADB serial evidence false or absent.
+- Guardrail: `script/check_no_device_quality.sh` asserts the seeded self-test keeps route-material redaction coverage true, marks `probe_summary_redaction_self_test=true`, keeps live/physical proof false, keeps `android_device.observed_adb_serial` absent, and adds `self_test_redaction_only_not_physical_relay_proof`. `script/check_copy_hygiene.py` pins the wrapper fields, no-device assertions, current progress/QA evidence, and roadmap coverage.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer identified this physical-wrapper self-test proof-boundary gap.
+- Caveat: this is no-device wrapper/self-test evidence. It does not prove physical Android relay reachability, optical QR scanning, live phone pairing, production relay deployment, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `bash -n script/check_physical_external_relay_pairing.sh script/check_no_device_quality.sh`
+- `script/check_physical_external_relay_pairing.sh --self-test-redact-probe-summary`
+- focused self-test summary assertions matching `check_physical_external_relay_probe_summary_redaction_guard`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- script/check_physical_external_relay_pairing.sh script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-03 No-ADB Expect-Reconnect Emit-Only Summary No-Device Gate
+
+- Scope: continue Immediate Queue 5/6 while the Android phone is disconnected. `script/no_adb_external_relay_pairing_smoke.sh --expect-reconnect` only proves saved-route reconnect in a non-emit live run after a trusted device produces a second `runtime.health`; an emit-only artifact run must record the requested mode without being mistaken for live reconnect proof.
+- Result: `script/check_no_device_quality.sh` now runs a focused `--emit-only --expect-reconnect` no-ADB QR smoke, asserts `mode.expect_reconnect=true`, and keeps `trusted_device_relay_reachability`, `trusted_device_pairing`, `trusted_device_runtime_health`, `trusted_device_reconnect`, `full_run_trusted_device_proof`, `external_network_relay_verified`, `production_relay`, and `optical_qr_scan` false while preserving verified QR artifact evidence.
+- Guardrail: the same focused guard asserts the baseline emit-only QR artifact smoke records `mode.expect_reconnect=false`, the reconnect-expectation artifact run remains `artifact_only_emit_mode`, does not add `external_network_operator_confirmation_missing`, and still carries `runtime_reached_relay_but_trusted_device_did_not_join`. `script/check_copy_hygiene.py` pins the focused guard label, `--expect-reconnect` invocation, mode assertions, current progress/QA evidence, and roadmap coverage.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer separately audited physical/ADB-facing scripts for no-device proof-boundary gaps.
+- Caveat: this is no-device summary-boundary evidence. It does not prove physical Android relay reachability, optical QR scanning, live phone pairing, saved-route reconnect, production relay deployment, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `bash -n script/no_adb_external_relay_pairing_smoke.sh script/check_no_device_quality.sh`
+- focused `script/no_adb_external_relay_pairing_smoke.sh --emit-only --expect-reconnect` summary run with local relay and QR round-trip verification
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-03 No-ADB External-Network Proof-Boundary Summary No-Device Gate
+
+- Scope: continue Immediate Queue 5/6 while the Android phone is disconnected. The no-ADB QR smoke can prove local emit-only artifact generation, but it should not imply external-network relay success, operator-confirmed different-network evidence, production relay use, or live trusted-device proof.
+- Result: the no-ADB QR smoke summary now records `mode.require_manual_network_confirmation`, `coverage.external_network_operator_confirmed`, `coverage.full_run_trusted_device_proof`, `coverage.external_network_relay_verified`, `coverage.production_relay`, `coverage.emit_only_qr_artifact_summary_verified`, and `coverage.unverified_qr_artifact_self_test`. External-network relay proof only becomes possible for a non-emit live run after the manual different-network confirmation gate passes and the runtime observes relay ready, accepted pairing, and `runtime.health`; emit-only and hidden self-test summaries keep it false.
+- Result: non-emit summaries that lack accepted operator confirmation now carry `external_network_operator_confirmation_missing`, so failed or unconfirmed full-run evidence cannot be mistaken for operator-confirmed different-network proof.
+- Guardrail: `script/check_no_device_quality.sh` asserts the verified local emit-only summary keeps operator-confirmed external-network relay, full-run trusted-device, and production relay proof false while marking the QR artifact summary verified, asserts `--self-test-unverified-qr-summary` keeps the verified-artifact flag false while explicitly marking the hidden self-test, feeds an invalid `SAME_NETWORK` confirmation to prove the required manual-confirmation mode exits 2 with the missing-confirmation caveat, and feeds an accepted `DIFFERENT_NETWORK` confirmation to prove a no-device timeout records operator confirmation without claiming trusted-device relay reachability, pairing, `runtime.health`, full-run trusted-device proof, or external relay proof. `script/check_copy_hygiene.py` pins the summary fields, assertions, current docs, and roadmap coverage.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer confirmed this manual external-network confirmation summary gap.
+- Caveat: this is no-device summary-boundary evidence. It does not prove physical Android relay reachability, optical QR scanning, live phone pairing, saved-route reconnect, live provider-backed chat/cancel, production relay deployment, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `bash -n script/no_adb_external_relay_pairing_smoke.sh script/check_no_device_quality.sh`
+- focused no-ADB emit-only summary run with local relay and QR round-trip verification
+- `script/no_adb_external_relay_pairing_smoke.sh --self-test-unverified-qr-summary`
+- focused `script/no_adb_external_relay_pairing_smoke.sh --require-manual-network-confirmation` runs with invalid `SAME_NETWORK` and accepted `DIFFERENT_NETWORK` stdin
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- script/no_adb_external_relay_pairing_smoke.sh script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-03 No-ADB Proof-Boundary Coverage Summary No-Device Gate
+
+- Scope: continue Immediate Queue 5/6 smoke expansion while the Android phone is disconnected. `script/no_adb_external_relay_pairing_smoke.sh --emit-only` can prove runtime-host relay registration and QR artifact generation, but it must not read like proof that a trusted phone reached the relay, paired, completed `runtime.health`, reconnected, or scanned the QR optically.
+- Result: the no-ADB QR smoke summary now records `coverage.runtime_host_relay_registration`, `coverage.runtime_host_waiting_for_peer`, `coverage.trusted_device_relay_reachability`, `coverage.trusted_device_pairing`, `coverage.trusted_device_runtime_health`, `coverage.trusted_device_reconnect`, and `coverage.optical_qr_scan`.
+- Guardrail: `script/check_no_device_quality.sh` asserts the local emit-only smoke marks runtime-host relay registration and waiting-for-peer true while keeping trusted-device reachability, pairing, runtime.health, reconnect, and optical QR scan false. The unverified summary self-test keeps the runtime-host and trusted-device proof flags false. `script/check_copy_hygiene.py` pins the summary fields, no-device assertions, summary phrase, current progress/QA evidence, and roadmap coverage.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer was used for line-anchor/candidate confirmation.
+- Caveat: this is no-device summary honesty evidence. It does not prove physical Android relay reachability, optical QR scanning, live phone pairing, saved-route reconnect, live provider-backed chat/cancel, production relay deployment, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `bash -n script/no_adb_external_relay_pairing_smoke.sh script/check_no_device_quality.sh`
+- focused no-ADB emit-only summary run with local relay and QR round-trip verification
+- `script/no_adb_external_relay_pairing_smoke.sh --self-test-unverified-qr-summary`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- script/no_adb_external_relay_pairing_smoke.sh script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-03 Relay Preflight Success Route-Material Redaction No-Device Gate
+
+- Scope: continue Immediate Queue 5/6 relay bootstrap hardening while the Android phone is disconnected. `script/relay_allocation_preflight.py` success JSON is often copied into no-device QA logs; it already omitted requested route tokens and relay secrets, but it still exposed raw opaque `relay_id` and `relay_nonce` route material.
+- Result: successful relay allocation preflight JSON now reports `relay_id_present=true`, `relay_expires_at_present=true`, `relay_nonce_present=true`, `has_relay_secret=true`, and `route_material_redacted=true` instead of raw `relay_id`, `relay_expires_at`, `relay_nonce`, or `relay_secret` values.
+- Guardrail: `script/check_no_device_quality.sh` asserts normal and token-required persisted allocation preflight output omit `requested_route_token`, omit raw route-token strings, omit `relay_secret`, omit raw `relay_id`/`relay_expires_at`/`relay_nonce`, omit `rt1-` opaque relay IDs from JSON output, and keep only safe presence booleans plus the route-material redaction marker. `script/check_copy_hygiene.py` now requires the output-redaction assertions, raw route-token absence assertions, raw relay-secret/relay-id/relay-expiry/relay-nonce absence assertions, safe presence booleans, route-material redaction marker, default no-device gate entry, exact summary phrase, current progress/QA evidence, and roadmap coverage.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer was used and closed; it identified a separate no-ADB runtime-log artifact classification candidate for a later slice.
+- Caveat: this proves no-device relay allocation preflight success-output redaction only. It does not prove production relay deployment, physical Android pairing, optical QR scanning, phone reachability, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `python3 -m py_compile script/relay_allocation_preflight.py script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- focused fake allocation preflight success-output checks through `script/check_no_device_quality.sh`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- script/relay_allocation_preflight.py script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-03 Different-Network Preflight Summary Allocation Redaction No-Device Gate
+
+- Scope: continue Immediate Queue 5/6 relay bootstrap hardening while the Android phone is disconnected. `script/run_different_network_dev_runtime.sh --preflight-only --summary-json` writes a durable wrapper summary, but it previously collapsed the safe allocation-helper result into one broad `required_fields_present` boolean.
+- Result: the different-network preflight summary now preserves only safe allocation presence booleans: `allocation.relay_id_present`, `allocation.relay_expires_at_present`, `allocation.relay_nonce_present`, `allocation.has_relay_secret`, and `allocation.route_material_redacted`. It still omits raw `relay_id`, `relay_secret`, `relay_nonce`, `relay_expires_at`, requested route tokens, allocation tokens, and `rt1-` relay IDs.
+- Result: the same summary now records proof-boundary coverage booleans: `coverage.runtime_host_allocation_preflight=true` for successful allocation preflight, while `coverage.trusted_device_relay_reachability`, `coverage.trusted_device_pairing`, `coverage.optical_qr_scan`, and `coverage.production_relay` remain false for preflight-only evidence.
+- Guardrail: `script/check_no_device_quality.sh` extends `check_different_network_preflight_summary_guard` to assert the safe allocation booleans, false live-device proof booleans, and absence of raw relay route material markers from the JSON payload. `script/check_copy_hygiene.py` pins the wrapper fields, no-device assertions, current docs, and roadmap coverage.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this is no-device runtime-host preflight summary evidence. It does not prove physical Android relay reachability, optical QR scanning, live phone pairing, production relay deployment, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `bash -n script/run_different_network_dev_runtime.sh script/check_no_device_quality.sh`
+- focused `script/run_different_network_dev_runtime.sh --relay-host 127.0.0.1 --start-local-relay --preflight-only --summary-json <tmp>` summary verification
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- script/run_different_network_dev_runtime.sh script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-03 Relay Wrapper Dry-Run Allocation-Token Redaction No-Device Gate
+
+- Scope: continue relay bootstrap hardening while the Android phone is disconnected. `script/run_allocation_relay.sh --dry-run` is an operator-facing preflight output that is likely to be copied into QA notes before starting a public/VPN/tunnel relay.
+- Result: the no-device gate now verifies `run_allocation_relay.sh --host 0.0.0.0 --allocation-token <token> --dry-run` reports token-required mode without printing the raw allocation token, `--allocation-token`, or an environment assignment containing the token. The same guard verifies non-loopback dry-run without a token still fails with the explicit allocation-token requirement.
+- Guardrail: `script/check_no_device_quality.sh` runs `check_relay_wrapper_dry_run_allocation_token_redaction_guard`, and `script/check_copy_hygiene.py` pins the guard, summary phrase, current docs, and roadmap coverage.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this is no-device wrapper dry-run output evidence. It does not prove production relay deployment, physical Android pairing, optical QR scanning, phone reachability, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `bash -n script/run_allocation_relay.sh script/check_no_device_quality.sh`
+- focused `script/run_allocation_relay.sh --host 0.0.0.0 --allocation-token <token> --dry-run` redaction check
+- focused `script/run_allocation_relay.sh --host 0.0.0.0 --dry-run` failure check
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- script/run_allocation_relay.sh script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-03 No-ADB Runtime Log Temporary Pairing/Route-Material Artifact Summary No-Device Gate
+
+- Scope: continue no-ADB QR smoke artifact honesty while the Android phone is disconnected. `script/no_adb_external_relay_pairing_smoke.sh` writes `runtime.log` as a long-lived QA artifact, and RuntimeDevServer prints `AETHERLINK_DEV_PAIRING_URI` there before the script writes the pairing URI and QR PNG.
+- Result: the no-ADB QR smoke summary now records `coverage.runtime_log_artifact_present`, `coverage.runtime_log_contains_temporary_pairing_material`, and `coverage.runtime_log_contains_temporary_route_material`. The detection parses `AETHERLINK_DEV_PAIRING_URI` lines and only marks pairing/route material when the expected pairing nonce/code and complete relay route fields are present.
+- Guardrail: `script/check_no_device_quality.sh` asserts the verified emit-only run marks runtime log pairing and route material as present and adds `runtime_log_contains_temporary_pairing_or_route_material`, while `--self-test-unverified-qr-summary` keeps the runtime log material flags false and omits that caveat. `script/check_copy_hygiene.py` pins the runtime-log coverage fields, caveat assertions, current docs, and roadmap coverage.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer identified the runtime-log artifact classification gap and was closed after reporting.
+- Caveat: this is no-device summary/docs evidence. It does not prove physical Android QR scanning, optical camera reliability, live phone pairing, production relay deployment, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `bash -n script/no_adb_external_relay_pairing_smoke.sh script/check_no_device_quality.sh`
+- no-ADB emit-only summary focused run with local relay and QR round-trip verification
+- `script/no_adb_external_relay_pairing_smoke.sh --self-test-unverified-qr-summary`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- script/no_adb_external_relay_pairing_smoke.sh script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-03 No-ADB QR Temporary Pairing/Route-Material Artifact Summary No-Device Gate
+
+- Scope: continue QR-only smoke honesty while the Android phone is disconnected. `script/no_adb_external_relay_pairing_smoke.sh` intentionally writes a pairing URI and QR PNG for manual scan evidence, and those artifacts must contain temporary route material; nearby logs/summaries are redacted, but the JSON summary should make this intentional secret-bearing artifact boundary machine-readable.
+- Result: the no-ADB QR smoke summary now sets `coverage.pairing_uri_contains_temporary_pairing_material=true`, `coverage.pairing_qr_contains_temporary_pairing_material=true`, `coverage.pairing_uri_contains_temporary_route_material=true`, and `coverage.pairing_qr_contains_temporary_route_material=true` only after the QR artifact exists and the QR round-trip verifier has accepted the route-bearing QR. Stale or unverified artifacts keep those pairing/route material flags false and get the separate `manual_scan_qr_artifacts_not_verified_as_route_material` caveat instead.
+- Guardrail: `script/check_no_device_quality.sh` asserts the verified pairing/route material flags plus `manual_scan_qr_artifacts_contain_temporary_pairing_material` and `manual_scan_qr_artifacts_contain_temporary_route_material` in the no-ADB emit-only summary caveats after QR round-trip verification, then runs the unverified QR summary self-test to assert the pairing/route material flags stay false and the unverified caveat is present. `script/check_copy_hygiene.py` pins the summary fields, self-test option, verified/unverified caveats, default gate assertions, current docs, and roadmap coverage.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer identified the missing machine-readable secret-bearing artifact contract while preserving the QR URI/PNG manual-scan artifact boundary.
+- Caveat: this is no-device summary/docs evidence. It does not prove physical Android QR scanning, optical camera reliability, live phone pairing, production relay deployment, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `bash -n script/no_adb_external_relay_pairing_smoke.sh script/check_no_device_quality.sh`
+- no-ADB emit-only summary focused run with local relay and QR round-trip verification
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- script/no_adb_external_relay_pairing_smoke.sh script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-03 No-ADB Print-URI Terminal Output Temporary Pairing/Route-Material Summary No-Device Gate
+
+- Scope: continue no-ADB QR smoke artifact honesty while the Android phone is disconnected. `--print-uri` intentionally writes the full `aetherlink://pair` URI to terminal output for manual diagnostics, and that stdout can become a long-lived QA log.
+- Result: the no-ADB QR smoke summary now records `mode.print_uri`, `coverage.terminal_output_contains_temporary_pairing_material`, and `coverage.terminal_output_contains_temporary_route_material`. The classification is true only when `--print-uri` was used and the pairing URI file contains parseable temporary pairing and relay route material.
+- Guardrail: `script/check_no_device_quality.sh` asserts normal emit-only runs keep the terminal-output flags false and omit the terminal-output caveat, then runs a `--print-uri` emit-only smoke with stdout captured to a temp file and asserts the summary marks the terminal output as temporary pairing/route-material-bearing without printing the captured URI. `script/check_copy_hygiene.py` pins the summary fields, caveat, no-device assertions, current docs, and roadmap coverage.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer identified the print-uri stdout artifact classification gap and was closed after reporting.
+- Caveat: this is no-device terminal-output summary evidence. It does not prove physical Android QR scanning, optical camera reliability, live phone pairing, production relay deployment, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `bash -n script/no_adb_external_relay_pairing_smoke.sh script/check_no_device_quality.sh`
+- no-ADB print-uri emit-only summary focused run with local relay, captured stdout, and QR round-trip verification
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- script/no_adb_external_relay_pairing_smoke.sh script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-03 No-ADB Relay Log Artifact Redaction Summary No-Device Gate
+
+- Scope: continue no-ADB QR smoke artifact honesty while the Android phone is disconnected. `script/no_adb_external_relay_pairing_smoke.sh` records a durable `relay.log` artifact path, but the summary previously did not classify whether that relay log kept route material redacted.
+- Result: the no-ADB QR smoke summary now records `coverage.relay_log_artifact_present`, `coverage.relay_log_relay_ids_shortened`, `coverage.relay_log_omits_temporary_secret_material`, and `coverage.relay_log_contains_unredacted_route_material`. Local relay emit-only runs must show shortened `relay_id=first6...last6` values and no relay secret, nonce, route-token, allocation-token, or compact alias markers.
+- Guardrail: `script/check_no_device_quality.sh` parses the generated pairing URI, extracts the full relay id, asserts that full id is absent from `relay.log`, and asserts the Swift `shortID` form is present when the relay id is longer than 12 characters. The unverified empty-log self-test now carries `relay_log_redaction_not_verified` instead of claiming relay-log redaction proof. `script/check_copy_hygiene.py` pins the summary fields, full-id absence check, shortened-id check, caveat, current docs, and roadmap coverage.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer confirmed this relay-log artifact verdict was not already covered by the no-ADB summary.
+- Caveat: this is no-device local-relay artifact evidence. It does not prove physical Android QR scanning, optical camera reliability, external relay reachability, live phone pairing, production relay deployment, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `bash -n script/no_adb_external_relay_pairing_smoke.sh script/check_no_device_quality.sh`
+- no-ADB emit-only summary focused run with local relay, relay-log shortened-id verification, and QR round-trip verification
+- `script/no_adb_external_relay_pairing_smoke.sh --self-test-unverified-qr-summary`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- script/no_adb_external_relay_pairing_smoke.sh script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-03 Physical External Relay Probe-Summary Route-Material Redaction No-Device Gate
+
+- Scope: continue physical external-relay QA artifact hardening while the Android phone is disconnected. `script/check_physical_external_relay_pairing.sh` embeds child probe JSON under `probe_summaries`; the current child probe is redacted, but the wrapper should not trust future or stale child artifacts to avoid raw route material.
+- Result: the wrapper now sanitizes loaded child probe summaries before embedding them in long-lived QA JSON. Raw `relay_id`, `relay_secret`, `relay_nonce`, `route_token`, related canonical/compact aliases, and key/value route-material tokens in probe output are removed while safe `relay_id_present`, `reachable`, and `route_ready` evidence is preserved.
+- Guardrail: `script/check_no_device_quality.sh` now runs `check_physical_external_relay_probe_summary_redaction_guard`, which drives `script/check_physical_external_relay_pairing.sh --self-test-redact-probe-summary` with seeded raw child probe material and verifies the parent summary preserves redaction-test booleans without retaining raw relay or route tokens or claiming live physical external-relay proof.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer confirmed the avoidable risk is parent wrapper retention of embedded child probe artifacts, while no-ADB QR URI/PNG artifacts remain intentional manual-scan evidence.
+- Caveat: this is no-device wrapper/self-test/docs evidence. It does not prove physical Android relay reachability, optical QR scanning, live phone pairing, production relay deployment, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `bash -n script/check_physical_external_relay_pairing.sh script/check_no_device_quality.sh`
+- `script/check_physical_external_relay_pairing.sh --self-test-redact-probe-summary`
+- `script/check_no_device_quality.sh` focused guard path through `check_physical_external_relay_probe_summary_redaction_guard`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- script/check_physical_external_relay_pairing.sh script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-03 Physical External Relay Runtime Log Temporary Pairing/Route-Material Summary No-Device Gate
+
+- Scope: continue physical external-relay QA artifact hardening while the Android phone is disconnected. The physical wrapper summary exposes a `runtime_log` artifact path; the log can contain `AETHERLINK_DEV_PAIRING_URI` with temporary pairing and relay route material.
+- Result: `script/check_physical_external_relay_pairing.sh` now records `coverage.runtime_log_artifact_present`, `coverage.runtime_log_contains_temporary_pairing_material`, and `coverage.runtime_log_contains_temporary_route_material` without embedding raw pairing URI values in the summary.
+- Guardrail: `script/check_no_device_quality.sh` drives `script/check_physical_external_relay_pairing.sh --self-test-redact-probe-summary` with a seeded runtime log containing temporary pairing and relay route material, then verifies the summary keeps only coverage booleans and the `runtime_log_contains_temporary_pairing_or_route_material` caveat. `script/check_copy_hygiene.py` pins the wrapper fields, self-test marker, no-device assertions, current docs, and roadmap coverage.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer was used and closed; it identified a separate no-ADB manual-scan pairing-material coverage candidate for a later slice.
+- Caveat: this is no-device wrapper/self-test summary evidence. It does not prove physical Android relay reachability, optical QR scanning, live phone pairing, production relay deployment, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `bash -n script/check_physical_external_relay_pairing.sh script/check_no_device_quality.sh`
+- `script/check_physical_external_relay_pairing.sh --self-test-redact-probe-summary`
+- `script/check_no_device_quality.sh` focused guard path through `check_physical_external_relay_probe_summary_redaction_guard`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- script/check_physical_external_relay_pairing.sh script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-03 Physical External Relay Wrapper Log Redaction Summary No-Device Gate
+
+- Scope: continue physical external-relay QA artifact hardening while the Android phone is disconnected. `script/check_physical_external_relay_pairing.sh` writes a durable wrapper `run.log`; the summary already exposed its path but did not classify whether the wrapper log kept pairing and relay route material redacted.
+- Result: the physical external-relay wrapper summary now records `coverage.wrapper_log_artifact_present`, `coverage.wrapper_log_omits_temporary_secret_material`, and `coverage.wrapper_log_contains_unredacted_route_material`. The self-test seeds a redacted `aetherlink://pair?<redacted>` wrapper-log line and verifies no pairing nonce/code, relay secret/nonce, route token, allocation token, runtime key, or compact alias markers are present.
+- Guardrail: `script/check_no_device_quality.sh` now includes the wrapper log file in the physical wrapper self-test inspection, asserts the wrapper-log coverage booleans, and verifies `wrapper_log_redaction_not_verified` is absent after positive verification. `script/check_copy_hygiene.py` pins the summary fields, self-test redacted line, no-device assertions, current docs, and roadmap coverage.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this is no-device wrapper-log self-test evidence. It does not prove physical Android relay reachability, optical QR scanning, live phone pairing, production relay deployment, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `bash -n script/check_physical_external_relay_pairing.sh script/check_no_device_quality.sh`
+- `script/check_physical_external_relay_pairing.sh --self-test-redact-probe-summary`
+- `script/check_no_device_quality.sh` focused guard path through `check_physical_external_relay_probe_summary_redaction_guard`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- script/check_physical_external_relay_pairing.sh script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-03 Android Pairing Deeplink Am-Start Route-Material Redaction No-Device Gate
+
+- Scope: continue physical pairing QA artifact hardening while the Android phone is disconnected. The physical deeplink smoke intentionally injects the generated `aetherlink://pair` URI through `adb shell am start`, but Android's `am start -W` output can echo the full `dat=` URI into long-lived wrapper logs.
+- Result: `script/android_pairing_deeplink_smoke.sh` now captures raw `am start` output only in a temporary raw file, writes the stored `am-start.txt` artifact through `sanitize_am_start_log_for_qa`, deletes the raw file, and prints only `aetherlink://pair?<redacted>` for pairing deeplink output.
+- Guardrail: `script/check_no_device_quality.sh` now runs `check_android_pairing_deeplink_am_start_log_redaction_guard`, feeding a seeded fake `am start` line with sensitive pairing and relay route material through the hidden sanitizer self-test and verifying no raw pairing nonce/code, route token, relay id, relay secret, or relay nonce remains.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer identified the `am start` log boundary as avoidable long-lived route-material retention, while QR artifact files remain intentional manual-scan evidence.
+- Caveat: this is no-device sanitizer/script/docs evidence. It does not prove physical Android QR scanning, optical camera reliability, live phone pairing, production relay deployment, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `bash -n script/android_pairing_deeplink_smoke.sh script/check_no_device_quality.sh`
+- `script/check_no_device_quality.sh` sanitizer path through `check_android_pairing_deeplink_am_start_log_redaction_guard`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- script/android_pairing_deeplink_smoke.sh script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-03 Android Relay Reachability Probe Route-Material Redaction No-Device Gate
+
+- Scope: continue private-overlay relay QA hardening while the Android phone is disconnected. `script/android_relay_reachability_probe.sh` is a physical-device diagnostic, but its JSON/stdout/stderr path should not preserve raw QR relay IDs as long-lived QA artifact material.
+- Result: the probe summary now records `relay_id_present` instead of raw `relay_id`, redacts the requested relay id from stored `probe.output`, and reports route readiness without printing the raw relay id.
+- Guardrail: `script/check_no_device_quality.sh` now runs a fake-ADB route-readiness probe with `rt1-sensitive-route-material`, verifies JSON/stdout/stderr omit that marker, and still proves seeded redaction-test `relay_id_present=true`, `route_ready=true`, and `reachable=true` without claiming live phone reachability proof. `script/check_copy_hygiene.py` requires the script redaction path, no-device guard, summary echo, current QA evidence, and roadmap coverage.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer identified the relay reachability probe artifact boundary after confirming the macOS allocation boundary was already covered.
+- Caveat: this is no-device script/docs evidence with fake ADB. It does not prove physical Android relay reachability, optical QR scanning, live phone pairing, production relay deployment, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `bash -n script/android_relay_reachability_probe.sh script/check_no_device_quality.sh`
+- `script/check_no_device_quality.sh` fake-ADB guard path through `check_android_relay_reachability_probe_route_material_redaction_guard`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- script/android_relay_reachability_probe.sh script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-03 Relay Allocation Response Route-Token Redaction Docs Guard
+
+- Scope: continue no-device relay allocation opacity hardening while the Android phone is disconnected. `docs/connection-overlay.md` still implied successful allocation responses could report `requested_route_token` for diagnostics, contradicting the current preflight/output redaction contract.
+- Result: `docs/connection-overlay.md` now states that raw route tokens stay out of allocation responses, preflight JSON, allocation stores, and relay logs, and that diagnostics should expose only opaque relay ids plus safe boolean field coverage.
+- Guardrail: `script/check_copy_hygiene.py` now requires the corrected connection-overlay wording and fails if the stale `response still reports the caller's requested_route_token` wording returns.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer was used for allocation/route-token boundary review.
+- Caveat: this is no-device docs/script contract evidence. It does not prove physical Android QR scanning, optical camera reliability, production relay deployment, live phone pairing, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- docs/connection-overlay.md script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-03 Android Route-Token Remote Material Isolation No-Device Gate
+
+- Scope: continue private-overlay route hardening while the Android phone is disconnected. `routeToken` is paired runtime identity/routing metadata; it must not become P2P session/rendezvous material or a raw relay route id at the generic Android core transport seam.
+- Result: `RuntimeConnectionManager` now rejects prepared remote routes that reuse the paired runtime `routeToken` as P2P `sessionId`, P2P rendezvous token, relay id, or relay rendezvous token before any P2P or relay connector is called.
+- Result: `RuntimePeerToPeerRoutePreparation` rejects a paired `routeToken` as `recordId`, and `RuntimeRelayRoutePreparation` rejects a paired `routeToken` as `relayId`, keeping standard route preparation on explicit route material.
+- Guardrail: `RuntimeConnectionManagerTest.remoteRoutePreparerRejectsRoutesThatReusePairingRouteTokenMaterial`, `RuntimePeerToPeerRoutePreparationTest.peerToPeerRoutePreparationRejectsPairedRouteTokenAsRecordId`, and `RuntimeRelayRoutePreparationTest.relayRoutePreparationRejectsPairedRouteTokenAsRelayId` are covered by the no-device gate, and `script/check_copy_hygiene.py` requires the manager/preparer guards, focused tests, no-device summary, current QA evidence, and roadmap coverage.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer confirmed the active app planner already uses explicit relay/P2P route material and identified the stale core transport test/gate contract.
+- Caveat: this is no-device Android core transport/source/script/docs evidence. It does not prove physical Android QR scanning, optical camera reliability, live phone pairing, phone relay reachability, live provider-backed chat/cancel, production relay deployment, production P2P traversal, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:transport:testDebugUnitTest --tests com.localagentbridge.android.core.transport.RuntimeConnectionManagerTest.remoteRoutePreparerRejectsRoutesThatReusePairingRouteTokenMaterial --tests com.localagentbridge.android.core.transport.RuntimeConnectionManagerTest.remoteRoutePreparerCanConnectIdentityOnlyTargetThroughPeerToPeerConnector --tests com.localagentbridge.android.core.transport.RuntimePeerToPeerRoutePreparationTest.peerToPeerRoutePreparationRejectsPairedRouteTokenAsRecordId --tests com.localagentbridge.android.core.transport.RuntimeRelayRoutePreparationTest.relayRoutePreparationRejectsPairedRouteTokenAsRelayId -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- apps/android/core/transport/src/main/java/com/localagentbridge/android/core/transport/RuntimeConnectionManager.kt apps/android/core/transport/src/main/java/com/localagentbridge/android/core/transport/RuntimePeerToPeerRoutePreparation.kt apps/android/core/transport/src/main/java/com/localagentbridge/android/core/transport/RuntimeRelayRoutePreparation.kt apps/android/core/transport/src/test/java/com/localagentbridge/android/core/transport/RuntimeConnectionManagerTest.kt apps/android/core/transport/src/test/java/com/localagentbridge/android/core/transport/RuntimePeerToPeerRoutePreparationTest.kt apps/android/core/transport/src/test/java/com/localagentbridge/android/core/transport/RuntimeRelayRoutePreparationTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-03 Android Route Refresh QR P2P Relay-Scope Isolation No-Device Gate
+
+- Scope: continue QR-only route-refresh hardening after the Android phone was disconnected. Relay scope belongs to relay route material, but a P2P-only QR path could carry stray `relay_scope=remote` without a complete relay route.
+- Result: `RuntimePairingPayloadParser` now rejects relay scope when no relay route material is present, while still allowing explicit `route_scope=local_diagnostic` direct QR parsing when diagnostic direct endpoints are deliberately enabled.
+- Result: `trustedRuntimeFromRouteRefreshQr` now fails closed for P2P route-refresh QR payloads that carry `relayScope` without a valid relay route, preventing a hand-built or malformed latest-QR payload from mixing route families before trusted route storage changes.
+- Guardrail: `RuntimePairingPayloadParserTest.rejectsRelayScopeWithoutRelayRouteMaterial` and `RuntimeClientViewModelTest.routeRefreshQrRejectsP2pRouteWithRelayScopeOnly` are now covered by `script/check_no_device_quality.sh`, and `script/check_copy_hygiene.py` requires the parser/ViewModel guards, focused tests, no-device summary, current progress/QA evidence, and roadmap coverage.
+- Device state: the Android phone was disconnected for this pass; `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer identified a separate route-token remote-route seam candidate while this implementation stayed focused on QR relay-scope isolation.
+- Caveat: this is no-device Android parser/ViewModel/source/script/docs evidence. It does not prove physical Android QR scanning, optical camera reliability, live phone pairing, phone relay reachability, live provider-backed chat/cancel, production relay deployment, production P2P traversal, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:pairing:testDebugUnitTest --tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.rejectsRelayScopeWithoutRelayRouteMaterial -Pkotlin.incremental=false --console=plain`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshQrRejectsP2pRouteWithRelayScopeOnly -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- apps/android/core/pairing/src/main/java/com/localagentbridge/android/core/pairing/RuntimePairingPayload.kt apps/android/core/pairing/src/test/java/com/localagentbridge/android/core/pairing/RuntimePairingPayloadParserTest.kt apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-03 Android App P2P Encrypted Body 2048-Byte Route Material No-Device Gate
+
+- Scope: continue private-overlay/P2P route hardening while the Android phone is disconnected. The shared QR parser, schema, and core route-material contract allow opaque `p2p_encrypted_body` values up to 2048 characters, but the Android app route planner and pending-route store still validated P2P encrypted bodies through the default 512-character opaque value limit.
+- Result: `RuntimeRemoteRoutePlanner` now validates `p2pEncryptedBody` with `OPAQUE_ROUTE_BODY_MAX_CHARS` for saved trusted P2P routes, pending pairing P2P routes, and expired P2P route detection. `RuntimeLocalStore` uses the same 2048-character body limit when sanitizing persisted pending P2P route material.
+- Result: `RuntimeClientViewModelTest.routeRefreshPayloadAddsFreshP2pRendezvousRouteToCurrentTrustedRuntime`, `trustedPeerToPeerRouteFallsBackToRelayAtViewModelConnectionLayer`, and `persistedRuntimeDataStoresPendingP2pRendezvousRouteUntilShorterRecordExpiry` now use a max-sized 2048-character opaque P2P encrypted body fixture, proving authenticated route.refresh acceptance, trusted reconnect dispatch, and pending route storage/restore preserve valid max-sized opaque P2P bodies.
+- Guardrail: `script/check_no_device_quality.sh` reports the Android app P2P encrypted body 2048-byte route material addendum, and `script/check_copy_hygiene.py` requires the app planner/store max-size checks, focused ViewModel fixture, current progress/QA evidence, and roadmap coverage.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer identified this app-layer size-bound drift while the implementation stayed in the main session.
+- Caveat: this is no-device Android JVM/source/script/docs evidence. It does not prove physical Android QR scanning, optical camera reliability, live phone pairing, phone relay reachability, live provider-backed chat/cancel, production relay deployment, production P2P traversal, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshPayloadAddsFreshP2pRendezvousRouteToCurrentTrustedRuntime --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedPeerToPeerRouteFallsBackToRelayAtViewModelConnectionLayer --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.persistedRuntimeDataStoresPendingP2pRendezvousRouteUntilShorterRecordExpiry -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeRemoteRoutePlanner.kt apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeLocalStore.kt apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-03 Android Authenticated Relay Reconnect Route Refresh Fresh Lease No-Device Gate
+
+- Scope: continue authenticated trusted-relay reconnect hardening while the Android phone is disconnected. The real relay reconnect integration already drove `route.refresh` through `RuntimeRelayTcpClient`, authenticated the session, and observed the refresh request, but the fake runtime returned the same relay nonce and non-advancing lease material, leaving the successful fresh-lease acceptance path under-pinned.
+- Result: `RuntimeClientViewModelRelayIntegrationTest.trustedPrivateOverlayRelayReconnectUsesRealRelayTcpClientAndAuthenticatedSession` now has the fake authenticated runtime return a refreshed relay nonce and advancing `relay_expires_at` value, waits for `trustedRuntimeStore.trustedRuntimeWritten`, and asserts the trusted store plus `viewModel.state.value.trustedRuntime` persist the refreshed nonce and lease.
+- Guardrail: `script/check_no_device_quality.sh` reports the Android authenticated relay reconnect route.refresh fresh lease addendum, and `script/check_copy_hygiene.py` requires the focused integration test, refreshed nonce/expiry assertions, trusted-store write wait, current progress/QA evidence, and roadmap coverage.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer identified this lease-acceptance gap while the implementation stayed in the main session.
+- Caveat: this is no-device Android JVM integration/script/docs evidence. It does not prove physical Android QR scanning, optical camera reliability, live phone pairing, phone relay reachability, live provider-backed chat/cancel, production relay deployment, production P2P traversal, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelRelayIntegrationTest.trustedPrivateOverlayRelayReconnectUsesRealRelayTcpClientAndAuthenticatedSession -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelRelayIntegrationTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-03 Shared Pairing QR Route-Scope Private Overlay Schema No-Device Gate
+
+- Scope: continue QR-only route hardening while the Android phone is disconnected. Android QR parsing already treats `route_scope` as a relay-scope alias for `route_*` relay material, but the shared pairing QR schema only allowed `route_scope` for `usb_reverse` or `local_diagnostic` and did not allow `route_scope=private_overlay` to satisfy private `route_host` literals.
+- Result: `packages/protocol-schema/pairing-qr.schema.json` now allows `route_scope=remote|private_overlay|usb_reverse|local_diagnostic` and accepts `route_scope=private_overlay` as an explicit private-overlay scope for private `route_host` relay aliases.
+- Result: `RuntimePairingPayloadParserTest.parsesRouteAliasPrivateOverlayScopeFromQrPayload` pins the Android parser contract for `route_host=100.64.1.10` plus `route_scope=private_overlay`, and `script/check_protocol_schema.py` now requires `route_scope` in the shared remote relay scope alias set.
+- Guardrail: `script/check_no_device_quality.sh` runs the focused parser regression and reports the shared pairing QR route-scope private-overlay schema addendum; `script/check_copy_hygiene.py` requires the schema rule, protocol checker constant, protocol docs, current QA evidence, and roadmap coverage.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer identified a separate authenticated route.refresh lease-acceptance smoke gap for follow-up while this slice stayed on shared QR schema/parser parity.
+- Caveat: this is no-device Android parser/shared schema/script/docs evidence only. It does not prove physical Android QR scanning, optical camera reliability, phone relay reachability, live provider-backed chat/cancel, production relay deployment, production P2P traversal, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:pairing:testDebugUnitTest --tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.parsesRouteAliasPrivateOverlayScopeFromQrPayload -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_protocol_schema.py script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `python3 script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- packages/protocol-schema/pairing-qr.schema.json script/check_protocol_schema.py apps/android/core/pairing/src/test/java/com/localagentbridge/android/core/pairing/RuntimePairingPayloadParserTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/protocol.md docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-03 Android Trusted Relay Scope Canonicality No-Device Gate
+
+- Scope: continue trusted relay-route hardening while the Android phone is disconnected. A GPT-5.5 read-only explorer confirmed `PairingStore` already rejects invalid `runtime_relay_scope` values through `TrustedRuntime.hasValidRelayRoute()`, but that write/read storage boundary was not pinned by focused scope-specific regressions.
+- Result: `PairingStoreTest.trustedRuntimeRejectsInvalidRelayScopeValues` now proves blank, unknown, case-mutated, and whitespace-mutated relay scopes do not count as valid trusted relay routes.
+- Result: `PairingStoreTest.pairingStoreDropsInvalidRelayScopeOnWrite` and `pairingStoreDropsInvalidStoredRelayScopeOnRead` prove `PairingStore` drops the whole relay route instead of persisting or restoring relay material when `runtime_relay_scope` is invalid.
+- Guardrail: `script/check_no_device_quality.sh` reports the Android trusted relay scope canonicality addendum, and `script/check_copy_hygiene.py` requires the implementation guard, scope regression tests, current QA evidence, and roadmap coverage.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer confirmed the storage boundary and returned without edits.
+- Caveat: this is no-device Android JVM/source/script evidence. It does not prove physical Android QR scanning, live phone pairing, optical QR reliability, live provider-backed chat/cancel, production relay allocation, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:pairing:testDebugUnitTest --tests com.localagentbridge.android.core.pairing.PairingStoreTest.trustedRuntimeRejectsInvalidRelayScopeValues --tests com.localagentbridge.android.core.pairing.PairingStoreTest.pairingStoreDropsInvalidRelayScopeOnWrite --tests com.localagentbridge.android.core.pairing.PairingStoreTest.pairingStoreDropsInvalidStoredRelayScopeOnRead -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- apps/android/core/pairing/src/test/java/com/localagentbridge/android/core/pairing/PairingStoreTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-03 Shared Route Refresh Private Overlay Scope Schema No-Device Gate
+
+- Scope: continue Immediate Queue 5/6 private-overlay route hardening while the Android phone is disconnected. Android route-refresh handling already refused to save private, CGNAT, or ULA relay hosts without `relay_scope=private_overlay`, but the shared authenticated `route.refresh` schema did not express that same scope requirement.
+- Result: `packages/protocol-schema/protocol.schema.json` now defines private-overlay relay host patterns for authenticated `route.refresh` payloads and requires `relay_scope=private_overlay` when `relay_host` is a private IPv4, CGNAT, or ULA literal.
+- Result: `script/check_protocol_schema.py` now structurally verifies the route-refresh private-overlay host patterns and the matching `relay_scope=private_overlay` rule.
+- Guardrail: `script/check_no_device_quality.sh` reports the shared route.refresh private-overlay scope schema addendum, and `script/check_copy_hygiene.py` requires the schema rule, protocol checker helper, protocol docs, current QA evidence, and roadmap coverage.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer proposed a separate PairingStore relay-scope canonicality follow-up while this slice stayed on shared route-refresh schema coverage.
+- Caveat: this is no-device shared schema/script/docs evidence only. It does not prove physical Android QR scanning, optical camera reliability, phone relay reachability, live provider-backed chat/cancel, production relay deployment, production P2P traversal, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh`
+- `python3 -m py_compile script/check_protocol_schema.py`
+- `python3 script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- packages/protocol-schema/protocol.schema.json script/check_protocol_schema.py script/check_no_device_quality.sh script/check_copy_hygiene.py docs/protocol.md docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-03 Shared Pairing QR Relay Alias-Family Schema No-Device Gate
+
+- Scope: continue QR route-material hardening while the Android phone is disconnected. Android QR parsing already rejected mixed canonical, `remote_*`, `route_*`, `rendezvous_*`, and compact relay aliases, but the shared decoded pairing QR schema still only enforced per-family completeness.
+- Result: `packages/protocol-schema/pairing-qr.schema.json` now rejects decoded QR payloads that contain relay route material from more than one relay alias family, while preserving complete single-family canonical, `remote_*`, `route_*`, `rendezvous_*`, and compact QR payloads.
+- Result: `script/check_protocol_schema.py` now structurally verifies that the shared schema rejects all pairwise mixed relay alias families and still allows complete single-family relay payloads.
+- Guardrail: `script/check_no_device_quality.sh` reports the shared pairing QR relay alias-family schema addendum, and `script/check_copy_hygiene.py` requires the schema rule, protocol checker helper, protocol docs, current QA evidence, and roadmap coverage.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer confirmed the shared relay alias-family schema gap and returned without edits.
+- Caveat: this is no-device shared schema/script/docs evidence only. It does not prove physical Android QR scanning, optical camera reliability, phone relay reachability, live provider-backed chat/cancel, production P2P traversal, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh`
+- `python3 -m py_compile script/check_protocol_schema.py script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `python3 script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- packages/protocol-schema/pairing-qr.schema.json script/check_protocol_schema.py script/check_no_device_quality.sh script/check_copy_hygiene.py docs/protocol.md docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-03 Android Pairing And Trusted Relay Host Canonicality No-Device Gate
+
+- Scope: close the follow-up Android relay-host canonicality gap while the Android phone is disconnected. Relay transport preparation already rejected whitespace-mutated, URL-shaped, path, query, fragment, and userinfo relay host values, but pairing QR parsing and trusted route restore could still treat those strings as eligible after trimming or later transport rejection.
+- Result: `RuntimePairingPayloadParser` now rejects non-canonical relay hosts before accepting QR relay route material, including leading/trailing space, embedded whitespace, `://`, `/`, `?`, `#`, and `@` forms.
+- Result: `isCanonicalRelayHostValue` is now shared through pairing, trusted PairingStore persistence/restore, runtime remote-route planning, and route UI availability checks so the trusted state does not advertise a relay route that transport preparation will later discard.
+- Guardrail: `RuntimePairingPayloadParserTest.rejectsNonCanonicalRelayHostsBeforeRouteMaterialAcceptance`, `PairingStoreTest.trustedRuntimeRejectsNonCanonicalRelayRoute`, `PairingStoreTest.pairingStoreDropsNonCanonicalRelayHostOnWrite`, and `PairingStoreTest.pairingStoreDropsNonCanonicalStoredRelayRouteOnRead` cover the parser, write, and restore boundaries. `script/check_no_device_quality.sh` now reports the Android pairing/trusted relay host canonicality addendum, and `script/check_copy_hygiene.py` requires the code, tests, no-device summary, current QA evidence, and roadmap coverage.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer confirmed the relay-host parse/store/restore gap and returned without edits.
+- Caveat: this is no-device Android parser/store/app JVM, script, and docs evidence only. It does not prove physical Android QR scanning, optical camera reliability, phone relay reachability, live provider-backed chat/cancel, production P2P traversal, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:pairing:testDebugUnitTest --tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.rejectsNonCanonicalRelayHostsBeforeRouteMaterialAcceptance --tests com.localagentbridge.android.core.pairing.PairingStoreTest.trustedRuntimeRejectsNonCanonicalRelayRoute --tests com.localagentbridge.android.core.pairing.PairingStoreTest.pairingStoreDropsNonCanonicalRelayHostOnWrite --tests com.localagentbridge.android.core.pairing.PairingStoreTest.pairingStoreDropsNonCanonicalStoredRelayRouteOnRead -Pkotlin.incremental=false --console=plain`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.macosCompactRelayQrFixtureParsesAndPreparesRelayRoute --tests com.localagentbridge.android.AppNavigationTest.privateOverlayRelayRouteWithScopeIsUsableInConnectionUi --tests com.localagentbridge.android.AppNavigationTest.privateOverlayRelayWithoutSecretUsesScopeAwareWarningPath -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_protocol_schema.py script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `python3 script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- apps/android/core/pairing/src/main/java/com/localagentbridge/android/core/pairing/RuntimePairingPayload.kt apps/android/core/pairing/src/main/java/com/localagentbridge/android/core/pairing/PairingStore.kt apps/android/core/pairing/src/test/java/com/localagentbridge/android/core/pairing/RuntimePairingPayloadParserTest.kt apps/android/core/pairing/src/test/java/com/localagentbridge/android/core/pairing/PairingStoreTest.kt apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeRemoteRoutePlanner.kt apps/android/app/src/main/java/com/localagentbridge/android/ui/ClientScreens.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-03 Shared Pairing QR P2P Alias-Family Schema No-Device Gate
+
+- Scope: continue QR route-material hardening while the Android phone is disconnected. Android QR parsing already rejected mixed canonical and compact P2P rendezvous aliases, but the shared decoded pairing QR schema still only enforced P2P family completeness and size bounds.
+- Result: `packages/protocol-schema/pairing-qr.schema.json` now rejects payloads that contain any canonical `p2p_*` rendezvous field together with any compact `pc`/`prid`/`peb`/`px`/`pn`/`pv` rendezvous field, while preserving complete single-family canonical or compact QR payloads.
+- Result: `script/check_protocol_schema.py` now structurally verifies that the shared schema rejects mixed canonical/compact P2P aliases and does not reject complete single-family P2P payloads.
+- Guardrail: `script/check_no_device_quality.sh` reports the shared pairing QR P2P alias-family schema addendum, and `script/check_copy_hygiene.py` requires the schema rule, checker helper, protocol docs, current QA evidence, and roadmap coverage.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 explorer identified a separate Android relay-host canonicality gap for follow-up and was closed without edits.
+- Caveat: this is no-device shared schema/script/docs evidence only. It does not prove physical Android QR scanning, optical camera reliability, phone relay reachability, live provider-backed chat/cancel, production P2P traversal, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check -- packages/protocol-schema/pairing-qr.schema.json script/check_protocol_schema.py script/check_no_device_quality.sh script/check_copy_hygiene.py docs/protocol.md docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-03 Aggregate No-Device Gate After P2P Alias And Wrapper Token Redaction
+
+- Scope: close the latest no-device route-hardening batch after the Android phone was disconnected, including Android pairing QR P2P alias-family isolation and allocation-token argv redaction for `run_different_network_dev_runtime.sh` and `no_adb_external_relay_pairing_smoke.sh`.
+- Result: the full no-device quality gate completed successfully after the parser, wrapper, hygiene, and docs updates.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Agent state: GPT-5.3-Codex-Spark was not used. GPT-5.5 read-only explorers were used for candidate selection, and the allocation-token argv explorer was closed after its result was incorporated.
+- Caveat: this proves no-device JVM/Compose, SwiftPM, script, schema, QR artifact, and local relay smoke coverage only. It does not prove physical Android QR scanning, optical camera reliability, phone relay reachability, live provider-backed chat/cancel, production relay deployment, production P2P traversal, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-03 Android Pairing QR P2P Alias-Family Isolation No-Device Gate
+
+- Scope: continue Immediate Queue 5/6 QR route-material hardening while the Android phone is disconnected. Android already rejected incomplete or expired P2P rendezvous material, but the parser could still assemble one complete P2P route from fields split across canonical `p2p_*` names and compact `pc`/`prid`/`peb`/`px`/`pn`/`pv` aliases.
+- Result: `RuntimePairingPayloadParser` now rejects mixed canonical and compact P2P rendezvous alias families before choosing P2P class, record id, encrypted body, expiration, anti-replay nonce, or protocol version values.
+- Result: `RuntimePairingPayloadParserTest.rejectsMixedP2pAliasFamiliesFromQrPayload` covers canonical-class plus compact-material, compact-class plus canonical-material, and complete canonical plus complete compact collision payloads, while existing compact and canonical P2P fixture tests keep valid single-family QR compatibility.
+- Guardrail: `script/check_no_device_quality.sh` now runs the focused mixed-family parser regression and reports `Android pairing QR P2P alias-family isolation addendum`; `script/check_copy_hygiene.py` pins the parser helper, mixed-family tests, protocol docs, current QA evidence, and roadmap coverage.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 read-only explorer identified the next no-device route-hardening gap, and a later GPT-5.5 explorer separately found an allocation-token argv gap for follow-up.
+- Caveat: this is no-device Android QR parser/JVM, script, and docs evidence only. It does not prove physical Android QR scanning, optical camera reliability, production P2P traversal, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:pairing:testDebugUnitTest --tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.rejectsMixedP2pAliasFamiliesFromQrPayload --tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.parsesSharedCompactP2pRendezvousQrFixture --tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.parsesP2pRendezvousRouteQrPayloadWithoutRelayAliasCollision -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- apps/android/core/pairing/src/main/java/com/localagentbridge/android/core/pairing/RuntimePairingPayload.kt apps/android/core/pairing/src/test/java/com/localagentbridge/android/core/pairing/RuntimePairingPayloadParserTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md docs/protocol.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-03 Android Stored Route-Token Canonicality No-Device Gate
+
+- Scope: continue Immediate Queue 5/6 private route hardening while the Android phone is disconnected. QR parsing already rejects whitespace-mutated or oversized `route_token` values, but trusted-runtime storage still loaded and persisted route tokens with only a blankness check.
+- Result: `PairingStore` now canonicalizes stored current and legacy route tokens with `isCanonicalOpaqueRouteValue` before emitting trusted runtime state, removes non-canonical stored route-token keys on read, and refuses to persist non-canonical route tokens on write.
+- Result: `PairingStoreTest.pairingStoreDropsNonCanonicalRouteTokenOnWrite` and `pairingStoreDropsNonCanonicalStoredRouteTokenOnRead` prove whitespace-mutated and oversized stored route tokens do not survive into trusted discovery or remote route preparation input.
+- Guardrail: `script/check_no_device_quality.sh` now reports the Android stored route-token canonicality addendum, and `script/check_copy_hygiene.py` requires the source boundary, focused tests, no-device summary, current QA evidence, and roadmap coverage.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 explorer identified stored trusted route-token canonicality as the strongest next no-device route-hardening candidate.
+- Caveat: this is no-device Android pairing-store/JVM, script, and docs evidence only. It does not prove physical Android QR scanning, production relay allocation, production P2P traversal, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:pairing:testDebugUnitTest --tests com.localagentbridge.android.core.pairing.PairingStoreTest.pairingStoreDropsNonCanonicalRouteTokenOnWrite --tests com.localagentbridge.android.core.pairing.PairingStoreTest.pairingStoreDropsNonCanonicalStoredRouteTokenOnRead -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check -- apps/android/core/pairing/src/main/java/com/localagentbridge/android/core/pairing/PairingStore.kt apps/android/core/pairing/src/test/java/com/localagentbridge/android/core/pairing/PairingStoreTest.kt apps/android/core/transport/src/test/java/com/localagentbridge/android/core/transport/RuntimeRelayRoutePreparationTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-03 Android Relay Route-Material Size-Bound No-Device Gate
+
+- Scope: continue Immediate Queue 5/6 no-device route hardening while the Android phone is disconnected. The relay route-preparation source already bounds opaque relay ids, frame secrets, and anti-replay nonces, but the focused Android transport test did not directly pin the oversize boundary.
+- Result: `RuntimeRelayRoutePreparationTest.relayRoutePreparationRejectsOversizedOpaqueRouteMaterial` now proves relay ids, relay frame secrets, and anti-replay nonces larger than the 512-character opaque route-material limit fail closed before a prepared relay route reaches the connector.
+- Guardrail: `script/check_no_device_quality.sh` now reports oversized opaque relay route material in the Android relay route-material canonicality addendum, and `script/check_copy_hygiene.py` requires the focused oversize regression and summary phrase.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Agent state: GPT-5.3-Codex-Spark was not used. A GPT-5.5 explorer was requested for next-candidate discovery after closing a completed GPT-5.5 agent slot.
+- Caveat: this is no-device Android core transport/JVM, script, and docs evidence only. It does not prove physical Android QR scanning, external relay reachability, production relay allocation, production P2P traversal, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:transport:testDebugUnitTest --tests com.localagentbridge.android.core.transport.RuntimeRelayRoutePreparationTest.relayRoutePreparationRejectsOversizedOpaqueRouteMaterial -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check -- apps/android/core/transport/src/test/java/com/localagentbridge/android/core/transport/RuntimeRelayRoutePreparationTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-03 Aggregate No-Device Gate And Memory Summary Draft Scroll Stabilization
+
+- Scope: close the current no-device hardening batch after the Android phone was disconnected, including relay control-line relay-id canonicality, relay allocation base64 requested-secret parsing, relay wrapper allocation-token argv redaction, and the Android Settings memory-summary draft approval regression.
+- Result: `ClientScreensNoDeviceComposeTest.settingsMemoryPanelShowsSummaryDraftApprovalAction` now scrolls to the memory-summary draft count and source-title nodes before asserting display, matching the existing scroll behavior used for the review action in the same panel.
+- Result: the full no-device quality gate completed successfully after the relay allocation parser fix and Compose test stabilization.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Agent state: GPT-5.3-Codex-Spark was not used. One GPT-5.5 read-only explorer was used for relay wrapper allocation-token argv redaction candidate selection.
+- Caveat: this proves no-device JVM/Compose, SwiftPM, script, schema, and local relay smoke coverage only. It does not prove physical Android QR scanning, optical camera reliability, physical TalkBack traversal, live provider-backed chat/cancel, production relay deployment, production P2P traversal, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsMemoryPanelShowsSummaryDraftApprovalAction -Pkotlin.incremental=false --console=plain`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/check_no_device_quality.sh`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- apps/macos/RelayServerCore/Sources/RelayAllocation.swift apps/macos/RelayServerCore/Sources/RelayHandshake.swift apps/macos/RelayServerCore/Sources/RelayProbe.swift apps/macos/RelayServerCore/Tests/RelayAllocationTests.swift apps/macos/RelayServerCore/Tests/RelayHandshakeTests.swift apps/macos/RelayServerCore/Tests/RelayProbeTests.swift apps/android/app/src/test/java/com/localagentbridge/android/ui/ClientScreensNoDeviceComposeTest.kt script/run_allocation_relay.sh script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-03 Relay Wrapper Allocation-Token Argv Redaction No-Device Gate
+
+- Scope: continue relay bootstrap hardening while the Android phone is disconnected. `AetherLinkRelay` and `relay_allocation_preflight.py` now accept allocation tokens from environment variables, but the wrapper scripts still had paths that forwarded `--allocation-token` into child process argv.
+- Result: `script/run_allocation_relay.sh` continues exporting `AETHERLINK_RELAY_ALLOCATION_TOKEN="$ALLOCATION_TOKEN"` before `exec`; `script/run_different_network_dev_runtime.sh` and `script/no_adb_external_relay_pairing_smoke.sh` now also pass allocation tokens to both the Python preflight and the local `AetherLinkRelay` child through environment variables instead of argv.
+- Result: `check_relay_wrapper_allocation_token_argv_redaction_guard`, `check_different_network_wrapper_allocation_token_argv_redaction_guard`, and `check_no_adb_wrapper_allocation_token_argv_redaction_guard` start the wrappers with allocation-token canaries and verify child process argv omits `--allocation-token` and the raw token while token-required allocation still works.
+- Guardrail: `script/check_no_device_quality.sh` now runs the focused wrapper argv smokes and reports `relay wrapper allocation-token argv redaction addendum`.
+- Guardrail: `script/check_copy_hygiene.py` rejects the old argv append paths and requires the wrapper export paths, focused no-device guards, current QA evidence, and roadmap coverage.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves local process-argv redaction and token enforcement for the development relay wrappers only. It does not prove production relay deployment, physical Android pairing, optical QR scanning, live provider-backed chat/cancel, production P2P traversal, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `bash -n script/run_allocation_relay.sh script/run_different_network_dev_runtime.sh script/no_adb_external_relay_pairing_smoke.sh script/check_no_device_quality.sh`
+- `python3 -m py_compile script/relay_allocation_preflight.py script/check_copy_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+
+### 2026-07-03 Relay Allocation Base64 Requested-Secret No-Device Gate
+
+- Scope: close the aggregate no-device QR emit failure found after the relay control-line work. The no-ADB QR smoke timed out because RuntimeDevServer sent a base64 requested relay secret containing `=` padding, and `RelayAllocationRequest.parse` treated any `=` in the secret slot as unknown metadata.
+- Result: `RelayAllocationRequest.parse` now rejects only explicit request metadata keys such as `backend_url`, `provider_url`, `requested_route_token`, and `relay_secret_debug` before treating a value as requested relay secret material.
+- Result: `RelayAllocationTests/testParsesAllocationRequestWithBase64RequestedRelaySecret` proves allocation requests accept base64-style requested relay secrets with `+`, `/`, and `=` padding while `RelayAllocationTests/testRejectsUnexpectedAllocationRequestMetadata` continues rejecting backend/provider/request metadata fields.
+- Result: a no-ADB local relay QR emit smoke passed after the parser fix, generating and round-trip verifying `pairing-uri.txt` and `pairing-qr.png`.
+- Guardrail: `script/check_no_device_quality.sh` now runs the focused Swift regression and reports `relay allocation base64 requested-secret addendum`.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves SwiftPM/no-device allocation parsing and local QR artifact generation only. It does not prove physical Android pairing, optical QR scanning, production relay deployment, live provider-backed chat/cancel, production P2P traversal, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `swift test --package-path apps/macos --filter 'RelayAllocationTests/testParsesAllocationRequestWithBase64RequestedRelaySecret|RelayAllocationTests/testRejectsUnexpectedAllocationRequestMetadata|RelayAllocationTests/testRejectsBlankAllocationTokenAndRelaySecret|RelayHandshakeTests/testRejectsNonCanonicalRelayID|RelayProbeTests/testRejectsNonCanonicalRelayID'`
+- `./script/no_adb_external_relay_pairing_smoke.sh --relay-host 127.0.0.1 --relay-port <free-port> --start-local-relay --emit-only --timeout 30 --work-dir <temp-dir>`
+
+### 2026-07-03 Relay Control-Line Relay-ID Canonicality No-Device Gate
+
+- Scope: continue the no-device relay hardening queue after the Android phone was disconnected. This focuses on Swift relay control lines that can be verified without ADB or a physical QR scan.
+- Result: `RelayHandshake` and `RelayProbeRequest` now share `isCanonicalRelayControlLineID`, capping relay ids at 512 characters and rejecting whitespace, URL/path/query/fragment/user-info shapes, and host:port strings before relay matching.
+- Result: `RelayHandshakeTests/testRejectsNonCanonicalRelayID` and `RelayProbeTests/testRejectsNonCanonicalRelayID` prove runtime/client handshakes and readiness probes reject whitespace, oversized, URL-shaped, path-shaped, query, fragment, user-info, and host:port relay ids.
+- Guardrail: `script/check_no_device_quality.sh` now runs both focused Swift regressions alongside the relay control-line framing and runtime-only readiness probe tests, and reports `relay control-line relay-id canonicality addendum`.
+- Guardrail: `script/check_copy_hygiene.py` now requires the shared canonicality helper, focused tests, no-device gate entry, current QA evidence, and roadmap coverage.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves SwiftPM/no-device relay parser behavior only. It does not prove physical Android pairing, optical QR scanning, production relay deployment, live provider-backed chat/cancel, production P2P traversal, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `swift test --package-path apps/macos --filter 'RelayHandshakeTests/testRejectsNonCanonicalRelayID|RelayProbeTests/testRejectsNonCanonicalRelayID|RelayHandshakeTests/testParsesRuntimeHandshake|RelayProbeTests/testParsesProbeRequest'`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 -m py_compile script/check_copy_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- apps/macos/RelayServerCore/Sources/RelayHandshake.swift apps/macos/RelayServerCore/Sources/RelayProbe.swift apps/macos/RelayServerCore/Tests/RelayHandshakeTests.swift apps/macos/RelayServerCore/Tests/RelayProbeTests.swift script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-02 Android Route Refresh QR Active-Connection Reuse P2P No-Device Gate
+
+- Coverage label: Android Route Refresh QR Active-Connection Reuse No-Device Gate.
+- Scope: continue the QR-only trusted-device UX and no-device smoke coverage queue after the Android phone was disconnected by extending the existing relay active-connection reuse regression to the P2P rendezvous QR route family.
+- Verification state: this is no-device JVM evidence; it does not use ADB, an optical QR scan, a physical phone, a production P2P connector, or real different-network connectivity.
+- Result: added `RuntimeClientViewModelTest.routeRefreshQrAfterAcceptedP2pPairingDoesNotOpenDuplicatePeerConnection`. It pairs from a P2P route QR, accepts pairing over the injected P2P connector, scans a same-runtime latest QR with refreshed P2P route material, and verifies the active channel is reused.
+- Result: the regression proves direct TCP and relay connectors are not used, `peerToPeerConnectionAttempts == 1`, the trusted route token and P2P record/body/nonce are refreshed, the active route remains `PeerToPeer`, and no UI error is published.
+- Guardrail: `script/check_no_device_quality.sh` now runs both relay and P2P route-refresh QR active-connection reuse tests, and its summary says saved relay and P2P route material are updated while avoiding duplicate relay or peer dials.
+- Guardrail: `script/check_copy_hygiene.py` now requires the P2P counterpart test, the no-device gate entry, refreshed P2P material assertions, the updated summary phrase, current QA evidence, and roadmap coverage.
+- Caveat: this proves active-channel reuse and storage updates for an injected no-device P2P connector only. It does not implement production P2P NAT traversal, candidate exchange, hole punching, optical QR scanning, or live external-network reachability.
+- No GPT-5.3-Codex-Spark subagent was used. One GPT-5.5 read-only explorer identified the missing P2P counterpart to the relay route-refresh active-connection reuse regression.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshQrAfterAcceptedP2pPairingDoesNotOpenDuplicatePeerConnection -Pkotlin.incremental=false --console=plain`
+- `bash -n script/check_no_device_quality.sh script/capture_macos_dock_icon.sh` (syntax only)
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+
+### 2026-07-02 Physical Android Reconnected QR Smoke And macOS Dock Icon Capture
+
+- Coverage label: Physical Android Reconnected QR Smoke.
+- Coverage label: macOS Dock Icon Physical Screenshot Capture.
+- Scope: use the reconnected physical Android phone for a fresh QR/deeplink relay smoke, then close the remaining macOS Dock icon screenshot gap from the app-icon readability queue.
+- Verification state: this is not no-device evidence; it combines a physical Android phone smoke with a local macOS desktop Dock screenshot.
+- Android device state: `adb devices -l` saw `R3CXC0M76VM` as `device`, model `SM_S936N`; the focused app was `com.localagentbridge.android/.MainActivity`.
+- Android screen evidence: `build/qa/android-current-screen-20260702.png` and `build/qa/android-current-ui-20260702.xml` showed the Korean Settings screen without a visible pairing failure or invalid/expired QR message.
+- Android physical smoke evidence: `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" PATH="$ANDROID_HOME/platform-tools:$JAVA_HOME/bin:$PATH" ./script/android_pairing_deeplink_smoke.sh --relay --serial R3CXC0M76VM --expect-chat-cancel --capture-ui-polish --chat-text AetherLink_reconnected_device_smoke` passed after installing the current debug APK.
+- Android result: the smoke injected the QR pairing URI, paired through the local diagnostic relay with USB `adb reverse`, tapped Korean chat send/cancel controls, observed `chat.send`, `chat.delta`, `chat.cancel`, and `chat.done`, and saved chat/model-selector/drawer/Settings/launcher PNG/XML artifacts in `/var/folders/n2/vgx0vf052yl248_8cff1xt2r0000gn/T//aetherlink-android-pairing.tKJkPN`.
+- macOS capture helper: added `script/capture_macos_dock_icon.sh`, which runs `script/build_and_run.sh --verify`, stages `dist/AetherLink.app`, temporarily disables Dock autohide only when needed, captures `build/qa/aetherlink-macos-dock-visible.png`, and restores the Dock setting before exit.
+- macOS physical screenshot evidence: `./script/capture_macos_dock_icon.sh` passed, reported `Bundle: /Users/hanchangha/Desktop/project/dist/AetherLink.app` and `CFBundleIconFile: AppIcon`, and left Dock `autohide` restored to `1`.
+- Visual review: the captured macOS desktop shows the AetherLink bundle icon rendered in the Dock. The screenshot also shows the app's Keychain identity-access prompt, but that prompt is unrelated to Dock icon rendering and does not obscure the Dock icon.
+- Caveat: the Android proof still uses ADB-injected QR deeplink delivery and USB `adb reverse`, not optical camera scanning or external public relay reachability. The macOS Dock proof is a local desktop Dock screenshot for the current `dist/AetherLink.app`; it does not cover other display scales, Dock sizes, or app-store metadata.
+- No GPT-5.3-Codex-Spark subagent was used. One GPT-5.5 read-only explorer confirmed the macOS bundle/icon path before the capture helper was added.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" PATH="$ANDROID_HOME/platform-tools:$JAVA_HOME/bin:$PATH" ./script/android_pairing_deeplink_smoke.sh --relay --serial R3CXC0M76VM --expect-chat-cancel --capture-ui-polish --chat-text AetherLink_reconnected_device_smoke`
+- `bash -n script/capture_macos_dock_icon.sh`
+- `./script/capture_macos_dock_icon.sh`
+
+### 2026-07-02 Physical Android UI Polish Screenshot Capture
+
+- Coverage label: Physical Android UI Polish Screenshot Capture.
+- Coverage label: macOS RelayPeerClient Physical QR Startup Timeout.
+- Scope: continue the physical-device QA and screenshot-review queue on the connected `R3CXC0M76VM` / `SM_S936N` Korean-locale phone.
+- Result: `script/android_pairing_deeplink_smoke.sh --capture-ui-polish` now captures paired PNG and uiautomator XML artifacts for chat, model selector, navigation drawer, Settings, and best-effort launcher placement after QR deeplink pairing succeeds.
+- Result: the smoke now foregrounds AetherLink before localized chat taps, so Korean `메시지` does not accidentally match another launcher app such as the Samsung Messages icon when a rerun starts from the home screen.
+- Result: `RelayPeerConfiguration.defaultControlLineTimeout` is now 45 seconds. This keeps the relay registration timeout bounded while leaving enough room for physical Android cold launch and QR route connection before the runtime gives up waiting for `AETHERLINK_RELAY ready`.
+- Device state: this is not no-device evidence; it used the connected physical Android phone `R3CXC0M76VM` / `SM_S936N`.
+- Evidence: passing work directory `/var/folders/n2/vgx0vf052yl248_8cff1xt2r0000gn/T//aetherlink-android-pairing.j4fOqZ`.
+- Evidence: captured screenshots/XML include `aetherlink-ui-chat`, `aetherlink-ui-model-selector`, `aetherlink-ui-drawer`, `aetherlink-ui-settings`, and `aetherlink-ui-launcher`; the launcher XML contained the `AetherLink` label.
+- Visual review: chat, model selector, drawer, Settings, and the launcher icon rendered without visible text overlap in the captured Korean-locale phone screenshots. The right-edge white handle visible in captures appears to be a Samsung system handle, not an AetherLink layout element.
+- Caveat: this is physical Android proof through ADB-injected QR deeplink delivery, USB `adb reverse` local relay reachability, and the RuntimeDevServer mock backend. It does not prove optical camera QR scanning, external public relay reachability, LM Studio-backed live chat/cancel, production P2P traversal, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `swift test --package-path apps/macos --filter 'RelayPeerClientTests/testRelayPeerConfigurationDefaultControlLineTimeoutAllowsPhysicalQrStartup|RelayPeerClientTests/testRelayPeerClientWaitsForAcceptedRuntimeRegistrationBeforeWaitingForPeer|RelayPeerClientTests/testRelayPeerClientTimesOutWhenRegistrationLineNeverArrives|RelayPeerClientTests/testRelayPeerClientTimesOutWhenReadyLineNeverArrivesAfterRegistration|RelayPeerClientTests/testRelayPeerClientEncryptsRuntimeFramesWithRouteNonceBoundCipher'`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/android_pairing_deeplink_smoke.sh --relay --serial R3CXC0M76VM --skip-install --expect-chat-cancel --capture-ui-polish --chat-text AetherLink_ui_polish_capture_smoke`
+- `bash -n script/android_pairing_deeplink_smoke.sh`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-02 Physical Android Live Ollama Chat Cancel Close
+
+- Coverage label: Physical Android Live Ollama Chat Cancel Smoke.
+- Coverage label: macOS chat.cancel immediate `chat.done(cancelled)` close.
+- Scope: close the live-provider gap found on the connected `R3CXC0M76VM` / `SM_S936N` phone. The first live run paired successfully and reached `chat.send`, `chat.delta`, and `chat.cancel`, but failed because the runtime did not emit the target `chat.done` quickly after acknowledging cancellation.
+- Result: `LocalRuntimeMessageRouter` now sends `chat.done` with `finish_reason = "cancelled"` for the original `chat.send` request as soon as `chat.cancel` successfully cancels the backend generation. It also suppresses later provider stream events for requests already marked cancelled, while keeping the stored runtime-owned cancelled event de-duplicated.
+- Result: the physical live smoke passed with Ollama available on `127.0.0.1:11434`, selected model `gemma4:e4b-mlx`, and LM Studio unavailable on `127.0.0.1:1234`.
+- Result: runtime log evidence shows `chat.send`, streamed `chat.delta`, `chat.cancel`, the cancel acknowledgement, and `chat.done` for the original request id after cancellation.
+- Device state: this is not no-device evidence; it used the connected physical Android phone `R3CXC0M76VM` / `SM_S936N`.
+- Evidence: passing work directory `/var/folders/n2/vgx0vf052yl248_8cff1xt2r0000gn/T//aetherlink-android-pairing.9DOg4v`; chat/cancel screenshot `/var/folders/n2/vgx0vf052yl248_8cff1xt2r0000gn/T//aetherlink-android-pairing.9DOg4v/aetherlink-chat-cancel-smoke.png`; final screenshot `/var/folders/n2/vgx0vf052yl248_8cff1xt2r0000gn/T//aetherlink-android-pairing.9DOg4v/aetherlink-pairing-smoke.png`.
+- Guardrail: `LocalRuntimeMessageRouterTests.testChatCancelAcknowledgementPersistsRuntimeOwnedCancelledEvent` now asserts that a successful cancel produces one `chat.done(cancelled)` for the target request and does not duplicate terminal messages or stored cancelled events.
+- Caveat: this is physical Android proof through ADB-injected QR deeplink delivery, USB `adb reverse` local relay reachability, and a live Ollama-backed RuntimeDevServer path. It does not prove optical camera QR scanning, external public relay reachability, LM Studio-backed live chat/cancel, production P2P traversal, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `swift test --package-path apps/macos --filter 'LocalRuntimeMessageRouterTests/testChatCancelAcknowledgementPersistsRuntimeOwnedCancelledEvent|LocalRuntimeMessageRouterTests/testChatCancelReturnsCancelAcknowledgement|LocalRuntimeMessageRouterTests/testChatCancelUnknownGenerationReturnsProtocolError'`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/android_pairing_deeplink_smoke.sh --relay --serial R3CXC0M76VM --live-backend --expect-chat-cancel --chat-delta-timeout 180 --chat-text AetherLink_live_ollama_cancel_fix_smoke`
+- `python3 -m json.tool` against `http://127.0.0.1:11434/api/tags` confirmed Ollama model availability; `curl --max-time 5 http://127.0.0.1:1234/v1/models` confirmed LM Studio was unavailable for this pass.
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-02 Physical Android Relay Reconnect Race And Locale-Resilient Chat/Cancel Smoke
+
+- Coverage label: Physical Android Relay Reconnect Race Gate.
+- Coverage label: Physical Android Locale-Resilient Chat Cancel Smoke.
+- Scope: fix the latest physical `--expect-chat-cancel --expect-reconnect` smoke on the connected `R3CXC0M76VM` / `SM_S936N` Korean-locale phone after QR deeplink pairing could reach chat but the smoke and saved-route relaunch path exposed two hardware-only gaps.
+- Result: `script/android_pairing_deeplink_smoke.sh` now resolves localized Android `strings.xml` content descriptions before tapping chat controls, so the physical smoke can tap Korean `메시지`, `메시지 전송`, and `생성 취소` instead of hard-coding English `Message`, `Send message`, and `Cancel generation`. The chat input helper also falls back to the enabled `android.widget.EditText` when content descriptions are merged differently by the UI tree.
+- Result: Android relay preflight now separates route-id reachability from runtime-waiting readiness. `isRelayProbeKnown()` lets saved trusted relay reconnect continue when the relay reports `known=true runtime_waiting=false` during the relaunch race, then the real relay client waits until the runtime host reconnects and the relay bridges the pair.
+- Result: the physical smoke passed end to end after the fix: QR deeplink injection, accepted pairing, initial `runtime.health`, `models.list`, Korean-locale chat send/cancel (`chat.send`, `chat.delta`, `chat.cancel`, `chat.done`), force-stop/relaunch, second `runtime.health`, and second `models.list`.
+- Device state: this is not no-device evidence; it used the connected physical Android phone `R3CXC0M76VM` / `SM_S936N`.
+- Evidence: passing work directory `/var/folders/n2/vgx0vf052yl248_8cff1xt2r0000gn/T//aetherlink-android-pairing.gLGY6T`; chat/cancel screenshot `/var/folders/n2/vgx0vf052yl248_8cff1xt2r0000gn/T//aetherlink-android-pairing.gLGY6T/aetherlink-chat-cancel-smoke.png`; final reconnect screenshot `/var/folders/n2/vgx0vf052yl248_8cff1xt2r0000gn/T//aetherlink-android-pairing.gLGY6T/aetherlink-pairing-smoke.png`.
+- Evidence: the passing relay log includes the relaunch race shape: `probed ... known=true runtime_waiting=false`, then `accepted role=client`, `waiting ... role=client`, `accepted role=runtime`, and `matched ... runtime<->client`.
+- Guardrail: `RuntimeClientViewModelTest.relayProbeKnownParserAllowsRuntimeReconnectRace` pins the `known=true runtime_waiting=false` reconnect-preflight path while keeping `RuntimeClientViewModelTest.relayProbeResponseParserRequiresKnownRouteAndWaitingRuntime` for route-level readiness probes. `script/check_copy_hygiene.py` and `script/check_no_device_quality.sh` require both regressions plus the locale-resilient physical smoke helpers.
+- Caveat: this is physical Android proof through ADB-injected QR deeplink delivery, USB `adb reverse` local relay reachability, and the RuntimeDevServer mock backend. It does not prove optical camera QR scanning, production external relay reachability, live Ollama/LM Studio model quality, physical file-picker behavior, production P2P traversal, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.relayProbeResponseParserRequiresKnownRouteAndWaitingRuntime --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.relayProbeKnownParserAllowsRuntimeReconnectRace --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.relayQrPairingFailsBeforeConnectWhenDeviceCannotReachRelayRoute -Pkotlin.incremental=false --console=plain`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./script/android_pairing_deeplink_smoke.sh --relay --serial R3CXC0M76VM --expect-reconnect --expect-chat-cancel --chat-text AetherLink_physical_smoke`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `bash -n script/android_pairing_deeplink_smoke.sh script/check_no_device_quality.sh`
+- `git diff --check -- apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt script/android_pairing_deeplink_smoke.sh script/check_copy_hygiene.py script/check_no_device_quality.sh docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-02 RuntimeDevServer Future Python Namespace Rejection No-Device Gate
+
+- Coverage label: Protocol Reserved Python Namespace No-Device Gate.
+- Coverage label: RuntimeDevServer Future Python Namespace Rejection No-Device Gate.
+- Scope: continue Queue 6 future-runtime-boundary coverage by reserving Python execution messages before any runtime Python sandbox, permission prompt, resource-limit, or audit-log design exists.
+- Result: `script/check_protocol_schema.py` now treats the `python.` prefix as a reserved future namespace alongside skills, MCP, web search, projects, and automation. Its self-check rejects synthetic `python.run` and `python.exec` names through the same helper used for active message enum hygiene.
+- Result: RuntimeDevServer authenticated relay smoke rejects `python.run` and `python.exec` with `unknown_message_type` through `smoke-future-python-run` and `smoke-future-python-exec` after pairing/auth.
+- Result: the relay ciphertext boundary marker list now includes `python.run`, `python.exec`, both Python request ids, and representative future Python payload text so unsupported Python request details must stay inside encrypted relay frame bodies.
+- Result: `docs/protocol.md` now names `python.run` and `python.exec` only as candidate future messages and keeps `python.*` reserved until runtime-owned sandboxing, permissions, resource limits, and audit semantics are designed.
+- Guardrail: `script/check_copy_hygiene.py` pins the protocol reserved prefix, RuntimeDevServer Python namespace rejection smoke, no-device summary, protocol docs, roadmap inventory, and current evidence. `script/check_no_device_quality.sh` reports the protocol reserved tools/search/Python namespace guard and RuntimeDevServer future Python namespace rejection addendum.
+- Device state: ADB currently recognizes `R3CXC0M76VM` / `SM_S936N`, but this slice is still no-device protocol/runtime smoke evidence and does not exercise the physical phone.
+- Caveat: this proves no-device protocol schema and RuntimeDevServer authenticated relay fail-closed behavior for future Python message names only. It does not implement Python execution, sandboxing, approval UI, audit logs, physical Android QR scanning, live provider-backed chat/cancel, production relay deployment, production P2P traversal, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `python3 -m py_compile script/check_protocol_schema.py script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `python3 script/check_protocol_schema.py`
+- `swiftc -typecheck script/runtime_authenticated_mock_smoke.swift`
+- `./script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check -- script/check_protocol_schema.py script/runtime_authenticated_mock_smoke.swift script/check_no_device_quality.sh script/check_copy_hygiene.py docs/protocol.md docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-02 RuntimeDevServer Chat Compaction Relay Smoke No-Device Gate
+
+- Scope: promote the runtime context compaction boundary from router-level/unit coverage into the authenticated RuntimeDevServer relay smoke while no Android phone is attached.
+- Result: `RuntimeDevServer` dev mock chat now supports the env-gated `AETHERLINK_DEV_MOCK_CHAT_REQUEST_AUDIT_FILE` JSONL request audit so the smoke can inspect the backend-dispatched request without changing production provider behavior.
+- Result: `script/runtime_authenticated_mock_smoke.swift` now sends `smoke-chat-compaction-relay` with 18 oversized visible turns. The mock backend audit must contain exactly one backend-only `Runtime conversation summary:` message with `Source span: client-visible conversation turns 1-6 of 18.`.
+- Result: `smoke-chat-compaction-messages` confirms `chat.messages.list` still exposes the original visible conversation plus the mock assistant response while keeping the compaction summary/source span out of visible history.
+- Result: the relay ciphertext boundary marker list now includes the compaction request ids, audit env var, summary/source-span markers, and representative oversized turn text.
+- Guardrail: `script/check_copy_hygiene.py` now pins the RuntimeDevServer audit hook, compaction smoke request ids, backend-only summary/source-span assertions, visible history separation assertion, no-device summary phrase, roadmap inventory, and docs evidence. `script/check_no_device_quality.sh` reports the RuntimeDevServer chat compaction backend-only audit addendum.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device RuntimeDevServer authenticated relay chat.send context compaction backend-only audit and visible history separation only. It does not prove physical Android QR scanning, phone reachability, live provider-backed chat/cancel, production relay deployment, production P2P traversal, tokenizer-aware compaction, LLM-generated summaries, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `swiftc -typecheck script/runtime_authenticated_mock_smoke.swift`
+- `swift build --package-path apps/macos --product RuntimeDevServer`
+- `swift test --package-path apps/macos --filter LocalRuntimeMessageRouterTests/testChatSendCompactionAnnotatesBackendOnlySourceSpanWithoutPersisting`
+- `./script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check -- apps/macos/RuntimeDevServer/Sources/RuntimeDevServer.swift script/runtime_authenticated_mock_smoke.swift script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-02 RuntimeDevServer Memory Source Audit Immutability No-Device Gate
+
+- Scope: promote the existing runtime memory source-audit boundary from router-level coverage into the authenticated RuntimeDevServer relay smoke while no Android phone is attached.
+- Result: `script/runtime_authenticated_mock_smoke.swift` now sends `smoke-memory-source-forgery` after approving a memory-summary draft and requires `invalid_payload` when a client tries to provide a `source` object through `memory.upsert`.
+- Result: the same smoke now edits the approved source-backed memory entry through `smoke-memory-source-preserving-edit`, verifies the edited content/enabled state, and confirms the runtime-derived source metadata still carries the original draft id and source session in both the edit response and `smoke-memory-source-preserving-list`.
+- Result: the relay ciphertext boundary marker list now includes the source-forgery request id, source-preserving edit/list request ids, forged source identifiers, and representative source-audit payload text.
+- Guardrail: `script/check_copy_hygiene.py` now pins the RuntimeDevServer memory source-audit smoke requests, no-device summary phrase, roadmap inventory, and docs evidence. `script/check_no_device_quality.sh` reports `client-supplied memory source rejection` and `approved memory source-preserving edit/list visibility` in the RuntimeDevServer history/title/session lifecycle/memory smoke addendum.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device RuntimeDevServer authenticated relay source-audit immutability only. It does not prove physical Android QR scanning, phone reachability, live provider-backed chat/cancel, production relay deployment, production P2P traversal, semantic memory search, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `swiftc -typecheck script/runtime_authenticated_mock_smoke.swift`
+- `./script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh`
+- `swift test --package-path apps/macos --filter LocalRuntimeMessageRouterTests/testMemoryUpsertRejectsClientSuppliedSourceMetadataAndPreservesRuntimeSource`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check -- script/runtime_authenticated_mock_smoke.swift script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-02 RuntimeDevServer Memory Summary Stale Guard No-Device Gate
+
+- Scope: promote the existing memory-summary stale expected-metadata guard from router-level coverage into the authenticated RuntimeDevServer relay smoke while no Android phone is attached.
+- Result: `script/runtime_authenticated_mock_smoke.swift` now sends `smoke-memory-summary-approve-stale` with a stale `expected_source_message_count` before the valid approval path, requires `memory_summary_draft_stale`, and then confirms the same draft can still be approved with current metadata.
+- Result: the same smoke now sends `smoke-memory-summary-dismiss-stale` before the valid dismiss path, requires `memory_summary_draft_stale`, and then confirms the current dismiss still hides the draft without writing a runtime memory entry.
+- Result: the relay ciphertext boundary marker list now includes both stale request ids plus `memory_summary_draft_stale`, so stale-guard request details must stay inside encrypted relay frame bodies.
+- Guardrail: `script/check_copy_hygiene.py` now pins the RuntimeDevServer stale approval/dismissal request ids, stale error code, no-device summary phrase, roadmap inventory, and docs evidence. `script/check_no_device_quality.sh` reports `memory-summary stale expected-metadata rejection` in the RuntimeDevServer history/title/session lifecycle/memory smoke addendum.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device RuntimeDevServer authenticated relay stale-guard behavior only. It does not prove physical Android QR scanning, phone reachability, live provider-backed chat/cancel, production relay deployment, production P2P traversal, semantic memory search, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `swiftc -typecheck script/runtime_authenticated_mock_smoke.swift`
+- `./script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh`
+- `swift test --package-path apps/macos --filter 'LocalRuntimeMessageRouterTests/testMemorySummaryDraftApproveWritesIdempotentOwnerScopedMemoryAndHidesApprovedDraft|LocalRuntimeMessageRouterTests/testMemorySummaryDraftDismissHidesOwnerScopedDraftWithoutWritingMemory'`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check -- script/runtime_authenticated_mock_smoke.swift script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-02 RuntimeDevServer Future Memory Search Rejection No-Device Gate
+
+- Scope: extend Queue 6 memory/runtime-boundary coverage so the implemented `memory.list` lexical query path stays separate from future advanced `memory.search` while no Android phone is attached.
+- Result: `script/check_protocol_schema.py` now has a named memory namespace self-check that allows only the documented active `memory.*` messages and treats synthetic `memory.search` / `memory.reflect` as reserved future advanced-memory messages.
+- Result: RuntimeDevServer authenticated relay smoke rejects `memory.search` with `unknown_message_type` after pairing/auth, before any semantic memory search, embedding-backed recall, reflection, or project-scoped memory feature path exists.
+- Result: the relay ciphertext boundary marker list now includes `memory.search`, `smoke-future-memory-search`, and a representative future advanced memory payload string so unsupported memory-search request details must stay inside encrypted relay frame bodies.
+- Guardrail: `script/check_copy_hygiene.py` now pins the schema self-check, RuntimeDevServer `memory.search` rejection smoke, no-device summary, roadmap inventory, and docs evidence. `script/check_no_device_quality.sh` reports `RuntimeDevServer future memory.search rejection addendum`.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device RuntimeDevServer authenticated relay fail-closed behavior for the future `memory.search` command only. It does not implement semantic memory search, embedding indexes, embedding-model memory ranking, automatic memory reflection, physical Android QR scanning, phone reachability, live provider-backed chat/cancel, production relay deployment, production P2P traversal, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `swiftc -typecheck script/runtime_authenticated_mock_smoke.swift`
+- `./script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh`
+- `swift test --package-path apps/macos --filter LocalRuntimeMessageRouterTests/testUnknownMessageTypeReturnsProtocolError`
+- `python3 -m py_compile script/check_protocol_schema.py script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check -- script/check_protocol_schema.py script/runtime_authenticated_mock_smoke.swift script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-02 RuntimeDevServer Future Route Namespace Rejection No-Device Gate
+
+- Scope: extend Queue 6 route namespace coverage from static protocol schema hygiene into the authenticated RuntimeDevServer relay path while no Android phone is attached.
+- Result: RuntimeDevServer authenticated relay smoke rejects `route.candidates.exchange` and `route.diagnostics.report` with `unknown_message_type` after the explicitly supported `route.refresh` diagnostic path succeeds, before any future route exchange or diagnostics feature path exists.
+- Result: the relay ciphertext boundary marker list now includes `route.candidates.exchange`, `route.diagnostics.report`, `smoke-future-route-candidates-exchange`, `smoke-future-route-diagnostics-report`, and representative future route payload strings so those unsupported route request details must stay inside encrypted relay frame bodies.
+- Guardrail: `script/check_copy_hygiene.py` now pins the new RuntimeDevServer future route smoke helper, request markers, default no-device summary, roadmap inventory, and docs evidence. `script/check_no_device_quality.sh` reports `RuntimeDevServer future route namespace rejection addendum`.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device RuntimeDevServer authenticated relay fail-closed behavior for unsupported future `route.*` messages only. It does not implement route candidate exchange, route diagnostics upload, production relay deployment, production P2P traversal, physical Android QR scanning, phone reachability, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `swiftc -typecheck script/runtime_authenticated_mock_smoke.swift`
+- `./script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh`
+- `python3 -m py_compile script/check_protocol_schema.py script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check -- script/runtime_authenticated_mock_smoke.swift script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-02 RuntimeDevServer Reserved Projects/Automation Namespace Rejection No-Device Gate
+
+- Scope: extend Queue 6 reserved future-namespace coverage from static protocol schema hygiene into the authenticated RuntimeDevServer relay path while no Android phone is attached.
+- Result: RuntimeDevServer authenticated relay smoke rejects `projects.sessions.list` and `automation.runs.create` with `unknown_message_type` after pairing/auth, matching the reserved `projects.` and `automation.` protocol prefixes before any workspace or scheduler feature path exists.
+- Result: the relay ciphertext boundary marker list now includes `projects.sessions.list`, `automation.runs.create`, `smoke-future-projects-sessions-list`, `smoke-future-automation-runs-create`, and representative project/automation payload strings so those future namespace request details must stay inside encrypted relay frame bodies.
+- Guardrail: `script/check_copy_hygiene.py` now pins the new RuntimeDevServer smoke requests, ciphertext markers, default no-device summary, roadmap inventory, and docs evidence. `script/check_no_device_quality.sh` reports `RuntimeDevServer reserved projects/automation namespace rejection addendum`.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device RuntimeDevServer authenticated relay fail-closed behavior for the reserved projects/automation namespaces only. It does not implement project workspaces, file indexing, scheduler automation, mobile approval UI, physical Android QR scanning, production relay deployment, production P2P traversal, phone reachability, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `swiftc -typecheck script/runtime_authenticated_mock_smoke.swift`
+- `./script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh`
+- `python3 -m py_compile script/check_protocol_schema.py script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `python3 script/check_protocol_schema.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check -- script/runtime_authenticated_mock_smoke.swift script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-02 RuntimeDevServer Memory List Query Ciphertext Marker No-Device Gate
+
+- Scope: extend the Immediate Queue 5/6 relay privacy smoke coverage for the newly added RuntimeDevServer `memory.list` query/search metadata path while no Android phone is attached.
+- Result: `script/runtime_authenticated_mock_smoke.swift` now includes `smoke-memory-list-search-metadata`, `smoke-memory-route`, the trimmed query text `smoke-tested concise`, and the `query` / `search` / `snippet` JSON keys in the authenticated relay plaintext-boundary marker list.
+- Result: the existing relay ciphertext boundary smoke now fails if the development relay sees the memory-list search request id, memory id, memory content, query text, or query/search/snippet JSON keys inside encrypted frame bodies.
+- Guardrail: `script/check_copy_hygiene.py` now pins the marker strings, no-device summary phrase, and docs evidence. `script/check_no_device_quality.sh` reports `RuntimeDevServer memory.list query ciphertext marker addendum`.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device RuntimeDevServer development-relay ciphertext-boundary behavior for the memory-list query path only. It does not prove physical Android QR scanning, production relay deployment, production P2P traversal, phone reachability, live provider-backed memory ranking, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `swiftc -typecheck script/runtime_authenticated_mock_smoke.swift`
+- `./script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check -- script/runtime_authenticated_mock_smoke.swift script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-02 Protocol Reserved Skills/MCP/Web Search Namespace No-Device Gate
+
+- Scope: continue roadmap v0.5-v0.7 boundary work while no Android phone is attached. Skills, MCP, and web search remain future runtime-host capabilities, not active client/runtime protocol commands.
+- Result: `script/check_protocol_schema.py` now treats `skills.`, `mcp.`, `web_search.`, `projects.`, and `automation.` as required reserved future prefixes and includes a named self-check that synthetic active message names under all five prefixes are rejected by the same helper used for the active enum.
+- Result: RuntimeDevServer authenticated relay smoke rejects `skills.run`, `mcp.tool.call`, and `web_search.query` with `unknown_message_type`, proving those future namespaces fail closed over an authenticated relay session instead of silently executing or reaching a backend/tool path.
+- Guardrail: `script/check_copy_hygiene.py` now pins the schema self-check, the authenticated RuntimeDevServer future-namespace smoke, protocol docs, roadmap coverage, current QA evidence, and no-device summary phrase. `script/check_no_device_quality.sh` reports `protocol reserved tools/search namespace guard addendum`.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves static protocol reservation and no-device RuntimeDevServer fail-closed behavior only. It does not implement skills, MCP, web search, runtime permission broker UI, production tool audit logs, physical Android QR scanning, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `python3 -m py_compile script/check_protocol_schema.py script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `python3 script/check_protocol_schema.py`
+- `swiftc -typecheck script/runtime_authenticated_mock_smoke.swift`
+- `./script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check -- script/check_protocol_schema.py script/runtime_authenticated_mock_smoke.swift script/check_no_device_quality.sh script/check_copy_hygiene.py docs/protocol.md docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-02 RuntimeDevServer Memory List Query Search Metadata Smoke No-Device Gate
+
+- Scope: promote runtime-owned `memory.list` lexical query/search metadata from router-level coverage into the authenticated RuntimeDevServer relay smoke while no Android phone is attached. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer identified this as the next practical no-device/default-gate slice.
+- Result: `script/runtime_authenticated_mock_smoke.swift` now sends the `smoke-memory-list-search-metadata` `memory.list` query over the authenticated relay path after `memory.upsert`.
+- Result: the smoke requires the query to isolate the runtime-owned memory entry and verifies deterministic `search.rank`, bounded `search.snippet`, and `search.matched_fields` metadata over RuntimeDevServer.
+- Guardrail: `script/check_copy_hygiene.py` now pins the RuntimeDevServer memory-list query smoke request, metadata assertions, docs evidence, and the no-device coverage phrase. `script/check_no_device_quality.sh` reports `RuntimeDevServer memory.list query search metadata smoke addendum`.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device RuntimeDevServer authenticated relay `memory.list` query/search metadata behavior only. It does not prove physical Android QR scanning, live provider-backed memory ranking, production semantic retrieval, live chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `swiftc -typecheck script/runtime_authenticated_mock_smoke.swift`
+- `./script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh`
+- `swift test --package-path apps/macos --filter LocalRuntimeMessageRouterTests/testMemoryListQueryFiltersRuntimeOwnedMemoryWithSearchMetadata`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check -- script/runtime_authenticated_mock_smoke.swift script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-02 RuntimeDevServer Embedding Search Hint Smoke No-Device Gate
+
+- Scope: extend the v0.3 embedding search-hint boundary from router unit coverage into the authenticated RuntimeDevServer relay smoke while no Android phone is attached. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer confirmed the smoke gap and was closed after reporting.
+- Result: `script/runtime_authenticated_mock_smoke.swift` now sends `embedding_model_id` with the `smoke-sessions-search-metadata` `chat.sessions.list` query over the authenticated relay path.
+- Result: the smoke requires the query result to keep deterministic search metadata, rejects any `embedding_model_id` response echo, and verifies the searched session still reports chat model `dev-mock` so the embedding hint is not treated as a chat model override.
+- Guardrail: `script/check_copy_hygiene.py` now pins the smoke request hint, no-echo helper, model override guard, docs evidence, and the no-device coverage phrase. `script/check_no_device_quality.sh` reports that RuntimeDevServer authenticated relay smoke sends `embedding_model_id` with `chat.sessions.list` query and verifies no response echo or chat model override.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device RuntimeDevServer authenticated smoke behavior only. It does not implement live provider-backed semantic ranking, production embedding indexing, physical Android QR scanning, live chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `swiftc -typecheck script/runtime_authenticated_mock_smoke.swift`
+- `./script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh`
+- `swift test --package-path apps/macos --filter LocalRuntimeMessageRouterTests/testChatSessionsListEmbeddingModelHintStaysSearchOnly`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check -- script/runtime_authenticated_mock_smoke.swift script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-02 Runtime Embedding Search Hint Boundary No-Device Gate
+
+- Scope: continue roadmap v0.3 embeddings/search plumbing while no Android phone is attached. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer recommended guarding the macOS runtime boundary for Android's new `embedding_model_id` search hint.
+- Result: `LocalRuntimeMessageRouter` now reads and trims `embedding_model_id` for `chat.sessions.list`, passes it to the runtime chat search boundary only when `query` is a real nonblank search, and drops the hint when the query is blank.
+- Result: `RuntimeChatEventStore` and `SQLiteRuntimeChatEventStore` now accept the optional embedding-model search hint while preserving the existing deterministic JSONL/SQLite search behavior. The hint is not echoed in `chat.sessions.list` responses and is not treated as a `chat.send` model override.
+- Guardrail: `LocalRuntimeMessageRouterTests/testChatSessionsListEmbeddingModelHintStaysSearchOnly` proves the hint reaches the runtime search boundary for real queries, is removed for blank queries, and does not appear in response payloads. `script/check_no_device_quality.sh` reports `runtime embedding search-hint boundary addendum`.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device macOS runtime boundary behavior only. It does not implement live provider-backed semantic ranking, production embedding indexing, physical Android QR scanning, live chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `swift test --filter LocalRuntimeMessageRouterTests/testChatSessionsListEmbeddingModelHintStaysSearchOnly`
+- `swift test --filter LocalRuntimeMessageRouterTests/testChatSessionsListQueryFiltersRuntimeOwnedSummaries`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-02 Android Protocol Model Metadata Parity No-Device Gate
+
+- Scope: tighten roadmap v0.3 model/embedding metadata regression coverage while no Android phone is attached. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer confirmed the Android DTO already preserves the fields and that the missing piece was a focused codec/gate guard.
+- Result: Android protocol tests now prove `ModelInfoPayload` round-trips `backend`, `provider`, `provider_model_id`, `qualified_id`, `model_kind`, `kind`, `capabilities`, `size_bytes`, `modified_at`, and `remote_model` alongside existing `context_window_tokens` metadata.
+- Result: legacy model payloads without `capabilities` decode to an empty list instead of failing, matching the macOS protocol compatibility behavior.
+- Guardrail: `ProtocolCodecTest.modelInfoPayloadPreservesProviderAndEmbeddingMetadata` and `ProtocolCodecTest.modelInfoPayloadDefaultsMissingCapabilitiesToEmptyList` are now focused no-device regressions, and `script/check_no_device_quality.sh` reports `Android protocol model metadata parity addendum`.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device Android protocol serialization and compatibility only. It does not prove physical Android QR scanning, live provider-backed model listing, production embedding indexing, live chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:protocol:testDebugUnitTest --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.modelInfoPayloadPreservesProviderAndEmbeddingMetadata --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.modelInfoPayloadDefaultsMissingCapabilitiesToEmptyList -Pkotlin.incremental=false --console=plain`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:protocol:testDebugUnitTest --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-02 Android Selected Embedding Search Hint No-Device Gate
+
+- Scope: continue roadmap v0.3 embeddings/research plumbing while no Android phone is attached. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer suggested adjacent Android model-metadata parity, while this pass finished the already-started selected embedding search hint slice.
+- Result: Android `chat.sessions.list` requests now serialize optional `embedding_model_id` only for a real trimmed search query. Plain chat-history refreshes continue to omit both `query` and `embedding_model_id`.
+- Result: `docs/protocol.md` and `packages/protocol-schema/protocol.schema.json` now define `embedding_model_id` as a runtime-side semantic search/ranking hint for future embedding-backed recall, not a `chat.send` model override and not a direct client-to-provider path.
+- Guardrail: `ProtocolCodecTest.chatHistorySessionPayloadsUseProtocolFieldNames` pins the wire field, and `RuntimeClientViewModelTest.refreshRuntimeChatHistorySendsSelectedEmbeddingModelOnlyForSearchQuery` proves selected embedding-model search hint plumbing is emitted only when a query is present.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device Android protocol/ViewModel serialization, schema, and docs only. It does not prove physical Android QR scanning, live provider-backed semantic search/ranking, production embedding indexing, live chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:protocol:testDebugUnitTest --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.chatHistorySessionPayloadsUseProtocolFieldNames -Pkotlin.incremental=false --console=plain`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.refreshRuntimeChatHistorySendsSelectedEmbeddingModelOnlyForSearchQuery -Pkotlin.incremental=false --console=plain`
+- `python3 script/check_protocol_schema.py`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-02 Protocol Route Namespace Reservation No-Device Gate
+
+- Scope: continue Immediate Queue 5/6 private-overlay route hardening while no Android phone is attached. `route.refresh` is the only currently implemented route protocol message; future route diagnostics, remote candidate exchange, encrypted relay allocation status, and route failure reporting must stay reserved until production NAT traversal, signaling, and relay transport are designed.
+- Result: `script/check_protocol_schema.py` now defines `ALLOWED_ROUTE_TYPES = {"route.refresh"}` and fails if the active protocol enum adds any other `route.*` message. A named self-check proves synthetic future messages such as `route.candidates.exchange` and `route.diagnostics.report` are rejected while `route.refresh` remains allowed.
+- Result: `docs/protocol.md` now states that protocol schema hygiene keeps `route.refresh` as the only active `route.*` message.
+- Guardrail: `script/check_no_device_quality.sh` already runs `python3 script/check_protocol_schema.py` and now reports `protocol route namespace guard addendum`; `script/check_copy_hygiene.py` requires the route allowlist, self-check, no-device summary phrase, protocol docs, roadmap coverage, and current docs evidence.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves static protocol route namespace reservation only. It does not implement production route diagnostics, remote candidate exchange, relay allocation status, NAT traversal, signaling, production relay/P2P traversal, physical Android QA, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `python3 -m py_compile script/check_protocol_schema.py`
+- `python3 script/check_protocol_schema.py`
+- `python3 -m py_compile script/check_protocol_schema.py script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check -- script/check_protocol_schema.py script/check_copy_hygiene.py script/check_no_device_quality.sh docs/protocol.md docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-02 Protocol Reserved Projects/Automation Namespace No-Device Gate
+
+- Scope: continue roadmap v0.8 Workspace/RAG and v0.9 Scheduling/Automations boundary work while no Android phone is attached. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer identified that `docs/protocol.md` reserved `projects.` and `automation.` but the protocol schema checker did not yet block those namespaces in the active message enum.
+- Result: `script/check_protocol_schema.py` now treats `projects.` and `automation.` as reserved future prefixes alongside existing future tool/search prefixes, and includes a named self-check that synthetic `projects.*` and `automation.*` message names are rejected by the same helper used for the active enum.
+- Result: `docs/protocol.md` now states that protocol schema hygiene rejects active `projects.` and `automation.` enum entries until the product, scheduler, privacy, and permission models are ready.
+- Guardrail: `script/check_no_device_quality.sh` already runs `python3 script/check_protocol_schema.py` and now reports `protocol reserved namespace guard addendum`; `script/check_copy_hygiene.py` requires the reserved-prefix implementation, self-check name, no-device summary phrase, protocol docs, roadmap coverage, and current docs evidence.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves static protocol namespace reservation only. It does not implement project/workspace features, file indexing, automations, scheduler permission prompts, mobile approval surfaces, physical Android QA, live provider-backed chat/cancel, production relay/P2P traversal, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `python3 -m py_compile script/check_protocol_schema.py`
+- `python3 script/check_protocol_schema.py`
+- `python3 -m py_compile script/check_protocol_schema.py script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check -- script/check_protocol_schema.py script/check_copy_hygiene.py script/check_no_device_quality.sh docs/protocol.md docs/roadmap.md docs/progress.md docs/qa-evidence.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-02 DocumentIngestion Resource Policy No-Device Gate
+
+- Scope: continue roadmap v0.2 Runtime Resource Policy and attachment/runtime-boundary hardening while no Android phone is attached. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer identified runtime-side document extraction resource limits as a no-device-verifiable slice that does not overlap the current relay/auth dirty files.
+- Result: `DocumentTextExtractor` now accepts a `DocumentIngestionResourcePolicy` while preserving the default `DocumentTextExtractor()` API. The policy bounds input files, archive listings, archive entry output, `textutil` converter output, and final normalized extracted text.
+- Result: oversized archive entry output and oversized normalized extracted text fail closed with `DocumentIngestionError.resourceLimitExceeded(...)`; `LocalRuntimeMessageRouter` maps that new ingestion error to the existing `unreadable_attachment` structured attachment rejection before backend dispatch.
+- Guardrail: `DocumentTextExtractorTests/testRejectsArchiveExtractionWhenResourcePolicyLimitIsExceeded` and `DocumentTextExtractorTests/testRejectsExtractedTextWhenResourcePolicyLimitIsExceeded` pin the resource policy, and `script/check_no_device_quality.sh` now runs both focused regressions before the full `DocumentTextExtractorTests` suite.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device SwiftPM document-ingestion resource-policy behavior only. It does not prove physical Android attachment picking, physical camera QR scanning, live provider-backed chat/cancel, production relay/P2P traversal, production allocation service behavior, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `swift test --filter DocumentTextExtractorTests/testRejectsArchiveExtractionWhenResourcePolicyLimitIsExceeded`
+- `swift test --filter DocumentTextExtractorTests/testRejectsExtractedTextWhenResourcePolicyLimitIsExceeded`
+- `swift test --filter DocumentTextExtractorTests`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check -- apps/macos/DocumentIngestion/Sources/DocumentTextExtractor.swift apps/macos/DocumentIngestion/Tests/DocumentTextExtractorTests.swift apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-02 Roadmap Queue Evidence Alignment No-Device Gate
+
+- Scope: continue roadmap operations while no Android phone is attached. Immediate Queue 6 now separates named no-device/default-gate coverage from live/physical proof gaps instead of presenting both as one flat backlog sentence.
+- Result: `docs/roadmap.md` keeps the existing smoke-coverage inventory visible for copy/gate checks, while adding an explicit `Live/physical proof that remains separate` line for physical Android QR scan, latest client-device QA, launcher/dock icon screenshots, live provider-backed chat/cancel, production relay allocation, production P2P/rendezvous traversal, and real different-network runtime connectivity.
+- Guardrail: `script/check_docs_hygiene.py` now requires the roadmap split, the no-device/default-gate inventory label, and the live/physical proof label so future roadmap edits cannot imply no-device evidence proves live device or production-network behavior.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves documentation and docs-hygiene alignment only. It does not prove physical Android QR scanning, physical client-device QA, live provider-backed chat/cancel, production relay allocation, production P2P/rendezvous traversal, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `python3 -m py_compile script/check_docs_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `git diff --check -- docs/roadmap.md docs/progress.md docs/qa-evidence.md script/check_docs_hygiene.py`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-02 Relay Allocation Response Field Validation No-Device Gate
+
+- Scope: continue development-relay allocation hardening while no Android phone is attached. The allocation response JSON decoder now reuses the validated `RelayAllocation` initializer, so decoded response lines cannot bypass relay_id, relay_secret, relay_expires_at, and relay_nonce validation.
+- Result: `RelayAllocationTests/testRejectsInvalidAllocationResponseLineFields` proves decoded allocation response lines reject whitespace-mutated relay ids, whitespace-bearing relay secrets, non-positive expirations, and whitespace-mutated relay nonces with the focused `RelayAllocationError` cases.
+- Guardrail: `script/check_no_device_quality.sh` now runs the focused SwiftPM regression and reports `relay allocation response field validation addendum`; `script/check_copy_hygiene.py` requires the custom decoder, invalid response-line fixtures, default gate entry, summary phrase, current QA evidence, and roadmap coverage.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device SwiftPM relay allocation response validation only. It does not prove physical Android QR scanning, live phone auth on hardware, production relay/P2P traversal, production allocation service behavior, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `swift test --filter RelayAllocationTests/testRejectsInvalidAllocationResponseLineFields`
+
+### 2026-07-02 Relay Allocation Request Input Rejection No-Device Gate
+
+- Scope: continue development-relay allocation hardening while no Android phone is attached. The relay allocation parser already rejected malformed request material, but this pass adds a named SwiftPM regression for blank allocation-token aliases and invalid requested relay secrets.
+- Result: `RelayAllocationTests/testRejectsBlankAllocationTokenAndRelaySecret` proves `AETHERLINK_RELAY allocate` rejects blank allocation_token/auth values with `invalidAllocationToken`, and rejects blank or whitespace requested relay secrets with `invalidRelaySecret`.
+- Guardrail: `script/check_no_device_quality.sh` now runs the focused SwiftPM regression and reports `relay allocation request input rejection addendum`; `script/check_copy_hygiene.py` requires the test name, exact invalid-token/secret inputs, default gate entry, summary phrase, and current docs evidence.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device SwiftPM relay allocation request input validation only. It does not prove physical Android QR scanning, live phone auth on hardware, production relay/P2P traversal, production allocation service behavior, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `swift test --filter RelayAllocationTests/testRejectsBlankAllocationTokenAndRelaySecret`
+
+### 2026-07-02 Android Client Runtime Proof Rejection No-Device Gate
+
+- Scope: close the client-side half of the runtime proof boundary while no Android phone is attached. The RuntimeDevServer relay smoke already proves QR-pinned runtime proof emission; this pass adds Android app no-device relay reconnect coverage for rejecting a bad nonce-bound `runtime_signature`.
+- Result: `RuntimeClientViewModelRelayIntegrationTest.trustedRelayReconnectRejectsInvalidRuntimeProofBeforeAuthResponse` drives a trusted private-overlay relay reconnect through the real `RuntimeRelayTcpClient`, receives an `auth.challenge` whose `runtime_signature` was signed for a replayed nonce, and verifies Android surfaces `runtime_authentication_failed`.
+- Result: `RuntimeClientViewModelRelayIntegrationTest.trustedRelayReconnectRejectsRuntimeFingerprintMismatchBeforeAuthResponse` covers runtime_key_fingerprint mismatch with a valid nonce-bound signature, proving Android still rejects before authentication when the challenge fingerprint does not match the QR-pinned runtime identity.
+- Result: the fake relay records that Android sends no post-challenge frame, so the regression proves the client does not send auth.response or runtime.health after invalid runtime proof verification.
+- Guardrail: `script/check_no_device_quality.sh` now runs the focused Android relay reconnect regression and reports `Android client-side runtime proof rejection addendum`; `script/check_copy_hygiene.py` requires the test name, fake relay guard, `runtime_authentication_failed`, and current docs evidence.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device Android JVM relay reconnect proof rejection only. It does not prove physical Android QR scanning, hardware key persistence, real camera input, live phone auth on hardware, production relay/P2P traversal, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME=/Applications/Android\ Studio.app/Contents/jbr/Contents/Home ANDROID_HOME=$HOME/Library/Android/sdk ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelRelayIntegrationTest.trustedRelayReconnectRejectsInvalidRuntimeProofBeforeAuthResponse -Pkotlin.incremental=false --console=plain`
+- `JAVA_HOME=/Applications/Android\ Studio.app/Contents/jbr/Contents/Home ANDROID_HOME=$HOME/Library/Android/sdk ./gradlew --no-daemon :app:testDebugUnitTest --tests com.localagentbridge.android.runtime.RuntimeClientViewModelRelayIntegrationTest.trustedRelayReconnectRejectsInvalidRuntimeProofBeforeAuthResponse --tests com.localagentbridge.android.runtime.RuntimeClientViewModelRelayIntegrationTest.trustedRelayReconnectRejectsRuntimeFingerprintMismatchBeforeAuthResponse -Pkotlin.incremental=false --console=plain`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+
+### 2026-07-02 RuntimeDevServer Accepted Pairing Runtime Identity Confirmation Smoke
+
+- Scope: continue QR-only trust-boundary smoke hardening while no Android phone is attached. Android already has accepted-pairing runtime identity mismatch rejection coverage; this pass adds the positive RuntimeDevServer relay smoke check that accepted pairing.result confirms the QR-pinned runtime identity.
+- Result: `script/runtime_authenticated_mock_smoke.swift` now requires accepted relay `pairing.result` to echo the QR-pinned `runtime_device_id`, `runtime_public_key`, and `runtime_key_fingerprint` before the smoke treats the device as trusted.
+- Result: the accepted pairing verifier also recomputes the fingerprint of `runtime_public_key`, so a pairing result cannot satisfy the smoke with a mismatched public key/fingerprint pair.
+- Guardrail: `script/check_no_device_quality.sh` reports `RuntimeDevServer accepted pairing runtime identity confirmation addendum`; `script/check_copy_hygiene.py` requires the accepted-pairing verifier helper, runtime identity field checks, current docs evidence, and the default no-device summary phrase.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device RuntimeDevServer development-relay accepted-pairing identity confirmation only. It does not prove physical Android QR scanning, client-side hardware persistence, live phone auth, production relay/P2P traversal, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `./script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check -- script/runtime_authenticated_mock_smoke.swift script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-02 RuntimeDevServer Relay Trusted-Hello Runtime Proof Smoke
+
+- Scope: continue Immediate Queue 6 trust-boundary smoke hardening while no Android phone is attached. The focused router regression already proved trusted `hello` can include a runtime proof when a signer is available; this pass promotes that contract into the full RuntimeDevServer relay smoke.
+- Result: `script/runtime_authenticated_mock_smoke.swift` now starts RuntimeDevServer with a per-run `AETHERLINK_DEV_RUNTIME_IDENTITY_FILE` instead of fake `AETHERLINK_DEV_RUNTIME_PUBLIC_KEY` / `AETHERLINK_DEV_RUNTIME_KEY_FINGERPRINT` values, so the emitted QR `runtime_public_key` and `runtime_key_fingerprint` come from the same file-backed private key that signs `auth.challenge`.
+- Result: the smoke now requires the development pairing URI and `AETHERLINK_DEV_PAIRING_INFO` to agree on `runtime_public_key` and `runtime_key_fingerprint`, verifies the fingerprint of the QR-pinned runtime_public_key, and verifies every trusted relay `auth.challenge` runtime_signature against the nonce-bound message `AetherLink runtime auth challenge v1`.
+- Result: the same verifier rejects replay of the captured `runtime_signature` against a different nonce before the client sends `auth.response`.
+- Guardrail: `script/check_no_device_quality.sh` reports `RuntimeDevServer relay trusted hello runtime proof addendum`; `script/check_copy_hygiene.py` now requires the runtime identity file env, runtime proof verifier helpers, runtime_signature/runtime_key_fingerprint checks, current progress/QA evidence, and the default no-device summary phrase.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device RuntimeDevServer development-relay trusted-hello proof emission and smoke-side verification only. It does not prove physical Android QR scanning, client-side runtime proof verification on hardware, live phone auth, production relay/P2P traversal, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `swift test --filter LocalRuntimeMessageRouterTests/testTrustedHelloIncludesVerifiableRuntimeProofWhenSignerIsAvailable`
+- `./script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check -- script/runtime_authenticated_mock_smoke.swift script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-02 Relay Route Refresh Ciphertext Boundary No-Device Gate
+
+- Scope: continue Immediate Queue 5/6 relay privacy smoke coverage while no Android phone is attached. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer identified that RuntimeDevServer relay smoke already exercised authenticated `route.refresh`, but the ciphertext boundary marker list did not explicitly cover route-refresh route material. The follow-up pass extended the same smoke to dynamic pairing bootstrap plaintext markers.
+- Result: `script/runtime_authenticated_mock_smoke.swift` now routes the relay plaintext marker set through `routeRefreshRelayPlaintextBoundaryMarkers()` and `pairingBootstrapRelayPlaintextBoundaryMarkers(...)`.
+- Result: the relay ciphertext boundary check now rejects plaintext `route.refresh`, `smoke-route-refresh`, relay/P2P route-material keys and representative values such as `relay_secret`, `relay_nonce`, `relay_expires_at`, `p2p_record_id`, `p2p_encrypted_body`, and the expected P2P anti-replay nonce if any appear in captured encrypted relay frame bodies.
+- Result: the same boundary now rejects dynamic pairing bootstrap values from the active smoke run, including pairing code/nonce, runtime identity material, route token, relay id/secret/nonce/lease values, and the smoke client public keys if any appear in captured relay frame bodies.
+- Guardrail: `script/check_no_device_quality.sh` reports `pairing bootstrap` and `route.refresh route-material plaintext markers`; `script/check_copy_hygiene.py` requires both smoke helpers, route-refresh route-material marker strings, pairing bootstrap plaintext markers, default no-device summary phrase, current progress/QA evidence, and roadmap coverage.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device RuntimeDevServer development-relay ciphertext-boundary behavior only. It does not prove physical Android QR scanning, production relay deployment, production P2P traversal, phone reachability, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `./script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check -- script/runtime_authenticated_mock_smoke.swift script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-02 Authenticated Model List Runtime-Boundary No-Device Gate
+
+- Scope: continue Immediate Queue 6 authenticated model-list smoke coverage while no Android phone is attached. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer identified that RuntimeDevServer already exercised authenticated `models.list`, but the positive runtime-boundary contract was not promoted as a named current no-device gate.
+- Result: `script/runtime_authenticated_mock_smoke.swift` now applies `requireAuthenticatedModelListBoundary(...)` to authenticated `models.list` and the post-`models.pull` model list.
+- Result: the smoke asserts model entries expose runtime-mediated metadata with `provider`, `backend`, `provider_model_id`, and `qualified_id`, while rejecting backend URLs, provider endpoints, `remote_host`, direct route material, relay secrets, route tokens, and mock cloud suggestions.
+- Guardrail: `script/check_no_device_quality.sh` reports `authenticated model list runtime-boundary addendum`; `script/check_copy_hygiene.py` requires the smoke helper, forbidden backend/route keys, focused router regression, no-device summary phrase, current progress/QA evidence, and roadmap coverage.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device RuntimeDevServer relay model-list boundary behavior only. It does not prove physical Android QR scanning, live provider-backed model inventory, production relay/P2P traversal, phone reachability, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `./script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh`
+- `swift test --filter LocalRuntimeMessageRouterTests/testModelsListReturnsModelsWithoutExposingOllamaURL`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check -- script/runtime_authenticated_mock_smoke.swift script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+### 2026-07-02 macOS RelayPeerClient Registration Ready Timeout No-Device Gate
+
+- Scope: continue Immediate Queue 5/6 relay/private-overlay hardening while no Android phone is attached. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer identified that Android relay TCP ready-timeout coverage existed, but the macOS runtime-host relay client could still wait indefinitely after TCP connect if the relay never sent `AETHERLINK_RELAY registered` or `AETHERLINK_RELAY ready`.
+- Result: `RelayPeerConfiguration` now carries a bounded `controlLineTimeout` while preserving the previous public initializer shape for existing call sites; the default is 45 seconds so physical QR cold starts have enough time to reach relay ready.
+- Result: `RelayPeerClient` fails with explicit `.failed(...)` statuses if relay registration does not arrive before the control-line timeout or if the relay registers the runtime but never sends the ready line.
+- Result: `RelayPeerClientTests.testRelayPeerConfigurationDefaultControlLineTimeoutAllowsPhysicalQrStartup`, `RelayPeerClientTests.testRelayPeerClientTimesOutWhenRegistrationLineNeverArrives`, and `RelayPeerClientTests.testRelayPeerClientTimesOutWhenReadyLineNeverArrivesAfterRegistration` prove the default is physical-QR tolerant while TCP connect alone is not treated as relay-ready state.
+- Guardrail: `script/check_no_device_quality.sh` runs the focused RelayPeerClient timeout regressions and reports the physical-QR-tolerant 45s control-line timeout addendum; `script/check_copy_hygiene.py` requires the implementation, focused tests, no-device summary, current QA/progress evidence, and roadmap coverage.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves macOS SwiftPM/no-device relay control-line timeout behavior only. It does not prove physical Android pairing, optical QR scanning, production relay/P2P traversal, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `swift test --filter 'RelayPeerClientTests/testRelayPeerConfigurationDefaultControlLineTimeoutAllowsPhysicalQrStartup|RelayPeerClientTests/testRelayPeerClientTimesOutWhenRegistrationLineNeverArrives|RelayPeerClientTests/testRelayPeerClientTimesOutWhenReadyLineNeverArrivesAfterRegistration'`
+- `swift test --filter RelayPeerClientTests`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check -- apps/macos/Transport/Sources/RelayPeerClient.swift apps/macos/Transport/Tests/RelayPeerClientTests.swift script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
 
 ### 2026-07-02 Android Private-Overlay QR Missing-Scope Diagnostic No-Device Gate
 
@@ -1398,14 +3578,14 @@ Verified after this change:
 - `git diff --check -- script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
 - `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
 
-### 2026-07-02 Android Route-Token Remote Preparation No-Device Gate
+### 2026-07-02 Android Route-Token Remote Preparation No-Device Gate (Superseded)
 
-- Scope: continue Immediate Queue 5/6 private-overlay route hardening while no Android phone is attached. The Android core transport already had a focused route-token preparation regression, but the default no-device gate did not pin that route tokens can feed future P2P and relay preparation without direct TCP endpoint material.
-- Result: `script/check_no_device_quality.sh` now runs `RuntimeConnectionManagerTest.remoteRoutePreparerCanUsePairingRouteTokenWithoutDirectTcpEndpoint` in the Android core transport block.
-- Result: the default no-device summary now reports `Android route-token remote preparation addendum`, covering paired runtime route tokens that prepare P2P and relay candidates without requiring fixed host/port endpoint material.
-- Guardrail: `script/check_copy_hygiene.py` now requires the focused regression, its P2P and relay route-token assertions, the default gate entry, the default coverage summary phrase, and this docs/roadmap coverage.
+- Scope: continue Immediate Queue 5/6 private-overlay route hardening while no Android phone is attached. This historical pass promoted a permissive generic core transport test that treated paired route tokens as a future remote-route preparation source.
+- Superseded by: the 2026-07-03 Android route-token remote material isolation pass. Current Android core transport now keeps `routeToken` as paired identity/routing metadata and rejects raw reuse as P2P session/rendezvous material or relay route id/rendezvous material.
+- Result then: `script/check_no_device_quality.sh` ran the now-replaced `RuntimeConnectionManagerTest.remoteRoutePreparerCanUsePairingRouteTokenWithoutDirectTcpEndpoint` selector.
+- Current guardrail: `script/check_copy_hygiene.py` now requires the replacement isolation regression and rejects reintroducing the stale permissive gate contract.
 - Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
-- Caveat: this proves no-device route-token preparation plumbing only. It does not implement production NAT traversal, signaling, hole punching, physical Android pairing, optical QR scanning, live provider-backed chat/cancel, or real different-network runtime connectivity.
+- Caveat: this is retained as historical evidence only and no longer describes the active route-token route-material contract. It does not implement production NAT traversal, signaling, hole punching, physical Android pairing, optical QR scanning, live provider-backed chat/cancel, or real different-network runtime connectivity.
 
 Verified after this change:
 
@@ -18038,4 +20218,329 @@ Verified after this change:
 - `python3 script/check_copy_hygiene.py`
 - `python3 script/check_docs_hygiene.py`
 - `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check`
+
+## 2026-07-02 macOS Protocol Model Metadata Parity No-Device Gate
+
+- Scope: align the macOS `BridgeProtocol.ModelInfo` codec with the model metadata already present in the shared schema and Android protocol DTOs. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer confirmed the missing macOS fields and the compatibility requirement for defaulting absent `capabilities` to an empty list.
+- Result: macOS protocol `ModelInfo` now preserves `backend`, `provider`, `provider_model_id`, `qualified_id`, `model_kind`, and `capabilities` alongside existing size/source/context-window metadata, so embedding model registration metadata can round-trip through the Swift protocol package.
+- Result: legacy payloads that omit `capabilities` still decode with an empty list instead of failing.
+- Guardrail: `ProtocolCodecTests/testModelInfoCodablePreservesProviderAndEmbeddingMetadata` covers the embedding/provider metadata wire keys, and `ProtocolCodecTests/testModelInfoCodableDefaultsMissingCapabilitiesToEmptyList` pins backwards-compatible decoding.
+- Guardrail: `script/check_no_device_quality.sh` now runs the focused codec regression and reports `macOS protocol model metadata parity addendum`; `script/check_copy_hygiene.py` requires the Swift fields, coding keys, focused regressions, no-device summary phrase, and current progress/QA/roadmap evidence.
+- Caveat: the Android phone was disconnected for this pass, so this is no-device macOS SwiftPM/source/script evidence. It does not prove physical Android QR scanning, live provider-backed model listing, live chat/cancel, or production different-network connectivity.
+
+Verified after this change:
+
+- `swift test --filter ProtocolCodecTests/testModelInfoCodablePreservesProviderAndEmbeddingMetadata`
+- `swift test --filter ProtocolCodecTests`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `git diff --check`
+
+## 2026-07-02 Runtime Memory List Search No-Device Gate
+
+- Scope: continue the roadmap memory/retrieval seam while the Android phone is disconnected. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer recommended a runtime-owned `memory.list` lexical query slice with deterministic search metadata before any embedding-backed memory search.
+- Result: `memory.list` now accepts an optional `query` payload and filters owner-scoped runtime memory entries over memory content plus bounded runtime-derived source metadata.
+- Result: queried memory entries return response-only `search.rank`, bounded `search.snippet`, and `search.matched_fields` metadata; blank queries keep the normal unfiltered memory list without search metadata.
+- Result: `memory.upsert` now rejects client-supplied `source` metadata with `invalid_payload`, while edits to runtime-approved source-backed memories preserve the existing runtime-derived audit source.
+- Guardrail: Swift router coverage pins query filtering, ranking/snippets/matched fields, blank-query behavior, source-forgery rejection, and source preservation after edit. Android protocol coverage pins `MemoryListRequestPayload.query` plus memory-entry search metadata serialization.
+- Caveat: this is deterministic lexical runtime-host filtering only. It does not implement semantic memory search, embedding indexes, embedding-model memory ranking, a `memory.search` command, physical Android QR scanning, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `swift test --package-path apps/macos --filter LocalRuntimeMessageRouterTests/testMemoryListQueryFiltersRuntimeOwnedMemoryWithSearchMetadata`
+- `swift test --package-path apps/macos --filter LocalRuntimeMessageRouterTests/testMemoryUpsertRejectsClientSuppliedSourceMetadataAndPreservesRuntimeSource`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:protocol:testDebugUnitTest --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memoryPayloadsUseProtocolFieldNames -Pkotlin.incremental=false --console=plain`
+- `python3 script/check_protocol_schema.py`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py script/check_protocol_schema.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh`
+- `git diff --check`
+
+## 2026-07-02 Android P2P Route-Family Isolation No-Device Gate
+
+- Scope: tighten the private-overlay/P2P transport boundary while the Android phone is disconnected. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer identified the focused P2P route-family isolation gap.
+- Result: `RuntimePeerToPeerRoutePreparationTest.peerToPeerRoutePreparationDoesNotCarryRelayOrRouteTokenFamilyMaterial` now proves P2P route preparation and prepared P2P routes do not carry direct host/port fields, relay ids, relay frame secrets, or paired route-token session material.
+- Result: the prepared P2P route uses the opaque P2P record id as both `sessionId` and `security.rendezvousToken`, keeping it separate from the paired runtime `routeToken` used by relay/remote preparation seams.
+- Guardrail: `script/check_copy_hygiene.py` now requires the test name, route-family forbidden-field assertions, no-device summary phrase, roadmap coverage, and current progress/QA evidence. `script/check_no_device_quality.sh` reports `Android P2P route-family isolation`.
+- Caveat: this is no-device Android core transport/JVM and script evidence only. It does not prove physical Android QR scanning, a production P2P connector, NAT traversal, candidate exchange, hole punching, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:transport:testDebugUnitTest --tests com.localagentbridge.android.core.transport.RuntimePeerToPeerRoutePreparationTest -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh`
+- `git diff --check -- apps/android/core/transport/src/test/java/com/localagentbridge/android/core/transport/RuntimePeerToPeerRoutePreparationTest.kt script/check_copy_hygiene.py script/check_no_device_quality.sh docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+
+## 2026-07-02 Android Relay Route-Material Canonicality No-Device Gate
+
+- Scope: harden the Android relay route preparation boundary while the Android phone is disconnected. GPT-5.3-Codex-Spark was not used; this continues the GPT-5.5-only session rule.
+- Result: `RuntimeRelayRoutePreparation` now rejects non-canonical relay host material before connector use, including whitespace-mutated hosts, URL-shaped hosts, path/query/fragment values, and user-info style host strings.
+- Result: relay ids, relay frame secrets, and anti-replay nonces now pass through the same bounded no-whitespace opaque-value check before a prepared relay route is created.
+- Guardrail: `RuntimeRelayRoutePreparationTest.relayRoutePreparationRejectsNonCanonicalRelayHostMaterial` and `RuntimeRelayRoutePreparationTest.relayRoutePreparationRejectsWhitespaceMutatedRelaySecrets` pin the fail-closed behavior. `script/check_copy_hygiene.py` requires the source helpers, focused tests, no-device summary phrase, roadmap coverage, and current progress/QA evidence.
+- Caveat: this is no-device Android core transport/JVM and script evidence only. It does not prove physical Android QR scanning, external relay reachability, production relay allocation, production P2P traversal, or real different-network connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:transport:testDebugUnitTest --tests com.localagentbridge.android.core.transport.RuntimeRelayRoutePreparationTest -Pkotlin.incremental=false --console=plain`
+- `python3 -m py_compile script/check_copy_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh`
+- `git diff --check -- apps/android/core/transport/src/main/java/com/localagentbridge/android/core/transport/RuntimeRelayRoutePreparation.kt apps/android/core/transport/src/test/java/com/localagentbridge/android/core/transport/RuntimeRelayRoutePreparationTest.kt script/check_copy_hygiene.py script/check_no_device_quality.sh docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+
+## 2026-07-03 Relay Allocation Request Unexpected Metadata Rejection No-Device Gate
+
+- Scope: continue Immediate Queue 5/6 relay bootstrap hardening while the Android phone is disconnected. Allocation requests should allow only the defined allocation options; backend/provider URLs, route-token echoes, or relay-secret debug fields must not be accepted as requested relay secret material.
+- Result: `RelayAllocationRequest.parse` now rejects unknown key=value request metadata with `invalidFormat` before falling back to `requestedRelaySecret`.
+- Result: `RelayAllocationTests/testRejectsUnexpectedAllocationRequestMetadata` proves allocation request lines carrying backend URL, provider URL, requested-route-token, or relay-secret debug metadata options are rejected even when an otherwise valid `allocation_token` is present.
+- Guardrail: `script/check_no_device_quality.sh` now runs the focused Swift regression and reports `relay allocation request unexpected metadata rejection addendum`; `script/check_copy_hygiene.py` requires the unknown-option parser guard, focused test, default gate entry, summary phrase, current progress/QA evidence, and roadmap coverage.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device.
+- Caveat: this is no-device Swift allocation request parser evidence only. It does not prove production relay deployment, physical Android pairing, optical QR scanning, phone reachability, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `swift test --filter RelayAllocationTests/testRejectsUnexpectedAllocationRequestMetadata`
+- `python3 -m py_compile script/relay_allocation_preflight.py script/check_copy_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- apps/macos/RelayServerCore/Sources/RelayAllocation.swift apps/macos/RelayServerCore/Tests/RelayAllocationTests.swift script/relay_allocation_preflight.py script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+
+## 2026-07-03 Relay Allocation Store Unexpected Metadata Rejection No-Device Gate
+
+- Scope: continue Immediate Queue 5/6 relay bootstrap hardening while the Android phone is disconnected. The relay allocation store should persist only opaque relay id, expiry, and nonce metadata; persisted tickets carrying route-token, relay-secret, allocation-token, provider, or backend metadata must not become valid relay leases on reload.
+- Result: `RelayAllocationTicket` now tracks unexpected decoded keys with `hasUnexpectedMetadata`, and `RelayAllocationRegistry` treats such tickets as not loadable while still preserving the existing behavior of loading other valid tickets from the same persisted store.
+- Result: `RelayAllocationTests/testAllocationRegistrySkipsPersistedTicketsWithUnexpectedMetadata` proves the registry skips persisted tickets that contain backend, provider, route-token, allocation-token, or relay-secret metadata fields while keeping a separate valid ticket.
+- Guardrail: `script/check_no_device_quality.sh` now runs the focused Swift regression and reports `relay allocation store unexpected metadata rejection addendum`; `script/check_copy_hygiene.py` requires the persisted-ticket metadata guard, canary store fixture, default gate entry, summary phrase, current progress/QA evidence, and roadmap coverage.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device.
+- Caveat: this is no-device Swift allocation-store parser evidence only. It does not prove production relay deployment, physical Android pairing, optical QR scanning, phone reachability, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `swift test --filter RelayAllocationTests/testAllocationRegistrySkipsPersistedTicketsWithUnexpectedMetadata`
+- `python3 -m py_compile script/relay_allocation_preflight.py script/check_copy_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- apps/macos/RelayServerCore/Sources/RelayAllocation.swift apps/macos/RelayServerCore/Tests/RelayAllocationTests.swift script/relay_allocation_preflight.py script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+
+## 2026-07-03 Swift Relay Allocation Unexpected Metadata Rejection No-Device Gate
+
+- Scope: continue Immediate Queue 5/6 relay bootstrap hardening while the Android phone is disconnected. Python preflight already rejects allocation response metadata outside the relay route-material contract; the Swift `RelayAllocation.parseResponseLine` parser now needs the same fail-closed behavior before `JSONDecoder` can ignore unknown keys.
+- Result: `RelayAllocation.parseResponseLine` now checks the response JSON object key set before decoding. Allocation response lines may contain only `relay_id`, `relay_secret`, `relay_expires_at`, and `relay_nonce`; extra keys fail with `unexpectedResponseMetadata`.
+- Result: `RelayAllocationTests/testRejectsUnexpectedAllocationResponseLineMetadata` rejects a response line containing canary `requested_route_token`, backend URL, provider URL, allocation-token, and relay-secret debug metadata fields, covering extra backend, provider, route-token, allocation-token, or relay-secret metadata fields.
+- Guardrail: `script/check_no_device_quality.sh` now runs the focused Swift regression and reports `Swift relay allocation unexpected metadata rejection addendum`; `script/check_copy_hygiene.py` requires the key-set guard, canary test, default gate entry, summary phrase, current progress/QA evidence, and roadmap coverage.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device.
+- Caveat: this is no-device Swift relay allocation parser evidence only. It does not prove production relay deployment, physical Android pairing, optical QR scanning, phone reachability, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `swift test --filter RelayAllocationTests/testRejectsUnexpectedAllocationResponseLineMetadata`
+- `python3 -m py_compile script/relay_allocation_preflight.py script/check_copy_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- apps/macos/RelayServerCore/Sources/RelayAllocation.swift apps/macos/RelayServerCore/Tests/RelayAllocationTests.swift script/relay_allocation_preflight.py script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+
+## 2026-07-03 Different-Network Relay Endpoint Input Redaction No-Device Gate
+
+- Scope: continue Immediate Queue 5/6 relay bootstrap hardening while the Android phone is disconnected. The different-network runtime launcher already rejects URL-shaped relay endpoints and malformed endpoint-list values, but those failure paths and preflight summaries must not echo provider/backend URLs, route-token query material, or relay-secret markers supplied as invalid input.
+- Result: `script/run_different_network_dev_runtime.sh` now renders URL-shaped relay endpoint failures as `<invalid-host>:<port>` in stderr while preserving the safe `use a host or IP address, not a URL` reason.
+- Result: the `--summary-json` preflight artifact now sanitizes URL-shaped relay endpoint hosts to `<invalid-host>`, so invalid endpoint input is not persisted in summary JSON.
+- Result: malformed `--relay-endpoint` or `AETHERLINK_BOOTSTRAP_RELAY_ENDPOINTS` values now use `<invalid-endpoint>` for parser-stage invalid endpoint or port failures instead of echoing the raw endpoint-list value.
+- Result: `script/check_no_device_quality.sh` now runs `check_different_network_relay_endpoint_input_redaction_guard`, which passes a URL-shaped relay host and a malformed endpoint-list value containing provider/backend/route-token/relay-secret markers and asserts those markers are absent from stderr and summary JSON.
+- Guardrail: `script/check_copy_hygiene.py` now requires the safe stderr label, endpoint-list parser sanitizer, summary sanitizer, no-device guard, summary phrase, current progress/QA evidence, and roadmap coverage.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device.
+- Caveat: this proves no-device different-network runtime launcher input redaction only. It does not prove production relay deployment, physical Android pairing, optical QR scanning, phone reachability, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- focused invalid-endpoint smoke for `script/run_different_network_dev_runtime.sh --preflight-only --summary-json`
+- `bash -n script/run_different_network_dev_runtime.sh script/check_no_device_quality.sh`
+- `python3 -m py_compile script/check_copy_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- script/run_different_network_dev_runtime.sh script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+## 2026-07-03 Android Pairing QR Relay Alias-Family Isolation No-Device Gate
+
+- Scope: continue Immediate Queue 5/6 QR route-material hardening while the Android phone is disconnected. Android already rejected incomplete `remote_*`, `route_*`, and `rendezvous_*` relay families, but the parser could still assemble one complete relay route from fields split across different alias families.
+- Result: `RuntimePairingPayloadParser` now rejects mixed relay alias families before choosing relay host/port/id/secret/expiration/nonce values. Canonical, `remote_*`, `route_*`, `rendezvous_*`, and compact relay material families must each stand alone.
+- Result: `RuntimePairingPayloadParserTest.rejectsMixedRelayAliasFamiliesFromQrPayload` covers remote/route, canonical/compact, compact/rendezvous, and two complete-family collision payloads, while the existing remote/rendezvous/compact parsing regressions still prove valid complete families are accepted.
+- Guardrail: `script/check_no_device_quality.sh` now runs the focused mixed-family parser regression and reports `Android pairing QR relay alias-family isolation addendum`; `script/check_copy_hygiene.py` pins the parser helper, mixed-family tests, protocol docs, current QA evidence, and roadmap coverage.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device.
+- Caveat: this is no-device Android parser evidence only. It does not prove optical QR scanning, physical Android rendering, phone relay reachability, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:pairing:testDebugUnitTest --tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.rejectsMixedRelayAliasFamiliesFromQrPayload --tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.parsesRemoteRouteAliasesFromQrPayload --tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.parsesRendezvousRouteAliasesFromQrPayload --tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.parsesCompactRemoteRouteQrPayload -Pkotlin.incremental=false --console=plain`
+- `bash -n script/check_no_device_quality.sh`
+- `python3 -m py_compile script/check_copy_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- apps/android/core/pairing/src/main/java/com/localagentbridge/android/core/pairing/RuntimePairingPayload.kt apps/android/core/pairing/src/test/java/com/localagentbridge/android/core/pairing/RuntimePairingPayloadParserTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/protocol.md docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+## 2026-07-03 Android Pairing QR Relay-Secret Canonicality No-Device Gate
+
+- Scope: continue Immediate Queue 5/6 QR route-material hardening while the Android phone is disconnected. Android relay transport preparation already rejects whitespace-mutated relay frame secrets, so the QR parser and schemas should reject the same malformed relay secrets before route material reaches pending/trusted storage.
+- Result: `RuntimePairingPayloadParser` now parses `relay_secret`, `remote_secret`, `route_secret`, `rendezvous_secret`, and compact `rs` through canonical opaque route validation instead of the old bounded-only parser.
+- Result: `RuntimePairingPayloadParserTest.rejectsWhitespaceMutatedRelaySecretAliasesInQrPayload` rejects whitespace-mutated relay secret aliases, while `preservesLiteralPlusInOpaqueQrValues` confirms base64-style `+`, `/`, and `=` characters are still preserved for compact relay secrets.
+- Result: `pairing-qr.schema.json` and `protocol.schema.json` now define `opaqueRouteSecret` with `pattern: "^\\S+$"`, and `script/check_protocol_schema.py` now fails if opaque route secrets are not whitespace-free.
+- Guardrail: `script/check_no_device_quality.sh` now runs the focused parser regressions and reports `Android pairing QR relay-secret canonicality addendum`; `script/check_copy_hygiene.py` requires the parser path, alias tests, schema pattern, protocol-schema checker phrase, default gate entry, current progress/QA evidence, and roadmap coverage.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device.
+- Caveat: this is no-device Android parser/schema evidence only. It does not prove optical QR scanning, physical Android rendering, phone relay reachability, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew --no-daemon :core:pairing:testDebugUnitTest --tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.rejectsWhitespaceMutatedRelaySecretAliasesInQrPayload --tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.preservesLiteralPlusInOpaqueQrValues -Pkotlin.incremental=false`
+- `python3 script/check_protocol_schema.py`
+- `bash -n script/check_no_device_quality.sh`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_protocol_schema.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- apps/android/core/pairing/src/main/java/com/localagentbridge/android/core/pairing/RuntimePairingPayload.kt apps/android/core/pairing/src/test/java/com/localagentbridge/android/core/pairing/RuntimePairingPayloadParserTest.kt packages/protocol-schema/pairing-qr.schema.json packages/protocol-schema/protocol.schema.json script/check_protocol_schema.py script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+## 2026-07-03 Relay Preflight Host Input Guard No-Device Gate
+
+- Scope: continue Immediate Queue 5/6 relay bootstrap hardening while the Android phone is disconnected. The shared relay allocation preflight helper must not accept backend/provider URLs, path-like values, user-info, or embedded host:port strings as relay hosts, and invalid input failures must not echo those raw values.
+- Result: `script/relay_allocation_preflight.py` now validates `--host` before network access, rejecting URL/path/user-info/whitespace and embedded host:port forms while preserving plain hostnames and IP literals.
+- Result: invalid-host failures now use `safe_endpoint_label` and render `<invalid-host>:<port>`, so provider hostnames, model-provider ports, endpoint paths, route-token query material, allocation tokens, and relay-secret values are not printed in stderr.
+- Result: `script/check_no_device_quality.sh` now runs `check_relay_preflight_host_input_guard`, which passes a URL-shaped host containing provider/backend/route-token/relay-secret markers and asserts the helper fails before network access with only the safe invalid-host label and reason.
+- Guardrail: `script/check_copy_hygiene.py` now requires the host validation helper, safe endpoint label, invalid-host redaction, no-device guard, summary phrase, current progress/QA evidence, and roadmap coverage.
+- Device state: `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l` returned no attached devices, so this pass is explicitly no-device.
+- Caveat: this proves no-device relay allocation preflight input validation only. It does not prove production relay deployment, physical Android pairing, optical QR scanning, phone reachability, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- focused invalid-host smoke for `script/relay_allocation_preflight.py`
+- `python3 -m py_compile script/relay_allocation_preflight.py script/check_copy_hygiene.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- script/relay_allocation_preflight.py script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+## 2026-07-03 Android Trusted Relay Store Canonicality No-Device Gate
+
+- Scope: harden trusted-runtime relay route storage while the Android phone is disconnected. A GPT-5.5 read-only explorer identified that `PairingStore` validated P2P stored route material canonically but only checked relay id/secret/nonce values for blankness.
+- Result: `PairingStore.hasCompleteRelayRoute()` now requires `runtime_relay_id`, resolved `runtime_relay_secret`, and `runtime_relay_nonce` to pass `isCanonicalOpaqueRouteValue`, matching the parser and P2P restore boundary.
+- Result: `PairingStoreTest.trustedRuntimeRejectsNonCanonicalRelayRoute`, `trustedRuntimeRejectsOversizedRelayRoute`, and `pairingStoreDropsNonCanonicalStoredRelayRouteOnRead` cover whitespace-mutated and oversized relay ids, secrets, and nonces before trusted restore or write persistence.
+- Guardrail: `script/check_no_device_quality.sh` already runs `PairingStoreTest` in the default no-device gate and now reports `Android trusted relay store canonicality addendum`; `script/check_copy_hygiene.py` pins the canonical helper calls, tests, current QA evidence, and roadmap coverage.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device.
+- Caveat: this is no-device Android JVM/source/script evidence. It does not prove physical Android QR scanning, live phone pairing, optical QR reliability, live provider-backed chat/cancel, production relay allocation, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew --no-daemon :core:pairing:testDebugUnitTest --tests com.localagentbridge.android.core.pairing.PairingStoreTest.trustedRuntimeRejectsNonCanonicalRelayRoute --tests com.localagentbridge.android.core.pairing.PairingStoreTest.trustedRuntimeRejectsOversizedRelayRoute --tests com.localagentbridge.android.core.pairing.PairingStoreTest.pairingStoreDropsNonCanonicalStoredRelayRouteOnRead -Pkotlin.incremental=false --console=plain`
+- `bash -n script/check_no_device_quality.sh`
+- `python3 -m py_compile script/check_copy_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- apps/android/core/pairing/src/main/java/com/localagentbridge/android/core/pairing/PairingStore.kt apps/android/core/pairing/src/test/java/com/localagentbridge/android/core/pairing/PairingStoreTest.kt script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+## 2026-07-03 macOS Route Refresh Opaque Material Size-Bound No-Device Gate
+
+- Scope: align macOS authenticated `route.refresh` response validation with the shared route-material schema while the Android phone is disconnected.
+- Result: `LocalRuntimeMessageRouter` now caps canonical runtime, relay, and P2P opaque route values at 512 characters while allowing `p2p_encrypted_body` up to the schema-defined 2048 characters.
+- Result: `LocalRuntimeMessageRouterTests/testRouteRefreshAllowsBoundedP2PEncryptedBodyLargerThanRouteValues` proves a 2048-character P2P encrypted body is emitted, while malformed relay and P2P route-material regressions reject oversized 513-character route values and 2049-character encrypted bodies.
+- Guardrail: `script/check_no_device_quality.sh` now runs the focused macOS route.refresh size-bound regression and reports `macOS route.refresh opaque material size-bound addendum`; `script/check_copy_hygiene.py` pins the Swift constants, focused tests, no-device summary, QA evidence, and roadmap coverage.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device.
+- Caveat: this is no-device SwiftPM/source/script evidence. It does not prove physical Android QR scanning, live phone pairing, optical QR reliability, live provider-backed chat/cancel, production relay allocation, or real P2P/different-network connectivity.
+
+Verified after this change:
+
+- `swift test --package-path apps/macos --filter 'LocalRuntimeMessageRouterTests/testRouteRefreshReturnsFreshP2PRendezvousMaterialFromRuntimeProvider|LocalRuntimeMessageRouterTests/testRouteRefreshAllowsBoundedP2PEncryptedBodyLargerThanRouteValues|LocalRuntimeMessageRouterTests/testRouteRefreshRejectsMalformedP2PRendezvousMaterialFromRuntimeProvider|LocalRuntimeMessageRouterTests/testRouteRefreshRejectsMalformedRelayMaterialFromRuntimeProvider'`
+- `bash -n script/check_no_device_quality.sh`
+- `python3 -m py_compile script/check_copy_hygiene.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift apps/macos/CompanionCore/Tests/LocalRuntimeMessageRouterTests.swift script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+## 2026-07-03 Relay Preflight Unexpected-Field Rejection No-Device Gate
+
+- Scope: continue Immediate Queue 5/6 relay bootstrap hardening while the Android phone is disconnected. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer identified unexpected relay allocation response fields as the next no-device-verifiable gap.
+- Result: `script/relay_allocation_preflight.py` now enforces an allocation response field allowlist after JSON decoding. Allocation responses may contain only `relay_id`, `relay_secret`, `relay_expires_at`, and `relay_nonce`; extra metadata fails closed with a safe `unsupported metadata` error.
+- Result: `script/check_no_device_quality.sh` now runs `check_relay_preflight_unexpected_field_rejection_guard`, which uses a fake allocation endpoint returning valid required fields plus canary `requested_route_token`, backend URL, provider URL, allocation-token, and relay-secret debug metadata, then asserts the preflight fails without echoing those unknown field names or values.
+- Guardrail: `script/check_copy_hygiene.py` now requires the response field allowlist, unexpected-field rejection helper, canary payload, safe failure assertion, no-device summary phrase, current progress/QA evidence, and roadmap coverage.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device.
+- Caveat: this is no-device relay allocation preflight script evidence only. It does not prove production relay deployment, physical Android pairing, optical QR scanning, phone reachability, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `python3 -m py_compile script/relay_allocation_preflight.py script/check_copy_hygiene.py`
+- focused fake-relay unexpected-field rejection smoke for `script/relay_allocation_preflight.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- script/relay_allocation_preflight.py script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+## 2026-07-03 Relay Preflight Response Value Canonicality No-Device Gate
+
+- Scope: continue Immediate Queue 5/6 relay bootstrap hardening while the Android phone is disconnected. The shared Python preflight already rejects unexpected allocation response fields; it also needs to reject non-canonical values inside the allowed field set before callers treat them as relay route material.
+- Result: `script/relay_allocation_preflight.py` now validates `relay_id`, `relay_secret`, and `relay_nonce` as non-empty string values with no whitespace, matching the Swift allocation parser's canonicality floor.
+- Result: `relay_id` also rejects URL/path/user-info-shaped values, and `relay_expires_at=0` now reaches the explicit expired-lease failure path instead of being flattened into a missing-field failure.
+- Result: `script/check_no_device_quality.sh` now runs `check_relay_preflight_response_value_canonicality_guard`, which uses a fake allocation endpoint to return whitespace-mutated `relay_id`, `relay_secret`, `relay_nonce`, URL-shaped `relay_id`, non-integer `relay_expires_at`, and zero `relay_expires_at`, then asserts the failure output keeps only safe field-level reasons without echoing response values.
+- Guardrail: `script/check_copy_hygiene.py` now requires the canonical response value helper, fake relay cases, default gate entry, summary phrase, current progress/QA evidence, and roadmap coverage.
+- Device state: the Android phone is disconnected, so this pass is explicitly no-device.
+- Caveat: this is no-device relay allocation preflight script evidence only. It does not prove production relay deployment, physical Android pairing, optical QR scanning, phone reachability, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `python3 -m py_compile script/relay_allocation_preflight.py script/check_copy_hygiene.py`
+- focused fake-relay response value canonicality smoke for `script/relay_allocation_preflight.py`
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- script/relay_allocation_preflight.py script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+- `"$HOME/Library/Android/sdk/platform-tools/adb" devices -l`
+
+## 2026-07-02 Relay Preflight Failure-Output Redaction No-Device Gate
+
+- Scope: harden the shared relay allocation preflight helper while the Android phone is disconnected. GPT-5.3-Codex-Spark was not used; a GPT-5.5 read-only explorer confirmed the narrow leak was the unexpected-prefix failure branch in `script/relay_allocation_preflight.py`.
+- Result: malformed non-allocation relay responses no longer appear raw in stderr. `relay_allocation_preflight.py` now reports the safe `did not return an allocation response` reason with a redacted unexpected-response marker instead of formatting the full response line.
+- Result: `script/check_no_device_quality.sh` now runs `check_relay_preflight_failure_output_redaction_guard`, which uses a fake allocation endpoint returning canary route-token, relay-secret, allocation-token, compact route aliases, provider URL, and backend endpoint material, then asserts none of those markers appear in the failed preflight output.
+- Guardrail: `script/check_copy_hygiene.py` now rejects `line!r` in the preflight helper and requires the redaction helper, fake relay guard, no-device summary phrase, roadmap coverage, and current progress/QA evidence.
+- Caveat: this is no-device relay allocation preflight script evidence only. It does not prove production relay deployment, physical Android pairing, optical QR scanning, phone reachability, live provider-backed chat/cancel, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `python3 -m py_compile script/relay_allocation_preflight.py script/check_copy_hygiene.py`
+- focused inline fake-relay malformed-response smoke for `script/relay_allocation_preflight.py` failure-output redaction
+- `bash -n script/check_no_device_quality.sh` (syntax only)
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `git diff --check -- script/relay_allocation_preflight.py script/check_no_device_quality.sh script/check_copy_hygiene.py docs/progress.md docs/qa-evidence.md docs/roadmap.md`
+
+## 2026-07-02 Android Settings Memory Runtime Search No-Device Gate
+
+- Scope: wire the new runtime-owned `memory.list` query seam into Android Settings > Memory while the Android phone is disconnected. GPT-5.3-Codex-Spark was not used; this continues the GPT-5.5-only session rule.
+- Result: Android Settings > Memory now includes localized memory search controls, filters visible memory rows locally over memory content, runtime search snippets/matched fields, and approved-source audit metadata, and forwards the normalized search text when the user refreshes memory.
+- Result: nonblank Settings Memory refreshes send `MemoryListRequestPayload.query` without refreshing memory-summary drafts, while blank refreshes preserve the existing full memory list plus summary-draft refresh behavior.
+- Result: runtime-provided memory `search.rank`, `search.snippet`, and `search.matched_fields` render under matching memory rows with memory-specific field labels, and the same response-only metadata stays out of device storage through the runtime-owned memory redaction path.
+- Guardrail: `RuntimeClientViewModelTest.refreshRuntimeMemorySendsTrimmedQueryAndRedactsSearchMetadataFromDeviceStorage` pins query payload trimming, summary-draft non-refresh, UI-state metadata, and device-storage redaction. `ClientScreensNoDeviceComposeTest.settingsMemorySearchFiltersRowsAndShowsRuntimeSearchMetadata` pins local filtering, refresh callback query forwarding, clear/no-results behavior, and metadata/snippet rendering.
+- Caveat: this is no-device Android JVM/Compose/resource/script evidence. It does not prove physical Android rendering, physical TalkBack traversal, optical/camera QR pairing, live provider-backed chat/cancel, semantic memory search, embedding-backed ranking, or real different-network runtime connectivity.
+
+Verified after this change:
+
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew :app:compileDebugKotlin`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew :app:testDebugUnitTest --tests 'com.localagentbridge.android.runtime.RuntimeClientViewModelTest.refreshRuntimeMemorySendsTrimmedQueryAndRedactsSearchMetadataFromDeviceStorage'`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew :app:testDebugUnitTest --tests 'com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsMemorySearchFiltersRowsAndShowsRuntimeSearchMetadata'`
+- `JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home" ./gradlew :app:testDebugUnitTest --tests 'com.localagentbridge.android.runtime.RuntimeClientViewModelTest.refreshRuntimeMemorySendsTrimmedQueryAndRedactsSearchMetadataFromDeviceStorage' --tests 'com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsMemorySearchFiltersRowsAndShowsRuntimeSearchMetadata'`
+- `python3 -m py_compile script/check_copy_hygiene.py script/check_docs_hygiene.py`
+- `python3 script/check_android_string_parity.py`
+- `python3 script/check_copy_hygiene.py`
+- `python3 script/check_docs_hygiene.py`
+- `bash -n script/check_no_device_quality.sh`
 - `git diff --check`

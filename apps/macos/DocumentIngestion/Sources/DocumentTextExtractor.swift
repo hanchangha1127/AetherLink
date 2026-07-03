@@ -13,6 +13,30 @@ public struct ExtractedDocument: Equatable, Sendable {
     }
 }
 
+public struct DocumentIngestionResourcePolicy: Equatable, Sendable {
+    public static let standard = DocumentIngestionResourcePolicy()
+
+    public var maxInputBytes: Int
+    public var maxArchiveListingBytes: Int
+    public var maxArchiveEntryBytes: Int
+    public var maxConverterOutputBytes: Int
+    public var maxExtractedTextCharacters: Int
+
+    public init(
+        maxInputBytes: Int = 32 * 1024 * 1024,
+        maxArchiveListingBytes: Int = 1 * 1024 * 1024,
+        maxArchiveEntryBytes: Int = 8 * 1024 * 1024,
+        maxConverterOutputBytes: Int = 8 * 1024 * 1024,
+        maxExtractedTextCharacters: Int = 200_000
+    ) {
+        self.maxInputBytes = maxInputBytes
+        self.maxArchiveListingBytes = maxArchiveListingBytes
+        self.maxArchiveEntryBytes = maxArchiveEntryBytes
+        self.maxConverterOutputBytes = maxConverterOutputBytes
+        self.maxExtractedTextCharacters = maxExtractedTextCharacters
+    }
+}
+
 public enum DocumentIngestionError: Error, Equatable, LocalizedError, Sendable {
     case unsupportedFileType(String)
     case unreadablePDF(String)
@@ -20,6 +44,7 @@ public enum DocumentIngestionError: Error, Equatable, LocalizedError, Sendable {
     case archiveEntryReadFailed(String)
     case converterFailed(String)
     case noExtractableText(String)
+    case resourceLimitExceeded(resource: String, limit: Int, actual: Int)
 
     public var errorDescription: String? {
         switch self {
@@ -35,15 +60,22 @@ public enum DocumentIngestionError: Error, Equatable, LocalizedError, Sendable {
             return "Could not convert document to text: \(path)"
         case .noExtractableText(let path):
             return "No extractable document text found: \(path)"
+        case .resourceLimitExceeded(let resource, let limit, let actual):
+            return "Document ingestion resource limit exceeded for \(resource): \(actual) exceeded \(limit)"
         }
     }
 }
 
 public final class DocumentTextExtractor: Sendable {
-    public init() {}
+    private let resourcePolicy: DocumentIngestionResourcePolicy
+
+    public init(resourcePolicy: DocumentIngestionResourcePolicy = .standard) {
+        self.resourcePolicy = resourcePolicy
+    }
 
     public func extractText(from fileURL: URL, mimeType: String? = nil) throws -> ExtractedDocument {
         let kind = DocumentKind(fileURL: fileURL, mimeType: mimeType)
+        try enforceFileSizeLimit(fileURL, limit: resourcePolicy.maxInputBytes)
         let text: String
         switch kind {
         case .pdf:
@@ -121,6 +153,11 @@ public final class DocumentTextExtractor: Sendable {
         }
 
         let normalizedText = normalizeWhitespace(text)
+        try enforceStringLimit(
+            normalizedText,
+            resource: "extracted text",
+            limit: resourcePolicy.maxExtractedTextCharacters
+        )
         guard !normalizedText.isEmpty else {
             throw DocumentIngestionError.noExtractableText(fileURL.path)
         }
@@ -189,7 +226,7 @@ public final class DocumentTextExtractor: Sendable {
     }
 
     private func extractRTFText(from fileURL: URL) throws -> String {
-        let data = try Data(contentsOf: fileURL)
+        let data = try readFileData(fileURL, limit: resourcePolicy.maxInputBytes)
         let attributed = try NSAttributedString(
             data: data,
             options: [.documentType: NSAttributedString.DocumentType.rtf],
@@ -199,7 +236,7 @@ public final class DocumentTextExtractor: Sendable {
     }
 
     private func extractHTMLText(from fileURL: URL) throws -> String {
-        let data = try Data(contentsOf: fileURL)
+        let data = try readFileData(fileURL, limit: resourcePolicy.maxInputBytes)
         if let attributed = try? NSAttributedString(
             data: data,
             options: [.documentType: NSAttributedString.DocumentType.html],
@@ -214,19 +251,26 @@ public final class DocumentTextExtractor: Sendable {
     }
 
     private func extractTextutilText(from fileURL: URL) throws -> String {
-        let data = try runTextutil(arguments: ["-convert", "txt", "-stdout", fileURL.path])
+        let data = try runTextutil(
+            arguments: ["-convert", "txt", "-stdout", fileURL.path],
+            outputResource: "textutil output"
+        )
         return String(data: data, encoding: .utf8) ?? String(decoding: data, as: UTF8.self)
     }
 
     private func extractBinaryText(from fileURL: URL) throws -> String {
-        let data = try Data(contentsOf: fileURL)
+        let data = try readFileData(fileURL, limit: resourcePolicy.maxInputBytes)
         let byteStrings = extractPrintableByteStrings(from: data)
         let utf16Strings = extractPrintableUTF16LEStrings(from: data)
         return uniqueTextParts(byteStrings + utf16Strings).joined(separator: "\n")
     }
 
     private func archiveEntries(_ fileURL: URL) throws -> [String] {
-        let data = try runUnzip(arguments: ["-Z1", fileURL.path], error: .archiveListingFailed(fileURL.path))
+        let data = try runUnzip(
+            arguments: ["-Z1", fileURL.path],
+            error: .archiveListingFailed(fileURL.path),
+            outputResource: "archive listing"
+        )
         guard let output = String(data: data, encoding: .utf8) else {
             throw DocumentIngestionError.archiveListingFailed(fileURL.path)
         }
@@ -237,10 +281,18 @@ public final class DocumentTextExtractor: Sendable {
     }
 
     private func archiveEntryData(_ fileURL: URL, entry: String) throws -> Data {
-        try runUnzip(arguments: ["-p", fileURL.path, entry], error: .archiveEntryReadFailed(entry))
+        try runUnzip(
+            arguments: ["-p", fileURL.path, entry],
+            error: .archiveEntryReadFailed(entry),
+            outputResource: "archive entry \(entry)"
+        )
     }
 
-    private func runUnzip(arguments: [String], error: DocumentIngestionError) throws -> Data {
+    private func runUnzip(
+        arguments: [String],
+        error: DocumentIngestionError,
+        outputResource: String
+    ) throws -> Data {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
         process.arguments = arguments
@@ -249,14 +301,21 @@ public final class DocumentTextExtractor: Sendable {
         process.standardOutput = output
         process.standardError = errors
         try process.run()
-        process.waitUntilExit()
+        let data = try readProcessOutput(
+            output.fileHandleForReading,
+            process: process,
+            resource: outputResource,
+            limit: outputResource == "archive listing"
+                ? resourcePolicy.maxArchiveListingBytes
+                : resourcePolicy.maxArchiveEntryBytes
+        )
         guard process.terminationStatus == 0 else {
             throw error
         }
-        return output.fileHandleForReading.readDataToEndOfFile()
+        return data
     }
 
-    private func runTextutil(arguments: [String]) throws -> Data {
+    private func runTextutil(arguments: [String], outputResource: String) throws -> Data {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/textutil")
         process.arguments = arguments
@@ -264,11 +323,82 @@ public final class DocumentTextExtractor: Sendable {
         process.standardOutput = output
         process.standardError = Pipe()
         try process.run()
-        process.waitUntilExit()
+        let data = try readProcessOutput(
+            output.fileHandleForReading,
+            process: process,
+            resource: outputResource,
+            limit: resourcePolicy.maxConverterOutputBytes
+        )
         guard process.terminationStatus == 0 else {
             throw DocumentIngestionError.converterFailed(arguments.last ?? "")
         }
-        return output.fileHandleForReading.readDataToEndOfFile()
+        return data
+    }
+}
+
+private func enforceFileSizeLimit(_ fileURL: URL, limit: Int) throws {
+    guard let fileSize = try fileURL.resourceValues(forKeys: [.fileSizeKey]).fileSize else {
+        return
+    }
+    guard fileSize <= limit else {
+        throw DocumentIngestionError.resourceLimitExceeded(
+            resource: "input file",
+            limit: limit,
+            actual: fileSize
+        )
+    }
+}
+
+private func readFileData(_ fileURL: URL, limit: Int) throws -> Data {
+    try enforceFileSizeLimit(fileURL, limit: limit)
+    let data = try Data(contentsOf: fileURL)
+    try enforceDataLimit(data, resource: "input file", limit: limit)
+    return data
+}
+
+private func readProcessOutput(
+    _ handle: FileHandle,
+    process: Process,
+    resource: String,
+    limit: Int
+) throws -> Data {
+    var data = Data()
+    while true {
+        let chunk = handle.readData(ofLength: 64 * 1024)
+        if chunk.isEmpty {
+            process.waitUntilExit()
+            return data
+        }
+        data.append(chunk)
+        if data.count > limit {
+            process.terminate()
+            process.waitUntilExit()
+            throw DocumentIngestionError.resourceLimitExceeded(
+                resource: resource,
+                limit: limit,
+                actual: data.count
+            )
+        }
+    }
+}
+
+private func enforceDataLimit(_ data: Data, resource: String, limit: Int) throws {
+    guard data.count <= limit else {
+        throw DocumentIngestionError.resourceLimitExceeded(
+            resource: resource,
+            limit: limit,
+            actual: data.count
+        )
+    }
+}
+
+private func enforceStringLimit(_ text: String, resource: String, limit: Int) throws {
+    guard text.count <= limit else {
+        throw DocumentIngestionError.resourceLimitExceeded(
+            resource: resource,
+            limit: limit,
+            actual: text.count
+        )
     }
 }
 

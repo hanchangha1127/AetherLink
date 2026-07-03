@@ -217,7 +217,13 @@ public struct RuntimeChatStoredMessage: Equatable, Sendable {
 public protocol RuntimeChatEventStore: Sendable {
     func append(_ event: RuntimeChatStoredEvent) throws
     func listSessions(ownerDeviceID: String?, limit: Int, includeArchived: Bool) throws -> [RuntimeChatStoredSession]
-    func listSessions(ownerDeviceID: String?, limit: Int, includeArchived: Bool, query: String?) throws -> [RuntimeChatStoredSession]
+    func listSessions(
+        ownerDeviceID: String?,
+        limit: Int,
+        includeArchived: Bool,
+        query: String?,
+        embeddingModelID: String?
+    ) throws -> [RuntimeChatStoredSession]
     func listAllSessions(limit: Int, includeArchived: Bool) throws -> [RuntimeChatStoredSession]
     func listMessages(ownerDeviceID: String?, sessionID: String, limit: Int) throws -> [RuntimeChatStoredMessage]
     func listAllMessages(sessionID: String, limit: Int) throws -> [RuntimeChatStoredMessage]
@@ -252,6 +258,22 @@ public extension RuntimeChatEventStore {
         limit: Int,
         includeArchived: Bool,
         query: String?
+    ) throws -> [RuntimeChatStoredSession] {
+        try listSessions(
+            ownerDeviceID: ownerDeviceID,
+            limit: limit,
+            includeArchived: includeArchived,
+            query: query,
+            embeddingModelID: nil
+        )
+    }
+
+    func listSessions(
+        ownerDeviceID: String?,
+        limit: Int,
+        includeArchived: Bool,
+        query: String?,
+        embeddingModelID: String?
     ) throws -> [RuntimeChatStoredSession] {
         guard let searchQuery = RuntimeChatSessionSearchQuery(query) else {
             return try listSessions(ownerDeviceID: ownerDeviceID, limit: limit, includeArchived: includeArchived)

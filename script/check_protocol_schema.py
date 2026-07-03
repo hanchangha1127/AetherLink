@@ -19,7 +19,41 @@ COMPACT_RELAY_QR_FIXTURE_PATH = ROOT / "shared" / "protocol" / "fixtures" / "mac
 COMPACT_PRIVATE_OVERLAY_RELAY_QR_FIXTURE_PATH = ROOT / "shared" / "protocol" / "fixtures" / "macos-compact-private-overlay-pairing-uri.txt"
 COMPACT_P2P_RENDEZVOUS_QR_FIXTURE_PATH = ROOT / "shared" / "protocol" / "fixtures" / "macos-compact-p2p-rendezvous-pairing-uri.txt"
 
-RESERVED_PREFIXES = ("skills.", "mcp.", "web_search.")
+RESERVED_PREFIXES = (
+    "skills.",
+    "mcp.",
+    "web_search.",
+    "python.",
+    "projects.",
+    "automation.",
+    "permission.",
+    "approval.",
+    "audit.",
+    "file.",
+    "terminal.",
+    "network.",
+    "backend.",
+    "embeddings.",
+    "retrieval.",
+    "index.",
+    "research.",
+    "citation.",
+    "source_control.",
+    "p2p.",
+    "rendezvous.",
+    "bootstrap.",
+    "dht.",
+    "nat.",
+    "stun.",
+    "turn.",
+    "session.",
+    "key_exchange.",
+    "encrypted_session.",
+    "anti_replay.",
+    "transport.",
+    "crypto.",
+)
+REQUIRED_RESERVED_PREFIXES = frozenset(RESERVED_PREFIXES)
 ALLOWED_MEMORY_TYPES = {
     "memory.list",
     "memory.upsert",
@@ -29,6 +63,7 @@ ALLOWED_MEMORY_TYPES = {
     "memory.summary.draft.dismiss",
 }
 ALLOWED_TOOL_TYPES = frozenset()
+ALLOWED_ROUTE_TYPES = {"route.refresh"}
 REQUIRED_RELAY_QR_FIELDS = {
     "relay_host",
     "relay_port",
@@ -81,6 +116,13 @@ PAIRING_QR_REQUIRED_FIELD_GROUPS = {
     },
 }
 COMPACT_RELAY_QR_FIELDS = {"rh", "rp", "ri", "rs", "rx", "rrn"}
+RELAY_QR_ALIAS_FAMILIES = {
+    "canonical": REQUIRED_RELAY_QR_FIELDS,
+    "remote": REMOTE_RELAY_QR_FIELDS,
+    "route": ROUTE_RELAY_QR_FIELDS,
+    "rendezvous": RENDEZVOUS_RELAY_QR_FIELDS,
+    "compact": COMPACT_RELAY_QR_FIELDS,
+}
 P2P_RENDEZVOUS_QR_FIELDS = {
     "p2p_class",
     "p2p_record_id",
@@ -162,6 +204,1026 @@ ROUTE_REFRESH_OPAQUE_VALUE_FIELDS = {
 }
 ROUTE_REFRESH_OPAQUE_SECRET_FIELDS = {"relay_secret"}
 ROUTE_REFRESH_OPAQUE_BODY_FIELDS = {"p2p_encrypted_body"}
+PRIVATE_OVERLAY_RELAY_HOST_PATTERNS = [
+    "^10\\.",
+    "^100\\.",
+    "^172\\.",
+    "^192\\.168\\.",
+    "f[c-d]",
+]
+PAIRING_QR_REMOTE_RELAY_SCOPE_FIELDS = ["relay_scope", "remote_scope", "route_scope", "rsc"]
+
+
+def reserved_future_message_types(message_types: list[str] | tuple[str, ...]) -> list[str]:
+    return [
+        message_type
+        for message_type in message_types
+        if message_type.startswith(RESERVED_PREFIXES)
+    ]
+
+
+def check_protocol_schema_rejects_reserved_future_runtime_namespaces() -> list[str]:
+    failures: list[str] = []
+    missing_prefixes = sorted(REQUIRED_RESERVED_PREFIXES - set(RESERVED_PREFIXES))
+    if missing_prefixes:
+        failures.append(f"reserved protocol prefixes missing {missing_prefixes}")
+
+    synthetic_reserved = reserved_future_message_types([
+        "skills.run",
+        "mcp.tool.call",
+        "web_search.query",
+        "python.run",
+        "python.exec",
+        "projects.sessions.list",
+        "automation.runs.create",
+        "permission.request",
+        "approval.prompt",
+        "audit.events.list",
+        "file.read",
+        "file.write",
+        "file.index",
+        "terminal.exec",
+        "terminal.kill",
+        "network.request",
+        "network.open",
+        "backend.call",
+        "backend.configure",
+        "embeddings.create",
+        "retrieval.query",
+        "index.build",
+        "research.brief.create",
+        "citation.sources.list",
+        "source_control.status",
+        "p2p.session.open",
+        "rendezvous.records.publish",
+        "bootstrap.records.lookup",
+        "dht.records.put",
+        "nat.candidates.gather",
+        "stun.binding.request",
+        "turn.relay.allocate",
+        "session.key.exchange",
+        "key_exchange.begin",
+        "encrypted_session.open",
+        "anti_replay.window.commit",
+        "transport.handshake",
+        "transport.rekey",
+        "crypto.session.open",
+        "crypto.key.rotate",
+    ])
+    if synthetic_reserved != [
+        "skills.run",
+        "mcp.tool.call",
+        "web_search.query",
+        "python.run",
+        "python.exec",
+        "projects.sessions.list",
+        "automation.runs.create",
+        "permission.request",
+        "approval.prompt",
+        "audit.events.list",
+        "file.read",
+        "file.write",
+        "file.index",
+        "terminal.exec",
+        "terminal.kill",
+        "network.request",
+        "network.open",
+        "backend.call",
+        "backend.configure",
+        "embeddings.create",
+        "retrieval.query",
+        "index.build",
+        "research.brief.create",
+        "citation.sources.list",
+        "source_control.status",
+        "p2p.session.open",
+        "rendezvous.records.publish",
+        "bootstrap.records.lookup",
+        "dht.records.put",
+        "nat.candidates.gather",
+        "stun.binding.request",
+        "turn.relay.allocate",
+        "session.key.exchange",
+        "key_exchange.begin",
+        "encrypted_session.open",
+        "anti_replay.window.commit",
+        "transport.handshake",
+        "transport.rekey",
+        "crypto.session.open",
+        "crypto.key.rotate",
+    ]:
+        failures.append(
+            "reserved protocol namespace guard must reject skills.*, mcp.*, web_search.*, "
+            "python.*, projects.*, automation.*, permission.*, approval.*, audit.*, "
+            "file.*, terminal.*, network.*, backend.*, embeddings.*, retrieval.*, "
+            "index.*, research.*, citation.*, source_control.*, p2p.*, rendezvous.*, "
+            "bootstrap.*, dht.*, nat.*, stun.*, turn.*, session.*, key_exchange.*, "
+            "encrypted_session.*, anti_replay.*, transport.*, and crypto.* message names"
+        )
+
+    return failures
+
+
+def future_memory_message_types(message_types: list[str] | tuple[str, ...]) -> list[str]:
+    return [
+        message_type
+        for message_type in message_types
+        if message_type.startswith("memory.") and message_type not in ALLOWED_MEMORY_TYPES
+    ]
+
+
+def check_protocol_schema_rejects_future_memory_namespaces() -> list[str]:
+    failures: list[str] = []
+    synthetic_memory_types = future_memory_message_types([
+        "memory.list",
+        "memory.upsert",
+        "memory.summary.drafts.list",
+        "memory.search",
+        "memory.reflect",
+    ])
+    if synthetic_memory_types != ["memory.search", "memory.reflect"]:
+        failures.append(
+            "memory namespace guard must allow only documented active memory.* messages "
+            "while future advanced memory messages stay reserved"
+        )
+    return failures
+
+
+def future_tool_message_types(message_types: list[str] | tuple[str, ...]) -> list[str]:
+    return [
+        message_type
+        for message_type in message_types
+        if message_type.startswith("tool.") and message_type not in ALLOWED_TOOL_TYPES
+    ]
+
+
+def check_protocol_schema_rejects_future_tool_namespaces() -> list[str]:
+    failures: list[str] = []
+    synthetic_tool_types = future_tool_message_types([
+        "tool.call",
+        "tool.result",
+        "tool.run",
+    ])
+    if synthetic_tool_types != ["tool.call", "tool.result", "tool.run"]:
+        failures.append(
+            "protocol tool namespace guard must reject tool.call, tool.result, and tool.run "
+            "until runtime tool permissions, execution, result handling, and audit semantics are designed"
+        )
+    return failures
+
+
+def check_protocol_schema_rejects_future_route_namespaces() -> list[str]:
+    failures: list[str] = []
+    synthetic_route_types = [
+        "route.refresh",
+        "route.candidates.exchange",
+        "route.diagnostics.report",
+        "route.allocation.status",
+        "route.failure.report",
+    ]
+    unsupported_route_types = [
+        message_type
+        for message_type in synthetic_route_types
+        if message_type.startswith("route.") and message_type not in ALLOWED_ROUTE_TYPES
+    ]
+    if unsupported_route_types != [
+        "route.candidates.exchange",
+        "route.diagnostics.report",
+        "route.allocation.status",
+        "route.failure.report",
+    ]:
+        failures.append(
+            "route namespace guard must allow only route.refresh while future route.* messages stay reserved"
+        )
+    return failures
+
+
+def check_chat_attachment_schema_contract(schema: dict[str, object]) -> list[str]:
+    failures: list[str] = []
+    defs = schema.get("$defs", {})
+    if not isinstance(defs, dict):
+        return ["$defs must include chatAttachment schema"]
+    chat_attachment = defs.get("chatAttachment")
+    if not isinstance(chat_attachment, dict):
+        return ["$defs.chatAttachment schema is missing"]
+
+    properties = chat_attachment.get("properties")
+    if not isinstance(properties, dict):
+        failures.append("$defs.chatAttachment.properties must be an object")
+    else:
+        allowed_keys = {"type", "mime_type", "name", "data_base64", "text"}
+        actual_keys = set(properties.keys())
+        if actual_keys != allowed_keys:
+            failures.append(
+                "$defs.chatAttachment.properties must stay limited to type, mime_type, name, data_base64, and text"
+            )
+        forbidden_keys = {
+            "source_path",
+            "file_path",
+            "workspace_id",
+            "source_control_status",
+            "backend_url",
+            "backend_credentials",
+            "route_token",
+            "trusted_source",
+        }
+        leaked_keys = sorted(actual_keys & forbidden_keys)
+        if leaked_keys:
+            failures.append(
+                "$defs.chatAttachment.properties includes future source/workspace/backend metadata "
+                f"{leaked_keys}"
+            )
+    if chat_attachment.get("additionalProperties") is not False:
+        failures.append("$defs.chatAttachment.additionalProperties must be false")
+    return failures
+
+
+def check_chat_message_schema_contract(schema: dict[str, object]) -> list[str]:
+    failures: list[str] = []
+    defs = schema.get("$defs", {})
+    if not isinstance(defs, dict):
+        return ["$defs must include chatMessage schema"]
+    chat_message = defs.get("chatMessage")
+    if not isinstance(chat_message, dict):
+        return ["$defs.chatMessage schema is missing"]
+
+    properties = chat_message.get("properties")
+    if not isinstance(properties, dict):
+        failures.append("$defs.chatMessage.properties must be an object")
+    else:
+        allowed_keys = {"role", "content", "attachments"}
+        actual_keys = set(properties.keys())
+        if actual_keys != allowed_keys:
+            failures.append("$defs.chatMessage.properties must stay limited to role, content, and attachments")
+        forbidden_keys = {
+            "source_path",
+            "file_path",
+            "workspace_id",
+            "source_control_status",
+            "backend_url",
+            "backend_credentials",
+            "route_token",
+            "trusted_source",
+            "runtime_memory",
+            "tool_results",
+        }
+        leaked_keys = sorted(actual_keys & forbidden_keys)
+        if leaked_keys:
+            failures.append(
+                "$defs.chatMessage.properties includes future source/workspace/backend metadata "
+                f"{leaked_keys}"
+            )
+    if chat_message.get("additionalProperties") is not False:
+        failures.append("$defs.chatMessage.additionalProperties must be false")
+    return failures
+
+
+def check_chat_send_payload_schema_contract(schema: dict[str, object]) -> list[str]:
+    failures: list[str] = []
+    defs = schema.get("$defs", {})
+    if not isinstance(defs, dict):
+        return ["$defs must include chatSendPayload schema"]
+    chat_send_payload = defs.get("chatSendPayload")
+    if not isinstance(chat_send_payload, dict):
+        return ["$defs.chatSendPayload schema is missing"]
+
+    properties = chat_send_payload.get("properties")
+    if not isinstance(properties, dict):
+        failures.append("$defs.chatSendPayload.properties must be an object")
+    else:
+        allowed_keys = {"session_id", "model", "locale", "messages"}
+        actual_keys = set(properties.keys())
+        if actual_keys != allowed_keys:
+            failures.append(
+                "$defs.chatSendPayload.properties must stay limited to session_id, model, locale, and messages"
+            )
+        forbidden_keys = {
+            "project_id",
+            "workspace_id",
+            "retrieval_context",
+            "permission_grant",
+            "source_path",
+            "source_control_status",
+            "backend_url",
+            "backend_credentials",
+            "route_token",
+            "trusted_source",
+            "tool_results",
+        }
+        leaked_keys = sorted(actual_keys & forbidden_keys)
+        if leaked_keys:
+            failures.append(
+                "$defs.chatSendPayload.properties includes future project/RAG/backend metadata "
+                f"{leaked_keys}"
+            )
+    if chat_send_payload.get("additionalProperties") is not False:
+        failures.append("$defs.chatSendPayload.additionalProperties must be false")
+    return failures
+
+
+def check_chat_title_request_payload_schema_contract(schema: dict[str, object]) -> list[str]:
+    failures: list[str] = []
+    defs = schema.get("$defs", {})
+    if not isinstance(defs, dict):
+        return ["$defs must include chatTitleRequestPayload schema"]
+    title_payload = defs.get("chatTitleRequestPayload")
+    if not isinstance(title_payload, dict):
+        return ["$defs.chatTitleRequestPayload schema is missing"]
+
+    properties = title_payload.get("properties")
+    if not isinstance(properties, dict):
+        failures.append("$defs.chatTitleRequestPayload.properties must be an object")
+    else:
+        allowed_keys = {"session_id", "model", "locale", "messages"}
+        actual_keys = set(properties.keys())
+        if actual_keys != allowed_keys:
+            failures.append(
+                "$defs.chatTitleRequestPayload.properties must stay limited to session_id, model, locale, and messages"
+            )
+        forbidden_keys = {
+            "title",
+            "project_id",
+            "workspace_id",
+            "retrieval_context",
+            "permission_grant",
+            "source_path",
+            "source_control_status",
+            "backend_url",
+            "backend_credentials",
+            "route_token",
+            "trusted_source",
+            "tool_results",
+        }
+        leaked_keys = sorted(actual_keys & forbidden_keys)
+        if leaked_keys:
+            failures.append(
+                "$defs.chatTitleRequestPayload.properties includes response/project/RAG/backend metadata "
+                f"{leaked_keys}"
+            )
+    if title_payload.get("additionalProperties") is not False:
+        failures.append("$defs.chatTitleRequestPayload.additionalProperties must be false")
+    return failures
+
+
+def check_pre_auth_payload_schema_contracts(schema: dict[str, object]) -> list[str]:
+    failures: list[str] = []
+    defs = schema.get("$defs", {})
+    if not isinstance(defs, dict):
+        return ["$defs must include pre-auth payload schemas"]
+
+    closed_object_payloads = {
+        "pairingRequestPayload": {
+            "pairing_nonce",
+            "pairing_code",
+            "device_id",
+            "device_name",
+            "public_key",
+        },
+        "helloPayload": {
+            "device_id",
+            "device_name",
+            "client_capabilities",
+        },
+    }
+    for payload_name, expected_keys in closed_object_payloads.items():
+        payload_schema = defs.get(payload_name)
+        if not isinstance(payload_schema, dict):
+            failures.append(f"$defs.{payload_name} schema is missing")
+            continue
+        properties = payload_schema.get("properties")
+        if not isinstance(properties, dict):
+            failures.append(f"$defs.{payload_name}.properties must be an object")
+        elif set(properties.keys()) != expected_keys:
+            failures.append(f"$defs.{payload_name} request properties must stay limited to {sorted(expected_keys)}")
+        if payload_schema.get("additionalProperties") is not False:
+            failures.append(f"$defs.{payload_name} request additionalProperties must be false")
+
+    auth_response_payload = defs.get("authResponsePayload")
+    if not isinstance(auth_response_payload, dict):
+        failures.append("$defs.authResponsePayload schema is missing")
+        return failures
+    options = auth_response_payload.get("oneOf")
+    if not isinstance(options, list):
+        failures.append("$defs.authResponsePayload.oneOf must describe request and accepted response payloads")
+        return failures
+    request_option = next(
+        (
+            option
+            for option in options
+            if isinstance(option, dict)
+            and option.get("required") == ["device_id", "nonce", "signature"]
+        ),
+        None,
+    )
+    if not isinstance(request_option, dict):
+        failures.append("$defs.authResponsePayload must include a device_id nonce signature request payload option")
+        return failures
+    properties = request_option.get("properties")
+    if not isinstance(properties, dict):
+        failures.append("$defs.authResponsePayload request properties must be an object")
+    elif set(properties.keys()) != {"device_id", "nonce", "signature"}:
+        failures.append("$defs.authResponsePayload request properties must stay limited to device_id, nonce, and signature")
+    if request_option.get("additionalProperties") is not False:
+        failures.append("$defs.authResponsePayload request additionalProperties must be false")
+
+    return failures
+
+
+def check_empty_request_payload_schema_contracts(schema: dict[str, object]) -> list[str]:
+    failures: list[str] = []
+    defs = schema.get("$defs", {})
+    if not isinstance(defs, dict):
+        return ["$defs must include empty-request payload schemas"]
+
+    empty_payload = defs.get("emptyPayload")
+    if not isinstance(empty_payload, dict):
+        return ["$defs.emptyPayload schema is missing"]
+    if empty_payload.get("type") != "object" or empty_payload.get("maxProperties") != 0:
+        failures.append("$defs.emptyPayload request must stay an object with maxProperties 0")
+
+    payload_defs = {
+        "runtimeHealthPayload": "runtime.health",
+        "modelsListPayload": "models.list",
+        "routeRefreshPayload": "route.refresh",
+    }
+    empty_request_failure_messages = {
+        "runtimeHealthPayload": "$defs.runtimeHealthPayload request must stay empty for runtime.health",
+        "modelsListPayload": "$defs.modelsListPayload request must stay empty for models.list",
+        "routeRefreshPayload": "$defs.routeRefreshPayload request must stay empty for route.refresh",
+    }
+    for payload_def, message_type in payload_defs.items():
+        payload_schema = defs.get(payload_def)
+        if not isinstance(payload_schema, dict):
+            failures.append(f"$defs.{payload_def} schema is missing")
+            continue
+        options = payload_schema.get("oneOf")
+        if not isinstance(options, list):
+            failures.append(f"$defs.{payload_def}.oneOf must describe empty request and response payloads")
+            continue
+        has_empty_request = any(
+            isinstance(option, dict) and option.get("$ref") == "#/$defs/emptyPayload"
+            for option in options
+        )
+        if not has_empty_request:
+            failures.append(empty_request_failure_messages[payload_def])
+
+    models_result = defs.get("modelsResultPayload")
+    if not isinstance(models_result, dict):
+        failures.append("$defs.modelsResultPayload schema is missing")
+    elif models_result.get("required") != ["models"]:
+        failures.append("$defs.modelsResultPayload response must require models")
+    elif models_result.get("additionalProperties") is not False:
+        failures.append("$defs.modelsResultPayload additionalProperties must be false")
+
+    return failures
+
+
+def check_models_pull_payload_schema_contract(schema: dict[str, object]) -> list[str]:
+    failures: list[str] = []
+    defs = schema.get("$defs", {})
+    if not isinstance(defs, dict):
+        return ["$defs must include modelsPullPayload schema"]
+    models_pull_payload = defs.get("modelsPullPayload")
+    if not isinstance(models_pull_payload, dict):
+        return ["$defs.modelsPullPayload schema is missing"]
+
+    options = models_pull_payload.get("oneOf")
+    if not isinstance(options, list):
+        return ["$defs.modelsPullPayload.oneOf must describe request and result payloads"]
+
+    request_option = next(
+        (
+            option
+            for option in options
+            if isinstance(option, dict)
+            and option.get("required") == ["model"]
+        ),
+        None,
+    )
+    if not isinstance(request_option, dict):
+        return ["$defs.modelsPullPayload must include a model-only request payload option"]
+
+    properties = request_option.get("properties")
+    if not isinstance(properties, dict):
+        failures.append("$defs.modelsPullPayload request properties must be an object")
+    else:
+        allowed_keys = {"model", "backend"}
+        actual_keys = set(properties.keys())
+        if actual_keys != allowed_keys:
+            failures.append("$defs.modelsPullPayload request properties must stay limited to model and backend")
+        forbidden_keys = {
+            "backend_url",
+            "backend_credentials",
+            "provider_url",
+            "route_token",
+            "relay_secret",
+            "requested_route_token",
+            "workspace_id",
+            "permission_grant",
+        }
+        leaked_keys = sorted(actual_keys & forbidden_keys)
+        if leaked_keys:
+            failures.append(
+                "$defs.modelsPullPayload request properties includes future backend/route/workspace metadata "
+                f"{leaked_keys}"
+            )
+    if request_option.get("additionalProperties") is not False:
+        failures.append("$defs.modelsPullPayload request additionalProperties must be false")
+    return failures
+
+
+def check_chat_cancel_payload_schema_contract(schema: dict[str, object]) -> list[str]:
+    failures: list[str] = []
+    defs = schema.get("$defs", {})
+    if not isinstance(defs, dict):
+        return ["$defs must include chatCancelPayload schema"]
+    chat_cancel_payload = defs.get("chatCancelPayload")
+    if not isinstance(chat_cancel_payload, dict):
+        return ["$defs.chatCancelPayload schema is missing"]
+
+    options = chat_cancel_payload.get("oneOf")
+    if not isinstance(options, list):
+        return ["$defs.chatCancelPayload.oneOf must describe request and acknowledgement payloads"]
+
+    request_option = next(
+        (
+            option
+            for option in options
+            if isinstance(option, dict)
+            and option.get("required") == ["target_request_id"]
+        ),
+        None,
+    )
+    if not isinstance(request_option, dict):
+        return ["$defs.chatCancelPayload must include a target_request_id-only request payload option"]
+
+    properties = request_option.get("properties")
+    if not isinstance(properties, dict):
+        failures.append("$defs.chatCancelPayload request properties must be an object")
+    else:
+        allowed_keys = {"target_request_id"}
+        actual_keys = set(properties.keys())
+        if actual_keys != allowed_keys:
+            failures.append("$defs.chatCancelPayload request properties must stay limited to target_request_id")
+        forbidden_keys = {
+            "backend_url",
+            "backend_credentials",
+            "provider_url",
+            "route_token",
+            "relay_secret",
+            "workspace_id",
+            "permission_grant",
+            "source_control_status",
+        }
+        leaked_keys = sorted(actual_keys & forbidden_keys)
+        if leaked_keys:
+            failures.append(
+                "$defs.chatCancelPayload request properties includes future backend/route/workspace metadata "
+                f"{leaked_keys}"
+            )
+    if request_option.get("additionalProperties") is not False:
+        failures.append("$defs.chatCancelPayload request additionalProperties must be false")
+    return failures
+
+
+def check_chat_sessions_list_payload_schema_contract(schema: dict[str, object]) -> list[str]:
+    failures: list[str] = []
+    defs = schema.get("$defs", {})
+    if not isinstance(defs, dict):
+        return ["$defs must include chatSessionsListPayload schema"]
+    chat_sessions_list_payload = defs.get("chatSessionsListPayload")
+    if not isinstance(chat_sessions_list_payload, dict):
+        return ["$defs.chatSessionsListPayload schema is missing"]
+
+    options = chat_sessions_list_payload.get("oneOf")
+    if not isinstance(options, list):
+        return ["$defs.chatSessionsListPayload.oneOf must describe request and response payloads"]
+
+    request_option = next(
+        (
+            option
+            for option in options
+            if isinstance(option, dict)
+            and isinstance(option.get("properties"), dict)
+            and "limit" in option.get("properties", {})
+            and "sessions" not in option.get("properties", {})
+        ),
+        None,
+    )
+    if not isinstance(request_option, dict):
+        return ["$defs.chatSessionsListPayload must include a session-list request payload option"]
+
+    properties = request_option.get("properties")
+    if not isinstance(properties, dict):
+        failures.append("$defs.chatSessionsListPayload request properties must be an object")
+    else:
+        allowed_keys = {"limit", "include_archived", "query", "embedding_model_id"}
+        actual_keys = set(properties.keys())
+        if actual_keys != allowed_keys:
+            failures.append(
+                "$defs.chatSessionsListPayload request properties must stay limited to limit, include_archived, query, and embedding_model_id"
+            )
+        forbidden_keys = {
+            "backend_url",
+            "backend_credentials",
+            "provider_url",
+            "route_token",
+            "relay_secret",
+            "requested_route_token",
+            "workspace_id",
+            "permission_grant",
+            "source_path",
+            "source_control_status",
+        }
+        leaked_keys = sorted(actual_keys & forbidden_keys)
+        if leaked_keys:
+            failures.append(
+                "$defs.chatSessionsListPayload request properties includes future backend/route/workspace/source metadata "
+                f"{leaked_keys}"
+            )
+    if request_option.get("additionalProperties") is not False:
+        failures.append("$defs.chatSessionsListPayload request additionalProperties must be false")
+    return failures
+
+
+def check_chat_messages_list_payload_schema_contract(schema: dict[str, object]) -> list[str]:
+    failures: list[str] = []
+    defs = schema.get("$defs", {})
+    if not isinstance(defs, dict):
+        return ["$defs must include chatMessagesListPayload schema"]
+    chat_messages_list_payload = defs.get("chatMessagesListPayload")
+    if not isinstance(chat_messages_list_payload, dict):
+        return ["$defs.chatMessagesListPayload schema is missing"]
+
+    options = chat_messages_list_payload.get("oneOf")
+    if not isinstance(options, list):
+        return ["$defs.chatMessagesListPayload.oneOf must describe request and response payloads"]
+
+    request_option = next(
+        (
+            option
+            for option in options
+            if isinstance(option, dict)
+            and option.get("required") == ["session_id"]
+        ),
+        None,
+    )
+    if not isinstance(request_option, dict):
+        return ["$defs.chatMessagesListPayload must include a session_id-only request payload option"]
+
+    properties = request_option.get("properties")
+    if not isinstance(properties, dict):
+        failures.append("$defs.chatMessagesListPayload request properties must be an object")
+    else:
+        allowed_keys = {"session_id", "limit"}
+        actual_keys = set(properties.keys())
+        if actual_keys != allowed_keys:
+            failures.append(
+                "$defs.chatMessagesListPayload request properties must stay limited to session_id and limit"
+            )
+        forbidden_keys = {
+            "backend_url",
+            "backend_credentials",
+            "provider_url",
+            "route_token",
+            "relay_secret",
+            "requested_route_token",
+            "workspace_id",
+            "permission_grant",
+            "source_path",
+            "source_control_status",
+        }
+        leaked_keys = sorted(actual_keys & forbidden_keys)
+        if leaked_keys:
+            failures.append(
+                "$defs.chatMessagesListPayload request properties includes future backend/route/workspace/source metadata "
+                f"{leaked_keys}"
+            )
+    if request_option.get("additionalProperties") is not False:
+        failures.append("$defs.chatMessagesListPayload request additionalProperties must be false")
+    return failures
+
+
+def check_chat_session_lifecycle_payload_schema_contract(schema: dict[str, object]) -> list[str]:
+    failures: list[str] = []
+    defs = schema.get("$defs", {})
+    if not isinstance(defs, dict):
+        return ["$defs must include chatSessionLifecycleRequestPayload schema"]
+    lifecycle_payload = defs.get("chatSessionLifecycleRequestPayload")
+    if not isinstance(lifecycle_payload, dict):
+        return ["$defs.chatSessionLifecycleRequestPayload schema is missing"]
+
+    if lifecycle_payload.get("required") != ["session_id"]:
+        failures.append("$defs.chatSessionLifecycleRequestPayload must require only session_id")
+
+    properties = lifecycle_payload.get("properties")
+    if not isinstance(properties, dict):
+        failures.append("$defs.chatSessionLifecycleRequestPayload properties must be an object")
+    else:
+        allowed_keys = {"session_id"}
+        actual_keys = set(properties.keys())
+        if actual_keys != allowed_keys:
+            failures.append(
+                "$defs.chatSessionLifecycleRequestPayload properties must stay limited to session_id"
+            )
+        forbidden_keys = {
+            "backend_url",
+            "backend_credentials",
+            "provider_url",
+            "route_token",
+            "relay_secret",
+            "requested_route_token",
+            "workspace_id",
+            "permission_grant",
+            "source_path",
+            "source_control_status",
+        }
+        leaked_keys = sorted(actual_keys & forbidden_keys)
+        if leaked_keys:
+            failures.append(
+                "$defs.chatSessionLifecycleRequestPayload properties includes future backend/route/workspace/source metadata "
+                f"{leaked_keys}"
+            )
+    if lifecycle_payload.get("additionalProperties") is not False:
+        failures.append("$defs.chatSessionLifecycleRequestPayload additionalProperties must be false")
+    return failures
+
+
+def check_chat_session_rename_payload_schema_contract(schema: dict[str, object]) -> list[str]:
+    failures: list[str] = []
+    defs = schema.get("$defs", {})
+    if not isinstance(defs, dict):
+        return ["$defs must include chatSessionRenamePayload schema"]
+    rename_payload = defs.get("chatSessionRenamePayload")
+    if not isinstance(rename_payload, dict):
+        return ["$defs.chatSessionRenamePayload schema is missing"]
+
+    options = rename_payload.get("oneOf")
+    if not isinstance(options, list):
+        return ["$defs.chatSessionRenamePayload.oneOf must describe request and acknowledgement payloads"]
+
+    request_option = next(
+        (
+            option
+            for option in options
+            if isinstance(option, dict)
+            and option.get("required") == ["session_id", "title"]
+        ),
+        None,
+    )
+    response_option = next(
+        (
+            option
+            for option in options
+            if isinstance(option, dict)
+            and option.get("required") == ["session_id", "title", "renamed_at"]
+        ),
+        None,
+    )
+    if not isinstance(request_option, dict):
+        return ["$defs.chatSessionRenamePayload must include a session_id/title request payload option"]
+    if not isinstance(response_option, dict):
+        failures.append("$defs.chatSessionRenamePayload must include a renamed_at acknowledgement payload option")
+
+    properties = request_option.get("properties")
+    if not isinstance(properties, dict):
+        failures.append("$defs.chatSessionRenamePayload request properties must be an object")
+    else:
+        allowed_keys = {"session_id", "title"}
+        actual_keys = set(properties.keys())
+        if actual_keys != allowed_keys:
+            failures.append(
+                "$defs.chatSessionRenamePayload request properties must stay limited to session_id and title"
+            )
+        forbidden_keys = {
+            "renamed_at",
+            "backend_url",
+            "backend_credentials",
+            "provider_url",
+            "route_token",
+            "relay_secret",
+            "requested_route_token",
+            "workspace_id",
+            "permission_grant",
+            "source_path",
+            "source_control_status",
+        }
+        leaked_keys = sorted(actual_keys & forbidden_keys)
+        if leaked_keys:
+            failures.append(
+                "$defs.chatSessionRenamePayload request properties includes runtime/backend/route/workspace/source metadata "
+                f"{leaked_keys}"
+            )
+    if request_option.get("additionalProperties") is not False:
+        failures.append("$defs.chatSessionRenamePayload request additionalProperties must be false")
+    return failures
+
+
+def check_memory_list_payload_schema_contract(schema: dict[str, object]) -> list[str]:
+    failures: list[str] = []
+    defs = schema.get("$defs", {})
+    if not isinstance(defs, dict):
+        return ["$defs must include memoryListPayload schema"]
+    memory_list_payload = defs.get("memoryListPayload")
+    if not isinstance(memory_list_payload, dict):
+        return ["$defs.memoryListPayload schema is missing"]
+
+    options = memory_list_payload.get("oneOf")
+    if not isinstance(options, list):
+        return ["$defs.memoryListPayload.oneOf must describe request and response payloads"]
+
+    request_option = next(
+        (
+            option
+            for option in options
+            if isinstance(option, dict)
+            and isinstance(option.get("properties"), dict)
+            and "entries" not in option.get("properties", {})
+        ),
+        None,
+    )
+    response_option = next(
+        (
+            option
+            for option in options
+            if isinstance(option, dict)
+            and option.get("required") == ["entries"]
+        ),
+        None,
+    )
+    if not isinstance(request_option, dict):
+        return ["$defs.memoryListPayload must include a query-only request payload option"]
+    if not isinstance(response_option, dict):
+        failures.append("$defs.memoryListPayload must include an entries response payload option")
+
+    properties = request_option.get("properties")
+    if not isinstance(properties, dict):
+        failures.append("$defs.memoryListPayload request properties must be an object")
+    else:
+        allowed_keys = {"query"}
+        actual_keys = set(properties.keys())
+        if actual_keys != allowed_keys:
+            failures.append("$defs.memoryListPayload request properties must stay limited to query")
+        forbidden_keys = {
+            "entries",
+            "backend_url",
+            "backend_credentials",
+            "provider_url",
+            "route_token",
+            "relay_secret",
+            "requested_route_token",
+            "workspace_id",
+            "permission_grant",
+            "source_path",
+            "source_control_status",
+        }
+        leaked_keys = sorted(actual_keys & forbidden_keys)
+        if leaked_keys:
+            failures.append(
+                "$defs.memoryListPayload request properties includes response/backend/route/workspace/source metadata "
+                f"{leaked_keys}"
+            )
+    if request_option.get("additionalProperties") is not False:
+        failures.append("$defs.memoryListPayload request additionalProperties must be false")
+    return failures
+
+
+def check_memory_upsert_payload_schema_contract(schema: dict[str, object]) -> list[str]:
+    failures: list[str] = []
+    defs = schema.get("$defs", {})
+    if not isinstance(defs, dict):
+        return ["$defs must include memoryUpsertPayload schema"]
+    memory_upsert_payload = defs.get("memoryUpsertPayload")
+    if not isinstance(memory_upsert_payload, dict):
+        return ["$defs.memoryUpsertPayload schema is missing"]
+
+    options = memory_upsert_payload.get("oneOf")
+    if not isinstance(options, list):
+        return ["$defs.memoryUpsertPayload.oneOf must describe request and response payloads"]
+
+    request_option = next(
+        (
+            option
+            for option in options
+            if isinstance(option, dict)
+            and option.get("required") == ["content"]
+        ),
+        None,
+    )
+    response_option = next(
+        (
+            option
+            for option in options
+            if isinstance(option, dict)
+            and option.get("required") == ["entry"]
+        ),
+        None,
+    )
+    if not isinstance(request_option, dict):
+        return ["$defs.memoryUpsertPayload must include a content request payload option"]
+    if not isinstance(response_option, dict):
+        failures.append("$defs.memoryUpsertPayload must include an entry response payload option")
+
+    properties = request_option.get("properties")
+    if not isinstance(properties, dict):
+        failures.append("$defs.memoryUpsertPayload request properties must be an object")
+    else:
+        allowed_keys = {"id", "content", "enabled"}
+        actual_keys = set(properties.keys())
+        if actual_keys != allowed_keys:
+            failures.append("$defs.memoryUpsertPayload request properties must stay limited to id, content, and enabled")
+        forbidden_keys = {
+            "entry",
+            "source",
+            "search",
+            "backend_url",
+            "backend_credentials",
+            "provider_url",
+            "route_token",
+            "relay_secret",
+            "requested_route_token",
+            "workspace_id",
+            "permission_grant",
+            "source_path",
+            "source_control_status",
+        }
+        leaked_keys = sorted(actual_keys & forbidden_keys)
+        if leaked_keys:
+            failures.append(
+                "$defs.memoryUpsertPayload request properties includes response/backend/route/workspace/source metadata "
+                f"{leaked_keys}"
+            )
+    if request_option.get("additionalProperties") is not False:
+        failures.append("$defs.memoryUpsertPayload request additionalProperties must be false")
+    return failures
+
+
+def check_memory_delete_payload_schema_contract(schema: dict[str, object]) -> list[str]:
+    failures: list[str] = []
+    defs = schema.get("$defs", {})
+    if not isinstance(defs, dict):
+        return ["$defs must include memoryDeletePayload schema"]
+    memory_delete_payload = defs.get("memoryDeletePayload")
+    if not isinstance(memory_delete_payload, dict):
+        return ["$defs.memoryDeletePayload schema is missing"]
+
+    options = memory_delete_payload.get("oneOf")
+    if not isinstance(options, list):
+        return ["$defs.memoryDeletePayload.oneOf must describe request and acknowledgement payloads"]
+
+    request_option = next(
+        (
+            option
+            for option in options
+            if isinstance(option, dict)
+            and option.get("required") == ["id"]
+        ),
+        None,
+    )
+    response_option = next(
+        (
+            option
+            for option in options
+            if isinstance(option, dict)
+            and option.get("required") == ["id", "deleted_at"]
+        ),
+        None,
+    )
+    if not isinstance(request_option, dict):
+        return ["$defs.memoryDeletePayload must include an id-only request payload option"]
+    if not isinstance(response_option, dict):
+        failures.append("$defs.memoryDeletePayload must include a deleted_at acknowledgement payload option")
+
+    properties = request_option.get("properties")
+    if not isinstance(properties, dict):
+        failures.append("$defs.memoryDeletePayload request properties must be an object")
+    else:
+        allowed_keys = {"id"}
+        actual_keys = set(properties.keys())
+        if actual_keys != allowed_keys:
+            failures.append("$defs.memoryDeletePayload request properties must stay limited to id")
+        forbidden_keys = {
+            "deleted_at",
+            "backend_url",
+            "backend_credentials",
+            "provider_url",
+            "route_token",
+            "relay_secret",
+            "requested_route_token",
+            "workspace_id",
+            "permission_grant",
+            "source_path",
+            "source_control_status",
+        }
+        leaked_keys = sorted(actual_keys & forbidden_keys)
+        if leaked_keys:
+            failures.append(
+                "$defs.memoryDeletePayload request properties includes runtime/backend/route/workspace/source metadata "
+                f"{leaked_keys}"
+            )
+    if request_option.get("additionalProperties") is not False:
+        failures.append("$defs.memoryDeletePayload request additionalProperties must be false")
+    return failures
 
 
 def main() -> int:
@@ -202,38 +1264,58 @@ def main() -> int:
         if duplicates:
             failures.append(f"properties.type.enum has duplicate entries {duplicates}")
 
-        reserved = [
-            message_type
-            for message_type in message_enum
-            if message_type.startswith(RESERVED_PREFIXES)
-        ]
+        failures.extend(check_protocol_schema_rejects_reserved_future_runtime_namespaces())
+
+        reserved = reserved_future_message_types(message_enum)
         if reserved:
             failures.append(
                 "properties.type.enum includes reserved future messages "
                 f"{reserved}"
             )
 
-        unsupported_memory_types = [
-            message_type
-            for message_type in message_enum
-            if message_type.startswith("memory.") and message_type not in ALLOWED_MEMORY_TYPES
-        ]
+        failures.extend(check_protocol_schema_rejects_future_memory_namespaces())
+        unsupported_memory_types = future_memory_message_types(message_enum)
         if unsupported_memory_types:
             failures.append(
                 "properties.type.enum includes future memory messages not documented "
                 f"as active {unsupported_memory_types}"
             )
 
-        unsupported_tool_types = [
-            message_type
-            for message_type in message_enum
-            if message_type.startswith("tool.") and message_type not in ALLOWED_TOOL_TYPES
-        ]
+        failures.extend(check_protocol_schema_rejects_future_tool_namespaces())
+        unsupported_tool_types = future_tool_message_types(message_enum)
         if unsupported_tool_types:
             failures.append(
                 "properties.type.enum includes future tool messages not documented "
                 f"as active v0.1 {unsupported_tool_types}"
             )
+
+        failures.extend(check_protocol_schema_rejects_future_route_namespaces())
+        unsupported_route_types = [
+            message_type
+            for message_type in message_enum
+            if message_type.startswith("route.") and message_type not in ALLOWED_ROUTE_TYPES
+        ]
+        if unsupported_route_types:
+            failures.append(
+                "properties.type.enum includes future route messages not documented "
+                f"as active {unsupported_route_types}"
+            )
+
+        failures.extend(check_pre_auth_payload_schema_contracts(schema))
+        failures.extend(check_empty_request_payload_schema_contracts(schema))
+        failures.extend(check_models_pull_payload_schema_contract(schema))
+        failures.extend(check_chat_cancel_payload_schema_contract(schema))
+        failures.extend(check_chat_sessions_list_payload_schema_contract(schema))
+        failures.extend(check_chat_messages_list_payload_schema_contract(schema))
+        failures.extend(check_chat_session_lifecycle_payload_schema_contract(schema))
+        failures.extend(check_chat_session_rename_payload_schema_contract(schema))
+        failures.extend(check_memory_list_payload_schema_contract(schema))
+        failures.extend(check_memory_upsert_payload_schema_contract(schema))
+        failures.extend(check_memory_delete_payload_schema_contract(schema))
+        failures.extend(check_chat_send_payload_schema_contract(schema))
+        failures.extend(check_chat_title_request_payload_schema_contract(schema))
+        failures.extend(check_chat_message_schema_contract(schema))
+        failures.extend(check_chat_attachment_schema_contract(schema))
 
         payload_contract_types = set()
         for rule in schema.get("allOf", []):
@@ -422,6 +1504,33 @@ def check_memory_summary_draft_schema(schema: dict) -> list[str]:
     if list_request is None:
         failures.append("memorySummaryDraftsListPayload missing limit request branch")
     else:
+        list_request_properties = list_request.get("properties", {})
+        if not isinstance(list_request_properties, dict):
+            failures.append("memorySummaryDraftsListPayload request properties must be an object")
+        else:
+            allowed_keys = {"limit"}
+            actual_keys = set(list_request_properties.keys())
+            if actual_keys != allowed_keys:
+                failures.append("memorySummaryDraftsListPayload request properties must stay limited to limit")
+            forbidden_keys = {
+                "drafts",
+                "backend_url",
+                "backend_credentials",
+                "provider_url",
+                "route_token",
+                "relay_secret",
+                "requested_route_token",
+                "workspace_id",
+                "permission_grant",
+                "source_path",
+                "source_control_status",
+            }
+            leaked_keys = sorted(actual_keys & forbidden_keys)
+            if leaked_keys:
+                failures.append(
+                    "memorySummaryDraftsListPayload request properties includes response/backend/route/workspace/source metadata "
+                    f"{leaked_keys}"
+                )
         require_additional_properties_false(
             failures,
             "memorySummaryDraftsListPayload request",
@@ -709,6 +1818,7 @@ def check_memory_summary_draft_schema(schema: dict) -> list[str]:
         .get("enum", [])
     )
     for error_code in [
+        "unexpected_message_direction",
         "memory_summary_draft_unavailable",
         "memory_summary_draft_stale",
     ]:
@@ -759,6 +1869,40 @@ def require_memory_summary_decision_request_fields(
     require_additional_properties_false(failures, label, schema)
     expect_required_fields(failures, label, schema, {"draft_id"})
     properties = schema.get("properties", {})
+    if not isinstance(properties, dict):
+        failures.append(f"{label} properties must be an object")
+        return
+    allowed_keys = {
+        "draft_id",
+        "expected_session_id",
+        "expected_source_message_count",
+    }
+    if allow_content:
+        allowed_keys.update({"content", "enabled"})
+    actual_keys = set(properties.keys())
+    if actual_keys != allowed_keys:
+        failures.append(f"{label} properties must stay limited to {', '.join(sorted(allowed_keys))}")
+    forbidden_keys = {
+        "status",
+        "entry",
+        "dismissed_at",
+        "source",
+        "backend_url",
+        "backend_credentials",
+        "provider_url",
+        "route_token",
+        "relay_secret",
+        "requested_route_token",
+        "workspace_id",
+        "permission_grant",
+        "source_path",
+        "source_control_status",
+    }
+    leaked_keys = sorted(actual_keys & forbidden_keys)
+    if leaked_keys:
+        failures.append(
+            f"{label} properties includes response/backend/route/workspace/source metadata {leaked_keys}"
+        )
     expect_schema_equal(
         failures,
         f"{label} draft_id",
@@ -939,7 +2083,7 @@ def check_pairing_qr_schema(schema: dict) -> list[str]:
         if properties.get(field, {}).get("$ref") != "#/$defs/p2pProtocolVersionValue":
             failures.append(f"pairing QR schema {field} must use p2pProtocolVersionValue")
 
-    for scope_field in ["relay_scope", "remote_scope", "rsc"]:
+    for scope_field in PAIRING_QR_REMOTE_RELAY_SCOPE_FIELDS:
         scope_enum = properties.get(scope_field, {}).get("enum", [])
         if "remote" not in scope_enum:
             failures.append(f"pairing QR schema {scope_field} must allow remote route scope")
@@ -1017,6 +2161,9 @@ def check_pairing_qr_schema(schema: dict) -> list[str]:
                     f"pairing QR schema must require {label} {missing} when {field} is present"
                 )
 
+    failures.extend(check_pairing_qr_relay_alias_family_isolation(schema))
+    failures.extend(check_pairing_qr_p2p_alias_family_isolation(schema))
+
     relay_host = properties.get("relay_host", {})
     relay_ref = relay_host.get("$ref")
     if relay_ref != "#/$defs/eligibleRelayHost":
@@ -1064,6 +2211,102 @@ def check_pairing_qr_schema(schema: dict) -> list[str]:
     return failures
 
 
+def check_pairing_qr_relay_alias_family_isolation(schema: dict) -> list[str]:
+    failures: list[str] = []
+    family_items = list(RELAY_QR_ALIAS_FAMILIES.items())
+
+    for family_label, payload_keys in family_items:
+        if pairing_qr_has_mixed_alias_family_rejection(schema, set(payload_keys)):
+            failures.append(
+                f"pairing QR schema must allow complete {family_label} relay alias family fields"
+            )
+
+    for index, (left_label, left_fields) in enumerate(family_items):
+        for right_label, right_fields in family_items[index + 1:]:
+            if not pairing_qr_has_mixed_alias_family_rejection(
+                schema,
+                set(left_fields) | set(right_fields),
+            ):
+                failures.append(
+                    "pairing QR schema must reject mixed relay alias families "
+                    f"between {left_label} and {right_label}"
+                )
+    return failures
+
+
+def check_pairing_qr_p2p_alias_family_isolation(schema: dict) -> list[str]:
+    failures: list[str] = []
+    canonical_payload = set(P2P_RENDEZVOUS_QR_FIELDS)
+    compact_payload = set(COMPACT_P2P_RENDEZVOUS_QR_FIELDS)
+    mixed_payloads = [
+        {"p2p_class", "prid", "peb", "px", "pn", "pv"},
+        {
+            "pc",
+            "p2p_record_id",
+            "p2p_encrypted_body",
+            "p2p_expires_at",
+            "p2p_anti_replay_nonce",
+            "p2p_protocol_version",
+        },
+        canonical_payload | compact_payload,
+    ]
+
+    if pairing_qr_has_mixed_alias_family_rejection(schema, canonical_payload):
+        failures.append("pairing QR schema must allow complete canonical P2P rendezvous fields")
+    if pairing_qr_has_mixed_alias_family_rejection(schema, compact_payload):
+        failures.append("pairing QR schema must allow complete compact P2P rendezvous fields")
+    for payload_keys in mixed_payloads:
+        if not pairing_qr_has_mixed_alias_family_rejection(schema, payload_keys):
+            failures.append(
+                "pairing QR schema must reject mixed canonical and compact P2P rendezvous aliases"
+            )
+            break
+    return failures
+
+
+def pairing_qr_has_mixed_alias_family_rejection(schema: dict, payload_keys: set[str]) -> bool:
+    for rule in schema.get("allOf", []):
+        if not isinstance(rule, dict):
+            continue
+        not_rule = rule.get("not", {})
+        if not isinstance(not_rule, dict):
+            continue
+        if alias_family_all_of_matches(not_rule.get("allOf", []), payload_keys):
+            return True
+        any_of = not_rule.get("anyOf", [])
+        if isinstance(any_of, list):
+            for option in any_of:
+                if not isinstance(option, dict):
+                    continue
+                if alias_family_all_of_matches(option.get("allOf", []), payload_keys):
+                    return True
+    return False
+
+
+def alias_family_all_of_matches(all_of: object, payload_keys: set[str]) -> bool:
+    return (
+        isinstance(all_of, list)
+        and len(all_of) == 2
+        and alias_family_condition_matches(all_of[0], payload_keys)
+        and alias_family_condition_matches(all_of[1], payload_keys)
+    )
+
+
+def alias_family_condition_matches(condition: object, payload_keys: set[str]) -> bool:
+    if not isinstance(condition, dict):
+        return False
+    any_of = condition.get("anyOf", [])
+    if not isinstance(any_of, list):
+        return False
+    for option in any_of:
+        if not isinstance(option, dict):
+            continue
+        required = option.get("required", [])
+        if isinstance(required, list) and set(required) <= payload_keys:
+            return True
+    return False
+
+
 def pairing_qr_schema_disallows_whitespace(field_schema: object) -> bool:
     if not isinstance(field_schema, dict):
         return False
@@ -1095,10 +2338,11 @@ def check_opaque_route_material_defs(defs: dict, *, label: str) -> list[str]:
         opaque_secret.get("type") != "string"
         or opaque_secret.get("minLength") != 1
         or opaque_secret.get("maxLength") != OPAQUE_ROUTE_VALUE_MAX_CHARS
+        or opaque_secret.get("pattern") != "^\\S+$"
     ):
         failures.append(
-            f"{label} opaqueRouteSecret must be a non-empty string capped at "
-            f"{OPAQUE_ROUTE_VALUE_MAX_CHARS} characters"
+            f"{label} opaqueRouteSecret must be a non-empty, whitespace-free string "
+            f"capped at {OPAQUE_ROUTE_VALUE_MAX_CHARS} characters"
         )
 
     opaque_body = defs.get("opaqueRouteBody", {})
@@ -1120,6 +2364,19 @@ def check_route_refresh_route_material_schema(schema: dict) -> list[str]:
     defs = schema.get("$defs", {})
     failures.extend(check_opaque_route_material_defs(defs, label="protocol route.refresh schema"))
 
+    private_host = defs.get("privateOverlayRelayHost", {})
+    host_patterns = "\n".join(
+        option.get("pattern", "")
+        for option in private_host.get("anyOf", [])
+        if isinstance(option, dict)
+    )
+    for expected_pattern in PRIVATE_OVERLAY_RELAY_HOST_PATTERNS:
+        if expected_pattern not in host_patterns:
+            failures.append(
+                "protocol route.refresh privateOverlayRelayHost must match private/CGNAT/ULA relay hosts; "
+                f"missing {expected_pattern}"
+            )
+
     route_refresh = defs.get("routeRefreshPayload", {})
     route_refresh_options = route_refresh.get("oneOf", [])
     material_schema = None
@@ -1129,6 +2386,13 @@ def check_route_refresh_route_material_schema(schema: dict) -> list[str]:
             break
     if material_schema is None:
         return ["route.refresh schema must include a route-material payload option"]
+
+    private_overlay_rules = material_schema.get("allOf", [])
+    if not any(is_route_refresh_private_overlay_scope_rule(rule) for rule in private_overlay_rules):
+        failures.append(
+            "route.refresh schema must require relay_scope=private_overlay when relay_host "
+            "uses a private, CGNAT, or ULA relay literal"
+        )
 
     properties = material_schema.get("properties", {})
     for field in ROUTE_REFRESH_OPAQUE_VALUE_FIELDS:
@@ -1150,6 +2414,28 @@ def check_route_refresh_route_material_schema(schema: dict) -> list[str]:
                 f"maxLength {OPAQUE_ROUTE_BODY_MAX_CHARS}"
             )
     return failures
+
+
+def is_route_refresh_private_overlay_scope_rule(rule: object) -> bool:
+    if not isinstance(rule, dict):
+        return False
+    condition = rule.get("if", {})
+    if not isinstance(condition, dict):
+        return False
+    if "relay_host" not in condition.get("required", []):
+        return False
+    field_schema = (
+        condition.get("properties", {})
+        .get("relay_host", {})
+    )
+    then = rule.get("then", {})
+    return (
+        isinstance(field_schema, dict)
+        and field_schema.get("$ref") == "#/$defs/privateOverlayRelayHost"
+        and isinstance(then, dict)
+        and then.get("required") == ["relay_scope"]
+        and then.get("properties", {}).get("relay_scope", {}).get("const") == "private_overlay"
+    )
 
 
 def check_private_overlay_qr_scope_contract(schema: dict) -> list[str]:
@@ -1176,7 +2462,7 @@ def check_private_overlay_qr_scope_contract(schema: dict) -> list[str]:
 
     private_scope = defs.get("privateOverlayScopeRequired", {})
     private_scope_json = json.dumps(private_scope, sort_keys=True)
-    for scope_field in ["relay_scope", "remote_scope", "rsc"]:
+    for scope_field in PAIRING_QR_REMOTE_RELAY_SCOPE_FIELDS:
         if scope_field not in private_scope_json:
             failures.append(
                 f"privateOverlayScopeRequired must allow {scope_field}=private_overlay"

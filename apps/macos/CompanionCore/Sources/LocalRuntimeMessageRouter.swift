@@ -133,6 +133,14 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         case MessageType.memorySummaryDraftDismiss:
             guard await allowRuntimeCommand(envelope, sink: sink) else { return }
             handleMemorySummaryDraftDismiss(envelope, sink: sink)
+        case MessageType.authChallenge,
+             MessageType.pairingResult,
+             MessageType.modelsResult,
+             MessageType.chatDelta,
+             MessageType.chatDone,
+             MessageType.chatTitleResult,
+             MessageType.error:
+            handleUnexpectedClientMessageDirection(envelope, sink: sink)
         default:
             sink.send(errorEnvelope(
                 requestID: envelope.requestID,
@@ -141,6 +149,15 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                 retryable: false
             ))
         }
+    }
+
+    private func handleUnexpectedClientMessageDirection(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) {
+        sink.send(errorEnvelope(
+            requestID: envelope.requestID,
+            code: "unexpected_message_direction",
+            message: "Runtime-to-client message type cannot be sent to AetherLink Runtime: \(envelope.type)",
+            retryable: false
+        ))
     }
 
     private func allowRuntimeCommand(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) async -> Bool {
@@ -175,6 +192,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
 
     private func handlePairingRequest(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) async {
         do {
+            try validateAllowedRequestPayload(envelope, allowedKeys: allowedPairingRequestPayloadKeys)
             let request = PairingRequest(
                 pairingNonce: try requiredString("pairing_nonce", in: envelope.payload),
                 pairingCode: try requiredString("pairing_code", in: envelope.payload),
@@ -272,6 +290,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
 
     private func handleHello(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) async {
         do {
+            try validateAllowedRequestPayload(envelope, allowedKeys: allowedHelloPayloadKeys)
             let deviceID = try requiredString("device_id", in: envelope.payload)
             guard try await trustedDevice(deviceID: deviceID) != nil else {
                 sink.send(errorEnvelope(
@@ -306,6 +325,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
 
     private func handleAuthResponse(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) async {
         do {
+            try validateAllowedRequestPayload(envelope, allowedKeys: allowedAuthResponsePayloadKeys)
             let deviceID = try requiredString("device_id", in: envelope.payload)
             let nonce = try requiredString("nonce", in: envelope.payload)
             let signature = try requiredString("signature", in: envelope.payload)
@@ -343,6 +363,13 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
     }
 
     private func handleRuntimeHealth(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) async {
+        do {
+            try validateEmptyRequestPayload(envelope)
+        } catch {
+            sink.send(errorEnvelope(requestID: envelope.requestID, error: error))
+            return
+        }
+
         if let aggregate = backend as? AggregatingLlmBackend {
             let statuses = await aggregate.providerHealth()
             let providerPayloads = statuses.mapValues { status in
@@ -400,6 +427,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
 
     private func handleModelsList(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) async {
         do {
+            try validateEmptyRequestPayload(envelope)
             let models = try await backend.listModels()
             sink.send(ProtocolEnvelope(
                 type: MessageType.modelsList,
@@ -442,6 +470,11 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
 
     private func handleModelsPull(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) async {
         do {
+            let unsupportedPayloadKeys = Set(envelope.payload.keys).subtracting(allowedModelsPullPayloadKeys)
+            guard unsupportedPayloadKeys.isEmpty else {
+                let fields = unsupportedPayloadKeys.sorted().joined(separator: ", ")
+                throw LocalRuntimeRouterError.invalidPayload("models.pull payload contains unsupported field(s): \(fields)")
+            }
             let model = try requiredString("model", in: envelope.payload)
             let result = try await backend.pullModel(name: model)
             let provider = ModelProvider.splitQualifiedModelID(model)?.provider ?? .ollama
@@ -462,6 +495,13 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
     }
 
     private func handleRouteRefresh(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) async {
+        do {
+            try validateEmptyRequestPayload(envelope)
+        } catch {
+            sink.send(errorEnvelope(requestID: envelope.requestID, error: error))
+            return
+        }
+
         do {
             guard let routeRefresher else {
                 sink.send(errorEnvelope(
@@ -559,6 +599,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
             try validateAttachments(in: backendRequest, for: model)
             var inlineReasoningSplitter = RuntimeInlineReasoningSplitter()
             for try await event in backend.chat(request: backendRequest) {
+                guard !isCancelledChatRequest(requestID: envelope.requestID) else { return }
                 switch event {
                 case .delta(let text):
                     try emitChatSegments(
@@ -622,26 +663,11 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                 }
             }
         } catch OllamaBackendError.generationCancelled {
-            recordCancelledChatEventIfPossible(context: storageContext)
-            sink.send(ProtocolEnvelope(
-                type: MessageType.chatDone,
-                requestID: envelope.requestID,
-                payload: ["finish_reason": .string("cancelled")]
-            ))
+            sendCancelledChatDoneIfNeeded(context: storageContext, sink: sink)
         } catch LMStudioBackendError.generationCancelled {
-            recordCancelledChatEventIfPossible(context: storageContext)
-            sink.send(ProtocolEnvelope(
-                type: MessageType.chatDone,
-                requestID: envelope.requestID,
-                payload: ["finish_reason": .string("cancelled")]
-            ))
+            sendCancelledChatDoneIfNeeded(context: storageContext, sink: sink)
         } catch let error as BackendError where error.code == "generation_cancelled" {
-            recordCancelledChatEventIfPossible(context: storageContext)
-            sink.send(ProtocolEnvelope(
-                type: MessageType.chatDone,
-                requestID: envelope.requestID,
-                payload: ["finish_reason": .string("cancelled")]
-            ))
+            sendCancelledChatDoneIfNeeded(context: storageContext, sink: sink)
         } catch {
             recordChatErrorIfPossible(context: storageContext, error: error)
             sink.send(errorEnvelope(requestID: envelope.requestID, error: error))
@@ -742,9 +768,10 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         }
     }
 
-    private func recordCancelledChatEventIfPossible(context: RuntimeChatStorageContext?) {
-        guard let context else { return }
-        guard markCancelledChatRequestIfNeeded(requestID: context.requestID) else { return }
+    @discardableResult
+    private func recordCancelledChatEventIfPossible(context: RuntimeChatStorageContext?) -> Bool {
+        guard let context else { return false }
+        guard markCancelledChatRequestIfNeeded(requestID: context.requestID) else { return false }
         try? recordChatEvent(.init(
             kind: .cancelled,
             requestID: context.requestID,
@@ -752,6 +779,19 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
             model: context.model,
             finishReason: "cancelled",
             ownerDeviceID: context.ownerDeviceID
+        ))
+        return true
+    }
+
+    private func sendCancelledChatDoneIfNeeded(
+        context: RuntimeChatStorageContext?,
+        sink: any RuntimeMessageSink
+    ) {
+        guard let context, recordCancelledChatEventIfPossible(context: context) else { return }
+        sink.send(ProtocolEnvelope(
+            type: MessageType.chatDone,
+            requestID: context.requestID,
+            payload: ["finish_reason": .string("cancelled")]
         ))
     }
 
@@ -797,6 +837,12 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
             }
             recordedCancelledChatRequestIDs.insert(requestID)
             return true
+        }
+    }
+
+    private func isCancelledChatRequest(requestID: String) -> Bool {
+        chatStorageLock.withLock {
+            recordedCancelledChatRequestIDs.contains(requestID)
         }
     }
 
@@ -916,10 +962,16 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
 
     private func handleChatCancel(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) {
         do {
+            let unsupportedPayloadKeys = Set(envelope.payload.keys).subtracting(allowedChatCancelPayloadKeys)
+            guard unsupportedPayloadKeys.isEmpty else {
+                let fields = unsupportedPayloadKeys.sorted().joined(separator: ", ")
+                throw LocalRuntimeRouterError.invalidPayload("chat.cancel payload contains unsupported field(s): \(fields)")
+            }
             let targetRequestID = try requiredString("target_request_id", in: envelope.payload)
             switch backend.cancel(generationID: targetRequestID) {
             case .cancelled:
-                recordCancelledChatEventIfPossible(context: activeChatStorageContext(for: targetRequestID))
+                let context = activeChatStorageContext(for: targetRequestID)
+                let shouldSendChatDone = recordCancelledChatEventIfPossible(context: context)
                 sink.send(ProtocolEnvelope(
                     type: MessageType.chatCancel,
                     requestID: envelope.requestID,
@@ -928,6 +980,13 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                         "cancelled": .bool(true)
                     ]
                 ))
+                if shouldSendChatDone, let context {
+                    sink.send(ProtocolEnvelope(
+                        type: MessageType.chatDone,
+                        requestID: context.requestID,
+                        payload: ["finish_reason": .string("cancelled")]
+                    ))
+                }
             case .notFound:
                 sink.send(errorEnvelope(
                     requestID: envelope.requestID,
@@ -942,20 +1001,36 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
     }
 
     private func handleChatSessionsList(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) {
+        let unsupportedPayloadKeys = Set(envelope.payload.keys).subtracting(allowedChatSessionsListPayloadKeys)
+        guard unsupportedPayloadKeys.isEmpty else {
+            let fields = unsupportedPayloadKeys.sorted().joined(separator: ", ")
+            sink.send(errorEnvelope(
+                requestID: envelope.requestID,
+                error: LocalRuntimeRouterError.invalidPayload(
+                    "chat.sessions.list payload contains unsupported field(s): \(fields)"
+                )
+            ))
+            return
+        }
         do {
             let limit = boundedWindowLimit(
-                optionalInt("limit", in: envelope.payload),
+                try optionalRequestInt("limit", in: envelope.payload),
                 defaultLimit: 100,
                 maxLimit: 200
             )
-            let includeArchived = optionalBool("include_archived", in: envelope.payload) ?? false
-            let query = optionalString("query", in: envelope.payload)
+            let includeArchived = try optionalRequestBool("include_archived", in: envelope.payload) ?? false
+            let query = try optionalRequestString("query", in: envelope.payload)
+            let embeddingModelID = try normalizedChatSessionSearchEmbeddingModelID(
+                query: query,
+                payload: envelope.payload
+            )
             let ownerDeviceID = commandOwnerDeviceID(connectionID: sink.connectionID)
             let sessions = try chatEventStore.listSessions(
                 ownerDeviceID: ownerDeviceID,
                 limit: limit,
                 includeArchived: includeArchived,
-                query: query
+                query: query,
+                embeddingModelID: embeddingModelID
             )
             sink.send(ProtocolEnvelope(
                 type: MessageType.chatSessionsList,
@@ -993,16 +1068,39 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                     })
                 ]
             ))
+        } catch let error as LocalRuntimeRouterError {
+            sink.send(errorEnvelope(requestID: envelope.requestID, error: error))
         } catch {
             sink.send(errorEnvelope(requestID: envelope.requestID, error: LocalRuntimeRouterError.chatStoreUnavailable(error.localizedDescription)))
         }
     }
 
+    private func normalizedChatSessionSearchEmbeddingModelID(
+        query: String?,
+        payload: [String: JSONValue]
+    ) throws -> String? {
+        let rawEmbeddingModelID = try optionalRequestString("embedding_model_id", in: payload)
+        guard RuntimeChatSessionSearchQuery(query) != nil else { return nil }
+        let normalized = rawEmbeddingModelID?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return normalized?.isEmpty == false ? normalized : nil
+    }
+
     private func handleChatMessagesList(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) {
+        let unsupportedPayloadKeys = Set(envelope.payload.keys).subtracting(allowedChatMessagesListPayloadKeys)
+        guard unsupportedPayloadKeys.isEmpty else {
+            let fields = unsupportedPayloadKeys.sorted().joined(separator: ", ")
+            sink.send(errorEnvelope(
+                requestID: envelope.requestID,
+                error: LocalRuntimeRouterError.invalidPayload(
+                    "chat.messages.list payload contains unsupported field(s): \(fields)"
+                )
+            ))
+            return
+        }
         do {
             let sessionID = try requiredString("session_id", in: envelope.payload)
             let limit = boundedWindowLimit(
-                optionalInt("limit", in: envelope.payload),
+                try optionalRequestInt("limit", in: envelope.payload),
                 defaultLimit: 200,
                 maxLimit: 500
             )
@@ -1058,6 +1156,13 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         mutation: RuntimeChatSessionMutation
     ) {
         do {
+            let unsupportedPayloadKeys = Set(envelope.payload.keys).subtracting(allowedChatSessionLifecyclePayloadKeys)
+            guard unsupportedPayloadKeys.isEmpty else {
+                let fields = unsupportedPayloadKeys.sorted().joined(separator: ", ")
+                throw LocalRuntimeRouterError.invalidPayload(
+                    "chat.session lifecycle payload contains unsupported field(s): \(fields)"
+                )
+            }
             let sessionID = try requiredString("session_id", in: envelope.payload)
             let ownerDeviceID = commandOwnerDeviceID(connectionID: sink.connectionID)
             let result = try mutateChatSession(
@@ -1082,6 +1187,13 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
 
     private func handleChatSessionRename(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) {
         do {
+            let unsupportedPayloadKeys = Set(envelope.payload.keys).subtracting(allowedChatSessionRenamePayloadKeys)
+            guard unsupportedPayloadKeys.isEmpty else {
+                let fields = unsupportedPayloadKeys.sorted().joined(separator: ", ")
+                throw LocalRuntimeRouterError.invalidPayload(
+                    "chat.session.rename payload contains unsupported field(s): \(fields)"
+                )
+            }
             let sessionID = try requiredString("session_id", in: envelope.payload)
             let title = try requiredString("title", in: envelope.payload)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1119,9 +1231,23 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
     }
 
     private func handleMemoryList(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) {
+        let unsupportedPayloadKeys = Set(envelope.payload.keys).subtracting(allowedMemoryListPayloadKeys)
+        guard unsupportedPayloadKeys.isEmpty else {
+            let fields = unsupportedPayloadKeys.sorted().joined(separator: ", ")
+            sink.send(errorEnvelope(
+                requestID: envelope.requestID,
+                error: LocalRuntimeRouterError.invalidPayload(
+                    "memory.list payload contains unsupported field(s): \(fields)"
+                )
+            ))
+            return
+        }
         do {
             let ownerDeviceID = commandOwnerDeviceID(connectionID: sink.connectionID)
-            let entries = try memoryStore.list(ownerDeviceID: ownerDeviceID)
+            let entries = try memoryStore.list(
+                ownerDeviceID: ownerDeviceID,
+                query: try optionalRequestString("query", in: envelope.payload)
+            )
             sink.send(ProtocolEnvelope(
                 type: MessageType.memoryList,
                 requestID: envelope.requestID,
@@ -1129,6 +1255,8 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
                     "entries": .array(entries.map { .object(memoryEntryPayload($0)) })
                 ]
             ))
+        } catch let error as LocalRuntimeRouterError {
+            sink.send(errorEnvelope(requestID: envelope.requestID, error: error))
         } catch {
             sink.send(errorEnvelope(requestID: envelope.requestID, error: LocalRuntimeRouterError.memoryStoreUnavailable(error.localizedDescription)))
         }
@@ -1136,11 +1264,18 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
 
     private func handleMemoryUpsert(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) {
         do {
+            let unsupportedPayloadKeys = Set(envelope.payload.keys).subtracting(allowedMemoryUpsertPayloadKeys)
+            guard unsupportedPayloadKeys.isEmpty else {
+                let fields = unsupportedPayloadKeys.sorted().joined(separator: ", ")
+                throw LocalRuntimeRouterError.invalidPayload(
+                    "memory.upsert payload contains unsupported field(s): \(fields)"
+                )
+            }
             let entry = try memoryStore.upsert(
                 ownerDeviceID: commandOwnerDeviceID(connectionID: sink.connectionID),
-                id: optionalString("id", in: envelope.payload),
+                id: try optionalRequestString("id", in: envelope.payload),
                 content: try requiredString("content", in: envelope.payload),
-                enabled: optionalBool("enabled", in: envelope.payload),
+                enabled: try optionalRequestBool("enabled", in: envelope.payload),
                 timestamp: Date()
             )
             sink.send(ProtocolEnvelope(
@@ -1157,6 +1292,13 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
 
     private func handleMemoryDelete(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) {
         do {
+            let unsupportedPayloadKeys = Set(envelope.payload.keys).subtracting(allowedMemoryDeletePayloadKeys)
+            guard unsupportedPayloadKeys.isEmpty else {
+                let fields = unsupportedPayloadKeys.sorted().joined(separator: ", ")
+                throw LocalRuntimeRouterError.invalidPayload(
+                    "memory.delete payload contains unsupported field(s): \(fields)"
+                )
+            }
             let result = try memoryStore.delete(
                 ownerDeviceID: commandOwnerDeviceID(connectionID: sink.connectionID),
                 id: try requiredString("id", in: envelope.payload),
@@ -1186,13 +1328,31 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         if let source = entry.source {
             payload["source"] = .object(memoryEntrySourcePayload(source))
         }
+        if let search = entry.search {
+            payload["search"] = .object([
+                "rank": .number(Double(search.rank)),
+                "snippet": .string(search.snippet),
+                "matched_fields": .array(search.matchedFields.map { .string($0) })
+            ])
+        }
         return payload
     }
 
     private func handleMemorySummaryDraftsList(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) {
+        let unsupportedPayloadKeys = Set(envelope.payload.keys).subtracting(allowedMemorySummaryDraftsListPayloadKeys)
+        guard unsupportedPayloadKeys.isEmpty else {
+            let fields = unsupportedPayloadKeys.sorted().joined(separator: ", ")
+            sink.send(errorEnvelope(
+                requestID: envelope.requestID,
+                error: LocalRuntimeRouterError.invalidPayload(
+                    "memory.summary.drafts.list payload contains unsupported field(s): \(fields)"
+                )
+            ))
+            return
+        }
         do {
             let limit = boundedWindowLimit(
-                optionalInt("limit", in: envelope.payload),
+                try optionalRequestInt("limit", in: envelope.payload),
                 defaultLimit: 25,
                 maxLimit: 50
             )
@@ -1240,6 +1400,13 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
 
     private func handleMemorySummaryDraftApprove(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) {
         do {
+            let unsupportedPayloadKeys = Set(envelope.payload.keys).subtracting(allowedMemorySummaryDraftApprovePayloadKeys)
+            guard unsupportedPayloadKeys.isEmpty else {
+                let fields = unsupportedPayloadKeys.sorted().joined(separator: ", ")
+                throw LocalRuntimeRouterError.invalidPayload(
+                    "memory.summary.draft.approve payload contains unsupported field(s): \(fields)"
+                )
+            }
             let ownerDeviceID = commandOwnerDeviceID(connectionID: sink.connectionID)
             let draftID = try requiredString("draft_id", in: envelope.payload)
             let rawExpectedSessionID = optionalString("expected_session_id", in: envelope.payload)?
@@ -1287,6 +1454,13 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
 
     private func handleMemorySummaryDraftDismiss(_ envelope: ProtocolEnvelope, sink: any RuntimeMessageSink) {
         do {
+            let unsupportedPayloadKeys = Set(envelope.payload.keys).subtracting(allowedMemorySummaryDraftDismissPayloadKeys)
+            guard unsupportedPayloadKeys.isEmpty else {
+                let fields = unsupportedPayloadKeys.sorted().joined(separator: ", ")
+                throw LocalRuntimeRouterError.invalidPayload(
+                    "memory.summary.draft.dismiss payload contains unsupported field(s): \(fields)"
+                )
+            }
             let ownerDeviceID = commandOwnerDeviceID(connectionID: sink.connectionID)
             let draftID = try requiredString("draft_id", in: envelope.payload)
             let rawExpectedSessionID = optionalString("expected_session_id", in: envelope.payload)?
@@ -1449,6 +1623,11 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
     }
 
     private func parsedChatRequest(from envelope: ProtocolEnvelope) throws -> RuntimeParsedChatRequest {
+        let unsupportedPayloadKeys = Set(envelope.payload.keys).subtracting(allowedChatRequestPayloadKeys)
+        guard unsupportedPayloadKeys.isEmpty else {
+            let fields = unsupportedPayloadKeys.sorted().joined(separator: ", ")
+            throw LocalRuntimeRouterError.invalidPayload("Chat request payload contains unsupported field(s): \(fields)")
+        }
         let sessionID = try requiredString("session_id", in: envelope.payload)
         let model = try requiredString("model", in: envelope.payload)
         let messagesValue = try requiredValue("messages", in: envelope.payload)
@@ -1459,6 +1638,11 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         let parsedMessages = try messageValues.map { value -> RuntimeParsedChatMessage in
             guard case .object(let object) = value else {
                 throw LocalRuntimeRouterError.invalidPayload("Each message must be an object")
+            }
+            let unsupportedKeys = Set(object.keys).subtracting(allowedChatMessageKeys)
+            guard unsupportedKeys.isEmpty else {
+                let fields = unsupportedKeys.sorted().joined(separator: ", ")
+                throw LocalRuntimeRouterError.invalidPayload("Message contains unsupported field(s): \(fields)")
             }
             let role = try requiredString("role", in: object)
             let baseContent = try requiredString("content", in: object)
@@ -2315,7 +2499,7 @@ private extension RuntimeRouteRefreshResult {
                   let p2pProtocolVersion,
                   p2pRouteClass == "p2p_rendezvous",
                   p2pRecordID.isCanonicalRouteRefreshValue,
-                  p2pEncryptedBody.isCanonicalRouteRefreshValue,
+                  p2pEncryptedBody.isCanonicalRouteRefreshP2PEncryptedBody,
                   p2pAntiReplayNonce.isCanonicalRouteRefreshValue,
                   p2pExpiresAtEpochMillis > nowEpochMillis,
                   p2pProtocolVersion == 1
@@ -2359,9 +2543,22 @@ private extension RuntimeRouteRefreshResult {
     }
 }
 
+private let routeRefreshOpaqueValueMaxCharacters = 512
+private let routeRefreshP2PEncryptedBodyMaxCharacters = 2_048
+
 private extension String {
     var isCanonicalRouteRefreshValue: Bool {
-        !isEmpty && rangeOfCharacter(from: .whitespacesAndNewlines) == nil
+        isCanonicalRouteRefreshValue(maxCharacters: routeRefreshOpaqueValueMaxCharacters)
+    }
+
+    var isCanonicalRouteRefreshP2PEncryptedBody: Bool {
+        isCanonicalRouteRefreshValue(maxCharacters: routeRefreshP2PEncryptedBodyMaxCharacters)
+    }
+
+    func isCanonicalRouteRefreshValue(maxCharacters: Int) -> Bool {
+        !isEmpty &&
+            count <= maxCharacters &&
+            rangeOfCharacter(from: .whitespacesAndNewlines) == nil
     }
 
     func isEligibleRouteRefreshRelayHost(relayScope: String?) -> Bool {
@@ -2458,6 +2655,121 @@ private struct ProcessedChatAttachments {
     var preservedAttachments: [ChatAttachment]
 }
 
+private func validateEmptyRequestPayload(_ envelope: ProtocolEnvelope) throws {
+    try validateAllowedRequestPayload(envelope, allowedKeys: [])
+}
+
+private func validateAllowedRequestPayload(_ envelope: ProtocolEnvelope, allowedKeys: Set<String>) throws {
+    let unsupportedPayloadKeys = Set(envelope.payload.keys).subtracting(allowedKeys)
+    guard unsupportedPayloadKeys.isEmpty else {
+        let fields = unsupportedPayloadKeys.sorted().joined(separator: ", ")
+        throw LocalRuntimeRouterError.invalidPayload("\(envelope.type) payload contains unsupported field(s): \(fields)")
+    }
+}
+
+private let allowedPairingRequestPayloadKeys: Set<String> = [
+    "pairing_nonce",
+    "pairing_code",
+    "device_id",
+    "device_name",
+    "public_key",
+]
+
+private let allowedHelloPayloadKeys: Set<String> = [
+    "device_id",
+    "device_name",
+    "client_capabilities",
+]
+
+private let allowedAuthResponsePayloadKeys: Set<String> = [
+    "device_id",
+    "nonce",
+    "signature",
+]
+
+private let allowedModelsPullPayloadKeys: Set<String> = [
+    "model",
+    "backend",
+]
+
+private let allowedChatCancelPayloadKeys: Set<String> = [
+    "target_request_id",
+]
+
+private let allowedChatSessionsListPayloadKeys: Set<String> = [
+    "limit",
+    "include_archived",
+    "query",
+    "embedding_model_id",
+]
+
+private let allowedChatMessagesListPayloadKeys: Set<String> = [
+    "session_id",
+    "limit",
+]
+
+private let allowedChatSessionLifecyclePayloadKeys: Set<String> = [
+    "session_id",
+]
+
+private let allowedChatSessionRenamePayloadKeys: Set<String> = [
+    "session_id",
+    "title",
+]
+
+private let allowedMemoryListPayloadKeys: Set<String> = [
+    "query",
+]
+
+private let allowedMemoryUpsertPayloadKeys: Set<String> = [
+    "id",
+    "content",
+    "enabled",
+]
+
+private let allowedMemoryDeletePayloadKeys: Set<String> = [
+    "id",
+]
+
+private let allowedMemorySummaryDraftsListPayloadKeys: Set<String> = [
+    "limit",
+]
+
+private let allowedMemorySummaryDraftApprovePayloadKeys: Set<String> = [
+    "draft_id",
+    "content",
+    "enabled",
+    "expected_session_id",
+    "expected_source_message_count",
+]
+
+private let allowedMemorySummaryDraftDismissPayloadKeys: Set<String> = [
+    "draft_id",
+    "expected_session_id",
+    "expected_source_message_count",
+]
+
+private let allowedChatRequestPayloadKeys: Set<String> = [
+    "session_id",
+    "model",
+    "locale",
+    "messages",
+]
+
+private let allowedChatMessageKeys: Set<String> = [
+    "role",
+    "content",
+    "attachments",
+]
+
+private let allowedChatAttachmentKeys: Set<String> = [
+    "type",
+    "mime_type",
+    "name",
+    "data_base64",
+    "text",
+]
+
 private func chatAttachments(from object: [String: JSONValue]) throws -> [ChatAttachment] {
     guard let attachmentsValue = object["attachments"] else { return [] }
     guard case .array(let attachmentValues) = attachmentsValue else {
@@ -2466,6 +2778,11 @@ private func chatAttachments(from object: [String: JSONValue]) throws -> [ChatAt
     return try attachmentValues.map { value in
         guard case .object(let attachmentObject) = value else {
             throw LocalRuntimeRouterError.invalidPayload("Each attachment must be an object")
+        }
+        let unsupportedKeys = Set(attachmentObject.keys).subtracting(allowedChatAttachmentKeys)
+        guard unsupportedKeys.isEmpty else {
+            let fields = unsupportedKeys.sorted().joined(separator: ", ")
+            throw LocalRuntimeRouterError.invalidPayload("Attachment contains unsupported field(s): \(fields)")
         }
         return ChatAttachment(
             type: try requiredString("type", in: attachmentObject),
@@ -2557,7 +2874,12 @@ private func extractDocumentAttachment(
             throw LocalRuntimeRouterError.unsupportedAttachment(
                 "Attachment '\(name)' has unsupported document type '\(mimeType)'."
             )
-        case .unreadablePDF, .archiveListingFailed, .archiveEntryReadFailed, .converterFailed, .noExtractableText:
+        case .unreadablePDF,
+             .archiveListingFailed,
+             .archiveEntryReadFailed,
+             .converterFailed,
+             .noExtractableText,
+             .resourceLimitExceeded:
             throw LocalRuntimeRouterError.unreadableAttachment(
                 "Attachment '\(name)' could not be read: \(error.localizedDescription)"
             )
@@ -2836,6 +3158,14 @@ private func optionalString(_ key: String, in payload: [String: JSONValue]) -> S
     return string
 }
 
+private func optionalRequestString(_ key: String, in payload: [String: JSONValue]) throws -> String? {
+    guard let value = payload[key] else { return nil }
+    guard case .string(let string) = value else {
+        throw LocalRuntimeRouterError.invalidPayload("Payload field \(key) must be a string")
+    }
+    return string.isEmpty ? nil : string
+}
+
 private func optionalInt(_ key: String, in payload: [String: JSONValue]) -> Int? {
     guard let value = payload[key] else { return nil }
     switch value {
@@ -2846,6 +3176,18 @@ private func optionalInt(_ key: String, in payload: [String: JSONValue]) -> Int?
     default:
         return nil
     }
+}
+
+private func optionalRequestInt(_ key: String, in payload: [String: JSONValue]) throws -> Int? {
+    guard let value = payload[key] else { return nil }
+    guard case .number(let number) = value,
+          number.isFinite,
+          number.rounded(.towardZero) == number,
+          number >= Double(Int.min),
+          number <= Double(Int.max) else {
+        throw LocalRuntimeRouterError.invalidPayload("Payload field \(key) must be an integer")
+    }
+    return Int(number)
 }
 
 private func boundedWindowLimit(_ value: Int?, defaultLimit: Int, maxLimit: Int) -> Int {
@@ -2863,6 +3205,14 @@ private func optionalBool(_ key: String, in payload: [String: JSONValue]) -> Boo
     default:
         return nil
     }
+}
+
+private func optionalRequestBool(_ key: String, in payload: [String: JSONValue]) throws -> Bool? {
+    guard let value = payload[key] else { return nil }
+    guard case .bool(let bool) = value else {
+        throw LocalRuntimeRouterError.invalidPayload("Payload field \(key) must be a boolean")
+    }
+    return bool
 }
 
 private extension String {

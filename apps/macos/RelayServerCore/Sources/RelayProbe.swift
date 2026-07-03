@@ -6,9 +6,7 @@ public struct RelayProbeRequest: Equatable, Sendable {
     public let relayID: String
 
     public init(relayID: String) throws {
-        guard !relayID.isEmpty,
-              relayID.rangeOfCharacter(from: .whitespacesAndNewlines) == nil
-        else {
+        guard isCanonicalRelayControlLineID(relayID) else {
             throw RelayProbeError.invalidRelayID
         }
         self.relayID = relayID

@@ -19,6 +19,7 @@ REQUIRE_MANUAL_NETWORK_CONFIRMATION=0
 WORK_DIR=""
 QR_PNG_PATH=""
 PORT="${LOCAL_AGENT_BRIDGE_PORT:-}"
+SELF_TEST_UNVERIFIED_QR_SUMMARY=0
 
 usage() {
   cat <<'USAGE'
@@ -248,6 +249,10 @@ while [[ $# -gt 0 ]]; do
       REQUIRE_MANUAL_NETWORK_CONFIRMATION=1
       shift
       ;;
+    --self-test-unverified-qr-summary)
+      SELF_TEST_UNVERIFIED_QR_SUMMARY=1
+      shift
+      ;;
     -h|--help)
       usage
       exit 0
@@ -259,6 +264,10 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+if [[ "$SELF_TEST_UNVERIFIED_QR_SUMMARY" == "1" && -z "$RELAY_HOST" ]]; then
+  RELAY_HOST="127.0.0.1"
+fi
 
 if [[ -z "$RELAY_HOST" ]]; then
   echo "Missing --relay-host. The relay host must be reachable from both devices." >&2
@@ -272,7 +281,7 @@ if [[ "$RELAY_HOST" == *"://"* || "$RELAY_HOST" == *"/"* || "$RELAY_HOST" == *"@
 fi
 
 NORMALIZED_RELAY_HOST="$(printf '%s' "$RELAY_HOST" | tr '[:upper:]' '[:lower:]')"
-if [[ "$START_LOCAL_RELAY" != "1" ]]; then
+if [[ "$START_LOCAL_RELAY" != "1" && "$SELF_TEST_UNVERIFIED_QR_SUMMARY" != "1" ]]; then
   validate_remote_relay_host_for_qr "$NORMALIZED_RELAY_HOST" "$ALLOW_PRIVATE_RELAY"
 fi
 
@@ -347,9 +356,12 @@ check_relay_allocation() {
     --quiet
   )
   if [[ -n "$token" ]]; then
-    args+=(--allocation-token "$token")
+    AETHERLINK_BOOTSTRAP_RELAY_ALLOCATION_TOKEN="$token" \
+      AETHERLINK_RELAY_ALLOCATION_TOKEN="$token" \
+      "${args[@]}"
+  else
+    "${args[@]}"
   fi
-  "${args[@]}"
 }
 
 wait_for_log() {
@@ -517,6 +529,7 @@ PAIRING_TTL_SECONDS="${PAIRING_TTL_SECONDS:-$(( TIMEOUT_SECONDS + 180 ))}"
 RUNTIME_PID=""
 RELAY_PID=""
 QR_ROUND_TRIP_VERIFIED=0
+NETWORK_CONFIRMED=0
 
 write_summary() {
   local exit_status="${1:-0}"
@@ -534,13 +547,19 @@ write_summary() {
     "$RUNTIME_LOG" \
     "$RELAY_LOG" \
     "$PAIRING_URI_FILE" \
-    "$PAIRING_QR_FILE" \
-    "$QR_ROUND_TRIP_VERIFIED" \
-    "$ALLOW_DIRECT_FALLBACK" <<'PY'
+	    "$PAIRING_QR_FILE" \
+	    "$QR_ROUND_TRIP_VERIFIED" \
+	    "$ALLOW_DIRECT_FALLBACK" \
+	    "$PRINT_URI" \
+	    "$REQUIRE_MANUAL_NETWORK_CONFIRMATION" \
+	    "$NETWORK_CONFIRMED" \
+	    "$SELF_TEST_UNVERIFIED_QR_SUMMARY" <<'PY'
 import datetime as dt
 import json
 import os
+import re
 import sys
+import urllib.parse
 
 (
     summary_path,
@@ -558,6 +577,10 @@ import sys
     pairing_qr_file,
     qr_round_trip_verified,
     allow_direct_fallback,
+    print_uri,
+    require_manual_network_confirmation,
+    network_confirmed,
+    self_test_unverified_qr_summary,
 ) = sys.argv[1:]
 
 def read(path):
@@ -569,7 +592,70 @@ def read(path):
 
 runtime_text = read(runtime_log)
 relay_text = read(relay_log)
+pairing_uri_text = read(pairing_uri_file).strip()
 health_count = runtime_text.count("runtime.health")
+runtime_log_artifact_present = os.path.exists(runtime_log)
+relay_log_artifact_present = os.path.exists(relay_log)
+pairing_uri_artifact_present = os.path.exists(pairing_uri_file)
+pairing_qr_artifact_present = os.path.exists(pairing_qr_file)
+qr_route_artifact_verified = qr_round_trip_verified == "1"
+
+def pairing_uri_queries(text):
+    marker = "AETHERLINK_DEV_PAIRING_URI "
+    for line in text.splitlines():
+        if marker not in line:
+            continue
+        query = pairing_uri_query(line.split(marker, 1)[1].strip())
+        if query:
+            yield query
+
+def pairing_uri_query(uri):
+    parsed = urllib.parse.urlparse(uri.strip())
+    if parsed.scheme == "aetherlink" and parsed.netloc == "pair":
+        return dict(urllib.parse.parse_qsl(parsed.query, keep_blank_values=True))
+    return {}
+
+def has_any(query, *names):
+    return any(query.get(name) for name in names)
+
+def has_temporary_pairing_material(query):
+    return (
+        has_any(query, "pairing_nonce", "nonce", "n")
+        and has_any(query, "pairing_code", "code", "c")
+    )
+
+def has_complete_relay_route_material(query):
+    return (
+        has_any(query, "relay_host", "remote_host", "route_host", "rendezvous_host", "rh")
+        and has_any(query, "relay_port", "remote_port", "route_port", "rendezvous_port", "rp")
+        and has_any(query, "relay_id", "remote_id", "route_id", "network_id", "ri")
+        and has_any(query, "relay_secret", "remote_secret", "route_secret", "rs")
+        and has_any(query, "relay_expires_at", "remote_expires_at", "route_expires_at", "rendezvous_expires_at", "rx")
+        and has_any(query, "relay_nonce", "remote_nonce", "route_nonce", "rendezvous_nonce", "rrn")
+    )
+
+def relay_log_contains_temporary_secret_material(text):
+    patterns = (
+        r"AETHERLINK_DEV_PAIRING_URI",
+        r"aetherlink://pair",
+        r"\b(?:pairing_nonce|pairing_code|relay_secret|remote_secret|route_secret|relay_nonce|remote_nonce|route_nonce|rendezvous_nonce|route_token|discovery_token|allocation_token|requested_route_token)\b",
+        r"(?:^|[?&\s])(?:n|c|rs|rrn|rt)=",
+    )
+    return any(re.search(pattern, text) for pattern in patterns)
+
+runtime_pairing_queries = list(pairing_uri_queries(runtime_text))
+pairing_uri_query_from_file = pairing_uri_query(pairing_uri_text)
+relay_log_relay_ids = re.findall(r"\brelay_id=([^\s]+)", relay_text)
+relay_log_relay_ids_shortened = bool(relay_log_relay_ids) and all("..." in relay_id for relay_id in relay_log_relay_ids)
+relay_log_contains_secret_material = relay_log_contains_temporary_secret_material(relay_text)
+relay_log_contains_unshortened_long_relay_id = any(len(relay_id) > 12 and "..." not in relay_id for relay_id in relay_log_relay_ids)
+relay_log_contains_unredacted_route_material = relay_log_contains_secret_material or relay_log_contains_unshortened_long_relay_id
+runtime_log_contains_temporary_pairing_material = any(has_temporary_pairing_material(query) for query in runtime_pairing_queries)
+runtime_log_contains_temporary_route_material = any(has_complete_relay_route_material(query) for query in runtime_pairing_queries)
+pairing_uri_contains_temporary_pairing_material = pairing_uri_artifact_present and qr_route_artifact_verified
+pairing_qr_contains_temporary_pairing_material = pairing_qr_artifact_present and qr_route_artifact_verified
+terminal_output_contains_temporary_pairing_material = print_uri == "1" and has_temporary_pairing_material(pairing_uri_query_from_file)
+terminal_output_contains_temporary_route_material = print_uri == "1" and has_complete_relay_route_material(pairing_uri_query_from_file)
 summary = {
     "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(),
     "exit_status": int(exit_status),
@@ -583,17 +669,60 @@ summary = {
     "mode": {
         "emit_only": emit_only == "1",
         "expect_reconnect": expect_reconnect == "1",
+        "print_uri": print_uri == "1",
+        "require_manual_network_confirmation": require_manual_network_confirmation == "1",
     },
     "artifacts": {
-        "runtime_log": runtime_log if os.path.exists(runtime_log) else None,
-        "relay_log": relay_log if os.path.exists(relay_log) else None,
-        "pairing_uri": pairing_uri_file if os.path.exists(pairing_uri_file) else None,
-        "pairing_qr": pairing_qr_file if os.path.exists(pairing_qr_file) else None,
+        "runtime_log": runtime_log if runtime_log_artifact_present else None,
+        "relay_log": relay_log if relay_log_artifact_present else None,
+        "pairing_uri": pairing_uri_file if pairing_uri_artifact_present else None,
+        "pairing_qr": pairing_qr_file if pairing_qr_artifact_present else None,
     },
     "coverage": {
-        "pairing_uri_artifact_present": os.path.exists(pairing_uri_file),
-        "pairing_qr_artifact_present": os.path.exists(pairing_qr_file),
-        "pairing_qr_round_trip_verified": qr_round_trip_verified == "1",
+        "runtime_host_relay_registration": "accepted role=runtime" in relay_text,
+        "runtime_host_waiting_for_peer": "relay status=waiting_for_peer" in runtime_text,
+        "trusted_device_relay_reachability": "relay status=ready" in runtime_text or "accepted role=client" in relay_text,
+        "trusted_device_pairing": "Development pairing accepted" in runtime_text,
+        "trusted_device_runtime_health": health_count > 0,
+        "trusted_device_reconnect": expect_reconnect == "1" and health_count > 1,
+        "optical_qr_scan": False,
+        "external_network_operator_confirmed": network_confirmed == "1",
+        "full_run_trusted_device_proof": (
+            emit_only != "1"
+            and "relay status=ready" in runtime_text
+            and "Development pairing accepted" in runtime_text
+            and health_count > 0
+        ),
+        "external_network_relay_verified": (
+            start_local_relay != "1"
+            and emit_only != "1"
+            and network_confirmed == "1"
+            and "relay status=ready" in runtime_text
+            and "Development pairing accepted" in runtime_text
+            and health_count > 0
+        ),
+        "production_relay": False,
+        "production_session_key_exchange": False,
+        "production_end_to_end_transport_encryption": False,
+        "runtime_log_artifact_present": runtime_log_artifact_present,
+        "runtime_log_contains_temporary_pairing_material": runtime_log_contains_temporary_pairing_material,
+        "runtime_log_contains_temporary_route_material": runtime_log_contains_temporary_route_material,
+        "relay_log_artifact_present": relay_log_artifact_present,
+        "relay_log_relay_ids_shortened": relay_log_relay_ids_shortened,
+        "relay_log_omits_temporary_secret_material": relay_log_artifact_present and not relay_log_contains_secret_material,
+        "relay_log_contains_temporary_secret_material": relay_log_contains_secret_material,
+        "relay_log_contains_unredacted_route_material": relay_log_contains_unredacted_route_material,
+        "pairing_uri_artifact_present": pairing_uri_artifact_present,
+        "pairing_qr_artifact_present": pairing_qr_artifact_present,
+        "pairing_uri_contains_temporary_pairing_material": pairing_uri_contains_temporary_pairing_material,
+        "pairing_qr_contains_temporary_pairing_material": pairing_qr_contains_temporary_pairing_material,
+        "pairing_uri_contains_temporary_route_material": pairing_uri_artifact_present and qr_route_artifact_verified,
+        "pairing_qr_contains_temporary_route_material": pairing_qr_artifact_present and qr_route_artifact_verified,
+        "terminal_output_contains_temporary_pairing_material": terminal_output_contains_temporary_pairing_material,
+        "terminal_output_contains_temporary_route_material": terminal_output_contains_temporary_route_material,
+        "pairing_qr_round_trip_verified": qr_route_artifact_verified,
+        "emit_only_qr_artifact_summary_verified": emit_only == "1" and pairing_uri_artifact_present and pairing_qr_artifact_present and qr_route_artifact_verified,
+        "unverified_qr_artifact_self_test": self_test_unverified_qr_summary == "1",
         "relay_route_required": True,
         "direct_endpoint_forbidden": allow_direct_fallback != "1",
         "artifact_only_emit_mode": emit_only == "1",
@@ -609,8 +738,26 @@ summary = {
 }
 
 caveats = []
+if runtime_log_contains_temporary_pairing_material or runtime_log_contains_temporary_route_material:
+    caveats.append("runtime_log_contains_temporary_pairing_or_route_material")
+if relay_log_contains_secret_material:
+    caveats.append("relay_log_contains_temporary_secret_material")
+if relay_log_artifact_present and (not relay_log_relay_ids_shortened or relay_log_contains_unredacted_route_material):
+    caveats.append("relay_log_redaction_not_verified")
+if pairing_uri_contains_temporary_pairing_material or pairing_qr_contains_temporary_pairing_material:
+    caveats.append("manual_scan_qr_artifacts_contain_temporary_pairing_material")
+if terminal_output_contains_temporary_pairing_material or terminal_output_contains_temporary_route_material:
+    caveats.append("terminal_output_contains_temporary_pairing_or_route_material")
+if qr_route_artifact_verified and (pairing_uri_artifact_present or pairing_qr_artifact_present):
+    caveats.append("manual_scan_qr_artifacts_contain_temporary_route_material")
+elif pairing_uri_artifact_present or pairing_qr_artifact_present:
+    caveats.append("manual_scan_qr_artifacts_not_verified_as_route_material")
 if emit_only == "1":
     caveats.append("artifact_only_emit_mode")
+caveats.append("not_production_session_key_exchange_proof")
+caveats.append("not_production_end_to_end_transport_encryption_proof")
+if emit_only != "1" and network_confirmed != "1":
+    caveats.append("external_network_operator_confirmation_missing")
 if start_local_relay == "1":
     caveats.append("local_relay_only_unless_advertised_host_is_public_vpn_tunnel_or_overlay")
 if "relay status=waiting_for_peer" in runtime_text and "relay status=ready" not in runtime_text:
@@ -624,6 +771,18 @@ with open(summary_path, "w", encoding="utf-8") as handle:
     handle.write("\n")
 PY
 }
+
+if [[ "$SELF_TEST_UNVERIFIED_QR_SUMMARY" == "1" ]]; then
+  EMIT_ONLY=1
+  printf '%s\n' "aetherlink://pair?self_test=unverified_qr_summary&relay_host=$RELAY_HOST&relay_port=$RELAY_PORT" >"$PAIRING_URI_FILE"
+  printf '%s\n' "self-test unverified QR artifact placeholder" >"$PAIRING_QR_FILE"
+  : >"$RUNTIME_LOG"
+  : >"$RELAY_LOG"
+  QR_ROUND_TRIP_VERIFIED=0
+  write_summary 0
+  echo "Summary: $SUMMARY_FILE"
+  exit 0
+fi
 
 cleanup() {
   local exit_status=$?
@@ -652,7 +811,7 @@ if [[ "$START_LOCAL_RELAY" == "1" ]]; then
   RELAY_BIN="$(swift build --show-bin-path)/AetherLinkRelay"
   RELAY_ARGS=("$RELAY_BIN" --host "$LOCAL_RELAY_BIND_HOST" --port "$RELAY_PORT" --require-allocation)
   if [[ -n "$ALLOCATION_TOKEN" ]]; then
-    RELAY_ARGS+=(--allocation-token "$ALLOCATION_TOKEN")
+    export AETHERLINK_RELAY_ALLOCATION_TOKEN="$ALLOCATION_TOKEN"
   fi
   "${RELAY_ARGS[@]}" >"$RELAY_LOG" 2>&1 &
   RELAY_PID="$!"
@@ -744,11 +903,12 @@ if [[ "$REQUIRE_MANUAL_NETWORK_CONFIRMATION" == "1" ]]; then
   echo "Manual network confirmation is required before waiting for the trusted device."
   echo "Confirm that the Android device is not using the same local network path as the runtime host, and that no adb reverse/tether tunnel is being used for the relay route."
   read -r -p "Type DIFFERENT_NETWORK or CELLULAR to continue: " NETWORK_CONFIRMATION
-  if [[ "$NETWORK_CONFIRMATION" != "DIFFERENT_NETWORK" && "$NETWORK_CONFIRMATION" != "CELLULAR" ]]; then
-    echo "Network confirmation failed; refusing to wait for a result that could be mistaken for cross-network evidence." >&2
-    exit 2
-  fi
-fi
+	  if [[ "$NETWORK_CONFIRMATION" != "DIFFERENT_NETWORK" && "$NETWORK_CONFIRMATION" != "CELLULAR" ]]; then
+	    echo "Network confirmation failed; refusing to wait for a result that could be mistaken for cross-network evidence." >&2
+	    exit 2
+	  fi
+	  NETWORK_CONFIRMED=1
+	fi
 
 echo "Waiting up to ${TIMEOUT_SECONDS}s for relay match, pairing acceptance, and runtime.health..."
 wait_for_log "$RUNTIME_LOG" "relay status=ready" "$TIMEOUT_SECONDS"

@@ -5,6 +5,16 @@ import XCTest
 @testable import Transport
 
 final class RelayPeerClientTests: XCTestCase {
+    func testRelayPeerConfigurationDefaultControlLineTimeoutAllowsPhysicalQrStartup() {
+        let configuration = RelayPeerConfiguration(
+            host: "127.0.0.1",
+            port: 43171,
+            relayID: "relay-default-timeout"
+        )
+
+        XCTAssertEqual(configuration.controlLineTimeout, 45)
+    }
+
     func testRelayPeerClientWaitsForAcceptedRuntimeRegistrationBeforeWaitingForPeer() throws {
         let server = try ControlledRelayServer()
         defer { server.stop() }
@@ -45,6 +55,75 @@ final class RelayPeerClientTests: XCTestCase {
         server.write("AETHERLINK_RELAY ready\n")
         XCTAssertEqual(readyStatus.wait(timeout: .now() + 2), .success)
         XCTAssertTrue(statusRecorder.contains(.ready))
+    }
+
+    func testRelayPeerClientTimesOutWhenRegistrationLineNeverArrives() throws {
+        let server = try ControlledRelayServer()
+        defer { server.stop() }
+
+        let statusRecorder = RelayStatusRecorder()
+        let failedStatus = DispatchSemaphore(value: 0)
+        let client = RelayPeerClient()
+        defer { client.stop() }
+
+        client.start(
+            configuration: RelayPeerConfiguration(
+                host: "127.0.0.1",
+                port: server.port,
+                relayID: "relay-registration-timeout",
+                reconnectDelay: 60,
+                controlLineTimeout: 0.1
+            ),
+            onStatusChange: { status in
+                statusRecorder.append(status)
+                if status == .failed("Relay registration timed out before ready.") {
+                    failedStatus.signal()
+                }
+            },
+            onMessage: { _, _ in }
+        )
+
+        XCTAssertEqual(server.waitForHandshake(), "AETHERLINK_RELAY runtime relay-registration-timeout\n")
+        XCTAssertEqual(failedStatus.wait(timeout: .now() + 2), .success)
+        XCTAssertFalse(statusRecorder.contains(.waitingForPeer))
+        XCTAssertFalse(statusRecorder.contains(.ready))
+    }
+
+    func testRelayPeerClientTimesOutWhenReadyLineNeverArrivesAfterRegistration() throws {
+        let server = try ControlledRelayServer()
+        defer { server.stop() }
+
+        let statusRecorder = RelayStatusRecorder()
+        let registeredStatus = DispatchSemaphore(value: 0)
+        let failedStatus = DispatchSemaphore(value: 0)
+        let client = RelayPeerClient()
+        defer { client.stop() }
+
+        client.start(
+            configuration: RelayPeerConfiguration(
+                host: "127.0.0.1",
+                port: server.port,
+                relayID: "relay-ready-timeout",
+                reconnectDelay: 60,
+                controlLineTimeout: 0.1
+            ),
+            onStatusChange: { status in
+                statusRecorder.append(status)
+                if status == .waitingForPeer {
+                    registeredStatus.signal()
+                }
+                if status == .failed("Relay ready line timed out after registration.") {
+                    failedStatus.signal()
+                }
+            },
+            onMessage: { _, _ in }
+        )
+
+        XCTAssertEqual(server.waitForHandshake(), "AETHERLINK_RELAY runtime relay-ready-timeout\n")
+        server.write("AETHERLINK_RELAY registered\n")
+        XCTAssertEqual(registeredStatus.wait(timeout: .now() + 2), .success)
+        XCTAssertEqual(failedStatus.wait(timeout: .now() + 2), .success)
+        XCTAssertFalse(statusRecorder.contains(.ready))
     }
 
     func testRelayPeerClientReportsDisconnectOnceWhenStoppedConnectionCancels() throws {

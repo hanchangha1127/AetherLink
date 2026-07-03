@@ -33,6 +33,7 @@ import com.localagentbridge.android.core.protocol.ErrorPayload
 import com.localagentbridge.android.core.protocol.HelloPayload
 import com.localagentbridge.android.core.protocol.MemoryDeletePayload
 import com.localagentbridge.android.core.protocol.MemoryDeleteResultPayload
+import com.localagentbridge.android.core.protocol.MemoryListRequestPayload
 import com.localagentbridge.android.core.protocol.MemoryListResultPayload
 import com.localagentbridge.android.core.protocol.MemorySummaryDraftApprovePayload
 import com.localagentbridge.android.core.protocol.MemorySummaryDraftApproveResultPayload
@@ -220,7 +221,7 @@ private class AndroidRuntimeRelayReachabilityChecker : RuntimeRelayReachabilityC
                 val request = "AETHERLINK_RELAY probe ${route.relayId.sanitizeRelayProbeToken()}\n"
                 socket.outputStream.write(request.toByteArray(Charsets.UTF_8))
                 socket.outputStream.flush()
-                socket.inputStream.readAsciiLine(maxBytes = 256).isRelayProbeReady()
+                socket.inputStream.readAsciiLine(maxBytes = 256).isRelayProbeKnown()
             }
         }.getOrDefault(false)
     }
@@ -233,9 +234,23 @@ private fun String.sanitizeRelayProbeToken(): String {
 }
 
 internal fun String.isRelayProbeReady(): Boolean {
+    val response = relayProbeResponseOrNull() ?: return false
+    return response.known && response.runtimeWaiting
+}
+
+internal fun String.isRelayProbeKnown(): Boolean {
+    return relayProbeResponseOrNull()?.known == true
+}
+
+private data class RelayProbeResponseFlags(
+    val known: Boolean,
+    val runtimeWaiting: Boolean,
+)
+
+private fun String.relayProbeResponseOrNull(): RelayProbeResponseFlags? {
     val tokens = trim().split(Regex("\\s+")).filter { it.isNotBlank() }
     if (tokens.size < 3 || tokens[0] != "AETHERLINK_RELAY" || tokens[1] != "probe") {
-        return false
+        return null
     }
     val values = tokens.drop(2).associate { token ->
         val separator = token.indexOf('=')
@@ -246,8 +261,10 @@ internal fun String.isRelayProbeReady(): Boolean {
         }
     }
     val known = values["known"].isRelayProbeTruthy() || values["allocated"].isRelayProbeTruthy()
-    return known &&
-        values["runtime_waiting"].isRelayProbeTruthy()
+    return RelayProbeResponseFlags(
+        known = known,
+        runtimeWaiting = values["runtime_waiting"].isRelayProbeTruthy(),
+    )
 }
 
 private fun String?.isRelayProbeTruthy(): Boolean {
@@ -1018,6 +1035,10 @@ class RuntimeClientViewModel internal constructor(
     }
 
     fun refreshRuntimeMemory() {
+        refreshRuntimeMemory(query = null)
+    }
+
+    fun refreshRuntimeMemory(query: String?) {
         if (state.value.isStreaming) {
             showError("generation_in_progress")
             return
@@ -1026,8 +1047,11 @@ class RuntimeClientViewModel internal constructor(
             showError("memory_runtime_required")
             return
         }
-        requestRuntimeMemory()
-        requestRuntimeMemorySummaryDrafts()
+        val normalizedQuery = query?.trim()?.ifBlank { null }
+        requestRuntimeMemory(query = normalizedQuery)
+        if (normalizedQuery == null) {
+            requestRuntimeMemorySummaryDrafts()
+        }
     }
 
     fun refreshRuntimeMemorySummaryDrafts() {
@@ -1765,6 +1789,7 @@ class RuntimeClientViewModel internal constructor(
         val requestId = UUID.randomUUID().toString()
         pendingChatSessionsRequestId = requestId
         val normalizedQuery = query?.trim()?.ifBlank { null }
+        val embeddingModelId = normalizedQuery?.let { state.value.selectedEmbeddingModelId }
         sendEnvelope(
             envelope(
                 type = MessageType.ChatSessionsList,
@@ -1774,6 +1799,7 @@ class RuntimeClientViewModel internal constructor(
                     limit = MAX_RUNTIME_CHAT_SESSIONS,
                     includeArchived = true,
                     query = normalizedQuery,
+                    embeddingModelId = embeddingModelId,
                 ),
             )
         )
@@ -1810,12 +1836,24 @@ class RuntimeClientViewModel internal constructor(
         )
     }
 
-    private fun requestRuntimeMemory() {
+    private fun requestRuntimeMemory(query: String? = null) {
         if (!isSessionAuthenticated || activeChannel?.isConnected != true) return
         if (pendingMemoryListRequestId != null) return
         val requestId = UUID.randomUUID().toString()
         pendingMemoryListRequestId = requestId
-        sendEnvelope(ProtocolEnvelope(type = MessageType.MemoryList, requestId = requestId))
+        val normalizedQuery = query?.trim()?.ifBlank { null }
+        if (normalizedQuery == null) {
+            sendEnvelope(ProtocolEnvelope(type = MessageType.MemoryList, requestId = requestId))
+        } else {
+            sendEnvelope(
+                envelope(
+                    type = MessageType.MemoryList,
+                    requestId = requestId,
+                    serializer = MemoryListRequestPayload.serializer(),
+                    payload = MemoryListRequestPayload(query = normalizedQuery),
+                )
+            )
+        }
     }
 
     private fun requestRuntimeMemorySummaryDrafts() {
@@ -4629,6 +4667,7 @@ internal fun trustedRuntimeFromRouteRefreshQr(
     val hasRelayRoute = payload.hasRelayRoute()
     val hasPeerToPeerRoute = payload.hasPeerToPeerRoute()
     if (!payload.hasRemoteRoute()) return null
+    if (!hasRelayRoute && payload.relayScope != null) return null
     if (!hasRelayRoute && payload.hasAnyRelayRouteMaterial()) return null
     if (!hasPeerToPeerRoute && payload.hasAnyPeerToPeerRouteMaterial()) return null
     if (current.deviceId != payload.runtimeDeviceId) return null

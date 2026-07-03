@@ -495,6 +495,14 @@
     <string name="embedding_model_connect_first">Connect to the trusted runtime before choosing an embedding model.</string>
     <string name="memory_title">Memory</string>
     <string name="memory_subtitle">Notes stored on the trusted runtime for future chats.</string>
+    <string name="memory_search_label">Search memory</string>
+    <string name="clear_memory_search_named">Clear memory search for %1$s</string>
+    <string name="no_memory_search_results">No matching memories.</string>
+    <string name="memory_search_result_summary">Showing memory matches for %1$s.</string>
+    <string name="memory_search_field_content">Memory</string>
+    <string name="memory_search_field_source">Source</string>
+    <string name="memory_search_field_source_range">Source range</string>
+    <string name="memory_search_field_source_excerpt">Source excerpt</string>
     <string name="memory_add_label">Add memory</string>
     <string name="memory_add_placeholder">Preference, project detail, or instruction to remember</string>
     <string name="memory_add">Add Memory</string>

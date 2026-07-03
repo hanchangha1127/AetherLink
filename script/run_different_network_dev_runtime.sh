@@ -169,31 +169,47 @@ if not values:
     print("No relay endpoints were provided.", file=sys.stderr)
     raise SystemExit(2)
 
+UNSAFE_ENDPOINT_INPUT_TOKENS = ("://", "/", "\\", "?", "#", "@")
+
+def safe_endpoint_input_label(value):
+    normalized = value.strip()
+    if not normalized:
+        return "<empty-endpoint>"
+    if normalized.startswith("[") or any(token in normalized for token in UNSAFE_ENDPOINT_INPUT_TOKENS):
+        return "<invalid-endpoint>"
+    return normalized
+
+def invalid_endpoint(value):
+    return ValueError(f"Invalid relay endpoint: {safe_endpoint_input_label(value)}")
+
+def invalid_endpoint_port(value):
+    return ValueError(f"Invalid relay endpoint port: {safe_endpoint_input_label(value)}")
+
 def parse_endpoint(value):
     if value.startswith("["):
         close = value.find("]")
         if close <= 1:
-            raise ValueError(f"Invalid relay endpoint: {value}")
+            raise invalid_endpoint(value)
         host = value[1:close]
         remainder = value[close + 1:]
         if not remainder:
             return host, default_port
         if not remainder.startswith(":"):
-            raise ValueError(f"Invalid relay endpoint: {value}")
+            raise invalid_endpoint(value)
         port_text = remainder[1:]
     elif value.count(":") == 1:
         host, port_text = value.rsplit(":", 1)
         if not host:
-            raise ValueError(f"Invalid relay endpoint: {value}")
+            raise invalid_endpoint(value)
     else:
         return value, default_port
 
     try:
         port = int(port_text)
     except ValueError:
-        raise ValueError(f"Invalid relay endpoint port: {value}") from None
+        raise invalid_endpoint_port(value) from None
     if not 1 <= port <= 65535:
-        raise ValueError(f"Invalid relay endpoint port: {value}")
+        raise invalid_endpoint_port(value)
     return host, port
 
 for raw in values:
@@ -203,16 +219,24 @@ for raw in values:
         print(str(error), file=sys.stderr)
         raise SystemExit(2)
     if not host:
-        print(f"Invalid relay endpoint: {raw}", file=sys.stderr)
+        print(f"Invalid relay endpoint: {safe_endpoint_input_label(raw)}", file=sys.stderr)
         raise SystemExit(2)
     print(f"{host}\t{port}")
 PY
 }
 
 RELAY_ENDPOINT_LINES=()
+set +e
+resolved_relay_endpoints="$(resolve_relay_endpoints "$RELAY_ENDPOINTS" "$RELAY_HOST" "$RELAY_PORT")"
+resolve_relay_endpoints_status=$?
+set -e
+if [[ "$resolve_relay_endpoints_status" -ne 0 ]]; then
+  exit "$resolve_relay_endpoints_status"
+fi
 while IFS= read -r endpoint_line; do
+  [[ -n "$endpoint_line" ]] || continue
   RELAY_ENDPOINT_LINES+=("$endpoint_line")
-done < <(resolve_relay_endpoints "$RELAY_ENDPOINTS" "$RELAY_HOST" "$RELAY_PORT")
+done <<< "$resolved_relay_endpoints"
 if [[ "${#RELAY_ENDPOINT_LINES[@]}" -eq 0 ]]; then
   echo "No relay endpoints were provided." >&2
   exit 2
@@ -266,6 +290,11 @@ def classify(host):
         return "private"
     return "public"
 
+def safe_endpoint_label(host, port, kind):
+    if kind == "url":
+        return f"<invalid-host>:{port}"
+    return f"{host}:{port}"
+
 failed = False
 for item in endpoints:
     host, port = item.split("\t", 1)
@@ -274,7 +303,7 @@ for item in endpoints:
         print("Invalid relay endpoint: empty host", file=sys.stderr)
         failed = True
     elif kind == "url":
-        print(f"Invalid relay endpoint {host}:{port}: use a host or IP address, not a URL.", file=sys.stderr)
+        print(f"Invalid relay endpoint {safe_endpoint_label(host, port, kind)}: use a host or IP address, not a URL.", file=sys.stderr)
         failed = True
     elif kind == "local" and not allow_local:
         print(
@@ -304,6 +333,7 @@ RELAY_PID=""
 PREFLIGHT_SUCCESS_ENDPOINT=""
 PREFLIGHT_REQUIRED_FIELDS_PRESENT=0
 PREFLIGHT_FAILURE_DETAIL=""
+PREFLIGHT_ALLOCATION_SUMMARY_JSON=""
 
 write_preflight_summary() {
   local exit_status="$1"
@@ -320,6 +350,7 @@ write_preflight_summary() {
     "$PREFLIGHT_SUCCESS_ENDPOINT" \
     "$PREFLIGHT_REQUIRED_FIELDS_PRESENT" \
     "$PREFLIGHT_FAILURE_DETAIL" \
+    "$PREFLIGHT_ALLOCATION_SUMMARY_JSON" \
     "$endpoint_payload" <<'PY'
 import datetime as dt
 import json
@@ -336,17 +367,28 @@ import sys
     success_endpoint,
     required_fields_present,
     failure_detail,
+    allocation_summary_json,
     endpoint_payload,
 ) = sys.argv[1:]
+
+def safe_summary_relay_host(host):
+    normalized = host.strip().lower().strip("[]")
+    if not normalized:
+        return host
+    if "://" in normalized or "/" in normalized or "@" in normalized or "?" in normalized or "#" in normalized:
+        return "<invalid-host>"
+    return host
 
 endpoints = []
 for line in endpoint_payload.splitlines():
     if not line.strip():
         continue
     host, port = line.split("\t", 1)
-    endpoints.append({"host": host, "port": int(port)})
+    endpoints.append({"host": safe_summary_relay_host(host), "port": int(port)})
 
 caveats = ["runtime_host_preflight_only_not_phone_reachability_proof"]
+caveats.append("not_production_session_key_exchange_proof")
+caveats.append("not_production_end_to_end_transport_encryption_proof")
 if start_local_relay == "1":
     caveats.append("local_relay_only_unless_advertised_host_is_public_vpn_tunnel_or_overlay")
 if use_legacy_relay == "1":
@@ -354,11 +396,29 @@ if use_legacy_relay == "1":
 if failure_detail.strip():
     caveats.append("relay_bootstrap_preflight_failed")
 
+try:
+    allocation_payload = json.loads(allocation_summary_json) if allocation_summary_json.strip() else {}
+except json.JSONDecodeError:
+    allocation_payload = {}
+
+def allocation_bool(name):
+    return allocation_payload.get(name) is True
+
 summary = {
     "generated_at": dt.datetime.now(dt.timezone.utc).isoformat(),
     "exit_status": int(exit_status),
     "mode": {
         "preflight_only": preflight_only == "1",
+    },
+    "coverage": {
+        "runtime_host_allocation_preflight": required_fields_present == "1" and use_legacy_relay != "1",
+        "runtime_host_static_legacy_relay_validation": success_endpoint != "" and use_legacy_relay == "1",
+        "trusted_device_relay_reachability": False,
+        "trusted_device_pairing": False,
+        "optical_qr_scan": False,
+        "production_relay": False,
+        "production_session_key_exchange": False,
+        "production_end_to_end_transport_encryption": False,
     },
     "relay": {
         "endpoints": endpoints,
@@ -370,6 +430,11 @@ summary = {
         "required_fields_present": required_fields_present == "1",
         "preflight_non_persistent": use_legacy_relay != "1",
         "legacy_allocation_skipped": use_legacy_relay == "1",
+        "relay_id_present": allocation_bool("relay_id_present"),
+        "relay_expires_at_present": allocation_bool("relay_expires_at_present"),
+        "relay_nonce_present": allocation_bool("relay_nonce_present"),
+        "has_relay_secret": allocation_bool("has_relay_secret"),
+        "route_material_redacted": allocation_bool("route_material_redacted"),
     },
     "failure_detail": failure_detail.strip() or None,
     "caveats": caveats,
@@ -461,12 +526,14 @@ check_relay_allocation() {
     --host "$host"
     --port "$port"
     --timeout "$timeout"
-    --quiet
   )
   if [[ -n "$token" ]]; then
-    args+=(--allocation-token "$token")
+    AETHERLINK_BOOTSTRAP_RELAY_ALLOCATION_TOKEN="$token" \
+      AETHERLINK_RELAY_ALLOCATION_TOKEN="$token" \
+      "${args[@]}"
+  else
+    "${args[@]}"
   fi
-  "${args[@]}"
 }
 
 if [[ "$START_LOCAL_RELAY" == "1" ]]; then
@@ -484,7 +551,7 @@ if [[ "$START_LOCAL_RELAY" == "1" ]]; then
     RELAY_ARGS+=(--require-allocation)
   fi
   if [[ -n "$ALLOCATION_TOKEN" ]]; then
-    RELAY_ARGS+=(--allocation-token "$ALLOCATION_TOKEN")
+    export AETHERLINK_RELAY_ALLOCATION_TOKEN="$ALLOCATION_TOKEN"
   fi
   "${RELAY_ARGS[@]}" &
   RELAY_PID="$!"
@@ -505,6 +572,7 @@ if [[ "$USE_LEGACY_RELAY" != "1" ]]; then
       allocation_preflight_succeeded=1
       PREFLIGHT_SUCCESS_ENDPOINT="$endpoint_host:$endpoint_port"
       PREFLIGHT_REQUIRED_FIELDS_PRESENT=1
+      PREFLIGHT_ALLOCATION_SUMMARY_JSON="$allocation_preflight_output"
       echo "Relay allocation preflight succeeded at $endpoint_host:$endpoint_port"
       break
     fi

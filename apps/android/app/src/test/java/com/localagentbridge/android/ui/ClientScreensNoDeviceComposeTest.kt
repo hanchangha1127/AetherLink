@@ -19355,6 +19355,98 @@ class ClientScreensNoDeviceComposeTest {
     }
 
     @Test
+    fun settingsMemorySearchFiltersRowsAndShowsRuntimeSearchMetadata() {
+        val refreshQueries = mutableListOf<String?>()
+        val runtimeSnippet = "Relay recovery source matched the memory entry."
+        val memoryEntries = listOf(
+            RuntimeMemoryEntry(
+                id = "memory-relay",
+                content = "Use latest QR route recovery.",
+                enabled = true,
+                createdAtMillis = 1_000L,
+                updatedAtMillis = 2_000L,
+                searchRank = 1,
+                searchSnippet = runtimeSnippet,
+                searchMatchedFields = listOf("content", "source_excerpt", "content"),
+            ),
+            RuntimeMemoryEntry(
+                id = "memory-language",
+                content = "Prefer concise Korean.",
+                enabled = true,
+                createdAtMillis = 3_000L,
+                updatedAtMillis = 4_000L,
+            ),
+        )
+
+        compose.setContent {
+            MaterialTheme {
+                Surface(
+                    modifier = Modifier
+                        .width(360.dp)
+                        .height(760.dp),
+                ) {
+                    Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                        MemoryPanel(
+                            entries = memoryEntries,
+                            actionsEnabled = true,
+                            onAddMemoryEntry = {},
+                            onRemoveMemoryEntry = {},
+                            onSetMemoryEntryEnabled = { _, _ -> },
+                            onRefreshMemory = {},
+                            onSearchMemory = { query -> refreshQueries += query },
+                            showHeader = false,
+                        )
+                    }
+                }
+            }
+        }
+
+        compose.onNodeWithTag(MEMORY_SEARCH_TEST_TAG)
+            .assertIsDisplayed()
+            .performTextInput("relay")
+        compose.waitForIdle()
+
+        compose.onNodeWithTag(MEMORY_SEARCH_RESULT_SUMMARY_TEST_TAG, useUnmergedTree = true)
+            .assertTextContains("relay", substring = true)
+        compose.onNodeWithText("Use latest QR route recovery.")
+            .performScrollTo()
+            .assertIsDisplayed()
+        compose.onNodeWithText("Prefer concise Korean.")
+            .assertDoesNotExist()
+        compose.onNodeWithTag(memoryEntrySearchMetadataTestTag("memory-relay"), useUnmergedTree = true)
+            .performScrollTo()
+            .assertTextContains("Match 1", substring = true)
+            .assertTextContains("Memory", substring = true)
+            .assertTextContains("Source excerpt", substring = true)
+        compose.onNodeWithTag(memoryEntrySearchSnippetTestTag("memory-relay"), useUnmergedTree = true)
+            .performScrollTo()
+            .assertTextContains(runtimeSnippet)
+
+        compose.onNodeWithTag(MEMORY_REFRESH_ACTION_TEST_TAG, useUnmergedTree = true)
+            .performScrollTo()
+        compose.onNodeWithTag(MEMORY_REFRESH_ACTION_TEST_TAG, useUnmergedTree = true)
+            .performClick()
+        compose.waitForIdle()
+        assertEquals(listOf("relay"), refreshQueries)
+
+        compose.onNodeWithTag(MEMORY_SEARCH_CLEAR_TEST_TAG, useUnmergedTree = true)
+            .performScrollTo()
+            .performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText("Prefer concise Korean.")
+            .performScrollTo()
+            .assertIsDisplayed()
+
+        compose.onNodeWithTag(MEMORY_SEARCH_TEST_TAG)
+            .performScrollTo()
+            .performTextInput("missing")
+        compose.waitForIdle()
+        compose.onNodeWithText("No matching memories.")
+            .performScrollTo()
+            .assertIsDisplayed()
+    }
+
+    @Test
     fun settingsMemoryPanelShowsSummaryDraftApprovalAction() {
         val draft = RuntimeMemorySummaryDraft(
             id = "draft-1",
@@ -19417,8 +19509,10 @@ class ClientScreensNoDeviceComposeTest {
         compose.onNodeWithText("Suggested memories")
             .assertIsDisplayed()
         compose.onNodeWithText("1 suggestion from older chats")
+            .performScrollTo()
             .assertIsDisplayed()
         compose.onNodeWithText("Long idle planning chat")
+            .performScrollTo()
             .assertIsDisplayed()
         compose.onNodeWithText("1 source")
             .assertDoesNotExist()

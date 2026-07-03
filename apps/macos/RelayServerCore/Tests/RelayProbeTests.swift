@@ -16,6 +16,30 @@ final class RelayProbeTests: XCTestCase {
         XCTAssertFalse(RelayProbeRequest.isProbeLine("AETHERLINK_RELAY runtime relay-123\n"))
     }
 
+    func testRejectsNonCanonicalRelayID() {
+        let relayIDs = [
+            "relay 123",
+            String(repeating: "r", count: relayControlLineRelayIDMaxCharacters + 1),
+            "https://relay.example.test/room?route_token=secret",
+            "relay.example.test:443",
+            "user@relay-id",
+            "relay/id",
+            "relay\\id",
+            "relay#fragment",
+        ]
+
+        for relayID in relayIDs {
+            XCTAssertThrowsError(try RelayProbeRequest(relayID: relayID), relayID) { error in
+                XCTAssertEqual(error as? RelayProbeError, .invalidRelayID)
+            }
+        }
+        for relayID in relayIDs where relayID.rangeOfCharacter(from: .whitespacesAndNewlines) == nil {
+            XCTAssertThrowsError(try RelayProbeRequest.parse("AETHERLINK_RELAY probe \(relayID)\n"), relayID) { error in
+                XCTAssertEqual(error as? RelayProbeError, .invalidRelayID)
+            }
+        }
+    }
+
     func testFormatsProbeResponseLine() {
         let waiting = String(
             decoding: RelayProbeResponse(known: true, runtimeWaiting: true).responseLine(),

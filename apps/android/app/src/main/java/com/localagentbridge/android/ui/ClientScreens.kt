@@ -138,6 +138,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.localagentbridge.android.R
 import com.localagentbridge.android.core.pairing.isAllowedRemoteRelayScope
+import com.localagentbridge.android.core.pairing.isCanonicalRelayHostValue
 import com.localagentbridge.android.core.pairing.isEligibleRemoteRelayHost
 import com.localagentbridge.android.core.transport.RuntimeEndpointSource
 import com.localagentbridge.android.runtime.APP_LANGUAGE_SOURCE_DEFAULT
@@ -885,7 +886,8 @@ internal fun connectionStatusHeroDetailRes(state: RuntimeUiState): Int {
 
 internal fun RuntimeTrustedRuntime?.hasRelayRouteMaterial(): Boolean {
     val host = this?.relayHost?.takeIf { it.isNotBlank() } ?: return false
-    return isAllowedRemoteRelayScope(relayScope) &&
+    return isCanonicalRelayHostValue(host) &&
+        isAllowedRemoteRelayScope(relayScope) &&
         isEligibleRemoteRelayHost(host, relayScope) &&
         relayPort != null &&
         relayPort in 1..65535 &&
@@ -914,7 +916,8 @@ private fun RuntimeTrustedRuntime?.hasUnusableRelayRouteHint(): Boolean {
 internal fun RuntimeTrustedRuntime?.hasRelayRouteWithoutSecret(): Boolean {
     val runtime = this ?: return false
     val host = runtime.relayHost?.takeIf { it.isNotBlank() } ?: return false
-    return isAllowedRemoteRelayScope(runtime.relayScope) &&
+    return isCanonicalRelayHostValue(host) &&
+        isAllowedRemoteRelayScope(runtime.relayScope) &&
         isEligibleRemoteRelayHost(host, runtime.relayScope) &&
         runtime.relayPort != null &&
         runtime.relayPort in 1..65535 &&
@@ -1984,6 +1987,7 @@ fun SettingsScreen(
     onApproveMemorySummaryDraft: (String) -> Unit = {},
     onDismissMemorySummaryDraft: (String) -> Unit = {},
     onRefreshMemory: () -> Unit = {},
+    onSearchMemory: (String?) -> Unit = { onRefreshMemory() },
     onRefreshChatHistory: (String?) -> Unit = {},
     onOpenChatSession: (String) -> Unit = {},
     onRenameChatSession: (String) -> Unit = {},
@@ -2119,6 +2123,7 @@ fun SettingsScreen(
                     onApproveMemorySummaryDraft = onApproveMemorySummaryDraft,
                     onDismissMemorySummaryDraft = onDismissMemorySummaryDraft,
                     onRefreshMemory = onRefreshMemory,
+                    onSearchMemory = onSearchMemory,
                     showHeader = false,
                 )
             }
@@ -6809,6 +6814,40 @@ private fun runtimeSearchMetadataText(
 }
 
 @Composable
+private fun memorySearchMetadataText(entry: RuntimeMemoryEntry): String? {
+    val rankText = entry.searchRank
+        ?.takeIf { it > 0 }
+        ?.let { stringResource(R.string.chat_search_match_rank, it) }
+    val fieldText = entry.searchMatchedFields
+        .mapNotNull { memorySearchFieldLabel(it) }
+        .distinct()
+        .take(3)
+        .joinToString(", ")
+        .takeIf(String::isNotBlank)
+    return when {
+        rankText != null && fieldText != null -> stringResource(
+            R.string.chat_search_match_metadata,
+            rankText,
+            fieldText,
+        )
+        rankText != null -> rankText
+        fieldText != null -> stringResource(R.string.chat_search_match_fields, fieldText)
+        else -> null
+    }
+}
+
+@Composable
+private fun memorySearchFieldLabel(field: String): String? {
+    return when (field.trim().lowercase(Locale.ROOT)) {
+        "content" -> stringResource(R.string.memory_search_field_content)
+        "source_title" -> stringResource(R.string.memory_search_field_source)
+        "source_range" -> stringResource(R.string.memory_search_field_source_range)
+        "source_excerpt" -> stringResource(R.string.memory_search_field_source_excerpt)
+        else -> null
+    }
+}
+
+@Composable
 private fun runtimeSearchFieldLabel(field: String): String? {
     return when (field.trim().lowercase(Locale.ROOT)) {
         "title" -> stringResource(R.string.chat_search_field_title)
@@ -7000,9 +7039,14 @@ internal fun MemoryPanel(
     onApproveMemorySummaryDraft: (String) -> Unit = {},
     onDismissMemorySummaryDraft: (String) -> Unit = {},
     onRefreshMemory: () -> Unit,
+    onSearchMemory: (String?) -> Unit = { onRefreshMemory() },
     showHeader: Boolean = true,
 ) {
     val draft = rememberSaveable { mutableStateOf("") }
+    var memorySearchQuery by rememberSaveable { mutableStateOf("") }
+    val normalizedMemorySearchQuery = memorySearchQuery.trim().ifBlank { null }
+    val hasMemorySearchQuery = normalizedMemorySearchQuery != null
+    val filteredEntries = filterMemoryEntries(entries, memorySearchQuery)
     val showAddedMemoryNotice = rememberSaveable { mutableStateOf(false) }
     val canAdd = actionsEnabled && draft.value.isNotBlank()
     val hapticFeedback = LocalHapticFeedback.current
@@ -7016,13 +7060,17 @@ internal fun MemoryPanel(
     val memoryRefreshContentDescription = stringResource(R.string.memory_refresh)
     val memoryAddContentDescription = stringResource(R.string.memory_add_label)
     val memoryAddActionLabel = stringResource(R.string.memory_add)
-    val pausedMemoryCount = entries.count { !it.enabled }
+    val memorySearchClearContentDescription = stringResource(
+        R.string.clear_memory_search_named,
+        normalizedMemorySearchQuery ?: memorySearchQuery,
+    )
+    val pausedMemoryCount = filteredEntries.count { !it.enabled }
     val memorySummary = stringResource(
         R.string.memory_summary,
         pluralStringResource(
             R.plurals.memory_saved_count,
-            entries.size,
-            entries.size,
+            filteredEntries.size,
+            filteredEntries.size,
         ),
         pluralStringResource(
             R.plurals.memory_paused_count,
@@ -7041,7 +7089,7 @@ internal fun MemoryPanel(
                     actionsEnabled = actionsEnabled,
                     actionsDisabledReason = actionsDisabledReason,
                     memoryRefreshContentDescription = memoryRefreshContentDescription,
-                    onRefreshMemory = onRefreshMemory,
+                    onRefreshMemory = { onSearchMemory(normalizedMemorySearchQuery) },
                     hapticFeedback = hapticFeedback,
                 )
             } else {
@@ -7053,7 +7101,7 @@ internal fun MemoryPanel(
                         actionsEnabled = actionsEnabled,
                         actionsDisabledReason = actionsDisabledReason,
                         memoryRefreshContentDescription = memoryRefreshContentDescription,
-                        onRefreshMemory = onRefreshMemory,
+                        onRefreshMemory = { onSearchMemory(normalizedMemorySearchQuery) },
                         hapticFeedback = hapticFeedback,
                     )
                 }
@@ -7144,21 +7192,61 @@ internal fun MemoryPanel(
                     )
                 }
             }
-            if (entries.isEmpty()) {
+            OutlinedTextField(
+                value = memorySearchQuery,
+                onValueChange = { memorySearchQuery = it },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(MEMORY_SEARCH_TEST_TAG),
+                singleLine = true,
+                label = { Text(stringResource(R.string.memory_search_label)) },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Filled.Search,
+                        contentDescription = null,
+                    )
+                },
+                trailingIcon = {
+                    if (memorySearchQuery.isNotEmpty()) {
+                        IconButton(
+                            onClick = {
+                                hapticFeedback.performAetherLinkFeedback(AetherLinkInteractionFeedback.PrimaryAction)
+                                memorySearchQuery = ""
+                            },
+                            modifier = Modifier
+                                .testTag(MEMORY_SEARCH_CLEAR_TEST_TAG)
+                                .semantics {
+                                    contentDescription = memorySearchClearContentDescription
+                                    onClick(label = memorySearchClearContentDescription, action = null)
+                                },
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Close,
+                                contentDescription = null,
+                            )
+                        }
+                    }
+                },
+            )
+            if (filteredEntries.isEmpty()) {
                 EmptyState(
-                    text = if (!actionsEnabled && actionsDisabledReasonRes == R.string.memory_action_state_wait_for_stream) {
-                        actionsDisabledReason
-                    } else {
-                        stringResource(memoryEmptyStateTextRes(actionsEnabled = actionsEnabled))
+                    text = when {
+                        hasMemorySearchQuery -> stringResource(R.string.no_memory_search_results)
+                        !actionsEnabled && actionsDisabledReasonRes == R.string.memory_action_state_wait_for_stream ->
+                            actionsDisabledReason
+                        else -> stringResource(memoryEmptyStateTextRes(actionsEnabled = actionsEnabled))
                     },
                     announceChanges = true,
                     modifier = Modifier.testTag(MEMORY_EMPTY_STATE_TEST_TAG),
                     textModifier = Modifier.testTag(MEMORY_EMPTY_STATE_TEXT_TEST_TAG),
                 )
             } else {
+                if (hasMemorySearchQuery) {
+                    MemorySearchResultSummary(query = normalizedMemorySearchQuery)
+                }
                 MemorySummary(summary = memorySummary)
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    entries.forEach { entry ->
+                    filteredEntries.forEach { entry ->
                         MemoryEntryRow(
                             entry = entry,
                             actionsEnabled = actionsEnabled,
@@ -7183,6 +7271,55 @@ internal fun MemoryPanel(
             }
         }
     }
+}
+
+internal fun filterMemoryEntries(
+    entries: List<RuntimeMemoryEntry>,
+    query: String,
+): List<RuntimeMemoryEntry> {
+    val terms = query
+        .trim()
+        .lowercase(Locale.ROOT)
+        .split(Regex("\\s+"))
+        .filter { it.isNotBlank() }
+    if (terms.isEmpty()) return entries
+    return entries.filter { entry ->
+        val source = entry.source
+        val searchableText = buildList {
+            add(entry.content)
+            entry.searchSnippet?.let(::add)
+            add(entry.searchMatchedFields.joinToString(" "))
+            if (source != null) {
+                add(source.kind)
+                add(source.summaryMethod)
+                add(source.sourceRange)
+                add(source.session.title)
+                add(source.session.modelId)
+                source.sourcePointers.forEach { pointer ->
+                    add(pointer.role)
+                    add(pointer.excerpt)
+                }
+            }
+        }.joinToString(separator = " ").lowercase(Locale.ROOT)
+        terms.all(searchableText::contains)
+    }
+}
+
+@Composable
+private fun MemorySearchResultSummary(query: String) {
+    val resultText = stringResource(R.string.memory_search_result_summary, query)
+
+    Text(
+        text = resultText,
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.secondary,
+        modifier = Modifier
+            .testTag(MEMORY_SEARCH_RESULT_SUMMARY_TEST_TAG)
+            .semantics {
+                contentDescription = resultText
+                liveRegion = LiveRegionMode.Polite
+            },
+    )
 }
 
 @Composable
@@ -7520,6 +7657,14 @@ internal fun MemoryEntryRow(
         memoryRemoveContentDescription,
     )
     val memoryActionStateDescription = disabledActionStateDescription ?: memoryStateDescription
+    val searchSnippet = entry.searchSnippet?.trim()?.takeIf(String::isNotBlank)
+    val searchMetadata = memorySearchMetadataText(entry)
+    val searchAccessibilitySummary = listOfNotNull(searchMetadata, searchSnippet)
+        .joinToString(separator = " ")
+        .takeIf(String::isNotBlank)
+    val contentAccessibilitySummary = searchAccessibilitySummary
+        ?.let { "${entry.content} $it" }
+        ?: entry.content
 
     if (showDeleteConfirmation.value) {
         AlertDialog(
@@ -7606,7 +7751,10 @@ internal fun MemoryEntryRow(
                 text = entry.content,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .testTag(MEMORY_ENTRY_CONTENT_TEST_TAG),
+                    .testTag(MEMORY_ENTRY_CONTENT_TEST_TAG)
+                    .semantics {
+                        contentDescription = contentAccessibilitySummary
+                    },
                 style = MaterialTheme.typography.bodyMedium,
                 color = if (entry.enabled) {
                     MaterialTheme.colorScheme.onSurfaceVariant
@@ -7614,6 +7762,30 @@ internal fun MemoryEntryRow(
                     MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.58f)
                 },
             )
+            searchMetadata?.let { metadata ->
+                Text(
+                    text = metadata,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag(memoryEntrySearchMetadataTestTag(entry.id)),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.secondary,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            searchSnippet?.let { snippet ->
+                Text(
+                    text = snippet,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag(memoryEntrySearchSnippetTestTag(entry.id)),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.secondary,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
             MemoryEntrySourceReview(
                 entry = entry,
                 memoryActionLabel = memoryActionLabel,
@@ -7890,6 +8062,9 @@ internal const val MEMORY_PANEL_HEADER_TEST_TAG = "memory_panel_header"
 internal const val MEMORY_REFRESH_ACTION_TEST_TAG = "memory_refresh_action"
 internal const val MEMORY_LOCK_NOTICE_TEST_TAG = "memory_lock_notice"
 internal const val MEMORY_LOCK_NOTICE_TEXT_TEST_TAG = "memory_lock_notice_text"
+internal const val MEMORY_SEARCH_TEST_TAG = "memory_search"
+internal const val MEMORY_SEARCH_CLEAR_TEST_TAG = "memory_search_clear"
+internal const val MEMORY_SEARCH_RESULT_SUMMARY_TEST_TAG = "memory_search_result_summary"
 internal const val MEMORY_ADD_INPUT_TEST_TAG = "memory_add_input"
 internal const val MEMORY_ADD_ACTION_TEST_TAG = "memory_add_action"
 internal const val MEMORY_ADD_ACTION_LABEL_TEST_TAG = "memory_add_action_label"
@@ -7907,9 +8082,18 @@ internal const val MEMORY_ENTRY_SOURCE_RANGE_TEST_TAG = "memory_entry_source_ran
 internal const val MEMORY_ENTRY_SOURCE_TOGGLE_TEST_TAG = "memory_entry_source_toggle"
 internal const val MEMORY_ENTRY_SOURCE_TOGGLE_LABEL_TEST_TAG = "memory_entry_source_toggle_label"
 internal const val MEMORY_ENTRY_SOURCE_EXCERPT_TEST_TAG_PREFIX = "memory_entry_source_excerpt_"
+internal const val MEMORY_ENTRY_SEARCH_METADATA_TEST_TAG_PREFIX = "memory_entry_search_metadata_"
+internal const val MEMORY_ENTRY_SEARCH_SNIPPET_TEST_TAG_PREFIX = "memory_entry_search_snippet_"
 
 internal fun memoryEntrySourceExcerptTestTag(index: Int): String =
     "$MEMORY_ENTRY_SOURCE_EXCERPT_TEST_TAG_PREFIX$index"
+
+internal fun memoryEntrySearchMetadataTestTag(entryId: String): String =
+    "$MEMORY_ENTRY_SEARCH_METADATA_TEST_TAG_PREFIX$entryId"
+
+internal fun memoryEntrySearchSnippetTestTag(entryId: String): String =
+    "$MEMORY_ENTRY_SEARCH_SNIPPET_TEST_TAG_PREFIX$entryId"
+
 internal const val MEMORY_DELETE_CONFIRMATION_DIALOG_TEST_TAG =
     "memory_delete_confirmation_dialog"
 internal const val MEMORY_DELETE_CONFIRMATION_TITLE_TEST_TAG =

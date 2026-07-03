@@ -165,6 +165,12 @@ public enum PairingValidationOutcome: Equatable, Sendable {
 
 public final class PairingCoordinator: @unchecked Sendable {
     public static let defaultMaxFailedAttempts = 3
+    private static let allowedRelayRouteScopes: Set<String> = [
+        "remote",
+        "private_overlay",
+        "usb_reverse"
+    ]
+    private static let localDiagnosticRouteScope = "local_diagnostic"
 
     private let lock = NSLock()
     public let maxFailedAttempts: Int
@@ -219,7 +225,11 @@ public final class PairingCoordinator: @unchecked Sendable {
             relaySecret: relaySecret,
             relayExpiresAtEpochMillis: relayExpiresAtEpochMillis,
             relayNonce: relayNonce,
-            relayScope: host == nil ? relayScope : relayScope ?? "local_diagnostic",
+            relayScope: Self.validatedRelayScope(
+                relayScope,
+                hasDirectEndpoint: host != nil,
+                hasRelayRoute: relayHost != nil
+            ),
             p2pRouteClass: p2pRouteClass,
             p2pRecordID: p2pRecordID,
             p2pEncryptedBody: p2pEncryptedBody,
@@ -233,6 +243,23 @@ public final class PairingCoordinator: @unchecked Sendable {
             failedAttempts = 0
         }
         return session
+    }
+
+    private static func validatedRelayScope(
+        _ relayScope: String?,
+        hasDirectEndpoint: Bool,
+        hasRelayRoute: Bool
+    ) -> String? {
+        let requestedScope = relayScope.flatMap { $0.isEmpty ? nil : $0 }
+        if hasRelayRoute {
+            guard let requestedScope else { return nil }
+            return allowedRelayRouteScopes.contains(requestedScope) ? requestedScope : nil
+        }
+        if hasDirectEndpoint {
+            let requestedScope = requestedScope ?? localDiagnosticRouteScope
+            return requestedScope == localDiagnosticRouteScope ? requestedScope : nil
+        }
+        return nil
     }
 
     public func validate(_ request: PairingRequest) -> PairingValidationOutcome {

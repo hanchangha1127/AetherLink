@@ -105,6 +105,87 @@ class ProtocolCodecTest {
     }
 
     @Test
+    fun modelInfoPayloadPreservesProviderAndEmbeddingMetadata() {
+        val payload = ModelsResultPayload(
+            models = listOf(
+                ModelInfoPayload(
+                    id = "nomic-embed-text",
+                    name = "Nomic Embed Text",
+                    backend = "ollama",
+                    provider = "ollama",
+                    modelKind = "embedding",
+                    kind = "embedding",
+                    capabilities = listOf("embedding", "retrieval"),
+                    providerModelId = "nomic-embed-text",
+                    qualifiedId = "ollama:nomic-embed-text",
+                    installed = true,
+                    running = false,
+                    source = "local",
+                    sizeBytes = 274_000_000,
+                    contextWindowTokens = 8192,
+                    modifiedAt = "2026-07-02T12:34:56Z",
+                    remoteModel = "nomic-embed-text",
+                ),
+            ),
+        )
+
+        val json = Json.parseToJsonElement(Json.encodeToString(payload)).jsonObject
+        val decoded = Json.decodeFromString<ModelsResultPayload>(Json.encodeToString(payload))
+
+        val model = json["models"]?.jsonArray?.first()?.jsonObject
+        assertEquals("ollama", model?.get("backend")?.jsonPrimitive?.content)
+        assertEquals("ollama", model?.get("provider")?.jsonPrimitive?.content)
+        assertEquals("embedding", model?.get("model_kind")?.jsonPrimitive?.content)
+        assertEquals("embedding", model?.get("kind")?.jsonPrimitive?.content)
+        assertEquals(
+            listOf("embedding", "retrieval"),
+            model?.get("capabilities")?.jsonArray?.map { it.jsonPrimitive.content },
+        )
+        assertEquals("nomic-embed-text", model?.get("provider_model_id")?.jsonPrimitive?.content)
+        assertEquals("ollama:nomic-embed-text", model?.get("qualified_id")?.jsonPrimitive?.content)
+        assertEquals("274000000", model?.get("size_bytes")?.jsonPrimitive?.content)
+        assertEquals("8192", model?.get("context_window_tokens")?.jsonPrimitive?.content)
+        assertEquals("2026-07-02T12:34:56Z", model?.get("modified_at")?.jsonPrimitive?.content)
+        assertEquals("nomic-embed-text", model?.get("remote_model")?.jsonPrimitive?.content)
+        assertEquals("ollama", decoded.models.first().backend)
+        assertEquals("ollama", decoded.models.first().provider)
+        assertEquals("embedding", decoded.models.first().modelKind)
+        assertEquals("embedding", decoded.models.first().kind)
+        assertEquals(listOf("embedding", "retrieval"), decoded.models.first().capabilities)
+        assertEquals("nomic-embed-text", decoded.models.first().providerModelId)
+        assertEquals("ollama:nomic-embed-text", decoded.models.first().qualifiedId)
+        assertEquals(274_000_000L, decoded.models.first().sizeBytes)
+        assertEquals(8192, decoded.models.first().contextWindowTokens)
+        assertEquals("2026-07-02T12:34:56Z", decoded.models.first().modifiedAt)
+        assertEquals("nomic-embed-text", decoded.models.first().remoteModel)
+    }
+
+    @Test
+    fun modelInfoPayloadDefaultsMissingCapabilitiesToEmptyList() {
+        val decoded = Json.decodeFromString<ModelsResultPayload>(
+            """
+            {
+              "models": [
+                {
+                  "id": "legacy-embed",
+                  "name": "Legacy Embed",
+                  "provider": "ollama",
+                  "model_kind": "embedding",
+                  "provider_model_id": "legacy-embed",
+                  "qualified_id": "ollama:legacy-embed"
+                }
+              ]
+            }
+            """.trimIndent(),
+        )
+
+        assertEquals(emptyList<String>(), decoded.models.first().capabilities)
+        assertEquals("embedding", decoded.models.first().modelKind)
+        assertEquals("legacy-embed", decoded.models.first().providerModelId)
+        assertEquals("ollama:legacy-embed", decoded.models.first().qualifiedId)
+    }
+
+    @Test
     fun runtimeHealthPayloadCanCarryModelResidencySnapshot() {
         val payload = RuntimeHealthPayload(
             status = "ok",
@@ -150,6 +231,7 @@ class ProtocolCodecTest {
             limit = 50,
             includeArchived = true,
             query = "relay route",
+            embeddingModelId = "ollama:nomic-embed-text",
         )
         val result = ChatSessionsListResultPayload(
             sessions = listOf(
@@ -177,6 +259,7 @@ class ProtocolCodecTest {
         assertEquals("50", requestJson["limit"]?.jsonPrimitive?.content)
         assertEquals("true", requestJson["include_archived"]?.jsonPrimitive?.content)
         assertEquals("relay route", requestJson["query"]?.jsonPrimitive?.content)
+        assertEquals("ollama:nomic-embed-text", requestJson["embedding_model_id"]?.jsonPrimitive?.content)
         val session = resultJson["sessions"]?.jsonArray?.first()?.jsonObject
         assertEquals("session-1", session?.get("session_id")?.jsonPrimitive?.content)
         assertEquals("Runtime history", session?.get("title")?.jsonPrimitive?.content)
@@ -305,7 +388,13 @@ class ProtocolCodecTest {
             createdAt = "2026-06-25T05:25:00Z",
             updatedAt = "2026-06-25T05:26:00Z",
             source = source,
+            search = ChatSessionSearchPayload(
+                rank = 1,
+                snippet = "Prefers concise answers.",
+                matchedFields = listOf("content"),
+            ),
         )
+        val listRequest = MemoryListRequestPayload(query = "concise answers")
         val listResult = MemoryListResultPayload(entries = listOf(entry))
         val upsert = MemoryUpsertPayload(
             id = "memory-1",
@@ -317,14 +406,17 @@ class ProtocolCodecTest {
             deletedAt = "2026-06-25T05:27:00Z",
         )
 
+        val listRequestJson = Json.parseToJsonElement(Json.encodeToString(listRequest)).jsonObject
         val listJson = Json.parseToJsonElement(protocolJson.encodeToString(listResult)).jsonObject
         val upsertJson = Json.parseToJsonElement(Json.encodeToString(upsert)).jsonObject
         val deleteJson = Json.parseToJsonElement(Json.encodeToString(deleteResult)).jsonObject
+        val decodedList = Json.decodeFromString<MemoryListResultPayload>(Json.encodeToString(listResult))
         val listedEntry = listJson["entries"]?.jsonArray?.first()?.jsonObject
 
         assertEquals(MessageType.MemoryList, "memory.list")
         assertEquals(MessageType.MemoryUpsert, "memory.upsert")
         assertEquals(MessageType.MemoryDelete, "memory.delete")
+        assertEquals("concise answers", listRequestJson["query"]?.jsonPrimitive?.content)
         assertEquals("memory-1", listedEntry?.get("id")?.jsonPrimitive?.content)
         assertEquals("Prefers concise answers.", listedEntry?.get("content")?.jsonPrimitive?.content)
         assertEquals(true, listedEntry?.get("enabled")?.jsonPrimitive?.boolean)
@@ -340,6 +432,16 @@ class ProtocolCodecTest {
             "Summarize my preference.",
             listedSource?.get("source_pointers")?.jsonArray?.first()?.jsonObject?.get("excerpt")?.jsonPrimitive?.content,
         )
+        val listedSearch = listedEntry?.get("search")?.jsonObject
+        assertEquals("1", listedSearch?.get("rank")?.jsonPrimitive?.content)
+        assertEquals("Prefers concise answers.", listedSearch?.get("snippet")?.jsonPrimitive?.content)
+        assertEquals(
+            listOf("content"),
+            listedSearch?.get("matched_fields")?.jsonArray?.map { it.jsonPrimitive.content },
+        )
+        assertEquals(1, decodedList.entries.first().search?.rank)
+        assertEquals("Prefers concise answers.", decodedList.entries.first().search?.snippet)
+        assertEquals(listOf("content"), decodedList.entries.first().search?.matchedFields)
         assertEquals("memory-1", upsertJson["id"]?.jsonPrimitive?.content)
         assertEquals("Prefers concise Korean answers.", upsertJson["content"]?.jsonPrimitive?.content)
         assertEquals(false, upsertJson["enabled"]?.jsonPrimitive?.boolean)

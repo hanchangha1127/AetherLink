@@ -790,6 +790,8 @@ def android_runtime_boundary_guard_failures() -> list[str]:
         ROOT / "apps/android/core/transport/src/test/java/com/localagentbridge/android/core/transport/"
         "RuntimeRelayTcpClientTest.kt"
     )
+    macos_relay_peer_client_path = ROOT / "apps/macos/Transport/Sources/RelayPeerClient.swift"
+    macos_relay_peer_client_test_path = ROOT / "apps/macos/Transport/Tests/RelayPeerClientTests.swift"
     runtime_connection_manager_path = (
         ROOT / "apps/android/core/transport/src/main/java/com/localagentbridge/android/core/transport/"
         "RuntimeConnectionManager.kt"
@@ -841,6 +843,11 @@ def android_runtime_boundary_guard_failures() -> list[str]:
     client_screens_test_text = client_screens_test_path.read_text(encoding="utf-8", errors="replace")
     runtime_test_text = runtime_test_path.read_text(encoding="utf-8", errors="replace")
     relay_tcp_client_test_text = relay_tcp_client_test_path.read_text(encoding="utf-8", errors="replace")
+    macos_relay_peer_client_text = macos_relay_peer_client_path.read_text(encoding="utf-8", errors="replace")
+    macos_relay_peer_client_test_text = macos_relay_peer_client_test_path.read_text(
+        encoding="utf-8",
+        errors="replace",
+    )
     runtime_connection_manager_text = runtime_connection_manager_path.read_text(encoding="utf-8", errors="replace")
     runtime_connection_manager_test_text = runtime_connection_manager_test_path.read_text(
         encoding="utf-8",
@@ -1034,7 +1041,9 @@ def android_runtime_boundary_guard_failures() -> list[str]:
         "PairingStoreTest.kt"
     )
     macos_pairing_path = ROOT / "apps/macos/Pairing/Sources/PairingCoordinator.swift"
+    macos_pairing_test_path = ROOT / "apps/macos/Pairing/Tests/PairingCoordinatorTests.swift"
     macos_runtime_test_path = ROOT / "apps/macos/CompanionCore/Tests/LocalRuntimeMessageRouterTests.swift"
+    package_path = ROOT / "Package.swift"
     protocol_schema_path = ROOT / "packages/protocol-schema/protocol.schema.json"
     pairing_qr_schema_path = ROOT / "packages/protocol-schema/pairing-qr.schema.json"
     protocol_schema_check_path = ROOT / "script/check_protocol_schema.py"
@@ -1047,7 +1056,9 @@ def android_runtime_boundary_guard_failures() -> list[str]:
     pairing_store_text = pairing_store_path.read_text(encoding="utf-8", errors="replace")
     pairing_store_test_text = pairing_store_test_path.read_text(encoding="utf-8", errors="replace")
     macos_pairing_text = macos_pairing_path.read_text(encoding="utf-8", errors="replace")
+    macos_pairing_test_text = macos_pairing_test_path.read_text(encoding="utf-8", errors="replace")
     macos_runtime_test_text = macos_runtime_test_path.read_text(encoding="utf-8", errors="replace")
+    package_text = package_path.read_text(encoding="utf-8", errors="replace")
     protocol_schema_text = protocol_schema_path.read_text(encoding="utf-8", errors="replace")
     pairing_qr_schema_text = pairing_qr_schema_path.read_text(encoding="utf-8", errors="replace")
     protocol_schema_check_text = protocol_schema_check_path.read_text(encoding="utf-8", errors="replace")
@@ -1062,7 +1073,7 @@ def android_runtime_boundary_guard_failures() -> list[str]:
         "optionalOpaqueQrValue(\"Invalid runtime public key\")",
         "optionalOpaqueQrValue(\"Invalid route token\")",
         "optionalOpaqueQrValue(\"Invalid relay id\")",
-        "optionalBoundedQrValue(\"Invalid relay secret\")",
+        "optionalOpaqueQrValue(\"Invalid relay secret\")",
         "optionalOpaqueQrValue(\"Invalid relay nonce\")",
         "optionalOpaqueQrValue(\"Invalid relay scope\")",
         "optionalOpaqueQrValue(\"Invalid P2P route class\")",
@@ -1078,11 +1089,391 @@ def android_runtime_boundary_guard_failures() -> list[str]:
                 f"{pairing_parser_path.relative_to(ROOT)}: Android pairing QR trust and route "
                 f"identity values must reject whitespace before trust/discovery matching; missing {snippet}."
             )
+    if "optionalBoundedQrValue" in pairing_parser_text:
+        failures.append(
+            f"{pairing_parser_path.relative_to(ROOT)}: Android relay QR secrets must use canonical "
+            "opaque route validation, not a bounded-only whitespace-tolerant parser."
+        )
     if "rejectsWhitespaceMutatedTrustAndRouteIdentityQrValues" not in pairing_parser_test_text:
         failures.append(
             f"{pairing_parser_test_path.relative_to(ROOT)}: Missing Android QR trust-value whitespace "
             "rejection regression test."
         )
+    required_relay_secret_canonicality_snippets = (
+        (
+            pairing_parser_test_text,
+            pairing_parser_test_path,
+            "rejectsWhitespaceMutatedRelaySecretAliasesInQrPayload",
+            "Android pairing parser tests must reject whitespace-mutated relay secret aliases.",
+        ),
+        (
+            pairing_parser_test_text,
+            pairing_parser_test_path,
+            "secret+with/symbols=",
+            "Android pairing parser tests must preserve base64-style relay secret characters.",
+        ),
+        (
+            pairing_parser_test_text,
+            pairing_parser_test_path,
+            '"remote_secret" to',
+            "Android pairing parser tests must cover remote_secret whitespace rejection.",
+        ),
+        (
+            pairing_parser_test_text,
+            pairing_parser_test_path,
+            '"route_secret" to',
+            "Android pairing parser tests must cover route_secret whitespace rejection.",
+        ),
+        (
+            pairing_parser_test_text,
+            pairing_parser_test_path,
+            '"rendezvous_secret" to',
+            "Android pairing parser tests must cover rendezvous_secret whitespace rejection.",
+        ),
+        (
+            pairing_parser_test_text,
+            pairing_parser_test_path,
+            '"rs" to',
+            "Android pairing parser tests must cover compact rs whitespace rejection.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimePairingPayloadParserTest.rejectsWhitespaceMutatedRelaySecretAliasesInQrPayload",
+            "Default no-device gate must run focused Android relay-secret QR canonicality coverage.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "Android pairing QR relay-secret canonicality addendum",
+            "Default no-device gate summary must mention Android relay-secret QR canonicality.",
+        ),
+        (
+            progress_text,
+            progress_path,
+            "Android Pairing QR Relay-Secret Canonicality No-Device Gate",
+            "Progress docs must record Android relay-secret QR canonicality coverage.",
+        ),
+        (
+            qa_evidence_text,
+            qa_evidence_path,
+            "Android Pairing QR Relay-Secret Canonicality No-Device Gate",
+            "QA evidence must record Android relay-secret QR canonicality coverage.",
+        ),
+        (
+            roadmap_text,
+            roadmap_path,
+            "Android pairing QR relay-secret canonicality",
+            "Roadmap smoke coverage queue must name Android relay-secret QR canonicality.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_relay_secret_canonicality_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_relay_alias_family_isolation_snippets = (
+        (
+            pairing_parser_text,
+            pairing_parser_path,
+            "query.requireSingleRelayAliasFamily()",
+            "Android pairing parser must reject mixed relay alias families before field selection.",
+        ),
+        (
+            pairing_parser_text,
+            pairing_parser_path,
+            "RELAY_ROUTE_ALIAS_FAMILIES",
+            "Android pairing parser must define explicit relay alias-family groups.",
+        ),
+        (
+            pairing_parser_text,
+            pairing_parser_path,
+            "Mixed relay alias families",
+            "Android pairing parser must use a focused mixed relay alias-family error.",
+        ),
+        (
+            pairing_parser_test_text,
+            pairing_parser_test_path,
+            "rejectsMixedRelayAliasFamiliesFromQrPayload",
+            "Android pairing parser tests must reject mixed relay alias-family QR payloads.",
+        ),
+        (
+            pairing_parser_test_text,
+            pairing_parser_test_path,
+            "remote_host=relay.example.test&remote_port=443&route_id=relay-1",
+            "Android pairing parser tests must cover remote/route relay alias mixing.",
+        ),
+        (
+            pairing_parser_test_text,
+            pairing_parser_test_path,
+            "relay_host=relay.example.test&rp=443&ri=relay-1",
+            "Android pairing parser tests must cover canonical/compact relay alias mixing.",
+        ),
+        (
+            pairing_parser_test_text,
+            pairing_parser_test_path,
+            "parsesRouteAliasPrivateOverlayScopeFromQrPayload",
+            "Android pairing parser tests must cover route_* relay aliases with route_scope=private_overlay.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimePairingPayloadParserTest.rejectsMixedRelayAliasFamiliesFromQrPayload",
+            "Default no-device gate must run focused Android relay alias-family isolation coverage.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "Android pairing QR relay alias-family isolation addendum",
+            "Default no-device gate summary must mention Android relay alias-family isolation.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "shared pairing QR relay alias-family schema addendum",
+            "Default no-device gate summary must mention shared relay alias-family schema isolation.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "shared pairing QR route-scope private-overlay schema addendum",
+            "Default no-device gate summary must mention shared route_scope private-overlay schema coverage.",
+        ),
+        (
+            pairing_qr_schema_text,
+            pairing_qr_schema_path,
+            "Relay route material must use one relay alias family: canonical relay_* fields, remote_* fields, route_* fields, rendezvous_* fields, or compact rh/rp/ri/rs/rx/rrn fields, not a mix.",
+            "Shared pairing QR schema must reject mixed relay alias families.",
+        ),
+        (
+            pairing_qr_schema_text,
+            pairing_qr_schema_path,
+            "Alias for relay_scope on route_* relay material.",
+            "Shared pairing QR schema must treat route_scope as a relay scope alias for route_* material.",
+        ),
+        (
+            pairing_qr_schema_text,
+            pairing_qr_schema_path,
+            '"route_scope": { "const": "private_overlay" }',
+            "Shared pairing QR schema must allow route_scope=private_overlay for private route_* relay hosts.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "check_pairing_qr_relay_alias_family_isolation",
+            "Protocol schema checker must pin shared relay alias-family isolation.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "pairing QR schema must reject mixed relay alias families",
+            "Protocol schema checker must fail when mixed relay alias-family schema rejection is missing.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            'PAIRING_QR_REMOTE_RELAY_SCOPE_FIELDS = ["relay_scope", "remote_scope", "route_scope", "rsc"]',
+            "Protocol schema checker must pin every remote relay scope alias, including route_scope.",
+        ),
+        (
+            protocol_doc_text,
+            protocol_doc_path,
+            "Relay route material from different alias families is not combined",
+            "Protocol docs must state that relay alias families cannot be mixed.",
+        ),
+        (
+            protocol_doc_text,
+            protocol_doc_path,
+            "The shared pairing QR schema rejects mixed relay alias families",
+            "Protocol docs must state that the shared QR schema rejects mixed relay alias families.",
+        ),
+        (
+            protocol_doc_text,
+            protocol_doc_path,
+            "`route_scope` is a relay-scope alias for `route_*` relay material",
+            "Protocol docs must define route_scope as a relay-scope alias for route_* material.",
+        ),
+        (
+            progress_text,
+            progress_path,
+            "Android Pairing QR Relay Alias-Family Isolation No-Device Gate",
+            "Progress docs must record Android relay alias-family isolation coverage.",
+        ),
+        (
+            progress_text,
+            progress_path,
+            "Shared Pairing QR Relay Alias-Family Schema No-Device Gate",
+            "Progress docs must record shared relay alias-family schema coverage.",
+        ),
+        (
+            progress_text,
+            progress_path,
+            "Shared Pairing QR Route-Scope Private Overlay Schema No-Device Gate",
+            "Progress docs must record shared route_scope private-overlay schema coverage.",
+        ),
+        (
+            qa_evidence_text,
+            qa_evidence_path,
+            "Android Pairing QR Relay Alias-Family Isolation No-Device Gate",
+            "QA evidence must record Android relay alias-family isolation coverage.",
+        ),
+        (
+            qa_evidence_text,
+            qa_evidence_path,
+            "Shared Pairing QR Relay Alias-Family Schema No-Device Gate",
+            "QA evidence must record shared relay alias-family schema coverage.",
+        ),
+        (
+            qa_evidence_text,
+            qa_evidence_path,
+            "Shared Pairing QR Route-Scope Private Overlay Schema No-Device Gate",
+            "QA evidence must record shared route_scope private-overlay schema coverage.",
+        ),
+        (
+            roadmap_text,
+            roadmap_path,
+            "Android pairing QR relay alias-family isolation",
+            "Roadmap smoke coverage queue must name Android relay alias-family isolation.",
+        ),
+        (
+            roadmap_text,
+            roadmap_path,
+            "shared pairing QR relay alias-family schema",
+            "Roadmap smoke coverage queue must name shared relay alias-family schema coverage.",
+        ),
+        (
+            roadmap_text,
+            roadmap_path,
+            "shared pairing QR route-scope private-overlay schema",
+            "Roadmap smoke coverage queue must name shared route_scope private-overlay schema coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_relay_alias_family_isolation_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_p2p_alias_family_isolation_snippets = (
+        (
+            pairing_parser_text,
+            pairing_parser_path,
+            "query.requireSingleP2pAliasFamily()",
+            "Android pairing parser must reject mixed P2P alias families before field selection.",
+        ),
+        (
+            pairing_parser_text,
+            pairing_parser_path,
+            "P2P_ROUTE_ALIAS_FAMILIES",
+            "Android pairing parser must define explicit P2P alias-family groups.",
+        ),
+        (
+            pairing_parser_text,
+            pairing_parser_path,
+            "Mixed P2P alias families",
+            "Android pairing parser must use a focused mixed P2P alias-family error.",
+        ),
+        (
+            pairing_parser_test_text,
+            pairing_parser_test_path,
+            "rejectsMixedP2pAliasFamiliesFromQrPayload",
+            "Android pairing parser tests must reject mixed P2P alias-family QR payloads.",
+        ),
+        (
+            pairing_parser_test_text,
+            pairing_parser_test_path,
+            "p2p_class=p2p_rendezvous&prid=p2p-record-1",
+            "Android pairing parser tests must cover canonical/compact P2P alias mixing.",
+        ),
+        (
+            pairing_parser_test_text,
+            pairing_parser_test_path,
+            "pc=p2p_rendezvous&p2p_record_id=p2p-record-1",
+            "Android pairing parser tests must cover compact/canonical P2P alias mixing.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimePairingPayloadParserTest.rejectsMixedP2pAliasFamiliesFromQrPayload",
+            "Default no-device gate must run focused Android P2P alias-family isolation coverage.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "Android pairing QR P2P alias-family isolation addendum",
+            "Default no-device gate summary must mention Android P2P alias-family isolation.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "shared pairing QR P2P alias-family schema addendum",
+            "Default no-device gate summary must mention shared P2P alias-family schema isolation.",
+        ),
+        (
+            pairing_qr_schema_text,
+            pairing_qr_schema_path,
+            "P2P rendezvous route material must use either canonical p2p_* fields or compact pc/prid/peb/px/pn/pv fields, not both.",
+            "Shared pairing QR schema must reject mixed canonical and compact P2P alias families.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "check_pairing_qr_p2p_alias_family_isolation",
+            "Protocol schema checker must pin shared P2P alias-family isolation.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "pairing QR schema must reject mixed canonical and compact P2P rendezvous aliases",
+            "Protocol schema checker must fail when mixed P2P alias-family schema rejection is missing.",
+        ),
+        (
+            protocol_doc_text,
+            protocol_doc_path,
+            "P2P rendezvous route material from canonical and compact alias families is not combined",
+            "Protocol docs must state that P2P alias families cannot be mixed.",
+        ),
+        (
+            protocol_doc_text,
+            protocol_doc_path,
+            "The shared pairing QR schema rejects mixed canonical/compact P2P alias families",
+            "Protocol docs must state that the shared QR schema rejects mixed P2P alias families.",
+        ),
+        (
+            progress_text,
+            progress_path,
+            "Android Pairing QR P2P Alias-Family Isolation No-Device Gate",
+            "Progress docs must record Android P2P alias-family isolation coverage.",
+        ),
+        (
+            progress_text,
+            progress_path,
+            "Shared Pairing QR P2P Alias-Family Schema No-Device Gate",
+            "Progress docs must record shared P2P alias-family schema coverage.",
+        ),
+        (
+            qa_evidence_text,
+            qa_evidence_path,
+            "Android Pairing QR P2P Alias-Family Isolation No-Device Gate",
+            "QA evidence must record Android P2P alias-family isolation coverage.",
+        ),
+        (
+            qa_evidence_text,
+            qa_evidence_path,
+            "Shared Pairing QR P2P Alias-Family Schema No-Device Gate",
+            "QA evidence must record shared P2P alias-family schema coverage.",
+        ),
+        (
+            roadmap_text,
+            roadmap_path,
+            "Android pairing QR P2P alias-family isolation",
+            "Roadmap smoke coverage queue must name Android P2P alias-family isolation.",
+        ),
+        (
+            roadmap_text,
+            roadmap_path,
+            "shared pairing QR P2P alias-family schema",
+            "Roadmap smoke coverage queue must name shared P2P alias-family schema coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_p2p_alias_family_isolation_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
     if "RUNTIME_NAME_MAX_CHARS = 80" not in pairing_parser_text or "normalizedRuntimeName()" not in pairing_parser_text:
         failures.append(
             f"{pairing_parser_path.relative_to(ROOT)}: Android pairing runtime names must be normalized "
@@ -1127,8 +1518,110 @@ def android_runtime_boundary_guard_failures() -> list[str]:
         (
             pairing_store_text,
             pairing_store_path,
+            "val routeToken = rawRouteToken?.takeIf(::isCanonicalOpaqueRouteValue)",
+            "PairingStore must canonicalize stored route tokens before trusted restore.",
+        ),
+        (
+            pairing_store_text,
+            pairing_store_path,
+            "shouldRemoveStoredRouteToken",
+            "PairingStore must remove non-canonical stored route tokens after read.",
+        ),
+        (
+            pairing_store_text,
+            pairing_store_path,
+            "prefs.removeRouteTokenKeys()",
+            "PairingStore must remove current and legacy route token keys when route tokens are not canonical.",
+        ),
+        (
+            pairing_store_text,
+            pairing_store_path,
+            "isCanonicalOpaqueRouteValue(relayId)",
+            "PairingStore must canonicalize stored relay ids before trusted restore.",
+        ),
+        (
+            pairing_store_text,
+            pairing_store_path,
+            "isCanonicalOpaqueRouteValue(relaySecret)",
+            "PairingStore must canonicalize stored relay secrets before trusted restore.",
+        ),
+        (
+            pairing_store_text,
+            pairing_store_path,
+            "isCanonicalOpaqueRouteValue(relayNonce)",
+            "PairingStore must canonicalize stored relay nonces before trusted restore.",
+        ),
+        (
+            pairing_store_text,
+            pairing_store_path,
+            "isAllowedRemoteRelayScope(relayScope)",
+            "PairingStore must reject non-canonical stored relay scopes before trusted restore.",
+        ),
+        (
+            pairing_store_text,
+            pairing_store_path,
             "isCanonicalOpaqueRouteValue(p2pEncryptedBody, maxChars = OPAQUE_ROUTE_BODY_MAX_CHARS)",
             "PairingStore must use the larger bounded P2P body ceiling on restore.",
+        ),
+        (
+            pairing_store_test_text,
+            pairing_store_test_path,
+            "pairingStoreDropsNonCanonicalRouteTokenOnWrite",
+            "PairingStore tests must drop non-canonical route tokens on write.",
+        ),
+        (
+            pairing_store_test_text,
+            pairing_store_test_path,
+            "pairingStoreDropsNonCanonicalStoredRouteTokenOnRead",
+            "PairingStore tests must drop non-canonical stored route tokens on read.",
+        ),
+        (
+            pairing_store_test_text,
+            pairing_store_test_path,
+            "assertNoStoredRouteToken",
+            "PairingStore tests must assert current and legacy route-token keys are removed.",
+        ),
+        (
+            pairing_store_test_text,
+            pairing_store_test_path,
+            "trustedRuntimeRejectsNonCanonicalRelayRoute",
+            "PairingStore tests must reject whitespace-mutated in-memory relay route material.",
+        ),
+        (
+            pairing_store_test_text,
+            pairing_store_test_path,
+            "trustedRuntimeRejectsOversizedRelayRoute",
+            "PairingStore tests must reject oversized in-memory relay route material.",
+        ),
+        (
+            pairing_store_test_text,
+            pairing_store_test_path,
+            "pairingStoreDropsNonCanonicalStoredRelayRouteOnRead",
+            "PairingStore tests must drop whitespace-mutated or oversized stored relay route material.",
+        ),
+        (
+            pairing_store_test_text,
+            pairing_store_test_path,
+            "trustedRuntimeRejectsInvalidRelayScopeValues",
+            "PairingStore tests must reject invalid in-memory relay scope values.",
+        ),
+        (
+            pairing_store_test_text,
+            pairing_store_test_path,
+            "pairingStoreDropsInvalidRelayScopeOnWrite",
+            "PairingStore tests must drop invalid relay scope values on write.",
+        ),
+        (
+            pairing_store_test_text,
+            pairing_store_test_path,
+            "pairingStoreDropsInvalidStoredRelayScopeOnRead",
+            "PairingStore tests must drop invalid stored relay scope values on read.",
+        ),
+        (
+            pairing_store_test_text,
+            pairing_store_test_path,
+            "nonCanonicalRelayScopeValues",
+            "PairingStore tests must centralize invalid relay scope value coverage.",
         ),
         (
             pairing_store_test_text,
@@ -1175,6 +1668,12 @@ def android_runtime_boundary_guard_failures() -> list[str]:
         (
             pairing_qr_schema_text,
             pairing_qr_schema_path,
+            '"opaqueRouteSecret": {\n      "type": "string",\n      "minLength": 1,\n      "maxLength": 512,\n      "pattern": "^\\\\S+$"',
+            "Shared pairing QR schema must make relay secrets whitespace-free.",
+        ),
+        (
+            pairing_qr_schema_text,
+            pairing_qr_schema_path,
             '"p2p_encrypted_body": { "$ref": "#/$defs/opaqueRouteBody" }',
             "Shared pairing QR schema must cap opaque P2P encrypted bodies separately.",
         ),
@@ -1189,6 +1688,12 @@ def android_runtime_boundary_guard_failures() -> list[str]:
             protocol_schema_path,
             '"relay_secret": { "$ref": "#/$defs/opaqueRouteSecret" }',
             "Shared route.refresh schema must cap relay secrets before runtime handling.",
+        ),
+        (
+            protocol_schema_text,
+            protocol_schema_path,
+            '"opaqueRouteSecret": {\n      "type": "string",\n      "minLength": 1,\n      "maxLength": 512,\n      "pattern": "^\\\\S+$"',
+            "Shared route.refresh schema must make relay secrets whitespace-free.",
         ),
         (
             protocol_schema_text,
@@ -1213,6 +1718,12 @@ def android_runtime_boundary_guard_failures() -> list[str]:
             protocol_schema_check_path,
             "check_route_refresh_route_material_schema",
             "Protocol schema checker must verify route.refresh route-material size bounds.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "opaqueRouteSecret must be a non-empty, whitespace-free string",
+            "Protocol schema checker must enforce whitespace-free opaque route secrets.",
         ),
         (
             no_device_text,
@@ -1271,8 +1782,32 @@ def android_runtime_boundary_guard_failures() -> list[str]:
         (
             no_device_text,
             no_device_path,
+            "Android stored route-token canonicality addendum",
+            "Default no-device gate summary must mention Android stored route-token canonicality.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
             "Android opaque route material size-bound addendum",
             "Default no-device gate summary must mention Android opaque route material size bounds.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "Android trusted relay store canonicality addendum",
+            "Default no-device gate summary must mention Android trusted relay store canonicality.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "Android trusted relay scope canonicality addendum",
+            "Default no-device gate summary must mention Android trusted relay scope canonicality.",
+        ),
+        (
+            progress_text,
+            progress_path,
+            "Android Stored Route-Token Canonicality No-Device Gate",
+            "Progress docs must record Android stored route-token canonicality coverage.",
         ),
         (
             progress_text,
@@ -1281,16 +1816,64 @@ def android_runtime_boundary_guard_failures() -> list[str]:
             "Progress docs must record the Android opaque route material size-bound no-device gate.",
         ),
         (
+            progress_text,
+            progress_path,
+            "Android Trusted Relay Store Canonicality No-Device Gate",
+            "Progress docs must record Android trusted relay store canonicality coverage.",
+        ),
+        (
+            progress_text,
+            progress_path,
+            "Android Trusted Relay Scope Canonicality No-Device Gate",
+            "Progress docs must record Android trusted relay scope canonicality coverage.",
+        ),
+        (
+            qa_evidence_text,
+            qa_evidence_path,
+            "Android Stored Route-Token Canonicality No-Device Gate",
+            "QA evidence must record Android stored route-token canonicality coverage.",
+        ),
+        (
             qa_evidence_text,
             qa_evidence_path,
             "Android Opaque Route Material Size Bound No-Device Gate",
             "QA evidence must record the Android opaque route material size-bound no-device gate.",
         ),
         (
+            qa_evidence_text,
+            qa_evidence_path,
+            "Android Trusted Relay Store Canonicality No-Device Gate",
+            "QA evidence must record Android trusted relay store canonicality coverage.",
+        ),
+        (
+            qa_evidence_text,
+            qa_evidence_path,
+            "Android Trusted Relay Scope Canonicality No-Device Gate",
+            "QA evidence must record Android trusted relay scope canonicality coverage.",
+        ),
+        (
+            roadmap_text,
+            roadmap_path,
+            "Android stored route-token canonicality",
+            "Roadmap smoke coverage queue must name Android stored route-token canonicality coverage.",
+        ),
+        (
             roadmap_text,
             roadmap_path,
             "Android opaque route material size bounds",
             "Roadmap smoke coverage queue must name Android opaque route material size-bound coverage.",
+        ),
+        (
+            roadmap_text,
+            roadmap_path,
+            "Android trusted relay store canonicality",
+            "Roadmap smoke coverage queue must name Android trusted relay store canonicality coverage.",
+        ),
+        (
+            roadmap_text,
+            roadmap_path,
+            "Android trusted relay scope canonicality",
+            "Roadmap smoke coverage queue must name Android trusted relay scope canonicality coverage.",
         ),
     )
     for haystack, path, snippet, guidance in required_opaque_route_material_size_bound_snippets:
@@ -1371,6 +1954,77 @@ def android_runtime_boundary_guard_failures() -> list[str]:
                 f"{runtime_test_path.relative_to(ROOT)}: Android trusted P2P rendezvous route "
                 f"material must persist, restore, and plan without claiming real P2P; missing {snippet}."
             )
+    required_app_p2p_body_size_bound_snippets = (
+        (
+            runtime_remote_route_planner_text,
+            runtime_remote_route_planner_path,
+            "isCanonicalOpaqueRouteValue(p2pEncryptedBody, maxChars = OPAQUE_ROUTE_BODY_MAX_CHARS)",
+            "Android app route planner must accept max-sized opaque P2P encrypted bodies.",
+        ),
+        (
+            runtime_store_text,
+            runtime_store_path,
+            "isCanonicalOpaqueRouteValue(it, maxChars = OPAQUE_ROUTE_BODY_MAX_CHARS)",
+            "Android pending route storage must preserve max-sized opaque P2P encrypted bodies.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "maxSizedOpaqueP2pEncryptedBody",
+            "Android ViewModel tests must use a max-sized opaque P2P encrypted body fixture.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "assertEquals(OPAQUE_ROUTE_BODY_MAX_CHARS, maxSizedP2pEncryptedBody.length)",
+            "Android ViewModel tests must pin the 2048-byte opaque P2P encrypted body size.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "routeRefreshPayloadAddsFreshP2pRendezvousRouteToCurrentTrustedRuntime",
+            "Android route.refresh payload tests must preserve max-sized P2P encrypted bodies.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "trustedPeerToPeerRouteFallsBackToRelayAtViewModelConnectionLayer",
+            "Android trusted reconnect tests must dispatch max-sized P2P encrypted bodies.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "persistedRuntimeDataStoresPendingP2pRendezvousRouteUntilShorterRecordExpiry",
+            "Android pending storage tests must restore max-sized P2P encrypted bodies.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "Android app P2P encrypted body 2048-byte route material addendum",
+            "Default no-device gate summary must mention app-layer P2P encrypted body size-bound coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Android App P2P Encrypted Body 2048-Byte Route Material No-Device Gate",
+            "Progress docs must record app-layer P2P encrypted body size-bound coverage.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Android App P2P Encrypted Body 2048-Byte Route Material No-Device Gate",
+            "QA evidence must record app-layer P2P encrypted body size-bound coverage.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "Android app P2P encrypted body 2048-byte route material",
+            "Roadmap smoke coverage queue must name app-layer P2P encrypted body size-bound coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_app_p2p_body_size_bound_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
     required_p2p_restore_discovery_suppression_snippets = (
         (
             runtime_test_text,
@@ -1592,6 +2246,89 @@ def android_runtime_boundary_guard_failures() -> list[str]:
                 f"{path.relative_to(ROOT)}: Missing macOS pairing QR payload-shape guard "
                 f"snippet {snippet!r}."
             )
+    required_macos_qr_scope_allowlist_snippets = (
+        (
+            package_text,
+            package_path,
+            'name: "PairingTests"',
+            "Package manifest must expose focused Pairing tests.",
+        ),
+        (
+            package_text,
+            package_path,
+            'path: "apps/macos/Pairing/Tests"',
+            "Package manifest must point PairingTests at the focused test folder.",
+        ),
+        (
+            macos_pairing_text,
+            macos_pairing_path,
+            "allowedRelayRouteScopes",
+            "PairingCoordinator must keep an explicit QR relay-scope allowlist.",
+        ),
+        (
+            macos_pairing_text,
+            macos_pairing_path,
+            "localDiagnosticRouteScope",
+            "PairingCoordinator must preserve local_diagnostic as a direct-route-only scope.",
+        ),
+        (
+            macos_pairing_text,
+            macos_pairing_path,
+            "validatedRelayScope(",
+            "PairingCoordinator must validate relayScope before storing or emitting a QR payload.",
+        ),
+        (
+            macos_pairing_test_text,
+            macos_pairing_test_path,
+            "testPairingQRCodeRejectsInvalidRelayScopeBeforeEmission",
+            "PairingTests must reject unsupported relay scopes before QR emission.",
+        ),
+        (
+            macos_pairing_test_text,
+            macos_pairing_test_path,
+            "testPairingQRCodeEmitsOnlyAllowedRelayScopes",
+            "PairingTests must preserve the allowed remote/private-overlay/USB relay scopes.",
+        ),
+        (
+            macos_pairing_test_text,
+            macos_pairing_test_path,
+            "testPairingQRCodeDirectEndpointScopeDefaultsToLocalDiagnosticOnly",
+            "PairingTests must keep local_diagnostic scoped to direct diagnostic QR routes.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "swift test --filter PairingCoordinatorTests",
+            "Default no-device gate must run the focused PairingCoordinator relay-scope allowlist tests.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "macOS pairing QR relay-scope allowlist addendum",
+            "Default no-device summary must name macOS PairingCoordinator relay-scope allowlist coverage.",
+        ),
+        (
+            progress_text,
+            progress_path,
+            "macOS Pairing QR Relay-Scope Allowlist No-Device Gate",
+            "Progress docs must record the macOS PairingCoordinator relay-scope allowlist no-device gate.",
+        ),
+        (
+            qa_evidence_text,
+            qa_evidence_path,
+            "macOS Pairing QR Relay-Scope Allowlist No-Device Gate",
+            "QA evidence must record the macOS PairingCoordinator relay-scope allowlist no-device gate.",
+        ),
+        (
+            roadmap_text,
+            roadmap_path,
+            "macOS pairing QR relay-scope allowlist",
+            "Roadmap smoke coverage queue must name macOS PairingCoordinator relay-scope allowlist coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_macos_qr_scope_allowlist_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
     if "loaded.shouldRemoveStoredRelayRoute" not in pairing_store_text or "editPrefs.removeRelayRouteKeys()" not in pairing_store_text:
         failures.append(
             f"{pairing_store_path.relative_to(ROOT)}: PairingStore must physically remove incomplete "
@@ -1669,10 +2406,14 @@ def android_runtime_boundary_guard_failures() -> list[str]:
         "validPeerToPeerRoutePreparationMapsToPreparedPeerToPeerRoute",
         "invalidPeerToPeerRoutePreparationReturnsNull",
         "peerToPeerRoutePreparationDoesNotCarryHostOrPortMaterial",
+        "peerToPeerRoutePreparationDoesNotCarryRelayOrRouteTokenFamilyMaterial",
         "peerToPeerRoutePreparerUsesInjectedClockForRecordExpiration",
         "peerToPeerRoutePreparerDropsInvalidRoutePreparations",
         "protocolVersion = 2",
         'it.contains("host") || it.contains("port")',
+        'forbiddenRouteFamilyTokens = listOf("host", "port", "relay", "routetoken", "framesecret")',
+        'assertEquals("p2p-record-isolation", route.security.rendezvousToken)',
+        "assertTrue(route.sessionId != identity.routeToken)",
     )
     for snippet in required_peer_to_peer_route_preparation_test_snippets:
         if snippet not in peer_to_peer_route_preparation_test_text:
@@ -1684,6 +2425,7 @@ def android_runtime_boundary_guard_failures() -> list[str]:
         "RuntimePeerToPeerRoutePreparationTest",
         "RuntimeConnectionManagerTest.relayConnectorCanFallbackAfterPreparedPeerToPeerRouteFails",
         "Android p2p_rendezvous route preparation contract and relay fallback ordering",
+        "Android P2P route-family isolation",
     )
     for snippet in required_peer_to_peer_no_device_snippets:
         if snippet not in no_device_text:
@@ -1691,54 +2433,119 @@ def android_runtime_boundary_guard_failures() -> list[str]:
                 f"{no_device_path.relative_to(ROOT)}: Android p2p_rendezvous route preparation and "
                 f"relay fallback ordering must stay in the no-device gate; missing {snippet}."
             )
+    required_peer_to_peer_route_family_docs = (
+        (
+            progress_text,
+            progress_path,
+            "Android P2P Route-Family Isolation No-Device Gate",
+            "Progress docs must record the Android P2P route-family isolation no-device gate.",
+        ),
+        (
+            qa_evidence_text,
+            qa_evidence_path,
+            "Android P2P Route-Family Isolation No-Device Gate",
+            "QA evidence must record the Android P2P route-family isolation no-device gate.",
+        ),
+        (
+            roadmap_text,
+            roadmap_path,
+            "Android P2P route-family isolation",
+            "Roadmap smoke coverage queue must name Android P2P route-family isolation coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_peer_to_peer_route_family_docs:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
     required_route_token_remote_preparation_snippets = (
+        (
+            runtime_connection_manager_text,
+            runtime_connection_manager_path,
+            "RemoteRouteUsesPairingRouteToken",
+            "Android transport manager must reject prepared remote routes that reuse paired route tokens as route material.",
+        ),
+        (
+            runtime_connection_manager_text,
+            runtime_connection_manager_path,
+            "usesPairingRouteTokenAsRouteMaterial",
+            "Android transport manager must check prepared P2P/relay route material against paired route tokens.",
+        ),
         (
             runtime_connection_manager_test_text,
             runtime_connection_manager_test_path,
-            "remoteRoutePreparerCanUsePairingRouteTokenWithoutDirectTcpEndpoint",
-            "Android transport tests must prove paired route tokens can prepare remote routes without direct endpoints.",
+            "remoteRoutePreparerRejectsRoutesThatReusePairingRouteTokenMaterial",
+            "Android transport tests must reject paired route tokens reused as P2P or relay route material.",
         ),
         (
             runtime_connection_manager_test_text,
             runtime_connection_manager_test_path,
             "sessionId = requireNotNull(pairedRuntime.routeToken)",
-            "Android transport tests must prove P2P route preparation can consume the paired route token.",
+            "Android transport tests must cover raw paired route-token reuse as a P2P session id.",
         ),
         (
             runtime_connection_manager_test_text,
             runtime_connection_manager_test_path,
-            'relayId = "relay-${pairedRuntime.routeToken}"',
-            "Android transport tests must prove relay route preparation can consume the paired route token.",
+            "security = securityContext(pairedRuntime.routeToken)",
+            "Android transport tests must cover raw paired route-token reuse as P2P/relay rendezvous material.",
+        ),
+        (
+            runtime_connection_manager_test_text,
+            runtime_connection_manager_test_path,
+            "relayId = requireNotNull(pairedRuntime.routeToken)",
+            "Android transport tests must cover raw paired route-token reuse as a relay id.",
+        ),
+        (
+            peer_to_peer_route_preparation_text,
+            peer_to_peer_route_preparation_path,
+            "if (routeRecordId == identity.routeToken) return null",
+            "Android P2P route preparation must reject paired route tokens as P2P record ids.",
+        ),
+        (
+            peer_to_peer_route_preparation_test_text,
+            peer_to_peer_route_preparation_test_path,
+            "peerToPeerRoutePreparationRejectsPairedRouteTokenAsRecordId",
+            "Android P2P route preparation tests must reject paired route tokens as record ids.",
+        ),
+        (
+            relay_route_preparation_text,
+            relay_route_preparation_path,
+            "if (routeRelayId == identity.routeToken) return null",
+            "Android relay route preparation must reject paired route tokens as relay ids.",
+        ),
+        (
+            relay_route_preparation_test_text,
+            relay_route_preparation_test_path,
+            "relayRoutePreparationRejectsPairedRouteTokenAsRelayId",
+            "Android relay route preparation tests must reject paired route tokens as relay ids.",
         ),
         (
             no_device_text,
             no_device_path,
-            "RuntimeConnectionManagerTest.remoteRoutePreparerCanUsePairingRouteTokenWithoutDirectTcpEndpoint",
-            "Default no-device gate must run the Android route-token remote preparation regression.",
+            "RuntimeConnectionManagerTest.remoteRoutePreparerRejectsRoutesThatReusePairingRouteTokenMaterial",
+            "Default no-device gate must run the Android route-token remote material isolation regression.",
         ),
         (
             no_device_text,
             no_device_path,
-            "Android route-token remote preparation addendum",
-            "Default no-device gate summary must mention Android route-token remote preparation coverage.",
+            "Android route-token remote material isolation addendum",
+            "Default no-device gate summary must mention Android route-token remote material isolation coverage.",
         ),
         (
             docs_progress_text,
             docs_progress_path,
-            "Android Route-Token Remote Preparation No-Device Gate",
-            "Progress docs must record the Android route-token remote preparation no-device gate.",
+            "Android Route-Token Remote Material Isolation No-Device Gate",
+            "Progress docs must record the Android route-token remote material isolation no-device gate.",
         ),
         (
             docs_qa_evidence_text,
             docs_qa_evidence_path,
-            "Android Route-Token Remote Preparation No-Device Gate",
-            "QA evidence must record the Android route-token remote preparation no-device gate.",
+            "Android Route-Token Remote Material Isolation No-Device Gate",
+            "QA evidence must record the Android route-token remote material isolation no-device gate.",
         ),
         (
             docs_roadmap_text,
             docs_roadmap_path,
-            "Android route-token remote preparation",
-            "Roadmap smoke coverage queue must name Android route-token remote preparation coverage.",
+            "Android route-token remote material isolation",
+            "Roadmap smoke coverage queue must name Android route-token remote material isolation coverage.",
         ),
     )
     for haystack, path, snippet, guidance in required_route_token_remote_preparation_snippets:
@@ -1836,6 +2643,107 @@ def android_runtime_boundary_guard_failures() -> list[str]:
         ),
     )
     for haystack, path, snippet, guidance in required_relay_ready_timeout_no_device_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_macos_relay_peer_timeout_snippets = (
+        (
+            macos_relay_peer_client_text,
+            macos_relay_peer_client_path,
+            "public var controlLineTimeout: TimeInterval",
+            "RelayPeerConfiguration must keep a bounded relay control-line timeout.",
+        ),
+        (
+            macos_relay_peer_client_text,
+            macos_relay_peer_client_path,
+            "defaultControlLineTimeout: TimeInterval = 45",
+            "RelayPeerConfiguration must keep a physical-QR-tolerant default control-line timeout.",
+        ),
+        (
+            macos_relay_peer_client_text,
+            macos_relay_peer_client_path,
+            "RelayRegistrationReadGate",
+            "RelayPeerClient must guard registration/ready line completion against timeout races.",
+        ),
+        (
+            macos_relay_peer_client_text,
+            macos_relay_peer_client_path,
+            "Relay registration timed out before ready.",
+            "RelayPeerClient must surface stalled runtime registration as a bounded failure.",
+        ),
+        (
+            macos_relay_peer_client_text,
+            macos_relay_peer_client_path,
+            "Relay ready line timed out after registration.",
+            "RelayPeerClient must surface stalled relay ready lines as a bounded failure.",
+        ),
+        (
+            macos_relay_peer_client_test_text,
+            macos_relay_peer_client_test_path,
+            "testRelayPeerConfigurationDefaultControlLineTimeoutAllowsPhysicalQrStartup",
+            "Transport tests must prove RelayPeerClient's default timeout is long enough for physical QR startup.",
+        ),
+        (
+            macos_relay_peer_client_test_text,
+            macos_relay_peer_client_test_path,
+            "testRelayPeerClientTimesOutWhenRegistrationLineNeverArrives",
+            "Transport tests must prove RelayPeerClient does not wait forever for relay registration.",
+        ),
+        (
+            macos_relay_peer_client_test_text,
+            macos_relay_peer_client_test_path,
+            "testRelayPeerClientTimesOutWhenReadyLineNeverArrivesAfterRegistration",
+            "Transport tests must prove RelayPeerClient does not wait forever after relay registration.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RelayPeerClientTests/testRelayPeerConfigurationDefaultControlLineTimeoutAllowsPhysicalQrStartup",
+            "Default no-device gate must run the macOS RelayPeerClient default timeout regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RelayPeerClientTests/testRelayPeerClientTimesOutWhenRegistrationLineNeverArrives",
+            "Default no-device gate must run the macOS RelayPeerClient registration timeout regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RelayPeerClientTests/testRelayPeerClientTimesOutWhenReadyLineNeverArrivesAfterRegistration",
+            "Default no-device gate must run the macOS RelayPeerClient ready-line timeout regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "physical-QR-tolerant 45s control-line timeout",
+            "Default no-device gate summary must mention macOS RelayPeerClient physical QR tolerant default timeout coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "macOS RelayPeerClient Registration Ready Timeout No-Device Gate",
+            "Progress docs must record the macOS RelayPeerClient registration/ready timeout no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "macOS RelayPeerClient Registration Ready Timeout No-Device Gate",
+            "QA evidence must record the macOS RelayPeerClient registration/ready timeout no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "TCP but never sends `AETHERLINK_RELAY registered`, or when it registers the runtime but never sends `AETHERLINK_RELAY ready`",
+            "QA evidence must record that TCP connect alone is not relay-ready state.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "relay TCP ready timeout",
+            "Roadmap smoke coverage queue must name relay TCP ready timeout coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_macos_relay_peer_timeout_snippets:
         if snippet not in haystack:
             failures.append(f"{path.relative_to(ROOT)}: {guidance}")
     required_relay_nonce_vector_no_device_snippets = (
@@ -3410,6 +4318,77 @@ def android_runtime_boundary_guard_failures() -> list[str]:
     for haystack, path, snippet, guidance in required_route_refresh_qr_expired_incomplete_p2p_rejection_snippets:
         if snippet not in haystack:
             failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_route_refresh_qr_p2p_relay_scope_isolation_snippets = (
+        (
+            pairing_parser_text,
+            pairing_parser_path,
+            "Relay scope requires relay route material",
+            "Android QR parser must reject relay scope unless relay route material is present.",
+        ),
+        (
+            pairing_parser_test_text,
+            pairing_parser_test_path,
+            "rejectsRelayScopeWithoutRelayRouteMaterial",
+            "Android QR parser tests must cover relay scope without relay route material.",
+        ),
+        (
+            pairing_parser_test_text,
+            pairing_parser_test_path,
+            "route_scope=local_diagnostic",
+            "Android QR parser tests must preserve explicit local_diagnostic direct QR parsing.",
+        ),
+        (
+            runtime_text,
+            runtime_path,
+            "if (!hasRelayRoute && payload.relayScope != null) return null",
+            "Android route-refresh QR conversion must reject P2P-only material with stray relay scope.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "routeRefreshQrRejectsP2pRouteWithRelayScopeOnly",
+            "Android ViewModel tests must reject route-refresh QR P2P material with relay scope only.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimePairingPayloadParserTest.rejectsRelayScopeWithoutRelayRouteMaterial",
+            "Default no-device gate must run the Android QR parser relay-scope isolation regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeClientViewModelTest.routeRefreshQrRejectsP2pRouteWithRelayScopeOnly",
+            "Default no-device gate must run the Android route-refresh QR P2P relay-scope isolation regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "Android route-refresh QR P2P relay-scope isolation addendum",
+            "Default no-device gate summary must mention Android route-refresh QR P2P relay-scope isolation coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Android Route Refresh QR P2P Relay-Scope Isolation No-Device Gate",
+            "Progress docs must record the Android route-refresh QR P2P relay-scope isolation no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Android Route Refresh QR P2P Relay-Scope Isolation No-Device Gate",
+            "QA evidence must record the Android route-refresh QR P2P relay-scope isolation no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "Android route-refresh QR P2P relay-scope isolation",
+            "Roadmap smoke coverage queue must name Android route-refresh QR P2P relay-scope isolation coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_route_refresh_qr_p2p_relay_scope_isolation_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
     required_trusted_last_known_ui_snippets = (
         "private fun RuntimeEndpointSource.isCurrentDirectRouteCandidate(): Boolean",
         "this != RuntimeEndpointSource.Manual && this != RuntimeEndpointSource.TrustedLastKnown",
@@ -3980,6 +4959,11 @@ def android_runtime_boundary_guard_failures() -> list[str]:
             f"{runtime_test_path.relative_to(ROOT)}: Missing Android route-refresh QR regression that "
             "reuses the active trusted relay connection."
         )
+    if "routeRefreshQrAfterAcceptedP2pPairingDoesNotOpenDuplicatePeerConnection" not in runtime_test_text:
+        failures.append(
+            f"{runtime_test_path.relative_to(ROOT)}: Missing Android route-refresh QR regression that "
+            "reuses the active trusted P2P connection."
+        )
     required_duplicate_relay_qr_idempotency_snippets = (
         (
             runtime_test_text,
@@ -4059,16 +5043,34 @@ def android_runtime_boundary_guard_failures() -> list[str]:
             "Android route-refresh QR active-connection reuse regression must assert refreshed relay material.",
         ),
         (
-            no_device_text,
-            no_device_path,
-            "RuntimeClientViewModelTest.routeRefreshQrAfterAcceptedRelayPairingDoesNotOpenDuplicateRelayConnection",
-            "Default no-device gate must run the Android route-refresh QR active-connection reuse regression.",
+            runtime_test_text,
+            runtime_test_path,
+            "assertEquals(1, peerToPeerConnectionAttempts)",
+            "Android route-refresh QR active-connection reuse regression must prove no duplicate P2P dial occurs.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            'assertEquals("p2p-refreshed", trusted.p2pRecordId)',
+            "Android route-refresh QR active-connection reuse regression must assert refreshed P2P material.",
         ),
         (
             no_device_text,
             no_device_path,
-            "Android route-refresh QR active-connection reuse addendum",
-            "Default no-device gate summary must mention Android route-refresh QR active-connection reuse coverage.",
+            "RuntimeClientViewModelTest.routeRefreshQrAfterAcceptedRelayPairingDoesNotOpenDuplicateRelayConnection",
+            "Default no-device gate must run the Android relay route-refresh QR active-connection reuse regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeClientViewModelTest.routeRefreshQrAfterAcceptedP2pPairingDoesNotOpenDuplicatePeerConnection",
+            "Default no-device gate must run the Android P2P route-refresh QR active-connection reuse regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "route-refresh QR scans update saved relay and P2P route material while reusing the active connection",
+            "Default no-device gate summary must mention relay and P2P route-refresh QR active-connection reuse coverage.",
         ),
         (
             docs_progress_text,
@@ -4085,8 +5087,8 @@ def android_runtime_boundary_guard_failures() -> list[str]:
         (
             docs_roadmap_text,
             docs_roadmap_path,
-            "route-refresh QR active-connection reuse",
-            "Roadmap smoke coverage queue must name route-refresh QR active-connection reuse coverage.",
+            "relay/P2P route-refresh QR active-connection reuse",
+            "Roadmap smoke coverage queue must name relay/P2P route-refresh QR active-connection reuse coverage.",
         ),
     )
     for haystack, path, snippet, guidance in required_route_refresh_qr_active_connection_reuse_snippets:
@@ -4497,6 +5499,58 @@ def android_runtime_boundary_guard_failures() -> list[str]:
             f"{relay_integration_test_path.relative_to(ROOT)}: Missing Android app integration test that "
             "drives compact relay QR pairing through the real RuntimeRelayTcpClient socket path."
         )
+    for snippet in (
+        "trustedPrivateOverlayRelayReconnectUsesRealRelayTcpClientAndAuthenticatedSession",
+        "trusted-overlay-relay-nonce-refreshed",
+        "refreshedRelayExpiresAt",
+        "trustedRuntimeStore.trustedRuntimeWritten",
+        "refreshedTrusted.relayExpiresAtEpochMillis",
+        "viewModel.state.value.trustedRuntime?.relayNonce",
+    ):
+        if snippet not in relay_integration_test_text:
+            failures.append(
+                f"{relay_integration_test_path.relative_to(ROOT)}: Missing Android authenticated "
+                f"relay reconnect route.refresh fresh lease acceptance guard {snippet}."
+            )
+    for haystack, path, snippet, guidance in (
+        (
+            progress_text,
+            progress_path,
+            "Android Authenticated Relay Reconnect Route Refresh Fresh Lease No-Device Gate",
+            "Progress docs must record Android authenticated relay reconnect route.refresh fresh lease coverage.",
+        ),
+        (
+            qa_evidence_text,
+            qa_evidence_path,
+            "Android Authenticated Relay Reconnect Route Refresh Fresh Lease No-Device Gate",
+            "QA evidence must record Android authenticated relay reconnect route.refresh fresh lease coverage.",
+        ),
+        (
+            roadmap_text,
+            roadmap_path,
+            "Android authenticated relay reconnect route.refresh fresh lease",
+            "Roadmap smoke coverage queue must name Android authenticated relay reconnect route.refresh fresh lease coverage.",
+        ),
+    ):
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    for snippet in (
+        "trustedRelayReconnectRejectsInvalidRuntimeProofBeforeAuthResponse",
+        "trustedRelayReconnectRejectsRuntimeFingerprintMismatchBeforeAuthResponse",
+        "FakeInvalidRuntimeProofRelayServer",
+        "challengeFingerprint",
+        "postChallengeRequest",
+        "runtime_authentication_failed",
+        "Android must not send auth.response or runtime.health after invalid runtime proof",
+        "Android must not send auth.response or runtime.health after runtime fingerprint mismatch",
+        "replayed-auth-nonce",
+        "wrong-runtime-fingerprint",
+    ):
+        if snippet not in relay_integration_test_text:
+            failures.append(
+                f"{relay_integration_test_path.relative_to(ROOT)}: Missing Android client-side runtime "
+                f"proof rejection guard {snippet}."
+            )
     if "freshCompactRelayQrRefreshesExpiredTrustedRelayRouteAndReconnectsViaRelay" not in runtime_test_text:
         failures.append(
             f"{runtime_test_path.relative_to(ROOT)}: Missing Android fresh relay QR recovery test that "
@@ -4535,6 +5589,227 @@ def android_runtime_boundary_guard_failures() -> list[str]:
             f"{relay_route_preparation_test_path.relative_to(ROOT)}: Missing Android relay preparation "
             "regression that fails closed when relay_id is absent even if a paired route token exists."
         )
+    required_relay_route_material_canonicality_snippets = (
+        (
+            pairing_parser_text,
+            pairing_parser_path,
+            "fun isCanonicalRelayHostValue",
+            "Android pairing parser must expose a shared relay-host canonicality guard.",
+        ),
+        (
+            pairing_parser_text,
+            pairing_parser_path,
+            "require(isCanonicalRelayHostValue(relayHost))",
+            "Android pairing QR parsing must reject non-canonical relay hosts before route acceptance.",
+        ),
+        (
+            pairing_store_text,
+            pairing_store_path,
+            "isCanonicalRelayHostValue(relayHost)",
+            "Android PairingStore must reject non-canonical relay hosts before trusted storage or restore.",
+        ),
+        (
+            runtime_remote_route_planner_text,
+            runtime_remote_route_planner_path,
+            "isCanonicalRelayHostValue(host)",
+            "Android route planning must keep relay-host canonicality aligned with transport.",
+        ),
+        (
+            ui_text,
+            ui_path,
+            "isCanonicalRelayHostValue(host)",
+            "Android route UI must not mark non-canonical relay hosts as usable route material.",
+        ),
+        (
+            relay_route_preparation_text,
+            relay_route_preparation_path,
+            "host.canonicalRelayHostOrNull()",
+            "Android relay preparation must validate canonical host material before relay routing.",
+        ),
+        (
+            relay_route_preparation_text,
+            relay_route_preparation_path,
+            "relayId.opaqueRelayRouteValueOrNull()",
+            "Android relay preparation must validate canonical relay ids.",
+        ),
+        (
+            relay_route_preparation_text,
+            relay_route_preparation_path,
+            "relayFrameSecret.opaqueRelayRouteValueOrNull()",
+            "Android relay preparation must validate canonical relay frame secrets.",
+        ),
+        (
+            relay_route_preparation_text,
+            relay_route_preparation_path,
+            "antiReplayNonce.opaqueRelayRouteValueOrNull()",
+            "Android relay preparation must validate canonical relay anti-replay nonces.",
+        ),
+        (
+            relay_route_preparation_text,
+            relay_route_preparation_path,
+            '!it.contains("://")',
+            "Android relay preparation must reject URL-shaped relay hosts.",
+        ),
+        (
+            relay_route_preparation_text,
+            relay_route_preparation_path,
+            "OPAQUE_RELAY_ROUTE_VALUE_MAX_CHARS",
+            "Android relay preparation must keep opaque relay values bounded.",
+        ),
+        (
+            relay_route_preparation_test_text,
+            relay_route_preparation_test_path,
+            "relayRoutePreparationRejectsNonCanonicalRelayHostMaterial",
+            "Android relay preparation tests must reject non-canonical relay host material.",
+        ),
+        (
+            relay_route_preparation_test_text,
+            relay_route_preparation_test_path,
+            "relayRoutePreparationRejectsWhitespaceMutatedRelaySecrets",
+            "Android relay preparation tests must reject whitespace-mutated relay secrets and nonces.",
+        ),
+        (
+            relay_route_preparation_test_text,
+            relay_route_preparation_test_path,
+            '"https://relay.example.test"',
+            "Android relay preparation tests must cover URL-shaped relay host rejection.",
+        ),
+        (
+            pairing_parser_test_text,
+            pairing_parser_test_path,
+            "rejectsNonCanonicalRelayHostsBeforeRouteMaterialAcceptance",
+            "Android pairing parser tests must reject non-canonical relay hosts before route material acceptance.",
+        ),
+        (
+            pairing_store_test_text,
+            pairing_store_test_path,
+            "pairingStoreDropsNonCanonicalRelayHostOnWrite",
+            "Android PairingStore tests must reject non-canonical relay hosts on write.",
+        ),
+        (
+            pairing_store_test_text,
+            pairing_store_test_path,
+            "nonCanonicalRelayHostValues().map",
+            "Android PairingStore tests must reject non-canonical relay hosts on read.",
+        ),
+        (
+            relay_route_preparation_test_text,
+            relay_route_preparation_test_path,
+            'valid.copy(relayId = "relay 1")',
+            "Android relay preparation tests must reject whitespace-mutated relay ids.",
+        ),
+        (
+            relay_route_preparation_test_text,
+            relay_route_preparation_test_path,
+            'valid.copy(relayFrameSecret = "secret 1")',
+            "Android relay preparation tests must reject whitespace-mutated relay frame secrets.",
+        ),
+        (
+            relay_route_preparation_test_text,
+            relay_route_preparation_test_path,
+            'valid.copy(antiReplayNonce = "nonce 1")',
+            "Android relay preparation tests must reject whitespace-mutated relay anti-replay nonces.",
+        ),
+        (
+            relay_route_preparation_test_text,
+            relay_route_preparation_test_path,
+            "relayRoutePreparationRejectsOversizedOpaqueRouteMaterial",
+            "Android relay preparation tests must reject oversized opaque relay route material.",
+        ),
+        (
+            relay_route_preparation_test_text,
+            relay_route_preparation_test_path,
+            "TEST_OPAQUE_RELAY_ROUTE_VALUE_MAX_CHARS + 1",
+            "Android relay preparation tests must pin the oversized opaque relay value boundary.",
+        ),
+        (
+            relay_route_preparation_test_text,
+            relay_route_preparation_test_path,
+            "valid.copy(relayFrameSecret = oversizedOpaqueValue)",
+            "Android relay preparation tests must reject oversized relay frame secrets.",
+        ),
+        (
+            relay_route_preparation_test_text,
+            relay_route_preparation_test_path,
+            "valid.copy(antiReplayNonce = oversizedOpaqueValue)",
+            "Android relay preparation tests must reject oversized relay anti-replay nonces.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "oversized opaque relay route material",
+            "Default no-device gate summary must mention oversized opaque relay route material.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "Android relay route-material canonicality",
+            "Default no-device gate summary must mention Android relay route-material canonicality.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "Android pairing/trusted relay host canonicality addendum",
+            "Default no-device gate summary must mention Android pairing/trusted relay host canonicality.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Android Relay Route-Material Canonicality No-Device Gate",
+            "Progress docs must record Android relay route-material canonicality evidence.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Android Pairing And Trusted Relay Host Canonicality No-Device Gate",
+            "Progress docs must record Android pairing/trusted relay host canonicality evidence.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Android Relay Route-Material Size-Bound No-Device Gate",
+            "Progress docs must record Android relay route-material size-bound evidence.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Android Relay Route-Material Canonicality No-Device Gate",
+            "QA evidence must record Android relay route-material canonicality evidence.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Android Pairing And Trusted Relay Host Canonicality No-Device Gate",
+            "QA evidence must record Android pairing/trusted relay host canonicality evidence.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Android Relay Route-Material Size-Bound No-Device Gate",
+            "QA evidence must record Android relay route-material size-bound evidence.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "Android relay route-material canonicality",
+            "Roadmap smoke coverage queue must name Android relay route-material canonicality.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "Android pairing/trusted relay host canonicality",
+            "Roadmap smoke coverage queue must name Android pairing/trusted relay host canonicality.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "Android relay route-material size-bound",
+            "Roadmap smoke coverage queue must name Android relay route-material size-bound.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_relay_route_material_canonicality_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
     if "trustedRelayHandshakeRejectionKeepsStoredRelayAndStopsAutoReconnectUntilUserRetries" not in runtime_test_text:
         failures.append(
             f"{runtime_test_path.relative_to(ROOT)}: Missing Android trusted relay handshake rejection "
@@ -4543,8 +5818,10 @@ def android_runtime_boundary_guard_failures() -> list[str]:
     required_relay_probe_snippets = (
         "AETHERLINK_RELAY probe",
         "isRelayProbeReady()",
+        "isRelayProbeKnown()",
         "runtime_waiting",
         "relayProbeResponseParserRequiresKnownRouteAndWaitingRuntime",
+        "relayProbeKnownParserAllowsRuntimeReconnectRace",
         "AETHERLINK_RELAY probe ready",
         "relayQrPairingFailsBeforeConnectWhenDeviceCannotReachRelayRoute",
     )
@@ -4623,6 +5900,233 @@ def android_runtime_boundary_guard_failures() -> list[str]:
         ),
     )
     for haystack, path, snippet, guidance in required_relay_reachability_probe_input_guard_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_relay_reachability_probe_route_material_redaction_snippets = (
+        (
+            android_relay_reachability_probe_text,
+            android_relay_reachability_probe_path,
+            '"relay_id_present": bool(relay_id)',
+            "Android relay reachability probe JSON must avoid writing raw relay IDs.",
+        ),
+        (
+            android_relay_reachability_probe_text,
+            android_relay_reachability_probe_path,
+            "SAFE_PROBE_OUTPUT",
+            "Android relay reachability probe must redact raw relay IDs from probe output.",
+        ),
+        (
+            android_relay_reachability_probe_text,
+            android_relay_reachability_probe_path,
+            "relay route ready",
+            "Android relay reachability probe stdout must preserve route-ready evidence without the raw relay ID.",
+        ),
+        (
+            android_relay_reachability_probe_text,
+            android_relay_reachability_probe_path,
+            '"source": "fake_adb_redaction_self_test" if redaction_self_test else "android_device_network_probe"',
+            "Android relay reachability probe JSON must mark fake-ADB redaction self-tests separately from live probe evidence.",
+        ),
+        (
+            android_relay_reachability_probe_text,
+            android_relay_reachability_probe_path,
+            '"adb_serial": None if redaction_self_test else serial',
+            "Android relay reachability probe self-tests must not claim an observed adb serial.",
+        ),
+        (
+            android_relay_reachability_probe_text,
+            android_relay_reachability_probe_path,
+            '"android_relay_probe_redaction_self_test": redaction_self_test',
+            "Android relay reachability probe JSON must expose self-test coverage separately from live proof.",
+        ),
+        (
+            android_relay_reachability_probe_text,
+            android_relay_reachability_probe_path,
+            '"live_android_route_probe_verified": (not redaction_self_test) and bool(relay_id) and probe_ready == "1"',
+            "Android relay reachability probe JSON must keep live route proof false in fake-ADB redaction self-tests.",
+        ),
+        (
+            android_relay_reachability_probe_text,
+            android_relay_reachability_probe_path,
+            '"production_relay": False',
+            "Android relay reachability probe JSON must not claim production relay proof.",
+        ),
+        (
+            android_relay_reachability_probe_text,
+            android_relay_reachability_probe_path,
+            '"production_session_key_exchange": False',
+            "Android relay reachability probe JSON must not claim production session-key proof.",
+        ),
+        (
+            android_relay_reachability_probe_text,
+            android_relay_reachability_probe_path,
+            '"production_end_to_end_transport_encryption": False',
+            "Android relay reachability probe JSON must not claim production E2E transport encryption proof.",
+        ),
+        (
+            android_relay_reachability_probe_text,
+            android_relay_reachability_probe_path,
+            "android_relay_probe_redaction_self_test_not_phone_reachability_proof",
+            "Android relay reachability probe JSON must caveat fake-ADB redaction self-tests as not phone reachability proof.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "check_android_relay_reachability_probe_route_material_redaction_guard",
+            "Default no-device gate must run the Android relay reachability probe route-material redaction guard.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "rt1-sensitive-route-material",
+            "Default no-device gate must seed a sensitive relay ID for route-material redaction coverage.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            'assert "relay_id" not in summary["relay"]',
+            "Default no-device gate must prove physical relay probe JSON omits the raw relay_id field.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            'summary["relay"]["relay_id_present"] is True',
+            "Default no-device gate must preserve safe relay-id presence evidence.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "AETHERLINK_RELAY_PROBE_SELF_TEST=1",
+            "Default no-device gate must mark fake-ADB relay reachability probe runs as self-tests.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            'summary["evidence"]["source"] == "fake_adb_redaction_self_test"',
+            "Default no-device gate must assert relay reachability redaction artifacts expose their fake-ADB source.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            'summary["device"]["adb_serial"] is None',
+            "Default no-device gate must assert fake-ADB relay reachability self-tests do not claim an observed adb serial.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            'summary["coverage"]["android_relay_probe_redaction_self_test"] is True',
+            "Default no-device gate must assert relay reachability redaction self-test coverage is explicitly marked.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            'summary["coverage"]["live_android_route_probe_verified"] is False',
+            "Default no-device gate must assert fake-ADB relay reachability self-tests do not claim live route proof.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            'summary["coverage"]["production_relay"] is False',
+            "Default no-device gate must assert relay reachability probe summaries do not claim production relay proof.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            'summary["coverage"]["production_session_key_exchange"] is False',
+            "Default no-device gate must assert relay reachability probe summaries do not claim production session-key proof.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            'summary["coverage"]["production_end_to_end_transport_encryption"] is False',
+            "Default no-device gate must assert relay reachability probe summaries do not claim production E2E transport encryption proof.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            '"not_production_session_key_exchange_proof" in summary["caveats"]',
+            "Default no-device gate must assert relay reachability probe summaries caveat production session-key proof.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            '"not_production_end_to_end_transport_encryption_proof" in summary["caveats"]',
+            "Default no-device gate must assert relay reachability probe summaries caveat production E2E transport proof.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            '"android_relay_probe_redaction_self_test_not_phone_reachability_proof" in summary["caveats"]',
+            "Default no-device gate must assert relay reachability redaction self-tests carry a not-phone-proof caveat.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "Android relay reachability probe route-material redaction addendum",
+            "Default no-device gate summary must mention Android relay reachability probe route-material redaction coverage.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "relay probe/physical wrapper production proof-boundary addendum",
+            "Default no-device gate summary must mention relay probe and physical wrapper production proof-boundary coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Android Relay Reachability Probe Route-Material Redaction No-Device Gate",
+            "Progress docs must record the Android relay reachability probe route-material redaction no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Android Relay Reachability Probe Route-Material Redaction No-Device Gate",
+            "QA evidence must record the Android relay reachability probe route-material redaction no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "Android relay reachability probe route-material redaction",
+            "Roadmap smoke coverage queue must name Android relay reachability probe route-material redaction coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Android Relay Reachability Probe Self-Test Proof Boundary No-Device Gate",
+            "Progress docs must record Android relay reachability probe self-test proof-boundary coverage.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Android Relay Reachability Probe Self-Test Proof Boundary No-Device Gate",
+            "QA evidence must record Android relay reachability probe self-test proof-boundary coverage.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "Android relay reachability probe self-test proof-boundary",
+            "Roadmap smoke coverage queue must name Android relay reachability probe self-test proof-boundary coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Relay Probe/Physical Wrapper Production Proof-Boundary Summary No-Device Gate",
+            "Progress docs must record relay probe/physical wrapper production proof-boundary summary coverage.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Relay Probe/Physical Wrapper Production Proof-Boundary Summary No-Device Gate",
+            "QA evidence must record relay probe/physical wrapper production proof-boundary summary coverage.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "relay probe/physical wrapper production proof-boundary",
+            "Roadmap smoke coverage queue must name relay probe/physical wrapper production proof-boundary coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_relay_reachability_probe_route_material_redaction_snippets:
         if snippet not in haystack:
             failures.append(f"{path.relative_to(ROOT)}: {guidance}")
     required_relay_auth_terminal_snippets = (
@@ -8379,9 +9883,10 @@ def android_haptic_guard_failures() -> list[str]:
         ),
         (
             "EmptyState(\n"
-            "                    text = if (!actionsEnabled && actionsDisabledReasonRes == R.string.memory_action_state_wait_for_stream) {\n"
-            "                        actionsDisabledReason",
-            "Memory empty states must announce localized empty/disconnected changes politely.",
+            "                    text = when {\n"
+            "                        hasMemorySearchQuery -> stringResource(R.string.no_memory_search_results)\n"
+            "                        !actionsEnabled && actionsDisabledReasonRes == R.string.memory_action_state_wait_for_stream ->",
+            "Memory empty states must announce localized empty/disconnected/search-no-results changes politely.",
         ),
         (
             "pluralStringResource(\n            R.plurals.memory_saved_count",
@@ -9659,6 +11164,10 @@ def android_physical_chat_smoke_guard_failures() -> list[str]:
             "Physical pairing smoke must keep the optional chat/cancel UI path.",
         ),
         (
+            "--capture-ui-polish",
+            "Physical pairing smoke must keep the optional UI polish screenshot/XML capture path.",
+        ),
+        (
             "--live-backend",
             "Physical pairing smoke must keep the optional real Ollama/LM Studio runtime path.",
         ),
@@ -9695,16 +11204,36 @@ def android_physical_chat_smoke_guard_failures() -> list[str]:
             "Physical external-relay smoke must wait until the runtime is waiting on the relay before route-level probing.",
         ),
         (
-            'tap_content_description "Message"',
-            "Physical chat/cancel smoke must tap the accessibility-labelled chat input.",
+            "node_center_by_localized_content_description",
+            "Physical chat/cancel smoke must resolve localized Android string resources for content descriptions.",
         ),
         (
-            'tap_content_description "Send message"',
-            "Physical chat/cancel smoke must tap the accessibility-labelled send control.",
+            "node_center_by_localized_text_or_content",
+            "Physical UI polish smoke must resolve localized drawer text as well as content descriptions.",
         ),
         (
-            'tap_content_description "Cancel generation"',
-            "Physical chat/cancel smoke must tap the accessibility-labelled cancel control.",
+            "node_center_by_localized_content_description_prefix",
+            "Physical UI polish smoke must tap dynamic localized model-picker content descriptions.",
+        ),
+        (
+            "node_center_by_enabled_edit_text",
+            "Physical chat/cancel smoke must fall back to the enabled EditText when localized chat input semantics are merged.",
+        ),
+        (
+            "bring_android_app_to_foreground",
+            "Physical chat/cancel smoke must foreground AetherLink before tapping localized text shared with launcher apps.",
+        ),
+        (
+            'tap_chat_input 15',
+            "Physical chat/cancel smoke must tap the locale-resilient chat input helper.",
+        ),
+        (
+            'tap_localized_content_description "content_desc_send"',
+            "Physical chat/cancel smoke must tap the localized send control.",
+        ),
+        (
+            'tap_localized_content_description "content_desc_cancel_generation"',
+            "Physical chat/cancel smoke must tap the localized cancel control.",
         ),
         (
             'wait_for_log "$RUNTIME_LOG" "chat.cancel"',
@@ -9714,10 +11243,155 @@ def android_physical_chat_smoke_guard_failures() -> list[str]:
             'wait_for_log "$RUNTIME_LOG" "chat.done"',
             "Physical chat/cancel smoke must verify the runtime closes the streamed chat lifecycle.",
         ),
+        (
+            "capture_ui_artifact",
+            "Physical UI polish smoke must save paired PNG/XML artifacts for review.",
+        ),
+        (
+            "aetherlink-ui-chat",
+            "Physical UI polish smoke must capture the chat screen.",
+        ),
+        (
+            "aetherlink-ui-model-selector",
+            "Physical UI polish smoke must capture the model selector.",
+        ),
+        (
+            "aetherlink-ui-drawer",
+            "Physical UI polish smoke must capture the navigation drawer.",
+        ),
+        (
+            "aetherlink-ui-settings",
+            "Physical UI polish smoke must capture Settings.",
+        ),
+        (
+            "aetherlink-ui-launcher",
+            "Physical UI polish smoke must capture best-effort launcher placement.",
+        ),
+        (
+            "Launcher icon check: AetherLink label visible.",
+            "Physical UI polish smoke must report launcher label visibility when present.",
+        ),
+        (
+            "sanitize_am_start_log_for_qa",
+            "Physical pairing smoke must sanitize Android am start output before storing or printing it.",
+        ),
+        (
+            "sanitize_android_qa_text_for_route_material",
+            "Physical pairing smoke must share route-material redaction across failed Android QA text artifacts.",
+        ),
+        (
+            "sanitize_android_qa_file_for_route_material",
+            "Physical pairing smoke must sanitize saved failed activity/logcat artifacts before preserving them.",
+        ),
+        (
+            'sanitize_android_qa_file_for_route_material "$activity_dump"',
+            "Physical pairing smoke must sanitize failed activity dumps before reporting their path.",
+        ),
+        (
+            'sanitize_android_qa_file_for_route_material "$logcat_dump"',
+            "Physical pairing smoke must sanitize failed logcat dumps before filtered stderr output.",
+        ),
+        (
+            "--self-test-sanitize-android-qa-artifacts",
+            "Physical pairing smoke must expose a no-device Android QA artifact sanitizer self-test path.",
+        ),
+        (
+            "ANDROID_QA_ARTIFACT_SANITIZER_SELF_TEST_MARKER",
+            "Physical pairing smoke must give the Android QA artifact sanitizer self-test an in-band proof-boundary marker.",
+        ),
+        (
+            "android_qa_artifact_sanitizer_self_test_not_phone_logcat_or_activity_proof",
+            "Android QA artifact sanitizer self-test must state that it is not phone logcat or activity proof.",
+        ),
+        (
+            "RAW_AM_START_LOG",
+            "Physical pairing smoke must keep raw am start output temporary so stored artifacts are sanitized.",
+        ),
+        (
+            "--self-test-sanitize-am-start-log",
+            "Physical pairing smoke must expose a no-device sanitizer self-test path.",
+        ),
+        (
+            "AM_START_SANITIZER_SELF_TEST_MARKER",
+            "Physical pairing smoke must give the hidden am-start sanitizer self-test an in-band proof-boundary marker.",
+        ),
+        (
+            "am_start_sanitizer_self_test_not_android_intent_or_phone_pairing_proof",
+            "Physical pairing smoke am-start sanitizer self-test must state that it is not phone pairing proof.",
+        ),
+        (
+            "aetherlink://pair?<redacted>",
+            "Physical pairing smoke must redact pairing deeplink query material from am start logs.",
+        ),
+        (
+            'rm -f "$RAW_AM_START_LOG"',
+            "Physical pairing smoke must delete raw am start output after sanitizing it.",
+        ),
     )
     for snippet, guidance in required_snippets:
         if snippet not in text:
             failures.append(f"{relative}: {guidance}")
+
+    no_device_path = ROOT / "script/check_no_device_quality.sh"
+    no_device_text = no_device_path.read_text(encoding="utf-8", errors="replace")
+    no_device_relative = no_device_path.relative_to(ROOT)
+    required_no_device_snippets = (
+        (
+            "--capture-ui-polish captures chat, model selector, drawer, Settings, and launcher screenshots/XML",
+            "No-device quality summary must mention the physical UI polish capture option without claiming no-device coverage.",
+        ),
+        (
+            "check_android_pairing_deeplink_am_start_log_redaction_guard",
+            "No-device quality gate must behavior-test Android pairing deeplink am-start log redaction.",
+        ),
+        (
+            "pairing-nonce-sensitive",
+            "No-device deeplink redaction guard must seed sensitive pairing material.",
+        ),
+        (
+            "relay-secret-sensitive",
+            "No-device deeplink redaction guard must seed sensitive relay route material.",
+        ),
+        (
+            'dat=aetherlink://pair?<redacted>',
+            "No-device deeplink redaction guard must prove only a redacted pairing URI marker remains.",
+        ),
+        (
+            "am_start_sanitizer_self_test_not_android_intent_or_phone_pairing_proof",
+            "No-device deeplink redaction guard must prove sanitizer self-test output is not phone pairing proof.",
+        ),
+        (
+            "check_android_pairing_failure_artifact_redaction_guard",
+            "No-device quality gate must behavior-test Android failed activity/logcat artifact redaction.",
+        ),
+        (
+            "--self-test-sanitize-android-qa-artifacts",
+            "No-device quality gate must run the Android QA artifact sanitizer self-test.",
+        ),
+        (
+            "Runtime connection failed code=remote_route_unreachable diagnostic=route_diagnostic_relay_failed",
+            "No-device Android QA artifact redaction guard must preserve structured failure diagnostics.",
+        ),
+        (
+            "android_qa_artifact_sanitizer_self_test_not_phone_logcat_or_activity_proof",
+            "No-device Android QA artifact redaction guard must prove self-test output is not phone logcat proof.",
+        ),
+        (
+            "Android pairing failure artifact redaction addendum",
+            "No-device quality summary must mention Android pairing failure artifact redaction coverage.",
+        ),
+        (
+            "Android pairing deeplink am-start route-material redaction addendum",
+            "No-device quality summary must mention Android pairing deeplink am-start route-material redaction coverage.",
+        ),
+        (
+            "Android pairing deeplink am-start sanitizer self-test proof-boundary addendum",
+            "No-device quality summary must mention Android pairing deeplink am-start sanitizer self-test proof-boundary coverage.",
+        ),
+    )
+    for snippet, guidance in required_no_device_snippets:
+        if snippet not in no_device_text:
+            failures.append(f"{no_device_relative}: {guidance}")
 
     relay_probe_path = ROOT / "script/android_relay_reachability_probe.sh"
     relay_probe_text = relay_probe_path.read_text(encoding="utf-8", errors="replace")
@@ -9769,6 +11443,54 @@ def android_physical_chat_smoke_guard_failures() -> list[str]:
             "Physical external-relay QA summary must embed child probe summaries for durable evidence.",
         ),
         (
+            "redact_probe_summary_route_material",
+            "Physical external-relay QA summary must defensively redact route material from embedded child probe summaries.",
+        ),
+        (
+            "SENSITIVE_ROUTE_KEYS",
+            "Physical external-relay QA summary must centralize sensitive probe-summary route keys.",
+        ),
+        (
+            "--self-test-redact-probe-summary",
+            "Physical external-relay QA wrapper must expose a no-device probe-summary redaction self-test.",
+        ),
+        (
+            "route_material=<redacted>",
+            "Physical external-relay QA wrapper must redact route-material key/value tokens in embedded probe output.",
+        ),
+        (
+            '"probe_summary_redaction_self_test": self_test_redaction_only',
+            "Physical external-relay QA summary must mark seeded probe-summary redaction self-tests separately from live proof.",
+        ),
+        (
+            '"live_android_device_probe_verified": live_android_device_probe_verified',
+            "Physical external-relay QA summary must expose live Android probe proof separately from seeded self-tests.",
+        ),
+        (
+            '"physical_external_relay_verified": physical_external_relay_verified',
+            "Physical external-relay QA summary must expose physical external-relay proof separately from seeded self-tests.",
+        ),
+        (
+            '"production_relay": False',
+            "Physical external-relay QA summary must not claim production relay proof.",
+        ),
+        (
+            '"production_session_key_exchange": False',
+            "Physical external-relay QA summary must not claim production session-key proof.",
+        ),
+        (
+            '"production_end_to_end_transport_encryption": False',
+            "Physical external-relay QA summary must not claim production E2E transport encryption proof.",
+        ),
+        (
+            '"physical_external_relay_success": physical_external_relay_verified',
+            "Physical external-relay QA summary must split physical success from legacy/self-test success.",
+        ),
+        (
+            "self_test_redaction_only_not_physical_relay_proof",
+            "Physical external-relay QA summary must caveat seeded redaction self-tests as not physical relay proof.",
+        ),
+        (
             '"external_relay_probe_from_device": bool(device_probe_json)',
             "Physical external-relay QA summary must not claim endpoint probe coverage when no probe artifact exists.",
         ),
@@ -9784,8 +11506,89 @@ def android_physical_chat_smoke_guard_failures() -> list[str]:
             "Set AETHERLINK_DIFFERENT_NETWORK_CONFIRMED=1 after putting the phone on a different network.",
             "Physical external-relay QA must clearly tell operators how to confirm different-network evidence.",
         ),
+        (
+            "SUMMARY_RELAY_HOST",
+            "Physical external-relay QA summary must use a sanitized relay host label for invalid input.",
+        ),
+        (
+            "validate_relay_host_input",
+            "Physical external-relay QA must validate URL-shaped relay hosts before child smoke execution.",
+        ),
+        (
+            "Invalid relay host $SUMMARY_RELAY_HOST:$RELAY_PORT: use a host or IP address, not a URL.",
+            "Physical external-relay QA must report unsafe relay-host input with a safe invalid-host label.",
+        ),
     )
     for snippet, guidance in required_physical_wrapper_snippets:
+        if snippet not in physical_wrapper_text:
+            failures.append(f"{physical_wrapper_relative}: {guidance}")
+    if "self-test-device" in physical_wrapper_text:
+        failures.append(
+            f"{physical_wrapper_relative}: Physical external-relay wrapper self-test must not invent "
+            "an observed adb serial."
+        )
+
+    required_physical_wrapper_runtime_log_snippets = (
+        (
+            "runtime_log_artifact_present = os.path.exists(runtime_log)",
+            "Physical external-relay wrapper summary must record whether runtime.log exists.",
+        ),
+        (
+            '"runtime_log_artifact_present": runtime_log_artifact_present',
+            "Physical external-relay wrapper summary must expose runtime-log artifact coverage.",
+        ),
+        (
+            '"runtime_log_contains_temporary_pairing_material": runtime_log_contains_temporary_pairing_material',
+            "Physical external-relay wrapper summary must classify runtime logs containing temporary pairing material.",
+        ),
+        (
+            '"runtime_log_contains_temporary_route_material": runtime_log_contains_temporary_route_material',
+            "Physical external-relay wrapper summary must classify runtime logs containing temporary route material.",
+        ),
+        (
+            "runtime_log_contains_temporary_pairing_or_route_material",
+            "Physical external-relay wrapper summary must caveat secret-bearing runtime logs.",
+        ),
+        (
+            "runtime-pairing-nonce-sensitive",
+            "Physical external-relay wrapper self-test must seed runtime-log pairing material.",
+        ),
+    )
+    for snippet, guidance in required_physical_wrapper_runtime_log_snippets:
+        if snippet not in physical_wrapper_text:
+            failures.append(f"{physical_wrapper_relative}: {guidance}")
+
+    required_physical_wrapper_log_snippets = (
+        (
+            "wrapper_log_artifact_present = os.path.exists(log_path)",
+            "Physical external-relay wrapper summary must record whether the wrapper log exists.",
+        ),
+        (
+            "wrapper_log_contains_unredacted_route_material",
+            "Physical external-relay wrapper summary must classify wrapper logs containing unredacted route material.",
+        ),
+        (
+            '"wrapper_log_artifact_present": wrapper_log_artifact_present',
+            "Physical external-relay wrapper summary must expose wrapper-log artifact coverage.",
+        ),
+        (
+            '"wrapper_log_omits_temporary_secret_material": wrapper_log_artifact_present and not wrapper_log_contains_route_material',
+            "Physical external-relay wrapper summary must expose wrapper-log temporary-secret omission coverage.",
+        ),
+        (
+            '"wrapper_log_contains_unredacted_route_material": wrapper_log_contains_route_material',
+            "Physical external-relay wrapper summary must expose wrapper-log unredacted route-material coverage.",
+        ),
+        (
+            "wrapper_log_redaction_not_verified",
+            "Physical external-relay wrapper summary must caveat missing or unsafe wrapper logs.",
+        ),
+        (
+            "Pairing deeplink output: aetherlink://pair?<redacted>",
+            "Physical external-relay wrapper self-test must seed a redacted pairing deeplink in wrapper logs.",
+        ),
+    )
+    for snippet, guidance in required_physical_wrapper_log_snippets:
         if snippet not in physical_wrapper_text:
             failures.append(f"{physical_wrapper_relative}: {guidance}")
 
@@ -9800,6 +11603,98 @@ def android_physical_chat_smoke_guard_failures() -> list[str]:
         (
             "physical external-relay summary addendum",
             "No-device quality summary must name physical external-relay summary coverage as a distinct addendum.",
+        ),
+        (
+            "check_physical_external_relay_probe_summary_redaction_guard",
+            "No-device quality gate must behavior-test physical external-relay probe-summary route-material redaction.",
+        ),
+        (
+            "relay-secret-sensitive",
+            "No-device physical wrapper guard must seed sensitive relay secret material in child probe summaries.",
+        ),
+        (
+            'assert "relay_secret" not in route_summary["relay"]',
+            "No-device physical wrapper guard must prove embedded child relay secrets are removed.",
+        ),
+        (
+            'assert "route_token" not in probe_output',
+            "No-device physical wrapper guard must prove embedded child route-token output is redacted.",
+        ),
+        (
+            "physical external-relay probe-summary route-material redaction addendum",
+            "No-device quality summary must name physical external-relay probe-summary route-material redaction coverage.",
+        ),
+        (
+            "physical external-relay probe-summary self-test proof-boundary addendum",
+            "No-device quality summary must name physical external-relay probe-summary self-test proof-boundary coverage.",
+        ),
+        (
+            'summary["self_test_success"] is True',
+            "No-device physical wrapper guard must assert seeded redaction self-tests are marked as self-test success.",
+        ),
+        (
+            'summary["physical_external_relay_success"] is False',
+            "No-device physical wrapper guard must assert seeded redaction self-tests do not claim physical external-relay success.",
+        ),
+        (
+            'summary["android_device"]["observed_adb_serial"] is None',
+            "No-device physical wrapper guard must assert seeded redaction self-tests do not claim an observed adb serial.",
+        ),
+        (
+            'summary["coverage"]["probe_summary_redaction_self_test"] is True',
+            "No-device physical wrapper guard must assert seeded probe-summary redaction self-tests are explicitly marked.",
+        ),
+        (
+            'summary["coverage"]["live_android_device_probe_verified"] is False',
+            "No-device physical wrapper guard must assert seeded probe-summary redaction self-tests do not claim live Android probe proof.",
+        ),
+        (
+            'summary["coverage"]["physical_external_relay_verified"] is False',
+            "No-device physical wrapper guard must assert seeded probe-summary redaction self-tests do not claim physical external-relay proof.",
+        ),
+        (
+            '"self_test_redaction_only_not_physical_relay_proof" in summary["caveats"]',
+            "No-device physical wrapper guard must assert seeded redaction self-tests carry a not-physical-proof caveat.",
+        ),
+        (
+            'summary["coverage"]["runtime_log_artifact_present"] is True',
+            "No-device physical wrapper guard must assert runtime-log artifact coverage.",
+        ),
+        (
+            'summary["coverage"]["runtime_log_contains_temporary_pairing_material"] is True',
+            "No-device physical wrapper guard must assert runtime-log temporary pairing-material coverage.",
+        ),
+        (
+            'summary["coverage"]["runtime_log_contains_temporary_route_material"] is True',
+            "No-device physical wrapper guard must assert runtime-log temporary route-material coverage.",
+        ),
+        (
+            '"runtime_log_contains_temporary_pairing_or_route_material" in summary["caveats"]',
+            "No-device physical wrapper guard must assert the runtime-log temporary-material caveat.",
+        ),
+        (
+            'summary["coverage"]["wrapper_log_artifact_present"] is True',
+            "No-device physical wrapper guard must assert wrapper-log artifact coverage.",
+        ),
+        (
+            'summary["coverage"]["wrapper_log_omits_temporary_secret_material"] is True',
+            "No-device physical wrapper guard must assert wrapper-log temporary-secret omission coverage.",
+        ),
+        (
+            'summary["coverage"]["wrapper_log_contains_unredacted_route_material"] is False',
+            "No-device physical wrapper guard must assert wrapper-log unredacted route-material coverage is false.",
+        ),
+        (
+            '"wrapper_log_redaction_not_verified" not in summary["caveats"]',
+            "No-device physical wrapper guard must assert the wrapper log redaction caveat is absent after verification.",
+        ),
+        (
+            '"aetherlink://pair?<redacted>" in wrapper_log',
+            "No-device physical wrapper guard must assert wrapper logs keep pairing deeplinks redacted.",
+        ),
+        (
+            "physical external-relay runtime-log temporary route-material summary addendum",
+            "No-device quality summary must name physical external-relay runtime-log temporary route-material summary coverage.",
         ),
         (
             'summary["coverage"]["external_relay_probe_reachable"] is False',
@@ -9832,6 +11727,26 @@ def android_physical_chat_smoke_guard_failures() -> list[str]:
         (
             "physical external-relay requested serial evidence binding addendum",
             "No-device quality summary must name physical external-relay requested serial evidence binding as a distinct addendum.",
+        ),
+        (
+            "check_physical_external_relay_url_host_redaction_guard",
+            "No-device quality gate must behavior-test physical external-relay URL host input redaction.",
+        ),
+        (
+            "provider.example.test:11434/v1/models?route_token=leaked-route-token&relay_secret=leaked-relay-secret",
+            "No-device physical wrapper guard must seed a URL-shaped relay host with route-token and relay-secret markers.",
+        ),
+        (
+            'summary["relay"]["host"] == "<invalid-host>"',
+            "No-device physical wrapper guard must assert unsafe relay host input is sanitized in summary JSON.",
+        ),
+        (
+            '"provider.example.test",',
+            "No-device physical wrapper guard must assert URL-host provider markers are absent from persisted evidence.",
+        ),
+        (
+            "physical external-relay URL host input redaction addendum",
+            "No-device quality summary must name physical external-relay URL host input redaction coverage.",
         ),
         (
             "check_physical_external_relay_different_network_confirmation_guard",
@@ -9879,6 +11794,84 @@ def android_physical_chat_smoke_guard_failures() -> list[str]:
         if snippet not in path.read_text(encoding="utf-8", errors="replace"):
             failures.append(f"{path.relative_to(ROOT)}: {guidance}")
 
+    required_physical_probe_summary_redaction_doc_snippets = (
+        (
+            ROOT / "docs/progress.md",
+            "Physical External Relay Probe-Summary Self-Test Proof Boundary No-Device Gate",
+            "Progress docs must record physical external-relay probe-summary self-test proof-boundary coverage.",
+        ),
+        (
+            ROOT / "docs/qa-evidence.md",
+            "Physical External Relay Probe-Summary Self-Test Proof Boundary No-Device Gate",
+            "QA evidence must record physical external-relay probe-summary self-test proof-boundary coverage.",
+        ),
+        (
+            ROOT / "docs/roadmap.md",
+            "Physical external-relay probe-summary self-test proof-boundary",
+            "Roadmap smoke coverage queue must name physical external-relay probe-summary self-test proof-boundary coverage.",
+        ),
+        (
+            ROOT / "docs/progress.md",
+            "Physical External Relay Probe-Summary Route-Material Redaction No-Device Gate",
+            "Progress docs must record physical external-relay probe-summary route-material redaction.",
+        ),
+        (
+            ROOT / "docs/qa-evidence.md",
+            "Physical External Relay Probe-Summary Route-Material Redaction No-Device Gate",
+            "QA evidence must record physical external-relay probe-summary route-material redaction.",
+        ),
+        (
+            ROOT / "docs/roadmap.md",
+            "physical external-relay probe-summary route-material redaction",
+            "Roadmap smoke coverage queue must name physical external-relay probe-summary route-material redaction coverage.",
+        ),
+    )
+    for path, snippet, guidance in required_physical_probe_summary_redaction_doc_snippets:
+        if snippet not in path.read_text(encoding="utf-8", errors="replace"):
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+
+    required_physical_runtime_log_doc_snippets = (
+        (
+            ROOT / "docs/progress.md",
+            "Physical External Relay Runtime Log Temporary Pairing/Route-Material Summary No-Device Gate",
+            "Progress docs must record physical external-relay runtime-log temporary material summary coverage.",
+        ),
+        (
+            ROOT / "docs/qa-evidence.md",
+            "Physical External Relay Runtime Log Temporary Pairing/Route-Material Summary No-Device Gate",
+            "QA evidence must record physical external-relay runtime-log temporary material summary coverage.",
+        ),
+        (
+            ROOT / "docs/roadmap.md",
+            "Physical external-relay runtime-log temporary route-material summary",
+            "Roadmap smoke coverage queue must name physical external-relay runtime-log temporary route-material summary coverage.",
+        ),
+    )
+    for path, snippet, guidance in required_physical_runtime_log_doc_snippets:
+        if snippet not in path.read_text(encoding="utf-8", errors="replace"):
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+
+    required_physical_wrapper_log_doc_snippets = (
+        (
+            ROOT / "docs/progress.md",
+            "Physical External Relay Wrapper Log Redaction Summary No-Device Gate",
+            "Progress docs must record physical external-relay wrapper-log redaction summary coverage.",
+        ),
+        (
+            ROOT / "docs/qa-evidence.md",
+            "Physical External Relay Wrapper Log Redaction Summary No-Device Gate",
+            "QA evidence must record physical external-relay wrapper-log redaction summary coverage.",
+        ),
+        (
+            ROOT / "docs/roadmap.md",
+            "Physical external-relay wrapper-log redaction summary",
+            "Roadmap smoke coverage queue must name physical external-relay wrapper-log redaction summary coverage.",
+        ),
+    )
+    for path, snippet, guidance in required_physical_wrapper_log_doc_snippets:
+        if snippet not in path.read_text(encoding="utf-8", errors="replace"):
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+
     required_physical_requested_serial_doc_snippets = (
         (
             ROOT / "docs/progress.md",
@@ -9898,6 +11891,77 @@ def android_physical_chat_smoke_guard_failures() -> list[str]:
     )
     for path, snippet, guidance in required_physical_requested_serial_doc_snippets:
         if snippet not in path.read_text(encoding="utf-8", errors="replace"):
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+
+    required_physical_url_host_redaction_doc_snippets = (
+        (
+            ROOT / "docs/progress.md",
+            "Physical External Relay URL Host Input Redaction No-Device Gate",
+            "Progress docs must record the physical external-relay URL host input redaction no-device gate.",
+        ),
+        (
+            ROOT / "docs/qa-evidence.md",
+            "Physical External Relay URL Host Input Redaction No-Device Gate",
+            "QA evidence must record the physical external-relay URL host input redaction no-device gate.",
+        ),
+        (
+            ROOT / "docs/roadmap.md",
+            "physical external-relay URL host input redaction",
+            "Roadmap smoke coverage queue must name physical external-relay URL host input redaction coverage.",
+        ),
+    )
+    for path, snippet, guidance in required_physical_url_host_redaction_doc_snippets:
+        if snippet not in path.read_text(encoding="utf-8", errors="replace"):
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+
+    no_device_text = (ROOT / "script/check_no_device_quality.sh").read_text(
+        encoding="utf-8",
+        errors="replace",
+    )
+    required_no_adb_url_host_redaction_snippets = (
+        (
+            no_device_text,
+            ROOT / "script/check_no_device_quality.sh",
+            "check_no_adb_external_relay_url_host_redaction_guard",
+            "No-device gate must include the no-ADB external-relay URL host redaction guard.",
+        ),
+        (
+            no_device_text,
+            ROOT / "script/check_no_device_quality.sh",
+            "provider.example.test:11434/v1/models?route_token=leaked-route-token&relay_secret=leaked-relay-secret",
+            "No-device gate must seed URL-shaped no-ADB relay-host route material.",
+        ),
+        (
+            no_device_text,
+            ROOT / "script/check_no_device_quality.sh",
+            "--relay-host must be a host or IP address, not a URL.",
+            "No-device gate must assert the safe no-ADB URL host rejection message.",
+        ),
+        (
+            ROOT / "docs/progress.md",
+            ROOT / "docs/progress.md",
+            "No-ADB External Relay URL Host Input Redaction No-Device Gate",
+            "Progress docs must record no-ADB external-relay URL host input redaction coverage.",
+        ),
+        (
+            ROOT / "docs/qa-evidence.md",
+            ROOT / "docs/qa-evidence.md",
+            "No-ADB External Relay URL Host Input Redaction No-Device Gate",
+            "QA evidence must record no-ADB external-relay URL host input redaction coverage.",
+        ),
+        (
+            ROOT / "docs/roadmap.md",
+            ROOT / "docs/roadmap.md",
+            "No-ADB external-relay URL host input redaction",
+            "Roadmap smoke coverage queue must name no-ADB external-relay URL host input redaction coverage.",
+        ),
+    )
+    for text_or_path, path, snippet, guidance in required_no_adb_url_host_redaction_snippets:
+        if not isinstance(text_or_path, str):
+            text = text_or_path.read_text(encoding="utf-8", errors="replace")
+        else:
+            text = text_or_path
+        if snippet not in text:
             failures.append(f"{path.relative_to(ROOT)}: {guidance}")
 
     required_physical_different_network_confirmation_doc_snippets = (
@@ -9926,25 +11990,236 @@ def android_physical_chat_smoke_guard_failures() -> list[str]:
         if snippet not in path.read_text(encoding="utf-8", errors="replace"):
             failures.append(f"{path.relative_to(ROOT)}: {guidance}")
 
+    required_physical_deeplink_redaction_doc_snippets = (
+        (
+            ROOT / "docs/progress.md",
+            "Android Pairing Failure Artifact Redaction No-Device Gate",
+            "Progress docs must record Android pairing failure artifact redaction coverage.",
+        ),
+        (
+            ROOT / "docs/qa-evidence.md",
+            "Android Pairing Failure Artifact Redaction No-Device Gate",
+            "QA evidence must record Android pairing failure artifact redaction coverage.",
+        ),
+        (
+            ROOT / "docs/roadmap.md",
+            "Android pairing failure artifact redaction",
+            "Roadmap smoke coverage queue must name Android pairing failure artifact redaction coverage.",
+        ),
+        (
+            ROOT / "docs/progress.md",
+            "Android Pairing Deeplink Am-Start Route-Material Redaction No-Device Gate",
+            "Progress docs must record Android pairing deeplink am-start route-material redaction.",
+        ),
+        (
+            ROOT / "docs/qa-evidence.md",
+            "Android Pairing Deeplink Am-Start Route-Material Redaction No-Device Gate",
+            "QA evidence must record Android pairing deeplink am-start route-material redaction.",
+        ),
+        (
+            ROOT / "docs/roadmap.md",
+            "Android pairing deeplink am-start route-material redaction",
+            "Roadmap smoke coverage queue must name Android pairing deeplink am-start route-material redaction coverage.",
+        ),
+        (
+            ROOT / "docs/progress.md",
+            "Android Pairing Deeplink Am-Start Sanitizer Self-Test Proof Boundary No-Device Gate",
+            "Progress docs must record Android pairing deeplink am-start sanitizer self-test proof-boundary coverage.",
+        ),
+        (
+            ROOT / "docs/qa-evidence.md",
+            "Android Pairing Deeplink Am-Start Sanitizer Self-Test Proof Boundary No-Device Gate",
+            "QA evidence must record Android pairing deeplink am-start sanitizer self-test proof-boundary coverage.",
+        ),
+        (
+            ROOT / "docs/roadmap.md",
+            "Android pairing deeplink am-start sanitizer self-test proof-boundary",
+            "Roadmap smoke coverage queue must name Android pairing deeplink am-start sanitizer self-test proof-boundary coverage.",
+        ),
+    )
+    for path, snippet, guidance in required_physical_deeplink_redaction_doc_snippets:
+        if snippet not in path.read_text(encoding="utf-8", errors="replace"):
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+
     no_adb_smoke_path = ROOT / "script/no_adb_external_relay_pairing_smoke.sh"
     no_adb_smoke_text = no_adb_smoke_path.read_text(encoding="utf-8", errors="replace")
     no_adb_smoke_relative = no_adb_smoke_path.relative_to(ROOT)
     required_no_adb_qr_summary_snippets = (
         (
+            '"runtime_host_relay_registration": "accepted role=runtime" in relay_text',
+            "No-ADB QR smoke summary must expose runtime-host relay registration coverage separately from trusted-device proof.",
+        ),
+        (
+            '"runtime_host_waiting_for_peer": "relay status=waiting_for_peer" in runtime_text',
+            "No-ADB QR smoke summary must expose runtime-host waiting-for-peer coverage separately from trusted-device proof.",
+        ),
+        (
+            '"trusted_device_relay_reachability": "relay status=ready" in runtime_text or "accepted role=client" in relay_text',
+            "No-ADB QR smoke summary must expose trusted-device relay reachability coverage.",
+        ),
+        (
+            '"trusted_device_pairing": "Development pairing accepted" in runtime_text',
+            "No-ADB QR smoke summary must expose trusted-device pairing coverage.",
+        ),
+        (
+            '"trusted_device_runtime_health": health_count > 0',
+            "No-ADB QR smoke summary must expose trusted-device runtime.health coverage.",
+        ),
+        (
+            '"trusted_device_reconnect": expect_reconnect == "1" and health_count > 1',
+            "No-ADB QR smoke summary must expose trusted-device reconnect coverage.",
+        ),
+        (
+            '"optical_qr_scan": False',
+            "No-ADB QR smoke summary must not claim optical QR scan proof from logs or manual payload input.",
+        ),
+        (
+            '"require_manual_network_confirmation": require_manual_network_confirmation == "1"',
+            "No-ADB QR smoke summary must record whether manual different-network confirmation was required.",
+        ),
+        (
+            '"external_network_operator_confirmed": network_confirmed == "1"',
+            "No-ADB QR smoke summary must expose whether the manual different-network confirmation gate passed.",
+        ),
+        (
+            '"full_run_trusted_device_proof": (',
+            "No-ADB QR smoke summary must expose full-run trusted-device proof separately from emit-only artifacts.",
+        ),
+        (
+            '"external_network_relay_verified": (',
+            "No-ADB QR smoke summary must expose external-network relay proof separately from local artifact evidence.",
+        ),
+        (
+            "external_network_operator_confirmation_missing",
+            "No-ADB QR smoke summary must caveat full runs that lack operator-confirmed external-network evidence.",
+        ),
+        (
+            '"production_relay": False',
+            "No-ADB QR smoke summary must not claim production relay coverage for the development smoke.",
+        ),
+        (
+            '"production_session_key_exchange": False',
+            "No-ADB QR smoke summary must not claim production session-key exchange proof.",
+        ),
+        (
+            '"production_end_to_end_transport_encryption": False',
+            "No-ADB QR smoke summary must not claim production end-to-end transport encryption proof.",
+        ),
+        (
+            "not_production_session_key_exchange_proof",
+            "No-ADB QR smoke summary must caveat missing production session-key exchange proof.",
+        ),
+        (
+            "not_production_end_to_end_transport_encryption_proof",
+            "No-ADB QR smoke summary must caveat missing production end-to-end transport encryption proof.",
+        ),
+        (
             '"coverage": {',
             "No-ADB QR smoke summary must expose machine-readable QR artifact coverage.",
         ),
         (
-            '"pairing_uri_artifact_present": os.path.exists(pairing_uri_file)',
+            '"pairing_uri_artifact_present": pairing_uri_artifact_present',
             "No-ADB QR smoke summary must record whether the pairing URI artifact exists.",
         ),
         (
-            '"pairing_qr_artifact_present": os.path.exists(pairing_qr_file)',
+            "runtime_log_artifact_present = os.path.exists(runtime_log)",
+            "No-ADB QR smoke summary must record whether the runtime log artifact exists.",
+        ),
+        (
+            '"runtime_log_artifact_present": runtime_log_artifact_present',
+            "No-ADB QR smoke summary must expose runtime log artifact coverage.",
+        ),
+        (
+            '"runtime_log_contains_temporary_pairing_material": runtime_log_contains_temporary_pairing_material',
+            "No-ADB QR smoke summary must classify runtime logs that contain temporary pairing material.",
+        ),
+        (
+            '"runtime_log_contains_temporary_route_material": runtime_log_contains_temporary_route_material',
+            "No-ADB QR smoke summary must classify runtime logs that contain temporary route material.",
+        ),
+        (
+            '"relay_log_artifact_present": relay_log_artifact_present',
+            "No-ADB QR smoke summary must record whether the relay log artifact exists.",
+        ),
+        (
+            '"relay_log_relay_ids_shortened": relay_log_relay_ids_shortened',
+            "No-ADB QR smoke summary must record whether relay log relay IDs are shortened.",
+        ),
+        (
+            '"relay_log_omits_temporary_secret_material": relay_log_artifact_present and not relay_log_contains_secret_material',
+            "No-ADB QR smoke summary must record whether relay logs omit temporary secret material.",
+        ),
+        (
+            '"relay_log_contains_unredacted_route_material": relay_log_contains_unredacted_route_material',
+            "No-ADB QR smoke summary must classify relay logs that contain unredacted route material.",
+        ),
+        (
+            "relay_log_redaction_not_verified",
+            "No-ADB QR smoke summary must carry a caveat when relay log redaction could not be verified.",
+        ),
+        (
+            "runtime_log_contains_temporary_pairing_or_route_material",
+            "No-ADB QR smoke summary must carry a caveat for intentionally secret-bearing runtime logs.",
+        ),
+        (
+            '"pairing_qr_artifact_present": pairing_qr_artifact_present',
             "No-ADB QR smoke summary must record whether the QR PNG artifact exists.",
         ),
         (
-            '"pairing_qr_round_trip_verified": qr_round_trip_verified == "1"',
+            "pairing_uri_contains_temporary_pairing_material = pairing_uri_artifact_present and qr_route_artifact_verified",
+            "No-ADB QR smoke summary must mark URI artifacts as temporary pairing-material-bearing only after QR verification.",
+        ),
+        (
+            "pairing_qr_contains_temporary_pairing_material = pairing_qr_artifact_present and qr_route_artifact_verified",
+            "No-ADB QR smoke summary must mark QR artifacts as temporary pairing-material-bearing only after QR verification.",
+        ),
+        (
+            '"pairing_uri_contains_temporary_pairing_material": pairing_uri_contains_temporary_pairing_material',
+            "No-ADB QR smoke summary must expose URI temporary pairing-material coverage.",
+        ),
+        (
+            '"pairing_qr_contains_temporary_pairing_material": pairing_qr_contains_temporary_pairing_material',
+            "No-ADB QR smoke summary must mark QR artifacts that contain temporary pairing material after QR verification.",
+        ),
+        (
+            '"pairing_uri_contains_temporary_route_material": pairing_uri_artifact_present and qr_route_artifact_verified',
+            "No-ADB QR smoke summary must mark URI artifacts as temporary route-material-bearing only after route QR verification.",
+        ),
+        (
+            '"pairing_qr_contains_temporary_route_material": pairing_qr_artifact_present and qr_route_artifact_verified',
+            "No-ADB QR smoke summary must mark QR artifacts as temporary route-material-bearing only after route QR verification.",
+        ),
+        (
+            "manual_scan_qr_artifacts_contain_temporary_route_material",
+            "No-ADB QR smoke summary must carry a caveat for intentionally secret-bearing manual scan artifacts.",
+        ),
+        (
+            "manual_scan_qr_artifacts_contain_temporary_pairing_material",
+            "No-ADB QR smoke summary must carry a caveat for manual scan artifacts that contain temporary pairing material.",
+        ),
+        (
+            "manual_scan_qr_artifacts_not_verified_as_route_material",
+            "No-ADB QR smoke summary must distinguish stale or unverified QR artifacts from verified route-material artifacts.",
+        ),
+        (
+            "--self-test-unverified-qr-summary",
+            "No-ADB QR smoke must keep a hidden self-test for stale or unverified QR artifact summary coverage.",
+        ),
+        (
+            "SELF_TEST_UNVERIFIED_QR_SUMMARY=1",
+            "No-ADB QR smoke self-test must create unverified QR artifact summaries without starting a relay or runtime.",
+        ),
+        (
+            '"pairing_qr_round_trip_verified": qr_route_artifact_verified',
             "No-ADB QR smoke summary must record QR PNG round-trip verification.",
+        ),
+        (
+            '"emit_only_qr_artifact_summary_verified": emit_only == "1" and pairing_uri_artifact_present and pairing_qr_artifact_present and qr_route_artifact_verified',
+            "No-ADB QR smoke summary must expose verified emit-only QR artifact summaries separately from live-device proof.",
+        ),
+        (
+            '"unverified_qr_artifact_self_test": self_test_unverified_qr_summary == "1"',
+            "No-ADB QR smoke summary must expose the hidden unverified QR artifact self-test.",
         ),
         (
             '"relay_route_required": True',
@@ -9958,6 +12233,30 @@ def android_physical_chat_smoke_guard_failures() -> list[str]:
             '"artifact_only_emit_mode": emit_only == "1"',
             "No-ADB QR smoke summary must record emit-only artifact mode.",
         ),
+        (
+            '"print_uri": print_uri == "1"',
+            "No-ADB QR smoke summary must record whether the full pairing URI was printed to terminal output.",
+        ),
+        (
+            "terminal_output_contains_temporary_pairing_material = print_uri == \"1\" and has_temporary_pairing_material(pairing_uri_query_from_file)",
+            "No-ADB QR smoke summary must classify --print-uri terminal output that contains temporary pairing material.",
+        ),
+        (
+            "terminal_output_contains_temporary_route_material = print_uri == \"1\" and has_complete_relay_route_material(pairing_uri_query_from_file)",
+            "No-ADB QR smoke summary must classify --print-uri terminal output that contains temporary route material.",
+        ),
+        (
+            '"terminal_output_contains_temporary_pairing_material": terminal_output_contains_temporary_pairing_material',
+            "No-ADB QR smoke summary must expose terminal-output temporary pairing-material coverage.",
+        ),
+        (
+            '"terminal_output_contains_temporary_route_material": terminal_output_contains_temporary_route_material',
+            "No-ADB QR smoke summary must expose terminal-output temporary route-material coverage.",
+        ),
+        (
+            "terminal_output_contains_temporary_pairing_or_route_material",
+            "No-ADB QR smoke summary must carry a caveat for intentionally secret-bearing --print-uri terminal output.",
+        ),
     )
     for snippet, guidance in required_no_adb_qr_summary_snippets:
         if snippet not in no_adb_smoke_text:
@@ -9965,16 +12264,296 @@ def android_physical_chat_smoke_guard_failures() -> list[str]:
 
     required_no_device_qr_summary_snippets = (
         (
+            'coverage["runtime_host_relay_registration"] is True',
+            "No-device quality gate must assert no-ADB runtime-host relay registration coverage.",
+        ),
+        (
+            'coverage["runtime_host_waiting_for_peer"] is True',
+            "No-device quality gate must assert no-ADB runtime-host waiting-for-peer coverage.",
+        ),
+        (
+            'coverage["trusted_device_relay_reachability"] is False',
+            "No-device quality gate must assert no-ADB emit-only runs do not claim trusted-device relay reachability.",
+        ),
+        (
+            'coverage["trusted_device_pairing"] is False',
+            "No-device quality gate must assert no-ADB emit-only runs do not claim trusted-device pairing.",
+        ),
+        (
+            'coverage["trusted_device_runtime_health"] is False',
+            "No-device quality gate must assert no-ADB emit-only runs do not claim trusted-device runtime.health.",
+        ),
+        (
+            'coverage["trusted_device_reconnect"] is False',
+            "No-device quality gate must assert no-ADB emit-only runs do not claim trusted-device reconnect.",
+        ),
+        (
+            'coverage["optical_qr_scan"] is False',
+            "No-device quality gate must assert no-ADB emit-only runs do not claim optical QR scan proof.",
+        ),
+        (
+            'coverage["external_network_operator_confirmed"] is False',
+            "No-device quality gate must assert no-ADB emit-only runs do not claim operator-confirmed external-network proof.",
+        ),
+        (
+            'coverage["full_run_trusted_device_proof"] is False',
+            "No-device quality gate must assert no-ADB emit-only runs do not claim full-run trusted-device proof.",
+        ),
+        (
+            'coverage["external_network_relay_verified"] is False',
+            "No-device quality gate must assert no-ADB emit-only runs do not claim external-network relay proof.",
+        ),
+        (
+            'coverage["production_relay"] is False',
+            "No-device quality gate must assert no-ADB emit-only runs do not claim production relay proof.",
+        ),
+        (
+            'coverage["production_session_key_exchange"] is False',
+            "No-device quality gate must assert no-device summaries do not claim production session-key exchange proof.",
+        ),
+        (
+            'coverage["production_end_to_end_transport_encryption"] is False',
+            "No-device quality gate must assert no-device summaries do not claim production end-to-end transport encryption proof.",
+        ),
+        (
+            '"not_production_session_key_exchange_proof" in summary["caveats"]',
+            "No-device quality gate must assert missing production session-key exchange proof is caveated.",
+        ),
+        (
+            '"not_production_end_to_end_transport_encryption_proof" in summary["caveats"]',
+            "No-device quality gate must assert missing production end-to-end transport encryption proof is caveated.",
+        ),
+        (
+            "no-ADB expect-reconnect emit-only summary guard",
+            "No-device quality gate must behavior-test --expect-reconnect in emit-only mode without claiming live reconnect proof.",
+        ),
+        (
+            "--expect-reconnect",
+            "No-device quality gate must pass --expect-reconnect to the no-ADB emit-only summary guard.",
+        ),
+        (
+            'summary["mode"]["emit_only"] is True',
+            "No-device quality gate must assert no-ADB emit-only summaries record emit-only mode.",
+        ),
+        (
+            'summary["mode"]["expect_reconnect"] is True',
+            "No-device quality gate must assert the no-ADB reconnect-expectation mode is recorded.",
+        ),
+        (
+            'summary["mode"]["expect_reconnect"] is False',
+            "No-device quality gate must assert the baseline no-ADB QR artifact smoke does not silently enable reconnect mode.",
+        ),
+        (
+            "no-ADB manual network confirmation negative summary guard",
+            "No-device quality gate must behavior-test failed no-ADB manual different-network confirmation summaries.",
+        ),
+        (
+            "no-ADB operator-confirmed timeout summary guard",
+            "No-device quality gate must behavior-test accepted operator confirmation without trusted-device proof.",
+        ),
+        (
+            'printf \'%s\\n\' "SAME_NETWORK"',
+            "No-device quality gate must feed an invalid manual different-network confirmation without user input.",
+        ),
+        (
+            'printf \'%s\\n\' "DIFFERENT_NETWORK"',
+            "No-device quality gate must feed an accepted manual different-network confirmation without user input.",
+        ),
+        (
+            'summary["mode"]["require_manual_network_confirmation"] is True',
+            "No-device quality gate must assert failed manual confirmation summaries record the required mode.",
+        ),
+        (
+            'summary["exit_status"] == 2',
+            "No-device quality gate must assert failed manual confirmation summaries preserve exit status.",
+        ),
+        (
+            '"external_network_operator_confirmation_missing" in summary["caveats"]',
+            "No-device quality gate must assert failed manual confirmation summaries carry the missing external-network confirmation caveat.",
+        ),
+        (
+            'summary["exit_status"] == 1',
+            "No-device quality gate must assert accepted-confirmation timeout summaries preserve timeout exit status.",
+        ),
+        (
+            'coverage["external_network_operator_confirmed"] is True',
+            "No-device quality gate must assert accepted manual confirmation is recorded without implying trusted-device proof.",
+        ),
+        (
+            'observed["relay_ready"] is False',
+            "No-device quality gate must assert accepted-confirmation timeout summaries did not observe relay readiness.",
+        ),
+        (
+            'observed["relay_client_registered"] is False',
+            "No-device quality gate must assert accepted-confirmation timeout summaries did not observe a trusted-device relay client.",
+        ),
+        (
+            'observed["runtime_health_count"] == 0',
+            "No-device quality gate must assert accepted-confirmation timeout summaries did not observe runtime.health.",
+        ),
+        (
+            '"runtime_reached_relay_but_trusted_device_did_not_join" in summary["caveats"]',
+            "No-device quality gate must assert accepted-confirmation timeout summaries still caveat the missing trusted device join.",
+        ),
+        (
+            'coverage["runtime_host_relay_registration"] is False',
+            "No-device quality gate must assert unverified self-tests do not claim runtime-host relay registration.",
+        ),
+        (
             'coverage["pairing_uri_artifact_present"] is True',
             "No-device quality gate must assert no-ADB QR URI artifact coverage.",
+        ),
+        (
+            'coverage["runtime_log_artifact_present"] is True',
+            "No-device quality gate must assert no-ADB runtime log artifact coverage.",
+        ),
+        (
+            'coverage["runtime_log_contains_temporary_pairing_material"] is True',
+            "No-device quality gate must assert no-ADB runtime log temporary pairing-material coverage.",
+        ),
+        (
+            'coverage["runtime_log_contains_temporary_route_material"] is True',
+            "No-device quality gate must assert no-ADB runtime log temporary route-material coverage.",
+        ),
+        (
+            'coverage["relay_log_artifact_present"] is True',
+            "No-device quality gate must assert no-ADB relay log artifact coverage.",
+        ),
+        (
+            'coverage["relay_log_relay_ids_shortened"] is True',
+            "No-device quality gate must assert no-ADB relay log shortened relay-id coverage.",
+        ),
+        (
+            'coverage["relay_log_omits_temporary_secret_material"] is True',
+            "No-device quality gate must assert no-ADB relay logs omit temporary secret material.",
+        ),
+        (
+            'coverage["relay_log_contains_unredacted_route_material"] is False',
+            "No-device quality gate must assert no-ADB relay logs do not contain unredacted route material.",
+        ),
+        (
+            'relay_id not in relay_log',
+            "No-device quality gate must assert the raw QR relay id is absent from relay logs.",
+        ),
+        (
+            'relay_id = query_value("relay_id", "remote_id", "route_id", "network_id", "ri")',
+            "No-device quality gate must parse canonical and compact relay-id aliases before checking relay logs.",
+        ),
+        (
+            'shortened = f"{relay_id[:6]}...{relay_id[-6:]}"',
+            "No-device quality gate must assert the relay log uses the Swift shortID form.",
+        ),
+        (
+            '"relay_log_redaction_not_verified" not in summary["caveats"]',
+            "No-device quality gate must assert verified no-ADB relay logs do not carry the redaction-unverified caveat.",
         ),
         (
             'coverage["pairing_qr_artifact_present"] is True',
             "No-device quality gate must assert no-ADB QR PNG artifact coverage.",
         ),
         (
+            'coverage["pairing_uri_contains_temporary_pairing_material"] is True',
+            "No-device quality gate must assert no-ADB QR URI temporary pairing-material coverage.",
+        ),
+        (
+            'coverage["pairing_qr_contains_temporary_pairing_material"] is True',
+            "No-device quality gate must assert no-ADB QR PNG temporary pairing-material coverage.",
+        ),
+        (
+            'coverage["pairing_uri_contains_temporary_route_material"] is True',
+            "No-device quality gate must assert no-ADB QR URI secret-bearing artifact coverage.",
+        ),
+        (
+            'coverage["pairing_qr_contains_temporary_route_material"] is True',
+            "No-device quality gate must assert no-ADB QR PNG secret-bearing artifact coverage.",
+        ),
+        (
+            '"manual_scan_qr_artifacts_contain_temporary_route_material" in summary["caveats"]',
+            "No-device quality gate must assert the no-ADB manual-scan artifact route-material caveat.",
+        ),
+        (
+            '"external_network_operator_confirmation_missing" not in summary["caveats"]',
+            "No-device quality gate must assert emit-only and unverified no-ADB summaries do not carry the full-run external-network confirmation caveat.",
+        ),
+        (
+            '"manual_scan_qr_artifacts_contain_temporary_pairing_material" in summary["caveats"]',
+            "No-device quality gate must assert the no-ADB manual-scan artifact pairing-material caveat.",
+        ),
+        (
+            '"runtime_log_contains_temporary_pairing_or_route_material" in summary["caveats"]',
+            "No-device quality gate must assert the no-ADB runtime-log temporary-material caveat.",
+        ),
+        (
+            "--self-test-unverified-qr-summary",
+            "No-device quality gate must execute the no-ADB unverified QR summary self-test.",
+        ),
+        (
+            'coverage["runtime_log_contains_temporary_pairing_material"] is False',
+            "No-device quality gate must assert unverified self-test runtime logs do not claim temporary pairing material.",
+        ),
+        (
+            'coverage["runtime_log_contains_temporary_route_material"] is False',
+            "No-device quality gate must assert unverified self-test runtime logs do not claim temporary route material.",
+        ),
+        (
+            '"relay_log_redaction_not_verified" in summary["caveats"]',
+            "No-device quality gate must assert empty self-test relay logs do not claim verified redaction.",
+        ),
+        (
+            'coverage["pairing_qr_round_trip_verified"] is False',
+            "No-device quality gate must assert unverified QR artifacts do not claim QR round-trip coverage.",
+        ),
+        (
+            'coverage["emit_only_qr_artifact_summary_verified"] is False',
+            "No-device quality gate must assert unverified QR artifacts do not claim verified emit-only artifact summary coverage.",
+        ),
+        (
+            'coverage["unverified_qr_artifact_self_test"] is True',
+            "No-device quality gate must assert the hidden unverified QR artifact self-test is marked explicitly.",
+        ),
+        (
+            'coverage["pairing_uri_contains_temporary_pairing_material"] is False',
+            "No-device quality gate must assert unverified URI artifacts do not claim temporary pairing-material coverage.",
+        ),
+        (
+            'coverage["pairing_qr_contains_temporary_pairing_material"] is False',
+            "No-device quality gate must assert unverified QR artifacts do not claim temporary pairing-material coverage.",
+        ),
+        (
+            'coverage["pairing_uri_contains_temporary_route_material"] is False',
+            "No-device quality gate must assert unverified URI artifacts do not claim verified temporary route-material coverage.",
+        ),
+        (
+            'coverage["pairing_qr_contains_temporary_route_material"] is False',
+            "No-device quality gate must assert unverified QR artifacts do not claim verified temporary route-material coverage.",
+        ),
+        (
+            '"manual_scan_qr_artifacts_not_verified_as_route_material" in summary["caveats"]',
+            "No-device quality gate must assert the no-ADB unverified manual-scan artifact caveat.",
+        ),
+        (
+            '"runtime_log_contains_temporary_pairing_or_route_material" not in summary["caveats"]',
+            "No-device quality gate must assert unverified self-test runtime logs do not carry the runtime-log temporary-material caveat.",
+        ),
+        (
+            '"manual_scan_qr_artifacts_contain_temporary_pairing_material" not in summary["caveats"]',
+            "No-device quality gate must assert unverified manual-scan artifacts do not carry the temporary pairing-material caveat.",
+        ),
+        (
+            '"manual_scan_qr_artifacts_contain_temporary_route_material" not in summary["caveats"]',
+            "No-device quality gate must assert unverified manual-scan artifacts do not carry the verified route-material caveat.",
+        ),
+        (
             'coverage["pairing_qr_round_trip_verified"] is True',
             "No-device quality gate must assert no-ADB QR PNG round-trip coverage.",
+        ),
+        (
+            'coverage["emit_only_qr_artifact_summary_verified"] is True',
+            "No-device quality gate must assert no-ADB verified emit-only QR artifact summary coverage.",
+        ),
+        (
+            'coverage["unverified_qr_artifact_self_test"] is False',
+            "No-device quality gate must assert normal no-ADB QR smoke is not the unverified artifact self-test.",
         ),
         (
             'coverage["relay_route_required"] is True',
@@ -9989,13 +12568,220 @@ def android_physical_chat_smoke_guard_failures() -> list[str]:
             "No-device quality gate must assert no-ADB QR emit-only coverage.",
         ),
         (
-            "no-ADB external-relay QR smoke records machine-readable QR URI, QR PNG, round-trip decode, relay-route, direct-endpoint, and emit-only coverage",
+            'coverage["terminal_output_contains_temporary_pairing_material"] is False',
+            "No-device quality gate must assert default no-ADB QR runs do not claim terminal-output pairing-material coverage.",
+        ),
+        (
+            'coverage["terminal_output_contains_temporary_route_material"] is False',
+            "No-device quality gate must assert default no-ADB QR runs do not claim terminal-output route-material coverage.",
+        ),
+        (
+            "--print-uri",
+            "No-device quality gate must exercise no-ADB QR terminal-output summary coverage.",
+        ),
+        (
+            'summary["mode"]["print_uri"] is True',
+            "No-device quality gate must assert no-ADB QR print-uri mode coverage.",
+        ),
+        (
+            'coverage["terminal_output_contains_temporary_pairing_material"] is True',
+            "No-device quality gate must assert no-ADB QR print-uri terminal-output pairing-material coverage.",
+        ),
+        (
+            'coverage["terminal_output_contains_temporary_route_material"] is True',
+            "No-device quality gate must assert no-ADB QR print-uri terminal-output route-material coverage.",
+        ),
+        (
+            '"terminal_output_contains_temporary_pairing_or_route_material" in summary["caveats"]',
+            "No-device quality gate must assert no-ADB QR print-uri terminal-output temporary-material caveat.",
+        ),
+        (
+            '>"$PRINT_URI_STDOUT"',
+            "No-device quality gate must capture no-ADB QR print-uri output without printing the raw pairing URI.",
+        ),
+        (
+            "no-ADB external-relay QR smoke records machine-readable runtime-log, QR URI, QR PNG, print-uri terminal-output, round-trip decode, runtime-host proof-boundary, temporary pairing-material, relay-route, direct-endpoint, and emit-only coverage",
             "No-device quality summary must name no-ADB QR summary coverage.",
+        ),
+        (
+            "no-device production session proof-boundary addendum",
+            "No-device quality summary must name production session proof-boundary coverage.",
         ),
     )
     for snippet, guidance in required_no_device_qr_summary_snippets:
         if snippet not in no_device_text:
             failures.append(f"{no_device_relative}: {guidance}")
+
+    required_no_adb_secret_artifact_doc_snippets = (
+        (
+            ROOT / "docs/progress.md",
+            "No-ADB Expect-Reconnect Emit-Only Summary No-Device Gate",
+            "Progress docs must record no-ADB expect-reconnect emit-only summary coverage.",
+        ),
+        (
+            ROOT / "docs/qa-evidence.md",
+            "No-ADB Expect-Reconnect Emit-Only Summary No-Device Gate",
+            "QA evidence must record no-ADB expect-reconnect emit-only summary coverage.",
+        ),
+        (
+            ROOT / "docs/roadmap.md",
+            "No-ADB expect-reconnect emit-only summary",
+            "Roadmap smoke coverage queue must name no-ADB expect-reconnect emit-only summary coverage.",
+        ),
+        (
+            ROOT / "docs/progress.md",
+            "No-ADB Proof-Boundary Coverage Summary No-Device Gate",
+            "Progress docs must record no-ADB proof-boundary coverage summary.",
+        ),
+        (
+            ROOT / "docs/progress.md",
+            "No-ADB External-Network Proof-Boundary Summary No-Device Gate",
+            "Progress docs must record no-ADB external-network proof-boundary summary coverage.",
+        ),
+        (
+            ROOT / "docs/qa-evidence.md",
+            "No-ADB Proof-Boundary Coverage Summary No-Device Gate",
+            "QA evidence must record no-ADB proof-boundary coverage summary.",
+        ),
+        (
+            ROOT / "docs/qa-evidence.md",
+            "No-ADB External-Network Proof-Boundary Summary No-Device Gate",
+            "QA evidence must record no-ADB external-network proof-boundary summary coverage.",
+        ),
+        (
+            ROOT / "docs/roadmap.md",
+            "No-ADB proof-boundary coverage summary",
+            "Roadmap smoke coverage queue must name no-ADB proof-boundary coverage summary.",
+        ),
+        (
+            ROOT / "docs/roadmap.md",
+            "No-ADB external-network proof-boundary summary",
+            "Roadmap smoke coverage queue must name no-ADB external-network proof-boundary summary.",
+        ),
+        (
+            ROOT / "docs/progress.md",
+            "No-ADB QR Temporary Pairing/Route-Material Artifact Summary No-Device Gate",
+            "Progress docs must record no-ADB QR temporary route-material artifact summary coverage.",
+        ),
+        (
+            ROOT / "docs/qa-evidence.md",
+            "No-ADB QR Temporary Pairing/Route-Material Artifact Summary No-Device Gate",
+            "QA evidence must record no-ADB QR temporary route-material artifact summary coverage.",
+        ),
+        (
+            ROOT / "docs/roadmap.md",
+            "No-ADB QR temporary pairing/route-material artifact summary",
+            "Roadmap smoke coverage queue must name no-ADB QR temporary route-material artifact summary coverage.",
+        ),
+    )
+    for path, snippet, guidance in required_no_adb_secret_artifact_doc_snippets:
+        if snippet not in path.read_text(encoding="utf-8", errors="replace"):
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+
+    required_no_adb_runtime_log_artifact_doc_snippets = (
+        (
+            ROOT / "docs/progress.md",
+            "No-ADB Runtime Log Temporary Pairing/Route-Material Artifact Summary No-Device Gate",
+            "Progress docs must record no-ADB runtime log temporary material artifact summary coverage.",
+        ),
+        (
+            ROOT / "docs/qa-evidence.md",
+            "No-ADB Runtime Log Temporary Pairing/Route-Material Artifact Summary No-Device Gate",
+            "QA evidence must record no-ADB runtime log temporary material artifact summary coverage.",
+        ),
+        (
+            ROOT / "docs/roadmap.md",
+            "No-ADB runtime-log temporary route-material summary",
+            "Roadmap smoke coverage queue must name no-ADB runtime log temporary route-material summary coverage.",
+        ),
+    )
+    for path, snippet, guidance in required_no_adb_runtime_log_artifact_doc_snippets:
+        if snippet not in path.read_text(encoding="utf-8", errors="replace"):
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+
+    required_no_adb_pairing_artifact_doc_snippets = (
+        (
+            ROOT / "docs/progress.md",
+            "No-ADB QR Temporary Pairing/Route-Material Artifact Summary No-Device Gate",
+            "Progress docs must record no-ADB QR temporary pairing-material artifact summary coverage.",
+        ),
+        (
+            ROOT / "docs/qa-evidence.md",
+            "No-ADB QR Temporary Pairing/Route-Material Artifact Summary No-Device Gate",
+            "QA evidence must record no-ADB QR temporary pairing-material artifact summary coverage.",
+        ),
+        (
+            ROOT / "docs/roadmap.md",
+            "No-ADB QR temporary pairing/route-material artifact summary",
+            "Roadmap smoke coverage queue must name no-ADB QR temporary pairing-material artifact summary coverage.",
+        ),
+    )
+    for path, snippet, guidance in required_no_adb_pairing_artifact_doc_snippets:
+        if snippet not in path.read_text(encoding="utf-8", errors="replace"):
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+
+    required_no_adb_terminal_output_doc_snippets = (
+        (
+            ROOT / "docs/progress.md",
+            "No-ADB Print-URI Terminal Output Temporary Pairing/Route-Material Summary No-Device Gate",
+            "Progress docs must record no-ADB print-uri terminal-output temporary material summary coverage.",
+        ),
+        (
+            ROOT / "docs/qa-evidence.md",
+            "No-ADB Print-URI Terminal Output Temporary Pairing/Route-Material Summary No-Device Gate",
+            "QA evidence must record no-ADB print-uri terminal-output temporary material summary coverage.",
+        ),
+        (
+            ROOT / "docs/roadmap.md",
+            "No-ADB print-uri terminal-output temporary route-material summary",
+            "Roadmap smoke coverage queue must name no-ADB print-uri terminal-output temporary material summary coverage.",
+        ),
+    )
+    for path, snippet, guidance in required_no_adb_terminal_output_doc_snippets:
+        if snippet not in path.read_text(encoding="utf-8", errors="replace"):
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+
+    required_no_adb_relay_log_doc_snippets = (
+        (
+            ROOT / "docs/progress.md",
+            "No-ADB Relay Log Artifact Redaction Summary No-Device Gate",
+            "Progress docs must record no-ADB relay log artifact redaction summary coverage.",
+        ),
+        (
+            ROOT / "docs/qa-evidence.md",
+            "No-ADB Relay Log Artifact Redaction Summary No-Device Gate",
+            "QA evidence must record no-ADB relay log artifact redaction summary coverage.",
+        ),
+        (
+            ROOT / "docs/roadmap.md",
+            "No-ADB relay-log redacted relay-id summary",
+            "Roadmap smoke coverage queue must name no-ADB relay log redacted relay-id summary coverage.",
+        ),
+    )
+    for path, snippet, guidance in required_no_adb_relay_log_doc_snippets:
+        if snippet not in path.read_text(encoding="utf-8", errors="replace"):
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+
+    required_no_device_production_session_doc_snippets = (
+        (
+            ROOT / "docs/progress.md",
+            "No-Device Production Session Proof-Boundary Summary Gate",
+            "Progress docs must record no-device production session proof-boundary summary coverage.",
+        ),
+        (
+            ROOT / "docs/qa-evidence.md",
+            "No-Device Production Session Proof-Boundary Summary Gate",
+            "QA evidence must record no-device production session proof-boundary summary coverage.",
+        ),
+        (
+            ROOT / "docs/roadmap.md",
+            "no-device production session proof-boundary",
+            "Roadmap smoke coverage queue must name no-device production session proof-boundary coverage.",
+        ),
+    )
+    for path, snippet, guidance in required_no_device_production_session_doc_snippets:
+        if snippet not in path.read_text(encoding="utf-8", errors="replace"):
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
 
     return failures
 
@@ -10011,8 +12797,14 @@ def attachment_ingestion_guard_failures() -> list[str]:
     )
     macos_extractor_path = ROOT / "apps/macos/DocumentIngestion/Sources/DocumentTextExtractor.swift"
     macos_test_path = ROOT / "apps/macos/DocumentIngestion/Tests/DocumentTextExtractorTests.swift"
+    macos_router_path = ROOT / "apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift"
+    macos_router_test_path = ROOT / "apps/macos/CompanionCore/Tests/LocalRuntimeMessageRouterTests.swift"
     lm_studio_test_path = ROOT / "apps/macos/LMStudioBackend/Tests/LMStudioBackendTests.swift"
+    protocol_schema_path = ROOT / "packages/protocol-schema/protocol.schema.json"
+    protocol_schema_check_path = ROOT / "script/check_protocol_schema.py"
+    runtime_smoke_path = ROOT / "script/runtime_authenticated_mock_smoke.swift"
     no_device_path = ROOT / "script/check_no_device_quality.sh"
+    docs_protocol_path = ROOT / "docs/protocol.md"
     docs_progress_path = ROOT / "docs/progress.md"
     docs_qa_evidence_path = ROOT / "docs/qa-evidence.md"
     docs_roadmap_path = ROOT / "docs/roadmap.md"
@@ -10025,8 +12817,14 @@ def attachment_ingestion_guard_failures() -> list[str]:
         android_prompt_resource_test_path,
         macos_extractor_path,
         macos_test_path,
+        macos_router_path,
+        macos_router_test_path,
         lm_studio_test_path,
+        protocol_schema_path,
+        protocol_schema_check_path,
+        runtime_smoke_path,
         no_device_path,
+        docs_protocol_path,
         docs_progress_path,
         docs_qa_evidence_path,
         docs_roadmap_path,
@@ -10043,8 +12841,14 @@ def attachment_ingestion_guard_failures() -> list[str]:
     android_prompt_resource_test_text = android_prompt_resource_test_path.read_text(encoding="utf-8")
     macos_extractor_text = macos_extractor_path.read_text(encoding="utf-8")
     macos_test_text = macos_test_path.read_text(encoding="utf-8")
+    macos_router_text = macos_router_path.read_text(encoding="utf-8")
+    macos_router_test_text = macos_router_test_path.read_text(encoding="utf-8")
     lm_studio_test_text = lm_studio_test_path.read_text(encoding="utf-8")
+    protocol_schema_text = protocol_schema_path.read_text(encoding="utf-8")
+    protocol_schema_check_text = protocol_schema_check_path.read_text(encoding="utf-8")
+    runtime_smoke_text = runtime_smoke_path.read_text(encoding="utf-8")
     no_device_text = no_device_path.read_text(encoding="utf-8")
+    docs_protocol_text = docs_protocol_path.read_text(encoding="utf-8")
     docs_progress_text = docs_progress_path.read_text(encoding="utf-8")
     docs_qa_evidence_text = docs_qa_evidence_path.read_text(encoding="utf-8")
     docs_roadmap_text = docs_roadmap_path.read_text(encoding="utf-8")
@@ -10243,6 +13047,2310 @@ def attachment_ingestion_guard_failures() -> list[str]:
                 f"{target_path.relative_to(ROOT)}: document ingestion must keep HWPML support snippet {snippet!r}."
             )
 
+    required_document_resource_policy_snippets = (
+        (
+            macos_extractor_text,
+            macos_extractor_path,
+            "public struct DocumentIngestionResourcePolicy",
+            "Document ingestion must keep a runtime-side extraction resource policy.",
+        ),
+        (
+            macos_extractor_text,
+            macos_extractor_path,
+            "maxArchiveEntryBytes",
+            "Document ingestion resource policy must bound archive entry extraction output.",
+        ),
+        (
+            macos_extractor_text,
+            macos_extractor_path,
+            "maxExtractedTextCharacters",
+            "Document ingestion resource policy must bound normalized extracted text before backend dispatch.",
+        ),
+        (
+            macos_extractor_text,
+            macos_extractor_path,
+            "readProcessOutput(",
+            "Document ingestion must read helper process output through the bounded reader.",
+        ),
+        (
+            macos_extractor_text,
+            macos_extractor_path,
+            ".resourceLimitExceeded",
+            "Document ingestion must expose a fail-closed resource-limit error.",
+        ),
+        (
+            macos_test_text,
+            macos_test_path,
+            "testRejectsArchiveExtractionWhenResourcePolicyLimitIsExceeded",
+            "Document ingestion tests must reject oversized archive entry extraction output.",
+        ),
+        (
+            macos_test_text,
+            macos_test_path,
+            "testRejectsExtractedTextWhenResourcePolicyLimitIsExceeded",
+            "Document ingestion tests must reject oversized normalized extracted text.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            ".resourceLimitExceeded",
+            "Runtime router must map document extraction resource-limit failures before backend dispatch.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "DocumentTextExtractorTests/testRejectsArchiveExtractionWhenResourcePolicyLimitIsExceeded",
+            "Default no-device gate must run the focused archive resource-limit regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "DocumentTextExtractorTests/testRejectsExtractedTextWhenResourcePolicyLimitIsExceeded",
+            "Default no-device gate must run the focused extracted-text resource-limit regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "DocumentIngestion resource policy addendum",
+            "Default no-device summary must name DocumentIngestion resource-policy coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "DocumentIngestion Resource Policy No-Device Gate",
+            "Progress docs must record the DocumentIngestion resource-policy no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "DocumentIngestion Resource Policy No-Device Gate",
+            "QA evidence must record the DocumentIngestion resource-policy no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "DocumentIngestion resource policy",
+            "Roadmap smoke coverage queue must name DocumentIngestion resource-policy coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_document_resource_policy_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+
+    required_attachment_source_metadata_snippets = (
+        (
+            macos_router_text,
+            macos_router_path,
+            "allowedPairingRequestPayloadKeys",
+            "Runtime router must keep a pairing.request payload key allowlist before trusting a device.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "allowedHelloPayloadKeys",
+            "Runtime router must keep a hello payload key allowlist before creating auth challenges.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "allowedAuthResponsePayloadKeys",
+            "Runtime router must keep an auth.response payload key allowlist before authenticating a connection.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "validateAllowedRequestPayload(envelope, allowedKeys: allowedPairingRequestPayloadKeys)",
+            "Runtime router must reject unknown pairing.request metadata before trust mutation.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "validateAllowedRequestPayload(envelope, allowedKeys: allowedHelloPayloadKeys)",
+            "Runtime router must reject unknown hello metadata before challenge creation.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "validateAllowedRequestPayload(envelope, allowedKeys: allowedAuthResponsePayloadKeys)",
+            "Runtime router must reject unknown auth.response metadata before authentication.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "testPairingRequestRejectsUnknownPayloadMetadataBeforeTrusting",
+            "Runtime router tests must prove pairing.request unknown metadata is rejected before trust mutation.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "testHelloRejectsUnknownPayloadMetadataBeforeChallengeCreation",
+            "Runtime router tests must prove hello unknown metadata is rejected before auth challenge creation.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "testAuthResponseRejectsUnknownPayloadMetadataBeforeAuthentication",
+            "Runtime router tests must prove auth.response unknown metadata is rejected before authentication.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "handleUnexpectedClientMessageDirection",
+            "Runtime router must keep response-only protocol types on a named direction-error path.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "unexpected_message_direction",
+            "Runtime router must return unexpected_message_direction for client-sent response-only message types.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "testResponseOnlyMessageTypesReturnDirectionProtocolError",
+            "Runtime router tests must prove response-only message types are rejected as wrong-direction messages.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "MessageType.chatTitleResult",
+            "Runtime router response-only regression must include chat.title.result.",
+        ),
+        (
+            protocol_schema_text,
+            protocol_schema_path,
+            '"unexpected_message_direction"',
+            "Protocol schema must include unexpected_message_direction in errorPayload.code.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            '"unexpected_message_direction"',
+            "Protocol schema checker must require unexpected_message_direction in errorPayload.code.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            '"accepted": .bool(true)',
+            "Pre-auth regressions must include response-only accepted as forbidden client metadata.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            '"runtime_signature": .string("forged-runtime-signature")',
+            "Pre-auth regressions must include forged runtime proof fields as forbidden client metadata.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            '"backend_url": .string("http://127.0.0.1:11434")',
+            "Pre-auth regressions must include backend_url as forbidden client metadata.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "smoke-pair-unknown-metadata",
+            "RuntimeDevServer smoke must reject pairing.request unknown metadata before trust mutation.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "smoke-hello-unknown-metadata",
+            "RuntimeDevServer smoke must reject hello unknown metadata before auth challenge creation.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "smoke-auth-unknown-metadata",
+            "RuntimeDevServer smoke must reject auth.response unknown metadata before authentication.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "`pairing.request.payload` accepts only `pairing_nonce`, `pairing_code`, `device_id`, `device_name`, and `public_key`",
+            "Protocol docs must document the active pairing.request allowlist.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "`hello.payload` accepts only `device_id`, `device_name`, and `client_capabilities`",
+            "Protocol docs must document the active hello allowlist.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "`auth.response` request payload accepts only `device_id`, `nonce`, and `signature`",
+            "Protocol docs must document the active auth.response request allowlist.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "check_pre_auth_payload_schema_contracts",
+            "Protocol schema checker must keep pre-auth request closed-schema self-checks.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "$defs.authResponsePayload request properties must stay limited to device_id, nonce, and signature",
+            "Protocol schema checker must fail if auth.response request grows future metadata fields.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "LocalRuntimeMessageRouterTests/testPairingRequestRejectsUnknownPayloadMetadataBeforeTrusting",
+            "Default no-device gate must run the pairing.request unknown-metadata rejection regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "LocalRuntimeMessageRouterTests/testHelloRejectsUnknownPayloadMetadataBeforeChallengeCreation",
+            "Default no-device gate must run the hello unknown-metadata rejection regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "LocalRuntimeMessageRouterTests/testAuthResponseRejectsUnknownPayloadMetadataBeforeAuthentication",
+            "Default no-device gate must run the auth.response unknown-metadata rejection regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "pre-auth unknown metadata rejection addendum",
+            "Default no-device summary must name pre-auth unknown-metadata rejection coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Pre-Auth Unknown Metadata Rejection No-Device Gate",
+            "Progress docs must record the pre-auth unknown metadata rejection no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Pre-Auth Unknown Metadata Rejection No-Device Gate",
+            "QA evidence must record the pre-auth unknown metadata rejection no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "pre-auth unknown metadata rejection",
+            "Roadmap smoke coverage queue must name pre-auth unknown metadata rejection coverage.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "validateEmptyRequestPayload(_ envelope: ProtocolEnvelope)",
+            "Runtime router must keep an empty request-payload guard for empty active commands.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "payload contains unsupported field(s):",
+            "Runtime router must report invalid_payload for non-empty empty-command payloads.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "try validateEmptyRequestPayload(envelope)",
+            "Runtime router must apply the empty payload guard before backend or route-refresh dispatch.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "testRuntimeHealthRejectsUnknownPayloadMetadataBeforeBackendDispatch",
+            "Runtime router tests must prove runtime.health unknown metadata is rejected before backend dispatch.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "testModelsListRejectsUnknownPayloadMetadataBeforeBackendDispatch",
+            "Runtime router tests must prove models.list unknown metadata is rejected before backend dispatch.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "testRouteRefreshRejectsUnknownPayloadMetadataBeforeRuntimeProviderDispatch",
+            "Runtime router tests must prove route.refresh unknown metadata is rejected before route provider dispatch.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            '"models": .array([])',
+            "Runtime router regression must include response-only models as forbidden models.list payload metadata.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            '"relay_secret": .string("future-relay-secret")',
+            "Runtime router regression must include response route material as forbidden empty-command payload metadata.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "XCTAssertEqual(backend.healthCheckCallCount, 0)",
+            "Runtime router regression must prove rejected runtime.health metadata never reaches backend health dispatch.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "XCTAssertEqual(backend.listModelsCallCount, 0)",
+            "Runtime router regression must prove rejected models.list metadata never reaches backend model-list dispatch.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "XCTAssertEqual(routeRefresher.refreshCount, 0)",
+            "Runtime router regression must prove rejected route.refresh metadata never reaches the route provider.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "smoke-health-unknown-metadata",
+            "RuntimeDevServer smoke must reject runtime.health unknown metadata before normal health checks.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "smoke-models-list-unknown-metadata",
+            "RuntimeDevServer smoke must reject models.list unknown metadata before normal model list checks.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "smoke-route-refresh-unknown-metadata",
+            "RuntimeDevServer smoke must reject route.refresh unknown metadata before normal route refresh checks.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "`runtime.health.payload` accepts only an empty object",
+            "Protocol docs must document the active runtime.health empty request payload.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "`models.list.payload` accepts only an empty object",
+            "Protocol docs must document the active models.list empty request payload.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "`route.refresh.payload` accepts only an empty object",
+            "Protocol docs must document the active route.refresh empty request payload.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "check_empty_request_payload_schema_contracts",
+            "Protocol schema checker must keep empty request-payload self-checks.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "$defs.emptyPayload request must stay an object with maxProperties 0",
+            "Protocol schema checker must fail if the shared empty request payload widens.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "$defs.modelsListPayload request must stay empty for models.list",
+            "Protocol schema checker must fail if models.list loses the empty request branch.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "LocalRuntimeMessageRouterTests/testRuntimeHealthRejectsUnknownPayloadMetadataBeforeBackendDispatch",
+            "Default no-device gate must run the runtime.health unknown-metadata rejection regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "LocalRuntimeMessageRouterTests/testModelsListRejectsUnknownPayloadMetadataBeforeBackendDispatch",
+            "Default no-device gate must run the models.list unknown-metadata rejection regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "LocalRuntimeMessageRouterTests/testRouteRefreshRejectsUnknownPayloadMetadataBeforeRuntimeProviderDispatch",
+            "Default no-device gate must run the route.refresh unknown-metadata rejection regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "empty runtime request unknown metadata rejection addendum",
+            "Default no-device summary must name empty runtime request unknown-metadata rejection coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Empty Runtime Request Unknown Metadata Rejection No-Device Gate",
+            "Progress docs must record the empty runtime request unknown metadata rejection no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Empty Runtime Request Unknown Metadata Rejection No-Device Gate",
+            "QA evidence must record the empty runtime request unknown metadata rejection no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "empty runtime request unknown metadata rejection",
+            "Roadmap smoke coverage queue must name empty runtime request unknown metadata rejection coverage.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "allowedModelsPullPayloadKeys",
+            "Runtime router must keep a models.pull payload key allowlist before backend pull dispatch.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "models.pull payload contains unsupported field(s):",
+            "Runtime router must reject unknown models.pull metadata with invalid_payload.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "Set(envelope.payload.keys).subtracting(allowedModelsPullPayloadKeys)",
+            "Runtime router must reject models.pull backend/route/workspace metadata before backend pull dispatch.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "testModelsPullRejectsUnknownPayloadMetadataBeforeBackendDispatch",
+            "Runtime router tests must prove unknown models.pull metadata is rejected before backend dispatch.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            '"backend_url": .string("http://127.0.0.1:11434")',
+            "Runtime router regression must include backend_url as a forbidden models.pull metadata key.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            '"provider_url": .string("http://provider.example.invalid/v1")',
+            "Runtime router regression must include provider_url as a forbidden models.pull metadata key.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            '"requested_route_token": .string("future-requested-route-token")',
+            "Runtime router regression must include requested_route_token as a forbidden models.pull metadata key.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "XCTAssertEqual(backend.pulledModelNames, [])",
+            "Runtime router regression must prove rejected models.pull metadata never reaches backend pull dispatch.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "`models.pull.payload` accepts only `model` and optional legacy `backend`",
+            "Protocol docs must document the active models.pull request allowlist.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "must not carry backend URLs, provider URLs, backend credentials, route tokens, relay secrets, requested route tokens, workspace IDs, permission grants, or direct-provider route material",
+            "Protocol docs must document forbidden models.pull backend/route/workspace metadata.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "check_models_pull_payload_schema_contract",
+            "Protocol schema checker must keep a modelsPullPayload request closed-schema self-check.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "$defs.modelsPullPayload request properties must stay limited to model and backend",
+            "Protocol schema checker must fail if modelsPullPayload grows future metadata fields.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "$defs.modelsPullPayload request additionalProperties must be false",
+            "Protocol schema checker must require modelsPullPayload request additionalProperties=false.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "LocalRuntimeMessageRouterTests/testModelsPullRejectsUnknownPayloadMetadataBeforeBackendDispatch",
+            "Default no-device gate must run the models.pull unknown-metadata rejection regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "models.pull unknown metadata rejection addendum",
+            "Default no-device summary must name models.pull unknown-metadata rejection coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Models Pull Unknown Metadata Runtime Rejection No-Device Gate",
+            "Progress docs must record the models.pull unknown metadata rejection no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Models Pull Unknown Metadata Runtime Rejection No-Device Gate",
+            "QA evidence must record the models.pull unknown metadata rejection no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "models.pull unknown metadata rejection",
+            "Roadmap smoke coverage queue must name models.pull unknown metadata rejection coverage.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "allowedChatCancelPayloadKeys",
+            "Runtime router must keep a chat.cancel payload key allowlist before backend cancel dispatch.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "chat.cancel payload contains unsupported field(s):",
+            "Runtime router must reject unknown chat.cancel metadata with invalid_payload.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "Set(envelope.payload.keys).subtracting(allowedChatCancelPayloadKeys)",
+            "Runtime router must reject chat.cancel backend/route/workspace metadata before backend cancel dispatch.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "testChatCancelRejectsUnknownPayloadMetadataBeforeBackendDispatch",
+            "Runtime router tests must prove unknown chat.cancel metadata is rejected before backend dispatch.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            '"source_control_status": .string("modified")',
+            "Runtime router regression must include source_control_status as a forbidden chat.cancel metadata key.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "XCTAssertEqual(backend.cancelledGenerationIDs, [])",
+            "Runtime router regression must prove rejected chat.cancel metadata never reaches backend cancel dispatch.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "`chat.cancel.payload` accepts only `target_request_id`",
+            "Protocol docs must document the active chat.cancel request allowlist.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "must not carry backend URLs, provider URLs, backend credentials, route tokens, relay secrets, workspace IDs, permission grants, source-control state, or direct-provider cancel metadata",
+            "Protocol docs must document forbidden chat.cancel backend/route/workspace metadata.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "check_chat_cancel_payload_schema_contract",
+            "Protocol schema checker must keep a chatCancelPayload request closed-schema self-check.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "$defs.chatCancelPayload request properties must stay limited to target_request_id",
+            "Protocol schema checker must fail if chatCancelPayload grows future metadata fields.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "$defs.chatCancelPayload request additionalProperties must be false",
+            "Protocol schema checker must require chatCancelPayload request additionalProperties=false.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "LocalRuntimeMessageRouterTests/testChatCancelRejectsUnknownPayloadMetadataBeforeBackendDispatch",
+            "Default no-device gate must run the chat.cancel unknown-metadata rejection regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "chat.cancel unknown metadata rejection addendum",
+            "Default no-device summary must name chat.cancel unknown-metadata rejection coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Chat Cancel Unknown Metadata Runtime Rejection No-Device Gate",
+            "Progress docs must record the chat.cancel unknown metadata rejection no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Chat Cancel Unknown Metadata Runtime Rejection No-Device Gate",
+            "QA evidence must record the chat.cancel unknown metadata rejection no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "chat.cancel unknown metadata rejection",
+            "Roadmap smoke coverage queue must name chat.cancel unknown metadata rejection coverage.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "allowedChatSessionsListPayloadKeys",
+            "Runtime router must keep a chat.sessions.list payload key allowlist before runtime chat store dispatch.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "chat.sessions.list payload contains unsupported field(s):",
+            "Runtime router must reject unknown chat.sessions.list metadata with invalid_payload.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "Set(envelope.payload.keys).subtracting(allowedChatSessionsListPayloadKeys)",
+            "Runtime router must reject chat.sessions.list backend/route/workspace metadata before runtime chat store dispatch.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "testChatSessionsListRejectsUnknownPayloadMetadataBeforeStoreDispatch",
+            "Runtime router tests must prove unknown chat.sessions.list metadata is rejected before runtime chat store dispatch.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            '"source_path": .string("/Users/example/project/notes.md")',
+            "Runtime router regression must include source_path as a forbidden chat.sessions.list metadata key.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "XCTAssertEqual(store.searchRequests, [])",
+            "Runtime router regression must prove rejected chat.sessions.list metadata never reaches runtime chat store dispatch.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            'try optionalRequestInt("limit", in: envelope.payload)',
+            "Runtime router must parse chat.sessions.list limit with a strict request integer helper.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            'try optionalRequestBool("include_archived", in: envelope.payload)',
+            "Runtime router must parse chat.sessions.list include_archived with a strict request boolean helper.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            'try optionalRequestString("query", in: envelope.payload)',
+            "Runtime router must parse chat.sessions.list query with a strict request string helper.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            'let rawEmbeddingModelID = try optionalRequestString("embedding_model_id", in: payload)',
+            "Runtime router must reject malformed embedding_model_id even when there is no usable query.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "testChatSessionsListRejectsInvalidAllowedPayloadTypesBeforeStoreDispatch",
+            "Runtime router tests must prove malformed allowed chat.sessions.list fields are rejected before store dispatch.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            '"sessions-invalid-limit-fraction"',
+            "Runtime router regression must include fractional limit as an invalid chat.sessions.list type.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            '"sessions-invalid-embedding-without-query-type"',
+            "Runtime router regression must reject malformed embedding_model_id even without a real search query.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "smoke-sessions-invalid-allowed-types",
+            "RuntimeDevServer smoke must reject invalid allowed chat.sessions.list payload types.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "malformed allowed fields return `invalid_payload` instead of being coerced or ignored",
+            "Protocol docs must document strict chat.sessions.list allowed-field type rejection.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "LocalRuntimeMessageRouterTests/testChatSessionsListRejectsInvalidAllowedPayloadTypesBeforeStoreDispatch",
+            "Default no-device gate must run the chat.sessions.list invalid allowed type regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "chat.sessions.list invalid allowed type rejection addendum",
+            "Default no-device summary must name chat.sessions.list invalid allowed type coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Chat Sessions List Invalid Allowed Type Runtime Rejection No-Device Gate",
+            "Progress docs must record the chat.sessions.list invalid allowed type no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Chat Sessions List Invalid Allowed Type Runtime Rejection No-Device Gate",
+            "QA evidence must record the chat.sessions.list invalid allowed type no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "chat.sessions.list invalid allowed type rejection",
+            "Roadmap smoke coverage queue must name chat.sessions.list invalid allowed type rejection coverage.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "`chat.sessions.list.payload` accepts only `limit`, `include_archived`, `query`, and `embedding_model_id`",
+            "Protocol docs must document the active chat.sessions.list request allowlist.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "must not carry backend URLs, provider URLs, backend credentials, route tokens, relay secrets, requested route tokens, workspace IDs, permission grants, source paths, source-control state, or direct-store metadata",
+            "Protocol docs must document forbidden chat.sessions.list backend/route/workspace/source metadata.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "check_chat_sessions_list_payload_schema_contract",
+            "Protocol schema checker must keep a chatSessionsListPayload request closed-schema self-check.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "$defs.chatSessionsListPayload request properties must stay limited to limit, include_archived, query, and embedding_model_id",
+            "Protocol schema checker must fail if chatSessionsListPayload grows future metadata fields.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "$defs.chatSessionsListPayload request additionalProperties must be false",
+            "Protocol schema checker must require chatSessionsListPayload request additionalProperties=false.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "LocalRuntimeMessageRouterTests/testChatSessionsListRejectsUnknownPayloadMetadataBeforeStoreDispatch",
+            "Default no-device gate must run the chat.sessions.list unknown-metadata rejection regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "chat.sessions.list unknown metadata rejection addendum",
+            "Default no-device summary must name chat.sessions.list unknown-metadata rejection coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Chat Sessions List Unknown Metadata Runtime Rejection No-Device Gate",
+            "Progress docs must record the chat.sessions.list unknown metadata rejection no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Chat Sessions List Unknown Metadata Runtime Rejection No-Device Gate",
+            "QA evidence must record the chat.sessions.list unknown metadata rejection no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "chat.sessions.list unknown metadata rejection",
+            "Roadmap smoke coverage queue must name chat.sessions.list unknown metadata rejection coverage.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "allowedChatMessagesListPayloadKeys",
+            "Runtime router must keep a chat.messages.list payload key allowlist before runtime chat store dispatch.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "chat.messages.list payload contains unsupported field(s):",
+            "Runtime router must reject unknown chat.messages.list metadata with invalid_payload.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "Set(envelope.payload.keys).subtracting(allowedChatMessagesListPayloadKeys)",
+            "Runtime router must reject chat.messages.list backend/route/workspace metadata before runtime chat store dispatch.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "testChatMessagesListRejectsUnknownPayloadMetadataBeforeStoreDispatch",
+            "Runtime router tests must prove unknown chat.messages.list metadata is rejected before runtime chat store dispatch.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "XCTAssertEqual(store.messageRequests, [])",
+            "Runtime router regression must prove rejected chat.messages.list metadata never reaches runtime chat store dispatch.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "`chat.messages.list.payload` accepts only `session_id` and `limit`",
+            "Protocol docs must document the active chat.messages.list request allowlist.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            'try optionalRequestInt("limit", in: envelope.payload)',
+            "Runtime router must parse chat.messages.list limit with a strict request integer helper.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "testChatMessagesListRejectsInvalidAllowedPayloadTypesBeforeStoreDispatch",
+            "Runtime router tests must prove malformed allowed chat.messages.list fields are rejected before store dispatch.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            '"messages-invalid-limit-fraction"',
+            "Runtime router regression must include fractional limit as an invalid chat.messages.list type.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "smoke-messages-invalid-limit-type",
+            "RuntimeDevServer smoke must reject invalid allowed chat.messages.list payload types.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "malformed allowed fields return `invalid_payload` instead of being coerced or ignored",
+            "Protocol docs must document strict chat.messages.list allowed-field type rejection.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "LocalRuntimeMessageRouterTests/testChatMessagesListRejectsInvalidAllowedPayloadTypesBeforeStoreDispatch",
+            "Default no-device gate must run the chat.messages.list invalid allowed type regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "chat.messages.list invalid allowed type rejection addendum",
+            "Default no-device summary must name chat.messages.list invalid allowed type coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Chat Messages List Invalid Allowed Type Runtime Rejection No-Device Gate",
+            "Progress docs must record the chat.messages.list invalid allowed type no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Chat Messages List Invalid Allowed Type Runtime Rejection No-Device Gate",
+            "QA evidence must record the chat.messages.list invalid allowed type no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "chat.messages.list invalid allowed type rejection",
+            "Roadmap smoke coverage queue must name chat.messages.list invalid allowed type rejection coverage.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "Transcript listing is a runtime-owned chat store query for one session",
+            "Protocol docs must document the chat.messages.list runtime-owned store boundary.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "check_chat_messages_list_payload_schema_contract",
+            "Protocol schema checker must keep a chatMessagesListPayload request closed-schema self-check.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "$defs.chatMessagesListPayload request properties must stay limited to session_id and limit",
+            "Protocol schema checker must fail if chatMessagesListPayload grows future metadata fields.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "$defs.chatMessagesListPayload request additionalProperties must be false",
+            "Protocol schema checker must require chatMessagesListPayload request additionalProperties=false.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "LocalRuntimeMessageRouterTests/testChatMessagesListRejectsUnknownPayloadMetadataBeforeStoreDispatch",
+            "Default no-device gate must run the chat.messages.list unknown-metadata rejection regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "chat.messages.list unknown metadata rejection addendum",
+            "Default no-device summary must name chat.messages.list unknown-metadata rejection coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Chat Messages List Unknown Metadata Runtime Rejection No-Device Gate",
+            "Progress docs must record the chat.messages.list unknown metadata rejection no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Chat Messages List Unknown Metadata Runtime Rejection No-Device Gate",
+            "QA evidence must record the chat.messages.list unknown metadata rejection no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "chat.messages.list unknown metadata rejection",
+            "Roadmap smoke coverage queue must name chat.messages.list unknown metadata rejection coverage.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "allowedChatSessionLifecyclePayloadKeys",
+            "Runtime router must keep a chat.session lifecycle payload key allowlist before runtime chat store mutation.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "chat.session lifecycle payload contains unsupported field(s):",
+            "Runtime router must reject unknown chat.session lifecycle metadata with invalid_payload.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "Set(envelope.payload.keys).subtracting(allowedChatSessionLifecyclePayloadKeys)",
+            "Runtime router must reject chat.session lifecycle backend/route/workspace metadata before runtime chat store mutation.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "testChatSessionLifecycleRejectsUnknownPayloadMetadataBeforeStoreMutation",
+            "Runtime router tests must prove unknown chat.session lifecycle metadata is rejected before runtime chat store mutation.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "XCTAssertEqual(store.mutationRequests, [])",
+            "Runtime router regression must prove rejected chat.session lifecycle metadata never reaches runtime chat store mutation.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "`chat.session.archive`, `chat.session.restore`, and `chat.session.delete` request payloads accept only `session_id`",
+            "Protocol docs must document the active chat.session lifecycle request allowlist.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "Session lifecycle commands mutate runtime-owned chat store state",
+            "Protocol docs must document the chat.session lifecycle runtime-owned mutation boundary.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "check_chat_session_lifecycle_payload_schema_contract",
+            "Protocol schema checker must keep a chatSessionLifecycleRequestPayload closed-schema self-check.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "$defs.chatSessionLifecycleRequestPayload properties must stay limited to session_id",
+            "Protocol schema checker must fail if chatSessionLifecycleRequestPayload grows future metadata fields.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "$defs.chatSessionLifecycleRequestPayload additionalProperties must be false",
+            "Protocol schema checker must require chatSessionLifecycleRequestPayload additionalProperties=false.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "LocalRuntimeMessageRouterTests/testChatSessionLifecycleRejectsUnknownPayloadMetadataBeforeStoreMutation",
+            "Default no-device gate must run the chat.session lifecycle unknown-metadata rejection regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "chat.session lifecycle unknown metadata rejection addendum",
+            "Default no-device summary must name chat.session lifecycle unknown-metadata rejection coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Chat Session Lifecycle Unknown Metadata Runtime Rejection No-Device Gate",
+            "Progress docs must record the chat.session lifecycle unknown metadata rejection no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Chat Session Lifecycle Unknown Metadata Runtime Rejection No-Device Gate",
+            "QA evidence must record the chat.session lifecycle unknown metadata rejection no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "chat.session lifecycle unknown metadata rejection",
+            "Roadmap smoke coverage queue must name chat.session lifecycle unknown metadata rejection coverage.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "allowedChatSessionRenamePayloadKeys",
+            "Runtime router must keep a chat.session.rename payload key allowlist before runtime title store mutation.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "chat.session.rename payload contains unsupported field(s):",
+            "Runtime router must reject unknown chat.session.rename metadata with invalid_payload.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "Set(envelope.payload.keys).subtracting(allowedChatSessionRenamePayloadKeys)",
+            "Runtime router must reject chat.session.rename timestamp/backend/route/workspace metadata before runtime title store mutation.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "testChatSessionRenameRejectsUnknownPayloadMetadataBeforeTitleStoreMutation",
+            "Runtime router tests must prove unknown chat.session.rename metadata is rejected before runtime title store mutation.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            '"renamed_at": .string("2026-06-23T09:02:00Z")',
+            "Runtime router regression must include renamed_at as forbidden client-supplied chat.session.rename metadata.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "check_chat_session_rename_payload_schema_contract",
+            "Protocol schema checker must keep a chatSessionRenamePayload request/acknowledgement self-check.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "$defs.chatSessionRenamePayload request properties must stay limited to session_id and title",
+            "Protocol schema checker must fail if chatSessionRenamePayload request grows future metadata fields.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "`chat.session.rename` request payloads accept only `session_id` and `title`",
+            "Protocol docs must document the active chat.session.rename request allowlist.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "Clients must not supply `renamed_at`; it is runtime-generated acknowledgement metadata",
+            "Protocol docs must document renamed_at as runtime-generated acknowledgement metadata.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "LocalRuntimeMessageRouterTests/testChatSessionRenameRejectsUnknownPayloadMetadataBeforeTitleStoreMutation",
+            "Default no-device gate must run the chat.session.rename unknown-metadata rejection regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "chat.session.rename unknown metadata rejection addendum",
+            "Default no-device summary must name chat.session.rename unknown-metadata rejection coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Chat Session Rename Unknown Metadata Runtime Rejection No-Device Gate",
+            "Progress docs must record the chat.session.rename unknown metadata rejection no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Chat Session Rename Unknown Metadata Runtime Rejection No-Device Gate",
+            "QA evidence must record the chat.session.rename unknown metadata rejection no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "chat.session rename unknown metadata rejection",
+            "Roadmap smoke coverage queue must name chat.session.rename unknown metadata rejection coverage.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "allowedMemoryListPayloadKeys",
+            "Runtime router must keep a memory.list payload key allowlist before runtime memory store dispatch.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "memory.list payload contains unsupported field(s):",
+            "Runtime router must reject unknown memory.list metadata with invalid_payload.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "Set(envelope.payload.keys).subtracting(allowedMemoryListPayloadKeys)",
+            "Runtime router must reject memory.list response/backend/route/workspace metadata before runtime memory store dispatch.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "testMemoryListRejectsUnknownPayloadMetadataBeforeStoreDispatch",
+            "Runtime router tests must prove unknown memory.list metadata is rejected before runtime memory store dispatch.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            '"entries": .array([])',
+            "Runtime router regression must include entries as forbidden client-supplied memory.list response metadata.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "XCTAssertEqual(store.listRequests, [])",
+            "Runtime router regression must prove rejected memory.list metadata never reaches runtime memory store dispatch.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "`memory.list.payload` accepts only optional `query`",
+            "Protocol docs must document the active memory.list request allowlist.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            'query: try optionalRequestString("query", in: envelope.payload)',
+            "Runtime router must parse memory.list query with a strict request string helper.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "catch let error as LocalRuntimeRouterError",
+            "Runtime router must return strict memory.list payload errors without wrapping them as store failures.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "testMemoryListRejectsInvalidAllowedPayloadTypesBeforeStoreDispatch",
+            "Runtime router tests must prove malformed allowed memory.list fields are rejected before store dispatch.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            '"memory-list-invalid-query-object"',
+            "Runtime router regression must include object query as an invalid memory.list type.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "smoke-memory-list-invalid-query-type",
+            "RuntimeDevServer smoke must reject invalid allowed memory.list query types.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "malformed allowed fields return `invalid_payload` instead of being coerced or treated as omitted",
+            "Protocol docs must document strict memory.list allowed-field type rejection.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "Clients must not supply `entries`; it is response-only memory list data",
+            "Protocol docs must document entries as response-only memory.list data.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "check_memory_list_payload_schema_contract",
+            "Protocol schema checker must keep a memoryListPayload request/response self-check.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "$defs.memoryListPayload request properties must stay limited to query",
+            "Protocol schema checker must fail if memoryListPayload request grows future metadata fields.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "$defs.memoryListPayload request additionalProperties must be false",
+            "Protocol schema checker must require memoryListPayload request additionalProperties=false.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "LocalRuntimeMessageRouterTests/testMemoryListRejectsUnknownPayloadMetadataBeforeStoreDispatch",
+            "Default no-device gate must run the memory.list unknown-metadata rejection regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "LocalRuntimeMessageRouterTests/testMemoryListRejectsInvalidAllowedPayloadTypesBeforeStoreDispatch",
+            "Default no-device gate must run the memory.list invalid allowed type regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "memory.list unknown metadata rejection addendum",
+            "Default no-device summary must name memory.list unknown-metadata rejection coverage.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "memory.list invalid allowed type rejection addendum",
+            "Default no-device summary must name memory.list invalid allowed type coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Memory List Unknown Metadata Runtime Rejection No-Device Gate",
+            "Progress docs must record the memory.list unknown metadata rejection no-device gate.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Memory List Invalid Allowed Type Runtime Rejection No-Device Gate",
+            "Progress docs must record the memory.list invalid allowed type no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Memory List Unknown Metadata Runtime Rejection No-Device Gate",
+            "QA evidence must record the memory.list unknown metadata rejection no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Memory List Invalid Allowed Type Runtime Rejection No-Device Gate",
+            "QA evidence must record the memory.list invalid allowed type no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "memory.list unknown metadata rejection",
+            "Roadmap smoke coverage queue must name memory.list unknown metadata rejection coverage.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "memory.list invalid allowed type rejection",
+            "Roadmap smoke coverage queue must name memory.list invalid allowed type rejection coverage.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "allowedMemoryUpsertPayloadKeys",
+            "Runtime router must keep a memory.upsert payload key allowlist before runtime memory store mutation.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "memory.upsert payload contains unsupported field(s):",
+            "Runtime router must reject unknown memory.upsert metadata with invalid_payload.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "Set(envelope.payload.keys).subtracting(allowedMemoryUpsertPayloadKeys)",
+            "Runtime router must reject memory.upsert response/backend/route/workspace metadata before runtime memory store mutation.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            'id: try optionalRequestString("id", in: envelope.payload)',
+            "Runtime router must parse memory.upsert id with a strict request string helper.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            'enabled: try optionalRequestBool("enabled", in: envelope.payload)',
+            "Runtime router must parse memory.upsert enabled with a strict request boolean helper.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "testMemoryUpsertRejectsUnknownPayloadMetadataBeforeStoreMutation",
+            "Runtime router tests must prove unknown memory.upsert metadata is rejected before runtime memory store mutation.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "testMemoryUpsertRejectsInvalidAllowedPayloadTypesBeforeStoreMutation",
+            "Runtime router tests must prove malformed allowed memory.upsert fields are rejected before store mutation.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            '"memory-upsert-invalid-enabled-string"',
+            "Runtime router regression must include string enabled as an invalid memory.upsert type.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            '"entry": .object([',
+            "Runtime router regression must include entry as forbidden client-supplied memory.upsert response metadata.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            '"source": .object([',
+            "Runtime router regression must include source as forbidden client-supplied memory.upsert source metadata.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "XCTAssertEqual(store.upsertRequests, [])",
+            "Runtime router regression must prove rejected memory.upsert metadata never reaches runtime memory store mutation.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "`memory.upsert.payload` accepts only optional `id`, required `content`, and optional `enabled`",
+            "Protocol docs must document the active memory.upsert request allowlist.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "`id` must be a string when present and `enabled` must be a boolean when present",
+            "Protocol docs must document strict memory.upsert allowed-field type rejection.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "Clients must not supply `entry`; it is response-only saved memory data",
+            "Protocol docs must document entry as response-only memory.upsert data.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "check_memory_upsert_payload_schema_contract",
+            "Protocol schema checker must keep a memoryUpsertPayload request/response self-check.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "$defs.memoryUpsertPayload request properties must stay limited to id, content, and enabled",
+            "Protocol schema checker must fail if memoryUpsertPayload request grows future metadata fields.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "$defs.memoryUpsertPayload request additionalProperties must be false",
+            "Protocol schema checker must require memoryUpsertPayload request additionalProperties=false.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "smoke-memory-upsert-unknown-metadata",
+            "RuntimeDevServer smoke must reject unknown memory.upsert metadata over the authenticated relay path.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "smoke-memory-upsert-invalid-enabled-type",
+            "RuntimeDevServer smoke must reject invalid allowed memory.upsert payload types.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "memory.upsert invalid enabled type created an entry",
+            "RuntimeDevServer smoke must prove rejected memory.upsert allowed-type errors do not create memory entries.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "smoke-memory-upsert-unknown-list",
+            "RuntimeDevServer smoke must prove rejected memory.upsert metadata does not create a memory entry.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "LocalRuntimeMessageRouterTests/testMemoryUpsertRejectsUnknownPayloadMetadataBeforeStoreMutation",
+            "Default no-device gate must run the memory.upsert unknown-metadata rejection regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "LocalRuntimeMessageRouterTests/testMemoryUpsertRejectsInvalidAllowedPayloadTypesBeforeStoreMutation",
+            "Default no-device gate must run the memory.upsert invalid allowed type regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "memory.upsert unknown metadata rejection addendum",
+            "Default no-device summary must name memory.upsert unknown-metadata rejection coverage.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "memory.upsert invalid allowed type rejection addendum",
+            "Default no-device summary must name memory.upsert invalid allowed type coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Memory Upsert Unknown Metadata Runtime Rejection No-Device Gate",
+            "Progress docs must record the memory.upsert unknown metadata rejection no-device gate.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Memory Upsert Invalid Allowed Type Runtime Rejection No-Device Gate",
+            "Progress docs must record the memory.upsert invalid allowed type no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Memory Upsert Unknown Metadata Runtime Rejection No-Device Gate",
+            "QA evidence must record the memory.upsert unknown metadata rejection no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Memory Upsert Invalid Allowed Type Runtime Rejection No-Device Gate",
+            "QA evidence must record the memory.upsert invalid allowed type no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "memory.upsert unknown metadata rejection",
+            "Roadmap smoke coverage queue must name memory.upsert unknown metadata rejection coverage.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "memory.upsert invalid allowed type rejection",
+            "Roadmap smoke coverage queue must name memory.upsert invalid allowed type rejection coverage.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "allowedMemoryDeletePayloadKeys",
+            "Runtime router must keep a memory.delete payload key allowlist before runtime memory store mutation.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "memory.delete payload contains unsupported field(s):",
+            "Runtime router must reject unknown memory.delete metadata with invalid_payload.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "Set(envelope.payload.keys).subtracting(allowedMemoryDeletePayloadKeys)",
+            "Runtime router must reject memory.delete timestamp/backend/route/workspace metadata before runtime memory store mutation.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "testMemoryDeleteRejectsUnknownPayloadMetadataBeforeStoreMutation",
+            "Runtime router tests must prove unknown memory.delete metadata is rejected before runtime memory store mutation.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            '"deleted_at": .string("2026-06-23T09:02:00Z")',
+            "Runtime router regression must include deleted_at as forbidden client-supplied memory.delete metadata.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "XCTAssertEqual(store.deleteRequests, [])",
+            "Runtime router regression must prove rejected memory.delete metadata never reaches runtime memory store mutation.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "`memory.delete.payload` accepts only `id`",
+            "Protocol docs must document the active memory.delete request allowlist.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "Clients must not supply `deleted_at`; it is runtime-generated acknowledgement metadata",
+            "Protocol docs must document deleted_at as runtime-generated acknowledgement metadata.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "check_memory_delete_payload_schema_contract",
+            "Protocol schema checker must keep a memoryDeletePayload request/acknowledgement self-check.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "$defs.memoryDeletePayload request properties must stay limited to id",
+            "Protocol schema checker must fail if memoryDeletePayload request grows future metadata fields.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "$defs.memoryDeletePayload request additionalProperties must be false",
+            "Protocol schema checker must require memoryDeletePayload request additionalProperties=false.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "LocalRuntimeMessageRouterTests/testMemoryDeleteRejectsUnknownPayloadMetadataBeforeStoreMutation",
+            "Default no-device gate must run the memory.delete unknown-metadata rejection regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "memory.delete unknown metadata rejection addendum",
+            "Default no-device summary must name memory.delete unknown-metadata rejection coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Memory Delete Unknown Metadata Runtime Rejection No-Device Gate",
+            "Progress docs must record the memory.delete unknown metadata rejection no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Memory Delete Unknown Metadata Runtime Rejection No-Device Gate",
+            "QA evidence must record the memory.delete unknown metadata rejection no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "memory.delete unknown metadata rejection",
+            "Roadmap smoke coverage queue must name memory.delete unknown metadata rejection coverage.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "allowedMemorySummaryDraftsListPayloadKeys",
+            "Runtime router must keep a memory.summary.drafts.list payload key allowlist before runtime chat or memory store dispatch.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "memory.summary.drafts.list payload contains unsupported field(s):",
+            "Runtime router must reject unknown memory.summary.drafts.list metadata with invalid_payload.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "Set(envelope.payload.keys).subtracting(allowedMemorySummaryDraftsListPayloadKeys)",
+            "Runtime router must reject memory.summary.drafts.list response/backend/route/workspace metadata before runtime store dispatch.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            'try optionalRequestInt("limit", in: envelope.payload),\n                defaultLimit: 25',
+            "Runtime router must strictly parse memory.summary.drafts.list limit before runtime chat or memory store dispatch.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "testMemorySummaryDraftsListRejectsUnknownPayloadMetadataBeforeStoreDispatch",
+            "Runtime router tests must prove unknown memory.summary.drafts.list metadata is rejected before runtime store dispatch.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            '"drafts": .array([])',
+            "Runtime router regression must include drafts as forbidden client-supplied memory.summary.drafts.list response metadata.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "XCTAssertEqual(chatStore.sessionListRequests, [])",
+            "Runtime router regression must prove rejected memory.summary.drafts.list metadata never reaches runtime chat store dispatch.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "XCTAssertEqual(memoryStore.listRequests, [])",
+            "Runtime router regression must prove rejected memory.summary.drafts.list metadata never reaches runtime memory store dispatch.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "testMemorySummaryDraftsListRejectsInvalidAllowedPayloadTypesBeforeStoreDispatch",
+            "Runtime router tests must prove malformed memory.summary.drafts.list allowed fields are rejected before runtime store dispatch.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "summary-drafts-invalid-limit-fraction",
+            "Runtime router regression must prove fractional memory.summary.drafts.list limit values are rejected.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "smoke-memory-summary-drafts-invalid-limit-type",
+            "RuntimeDevServer relay smoke must reject malformed memory.summary.drafts.list limit values.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "`memory.summary.drafts.list.payload` accepts only optional integer `limit`",
+            "Protocol docs must document the active memory.summary.drafts.list request allowlist.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "Malformed allowed fields, such as string or fractional `limit` values, return `invalid_payload`",
+            "Protocol docs must document malformed memory.summary.drafts.list allowed field rejection.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "Clients must not supply `drafts`; it is response-only review data",
+            "Protocol docs must document drafts as response-only memory.summary.drafts.list data.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "memorySummaryDraftsListPayload request properties must stay limited to limit",
+            "Protocol schema checker must fail if memorySummaryDraftsListPayload request grows future metadata fields.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "memorySummaryDraftsListPayload request properties includes response/backend/route/workspace/source metadata",
+            "Protocol schema checker must reject future memory.summary.drafts.list metadata fields.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "LocalRuntimeMessageRouterTests/testMemorySummaryDraftsListRejectsUnknownPayloadMetadataBeforeStoreDispatch",
+            "Default no-device gate must run the memory.summary.drafts.list unknown-metadata rejection regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "LocalRuntimeMessageRouterTests/testMemorySummaryDraftsListRejectsInvalidAllowedPayloadTypesBeforeStoreDispatch",
+            "Default no-device gate must run the memory.summary.drafts.list invalid allowed type regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "memory.summary.drafts.list unknown metadata rejection addendum",
+            "Default no-device summary must name memory.summary.drafts.list unknown-metadata rejection coverage.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "memory.summary.drafts.list invalid allowed type rejection addendum",
+            "Default no-device summary must name memory.summary.drafts.list invalid allowed type rejection coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Memory Summary Drafts List Unknown Metadata Runtime Rejection No-Device Gate",
+            "Progress docs must record the memory.summary.drafts.list unknown metadata rejection no-device gate.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Memory Summary Drafts List Invalid Allowed Type Runtime Rejection No-Device Gate",
+            "Progress docs must record the memory.summary.drafts.list invalid allowed type rejection no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Memory Summary Drafts List Unknown Metadata Runtime Rejection No-Device Gate",
+            "QA evidence must record the memory.summary.drafts.list unknown metadata rejection no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Memory Summary Drafts List Invalid Allowed Type Runtime Rejection No-Device Gate",
+            "QA evidence must record the memory.summary.drafts.list invalid allowed type rejection no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "memory.summary.drafts.list unknown metadata rejection",
+            "Roadmap smoke coverage queue must name memory.summary.drafts.list unknown metadata rejection coverage.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "memory.summary.drafts.list invalid allowed type rejection",
+            "Roadmap smoke coverage queue must name memory.summary.drafts.list invalid allowed type rejection coverage.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "allowedMemorySummaryDraftApprovePayloadKeys",
+            "Runtime router must keep a memory.summary.draft.approve payload key allowlist before runtime store mutation.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "memory.summary.draft.approve payload contains unsupported field(s):",
+            "Runtime router must reject unknown memory.summary.draft.approve metadata with invalid_payload.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "Set(envelope.payload.keys).subtracting(allowedMemorySummaryDraftApprovePayloadKeys)",
+            "Runtime router must reject memory.summary.draft.approve response/backend/route/workspace metadata before runtime store mutation.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "allowedMemorySummaryDraftDismissPayloadKeys",
+            "Runtime router must keep a memory.summary.draft.dismiss payload key allowlist before runtime store mutation.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "memory.summary.draft.dismiss payload contains unsupported field(s):",
+            "Runtime router must reject unknown memory.summary.draft.dismiss metadata with invalid_payload.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "Set(envelope.payload.keys).subtracting(allowedMemorySummaryDraftDismissPayloadKeys)",
+            "Runtime router must reject memory.summary.draft.dismiss response/backend/route/workspace metadata before runtime store mutation.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "testMemorySummaryDraftApproveRejectsUnknownPayloadMetadataBeforeStoreMutation",
+            "Runtime router tests must prove unknown memory.summary.draft.approve metadata is rejected before runtime store mutation.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            '"entry": .object(["id": .string("client-entry")])',
+            "Runtime router regression must include entry as forbidden client-supplied memory.summary.draft.approve response metadata.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "XCTAssertEqual(memoryStore.upsertRequests, [])",
+            "Runtime router regression must prove rejected memory.summary.draft.approve metadata never reaches runtime memory mutation.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "testMemorySummaryDraftDismissRejectsUnknownPayloadMetadataBeforeStoreMutation",
+            "Runtime router tests must prove unknown memory.summary.draft.dismiss metadata is rejected before runtime store mutation.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            '"dismissed_at": .string("2026-06-23T09:02:00Z")',
+            "Runtime router regression must include dismissed_at as forbidden client-supplied memory.summary.draft.dismiss response metadata.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "XCTAssertEqual(memoryStore.dismissMemorySummaryDraftRequests, [])",
+            "Runtime router regression must prove rejected memory.summary.draft.dismiss metadata never reaches runtime memory mutation.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "`memory.summary.draft.approve.payload` accepts only `draft_id`, optional `content`, optional `enabled`, optional `expected_session_id`, and optional `expected_source_message_count`",
+            "Protocol docs must document the active memory.summary.draft.approve request allowlist.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "Clients must not supply `status` or `entry`; they are response-only approval data",
+            "Protocol docs must document status/entry as response-only memory.summary.draft.approve data.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "`memory.summary.draft.dismiss.payload` accepts only `draft_id`, optional `expected_session_id`, and optional `expected_source_message_count`",
+            "Protocol docs must document the active memory.summary.draft.dismiss request allowlist.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "Clients must not supply `status` or `dismissed_at`; they are response-only dismissal data",
+            "Protocol docs must document status/dismissed_at as response-only memory.summary.draft.dismiss data.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "properties must stay limited to",
+            "Protocol schema checker must fail if memory-summary draft decision requests grow future metadata fields.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "properties includes response/backend/route/workspace/source metadata",
+            "Protocol schema checker must reject future memory-summary draft decision metadata fields.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "LocalRuntimeMessageRouterTests/testMemorySummaryDraftApproveRejectsUnknownPayloadMetadataBeforeStoreMutation",
+            "Default no-device gate must run the memory.summary.draft.approve unknown-metadata rejection regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "LocalRuntimeMessageRouterTests/testMemorySummaryDraftDismissRejectsUnknownPayloadMetadataBeforeStoreMutation",
+            "Default no-device gate must run the memory.summary.draft.dismiss unknown-metadata rejection regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "memory.summary.draft.approve unknown metadata rejection addendum",
+            "Default no-device summary must name memory.summary.draft.approve unknown-metadata rejection coverage.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "memory.summary.draft.dismiss unknown metadata rejection addendum",
+            "Default no-device summary must name memory.summary.draft.dismiss unknown-metadata rejection coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Memory Summary Draft Decision Unknown Metadata Runtime Rejection No-Device Gate",
+            "Progress docs must record the memory-summary draft decision unknown metadata rejection no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Memory Summary Draft Decision Unknown Metadata Runtime Rejection No-Device Gate",
+            "QA evidence must record the memory-summary draft decision unknown metadata rejection no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "memory.summary draft decision unknown metadata rejection",
+            "Roadmap smoke coverage queue must name memory-summary draft decision unknown metadata rejection coverage.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "allowedChatRequestPayloadKeys",
+            "Runtime router must keep a chat.send payload key allowlist before backend dispatch.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "Chat request payload contains unsupported field(s):",
+            "Runtime router must reject unknown chat.send payload metadata with invalid_payload.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "Set(envelope.payload.keys).subtracting(allowedChatRequestPayloadKeys)",
+            "Runtime router must reject chat.send payload project/RAG/backend metadata before parsing messages.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "testChatSendRejectsTopLevelPayloadMetadataBeforeBackendDispatch",
+            "Runtime router tests must prove top-level chat.send payload metadata is rejected before backend dispatch.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            '"project_id": .string("project-1")',
+            "Runtime router regression must include project_id as a forbidden top-level chat.send payload key.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            '"retrieval_context": .string("future retrieval context")',
+            "Runtime router regression must include retrieval_context as a forbidden top-level chat.send payload key.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            '"permission_grant": .string("future permission grant")',
+            "Runtime router regression must include permission_grant as a forbidden top-level chat.send payload key.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "`chat.send.payload` accepts only `session_id`, `model`, `locale`, and `messages`",
+            "Protocol docs must document the active chat.send payload allowlist.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "must not carry project IDs, workspace IDs, retrieval context, permission grants, backend URLs, backend credentials, route material, tool results, or trusted-source metadata",
+            "Protocol docs must document forbidden top-level chat.send project/RAG/backend metadata.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "check_chat_send_payload_schema_contract",
+            "Protocol schema checker must keep a chatSendPayload closed-schema self-check.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "$defs.chatSendPayload.properties must stay limited to session_id, model, locale, and messages",
+            "Protocol schema checker must fail if chatSendPayload grows future metadata fields.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "$defs.chatSendPayload.additionalProperties must be false",
+            "Protocol schema checker must require chatSendPayload.additionalProperties=false.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "LocalRuntimeMessageRouterTests/testChatSendRejectsTopLevelPayloadMetadataBeforeBackendDispatch",
+            "Default no-device gate must run the top-level chat.send payload metadata rejection regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "chat.send top-level payload metadata rejection addendum",
+            "Default no-device summary must name top-level chat.send payload metadata rejection coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Chat Send Top-Level Payload Metadata Runtime Rejection No-Device Gate",
+            "Progress docs must record the top-level chat.send payload metadata rejection no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Chat Send Top-Level Payload Metadata Runtime Rejection No-Device Gate",
+            "QA evidence must record the top-level chat.send payload metadata rejection no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "chat.send top-level payload metadata rejection",
+            "Roadmap smoke coverage queue must name top-level chat.send payload metadata rejection coverage.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "testChatTitleRequestRejectsUnknownPayloadMetadataBeforeBackendDispatch",
+            "Runtime router tests must prove chat.title.request unknown metadata is rejected before backend dispatch.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            '"title": .string("client-supplied-title")',
+            "Runtime router regression must include response-only title as a forbidden chat.title.request payload key.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            '"provider_url": .string("http://127.0.0.1:1234/v1")',
+            "Runtime router regression must include provider_url as forbidden chat.title.request metadata.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "XCTAssertEqual(backend.listModelsCallCount, 0)",
+            "Runtime router regression must prove rejected chat.title.request metadata never reaches model lookup.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "smoke-title-unknown-metadata",
+            "RuntimeDevServer smoke must reject chat.title.request unknown metadata before normal title generation.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "chat.title.request unknown metadata",
+            "RuntimeDevServer smoke must label the chat.title.request unknown metadata rejection.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "`chat.title.request.payload` accepts only `session_id`, `model`, `locale`, and `messages`",
+            "Protocol docs must document the active chat.title.request payload allowlist.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "Clients must not send response-only `title`, project IDs, workspace IDs, retrieval context, permission grants, backend URLs, provider URLs, backend credentials, route tokens, relay secrets, requested route tokens, source paths, source-control state, tool results, or direct-provider route material",
+            "Protocol docs must document forbidden chat.title.request project/RAG/backend metadata.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "check_chat_title_request_payload_schema_contract",
+            "Protocol schema checker must keep a chatTitleRequestPayload closed-schema self-check.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "$defs.chatTitleRequestPayload.properties must stay limited to session_id, model, locale, and messages",
+            "Protocol schema checker must fail if chatTitleRequestPayload grows future metadata fields.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "LocalRuntimeMessageRouterTests/testChatTitleRequestRejectsUnknownPayloadMetadataBeforeBackendDispatch",
+            "Default no-device gate must run the chat.title.request unknown-metadata rejection regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "chat.title.request unknown metadata rejection addendum",
+            "Default no-device summary must name chat.title.request unknown-metadata rejection coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Chat Title Request Unknown Metadata Runtime Rejection No-Device Gate",
+            "Progress docs must record the chat.title.request unknown metadata rejection no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Chat Title Request Unknown Metadata Runtime Rejection No-Device Gate",
+            "QA evidence must record the chat.title.request unknown metadata rejection no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "chat.title.request unknown metadata rejection",
+            "Roadmap smoke coverage queue must name chat.title.request unknown metadata rejection coverage.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "allowedChatMessageKeys",
+            "Runtime router must keep a chat message key allowlist before backend dispatch.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "Message contains unsupported field(s):",
+            "Runtime router must reject unknown chat message metadata with invalid_payload.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "Set(object.keys).subtracting(allowedChatMessageKeys)",
+            "Runtime router must reject chat message source/workspace/backend metadata before constructing ChatMessage.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "testChatSendRejectsMessageSourceMetadataBeforeBackendDispatch",
+            "Runtime router tests must prove chat message source metadata is rejected before backend dispatch.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            '"trusted_source": .bool(true)',
+            "Runtime router regression must include trusted_source as a forbidden chat message metadata key.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "Message objects accept only `role`, `content`, and `attachments`",
+            "Protocol docs must document the active chat message allowlist.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "must not carry source paths, workspace IDs, source-control state, backend URLs, backend credentials, route material, runtime memory context, tool results, or trusted-source metadata",
+            "Protocol docs must document forbidden chat message source/workspace/backend metadata.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "LocalRuntimeMessageRouterTests/testChatSendRejectsMessageSourceMetadataBeforeBackendDispatch",
+            "Default no-device gate must run the chat message source-metadata rejection regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "chat.send message metadata rejection addendum",
+            "Default no-device summary must name chat message source-metadata rejection coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Chat Send Message Metadata Runtime Rejection No-Device Gate",
+            "Progress docs must record the chat message metadata rejection no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Chat Send Message Metadata Runtime Rejection No-Device Gate",
+            "QA evidence must record the chat message metadata rejection no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "chat.send message metadata rejection",
+            "Roadmap smoke coverage queue must name chat message metadata rejection coverage.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "allowedChatAttachmentKeys",
+            "Runtime router must keep an attachment key allowlist before backend dispatch.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "Attachment contains unsupported field(s):",
+            "Runtime router must reject unknown attachment metadata with invalid_payload.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "Set(attachmentObject.keys).subtracting(allowedChatAttachmentKeys)",
+            "Runtime router must reject attachment source/workspace/backend metadata before constructing ChatAttachment.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "testChatSendRejectsAttachmentSourceMetadataBeforeBackendDispatch",
+            "Runtime router tests must prove attachment source metadata is rejected before backend dispatch.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            '"source_path": .string("/Users/example/project/notes.txt")',
+            "Runtime router regression must include source_path as a forbidden attachment metadata key.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            '"workspace_id": .string("workspace-1")',
+            "Runtime router regression must include workspace_id as a forbidden attachment metadata key.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            '"source_control_status": .string("modified")',
+            "Runtime router regression must include source_control_status as a forbidden attachment metadata key.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            '"backend_url": .string("https://provider.example.invalid/v1/chat/completions")',
+            "Runtime router regression must include backend_url as a forbidden attachment metadata key.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "XCTAssertNil(capturedRequest.value)",
+            "Runtime router regression must prove the rejected attachment never reaches backend dispatch.",
+        ),
+        (
+            protocol_schema_text,
+            protocol_schema_path,
+            '"additionalProperties": false',
+            "Protocol schema must keep chatAttachment closed to unknown metadata.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "check_chat_message_schema_contract",
+            "Protocol schema checker must keep a chatMessage closed-schema self-check.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "$defs.chatMessage.properties must stay limited to role, content, and attachments",
+            "Protocol schema checker must fail if chatMessage grows future metadata fields.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "$defs.chatMessage.additionalProperties must be false",
+            "Protocol schema checker must require chatMessage.additionalProperties=false.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "check_chat_attachment_schema_contract",
+            "Protocol schema checker must keep a chatAttachment closed-schema self-check.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "Attachment objects accept only `type`, `mime_type`, `name`, `data_base64`, and `text`",
+            "Protocol docs must document the active attachment allowlist.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "must not carry source paths, workspace IDs, source-control state, backend URLs, backend credentials, route material, or trusted-source metadata",
+            "Protocol docs must document forbidden attachment source/workspace/backend metadata.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "LocalRuntimeMessageRouterTests/testChatSendRejectsAttachmentSourceMetadataBeforeBackendDispatch",
+            "Default no-device gate must run the attachment source-metadata rejection regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "attachment source metadata rejection addendum",
+            "Default no-device summary must name attachment source-metadata rejection coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Attachment Source Metadata Runtime Rejection No-Device Gate",
+            "Progress docs must record the attachment source metadata rejection no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Attachment Source Metadata Runtime Rejection No-Device Gate",
+            "QA evidence must record the attachment source metadata rejection no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "attachment source metadata rejection",
+            "Roadmap smoke coverage queue must name attachment source metadata rejection coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_attachment_source_metadata_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+
     required_lm_studio_vision_image_snippets = (
         (
             lm_studio_test_text,
@@ -10335,7 +15443,9 @@ def runtime_history_storage_guard_failures() -> list[str]:
     docs_progress_path = ROOT / "docs/progress.md"
     docs_qa_evidence_path = ROOT / "docs/qa-evidence.md"
     docs_roadmap_path = ROOT / "docs/roadmap.md"
+    docs_protocol_path = ROOT / "docs/protocol.md"
     docs_security_path = ROOT / "docs/security.md"
+    schema_path = ROOT / "packages/protocol-schema/protocol.schema.json"
     package_path = ROOT / "Package.swift"
 
     required_paths = (
@@ -10362,7 +15472,9 @@ def runtime_history_storage_guard_failures() -> list[str]:
         docs_progress_path,
         docs_qa_evidence_path,
         docs_roadmap_path,
+        docs_protocol_path,
         docs_security_path,
+        schema_path,
         package_path,
     )
     if any(not path.exists() for path in required_paths):
@@ -10391,7 +15503,9 @@ def runtime_history_storage_guard_failures() -> list[str]:
     docs_progress_text = docs_progress_path.read_text(encoding="utf-8", errors="replace")
     docs_qa_evidence_text = docs_qa_evidence_path.read_text(encoding="utf-8", errors="replace")
     docs_roadmap_text = docs_roadmap_path.read_text(encoding="utf-8", errors="replace")
+    docs_protocol_text = docs_protocol_path.read_text(encoding="utf-8", errors="replace")
     docs_security_text = docs_security_path.read_text(encoding="utf-8", errors="replace")
+    schema_text = schema_path.read_text(encoding="utf-8", errors="replace")
     package_text = package_path.read_text(encoding="utf-8", errors="replace")
 
     android_store_relative = android_store_path.relative_to(ROOT)
@@ -10417,7 +15531,9 @@ def runtime_history_storage_guard_failures() -> list[str]:
     docs_progress_relative = docs_progress_path.relative_to(ROOT)
     docs_qa_evidence_relative = docs_qa_evidence_path.relative_to(ROOT)
     docs_roadmap_relative = docs_roadmap_path.relative_to(ROOT)
+    docs_protocol_relative = docs_protocol_path.relative_to(ROOT)
     docs_security_relative = docs_security_path.relative_to(ROOT)
+    schema_relative = schema_path.relative_to(ROOT)
     package_relative = package_path.relative_to(ROOT)
 
     required_android_store_snippets = (
@@ -10476,8 +15592,20 @@ def runtime_history_storage_guard_failures() -> list[str]:
             "Android protocol DTO must keep chat.sessions.list query serializable.",
         ),
         (
+            '@SerialName("embedding_model_id") val embeddingModelId: String? = null',
+            "Android protocol DTO must keep the selected embedding model search hint serializable.",
+        ),
+        (
             "data class ChatSessionSearchPayload(\n    val rank: Int,\n    val snippet: String,\n    @SerialName(\"matched_fields\") val matchedFields: List<String> = emptyList(),",
             "Android protocol DTO must decode chat.sessions.list search rank/snippet metadata.",
+        ),
+        (
+            "data class MemoryListRequestPayload(\n    val query: String? = null,",
+            "Android protocol DTO must encode optional memory.list query requests.",
+        ),
+        (
+            "val search: ChatSessionSearchPayload? = null,",
+            "Android memory entry DTO must decode response-only search metadata.",
         ),
         (
             'const val MemorySummaryDraftsList = "memory.summary.drafts.list"',
@@ -10532,6 +15660,58 @@ def runtime_history_storage_guard_failures() -> list[str]:
         if snippet not in android_protocol_text:
             failures.append(f"{android_protocol_relative}: {guidance}")
 
+    required_schema_snippets = (
+        (
+            '"embedding_model_id": { "$ref": "#/$defs/nonEmptyString" }',
+            "Protocol schema must allow the optional selected embedding model search hint on chat.sessions.list.",
+        ),
+        (
+            '"query": { "$ref": "#/$defs/nonEmptyString" }',
+            "Protocol schema must allow optional query payloads for runtime-owned search commands.",
+        ),
+        (
+            '"search": { "$ref": "#/$defs/chatSessionSearch" }',
+            "Protocol schema must allow response-only search metadata on memory entries.",
+        ),
+    )
+    for snippet, guidance in required_schema_snippets:
+        if snippet not in schema_text:
+            failures.append(f"{schema_relative}: {guidance}")
+
+    required_protocol_doc_snippets = (
+        (
+            '"embedding_model_id": "ollama:nomic-embed-text"',
+            "Protocol docs must show the optional selected embedding model search hint.",
+        ),
+        (
+            "it is a runtime-side semantic search/ranking hint for future embedding-backed recall",
+            "Protocol docs must keep embedding_model_id scoped to runtime-side search/ranking.",
+        ),
+        (
+            "not a `chat.send` model override and not a direct client-to-provider request",
+            "Protocol docs must not let embedding_model_id become a chat model override or client-provider path.",
+        ),
+        (
+            "must not echo the hint in response payloads",
+            "Protocol docs must keep embedding_model_id out of chat.sessions.list responses.",
+        ),
+        (
+            "Nonblank queries are normalized by the runtime and filter owner-scoped memory entries",
+            "Protocol docs must describe runtime-owned memory.list query filtering.",
+        ),
+        (
+            "`source` is runtime-derived output metadata and is not accepted in this request",
+            "Protocol docs must forbid client-supplied memory source metadata.",
+        ),
+        (
+            "search.rank",
+            "Protocol docs must describe response-only memory search metadata.",
+        ),
+    )
+    for snippet, guidance in required_protocol_doc_snippets:
+        if snippet not in docs_protocol_text:
+            failures.append(f"{docs_protocol_relative}: {guidance}")
+
     required_android_viewmodel_snippets = (
         (
             "fun refreshRuntimeChatHistory(query: String?)",
@@ -10542,8 +15722,32 @@ def runtime_history_storage_guard_failures() -> list[str]:
             "Android chat.sessions.list query requests must trim blank search text before serialization.",
         ),
         (
+            "val embeddingModelId = normalizedQuery?.let { state.value.selectedEmbeddingModelId }",
+            "Android chat.sessions.list search requests must bind the selected embedding model only when a query is present.",
+        ),
+        (
             "query = normalizedQuery",
             "Android chat.sessions.list request payload must pass the optional runtime-owned search query.",
+        ),
+        (
+            "embeddingModelId = embeddingModelId",
+            "Android chat.sessions.list request payload must pass the selected embedding model search hint.",
+        ),
+        (
+            "fun refreshRuntimeMemory(query: String?)",
+            "Android runtime memory refresh must expose a query-capable overload.",
+        ),
+        (
+            "requestRuntimeMemory(query = normalizedQuery)",
+            "Android memory.list query refresh must pass normalized search text into the request helper.",
+        ),
+        (
+            "if (normalizedQuery == null) {\n            requestRuntimeMemorySummaryDrafts()",
+            "Android memory query refresh must not refresh summary drafts for nonblank memory searches.",
+        ),
+        (
+            "payload = MemoryListRequestPayload(query = normalizedQuery)",
+            "Android memory.list query refresh must encode the optional memory search payload.",
         ),
         (
             "MessageType.MemorySummaryDraftsList,",
@@ -10625,8 +15829,13 @@ def runtime_history_storage_guard_failures() -> list[str]:
     required_android_protocol_test_snippets = (
         'query = "relay route"',
         'assertEquals("relay route", requestJson["query"]?.jsonPrimitive?.content)',
+        'embeddingModelId = "ollama:nomic-embed-text"',
+        'assertEquals("ollama:nomic-embed-text", requestJson["embedding_model_id"]?.jsonPrimitive?.content)',
         "ChatSessionSearchPayload(",
         'assertEquals("Runtime history matched relay route.", decoded.sessions.first().search?.snippet)',
+        "MemoryListRequestPayload(query = \"concise answers\")",
+        'assertEquals("concise answers", listRequestJson["query"]?.jsonPrimitive?.content)',
+        'assertEquals("Prefers concise answers.", decodedList.entries.first().search?.snippet)',
         "memorySummaryDraftsListPayloadUsesProtocolFieldNames",
         'assertEquals(MessageType.MemorySummaryDraftsList, "memory.summary.drafts.list")',
         "MemorySummaryDraftsListResultPayload(",
@@ -10667,6 +15876,12 @@ def runtime_history_storage_guard_failures() -> list[str]:
         'assertEquals(400L, archivedRuntimeChatSessions(restoreAck).single().archivedAtMillis)',
         "refreshRuntimeChatHistoryCanSendTrimmedQuery",
         'assertEquals("relay route", queryPayload.query)',
+        "refreshRuntimeChatHistorySendsSelectedEmbeddingModelOnlyForSearchQuery",
+        "assertNull(refreshPayload.embeddingModelId)",
+        "assertEquals(selectedEmbeddingModel.id, queryPayload.embeddingModelId)",
+        "refreshRuntimeMemorySendsTrimmedQueryAndRedactsSearchMetadataFromDeviceStorage",
+        'assertEquals("relay recovery", queryPayload.query)',
+        'assertEquals(listOf("content", "source_excerpt"), runtimeEntry.searchMatchedFields)',
         "ChatSessionSearchPayload(",
         "assertNull(savedRedaction.runtimeSearchSnippet)",
     )
@@ -10708,6 +15923,10 @@ def runtime_history_storage_guard_failures() -> list[str]:
         (
             "query: String?",
             "Runtime chat session listing must keep the protocol query filter plumbed through the store boundary.",
+        ),
+        (
+            "embeddingModelID: String?",
+            "Runtime chat session listing must keep the selected embedding-model search hint plumbed through the store boundary.",
         ),
         (
             "RuntimeChatSessionSearchQuery",
@@ -10758,10 +15977,54 @@ def runtime_history_storage_guard_failures() -> list[str]:
         if snippet not in macos_store_text:
             failures.append(f"{macos_store_relative}: {guidance}")
 
+    required_macos_router_embedding_search_hint_snippets = (
+        (
+            'let rawEmbeddingModelID = try optionalRequestString("embedding_model_id", in: payload)',
+            "Runtime chat.sessions.list must explicitly read the selected embedding-model search hint.",
+        ),
+        (
+            "normalizedChatSessionSearchEmbeddingModelID(",
+            "Runtime chat.sessions.list must normalize the selected embedding-model search hint at the router boundary.",
+        ),
+        (
+            "guard RuntimeChatSessionSearchQuery(query) != nil else { return nil }",
+            "Runtime chat.sessions.list must ignore embedding_model_id when there is no real search query.",
+        ),
+        (
+            "embeddingModelID: embeddingModelID",
+            "Runtime chat.sessions.list must pass the selected embedding-model hint into the runtime search boundary.",
+        ),
+    )
+    for snippet, guidance in required_macos_router_embedding_search_hint_snippets:
+        if snippet not in macos_router_text:
+            failures.append(f"{macos_router_relative}: {guidance}")
+
+    required_macos_router_memory_search_snippets = (
+        (
+            'query: try optionalRequestString("query", in: envelope.payload)',
+            "Runtime memory.list must pass the optional query to the runtime memory store.",
+        ),
+        (
+            "memory.upsert payload contains unsupported field(s):",
+            "Runtime memory.upsert must reject client-supplied source and response metadata.",
+        ),
+        (
+            'payload["search"] = .object([',
+            "Runtime memory.list responses must include response-only search metadata when the store returns it.",
+        ),
+    )
+    for snippet, guidance in required_macos_router_memory_search_snippets:
+        if snippet not in macos_router_text:
+            failures.append(f"{macos_router_relative}: {guidance}")
+
     required_macos_sqlite_store_snippets = (
         (
             "public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore",
             "Runtime history SQLite/FTS migration must keep a concrete RuntimeChatEventStore backend.",
+        ),
+        (
+            "embeddingModelID: String?",
+            "Runtime history SQLite/FTS query path must accept the selected embedding-model search hint without falling back to JSONL.",
         ),
         (
             "CREATE VIRTUAL TABLE IF NOT EXISTS runtime_chat_session_fts USING fts5",
@@ -10866,6 +16129,22 @@ def runtime_history_storage_guard_failures() -> list[str]:
         (
             "readEvents(ownerDeviceID: ownerDeviceID)",
             "Runtime memory reads must filter by trusted-device owner scope.",
+        ),
+        (
+            "public struct RuntimeMemoryEntrySearch",
+            "Runtime memory entries must carry response-only search metadata.",
+        ),
+        (
+            "func list(ownerDeviceID: String?, query: String?)",
+            "Runtime memory store must expose a query-capable owner-scoped listing boundary.",
+        ),
+        (
+            "func runtimeMemorySearchMatch(_ query: RuntimeMemorySearchQuery)",
+            "Runtime memory query filtering must stay deterministic and runtime-owned.",
+        ),
+        (
+            'append("source_excerpt", pointer.excerpt, weight: 40)',
+            "Runtime memory query filtering must cover bounded source excerpts without exposing full transcripts.",
         ),
     )
     for snippet, guidance in required_macos_memory_store_snippets:
@@ -10993,11 +16272,11 @@ def runtime_history_storage_guard_failures() -> list[str]:
             "Runtime parsed chat request must keep backend and storage message streams explicit.",
         ),
         (
-            "let limit = boundedWindowLimit(\n                optionalInt(\"limit\", in: envelope.payload),\n                defaultLimit: 100,\n                maxLimit: 200",
+            "let limit = boundedWindowLimit(\n                try optionalRequestInt(\"limit\", in: envelope.payload),\n                defaultLimit: 100,\n                maxLimit: 200",
             "chat.sessions.list must preserve nonpositive limits as empty history windows.",
         ),
         (
-            "let limit = boundedWindowLimit(\n                optionalInt(\"limit\", in: envelope.payload),\n                defaultLimit: 200,\n                maxLimit: 500",
+            "let limit = boundedWindowLimit(\n                try optionalRequestInt(\"limit\", in: envelope.payload),\n                defaultLimit: 200,\n                maxLimit: 500",
             "chat.messages.list must preserve nonpositive limits as empty history windows.",
         ),
         (
@@ -11017,7 +16296,7 @@ def runtime_history_storage_guard_failures() -> list[str]:
             "Runtime chat session reads must use trusted-device owner scope.",
         ),
         (
-            "let query = optionalString(\"query\", in: envelope.payload)",
+            "let query = try optionalRequestString(\"query\", in: envelope.payload)",
             "chat.sessions.list must parse the optional runtime-owned session search query.",
         ),
         (
@@ -11285,6 +16564,12 @@ def runtime_history_storage_guard_failures() -> list[str]:
         '"memory-summary:\\(draftID)"',
         'XCTAssertEqual(try memoryStore.dismissedMemorySummaryDraftIDs(ownerDeviceID: "device-a"), Set([draftID]))',
         'XCTAssertEqual(sourcePayload["draft_id"], .string(draftID))',
+        "testMemoryListQueryFiltersRuntimeOwnedMemoryWithSearchMetadata",
+        'payload: ["query": .string("relay recovery")]',
+        'XCTAssertEqual(firstSearch["matched_fields"], .array([.string("content")]))',
+        "testMemoryUpsertRejectsClientSuppliedSourceMetadataAndPreservesRuntimeSource",
+        'requestID: "memory-source-forgery"',
+        'XCTAssertEqual(reloadedEntry?.source?.draftID, source.draftID)',
         "JSONLRuntimeMemoryStore(fileURL: memoryStoreURL)",
         'XCTAssertFalse(preview.contains("Runtime user memory"))',
         'XCTAssertFalse(preview.contains("private reasoning"))',
@@ -11381,6 +16666,22 @@ def runtime_history_storage_guard_failures() -> list[str]:
         failures.append(
             f"{no_device_relative}: Default no-device gate must mention runtime-owned chat session query coverage."
         )
+    if "selected embedding-model search hint plumbing" not in no_device_text:
+        failures.append(
+            f"{no_device_relative}: Default no-device gate must mention selected embedding-model search hint coverage."
+        )
+    if "RuntimeClientViewModelTest.refreshRuntimeChatHistorySendsSelectedEmbeddingModelOnlyForSearchQuery" not in no_device_text:
+        failures.append(
+            f"{no_device_relative}: Default no-device gate must run the selected embedding-model search hint regression."
+        )
+    if "LocalRuntimeMessageRouterTests/testChatSessionsListEmbeddingModelHintStaysSearchOnly" not in no_device_text:
+        failures.append(
+            f"{no_device_relative}: Default no-device gate must run the runtime embedding search-hint boundary regression."
+        )
+    if "runtime embedding search-hint boundary addendum" not in no_device_text:
+        failures.append(
+            f"{no_device_relative}: Default no-device gate must mention runtime embedding search-hint boundary coverage."
+        )
     if "deterministic ranking, bounded snippets" not in no_device_text:
         failures.append(
             f"{no_device_relative}: Default no-device gate must mention runtime-owned chat session ranking/snippet coverage."
@@ -11405,6 +16706,211 @@ def runtime_history_storage_guard_failures() -> list[str]:
         failures.append(
             f"{no_device_relative}: Default no-device gate must mention SQLite runtime chat deleted-session retention pruning coverage."
         )
+    required_selected_embedding_search_hint_docs = (
+        (
+            docs_progress_text,
+            docs_progress_relative,
+            "Android Selected Embedding Search Hint No-Device Gate",
+            "Progress docs must record the selected embedding search hint no-device gate.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_relative,
+            "`embedding_model_id`",
+            "Progress docs must name the embedding_model_id search hint field.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_relative,
+            "RuntimeClientViewModelTest.refreshRuntimeChatHistorySendsSelectedEmbeddingModelOnlyForSearchQuery",
+            "Progress docs must record the focused selected embedding search hint regression.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_relative,
+            "Android Selected Embedding Search Hint No-Device Gate",
+            "QA evidence must record the selected embedding search hint no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_relative,
+            "`embedding_model_id`",
+            "QA evidence must name the embedding_model_id search hint field.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_relative,
+            "selected embedding-model search hint plumbing",
+            "QA evidence must record the no-device summary phrase for selected embedding search hint coverage.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_relative,
+            "Android selected embedding-model search hint",
+            "Roadmap smoke coverage queue must name selected embedding-model search hint coverage.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_relative,
+            "`embedding_model_id` search hint",
+            "Roadmap v0.3 must keep selected embedding_model_id search hint plumbing visible.",
+        ),
+    )
+    for haystack, relative, snippet, guidance in required_selected_embedding_search_hint_docs:
+        if snippet not in haystack:
+            failures.append(f"{relative}: {guidance}")
+    required_runtime_embedding_search_hint_docs = (
+        (
+            docs_progress_text,
+            docs_progress_relative,
+            "Runtime Embedding Search Hint Boundary No-Device Gate",
+            "Progress docs must record the runtime embedding search-hint boundary no-device gate.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_relative,
+            "LocalRuntimeMessageRouterTests/testChatSessionsListEmbeddingModelHintStaysSearchOnly",
+            "Progress docs must record the focused runtime embedding search-hint boundary regression.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_relative,
+            "runtime embedding search-hint boundary addendum",
+            "Progress docs must record the no-device summary phrase for runtime embedding search-hint coverage.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_relative,
+            "Runtime Embedding Search Hint Boundary No-Device Gate",
+            "QA evidence must record the runtime embedding search-hint boundary no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_relative,
+            "LocalRuntimeMessageRouterTests/testChatSessionsListEmbeddingModelHintStaysSearchOnly",
+            "QA evidence must record the focused runtime embedding search-hint boundary regression.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_relative,
+            "never echoes it as a response field or treats it as a chat model override",
+            "QA evidence must keep the embedding_model_id boundary scoped away from response echo or chat model override.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_relative,
+            "runtime embedding search-hint boundary",
+            "Roadmap smoke coverage queue must name runtime embedding search-hint boundary coverage.",
+        ),
+    )
+    for haystack, relative, snippet, guidance in required_runtime_embedding_search_hint_docs:
+        if snippet not in haystack:
+            failures.append(f"{relative}: {guidance}")
+    required_runtime_memory_search_docs = (
+        (
+            docs_progress_text,
+            docs_progress_relative,
+            "Runtime Memory List Search No-Device Gate",
+            "Progress docs must record the runtime memory list search no-device gate.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_relative,
+            "LocalRuntimeMessageRouterTests/testMemoryListQueryFiltersRuntimeOwnedMemoryWithSearchMetadata",
+            "Progress docs must record the focused runtime memory search metadata regression.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_relative,
+            "LocalRuntimeMessageRouterTests/testMemoryUpsertRejectsClientSuppliedSourceMetadataAndPreservesRuntimeSource",
+            "Progress docs must record the focused runtime memory source-forgery regression.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_relative,
+            "Android Settings Memory Runtime Search No-Device Gate",
+            "Progress docs must record the Android Settings memory runtime search no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_relative,
+            "Runtime Memory List Search No-Device Gate",
+            "QA evidence must record the runtime memory list search no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_relative,
+            "runtime memory list search addendum",
+            "QA evidence must record the no-device summary phrase for memory list search coverage.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_relative,
+            "RuntimeDevServer memory.list query search metadata smoke",
+            "QA evidence must record the RuntimeDevServer memory.list query search metadata smoke.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_relative,
+            "RuntimeDevServer memory.list query search metadata smoke",
+            "Progress docs must record the RuntimeDevServer memory.list query search metadata smoke.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_relative,
+            "Android Settings memory runtime search addendum",
+            "QA evidence must record the no-device summary phrase for Android Settings memory search coverage.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_relative,
+            "runtime memory list search",
+            "Roadmap smoke coverage queue must name runtime memory list search coverage.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_relative,
+            "Android Settings memory runtime search",
+            "Roadmap smoke coverage queue must name Android Settings memory runtime search coverage.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_relative,
+            "The current implementation is deterministic lexical filtering",
+            "Protocol docs must keep memory.list query scoped away from semantic embedding search.",
+        ),
+    )
+    for haystack, relative, snippet, guidance in required_runtime_memory_search_docs:
+        if snippet not in haystack:
+            failures.append(f"{relative}: {guidance}")
+    if "LocalRuntimeMessageRouterTests/testMemoryListQueryFiltersRuntimeOwnedMemoryWithSearchMetadata" not in no_device_text:
+        failures.append(
+            f"{no_device_relative}: Default no-device gate must run runtime memory list search metadata regression."
+        )
+    if "LocalRuntimeMessageRouterTests/testMemoryUpsertRejectsClientSuppliedSourceMetadataAndPreservesRuntimeSource" not in no_device_text:
+        failures.append(
+            f"{no_device_relative}: Default no-device gate must run runtime memory source-forgery rejection regression."
+        )
+    if "runtime memory list search addendum" not in no_device_text:
+        failures.append(
+            f"{no_device_relative}: Default no-device gate must mention runtime memory list search coverage."
+        )
+    if "RuntimeDevServer memory.list query search metadata smoke addendum" not in no_device_text:
+        failures.append(
+            f"{no_device_relative}: Default no-device gate must mention RuntimeDevServer memory.list query search metadata smoke coverage."
+        )
+    if "RuntimeClientViewModelTest.refreshRuntimeMemorySendsTrimmedQueryAndRedactsSearchMetadataFromDeviceStorage" not in no_device_text:
+        failures.append(
+            f"{no_device_relative}: Default no-device gate must run Android memory search query/redaction regression."
+        )
+    if "ClientScreensNoDeviceComposeTest.settingsMemorySearchFiltersRowsAndShowsRuntimeSearchMetadata" not in no_device_text:
+        failures.append(
+            f"{no_device_relative}: Default no-device gate must run Android Settings memory search UI regression."
+        )
+    if "Android Settings memory runtime search addendum" not in no_device_text:
+        failures.append(
+            f"{no_device_relative}: Default no-device gate must mention Android Settings memory runtime search coverage."
+        )
     if "swift test --filter RuntimeLongInactivityMemorySummarizationPolicyTests" not in no_device_text:
         failures.append(
             f"{no_device_relative}: Default no-device gate must run long-inactivity memory summarization policy tests."
@@ -11417,7 +16923,7 @@ def runtime_history_storage_guard_failures() -> list[str]:
         failures.append(
             f"{no_device_relative}: Default no-device gate must mention deterministic long-inactivity memory draft coverage."
         )
-    if "LocalRuntimeMessageRouterTests/testMemorySummaryDraftsListRequiresAuthentication|LocalRuntimeMessageRouterTests/testMemorySummaryDraftsListReturnsOwnerScopedActiveVisibleDraftsOnly|LocalRuntimeMessageRouterTests/testMemorySummaryDraftApproveRequiresAuthentication|LocalRuntimeMessageRouterTests/testMemorySummaryDraftApproveWritesIdempotentOwnerScopedMemoryAndHidesApprovedDraft" not in no_device_text:
+    if "LocalRuntimeMessageRouterTests/testMemorySummaryDraftsListRequiresAuthentication|LocalRuntimeMessageRouterTests/testMemorySummaryDraftsListReturnsOwnerScopedActiveVisibleDraftsOnly|LocalRuntimeMessageRouterTests/testMemorySummaryDraftsListRejectsUnknownPayloadMetadataBeforeStoreDispatch|LocalRuntimeMessageRouterTests/testMemorySummaryDraftsListRejectsInvalidAllowedPayloadTypesBeforeStoreDispatch|LocalRuntimeMessageRouterTests/testMemorySummaryDraftApproveRequiresAuthentication|LocalRuntimeMessageRouterTests/testMemorySummaryDraftApproveWritesIdempotentOwnerScopedMemoryAndHidesApprovedDraft" not in no_device_text:
         failures.append(
             f"{no_device_relative}: Default no-device gate must run memory summary draft protocol listing and approval regressions."
         )
@@ -13224,6 +18730,7 @@ def no_device_quality_gate_guard_failures() -> list[str]:
     docs_qa_evidence_path = ROOT / "docs/qa-evidence.md"
     docs_roadmap_path = ROOT / "docs/roadmap.md"
     relay_allocation_preflight_path = ROOT / "script/relay_allocation_preflight.py"
+    different_network_runtime_path = ROOT / "script/run_different_network_dev_runtime.sh"
     runtime_mutation_test_path = ROOT / (
         "apps/android/app/src/test/java/com/localagentbridge/android/runtime/"
         "RuntimeClientChatSessionMutationFailureTest.kt"
@@ -13262,6 +18769,7 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         pairing_parser_test_path,
         runtime_connection_manager_test_path,
         relay_allocation_preflight_path,
+        different_network_runtime_path,
         docs_progress_path,
         docs_qa_evidence_path,
         docs_roadmap_path,
@@ -13282,6 +18790,10 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         errors="replace",
     )
     relay_allocation_preflight_text = relay_allocation_preflight_path.read_text(
+        encoding="utf-8",
+        errors="replace",
+    )
+    different_network_runtime_text = different_network_runtime_path.read_text(
         encoding="utf-8",
         errors="replace",
     )
@@ -13733,8 +19245,68 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         (
             gate_text,
             gate_path,
-            'assert payload["relay_id"].startswith("rt1-"), payload',
-            "Default no-device gate must prove relay_allocation_preflight success JSON keeps opaque relay IDs.",
+            'assert payload["relay_id_present"] is True, payload',
+            "Default no-device gate must prove relay_allocation_preflight success JSON keeps a safe relay-id presence boolean.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            'assert payload["relay_expires_at_present"] is True, payload',
+            "Default no-device gate must prove relay_allocation_preflight success JSON keeps a safe relay-expiry presence boolean.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            'assert payload["relay_nonce_present"] is True, payload',
+            "Default no-device gate must prove relay_allocation_preflight success JSON keeps a safe relay-nonce presence boolean.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            'assert payload["route_material_redacted"] is True, payload',
+            "Default no-device gate must prove relay_allocation_preflight success JSON marks route material redacted.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            '"relay_id" not in payload',
+            "Default no-device gate must prove relay_allocation_preflight success JSON omits raw relay IDs.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            '"relay_expires_at" not in payload',
+            "Default no-device gate must prove relay_allocation_preflight success JSON omits raw relay expiry values.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            '"relay_nonce" not in payload',
+            "Default no-device gate must prove relay_allocation_preflight success JSON omits raw relay nonces.",
+        ),
+        (
+            relay_allocation_preflight_text,
+            relay_allocation_preflight_path,
+            '"relay_id_present": bool(payload.get("relay_id"))',
+            "Relay allocation preflight output must expose only a safe relay-id presence boolean.",
+        ),
+        (
+            relay_allocation_preflight_text,
+            relay_allocation_preflight_path,
+            '"relay_expires_at_present": bool(payload.get("relay_expires_at"))',
+            "Relay allocation preflight output must expose only a safe relay-expiry presence boolean.",
+        ),
+        (
+            relay_allocation_preflight_text,
+            relay_allocation_preflight_path,
+            '"relay_nonce_present": bool(payload.get("relay_nonce"))',
+            "Relay allocation preflight output must expose only a safe relay-nonce presence boolean.",
+        ),
+        (
+            relay_allocation_preflight_text,
+            relay_allocation_preflight_path,
+            '"route_material_redacted": True',
+            "Relay allocation preflight output must mark raw route material as redacted.",
         ),
         (
             relay_allocation_preflight_text,
@@ -13753,6 +19325,12 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             gate_path,
             'assert payload["has_relay_secret"] is True, payload',
             "Default no-device gate must prove relay_allocation_preflight success JSON keeps only a safe secret-presence boolean.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            "\"rt1-\" not in json.dumps(payload)",
+            "Default no-device gate must prove relay_allocation_preflight success JSON omits raw opaque relay IDs.",
         ),
         (
             gate_text,
@@ -13781,13 +19359,13 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         (
             docs_progress_text,
             docs_progress_path,
-            "output-redaction assertions, raw route-token absence assertions, raw relay-secret absence assertion, safe secret-presence boolean assertion, opaque relay-id assertion, default no-device gate entry, exact summary phrase, current progress/QA evidence, and roadmap coverage",
+            "output-redaction assertions, raw route-token absence assertions, raw relay-secret/relay-id/relay-expiry/relay-nonce absence assertions, safe presence booleans, route-material redaction marker, default no-device gate entry, exact summary phrase, current progress/QA evidence, and roadmap coverage",
             "Progress docs must record the relay preflight output redaction no-device gate.",
         ),
         (
             docs_qa_evidence_text,
             docs_qa_evidence_path,
-            "Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring the output-redaction assertions, raw route-token absence assertions, raw relay-secret absence assertion, safe secret-presence boolean assertion, opaque relay-id assertion, default no-device gate entry, exact summary phrase, current progress/QA evidence, and roadmap coverage.",
+            "Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring the output-redaction assertions, raw route-token absence assertions, raw relay-secret/relay-id/relay-expiry/relay-nonce absence assertions, safe presence booleans, route-material redaction marker, default no-device gate entry, exact summary phrase, current progress/QA evidence, and roadmap coverage.",
             "QA evidence must record the relay preflight output redaction no-device gate.",
         ),
         (
@@ -13798,6 +19376,587 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         ),
     )
     for haystack, path, snippet, guidance in required_relay_preflight_output_redaction_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    if "line!r" in relay_allocation_preflight_text:
+        failures.append(
+            f"{relay_allocation_preflight_path.relative_to(ROOT)}: Relay allocation preflight failure "
+            "paths must not echo raw unexpected relay response lines."
+        )
+    required_relay_preflight_failure_output_redaction_snippets = (
+        (
+            relay_allocation_preflight_text,
+            relay_allocation_preflight_path,
+            "redacted_unexpected_response",
+            "Relay allocation preflight must redact malformed allocation response bodies on failure.",
+        ),
+        (
+            relay_allocation_preflight_text,
+            relay_allocation_preflight_path,
+            "<redacted unexpected relay response",
+            "Relay allocation preflight must return a safe redacted unexpected-response marker.",
+        ),
+        (
+            relay_allocation_preflight_text,
+            relay_allocation_preflight_path,
+            "did not return an allocation response",
+            "Relay allocation preflight must preserve a safe unexpected-response failure reason.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            "check_relay_preflight_failure_output_redaction_guard",
+            "Default no-device gate must run the relay preflight failure-output redaction helper.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            "NOT_AETHERLINK_ALLOCATION",
+            "Default no-device gate must exercise malformed non-allocation relay responses.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            "route_token=leaked-route-token",
+            "Default no-device gate must seed malformed responses with raw route-token markers.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            "relay_secret=leaked-relay-secret",
+            "Default no-device gate must seed malformed responses with relay-secret markers.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            "allocation_token=leaked-allocation-token",
+            "Default no-device gate must seed malformed responses with allocation-token markers.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            "provider.example.test",
+            "Default no-device gate must seed malformed responses with provider endpoint markers.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            "127.0.0.1:11434",
+            "Default no-device gate must seed malformed responses with backend endpoint markers.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            "did not return an allocation response",
+            "Default no-device gate must preserve the safe malformed-response failure reason.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            "<redacted unexpected relay response",
+            "Default no-device gate must assert malformed response bodies are redacted.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            "relay preflight failure-output redaction addendum",
+            "Default no-device gate summary must mention relay preflight failure-output redaction coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Relay Preflight Failure-Output Redaction No-Device Gate",
+            "Progress docs must record relay preflight failure-output redaction coverage.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Relay Preflight Failure-Output Redaction No-Device Gate",
+            "QA evidence must record relay preflight failure-output redaction coverage.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "relay preflight failure-output redaction",
+            "Roadmap smoke coverage queue must name relay preflight failure-output redaction coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_relay_preflight_failure_output_redaction_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_relay_preflight_unexpected_field_snippets = (
+        (
+            relay_allocation_preflight_text,
+            relay_allocation_preflight_path,
+            "ALLOWED_ALLOCATION_RESPONSE_FIELDS",
+            "Relay allocation preflight must define an allocation response field allowlist.",
+        ),
+        (
+            relay_allocation_preflight_text,
+            relay_allocation_preflight_path,
+            "set(payload) - ALLOWED_ALLOCATION_RESPONSE_FIELDS",
+            "Relay allocation preflight must reject allocation response fields outside the allowlist.",
+        ),
+        (
+            relay_allocation_preflight_text,
+            relay_allocation_preflight_path,
+            "included unsupported metadata",
+            "Relay allocation preflight must fail with a safe unexpected-field reason.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            "check_relay_preflight_unexpected_field_rejection_guard",
+            "Default no-device gate must run the relay preflight unexpected-field rejection helper.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            '"requested_route_token": "leaked-route-token"',
+            "Default no-device gate must seed unexpected response fields with raw route-token markers.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            '"backend_url": "http://127.0.0.1:11434/api/tags"',
+            "Default no-device gate must seed unexpected response fields with backend endpoint markers.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            '"provider_url": "https://provider.example.test/v1/models"',
+            "Default no-device gate must seed unexpected response fields with provider endpoint markers.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            "unsupported metadata",
+            "Default no-device gate must assert the safe unexpected-field failure reason.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            "relay preflight unexpected-field rejection addendum",
+            "Default no-device gate summary must mention relay preflight unexpected-field rejection coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Relay Preflight Unexpected-Field Rejection No-Device Gate",
+            "Progress docs must record relay preflight unexpected-field rejection coverage.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Relay Preflight Unexpected-Field Rejection No-Device Gate",
+            "QA evidence must record relay preflight unexpected-field rejection coverage.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "relay preflight unexpected-field rejection",
+            "Roadmap smoke coverage queue must name relay preflight unexpected-field rejection coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_relay_preflight_unexpected_field_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_relay_preflight_response_value_canonicality_snippets = (
+        (
+            relay_allocation_preflight_text,
+            relay_allocation_preflight_path,
+            "UNSAFE_RELAY_ID_TOKENS",
+            "Relay allocation preflight must define unsafe relay_id response value tokens.",
+        ),
+        (
+            relay_allocation_preflight_text,
+            relay_allocation_preflight_path,
+            "validate_canonical_response_value",
+            "Relay allocation preflight must validate canonical relay response values.",
+        ),
+        (
+            relay_allocation_preflight_text,
+            relay_allocation_preflight_path,
+            "returned invalid {key}",
+            "Relay allocation preflight must report safe field-level invalid response value reasons.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            "check_relay_preflight_response_value_canonicality_guard",
+            "Default no-device gate must run the relay preflight response value canonicality helper.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            "case-relay-id-whitespace",
+            "Default no-device gate must exercise whitespace-mutated relay_id responses.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            "case-relay-secret-whitespace",
+            "Default no-device gate must exercise whitespace-mutated relay_secret responses.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            "case-relay-nonce-whitespace",
+            "Default no-device gate must exercise whitespace-mutated relay_nonce responses.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            "case-relay-id-url",
+            "Default no-device gate must exercise URL-shaped relay_id responses.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            "case-relay-expires-non-int",
+            "Default no-device gate must exercise non-integer relay_expires_at responses.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            "case-relay-expires-zero",
+            "Default no-device gate must exercise expired relay_expires_at responses.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            "relay preflight response value canonicality addendum",
+            "Default no-device gate summary must mention relay preflight response value canonicality.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Relay Preflight Response Value Canonicality No-Device Gate",
+            "Progress docs must record relay preflight response value canonicality coverage.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Relay Preflight Response Value Canonicality No-Device Gate",
+            "QA evidence must record relay preflight response value canonicality coverage.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "relay preflight response value canonicality",
+            "Roadmap smoke coverage queue must name relay preflight response value canonicality coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_relay_preflight_response_value_canonicality_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_relay_preflight_host_input_snippets = (
+        (
+            relay_allocation_preflight_text,
+            relay_allocation_preflight_path,
+            "UNSAFE_RELAY_HOST_TOKENS",
+            "Relay allocation preflight must define unsafe relay host input tokens.",
+        ),
+        (
+            relay_allocation_preflight_text,
+            relay_allocation_preflight_path,
+            "is_safe_relay_host",
+            "Relay allocation preflight must validate relay host input before network access.",
+        ),
+        (
+            relay_allocation_preflight_text,
+            relay_allocation_preflight_path,
+            "safe_endpoint_label",
+            "Relay allocation preflight failure output must use a safe endpoint label.",
+        ),
+        (
+            relay_allocation_preflight_text,
+            relay_allocation_preflight_path,
+            "<invalid-host>",
+            "Relay allocation preflight must redact invalid relay hosts in failure output.",
+        ),
+        (
+            relay_allocation_preflight_text,
+            relay_allocation_preflight_path,
+            "embedded port",
+            "Relay allocation preflight must reject embedded host:port input.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            "check_relay_preflight_host_input_guard",
+            "Default no-device gate must run the relay preflight host input helper.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            "https://provider.example.test:11434/v1/models?route_token=leaked-route-token&relay_secret=leaked-relay-secret",
+            "Default no-device gate must exercise URL-shaped relay host input with provider/backend markers.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            "<invalid-host>:43171",
+            "Default no-device gate must assert invalid relay hosts are redacted in endpoint labels.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            "relay preflight host input guard addendum",
+            "Default no-device gate summary must mention relay preflight host input coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Relay Preflight Host Input Guard No-Device Gate",
+            "Progress docs must record relay preflight host input coverage.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Relay Preflight Host Input Guard No-Device Gate",
+            "QA evidence must record relay preflight host input coverage.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "relay preflight host input guard",
+            "Roadmap smoke coverage queue must name relay preflight host input coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_relay_preflight_host_input_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_different_network_endpoint_input_redaction_snippets = (
+        (
+            different_network_runtime_text,
+            different_network_runtime_path,
+            "safe_summary_relay_host",
+            "Different-network runtime summary JSON must sanitize URL-shaped relay hosts.",
+        ),
+        (
+            different_network_runtime_text,
+            different_network_runtime_path,
+            "safe_endpoint_input_label",
+            "Different-network runtime endpoint-list parser must sanitize malformed relay endpoint input.",
+        ),
+        (
+            different_network_runtime_text,
+            different_network_runtime_path,
+            "<invalid-endpoint>",
+            "Different-network runtime endpoint-list parser must redact malformed relay endpoint values.",
+        ),
+        (
+            different_network_runtime_text,
+            different_network_runtime_path,
+            "safe_endpoint_label",
+            "Different-network runtime stderr must use a safe invalid endpoint label.",
+        ),
+        (
+            different_network_runtime_text,
+            different_network_runtime_path,
+            "<invalid-host>",
+            "Different-network runtime must redact URL-shaped relay endpoints in failure output.",
+        ),
+        (
+            different_network_runtime_text,
+            different_network_runtime_path,
+            '"production_session_key_exchange": False',
+            "Different-network runtime preflight summary must not claim production session-key exchange proof.",
+        ),
+        (
+            different_network_runtime_text,
+            different_network_runtime_path,
+            '"production_end_to_end_transport_encryption": False',
+            "Different-network runtime preflight summary must not claim production end-to-end transport encryption proof.",
+        ),
+        (
+            different_network_runtime_text,
+            different_network_runtime_path,
+            "not_production_session_key_exchange_proof",
+            "Different-network runtime preflight summary must caveat missing production session-key exchange proof.",
+        ),
+        (
+            different_network_runtime_text,
+            different_network_runtime_path,
+            "not_production_end_to_end_transport_encryption_proof",
+            "Different-network runtime preflight summary must caveat missing production end-to-end transport encryption proof.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            "check_different_network_relay_endpoint_input_redaction_guard",
+            "Default no-device gate must run the different-network endpoint input redaction helper.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            "https://provider.example.test:11434/v1/models?route_token=leaked-route-token&relay_secret=leaked-relay-secret",
+            "Default no-device gate must exercise URL-shaped different-network relay endpoint input.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            "provider.example.test:bad?route_token=leaked-route-token&relay_secret=leaked-relay-secret",
+            "Default no-device gate must exercise malformed endpoint-list parser input with route material markers.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            "Invalid relay endpoint port: <invalid-endpoint>",
+            "Default no-device gate must assert malformed endpoint-list parser input is redacted.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            'summary["relay"]["endpoints"][0]["host"] == "<invalid-host>"',
+            "Default no-device gate must assert summary JSON redacts invalid relay endpoint hosts.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            'summary["coverage"]["production_session_key_exchange"] is False',
+            "Default no-device gate must assert different-network preflight does not claim production session-key exchange proof.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            'summary["coverage"]["production_end_to_end_transport_encryption"] is False',
+            "Default no-device gate must assert different-network preflight does not claim production end-to-end transport encryption proof.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            "different-network relay endpoint input redaction addendum",
+            "Default no-device gate summary must mention different-network endpoint input redaction.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Different-Network Relay Endpoint Input Redaction No-Device Gate",
+            "Progress docs must record different-network endpoint input redaction coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "malformed endpoint-list values",
+            "Progress docs must record malformed endpoint-list redaction coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "summary JSON",
+            "Progress docs must record summary JSON redaction coverage.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Different-Network Relay Endpoint Input Redaction No-Device Gate",
+            "QA evidence must record different-network endpoint input redaction coverage.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "malformed endpoint-list values",
+            "QA evidence must record malformed endpoint-list redaction coverage.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "summary JSON",
+            "QA evidence must record summary JSON redaction coverage.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "different-network relay endpoint input redaction",
+            "Roadmap smoke coverage queue must name different-network endpoint input redaction coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_different_network_endpoint_input_redaction_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_different_network_preflight_summary_snippets = (
+        (
+            different_network_runtime_text,
+            different_network_runtime_path,
+            '"runtime_host_allocation_preflight": required_fields_present == "1" and use_legacy_relay != "1"',
+            "Different-network preflight summary must classify runtime-host allocation preflight coverage.",
+        ),
+        (
+            different_network_runtime_text,
+            different_network_runtime_path,
+            '"trusted_device_relay_reachability": False',
+            "Different-network preflight summary must explicitly avoid claiming trusted-device relay reachability.",
+        ),
+        (
+            different_network_runtime_text,
+            different_network_runtime_path,
+            '"optical_qr_scan": False',
+            "Different-network preflight summary must explicitly avoid claiming optical QR scan coverage.",
+        ),
+        (
+            different_network_runtime_text,
+            different_network_runtime_path,
+            '"relay_id_present": allocation_bool("relay_id_present")',
+            "Different-network preflight summary must preserve safe relay-id presence coverage.",
+        ),
+        (
+            different_network_runtime_text,
+            different_network_runtime_path,
+            '"route_material_redacted": allocation_bool("route_material_redacted")',
+            "Different-network preflight summary must preserve route-material redaction coverage.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            'summary["coverage"]["runtime_host_allocation_preflight"] is True',
+            "Default no-device gate must assert different-network runtime-host allocation preflight coverage.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            'summary["coverage"]["trusted_device_relay_reachability"] is False',
+            "Default no-device gate must assert different-network preflight does not prove device reachability.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            'summary["allocation"]["relay_id_present"] is True',
+            "Default no-device gate must assert different-network preflight relay-id presence coverage.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            'summary["allocation"]["route_material_redacted"] is True',
+            "Default no-device gate must assert different-network preflight route-material redaction coverage.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            '"aetherlink-preflight"',
+            "Default no-device gate must assert raw preflight route tokens stay out of different-network summaries.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Different-Network Preflight Summary Allocation Redaction No-Device Gate",
+            "Progress docs must record different-network preflight summary allocation redaction coverage.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Different-Network Preflight Summary Allocation Redaction No-Device Gate",
+            "QA evidence must record different-network preflight summary allocation redaction coverage.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "different-network preflight summary allocation redaction",
+            "Roadmap smoke coverage queue must name different-network preflight summary allocation redaction coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_different_network_preflight_summary_snippets:
         if snippet not in haystack:
             failures.append(f"{path.relative_to(ROOT)}: {guidance}")
     required_private_overlay_missing_scope_snippets = (
@@ -14220,6 +20379,14 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device quality gate must run the Android app private-overlay real relay TCP reconnect regression.",
         ),
         (
+            "RuntimeClientViewModelRelayIntegrationTest.trustedRelayReconnectRejectsInvalidRuntimeProofBeforeAuthResponse",
+            "Default no-device quality gate must run the Android app runtime proof rejection regression.",
+        ),
+        (
+            "RuntimeClientViewModelRelayIntegrationTest.trustedRelayReconnectRejectsRuntimeFingerprintMismatchBeforeAuthResponse",
+            "Default no-device quality gate must run the Android app runtime fingerprint mismatch rejection regression.",
+        ),
+        (
             "RuntimeIdentityProofVerifierTest",
             "Default no-device quality gate must run the Android device identity signature/base64 regression.",
         ),
@@ -14362,6 +20529,10 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         (
             "macOS connection-close generation cancellation",
             "Default no-device gate coverage summary must mention macOS connection-close generation cancellation.",
+        ),
+        (
+            "macOS chat.cancel immediate done closure",
+            "Default no-device gate coverage summary must mention macOS chat.cancel immediate done closure.",
         ),
         (
             "macOS QR-only pairing addendum: clean first-run Pairing hides Connection Recovery unless saved route diagnostics or a route-preparation issue exists, and does not expose setup only because automatic route preparation is unavailable",
@@ -14518,6 +20689,14 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         (
             "Android private-overlay real relay TCP reconnect path",
             "Default no-device gate coverage summary must mention Android private-overlay real relay TCP reconnect coverage.",
+        ),
+        (
+            "Android authenticated relay reconnect route.refresh fresh lease addendum",
+            "Default no-device gate coverage summary must mention authenticated relay reconnect route.refresh fresh lease acceptance.",
+        ),
+        (
+            "Android client-side runtime proof rejection addendum",
+            "Default no-device gate coverage summary must mention Android runtime proof rejection coverage.",
         ),
         (
             "Android device identity Base64 signature guard",
@@ -16656,6 +22835,10 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate must run the Android relay probe response parser regression.",
         ),
         (
+            "RuntimeClientViewModelTest.relayProbeKnownParserAllowsRuntimeReconnectRace",
+            "Default no-device gate must run the Android relay probe reconnect race parser regression.",
+        ),
+        (
             "RuntimeClientViewModelTest.duplicateCompactRelayQrScanSendsSinglePairingRequestOnActiveRelayConnection",
             "Default no-device gate must run the duplicate compact relay QR idempotency regression.",
         ),
@@ -16728,6 +22911,10 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate must run the route-refresh QR duplicate relay connection regression.",
         ),
         (
+            "RuntimeClientViewModelTest.routeRefreshQrAfterAcceptedP2pPairingDoesNotOpenDuplicatePeerConnection",
+            "Default no-device gate must run the route-refresh QR duplicate P2P connection regression.",
+        ),
+        (
             "RuntimeClientViewModelTest.pendingPairingQrWithoutRemoteRouteDoesNotFallbackToSavedRelayRoute",
             "Default no-device gate must run the pending route-less QR no saved relay fallback regression.",
         ),
@@ -16744,8 +22931,8 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate coverage summary must mention Android relay QR idempotency coverage.",
         ),
         (
-            "Android route-refresh QR active-connection reuse addendum",
-            "Default no-device gate coverage summary must mention Android route-refresh QR active-connection reuse coverage.",
+            "route-refresh QR scans update saved relay and P2P route material while reusing the active connection",
+            "Default no-device gate coverage summary must mention Android relay/P2P route-refresh QR active-connection reuse coverage.",
         ),
         (
             "Android product QR remote-route requirement",
@@ -16999,6 +23186,7 @@ def runtime_auth_domain_separation_guard_failures() -> list[str]:
     no_device_path = ROOT / "script/check_no_device_quality.sh"
     progress_path = ROOT / "docs/progress.md"
     qa_evidence_path = ROOT / "docs/qa-evidence.md"
+    docs_roadmap_path = ROOT / "docs/roadmap.md"
     protocol_path = ROOT / "docs/protocol.md"
     security_path = ROOT / "docs/security.md"
 
@@ -17021,6 +23209,7 @@ def runtime_auth_domain_separation_guard_failures() -> list[str]:
         no_device_path: no_device_path.read_text(encoding="utf-8", errors="replace"),
         progress_path: progress_path.read_text(encoding="utf-8", errors="replace"),
         qa_evidence_path: qa_evidence_path.read_text(encoding="utf-8", errors="replace"),
+        docs_roadmap_path: docs_roadmap_path.read_text(encoding="utf-8", errors="replace"),
         protocol_path: protocol_path.read_text(encoding="utf-8", errors="replace"),
         security_path: security_path.read_text(encoding="utf-8", errors="replace"),
     }
@@ -17044,6 +23233,7 @@ def runtime_auth_domain_separation_guard_failures() -> list[str]:
             no_device_path,
             progress_path,
             qa_evidence_path,
+            docs_roadmap_path,
         ):
             continue
         if domain_context not in text:
@@ -17231,6 +23421,26 @@ def runtime_auth_domain_separation_guard_failures() -> list[str]:
             f"{no_device_path.relative_to(ROOT)}: default no-device gate must report RuntimeDevServer relay "
             "rejected-pairing smoke coverage."
         )
+    for snippet in (
+        "requireAcceptedPairingRuntimeIdentity",
+        "accepted pairing.result runtime identity",
+        "expectedRuntimeDeviceID",
+        "expectedRuntimeProof",
+        '"runtime_device_id"',
+        '"runtime_public_key"',
+        '"runtime_key_fingerprint"',
+        "runtime_public_key did not match QR identity",
+    ):
+        if snippet not in path_texts[runtime_mock_smoke_path]:
+            failures.append(
+                f"{runtime_mock_smoke_path.relative_to(ROOT)}: authenticated mock smoke must prove "
+                f"accepted relay pairing.result confirms the QR-pinned runtime identity; missing {snippet}."
+            )
+    if "RuntimeDevServer accepted pairing runtime identity confirmation addendum" not in path_texts[no_device_path]:
+        failures.append(
+            f"{no_device_path.relative_to(ROOT)}: default no-device gate must report RuntimeDevServer "
+            "accepted-pairing runtime identity confirmation coverage."
+        )
     if "RuntimeDevServer relay malformed pairing identity rejection keeps the device untrusted while preserving the active QR for a later valid pairing" not in path_texts[no_device_path]:
         failures.append(
             f"{no_device_path.relative_to(ROOT)}: default no-device gate must report RuntimeDevServer relay "
@@ -17251,6 +23461,21 @@ def runtime_auth_domain_separation_guard_failures() -> list[str]:
         (qa_evidence_path, path_texts[qa_evidence_path]),
     ):
         for snippet in (
+            "Android Client Runtime Proof Rejection No-Device Gate",
+            "trustedRelayReconnectRejectsInvalidRuntimeProofBeforeAuthResponse",
+            "trustedRelayReconnectRejectsRuntimeFingerprintMismatchBeforeAuthResponse",
+            "runtime_authentication_failed",
+            "runtime_key_fingerprint mismatch",
+            "auth.response or runtime.health",
+            "no-device Android JVM relay reconnect",
+            "physical Android QR scanning",
+        ):
+            if snippet not in text:
+                failures.append(
+                    f"{path.relative_to(ROOT)}: Docs must record Android client-side runtime proof "
+                    f"rejection evidence and physical-device caveats; missing {snippet}."
+                )
+        for snippet in (
             "RuntimeDevServer Malformed Pairing Identity Relay Smoke",
             "RuntimeDevServer Rejected Pairing Connection Auth Gate Smoke",
             "RuntimeDevServer Consumed Pairing QR Reuse Smoke",
@@ -17262,6 +23487,7 @@ def runtime_auth_domain_separation_guard_failures() -> list[str]:
             "smoke-pair-consumed-health",
             "authentication_required",
             "pairing_not_active",
+            "accepted pairing.result confirms the QR-pinned runtime identity",
             "second device untrusted",
             "rejected and consumed pairing connections unauthenticated",
             "physical Android QR scan",
@@ -17307,6 +23533,100 @@ def runtime_auth_domain_separation_guard_failures() -> list[str]:
             f"{no_device_path.relative_to(ROOT)}: default no-device gate must report RuntimeDevServer relay "
             "unauthenticated command and untrusted hello smoke coverage."
         )
+    for snippet in (
+        "runtimeIdentityFile",
+        "AETHERLINK_DEV_RUNTIME_IDENTITY_FILE",
+        "AETHERLINK_DEV_RUNTIME_PUBLIC_KEY",
+        "AETHERLINK_DEV_RUNTIME_KEY_FINGERPRINT",
+        "RuntimeProofExpectation",
+        "runtimePublicKeyFingerprint",
+        "requireRuntimePublicKeyFingerprint",
+        "verifyRuntimeAuthChallengeSignature",
+        "requireRuntimeAuthChallengeProof",
+        '"runtime_key_fingerprint"',
+        '"runtime_signature"',
+        "AetherLink runtime auth challenge v1",
+        "different-nonce",
+        "runtimeProof: runtimeProof",
+        "pairingInfoRuntimePublicKeyBase64",
+        "parsedPairingURI.runtimePublicKeyBase64",
+    ):
+        if snippet not in path_texts[runtime_mock_smoke_path]:
+            failures.append(
+                f"{runtime_mock_smoke_path.relative_to(ROOT)}: authenticated mock smoke must prove "
+                f"RuntimeDevServer relay trusted hello runtime proof using the QR-pinned runtime identity; missing {snippet}."
+            )
+    if "RuntimeDevServer relay trusted hello runtime proof addendum" not in path_texts[no_device_path]:
+        failures.append(
+            f"{no_device_path.relative_to(ROOT)}: default no-device gate must report RuntimeDevServer relay "
+            "trusted hello runtime-proof smoke coverage."
+        )
+    for path, text in (
+        (progress_path, path_texts[progress_path]),
+        (qa_evidence_path, path_texts[qa_evidence_path]),
+    ):
+        for snippet in (
+            "RuntimeDevServer Relay Trusted-Hello Runtime Proof Smoke",
+            "./script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh",
+            "AETHERLINK_DEV_RUNTIME_IDENTITY_FILE",
+            "runtime_signature",
+            "runtime_key_fingerprint",
+            "QR-pinned runtime_public_key",
+            "RuntimeDevServer relay trusted hello runtime proof addendum",
+            "physical Android QR scanning",
+        ):
+            if snippet not in text:
+                failures.append(
+                    f"{path.relative_to(ROOT)}: Docs must record no-device RuntimeDevServer relay "
+                    f"trusted hello runtime proof evidence and physical-device caveats; missing {snippet}."
+                )
+    for snippet in (
+        "func requireAuthenticatedModelListBoundary",
+        "forbiddenModelKeys",
+        '"remote_host"',
+        '"backend_url"',
+        '"provider_url"',
+        '"route_host"',
+        '"relay_secret"',
+        '"route_token"',
+        "authenticated models.list",
+        "authenticated models.list after pull",
+        "cloud suggestion",
+    ):
+        if snippet not in path_texts[runtime_mock_smoke_path]:
+            failures.append(
+                f"{runtime_mock_smoke_path.relative_to(ROOT)}: authenticated mock smoke must prove "
+                f"authenticated models.list exposes only runtime-mediated model metadata; missing {snippet}."
+            )
+    if "testModelsListReturnsModelsWithoutExposingOllamaURL" not in path_texts[macos_router_test_path]:
+        failures.append(
+            f"{macos_router_test_path.relative_to(ROOT)}: LocalRuntimeMessageRouter must keep focused "
+            "model-list URL/remote_host redaction coverage."
+        )
+    if "authenticated model list runtime-boundary addendum" not in path_texts[no_device_path]:
+        failures.append(
+            f"{no_device_path.relative_to(ROOT)}: default no-device gate must report authenticated "
+            "RuntimeDevServer models.list runtime-boundary coverage."
+        )
+    for path, text in (
+        (progress_path, path_texts[progress_path]),
+        (qa_evidence_path, path_texts[qa_evidence_path]),
+    ):
+        for snippet in (
+            "Authenticated Model List Runtime-Boundary No-Device Gate",
+            "./script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh",
+            "LocalRuntimeMessageRouterTests/testModelsListReturnsModelsWithoutExposingOllamaURL",
+            "authenticated model list runtime-boundary addendum",
+            "backend URLs, provider endpoints, `remote_host`, direct route material, relay secrets, route tokens",
+            "physical Android QR scanning",
+        ):
+            if snippet not in text:
+                failures.append(
+                    f"{path.relative_to(ROOT)}: Docs must record no-device authenticated model-list "
+                    f"runtime-boundary coverage and physical-device caveats; missing {snippet}."
+                )
+    if "authenticated model list" not in path_texts[docs_roadmap_path]:
+        failures.append("docs/roadmap.md: Roadmap smoke coverage queue must name authenticated model list coverage.")
     for snippet in (
         "testUntrustedHelloReturnsPairingRequired",
         "MessageType.hello",
@@ -18764,6 +25084,7 @@ def is_allowed_match(path: Path, line: str, rule_name: str) -> bool:
 def route_refresh_relay_scope_guard_failures() -> list[str]:
     failures: list[str] = []
     protocol_schema_path = ROOT / "packages/protocol-schema/protocol.schema.json"
+    protocol_schema_check_path = ROOT / "script/check_protocol_schema.py"
     android_protocol_path = ROOT / (
         "apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/"
         "ProtocolModels.kt"
@@ -18784,6 +25105,7 @@ def route_refresh_relay_scope_guard_failures() -> list[str]:
 
     for path in (
         protocol_schema_path,
+        protocol_schema_check_path,
         android_protocol_path,
         android_runtime_path,
         android_test_path,
@@ -18804,6 +25126,7 @@ def route_refresh_relay_scope_guard_failures() -> list[str]:
             return failures
 
     protocol_schema_text = protocol_schema_path.read_text(encoding="utf-8", errors="replace")
+    protocol_schema_check_text = protocol_schema_check_path.read_text(encoding="utf-8", errors="replace")
     android_protocol_text = android_protocol_path.read_text(encoding="utf-8", errors="replace")
     android_runtime_text = android_runtime_path.read_text(encoding="utf-8", errors="replace")
     android_test_text = android_test_path.read_text(encoding="utf-8", errors="replace")
@@ -18835,6 +25158,59 @@ def route_refresh_relay_scope_guard_failures() -> list[str]:
                 f"{protocol_schema_path.relative_to(ROOT)}: route.refresh schema must allow complete "
                 f"opaque P2P rendezvous material and reject partial P2P families; missing {snippet}."
             )
+    required_shared_route_refresh_private_overlay_scope_snippets = (
+        (
+            protocol_schema_text,
+            protocol_schema_path,
+            '"privateOverlayRelayHost"',
+            "Protocol route.refresh schema must define private-overlay relay host patterns.",
+        ),
+        (
+            protocol_schema_text,
+            protocol_schema_path,
+            '"relay_scope": { "const": "private_overlay" }',
+            "Protocol route.refresh schema must require relay_scope=private_overlay for private relay literals.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "is_route_refresh_private_overlay_scope_rule",
+            "Protocol schema checker must structurally verify the route.refresh private-overlay scope rule.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "route.refresh schema must require relay_scope=private_overlay",
+            "Protocol schema checker must fail when route.refresh private-overlay scope coverage is missing.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "shared route.refresh private-overlay scope schema addendum",
+            "Default no-device gate summary must mention shared route.refresh private-overlay scope schema coverage.",
+        ),
+        (
+            progress_text,
+            progress_path,
+            "Shared Route Refresh Private Overlay Scope Schema No-Device Gate",
+            "Progress docs must record the shared route.refresh private-overlay scope schema no-device gate.",
+        ),
+        (
+            qa_evidence_text,
+            qa_evidence_path,
+            "Shared Route Refresh Private Overlay Scope Schema No-Device Gate",
+            "QA evidence must record the shared route.refresh private-overlay scope schema no-device gate.",
+        ),
+        (
+            roadmap_text,
+            roadmap_path,
+            "shared route.refresh private-overlay scope schema",
+            "Roadmap smoke coverage queue must name shared route.refresh private-overlay scope schema coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_shared_route_refresh_private_overlay_scope_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
     for snippet in (
         '@SerialName("p2p_class") val p2pRouteClass: String? = null',
         '@SerialName("p2p_record_id") val p2pRecordId: String? = null',
@@ -18910,12 +25286,16 @@ def route_refresh_relay_scope_guard_failures() -> list[str]:
         '"usb_reverse"',
         "guard let payload = route.routeRefreshPayload() else",
         "func routeRefreshPayload(nowEpochMillis: Int64 = currentRouteRefreshEpochMillis()) -> [String: JSONValue]?",
+        "private let routeRefreshOpaqueValueMaxCharacters = 512",
+        "private let routeRefreshP2PEncryptedBodyMaxCharacters = 2_048",
         "runtimeDeviceID.isCanonicalRouteRefreshValue",
         "relayHost.isCanonicalRouteRefreshValue",
         "relayExpiresAtEpochMillis > nowEpochMillis",
         "let validatedRelayScope,",
         "relayHost.isEligibleRouteRefreshRelayHost(relayScope: validatedRelayScope)",
         "hasAnyP2PRouteMaterial",
+        "p2pEncryptedBody.isCanonicalRouteRefreshP2PEncryptedBody",
+        "func isCanonicalRouteRefreshValue(maxCharacters: Int) -> Bool",
         'payload["p2p_class"] = .string(p2pRouteClass)',
         'payload["p2p_protocol_version"] = .number(Double(p2pProtocolVersion))',
         "return allowedRouteRefreshRelayScopes.contains(relayScope) ? .some(relayScope) : nil",
@@ -18931,7 +25311,11 @@ def route_refresh_relay_scope_guard_failures() -> list[str]:
         "testRouteRefreshRejectsMalformedRelayMaterialFromRuntimeProvider",
         "testRouteRefreshAllowsPrivateOverlayAndUsbReverseScopedRelayMaterial",
         "testRouteRefreshReturnsFreshP2PRendezvousMaterialFromRuntimeProvider",
+        "testRouteRefreshAllowsBoundedP2PEncryptedBodyLargerThanRouteValues",
         "testRouteRefreshRejectsMalformedP2PRendezvousMaterialFromRuntimeProvider",
+        'String(repeating: "r", count: 513)',
+        'String(repeating: "p", count: 2_048)',
+        'String(repeating: "p", count: 2_049)',
         "testRouteRefreshFailureRedactsRelaySecretsAndProviderEndpoints",
         'relayScope: "public"',
         'routeRefreshResult(relayHost: "127.0.0.1", relayScope: "remote")',
@@ -19316,11 +25700,56 @@ def route_refresh_relay_scope_guard_failures() -> list[str]:
         "RelayCiphertextBoundaryRecorder",
         "verifyRelayCiphertextBoundaryIfNeeded",
         "relayPlaintextBoundaryMarkers",
+        "routeRefreshRelayPlaintextBoundaryMarkers",
+        "pairingBootstrapRelayPlaintextBoundaryMarkers",
+        "uniqueNonEmptyMarkers",
         "Relay ciphertext boundary verified",
+        '"pairing_code"',
+        '"pairing_nonce"',
+        '"device_public_key"',
+        '"runtime_public_key"',
+        "parsedPairingURI.pairingCode",
+        "parsedPairingURI.pairingNonce",
+        "primaryDevicePublicKeyBase64",
+        "consumedPairingDevicePublicKeyBase64",
+        "extraPlaintextMarkers:",
+        '"route.refresh"',
+        '"smoke-route-refresh"',
+        '"runtime_device_id"',
+        '"runtime_key_fingerprint"',
+        '"relay_secret"',
+        '"relay_nonce"',
+        '"relay_expires_at"',
+        '"p2p_record_id"',
+        '"p2p_encrypted_body"',
+        '"p2p_anti_replay_nonce"',
+        "expectedP2PRouteRefresh.recordID",
+        "expectedP2PRouteRefresh.encryptedBody",
+        "expectedP2PRouteRefresh.antiReplayNonce",
         '"chat.send"',
         '"memory.upsert"',
         "p2p_protocol_version",
         "smoke-p2p-encrypted-body-1",
+        "dev-mock-alt",
+        "lm_studio:dev-mock-alt",
+        "provider_model_id",
+        "qualified_id",
+        "capabilities",
+        "vision",
+        "smokeFilePayloadLabel",
+        "smokeModelCommandPayload",
+        "smokeBackendCredentialCanary",
+        "smokeBackendAPIKeyCanary",
+        "smokeBackendURLCanary",
+        "Authorization: Bearer smoke-backend-credential-canary",
+        "AETHERLINK_SMOKE_BACKEND_API_KEY=smoke-backend-api-key-canary",
+        "https://provider.example.invalid/v1/chat/completions",
+        "backend_credentials",
+        "backend_url",
+        "api_key",
+        "model_command",
+        "file_payload_label",
+        "model_command_payload",
     ):
         if snippet not in runtime_mock_smoke_text:
             failures.append(
@@ -19353,6 +25782,7 @@ def route_refresh_relay_scope_guard_failures() -> list[str]:
         "LocalRuntimeMessageRouterTests/testRouteRefreshRejectsMalformedRelayMaterialFromRuntimeProvider",
         "LocalRuntimeMessageRouterTests/testRouteRefreshAllowsPrivateOverlayAndUsbReverseScopedRelayMaterial",
         "LocalRuntimeMessageRouterTests/testRouteRefreshReturnsFreshP2PRendezvousMaterialFromRuntimeProvider",
+        "LocalRuntimeMessageRouterTests/testRouteRefreshAllowsBoundedP2PEncryptedBodyLargerThanRouteValues",
         "LocalRuntimeMessageRouterTests/testRouteRefreshRejectsMalformedP2PRendezvousMaterialFromRuntimeProvider",
         "route.refresh relay-scope enum validation",
         "route.refresh malformed relay material validation",
@@ -19364,11 +25794,13 @@ def route_refresh_relay_scope_guard_failures() -> list[str]:
         "Android route.refresh renewal and retry delays stay inside the active remote-route lease window",
         "authenticated relay sessions send route.refresh before lease expiry and retry retryable route.refresh errors inside the active lease",
         "authenticated route.refresh can carry complete opaque P2P rendezvous material without claiming real P2P traversal",
+        "route.refresh caps runtime, relay, and P2P route values at 512 characters while allowing p2p_encrypted_body up to 2048 characters",
         "Android pending, trusted, and route.refresh P2P rendezvous records reject whitespace-mutated opaque route values",
         "Android route.refresh rejects reused or non-advancing P2P rendezvous records before storage",
         "Android authenticated route.refresh keeps the current P2P rendezvous route and schedules retry when refreshed P2P material reuses the active record or lease",
         "Android remote route identity mismatch QR recovery",
-        "authenticated relay smoke checks encrypted frame bodies for model, chat, attachment, cancel, history, and memory plaintext markers",
+        "authenticated relay smoke checks encrypted frame bodies for AI protocol payloads, model lists, prompts, files, memory, backend credentials, backend URLs, model commands, cancel, history, memory.list query/search, pairing bootstrap, and route.refresh route-material plaintext markers",
+        "authenticated relay smoke checks encrypted frame bodies for backend credential, backend URL, model command payload, prompt, file payload label, model-list response, and memory plaintext markers",
         "./script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh",
         "RuntimeDevServer route.refresh P2P smoke addendum",
         "RuntimeDevServer route.refresh relay lease freshness smoke addendum",
@@ -19380,7 +25812,46 @@ def route_refresh_relay_scope_guard_failures() -> list[str]:
                 f"{no_device_path.relative_to(ROOT)}: Default no-device gate must cover route.refresh "
                 f"relay material validation; missing {snippet}."
             )
+    for haystack, path in (
+        (progress_text, progress_path),
+        (qa_evidence_text, qa_evidence_path),
+    ):
+        for snippet in (
+            "Relay Route Refresh Ciphertext Boundary No-Device Gate",
+            "./script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh",
+            "routeRefreshRelayPlaintextBoundaryMarkers",
+            "pairingBootstrapRelayPlaintextBoundaryMarkers",
+            "route.refresh route-material plaintext markers",
+            "pairing bootstrap plaintext markers",
+            "Relay Ciphertext Sensitive-Class Canary No-Device Gate",
+            "backend credential, backend URL, model command payload, prompt, file payload label, model-list response, and memory plaintext markers",
+            "relay/P2P route-material keys and representative values",
+            "physical Android QR scanning",
+        ):
+            if snippet not in haystack:
+                failures.append(
+                    f"{path.relative_to(ROOT)}: Docs must record route.refresh ciphertext-boundary "
+                    f"coverage and physical-device caveats; missing {snippet}."
+                )
     required_route_refresh_timing_policy_doc_snippets = (
+        (
+            progress_text,
+            progress_path,
+            "macOS Route Refresh Opaque Material Size-Bound No-Device Gate",
+            "Progress docs must record the macOS route.refresh opaque material size-bound no-device gate.",
+        ),
+        (
+            qa_evidence_text,
+            qa_evidence_path,
+            "macOS Route Refresh Opaque Material Size-Bound No-Device Gate",
+            "QA evidence must record the macOS route.refresh opaque material size-bound no-device gate.",
+        ),
+        (
+            roadmap_text,
+            roadmap_path,
+            "macOS route.refresh opaque material size-bound",
+            "Roadmap smoke coverage queue must name macOS route.refresh opaque material size-bound coverage.",
+        ),
         (
             progress_text,
             progress_path,
@@ -19427,12 +25898,21 @@ def route_refresh_relay_scope_guard_failures() -> list[str]:
 
 def runtime_mock_history_memory_smoke_guard_failures() -> list[str]:
     failures: list[str] = []
+    runtime_dev_server_path = ROOT / "apps/macos/RuntimeDevServer/Sources/RuntimeDevServer.swift"
     runtime_mock_smoke_path = ROOT / "script/runtime_authenticated_mock_smoke.swift"
     no_device_path = ROOT / "script/check_no_device_quality.sh"
+    roadmap_path = ROOT / "docs/roadmap.md"
     progress_path = ROOT / "docs/progress.md"
     qa_evidence_path = ROOT / "docs/qa-evidence.md"
 
-    for path in (runtime_mock_smoke_path, no_device_path, progress_path, qa_evidence_path):
+    for path in (
+        runtime_dev_server_path,
+        runtime_mock_smoke_path,
+        no_device_path,
+        roadmap_path,
+        progress_path,
+        qa_evidence_path,
+    ):
         if not path.exists():
             failures.append(
                 f"{path.relative_to(ROOT)} is missing for RuntimeDevServer "
@@ -19440,19 +25920,52 @@ def runtime_mock_history_memory_smoke_guard_failures() -> list[str]:
             )
             return failures
 
+    runtime_dev_server_text = runtime_dev_server_path.read_text(encoding="utf-8", errors="replace")
     runtime_mock_smoke_text = runtime_mock_smoke_path.read_text(encoding="utf-8", errors="replace")
     no_device_text = no_device_path.read_text(encoding="utf-8", errors="replace")
+    roadmap_text = roadmap_path.read_text(encoding="utf-8", errors="replace")
     progress_text = progress_path.read_text(encoding="utf-8", errors="replace")
     qa_evidence_text = qa_evidence_path.read_text(encoding="utf-8", errors="replace")
 
     for snippet in (
+        '"AETHERLINK_DEV_MOCK_CHAT_REQUEST_AUDIT_FILE"',
+        "chatRequestAuditFile",
+        "recordChatRequestAudit",
+        '"generation_id": request.generationID',
+        '"session_id": request.sessionID',
+        '"messages": request.messages.map',
+    ):
+        if snippet not in runtime_dev_server_text:
+            failures.append(
+                f"{runtime_dev_server_path.relative_to(ROOT)}: dev mock backend must keep "
+                f"the env-gated chat request audit hook; missing {snippet}."
+            )
+
+    for snippet in (
         "func runAuthenticatedHistoryAndMemoryChecks",
         "func runAuthenticatedTitleAndSessionLifecycleChecks",
+        "smokeCompactionSessionID",
+        "mockChatRequestAuditFile",
+        "mockChatRequestAuditMessages",
+        "func runAuthenticatedCompactionSmoke",
+        '"smoke-chat-compaction-relay"',
+        '"smoke-chat-compaction-messages"',
+        '"Runtime conversation summary:"',
+        '"Source span: client-visible conversation turns"',
+        '"relay compaction source span turn \\(index) "',
+        "!auditContents.contains(firstVisibleContent)",
+        '!visibleContents.contains(where: { $0.hasPrefix("Runtime conversation summary:") })',
+        "!visibleContents.contains(where: { $0.contains(\"Source span: client-visible conversation turns\") })",
+        "try runAuthenticatedCompactionSmoke(client: client, chatRequestAuditFile: chatRequestAuditFile)",
         '"chat.sessions.list"',
         '"smoke-sessions"',
         "func requireSearchMetadata(",
+        "func requireNoEmbeddingModelHintEcho(",
         '"smoke-sessions-search-metadata"',
         'query: "hello smoke test"',
+        'embeddingModelID: smokeEmbeddingSearchHintModelID',
+        '"embedding_model_id"',
+        'searchedSmokeSession["model"] as? String == "dev-mock"',
         'snippetContains: "Say hello from the smoke test."',
         'matchedField: "transcript"',
         '"matched_fields"',
@@ -19480,17 +25993,35 @@ def runtime_mock_history_memory_smoke_guard_failures() -> list[str]:
         '"memory.upsert"',
         '"smoke-memory-upsert"',
         '"memory.list"',
+        '"smoke-memory-list-search-metadata"',
+        'query: " smoke-tested concise "',
+        '"smoke-memory-route"',
+        '"smoke-tested concise"',
+        '"\\"query\\""',
+        '"\\"search\\""',
+        '"\\"snippet\\""',
+        'snippetContains: "Prefers smoke-tested concise answers."',
+        'matchedField: "content"',
         '"smoke-memory-list-after-delete"',
         '"memory.delete"',
         '"smoke-memory-delete"',
         '"memory.summary.drafts.list"',
         '"smoke-memory-summary-drafts"',
         '"memory.summary.draft.approve"',
+        '"smoke-memory-summary-approve-stale"',
         '"smoke-memory-summary-approve"',
         '"smoke-memory-summary-after-approve"',
         '"smoke-memory-summary-memory-list"',
         '"smoke-memory-summary-delete"',
+        '"smoke-memory-source-forgery"',
+        '"smoke-memory-source-preserving-edit"',
+        '"smoke-memory-source-preserving-list"',
+        '"smoke-forged-source-memory"',
+        '"smoke-forged-draft"',
+        '"Client tries to forge source metadata."',
+        '"Edited approved smoke summary keeps source audit metadata."',
         '"smoke-memory-summary-dismiss-seed"',
+        '"smoke-memory-summary-dismiss-stale"',
         '"smoke-memory-summary-dismiss"',
         '"smoke-memory-summary-after-dismiss"',
         '"smoke-memory-summary-dismiss-memory-list"',
@@ -19499,12 +26030,13 @@ def runtime_mock_history_memory_smoke_guard_failures() -> list[str]:
         '"AETHERLINK_DEV_MEMORY_SUMMARY_MIN_MESSAGES"',
         '"memory-summary:\\(summaryDraftID)"',
         '"memory-summary:\\(dismissDraftID)"',
+        '"memory_summary_draft_stale"',
         '"smoke-memory-summary-approve-unavailable"',
         '"memory.summary.draft.dismiss"',
         '"smoke-memory-summary-dismiss-unavailable"',
         '"memory_summary_draft_unavailable"',
         '"smoke-missing-memory-summary-draft"',
-        "try runAuthenticatedHistoryAndMemoryChecks(client: client)",
+        "try runAuthenticatedHistoryAndMemoryChecks(client: client, chatRequestAuditFile: chatRequestAuditFile)",
         "seedTrustedDevicesFile",
         "runMultiDeviceOwnerIsolationChecks",
         'requestPrefix: "smoke-owner-a"',
@@ -19541,8 +26073,15 @@ def runtime_mock_history_memory_smoke_guard_failures() -> list[str]:
 
     for snippet in (
         "RuntimeDevServer history/title/session lifecycle/memory smoke addendum",
-        "authenticated relay smoke positively validates chat.sessions.list, chat.messages.list, chat.title.request, chat.session rename/archive/restore/delete, archived chat.send restore-required rejection, memory.upsert, memory.list, memory.delete, memory.summary.drafts.list, memory.summary.draft.approve, memory.summary.draft.dismiss, approved memory-summary memory.list visibility, dismissed draft hiding, dismissed draft no memory.list entry, and memory.summary draft unavailable errors over RuntimeDevServer",
+        "authenticated relay smoke positively validates chat.sessions.list, chat.messages.list, chat.title.request, chat.session rename/archive/restore/delete, archived chat.send restore-required rejection, chat.send context compaction backend-only audit, visible history separation, memory.upsert, memory.list, memory.delete, memory.summary.drafts.list, memory.summary.draft.approve, memory.summary.draft.dismiss, approved memory-summary memory.list visibility, memory-summary stale expected-metadata rejection, client-supplied memory source rejection, approved memory source-preserving edit/list visibility, dismissed draft hiding, dismissed draft no memory.list entry, and memory.summary draft unavailable errors over RuntimeDevServer",
+        "RuntimeDevServer chat compaction backend-only audit addendum",
+        "authenticated relay smoke validates chat.send context compaction backend-only audit and visible history separation over RuntimeDevServer",
         "RuntimeDevServer chat.sessions.list query search metadata smoke",
+        "RuntimeDevServer authenticated relay smoke sends embedding_model_id with chat.sessions.list query and verifies no response echo or chat model override",
+        "RuntimeDevServer memory.list query search metadata smoke addendum",
+        "authenticated relay smoke validates memory.list query ranking, snippet, and matched_fields metadata over RuntimeDevServer",
+        "RuntimeDevServer memory.list query ciphertext marker addendum",
+        "authenticated relay ciphertext boundary includes the memory.list query request id, memory id, trimmed query text, and query/search/snippet JSON keys",
         "archived chat.send restore-required rejection",
         "RuntimeDevServer multi-device owner isolation smoke addendum",
         "authenticated relay smoke validates memory, chat session, message, and session mutation owner-device boundaries across two trusted devices",
@@ -19553,16 +26092,45 @@ def runtime_mock_history_memory_smoke_guard_failures() -> list[str]:
                 f"RuntimeDevServer history/title/session lifecycle/memory smoke coverage; missing {snippet}."
             )
 
+    if "RuntimeDevServer chat compaction backend-only audit" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap smoke coverage queue must name RuntimeDevServer chat compaction backend-only audit coverage."
+        )
+    if "RuntimeDevServer memory-summary stale guard" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap smoke coverage queue must name RuntimeDevServer memory-summary stale guard coverage."
+        )
+    if "RuntimeDevServer memory source-audit immutability" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap smoke coverage queue must name RuntimeDevServer memory source-audit immutability coverage."
+        )
+
     for path, text in (
         (progress_path, progress_text),
         (qa_evidence_path, qa_evidence_text),
     ):
         for snippet in (
             "RuntimeDevServer Authenticated History Title Session Lifecycle And Memory Smoke",
+            "RuntimeDevServer Chat Compaction Relay Smoke No-Device Gate",
             "./script/runtime_authenticated_mock_smoke.swift --relay --expect-p2p-route-refresh",
+            "AETHERLINK_DEV_MOCK_CHAT_REQUEST_AUDIT_FILE",
+            "smoke-chat-compaction-relay",
+            "smoke-chat-compaction-messages",
+            "Runtime conversation summary:",
+            "Source span: client-visible conversation turns",
+            "chat.send context compaction backend-only audit",
+            "visible history separation",
             "chat.sessions.list",
             "query search metadata",
             "smoke-sessions-search-metadata",
+            "embedding_model_id",
+            "no response echo or chat model override",
+            "RuntimeDevServer memory.list query search metadata smoke",
+            "RuntimeDevServer memory.list query ciphertext marker",
+            "smoke-memory-list-search-metadata",
+            "smoke-memory-route",
+            "smoke-tested concise",
+            "query/search/snippet JSON keys",
             "chat.messages.list",
             "chat.title.request",
             "chat.session.rename",
@@ -19578,17 +26146,28 @@ def runtime_mock_history_memory_smoke_guard_failures() -> list[str]:
             "memory.summary.draft.approve",
             "memory.summary.draft.dismiss",
             "approved memory-summary memory.list visibility",
+            "memory-summary stale expected-metadata rejection",
+            "client-supplied memory source rejection",
+            "approved memory source-preserving edit/list visibility",
             "dismissed draft hiding",
             "dismissed draft no memory.list entry",
+            "smoke-memory-summary-approve-stale",
             "smoke-memory-summary-approve",
             "smoke-memory-summary-after-approve",
             "smoke-memory-summary-memory-list",
+            "smoke-memory-source-forgery",
+            "smoke-memory-source-preserving-edit",
+            "smoke-memory-source-preserving-list",
+            "smoke-memory-summary-dismiss-stale",
             "smoke-memory-summary-dismiss",
             "smoke-memory-summary-after-dismiss",
             "smoke-memory-summary-dismiss-memory-list",
+            "memory_summary_draft_stale",
             "memory.summary draft unavailable errors",
             "smoke-memory-summary-drafts",
             "memory_summary_draft_unavailable",
+            "RuntimeDevServer Memory Summary Stale Guard No-Device Gate",
+            "RuntimeDevServer Memory Source Audit Immutability No-Device Gate",
             "RuntimeDevServer Multi-Device Owner Isolation Smoke",
             "multi-device owner isolation",
             "two trusted devices",
@@ -20304,6 +26883,850 @@ def suggested_questions_removed_guard_failures() -> list[str]:
     return failures
 
 
+def protocol_reserved_namespace_guard_failures() -> list[str]:
+    failures: list[str] = []
+    protocol_schema_check_path = ROOT / "script/check_protocol_schema.py"
+    runtime_mock_smoke_path = ROOT / "script/runtime_authenticated_mock_smoke.swift"
+    no_device_path = ROOT / "script/check_no_device_quality.sh"
+    protocol_docs_path = ROOT / "docs/protocol.md"
+    connection_overlay_path = ROOT / "docs/connection-overlay.md"
+    roadmap_path = ROOT / "docs/roadmap.md"
+    progress_path = ROOT / "docs/progress.md"
+    qa_evidence_path = ROOT / "docs/qa-evidence.md"
+
+    required_paths = (
+        protocol_schema_check_path,
+        runtime_mock_smoke_path,
+        no_device_path,
+        protocol_docs_path,
+        connection_overlay_path,
+        roadmap_path,
+        progress_path,
+        qa_evidence_path,
+    )
+    for path in required_paths:
+        if not path.exists():
+            failures.append(f"{path.relative_to(ROOT)} is missing for protocol reserved namespace guard.")
+            return failures
+
+    protocol_schema_check_text = protocol_schema_check_path.read_text(encoding="utf-8", errors="replace")
+    runtime_mock_smoke_text = runtime_mock_smoke_path.read_text(encoding="utf-8", errors="replace")
+    no_device_text = no_device_path.read_text(encoding="utf-8", errors="replace")
+    protocol_docs_text = protocol_docs_path.read_text(encoding="utf-8", errors="replace")
+    connection_overlay_text = connection_overlay_path.read_text(encoding="utf-8", errors="replace")
+    roadmap_text = roadmap_path.read_text(encoding="utf-8", errors="replace")
+    progress_text = progress_path.read_text(encoding="utf-8", errors="replace")
+    qa_evidence_text = qa_evidence_path.read_text(encoding="utf-8", errors="replace")
+
+    required_schema_guard_snippets = (
+        '"skills."',
+        '"mcp."',
+        '"web_search."',
+        '"python."',
+        '"projects."',
+        '"automation."',
+        '"permission."',
+        '"approval."',
+        '"audit."',
+        '"file."',
+        '"terminal."',
+        '"network."',
+        '"backend."',
+        '"embeddings."',
+        '"retrieval."',
+        '"index."',
+        '"research."',
+        '"citation."',
+        '"source_control."',
+        '"embeddings.create"',
+        '"retrieval.query"',
+        '"index.build"',
+        '"research.brief.create"',
+        '"citation.sources.list"',
+        '"source_control.status"',
+        '"p2p."',
+        '"rendezvous."',
+        '"bootstrap."',
+        '"dht."',
+        '"nat."',
+        '"stun."',
+        '"turn."',
+        '"session."',
+        '"key_exchange."',
+        '"encrypted_session."',
+        '"anti_replay."',
+        '"transport."',
+        '"crypto."',
+        "REQUIRED_RESERVED_PREFIXES = frozenset(RESERVED_PREFIXES)",
+        "ALLOWED_ROUTE_TYPES = {\"route.refresh\"}",
+        "reserved_future_message_types(",
+        "check_protocol_schema_rejects_reserved_future_runtime_namespaces",
+        "reserved protocol namespace guard must reject skills.*, mcp.*, web_search.*,",
+        "python.*, projects.*, automation.*, permission.*, approval.*, audit.*,",
+        "file.*, terminal.*, network.*, backend.*, embeddings.*, retrieval.*,",
+        "index.*, research.*, citation.*, source_control.*, p2p.*, rendezvous.*,",
+        "bootstrap.*, dht.*, nat.*, stun.*, turn.*, session.*, key_exchange.*,",
+        "encrypted_session.*, anti_replay.*, transport.*, and crypto.* message names",
+        "future_memory_message_types(",
+        "check_protocol_schema_rejects_future_memory_namespaces",
+        "properties.type.enum includes future memory messages not documented",
+        "future_tool_message_types(",
+        "check_protocol_schema_rejects_future_tool_namespaces",
+        '"tool.call"',
+        '"tool.result"',
+        '"tool.run"',
+        "protocol tool namespace guard must reject tool.call, tool.result, and tool.run",
+        "properties.type.enum includes future tool messages not documented",
+        "check_protocol_schema_rejects_future_route_namespaces",
+        '"route.allocation.status"',
+        '"route.failure.report"',
+        "properties.type.enum includes reserved future messages",
+        "properties.type.enum includes future route messages not documented",
+    )
+    for snippet in required_schema_guard_snippets:
+        if snippet not in protocol_schema_check_text:
+            failures.append(
+                f"{protocol_schema_check_path.relative_to(ROOT)}: Missing protocol reserved namespace guard {snippet!r}."
+            )
+
+    required_runtime_smoke_snippets = (
+        "func runAuthenticatedFutureNamespaceRejectionChecks",
+        "func runAuthenticatedFutureMemoryNamespaceRejectionChecks",
+        "func runAuthenticatedFutureRouteNamespaceRejectionChecks",
+        '"memory.search"',
+        '"tool.call"',
+        '"tool.result"',
+        '"tool.run"',
+        '"skills.run"',
+        '"mcp.tool.call"',
+        '"web_search.query"',
+        '"python.run"',
+        '"python.exec"',
+        '"projects.sessions.list"',
+        '"automation.runs.create"',
+        '"permission.request"',
+        '"approval.prompt"',
+        '"audit.events.list"',
+        '"file.read"',
+        '"file.write"',
+        '"file.index"',
+        '"terminal.exec"',
+        '"terminal.kill"',
+        '"network.request"',
+        '"network.open"',
+        '"backend.call"',
+        '"backend.configure"',
+        '"embeddings.create"',
+        '"retrieval.query"',
+        '"index.build"',
+        '"research.brief.create"',
+        '"citation.sources.list"',
+        '"source_control.status"',
+        '"p2p.session.open"',
+        '"rendezvous.records.publish"',
+        '"bootstrap.records.lookup"',
+        '"dht.records.put"',
+        '"nat.candidates.gather"',
+        '"stun.binding.request"',
+        '"turn.relay.allocate"',
+        '"session.key.exchange"',
+        '"key_exchange.begin"',
+        '"encrypted_session.open"',
+        '"anti_replay.window.commit"',
+        '"transport.handshake"',
+        '"transport.rekey"',
+        '"crypto.session.open"',
+        '"crypto.key.rotate"',
+        '"route.candidates.exchange"',
+        '"route.diagnostics.report"',
+        '"route.allocation.status"',
+        '"route.failure.report"',
+        '"smoke-future-memory-search"',
+        '"smoke-future-tool-call"',
+        '"smoke-future-tool-result"',
+        '"smoke-future-tool-run"',
+        '"smoke-future-skills-run"',
+        '"smoke-future-mcp-tool-call"',
+        '"smoke-future-web-search-query"',
+        '"smoke-future-python-run"',
+        '"smoke-future-python-exec"',
+        '"smoke-future-projects-sessions-list"',
+        '"smoke-future-automation-runs-create"',
+        '"smoke-future-permission-request"',
+        '"smoke-future-approval-prompt"',
+        '"smoke-future-audit-events-list"',
+        '"smoke-future-file-read"',
+        '"smoke-future-file-write"',
+        '"smoke-future-file-index"',
+        '"smoke-future-terminal-exec"',
+        '"smoke-future-terminal-kill"',
+        '"smoke-future-network-request"',
+        '"smoke-future-network-open"',
+        '"smoke-future-backend-call"',
+        '"smoke-future-backend-configure"',
+        '"smoke-future-embeddings-create"',
+        '"smoke-future-retrieval-query"',
+        '"smoke-future-index-build"',
+        '"smoke-future-research-brief-create"',
+        '"smoke-future-citation-sources-list"',
+        '"smoke-future-source-control-status"',
+        '"smoke-future-p2p-session-open"',
+        '"smoke-future-rendezvous-records-publish"',
+        '"smoke-future-bootstrap-records-lookup"',
+        '"smoke-future-dht-records-put"',
+        '"smoke-future-nat-candidates-gather"',
+        '"smoke-future-stun-binding-request"',
+        '"smoke-future-turn-relay-allocate"',
+        '"smoke-future-session-key-exchange"',
+        '"smoke-future-key-exchange-begin"',
+        '"smoke-future-encrypted-session-open"',
+        '"smoke-future-anti-replay-window-commit"',
+        '"smoke-future-transport-handshake"',
+        '"smoke-future-transport-rekey"',
+        '"smoke-future-crypto-session-open"',
+        '"smoke-future-crypto-key-rotate"',
+        '"smoke-future-route-candidates-exchange"',
+        '"smoke-future-route-diagnostics-report"',
+        '"smoke-future-route-allocation-status"',
+        '"smoke-future-route-failure-report"',
+        '"smoke-response-only-auth-challenge"',
+        '"smoke-response-only-pairing-result"',
+        '"smoke-response-only-models-result"',
+        '"smoke-response-only-chat-delta"',
+        '"smoke-response-only-chat-done"',
+        '"smoke-response-only-chat-title-result"',
+        '"smoke-response-only-error"',
+        '"unknown_message_type"',
+        '"unexpected_message_direction"',
+        "try runAuthenticatedResponseOnlyMessageDirectionChecks(client: client)",
+        "try runAuthenticatedFutureNamespaceRejectionChecks(client: client)",
+        "try runAuthenticatedFutureMemoryNamespaceRejectionChecks(client: client)",
+        "try runAuthenticatedFutureRouteNamespaceRejectionChecks(client: client)",
+        "future advanced memory search namespace smoke",
+        "future generic tool namespace smoke",
+        "future tool result namespace smoke",
+        "future tool run namespace smoke",
+        "future runtime namespace smoke",
+        "future python tool namespace smoke",
+        "future project workspace namespace smoke",
+        "future automation scheduler namespace smoke",
+        "future runtime permission namespace smoke",
+        "future mobile approval namespace smoke",
+        "future audit event namespace smoke",
+        "future file read namespace smoke",
+        "future file write namespace smoke",
+        "future file index namespace smoke",
+        "future terminal exec namespace smoke",
+        "future terminal kill namespace smoke",
+        "future network request namespace smoke",
+        "future network open namespace smoke",
+        "future backend call namespace smoke",
+        "future backend configure namespace smoke",
+        "future embeddings create namespace smoke",
+        "future retrieval query namespace smoke",
+        "future index build namespace smoke",
+        "future research brief namespace smoke",
+        "future citation sources namespace smoke",
+        "future source control status namespace smoke",
+        "future p2p session namespace smoke",
+        "future rendezvous record namespace smoke",
+        "future bootstrap lookup namespace smoke",
+        "future dht record namespace smoke",
+        "future nat candidate namespace smoke",
+        "future stun binding namespace smoke",
+        "future turn relay namespace smoke",
+        "future session key exchange namespace smoke",
+        "future key exchange transcript namespace smoke",
+        "future encrypted session namespace smoke",
+        "future anti replay namespace smoke",
+        "future transport handshake namespace smoke",
+        "future transport rekey namespace smoke",
+        "future crypto session namespace smoke",
+        "future crypto key rotation namespace smoke",
+        "future route candidate namespace smoke",
+        "future route diagnostics namespace smoke",
+        "future route allocation status namespace smoke",
+        "future route failure report namespace smoke",
+    )
+    for snippet in required_runtime_smoke_snippets:
+        if snippet not in runtime_mock_smoke_text:
+            failures.append(
+                f"{runtime_mock_smoke_path.relative_to(ROOT)}: Missing authenticated future runtime namespace smoke {snippet!r}."
+            )
+
+    required_no_device_snippets = (
+        "protocol reserved namespace guard addendum",
+        "projects. and automation. active messages remain blocked by protocol schema hygiene",
+        "protocol generic tool namespace guard addendum",
+        "tool.* active messages remain blocked by protocol schema hygiene and RuntimeDevServer relay smoke",
+        "protocol reserved tools/search/python namespace guard addendum",
+        "skills., mcp., web_search., and python. active messages remain blocked by protocol schema hygiene and RuntimeDevServer relay smoke",
+        "protocol reserved permission/approval/audit namespace guard addendum",
+        "permission., approval., and audit. active messages remain blocked by protocol schema hygiene and RuntimeDevServer relay smoke",
+        "protocol reserved runtime action namespace guard addendum",
+        "file., terminal., network., and backend. active messages remain blocked by protocol schema hygiene and RuntimeDevServer relay smoke",
+        "protocol reserved RAG/research namespace guard addendum",
+        "embeddings., retrieval., index., research., citation., and source_control. active messages remain blocked by protocol schema hygiene and RuntimeDevServer relay smoke",
+        "protocol reserved private-overlay namespace guard addendum",
+        "p2p., rendezvous., bootstrap., dht., nat., stun., and turn. active messages remain blocked by protocol schema hygiene and RuntimeDevServer relay smoke",
+        "protocol reserved encrypted-session namespace guard addendum",
+        "session., key_exchange., encrypted_session., and anti_replay. active messages remain blocked by protocol schema hygiene and RuntimeDevServer relay smoke",
+        "protocol reserved transport/crypto namespace guard addendum",
+        "transport. and crypto. active messages remain blocked by protocol schema hygiene and RuntimeDevServer relay smoke",
+        "RuntimeDevServer future Python namespace rejection addendum",
+        "authenticated RuntimeDevServer relay smoke rejects python.run and python.exec with unknown_message_type",
+        "RuntimeDevServer generic tool namespace rejection addendum",
+        "authenticated RuntimeDevServer relay smoke rejects tool.call, tool.result, and tool.run with unknown_message_type",
+        "RuntimeDevServer reserved projects/automation namespace rejection addendum",
+        "authenticated RuntimeDevServer relay smoke rejects projects.sessions.list and automation.runs.create with unknown_message_type",
+        "RuntimeDevServer reserved permission/approval/audit namespace rejection addendum",
+        "authenticated RuntimeDevServer relay smoke rejects permission.request, approval.prompt, and audit.events.list with unknown_message_type",
+        "RuntimeDevServer reserved runtime action namespace rejection addendum",
+        "authenticated RuntimeDevServer relay smoke rejects file.read, file.write, file.index, terminal.exec, terminal.kill, network.request, network.open, backend.call, and backend.configure with unknown_message_type",
+        "RuntimeDevServer reserved RAG/research namespace rejection addendum",
+        "authenticated RuntimeDevServer relay smoke rejects embeddings.create, retrieval.query, index.build, research.brief.create, citation.sources.list, and source_control.status with unknown_message_type",
+        "RuntimeDevServer reserved private-overlay namespace rejection addendum",
+        "authenticated RuntimeDevServer relay smoke rejects p2p.session.open, rendezvous.records.publish, bootstrap.records.lookup, dht.records.put, nat.candidates.gather, stun.binding.request, and turn.relay.allocate with unknown_message_type",
+        "RuntimeDevServer reserved encrypted-session namespace rejection addendum",
+        "authenticated RuntimeDevServer relay smoke rejects session.key.exchange, key_exchange.begin, encrypted_session.open, and anti_replay.window.commit with unknown_message_type",
+        "RuntimeDevServer reserved transport/crypto namespace rejection addendum",
+        "authenticated RuntimeDevServer relay smoke rejects transport.handshake, transport.rekey, crypto.session.open, and crypto.key.rotate with unknown_message_type",
+        "RuntimeDevServer response-only message direction rejection addendum",
+        "authenticated RuntimeDevServer relay smoke rejects auth.challenge, pairing.result, models.result, chat.delta, chat.done, chat.title.result, and error with unexpected_message_direction",
+        "RuntimeDevServer future memory.search rejection addendum",
+        "authenticated RuntimeDevServer relay smoke rejects memory.search with unknown_message_type",
+        "protocol route namespace guard addendum",
+        "route.refresh remains the only active route.* message",
+        "RuntimeDevServer future route namespace rejection addendum",
+        "authenticated RuntimeDevServer relay smoke accepts route.refresh but rejects route.candidates.exchange, route.diagnostics.report, route.allocation.status, and route.failure.report with unknown_message_type",
+    )
+    for snippet in required_no_device_snippets:
+        if snippet not in no_device_text:
+            failures.append(
+                f"{no_device_path.relative_to(ROOT)}: Default no-device summary must mention reserved projects/automation namespace coverage; missing {snippet!r}."
+            )
+
+    required_protocol_doc_snippets = (
+        "reserve the `skills.` namespace",
+        "reserve the `mcp.` namespace",
+        "reserve the `web_search.` namespace",
+        "reserve the `python.` namespace",
+        "reserve the `projects.` namespace",
+        "reserve the `automation.` namespace",
+        "generic `tool.` namespace",
+        "reserve the `permission.` namespace",
+        "reserve the `approval.` namespace",
+        "reserve the `audit.` namespace",
+        "reserve the `file.` namespace",
+        "reserve the `terminal.` namespace",
+        "reserve the `network.` namespace",
+        "reserve the `backend.` namespace",
+        "reserve the `embeddings.` namespace",
+        "reserve the `retrieval.` namespace",
+        "reserve the `index.` namespace",
+        "reserve the `research.` namespace",
+        "reserve the `citation.` namespace",
+        "reserve the `source_control.` namespace",
+        "reserve the `p2p.` namespace",
+        "reserve the `rendezvous.` namespace",
+        "reserve the `bootstrap.` namespace",
+        "reserve the `dht.` namespace",
+        "reserve the `nat.` namespace",
+        "reserve the `stun.` namespace",
+        "reserve the `turn.` namespace",
+        "reserve the `session.` namespace",
+        "reserve the `key_exchange.` namespace",
+        "reserve the `encrypted_session.` namespace",
+        "reserve the `anti_replay.` namespace",
+        "reserve the `transport.` namespace",
+        "reserve the `crypto.` namespace",
+        "Do not add active message names until the runtime permission broker and skill registry are designed",
+        "Do not add active message names until the runtime MCP client and permission model are designed",
+        "Do not add active message names until the runtime search provider, citation, cache, and permission model are designed",
+        "Do not add active message names until the runtime Python sandbox, permission prompts, resource limits, and audit model are designed",
+        "Protocol schema hygiene rejects active message enum entries under `skills.`, `mcp.`, `web_search.`, and `python.`",
+        "Protocol schema hygiene rejects active message enum entries under `p2p.`, `rendezvous.`, `bootstrap.`, `dht.`, `nat.`, `stun.`, and `turn.`",
+        "Protocol schema hygiene rejects active message enum entries under `session.`, `key_exchange.`, `encrypted_session.`, and `anti_replay.`",
+        "Protocol schema hygiene rejects active message enum entries under `transport.` and `crypto.`",
+        "Protocol schema hygiene rejects active message enum entries under `permission.`, `approval.`, and `audit.`",
+        "Protocol schema hygiene rejects active message enum entries under `file.`, `terminal.`, `network.`, and `backend.`",
+        "Protocol schema hygiene rejects active message enum entries under `embeddings.`, `retrieval.`, `index.`, `research.`, `citation.`, and `source_control.`",
+        "Protocol schema hygiene rejects active message enum entries under generic `tool.`",
+        "current `models.list` embedding model metadata",
+        "current deterministic lexical `memory.list` query filter",
+        "current `chat.sessions.list` `embedding_model_id` search hint",
+        "The current implementation is deterministic lexical filtering",
+        "separate `memory.search` command",
+        "Advanced memory: `memory.search`",
+        "Do not add active message names until the product shape is ready",
+        "Do not add active message names until the scheduler and permission model are designed",
+        "Other `route.*` names remain reserved",
+        "route.refresh remains the only active `route.*` message",
+        "`route.allocation.status`",
+        "`route.failure.report`",
+        "Runtime-to-client response message types sent by clients return `error` with `code = \"unexpected_message_direction\"`",
+        "`unexpected_message_direction`",
+    )
+    for snippet in required_protocol_doc_snippets:
+        if snippet not in protocol_docs_text:
+            failures.append(
+                f"{protocol_docs_path.relative_to(ROOT)}: Protocol docs must keep projects/automation namespaces reserved; missing {snippet!r}."
+            )
+
+    required_connection_overlay_snippets = (
+        "Future RAG/research action messages are intentionally reserved",
+        "`embeddings.`, `retrieval.`, `index.`, `research.`, `citation.`, and `source_control.` message names must stay inactive",
+        "runtime-side embedding generation, retrieval, indexing, research, citation, trusted-source controls, source-control context, permissions, redaction, and audit semantics",
+    )
+    for snippet in required_connection_overlay_snippets:
+        if snippet not in connection_overlay_text:
+            failures.append(
+                f"{connection_overlay_path.relative_to(ROOT)}: Connection overlay docs must keep future RAG/research action namespaces reserved; missing {snippet!r}."
+            )
+
+    if "protocol reserved projects/automation namespace guard" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap smoke coverage queue must name protocol reserved projects/automation namespace guard."
+        )
+    if "RuntimeDevServer reserved projects/automation namespace rejection" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap smoke coverage queue must name RuntimeDevServer reserved projects/automation namespace rejection."
+        )
+    if "protocol generic tool namespace guard" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap smoke coverage queue must name protocol generic tool namespace guard."
+        )
+    if "RuntimeDevServer generic tool namespace rejection" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap smoke coverage queue must name RuntimeDevServer generic tool namespace rejection."
+        )
+    if "protocol reserved permission/approval/audit namespace guard" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap smoke coverage queue must name protocol reserved permission/approval/audit namespace guard."
+        )
+    if "RuntimeDevServer reserved permission/approval/audit namespace rejection" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap smoke coverage queue must name RuntimeDevServer reserved permission/approval/audit namespace rejection."
+        )
+    if "protocol reserved runtime action namespace guard" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap smoke coverage queue must name protocol reserved runtime action namespace guard."
+        )
+    if "RuntimeDevServer reserved runtime action namespace rejection" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap smoke coverage queue must name RuntimeDevServer reserved runtime action namespace rejection."
+        )
+    if "protocol reserved RAG/research namespace guard" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap smoke coverage queue must name protocol reserved RAG/research namespace guard."
+        )
+    if "RuntimeDevServer reserved RAG/research namespace rejection" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap smoke coverage queue must name RuntimeDevServer reserved RAG/research namespace rejection."
+        )
+    if "protocol reserved private-overlay namespace guard" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap smoke coverage queue must name protocol reserved private-overlay namespace guard."
+        )
+    if "RuntimeDevServer reserved private-overlay namespace rejection" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap smoke coverage queue must name RuntimeDevServer reserved private-overlay namespace rejection."
+        )
+    if "protocol reserved encrypted-session namespace guard" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap smoke coverage queue must name protocol reserved encrypted-session namespace guard."
+        )
+    if "RuntimeDevServer reserved encrypted-session namespace rejection" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap smoke coverage queue must name RuntimeDevServer reserved encrypted-session namespace rejection."
+        )
+    if "protocol reserved transport/crypto namespace guard" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap smoke coverage queue must name protocol reserved transport/crypto namespace guard."
+        )
+    if "RuntimeDevServer reserved transport/crypto namespace rejection" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap smoke coverage queue must name RuntimeDevServer reserved transport/crypto namespace rejection."
+        )
+    if "response-only message direction rejection" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap smoke coverage queue must name response-only message direction rejection."
+        )
+    if "protocol reserved skills/MCP/web-search namespace guard" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap smoke coverage queue must name protocol reserved skills/MCP/web-search namespace guard."
+        )
+    if "protocol reserved Python namespace guard" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap smoke coverage queue must name protocol reserved Python namespace guard."
+        )
+    if "RuntimeDevServer future Python namespace rejection" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap smoke coverage queue must name RuntimeDevServer future Python namespace rejection."
+        )
+    if "RuntimeDevServer future memory.search rejection" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap smoke coverage queue must name RuntimeDevServer future memory.search rejection."
+        )
+    if "protocol route namespace guard" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap smoke coverage queue must name protocol route namespace guard."
+        )
+    if "RuntimeDevServer future route namespace rejection" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap smoke coverage queue must name RuntimeDevServer future route namespace rejection."
+        )
+    for path, text in (
+        (progress_path, progress_text),
+        (qa_evidence_path, qa_evidence_text),
+    ):
+        if "Protocol Reserved Projects/Automation Namespace No-Device Gate" not in text:
+            failures.append(
+                f"{path.relative_to(ROOT)}: Docs must record protocol reserved projects/automation namespace no-device gate."
+            )
+        if "Protocol Reserved Skills/MCP/Web Search Namespace No-Device Gate" not in text:
+            failures.append(
+                f"{path.relative_to(ROOT)}: Docs must record protocol reserved skills/MCP/web search namespace no-device gate."
+            )
+        if "Protocol Reserved Python Namespace No-Device Gate" not in text:
+            failures.append(
+                f"{path.relative_to(ROOT)}: Docs must record protocol reserved Python namespace no-device gate."
+            )
+        if "RuntimeDevServer Future Python Namespace Rejection No-Device Gate" not in text:
+            failures.append(
+                f"{path.relative_to(ROOT)}: Docs must record RuntimeDevServer future Python namespace rejection no-device gate."
+            )
+        if "RuntimeDevServer Reserved Projects/Automation Namespace Rejection No-Device Gate" not in text:
+            failures.append(
+                f"{path.relative_to(ROOT)}: Docs must record RuntimeDevServer reserved projects/automation namespace rejection no-device gate."
+            )
+        if "Protocol Generic Tool Namespace No-Device Gate" not in text:
+            failures.append(
+                f"{path.relative_to(ROOT)}: Docs must record protocol generic tool namespace no-device gate."
+            )
+        if "RuntimeDevServer Generic Tool Namespace Rejection No-Device Gate" not in text:
+            failures.append(
+                f"{path.relative_to(ROOT)}: Docs must record RuntimeDevServer generic tool namespace rejection no-device gate."
+            )
+        if "Protocol Reserved Permission/Approval/Audit Namespace No-Device Gate" not in text:
+            failures.append(
+                f"{path.relative_to(ROOT)}: Docs must record protocol reserved permission/approval/audit namespace no-device gate."
+            )
+        if "RuntimeDevServer Reserved Permission/Approval/Audit Namespace Rejection No-Device Gate" not in text:
+            failures.append(
+                f"{path.relative_to(ROOT)}: Docs must record RuntimeDevServer reserved permission/approval/audit namespace rejection no-device gate."
+            )
+        if "Protocol Reserved Runtime Action Namespace No-Device Gate" not in text:
+            failures.append(
+                f"{path.relative_to(ROOT)}: Docs must record protocol reserved runtime action namespace no-device gate."
+            )
+        if "RuntimeDevServer Reserved Runtime Action Namespace Rejection No-Device Gate" not in text:
+            failures.append(
+                f"{path.relative_to(ROOT)}: Docs must record RuntimeDevServer reserved runtime action namespace rejection no-device gate."
+            )
+        if "Protocol Reserved RAG/Research Namespace No-Device Gate" not in text:
+            failures.append(
+                f"{path.relative_to(ROOT)}: Docs must record protocol reserved RAG/research namespace no-device gate."
+            )
+        if "RuntimeDevServer Reserved RAG/Research Namespace Rejection No-Device Gate" not in text:
+            failures.append(
+                f"{path.relative_to(ROOT)}: Docs must record RuntimeDevServer reserved RAG/research namespace rejection no-device gate."
+            )
+        if "Protocol Reserved Private Overlay Namespace No-Device Gate" not in text:
+            failures.append(
+                f"{path.relative_to(ROOT)}: Docs must record protocol reserved private-overlay namespace no-device gate."
+            )
+        if "RuntimeDevServer Reserved Private Overlay Namespace Rejection No-Device Gate" not in text:
+            failures.append(
+                f"{path.relative_to(ROOT)}: Docs must record RuntimeDevServer reserved private-overlay namespace rejection no-device gate."
+            )
+        if "Protocol Reserved Encrypted Session Namespace No-Device Gate" not in text:
+            failures.append(
+                f"{path.relative_to(ROOT)}: Docs must record protocol reserved encrypted-session namespace no-device gate."
+            )
+        if "Protocol Reserved Transport/Crypto Namespace No-Device Gate" not in text:
+            failures.append(
+                f"{path.relative_to(ROOT)}: Docs must record protocol reserved transport/crypto namespace no-device gate."
+            )
+        if "RuntimeDevServer authenticated relay smoke rejects `skills.run`, `mcp.tool.call`, and `web_search.query`" not in text:
+            failures.append(
+                f"{path.relative_to(ROOT)}: Docs must record authenticated RuntimeDevServer rejection for future skills/MCP/web_search messages."
+            )
+        if "RuntimeDevServer authenticated relay smoke rejects `python.run` and `python.exec`" not in text:
+            failures.append(
+                f"{path.relative_to(ROOT)}: Docs must record authenticated RuntimeDevServer rejection for future Python messages."
+            )
+        if "RuntimeDevServer authenticated relay smoke rejects `projects.sessions.list` and `automation.runs.create`" not in text:
+            failures.append(
+                f"{path.relative_to(ROOT)}: Docs must record authenticated RuntimeDevServer rejection for future projects/automation messages."
+            )
+        if "RuntimeDevServer authenticated relay smoke rejects `tool.call`, `tool.result`, and `tool.run`" not in text:
+            failures.append(
+                f"{path.relative_to(ROOT)}: Docs must record authenticated RuntimeDevServer rejection for future generic tool messages."
+            )
+        if "RuntimeDevServer authenticated relay smoke rejects `permission.request`, `approval.prompt`, and `audit.events.list`" not in text:
+            failures.append(
+                f"{path.relative_to(ROOT)}: Docs must record authenticated RuntimeDevServer rejection for future permission/approval/audit messages."
+            )
+        if "RuntimeDevServer authenticated relay smoke rejects `file.read`, `file.write`, `file.index`, `terminal.exec`, `terminal.kill`, `network.request`, `network.open`, `backend.call`, and `backend.configure`" not in text:
+            failures.append(
+                f"{path.relative_to(ROOT)}: Docs must record authenticated RuntimeDevServer rejection for future runtime action messages."
+            )
+        if "RuntimeDevServer authenticated relay smoke rejects `embeddings.create`, `retrieval.query`, `index.build`, `research.brief.create`, `citation.sources.list`, and `source_control.status`" not in text:
+            failures.append(
+                f"{path.relative_to(ROOT)}: Docs must record authenticated RuntimeDevServer rejection for future RAG/research messages."
+            )
+        if "RuntimeDevServer authenticated relay smoke rejects `p2p.session.open`, `rendezvous.records.publish`, `bootstrap.records.lookup`, `dht.records.put`, `nat.candidates.gather`, `stun.binding.request`, and `turn.relay.allocate`" not in text:
+            failures.append(
+                f"{path.relative_to(ROOT)}: Docs must record authenticated RuntimeDevServer rejection for future private-overlay messages."
+            )
+        if "RuntimeDevServer authenticated relay smoke rejects `session.key.exchange`, `key_exchange.begin`, `encrypted_session.open`, and `anti_replay.window.commit`" not in text:
+            failures.append(
+                f"{path.relative_to(ROOT)}: Docs must record authenticated RuntimeDevServer rejection for future encrypted-session messages."
+            )
+        if "RuntimeDevServer authenticated relay smoke rejects `transport.handshake`, `transport.rekey`, `crypto.session.open`, and `crypto.key.rotate`" not in text:
+            failures.append(
+                f"{path.relative_to(ROOT)}: Docs must record authenticated RuntimeDevServer rejection for future transport/crypto messages."
+            )
+        if "Response-Only Message Direction Rejection No-Device Gate" not in text:
+            failures.append(
+                f"{path.relative_to(ROOT)}: Docs must record response-only message direction rejection no-device gate."
+            )
+        if "RuntimeDevServer authenticated relay smoke rejects `auth.challenge`, `pairing.result`, `models.result`, `chat.delta`, `chat.done`, `chat.title.result`, and `error`" not in text:
+            failures.append(
+                f"{path.relative_to(ROOT)}: Docs must record authenticated RuntimeDevServer rejection for response-only protocol messages."
+            )
+        if "RuntimeDevServer Future Memory Search Rejection No-Device Gate" not in text:
+            failures.append(
+                f"{path.relative_to(ROOT)}: Docs must record RuntimeDevServer future memory.search rejection no-device gate."
+            )
+        if "RuntimeDevServer authenticated relay smoke rejects `memory.search`" not in text:
+            failures.append(
+                f"{path.relative_to(ROOT)}: Docs must record authenticated RuntimeDevServer rejection for future memory.search messages."
+            )
+        if "Protocol Route Namespace Reservation No-Device Gate" not in text:
+            failures.append(
+                f"{path.relative_to(ROOT)}: Docs must record protocol route namespace reservation no-device gate."
+            )
+        if "RuntimeDevServer Future Route Namespace Rejection No-Device Gate" not in text:
+            failures.append(
+                f"{path.relative_to(ROOT)}: Docs must record RuntimeDevServer future route namespace rejection no-device gate."
+            )
+        if "RuntimeDevServer authenticated relay smoke rejects `route.candidates.exchange`, `route.diagnostics.report`, `route.allocation.status`, and `route.failure.report`" not in text:
+            failures.append(
+                f"{path.relative_to(ROOT)}: Docs must record authenticated RuntimeDevServer rejection for future route messages."
+            )
+
+    return failures
+
+
+def macos_protocol_model_metadata_guard_failures() -> list[str]:
+    failures: list[str] = []
+    protocol_model_path = ROOT / "apps/macos/Protocol/Sources/ProtocolEnvelope.swift"
+    protocol_tests_path = ROOT / "apps/macos/Protocol/Tests/ProtocolCodecTests.swift"
+    no_device_path = ROOT / "script/check_no_device_quality.sh"
+    roadmap_path = ROOT / "docs/roadmap.md"
+    progress_path = ROOT / "docs/progress.md"
+    qa_evidence_path = ROOT / "docs/qa-evidence.md"
+
+    required_paths = (
+        protocol_model_path,
+        protocol_tests_path,
+        no_device_path,
+        roadmap_path,
+        progress_path,
+        qa_evidence_path,
+    )
+    for path in required_paths:
+        if not path.exists():
+            failures.append(f"{path.relative_to(ROOT)} is missing for macOS protocol model metadata guard.")
+            return failures
+
+    protocol_model_text = protocol_model_path.read_text(encoding="utf-8", errors="replace")
+    protocol_tests_text = protocol_tests_path.read_text(encoding="utf-8", errors="replace")
+    no_device_text = no_device_path.read_text(encoding="utf-8", errors="replace")
+    roadmap_text = roadmap_path.read_text(encoding="utf-8", errors="replace")
+    progress_text = progress_path.read_text(encoding="utf-8", errors="replace")
+    qa_evidence_text = qa_evidence_path.read_text(encoding="utf-8", errors="replace")
+
+    required_model_snippets = (
+        "public var backend: String?",
+        "public var provider: String?",
+        "public var modelKind: String?",
+        "public var capabilities: [String]",
+        "public var providerModelID: String?",
+        "public var qualifiedID: String?",
+        'case modelKind = "model_kind"',
+        'case providerModelID = "provider_model_id"',
+        'case qualifiedID = "qualified_id"',
+        "capabilities = try container.decodeIfPresent([String].self, forKey: .capabilities) ?? []",
+        "if !capabilities.isEmpty",
+    )
+    for snippet in required_model_snippets:
+        if snippet not in protocol_model_text:
+            failures.append(
+                f"{protocol_model_path.relative_to(ROOT)}: Missing protocol model metadata codec snippet {snippet!r}."
+            )
+
+    required_test_snippets = (
+        "testModelInfoCodablePreservesProviderAndEmbeddingMetadata",
+        "testModelInfoCodableDefaultsMissingCapabilitiesToEmptyList",
+        '"model_kind"',
+        '"provider_model_id"',
+        '"qualified_id"',
+        'XCTAssertEqual(decodedObject["capabilities"] as? [String], ["embedding", "retrieval"])',
+    )
+    for snippet in required_test_snippets:
+        if snippet not in protocol_tests_text:
+            failures.append(
+                f"{protocol_tests_path.relative_to(ROOT)}: Missing protocol model metadata regression {snippet!r}."
+            )
+
+    required_no_device_snippets = (
+        "ProtocolCodecTests/testModelInfoCodablePreservesProviderAndEmbeddingMetadata",
+        "macOS protocol model metadata parity addendum",
+        "BridgeProtocol ModelInfo preserves provider, provider_model_id, qualified_id, model_kind, capabilities",
+    )
+    for snippet in required_no_device_snippets:
+        if snippet not in no_device_text:
+            failures.append(
+                f"{no_device_path.relative_to(ROOT)}: Default no-device gate must mention macOS protocol "
+                f"model metadata parity; missing {snippet!r}."
+            )
+
+    if "macOS protocol model metadata parity" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap smoke coverage queue must name macOS protocol "
+            "model metadata parity."
+        )
+
+    for path, text in (
+        (progress_path, progress_text),
+        (qa_evidence_path, qa_evidence_text),
+    ):
+        for snippet in (
+            "macOS Protocol Model Metadata Parity No-Device Gate",
+            "provider_model_id`, `qualified_id`, `model_kind`, and `capabilities",
+            "ProtocolCodecTests/testModelInfoCodablePreservesProviderAndEmbeddingMetadata",
+            "macOS protocol model metadata parity addendum",
+        ):
+            if snippet not in text:
+                failures.append(
+                    f"{path.relative_to(ROOT)}: Docs must record macOS protocol model metadata parity "
+                    f"no-device evidence; missing {snippet!r}."
+                )
+
+    return failures
+
+
+def android_protocol_model_metadata_guard_failures() -> list[str]:
+    failures: list[str] = []
+    android_protocol_path = (
+        ROOT / "apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/ProtocolModels.kt"
+    )
+    android_protocol_test_path = (
+        ROOT / "apps/android/core/protocol/src/test/java/com/localagentbridge/android/core/protocol/ProtocolCodecTest.kt"
+    )
+    no_device_path = ROOT / "script/check_no_device_quality.sh"
+    roadmap_path = ROOT / "docs/roadmap.md"
+    progress_path = ROOT / "docs/progress.md"
+    qa_evidence_path = ROOT / "docs/qa-evidence.md"
+    required_paths = (
+        android_protocol_path,
+        android_protocol_test_path,
+        no_device_path,
+        roadmap_path,
+        progress_path,
+        qa_evidence_path,
+    )
+    if any(not path.exists() for path in required_paths):
+        return ["Android protocol model metadata guard files are missing."]
+
+    android_protocol_text = android_protocol_path.read_text(encoding="utf-8", errors="replace")
+    android_protocol_test_text = android_protocol_test_path.read_text(encoding="utf-8", errors="replace")
+    no_device_text = no_device_path.read_text(encoding="utf-8", errors="replace")
+    roadmap_text = roadmap_path.read_text(encoding="utf-8", errors="replace")
+    progress_text = progress_path.read_text(encoding="utf-8", errors="replace")
+    qa_evidence_text = qa_evidence_path.read_text(encoding="utf-8", errors="replace")
+
+    required_model_snippets = (
+        "data class ModelInfoPayload(",
+        "val backend: String? = null",
+        "val provider: String? = null",
+        '@SerialName("model_kind") val modelKind: String? = null',
+        "val kind: String? = null",
+        "val capabilities: List<String> = emptyList()",
+        '@SerialName("provider_model_id") val providerModelId: String? = null',
+        '@SerialName("qualified_id") val qualifiedId: String? = null',
+        '@SerialName("size_bytes") val sizeBytes: Long? = null',
+        '@SerialName("context_window_tokens") val contextWindowTokens: Int? = null',
+        '@SerialName("modified_at") val modifiedAt: String? = null',
+        '@SerialName("remote_model") val remoteModel: String? = null',
+    )
+    for snippet in required_model_snippets:
+        if snippet not in android_protocol_text:
+            failures.append(
+                f"{android_protocol_path.relative_to(ROOT)}: Missing Android model metadata DTO snippet {snippet!r}."
+            )
+
+    required_test_snippets = (
+        "modelInfoPayloadPreservesProviderAndEmbeddingMetadata",
+        "modelInfoPayloadDefaultsMissingCapabilitiesToEmptyList",
+        '"model_kind"',
+        '"kind"',
+        '"provider_model_id"',
+        '"qualified_id"',
+        '"size_bytes"',
+        '"modified_at"',
+        '"remote_model"',
+        'listOf("embedding", "retrieval")',
+        "assertEquals(emptyList<String>(), decoded.models.first().capabilities)",
+    )
+    for snippet in required_test_snippets:
+        if snippet not in android_protocol_test_text:
+            failures.append(
+                f"{android_protocol_test_path.relative_to(ROOT)}: Missing Android model metadata parity "
+                f"regression {snippet!r}."
+            )
+
+    required_no_device_snippets = (
+        "ProtocolCodecTest.modelInfoPayloadPreservesProviderAndEmbeddingMetadata",
+        "ProtocolCodecTest.modelInfoPayloadDefaultsMissingCapabilitiesToEmptyList",
+        "Android protocol model metadata parity addendum",
+        "Android ModelInfoPayload preserves backend, provider, provider_model_id, qualified_id, model_kind, kind, capabilities, size_bytes, context_window_tokens, modified_at, and remote_model",
+    )
+    for snippet in required_no_device_snippets:
+        if snippet not in no_device_text:
+            failures.append(
+                f"{no_device_path.relative_to(ROOT)}: Default no-device gate must mention Android protocol "
+                f"model metadata parity; missing {snippet!r}."
+            )
+
+    if "Android protocol model metadata parity" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap smoke coverage queue must name Android protocol "
+            "model metadata parity."
+        )
+
+    for path, text in (
+        (progress_path, progress_text),
+        (qa_evidence_path, qa_evidence_text),
+    ):
+        for snippet in (
+            "Android Protocol Model Metadata Parity No-Device Gate",
+            "`backend`, `provider`, `provider_model_id`, `qualified_id`, `model_kind`, `kind`, `capabilities`, `size_bytes`, `modified_at`, and `remote_model`",
+            "ProtocolCodecTest.modelInfoPayloadPreservesProviderAndEmbeddingMetadata",
+            "Android protocol model metadata parity addendum",
+        ):
+            if snippet not in text:
+                failures.append(
+                    f"{path.relative_to(ROOT)}: Docs must record Android protocol model metadata parity "
+                    f"no-device evidence; missing {snippet!r}."
+                )
+
+    return failures
+
+
 def relay_exposed_bind_token_guard_failures() -> list[str]:
     failures: list[str] = []
     required_files = {
@@ -20326,8 +27749,16 @@ def relay_exposed_bind_token_guard_failures() -> list[str]:
         ),
         "script/check_no_device_quality.sh": (
             "check_relay_exposed_bind_token_guard",
+            "check_relay_wrapper_dry_run_allocation_token_redaction_guard",
             "Wildcard relay bind without allocation token should fail",
             "tokenless AetherLinkRelay binds are loopback-only",
+            "run_allocation_relay dry-run leaked allocation-token marker",
+            "--summary-json \"$summary_path\"",
+            "dry_run_not_relay_process_proof",
+            "not_production_relay_proof",
+            "not_trusted_device_reachability_proof",
+            "relay wrapper dry-run allocation-token redaction addendum",
+            "relay wrapper dry-run summary proof-boundary addendum",
         ),
         "script/no_adb_external_relay_pairing_smoke.sh": (
             "local_relay_bind_host",
@@ -20341,6 +27772,11 @@ def relay_exposed_bind_token_guard_failures() -> list[str]:
         ),
         "script/run_allocation_relay.sh": (
             'HOST="${AETHERLINK_RELAY_BIND_HOST:-127.0.0.1}"',
+            "--summary-json",
+            "write_dry_run_summary",
+            "development_relay_started",
+            "dry_run_not_relay_process_proof",
+            "not_production_relay_proof",
             "Allocation token required for non-loopback relay bind",
             "Allocation token: not required for loopback bind",
         ),
@@ -20350,14 +27786,20 @@ def relay_exposed_bind_token_guard_failures() -> list[str]:
         ),
         "docs/roadmap.md": (
             "Tokenless development-relay binds are loopback-only",
+            "relay wrapper dry-run allocation-token redaction",
+            "relay wrapper dry-run summary proof-boundary",
         ),
         "docs/progress.md": (
             "AetherLinkRelay Exposed Bind Allocation Token Guard",
             "tokenless AetherLinkRelay binds are loopback-only",
+            "Relay Wrapper Dry-Run Allocation-Token Redaction No-Device Gate",
+            "Relay Wrapper Dry-Run Summary Proof-Boundary No-Device Gate",
         ),
         "docs/qa-evidence.md": (
             "AetherLinkRelay Exposed Bind Allocation Token Guard",
             "tokenless AetherLinkRelay binds are loopback-only",
+            "Relay Wrapper Dry-Run Allocation-Token Redaction No-Device Gate",
+            "Relay Wrapper Dry-Run Summary Proof-Boundary No-Device Gate",
         ),
     }
     for relative, snippets in required_files.items():
@@ -20377,20 +27819,111 @@ def relay_exposed_bind_token_guard_failures() -> list[str]:
 def relay_allocation_token_authorization_guard_failures() -> list[str]:
     failures: list[str] = []
     required_files = {
+        "apps/macos/RelayServerCore/Sources/RelayAllocation.swift": (
+            "public init(from decoder: Decoder) throws",
+            "try self.init(",
+            "relaySecret.rangeOfCharacter(from: .whitespacesAndNewlines) == nil",
+            "allowedResponseFieldNames",
+            "JSONSerialization.jsonObject",
+            "unexpectedResponseMetadata",
+            "hasUnexpectedMetadata",
+            "AnyCodingKey",
+            "looksLikeUnknownOption",
+            "rejectedRequestMetadataKeys",
+        ),
         "apps/macos/RelayServerCore/Tests/RelayAllocationTests.swift": (
             "testParsesAllocationRequestWithAuthAlias",
+            "testParsesAllocationRequestWithBase64RequestedRelaySecret",
+            "secret+with/symbols=",
             "auth=allocation-token-1",
+            "testRejectsBlankAllocationTokenAndRelaySecret",
+            "testRejectsUnexpectedAllocationRequestMetadata",
+            "testRejectsInvalidAllocationResponseLineFields",
+            "testRejectsUnexpectedAllocationResponseLineMetadata",
+            "testAllocationRegistrySkipsPersistedTicketsWithUnexpectedMetadata",
+            "allocation_token=",
+            "auth=",
+            "requestedRelaySecret: \"\"",
+            "requestedRelaySecret: \"secret value\"",
+            "allocationResponseLine(relayID: \"relay 1\")",
+            "allocationResponseLine(relaySecret: \"secret value\")",
+            "allocationResponseLine(relayExpiresAtEpochMillis: 0)",
+            "allocationResponseLine(relayNonce: \"nonce value\")",
+            "\"requested_route_token\":\"leaked-route-token\"",
+            "\"backend_url\":\"http://127.0.0.1:11434/api/tags\"",
+            "\"provider_url\":\"https://provider.example.test/v1/models\"",
+            "backend_url=http://127.0.0.1:11434/api/tags",
+            "provider_url=https://provider.example.test/v1/models",
+            "requested_route_token=leaked-route-token",
+            "relay_secret_debug=leaked-relay-secret",
+            "\"relay_secret\": \"leaked-relay-secret\"",
+            "\"requested_route_token\": \"leaked-route-token\"",
+            "\"backend_url\": \"http://127.0.0.1:11434/api/tags\"",
+            ".invalidAllocationToken",
+            ".invalidRelaySecret",
+            ".invalidExpiration",
+            ".invalidNonce",
+            ".unexpectedResponseMetadata",
         ),
         "script/relay_allocation_preflight.py": (
             "--allocation-token",
+            "AETHERLINK_BOOTSTRAP_RELAY_ALLOCATION_TOKEN",
+            "AETHERLINK_RELAY_ALLOCATION_TOKEN",
             "allocation_token=",
             "--persist",
         ),
+        "script/run_allocation_relay.sh": (
+            'export AETHERLINK_RELAY_ALLOCATION_TOKEN="$ALLOCATION_TOKEN"',
+            "Allocation token is required for route allocation.",
+        ),
+        "script/run_different_network_dev_runtime.sh": (
+            'AETHERLINK_BOOTSTRAP_RELAY_ALLOCATION_TOKEN="$token"',
+            'AETHERLINK_RELAY_ALLOCATION_TOKEN="$token"',
+            'export AETHERLINK_RELAY_ALLOCATION_TOKEN="$ALLOCATION_TOKEN"',
+        ),
+        "script/no_adb_external_relay_pairing_smoke.sh": (
+            'AETHERLINK_BOOTSTRAP_RELAY_ALLOCATION_TOKEN="$token"',
+            'AETHERLINK_RELAY_ALLOCATION_TOKEN="$token"',
+            'export AETHERLINK_RELAY_ALLOCATION_TOKEN="$ALLOCATION_TOKEN"',
+        ),
+        "script/android_pairing_deeplink_smoke.sh": (
+            'AETHERLINK_BOOTSTRAP_RELAY_ALLOCATION_TOKEN="$token"',
+            'AETHERLINK_RELAY_ALLOCATION_TOKEN="$token"',
+            'export AETHERLINK_RELAY_ALLOCATION_TOKEN="$ALLOCATION_TOKEN"',
+        ),
+        "script/check_physical_external_relay_pairing.sh": (
+            'AETHERLINK_BOOTSTRAP_RELAY_ALLOCATION_TOKEN="$ALLOCATION_TOKEN"',
+            'AETHERLINK_RELAY_ALLOCATION_TOKEN="$ALLOCATION_TOKEN"',
+        ),
         "script/check_no_device_quality.sh": (
+            "check_relay_wrapper_allocation_token_argv_redaction_guard",
+            "check_different_network_wrapper_allocation_token_argv_redaction_guard",
+            "check_no_adb_wrapper_allocation_token_argv_redaction_guard",
+            "check_android_pairing_deeplink_allocation_token_argv_redaction_guard",
+            "relay_child_command_for_parent",
+            'ps -p "$relay_pid" -o command=',
+            "wrong-wrapper-token",
+            "no-device-different-network-wrapper-token",
+            "no-device-no-adb-wrapper-token",
+            "no-device-android-pairing-token",
             "check_relay_allocation_token_authorization_guard",
+            "RelayAllocationTests/testParsesAllocationRequestWithBase64RequestedRelaySecret",
+            "RelayAllocationTests/testRejectsBlankAllocationTokenAndRelaySecret",
+            "RelayAllocationTests/testRejectsUnexpectedAllocationRequestMetadata",
+            "RelayAllocationTests/testRejectsInvalidAllocationResponseLineFields",
+            "RelayAllocationTests/testRejectsUnexpectedAllocationResponseLineMetadata",
+            "RelayAllocationTests/testAllocationRegistrySkipsPersistedTicketsWithUnexpectedMetadata",
             "Missing allocation token should fail against a token-required relay.",
             "Wrong allocation token should fail against a token-required relay.",
             "token-required AetherLinkRelay allocation rejects missing or wrong tokens",
+            "relay allocation request unexpected metadata rejection addendum",
+            "relay allocation request input rejection addendum",
+            "relay allocation base64 requested-secret addendum",
+            "relay wrapper allocation-token argv redaction addendum",
+            "Android pairing deeplink allocation-token argv redaction addendum",
+            "relay allocation response field validation addendum",
+            "Swift relay allocation unexpected metadata rejection addendum",
+            "relay allocation store unexpected metadata rejection addendum",
             "token-relay-secret-should-not-persist",
         ),
         "docs/connection-overlay.md": (
@@ -20399,11 +27932,56 @@ def relay_allocation_token_authorization_guard_failures() -> list[str]:
         ),
         "docs/progress.md": (
             "AetherLinkRelay Allocation Token Authorization Guard",
+            "Relay Allocation Request Input Rejection No-Device Gate",
+            "Relay Allocation Base64 Requested-Secret No-Device Gate",
+            "Relay Wrapper Allocation-Token Argv Redaction No-Device Gate",
+            "Android Pairing Deeplink Allocation-Token Argv Redaction No-Device Gate",
+            "run_different_network_dev_runtime",
+            "no_adb_external_relay_pairing_smoke",
+            "android_pairing_deeplink_smoke",
+            "Relay Allocation Request Unexpected Metadata Rejection No-Device Gate",
+            "Relay Allocation Response Field Validation No-Device Gate",
+            "Swift Relay Allocation Unexpected Metadata Rejection No-Device Gate",
+            "Relay Allocation Store Unexpected Metadata Rejection No-Device Gate",
             "token-required AetherLinkRelay allocation rejects missing or wrong tokens",
+            "blank allocation_token/auth values",
+            "base64-style requested relay secrets with `+`, `/`, and `=` padding",
+            "child process argv omits `--allocation-token` and the raw token",
+            "unknown key=value request metadata",
+            "relay_id, relay_secret, relay_expires_at, and relay_nonce validation",
+            "extra backend, provider, route-token, allocation-token, or relay-secret metadata fields",
+            "skips persisted tickets that contain backend, provider, route-token, allocation-token, or relay-secret metadata fields",
         ),
         "docs/qa-evidence.md": (
             "AetherLinkRelay Allocation Token Authorization Guard",
+            "Relay Allocation Request Input Rejection No-Device Gate",
+            "Relay Allocation Base64 Requested-Secret No-Device Gate",
+            "Relay Wrapper Allocation-Token Argv Redaction No-Device Gate",
+            "Android Pairing Deeplink Allocation-Token Argv Redaction No-Device Gate",
+            "run_different_network_dev_runtime",
+            "no_adb_external_relay_pairing_smoke",
+            "android_pairing_deeplink_smoke",
+            "Relay Allocation Request Unexpected Metadata Rejection No-Device Gate",
+            "Relay Allocation Response Field Validation No-Device Gate",
+            "Swift Relay Allocation Unexpected Metadata Rejection No-Device Gate",
+            "Relay Allocation Store Unexpected Metadata Rejection No-Device Gate",
             "token-required AetherLinkRelay allocation rejects missing or wrong tokens",
+            "blank allocation_token/auth values",
+            "base64-style requested relay secrets with `+`, `/`, and `=` padding",
+            "child process argv omits `--allocation-token` and the raw token",
+            "unknown key=value request metadata",
+            "relay_id, relay_secret, relay_expires_at, and relay_nonce validation",
+            "extra backend, provider, route-token, allocation-token, or relay-secret metadata fields",
+            "skips persisted tickets that contain backend, provider, route-token, allocation-token, or relay-secret metadata fields",
+        ),
+        "docs/roadmap.md": (
+            "relay allocation response field validation",
+            "relay allocation request unexpected metadata rejection",
+            "relay allocation base64 requested-secret",
+            "relay wrapper allocation-token argv redaction",
+            "Android pairing deeplink allocation-token argv redaction",
+            "Swift relay allocation unexpected metadata rejection",
+            "relay allocation store unexpected metadata rejection",
         ),
     }
     for relative, snippets in required_files.items():
@@ -20417,6 +27995,36 @@ def relay_allocation_token_authorization_guard_failures() -> list[str]:
                 failures.append(
                     f"{relative}: Missing relay allocation-token authorization guard snippet {snippet!r}."
                 )
+    run_allocation_relay_text = (ROOT / "script/run_allocation_relay.sh").read_text(
+        encoding="utf-8",
+        errors="replace",
+    )
+    if 'ARGS+=(--allocation-token "$ALLOCATION_TOKEN")' in run_allocation_relay_text:
+        failures.append(
+            "script/run_allocation_relay.sh: run_allocation_relay must not pass allocation tokens in child process argv."
+        )
+    for relative in (
+        "script/run_different_network_dev_runtime.sh",
+        "script/no_adb_external_relay_pairing_smoke.sh",
+        "script/android_pairing_deeplink_smoke.sh",
+    ):
+        wrapper_text = (ROOT / relative).read_text(encoding="utf-8", errors="replace")
+        if 'RELAY_ARGS+=(--allocation-token "$ALLOCATION_TOKEN")' in wrapper_text:
+            failures.append(
+                f"{relative}: wrapper must not pass allocation tokens in AetherLinkRelay child argv."
+            )
+        if 'args+=(--allocation-token "$token")' in wrapper_text:
+            failures.append(
+                f"{relative}: wrapper preflight must not pass allocation tokens in child process argv."
+            )
+    physical_wrapper_text = (ROOT / "script/check_physical_external_relay_pairing.sh").read_text(
+        encoding="utf-8",
+        errors="replace",
+    )
+    if 'COMMAND+=(--allocation-token "$ALLOCATION_TOKEN")' in physical_wrapper_text:
+        failures.append(
+            "script/check_physical_external_relay_pairing.sh: physical wrapper must not pass allocation tokens in child process argv."
+        )
     return failures
 
 
@@ -20446,13 +28054,16 @@ def relay_opaque_id_guard_failures() -> list[str]:
             "\"requested_route_token\" not in payload",
             "\"normal-route\" not in json.dumps(payload)",
             "\"token-persisted-route\" not in json.dumps(payload)",
-            "payload[\"relay_id\"].startswith(\"rt1-\")",
+            "assert \"rt1-\" in contents, contents",
+            "\"rt1-\" not in json.dumps(payload)",
             "raw route tokens out of allocation stores and relay logs",
             "relay allocation opacity addendum",
         ),
         "docs/connection-overlay.md": (
             "opaque stable relay id derived from the route token",
             "raw route token is not returned as the relay room id",
+            "raw route tokens stay out of allocation responses, preflight JSON, allocation stores, and relay logs",
+            "not `requested_route_token`",
         ),
         "docs/roadmap.md": (
             "allocation path now issues opaque relay ids derived from route tokens",
@@ -20482,6 +28093,10 @@ def relay_opaque_id_guard_failures() -> list[str]:
             failures.append(f"{relative} is missing for relay opaque-id allocation guard.")
             continue
         text = path.read_text(encoding="utf-8", errors="replace")
+        if relative == "docs/connection-overlay.md" and "response still reports the caller's `requested_route_token`" in text:
+            failures.append(
+                f"{relative}: Relay allocation docs must not claim successful responses report requested_route_token."
+            )
         for snippet in snippets:
             if snippet not in text:
                 failures.append(
@@ -20575,15 +28190,81 @@ def relay_allocation_renewal_guard_failures() -> list[str]:
     return failures
 
 
+def relay_control_line_relay_id_canonicality_guard_failures() -> list[str]:
+    failures: list[str] = []
+    required_files = {
+        "apps/macos/RelayServerCore/Sources/RelayHandshake.swift": (
+            "relayControlLineRelayIDMaxCharacters = 512",
+            "relayControlLineRelayIDForbiddenCharacters",
+            "isCanonicalRelayControlLineID",
+            "guard isCanonicalRelayControlLineID(relayID)",
+        ),
+        "apps/macos/RelayServerCore/Sources/RelayProbe.swift": (
+            "guard isCanonicalRelayControlLineID(relayID)",
+        ),
+        "apps/macos/RelayServerCore/Tests/RelayHandshakeTests.swift": (
+            "testRejectsNonCanonicalRelayID",
+            "relayControlLineRelayIDMaxCharacters + 1",
+            "https://relay.example.test/room?route_token=secret",
+            "relay.example.test:443",
+            "user@relay-id",
+            "relay/id",
+            "relay\\\\id",
+            "relay#fragment",
+        ),
+        "apps/macos/RelayServerCore/Tests/RelayProbeTests.swift": (
+            "testRejectsNonCanonicalRelayID",
+            "relayControlLineRelayIDMaxCharacters + 1",
+            "https://relay.example.test/room?route_token=secret",
+            "relay.example.test:443",
+            "user@relay-id",
+            "relay/id",
+            "relay\\\\id",
+            "relay#fragment",
+        ),
+        "script/check_no_device_quality.sh": (
+            "RelayHandshakeTests/testRejectsNonCanonicalRelayID",
+            "RelayProbeTests/testRejectsNonCanonicalRelayID",
+            "relay control-line relay-id canonicality addendum",
+            "URL-shaped, path-shaped, query, fragment, user-info, and host:port relay ids",
+        ),
+        "docs/progress.md": (
+            "Relay Control-Line Relay-ID Canonicality No-Device Gate",
+            "runtime/client handshakes and readiness probes reject whitespace, oversized, URL-shaped, path-shaped, query, fragment, user-info, and host:port relay ids",
+        ),
+        "docs/qa-evidence.md": (
+            "Relay Control-Line Relay-ID Canonicality No-Device Gate",
+            "runtime/client handshakes and readiness probes reject whitespace, oversized, URL-shaped, path-shaped, query, fragment, user-info, and host:port relay ids",
+        ),
+        "docs/roadmap.md": (
+            "relay control-line relay-id canonicality",
+        ),
+    }
+    for relative, snippets in required_files.items():
+        path = ROOT / relative
+        if not path.exists():
+            failures.append(f"{relative} is missing for relay control-line relay-id canonicality guard.")
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace")
+        for snippet in snippets:
+            if snippet not in text:
+                failures.append(
+                    f"{relative}: Missing relay control-line relay-id canonicality guard snippet {snippet!r}."
+                )
+    return failures
+
+
 def app_icon_readability_guard_failures() -> list[str]:
     failures: list[str] = []
     icon_check_path = ROOT / "script/check_app_icons.py"
+    dock_capture_path = ROOT / "script/capture_macos_dock_icon.sh"
     no_device_path = ROOT / "script/check_no_device_quality.sh"
     docs_progress_path = ROOT / "docs/progress.md"
     docs_qa_evidence_path = ROOT / "docs/qa-evidence.md"
     docs_roadmap_path = ROOT / "docs/roadmap.md"
     required_files = (
         icon_check_path,
+        dock_capture_path,
         no_device_path,
         docs_progress_path,
         docs_qa_evidence_path,
@@ -20595,6 +28276,7 @@ def app_icon_readability_guard_failures() -> list[str]:
             return failures
 
     icon_check_text = icon_check_path.read_text(encoding="utf-8", errors="replace")
+    dock_capture_text = dock_capture_path.read_text(encoding="utf-8", errors="replace")
     no_device_text = no_device_path.read_text(encoding="utf-8", errors="replace")
     docs_progress_text = docs_progress_path.read_text(encoding="utf-8", errors="replace")
     docs_qa_evidence_text = docs_qa_evidence_path.read_text(encoding="utf-8", errors="replace")
@@ -20619,9 +28301,28 @@ def app_icon_readability_guard_failures() -> list[str]:
                 f"guard snippet {snippet!r}."
             )
 
+    required_dock_capture_snippets = (
+        "--dry-run",
+        "--summary-json",
+        "dry_run_not_macos_dock_screenshot_proof",
+        "macos_dock_capture_verified",
+        "physical_macos_dock_screenshot",
+        "Not a macOS Dock screenshot proof.",
+    )
+    for snippet in required_dock_capture_snippets:
+        if snippet not in dock_capture_text:
+            failures.append(
+                f"{dock_capture_path.relative_to(ROOT)}: Missing macOS Dock capture dry-run "
+                f"summary snippet {snippet!r}."
+            )
+
     required_no_device_snippets = (
         "python3 script/check_app_icons.py",
+        "check_macos_dock_capture_dry_run_summary_guard",
+        "dry_run_not_macos_dock_screenshot_proof",
         "Covered app icon addendum: no-device Android launcher and macOS Dock small-size readability plus asset-chain validation.",
+        "Covered macOS Dock capture dry-run summary addendum: capture_macos_dock_icon dry-run writes no-side-effect summary evidence without claiming a physical Dock screenshot.",
+        "Physical macOS Dock capture option: script/capture_macos_dock_icon.sh stages dist/AetherLink.app and captures build/qa/aetherlink-macos-dock-visible.png with CFBundleIconFile=AppIcon.",
         "launcher/Dock screenshots",
     )
     for snippet in required_no_device_snippets:
@@ -20632,21 +28333,37 @@ def app_icon_readability_guard_failures() -> list[str]:
             )
     required_doc_snippets = {
         docs_progress_path: (
+            "macOS Dock Capture Dry-Run Summary No-Device Gate",
+            "Physical Android Reconnected QR Smoke And macOS Dock Icon Capture",
+            "script/capture_macos_dock_icon.sh",
+            "`--dry-run --summary-json`",
+            "dry_run_not_macos_dock_screenshot_proof",
+            "build/qa/aetherlink-macos-dock-visible.png",
+            "CFBundleIconFile: AppIcon",
             "App Icon Small-Size Readability No-Device Preflight",
             "Android resource-processing evidence",
             "script/check_no_device_quality.sh` passed after the macOS QR-only pairing gate update and still runs `python3 script/check_app_icons.py` plus reports `Covered app icon addendum`",
             "physical screenshot aesthetics",
-            "script/check_copy_hygiene.py` now requires the icon readability functions, full no-device gate evidence, current progress/QA evidence, Android resource-processing evidence, default no-device gate phrase, and the remaining launcher/Dock screenshot caveat.",
         ),
         docs_qa_evidence_path: (
+            "macOS Dock Capture Dry-Run Summary No-Device Gate",
+            "Physical Android Reconnected QR Smoke And macOS Dock Icon Capture",
+            "script/capture_macos_dock_icon.sh",
+            "`--dry-run --summary-json`",
+            "dry_run_not_macos_dock_screenshot_proof",
+            "build/qa/aetherlink-macos-dock-visible.png",
+            "CFBundleIconFile: AppIcon",
             "App Icon Small-Size Readability No-Device Preflight",
             "Android resource evidence: `JAVA_HOME=\"/Applications/Android Studio.app/Contents/jbr/Contents/Home\" ./gradlew --no-daemon :app:processDebugResources -Pkotlin.incremental=false --console=plain` passed with the current launcher assets.",
             "Gate evidence: `JAVA_HOME=\"/Applications/Android Studio.app/Contents/jbr/Contents/Home\" ANDROID_HOME=\"$HOME/Library/Android/sdk\" ./script/check_no_device_quality.sh` passed and reported `Covered app icon addendum: no-device Android launcher and macOS Dock small-size readability plus asset-chain validation.`",
-            "Static evidence: `python3 script/check_copy_hygiene.py` passed after requiring the icon readability functions, full no-device gate evidence, current progress/QA evidence, Android resource-processing evidence, default no-device gate phrase, and the remaining launcher/Dock screenshot caveat.",
             "physical screenshot aesthetics",
         ),
         docs_roadmap_path: (
             "Capture launcher/dock screenshots on real devices",
+            "macOS Dock capture dry-run summary",
+            "build/qa/aetherlink-macos-dock-visible.png",
+            "CFBundleIconFile=AppIcon",
+            "additional launcher/dock icon screenshots across device sizes",
         ),
     }
     docs_text_by_path = {
@@ -20710,6 +28427,27 @@ def main() -> int:
             print(f" - {failure}", file=sys.stderr)
         return 1
 
+    protocol_reserved_namespace_failures = protocol_reserved_namespace_guard_failures()
+    if protocol_reserved_namespace_failures:
+        print("Protocol reserved namespace guard failed:", file=sys.stderr)
+        for failure in protocol_reserved_namespace_failures:
+            print(f" - {failure}", file=sys.stderr)
+        return 1
+
+    macos_protocol_model_metadata_failures = macos_protocol_model_metadata_guard_failures()
+    if macos_protocol_model_metadata_failures:
+        print("macOS protocol model metadata guard failed:", file=sys.stderr)
+        for failure in macos_protocol_model_metadata_failures:
+            print(f" - {failure}", file=sys.stderr)
+        return 1
+
+    android_protocol_model_metadata_failures = android_protocol_model_metadata_guard_failures()
+    if android_protocol_model_metadata_failures:
+        print("Android protocol model metadata guard failed:", file=sys.stderr)
+        for failure in android_protocol_model_metadata_failures:
+            print(f" - {failure}", file=sys.stderr)
+        return 1
+
     relay_exposed_bind_token_failures = relay_exposed_bind_token_guard_failures()
     if relay_exposed_bind_token_failures:
         print("Relay exposed-bind allocation-token guard failed:", file=sys.stderr)
@@ -20735,6 +28473,13 @@ def main() -> int:
     if relay_allocation_renewal_failures:
         print("Relay allocation renewal guard failed:", file=sys.stderr)
         for failure in relay_allocation_renewal_failures:
+            print(f" - {failure}", file=sys.stderr)
+        return 1
+
+    relay_control_line_relay_id_canonicality_failures = relay_control_line_relay_id_canonicality_guard_failures()
+    if relay_control_line_relay_id_canonicality_failures:
+        print("Relay control-line relay-id canonicality guard failed:", file=sys.stderr)
+        for failure in relay_control_line_relay_id_canonicality_failures:
             print(f" - {failure}", file=sys.stderr)
         return 1
 

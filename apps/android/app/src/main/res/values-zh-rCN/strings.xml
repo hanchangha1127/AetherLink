@@ -495,6 +495,14 @@
     <string name="embedding_model_connect_first">选择记忆索引模型前，请先连接受信任的运行时。</string>
     <string name="memory_title">记忆</string>
     <string name="memory_subtitle">为后续聊天保存在受信任运行时上的备注。</string>
+    <string name="memory_search_label">搜索记忆</string>
+    <string name="clear_memory_search_named">清除“%1$s”的记忆搜索</string>
+    <string name="no_memory_search_results">没有匹配的记忆。</string>
+    <string name="memory_search_result_summary">正在显示与“%1$s”匹配的记忆。</string>
+    <string name="memory_search_field_content">记忆</string>
+    <string name="memory_search_field_source">来源</string>
+    <string name="memory_search_field_source_range">来源范围</string>
+    <string name="memory_search_field_source_excerpt">来源摘录</string>
     <string name="memory_add_label">添加记忆</string>
     <string name="memory_add_placeholder">要记住的偏好、项目信息或指令</string>
     <string name="memory_add">添加记忆</string>

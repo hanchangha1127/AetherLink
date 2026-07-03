@@ -17,6 +17,8 @@ LIVE_BACKEND=0
 CHAT_TEXT="${AETHERLINK_ANDROID_CHAT_SMOKE_TEXT:-AetherLink_external_relay_smoke}"
 CHAT_DELTA_TIMEOUT="${AETHERLINK_ANDROID_CHAT_DELTA_TIMEOUT_SECONDS:-15}"
 REQUIRE_DIFFERENT_NETWORK_CONFIRMATION=0
+SELF_TEST_REDACT_PROBE_SUMMARY=0
+SUMMARY_RELAY_HOST="$RELAY_HOST"
 
 usage() {
   cat <<'USAGE'
@@ -162,6 +164,10 @@ while [[ $# -gt 0 ]]; do
       REQUIRE_DIFFERENT_NETWORK_CONFIRMATION=1
       shift
       ;;
+    --self-test-redact-probe-summary)
+      SELF_TEST_REDACT_PROBE_SUMMARY=1
+      shift
+      ;;
     -h|--help)
       usage
       exit 0
@@ -174,6 +180,10 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+if [[ "$SELF_TEST_REDACT_PROBE_SUMMARY" -eq 1 && -z "$RELAY_HOST" ]]; then
+  RELAY_HOST="relay.example.test"
+fi
+
 if [[ -z "$RELAY_HOST" ]]; then
   echo "Missing --relay-host or AETHERLINK_BOOTSTRAP_RELAY_HOST." >&2
   usage >&2
@@ -184,6 +194,8 @@ if [[ "$REQUIRE_DIFFERENT_NETWORK_CONFIRMATION" -eq 1 && "${AETHERLINK_DIFFERENT
   echo "Set AETHERLINK_DIFFERENT_NETWORK_CONFIRMED=1 after putting the phone on a different network." >&2
   exit 2
 fi
+
+SUMMARY_RELAY_HOST="$RELAY_HOST"
 
 mkdir -p "$(dirname "$JSON_PATH")" "$(dirname "$LOG_PATH")"
 cd "$ROOT_DIR"
@@ -198,9 +210,6 @@ COMMAND=(
 
 if [[ -n "$SERIAL" ]]; then
   COMMAND+=(--serial "$SERIAL")
-fi
-if [[ -n "$ALLOCATION_TOKEN" ]]; then
-  COMMAND+=(--allocation-token "$ALLOCATION_TOKEN")
 fi
 if [[ "$SKIP_INSTALL" -eq 1 ]]; then
   COMMAND+=(--skip-install)
@@ -223,6 +232,7 @@ fi
 
 redacted_command() {
   local redact_next=0
+  local sanitize_host_next=0
   local pieces=()
   local arg
   for arg in "${COMMAND[@]}"; do
@@ -231,12 +241,43 @@ redacted_command() {
       redact_next=0
       continue
     fi
+    if [[ "$sanitize_host_next" -eq 1 ]]; then
+      pieces+=("$SUMMARY_RELAY_HOST")
+      sanitize_host_next=0
+      continue
+    fi
     pieces+=("$arg")
     if [[ "$arg" == "--allocation-token" ]]; then
       redact_next=1
+    elif [[ "$arg" == "--external-relay-host" ]]; then
+      sanitize_host_next=1
     fi
   done
   printf '%q ' "${pieces[@]}"
+}
+
+validate_relay_host_input() {
+  local safe_host
+  local status
+  set +e
+  safe_host="$(python3 - "$RELAY_HOST" <<'PY'
+import sys
+
+host = sys.argv[1]
+normalized = host.strip().lower().strip("[]")
+if not normalized:
+    print("<empty-host>")
+    raise SystemExit(2)
+if "://" in normalized or "/" in normalized or "@" in normalized or "?" in normalized or "#" in normalized:
+    print("<invalid-host>")
+    raise SystemExit(2)
+print(host)
+PY
+)"
+  status=$?
+  set -e
+  SUMMARY_RELAY_HOST="$safe_host"
+  return "$status"
 }
 
 count_in_file() {
@@ -303,7 +344,7 @@ write_json_summary() {
     "$started_at" \
     "$ended_at" \
     "$duration_seconds" \
-    "$RELAY_HOST" \
+    "$SUMMARY_RELAY_HOST" \
     "$RELAY_PORT" \
     "$device_serial" \
     "$SERIAL" \
@@ -323,13 +364,16 @@ write_json_summary() {
     "$runtime_log" \
     "$screenshot" \
     "$device_probe_json" \
-    "$device_route_probe_json" \
-    "$redacted_command_text" \
-    "$REQUIRE_DIFFERENT_NETWORK_CONFIRMATION" \
-    "$([[ -n "$ALLOCATION_TOKEN" ]] && echo 1 || echo 0)" <<'PY'
+	    "$device_route_probe_json" \
+	    "$redacted_command_text" \
+	    "$REQUIRE_DIFFERENT_NETWORK_CONFIRMATION" \
+	    "$([[ -n "$ALLOCATION_TOKEN" ]] && echo 1 || echo 0)" \
+	    "$SELF_TEST_REDACT_PROBE_SUMMARY" <<'PY'
 import json
 import os
+import re
 import sys
+import urllib.parse
 
 (
     path,
@@ -361,6 +405,7 @@ import sys
     redacted_command,
     require_different_network_confirmation,
     allocation_token_set,
+    self_test_redact_probe_summary,
 ) = sys.argv[1:]
 
 exit_status = int(status)
@@ -372,11 +417,14 @@ chat_delta_count = int(chat_delta_count)
 chat_cancel_count = int(chat_cancel_count)
 expect_reconnect_bool = expect_reconnect == "1"
 expect_chat_cancel_bool = expect_chat_cancel == "1"
+self_test_redaction_only = self_test_redact_probe_summary == "1"
 
 caveats = [
     "uses_adb_deeplink_injection_not_optical_camera_qr_scan",
     "requires_user_controlled_public_vpn_tunnel_or_private_overlay_relay",
     "does_not_expose_ollama_or_lm_studio_to_android",
+    "not_production_session_key_exchange_proof",
+    "not_production_end_to_end_transport_encryption_proof",
 ]
 if require_different_network_confirmation != "1":
     caveats.append("operator_must_confirm_phone_was_on_a_different_network")
@@ -388,18 +436,114 @@ if expect_reconnect_bool and model_list_count < 1:
     caveats.append("saved_route_models_list_reconnect_not_observed")
 if expect_chat_cancel_bool and chat_cancel_count < 1:
     caveats.append("chat_cancel_not_observed")
+if self_test_redaction_only:
+    caveats.append("self_test_redaction_only_not_physical_relay_proof")
 
 def load_json_artifact(candidate_path):
     if not candidate_path:
         return None
     try:
         with open(candidate_path, "r", encoding="utf-8") as handle:
-            return json.load(handle)
+            return redact_probe_summary_route_material(json.load(handle))
     except Exception as exc:
         return {
             "path": candidate_path,
             "load_error": str(exc),
         }
+
+SENSITIVE_ROUTE_KEYS = {
+    "allocation_token",
+    "allocationtoken",
+    "requested_route_token",
+    "requestedroutetoken",
+    "network_id",
+    "networkid",
+    "remote_id",
+    "remoteid",
+    "remote_nonce",
+    "remotenonce",
+    "remote_secret",
+    "remotesecret",
+    "rendezvous_nonce",
+    "rendezvousnonce",
+    "rendezvous_secret",
+    "rendezvoussecret",
+    "relay_id",
+    "relayid",
+    "relay_secret",
+    "relaysecret",
+    "relay_nonce",
+    "relaynonce",
+    "relay_expires_at",
+    "relayexpiresat",
+    "ri",
+    "rrn",
+    "rs",
+    "rt",
+    "route_id",
+    "routeid",
+    "route_token",
+    "routetoken",
+    "route_secret",
+    "routesecret",
+    "route_nonce",
+    "routenonce",
+}
+
+def redact_probe_summary_route_material(summary):
+    sensitive_values = set()
+
+    def collect(node):
+        if isinstance(node, dict):
+            for key, value in node.items():
+                normalized_key = key.lower()
+                compact_key = normalized_key.replace("_", "")
+                if (
+                    (normalized_key in SENSITIVE_ROUTE_KEYS or compact_key in SENSITIVE_ROUTE_KEYS)
+                    and isinstance(value, str)
+                    and value
+                ):
+                    sensitive_values.add(value)
+                collect(value)
+        elif isinstance(node, list):
+            for item in node:
+                collect(item)
+
+    def scrub_text(value):
+        import re
+
+        text = value
+        for marker in sorted(sensitive_values, key=len, reverse=True):
+            text = text.replace(marker, "<redacted-route-material>")
+        key_pattern = "|".join(re.escape(key) for key in sorted(SENSITIVE_ROUTE_KEYS, key=len, reverse=True))
+        return re.sub(
+            rf"(?i)(?<![A-Za-z0-9_])(?:{key_pattern})=[^\s,;}}]+",
+            "route_material=<redacted>",
+            text,
+        )
+
+    def sanitize(node):
+        if isinstance(node, dict):
+            sanitized = {}
+            for key, value in node.items():
+                normalized_key = key.lower()
+                compact_key = normalized_key.replace("_", "")
+                if normalized_key == "relay_id":
+                    if value:
+                        sanitized["relay_id_present"] = True
+                    continue
+                if normalized_key in SENSITIVE_ROUTE_KEYS or compact_key in SENSITIVE_ROUTE_KEYS:
+                    continue
+                sanitized[key] = sanitize(value)
+            return sanitized
+        if isinstance(node, list):
+            return [sanitize(item) for item in node]
+        if isinstance(node, str):
+            return scrub_text(node)
+        return node
+
+    collect(summary)
+    return sanitize(summary)
 
 def probe_bool(summary, key):
     if not isinstance(summary, dict):
@@ -411,10 +555,81 @@ device_endpoint_probe = load_json_artifact(device_probe_json)
 device_route_probe = load_json_artifact(device_route_probe_json)
 endpoint_reachable = probe_bool(device_endpoint_probe, "reachable")
 route_ready = probe_bool(device_route_probe, "route_ready")
+runtime_log_artifact_present = os.path.exists(runtime_log)
+wrapper_log_artifact_present = os.path.exists(log_path)
+
+def read_text(candidate_path):
+    try:
+        with open(candidate_path, "r", encoding="utf-8", errors="replace") as handle:
+            return handle.read()
+    except FileNotFoundError:
+        return ""
+
+def pairing_uri_queries(text):
+    marker = "AETHERLINK_DEV_PAIRING_URI "
+    for line in text.splitlines():
+        if marker not in line:
+            continue
+        uri = line.split(marker, 1)[1].strip()
+        parsed = urllib.parse.urlparse(uri)
+        if parsed.scheme == "aetherlink" and parsed.netloc == "pair":
+            yield dict(urllib.parse.parse_qsl(parsed.query, keep_blank_values=True))
+
+def has_any(query, *names):
+    return any(query.get(name) for name in names)
+
+def wrapper_log_contains_unredacted_route_material(text):
+    patterns = (
+        r"AETHERLINK_DEV_PAIRING_URI\s+aetherlink://pair\?",
+        r"aetherlink://pair\?(?!<redacted>)",
+        r"(?i)(?<![A-Za-z0-9_])(?:pairing_nonce|pairing_code|relay_secret|remote_secret|route_secret|relay_nonce|remote_nonce|route_nonce|rendezvous_nonce|route_token|discovery_token|allocation_token|requested_route_token|runtime_public_key|runtime_key_fingerprint)=",
+        r"(?i)(?<![A-Za-z0-9_])(?:rs|rrn|rt|rk|rf)=",
+    )
+    return any(re.search(pattern, text) for pattern in patterns)
+
+wrapper_log_text = read_text(log_path)
+wrapper_log_contains_route_material = wrapper_log_contains_unredacted_route_material(wrapper_log_text)
+runtime_pairing_queries = list(pairing_uri_queries(read_text(runtime_log)))
+runtime_log_contains_temporary_pairing_material = any(
+    has_any(query, "pairing_nonce", "nonce", "n")
+    and has_any(query, "pairing_code", "code", "c")
+    for query in runtime_pairing_queries
+)
+runtime_log_contains_temporary_route_material = any(
+    has_any(query, "relay_host", "remote_host", "route_host", "rendezvous_host", "rh")
+    and has_any(query, "relay_port", "remote_port", "route_port", "rendezvous_port", "rp")
+    and has_any(query, "relay_id", "remote_id", "route_id", "network_id", "ri")
+    and has_any(query, "relay_secret", "remote_secret", "route_secret", "rs")
+    and has_any(query, "relay_expires_at", "remote_expires_at", "route_expires_at", "rendezvous_expires_at", "rx")
+    and has_any(query, "relay_nonce", "remote_nonce", "route_nonce", "rendezvous_nonce", "rrn")
+    for query in runtime_pairing_queries
+)
 if not endpoint_reachable:
     caveats.append("device_endpoint_probe_not_reachable_or_missing")
 if not route_ready:
     caveats.append("device_route_probe_not_ready_or_missing")
+if runtime_log_contains_temporary_pairing_material or runtime_log_contains_temporary_route_material:
+    caveats.append("runtime_log_contains_temporary_pairing_or_route_material")
+if wrapper_log_contains_route_material:
+    caveats.append("wrapper_log_contains_unredacted_route_material")
+if not wrapper_log_artifact_present or wrapper_log_contains_route_material:
+    caveats.append("wrapper_log_redaction_not_verified")
+
+live_android_device_probe_verified = (
+    not self_test_redaction_only
+    and bool(observed_device_serial)
+    and bool(device_probe_json)
+    and bool(device_route_probe_json)
+    and endpoint_reachable
+    and route_ready
+)
+physical_external_relay_verified = (
+    exit_status == 0
+    and no_adb_reverse == "1"
+    and live_android_device_probe_verified
+    and pairing_count > 0
+    and health_count > 0
+)
 
 summary = {
     "generated_at": ended_at,
@@ -422,6 +637,8 @@ summary = {
     "ended_at": ended_at,
     "duration_seconds": int(duration_seconds),
     "success": exit_status == 0 and no_adb_reverse == "1",
+    "self_test_success": self_test_redaction_only and exit_status == 0,
+    "physical_external_relay_success": physical_external_relay_verified,
     "exit_status": exit_status,
     "command": redacted_command.strip(),
     "relay": {
@@ -439,6 +656,18 @@ summary = {
         "external_relay_route_probe_from_device": bool(device_route_probe_json),
         "external_relay_probe_reachable": endpoint_reachable,
         "external_relay_route_ready": route_ready,
+        "probe_summary_redaction_self_test": self_test_redaction_only,
+        "live_android_device_probe_verified": live_android_device_probe_verified,
+        "physical_external_relay_verified": physical_external_relay_verified,
+        "production_relay": False,
+        "production_session_key_exchange": False,
+        "production_end_to_end_transport_encryption": False,
+        "wrapper_log_artifact_present": wrapper_log_artifact_present,
+        "wrapper_log_omits_temporary_secret_material": wrapper_log_artifact_present and not wrapper_log_contains_route_material,
+        "wrapper_log_contains_unredacted_route_material": wrapper_log_contains_route_material,
+        "runtime_log_artifact_present": runtime_log_artifact_present,
+        "runtime_log_contains_temporary_pairing_material": runtime_log_contains_temporary_pairing_material,
+        "runtime_log_contains_temporary_route_material": runtime_log_contains_temporary_route_material,
         "adb_reverse_absence_proven": no_adb_reverse == "1",
         "pairing_accepted_count": pairing_count,
         "runtime_health_count": health_count,
@@ -474,11 +703,108 @@ with open(path, "w", encoding="utf-8") as handle:
 PY
 }
 
+if [[ "$SELF_TEST_REDACT_PROBE_SUMMARY" -eq 1 ]]; then
+  SELF_TEST_WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/aetherlink-physical-wrapper-redaction.XXXXXX")"
+  SELF_TEST_RUNTIME_LOG="$SELF_TEST_WORK_DIR/runtime.log"
+  SELF_TEST_ENDPOINT_JSON="$SELF_TEST_WORK_DIR/endpoint.json"
+  SELF_TEST_ROUTE_JSON="$SELF_TEST_WORK_DIR/route.json"
+  cat >"$SELF_TEST_RUNTIME_LOG" <<'LOG'
+[runtime] AETHERLINK_DEV_PAIRING_URI aetherlink://pair?v=1&pairing_nonce=runtime-pairing-nonce-sensitive&pairing_code=123456&runtime_device_id=runtime-device-sensitive&runtime_name=AetherLink&runtime_public_key=runtime-public-key-sensitive&runtime_key_fingerprint=runtime-fingerprint-sensitive&route_token=runtime-route-token-sensitive&relay_host=relay.example.test&relay_port=43171&relay_id=relay-id-sensitive&relay_secret=relay-secret-sensitive&relay_expires_at=4102444800&relay_nonce=relay-nonce-sensitive
+Development pairing accepted
+runtime.health
+models.list
+LOG
+  cat >"$LOG_PATH" <<'LOG'
+Running physical external relay pairing QA self-test.
+Pairing deeplink output: aetherlink://pair?<redacted>
+AETHERLINK_RELAY probe route_material=<redacted>
+Runtime log: <self-test-runtime-log>
+Summary: <self-test-summary>
+LOG
+  cat >"$SELF_TEST_ENDPOINT_JSON" <<'JSON'
+{
+  "probe": {
+    "reachable": true,
+    "output": "tcp connected"
+  },
+  "relay": {
+    "host": "relay.example.test",
+    "port": 43171
+  }
+}
+JSON
+  cat >"$SELF_TEST_ROUTE_JSON" <<'JSON'
+{
+  "probe": {
+    "reachable": true,
+    "route_ready": true,
+    "output": "AETHERLINK_RELAY probe known=1 runtime_waiting=1 relay_id=relay-id-sensitive relay_secret=relay-secret-sensitive route_token=route-token-sensitive"
+  },
+  "relay": {
+    "host": "relay.example.test",
+    "port": 43171,
+    "relay_id": "relay-id-sensitive",
+    "relay_secret": "relay-secret-sensitive",
+    "relay_nonce": "relay-nonce-sensitive",
+    "route_token": "route-token-sensitive"
+  }
+}
+JSON
+  write_json_summary \
+    0 \
+    "2026-07-03T00:00:00Z" \
+	    "2026-07-03T00:00:01Z" \
+	    1 \
+	    "$SELF_TEST_WORK_DIR" \
+	    "" \
+	    "$SELF_TEST_RUNTIME_LOG" \
+    "" \
+    "$SELF_TEST_ENDPOINT_JSON" \
+    1 \
+    "$SELF_TEST_ROUTE_JSON" \
+    "$(redacted_command)"
+  cat "$JSON_PATH"
+  rm -rf "$SELF_TEST_WORK_DIR"
+  exit 0
+fi
+
+if ! validate_relay_host_input; then
+  STARTED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+  ENDED_AT="$STARTED_AT"
+  mkdir -p "$(dirname "$LOG_PATH")"
+  printf 'Invalid relay host %s:%s: use a host or IP address, not a URL.\n' \
+    "$SUMMARY_RELAY_HOST" \
+    "$RELAY_PORT" >"$LOG_PATH"
+  write_json_summary \
+    2 \
+    "$STARTED_AT" \
+    "$ENDED_AT" \
+    0 \
+    "" \
+    "" \
+    "" \
+    "" \
+    "" \
+    0 \
+    "" \
+    "$(redacted_command)"
+  echo "Invalid relay host $SUMMARY_RELAY_HOST:$RELAY_PORT: use a host or IP address, not a URL." >&2
+  echo "Summary: $JSON_PATH" >&2
+  echo "Log: $LOG_PATH" >&2
+  exit 2
+fi
+
 STARTED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 START_SECONDS="$(date +%s)"
 echo "Running physical external relay pairing QA. Full log: $LOG_PATH"
 set +e
-"${COMMAND[@]}" >"$LOG_PATH" 2>&1
+if [[ -n "$ALLOCATION_TOKEN" ]]; then
+  AETHERLINK_BOOTSTRAP_RELAY_ALLOCATION_TOKEN="$ALLOCATION_TOKEN" \
+    AETHERLINK_RELAY_ALLOCATION_TOKEN="$ALLOCATION_TOKEN" \
+    "${COMMAND[@]}" >"$LOG_PATH" 2>&1
+else
+  "${COMMAND[@]}" >"$LOG_PATH" 2>&1
+fi
 STATUS=$?
 set -e
 ENDED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"

@@ -122,6 +122,7 @@ class RuntimePairingPayloadParserTest {
             "runtime_public_key" to "public%20key-1",
             "route_token" to "route%091",
             "relay_id" to "relay%201",
+            "relay_secret" to "secret%201",
             "relay_nonce" to "%20nonce-route-1",
             "relay_scope" to "remote%20",
         )
@@ -200,13 +201,47 @@ class RuntimePairingPayloadParserTest {
                 "&runtime_device_id=runtime-1&runtime_name=AetherLink%20Runtime" +
                 "&runtime_public_key=abc+def/ghi%3D&runtime_key_fingerprint=fp-1" +
                 "&relay_host=relay.example.test&relay_port=443&relay_id=relay-1" +
-                "&relay_secret=secret%20with%20symbols%20+%20/%20%3D" +
+                "&relay_secret=secret+with/symbols%3D" +
                 "&relay_expires_at=4102444800000&relay_nonce=nonce-route-1"
         )
 
         assertEquals("AetherLink Runtime", payload.runtimeName)
         assertEquals("abc+def/ghi=", payload.runtimePublicKeyBase64)
-        assertEquals("secret with symbols + / =", payload.relaySecret)
+        assertEquals("secret+with/symbols=", payload.relaySecret)
+    }
+
+    @Test
+    fun rejectsWhitespaceMutatedRelaySecretAliasesInQrPayload() {
+        val identity = "aetherlink://pair?version=1&pairing_nonce=nonce-1&pairing_code=123456" +
+            "&runtime_device_id=runtime-1&runtime_name=AetherLink+Runtime" +
+            "&runtime_key_fingerprint=fp-1"
+        listOf(
+            "relay_secret" to
+                "&relay_host=relay.example.test&relay_port=443&relay_id=relay-1" +
+                "&relay_secret=secret-1&relay_expires_at=4102444800000&relay_nonce=nonce-route-1",
+            "remote_secret" to
+                "&remote_host=relay.example.test&remote_port=443&remote_id=relay-1" +
+                "&remote_secret=secret-1&remote_expires_at=4102444800000&remote_nonce=nonce-route-1",
+            "route_secret" to
+                "&route_host=relay.example.test&route_port=443&route_id=relay-1" +
+                "&route_secret=secret-1&route_expires_at=4102444800000&route_nonce=nonce-route-1",
+            "rendezvous_secret" to
+                "&rendezvous_host=relay.example.test&rendezvous_port=443&rendezvous_id=relay-1" +
+                "&rendezvous_secret=secret-1&rendezvous_expires_at=4102444800000" +
+                "&rendezvous_nonce=nonce-route-1",
+            "rs" to
+                "&rh=relay.example.test&rp=443&ri=relay-1&rs=secret-1" +
+                "&rx=4102444800000&rrn=nonce-route-1",
+        ).forEach { (field, routeFields) ->
+            try {
+                RuntimePairingPayloadParser.parse(
+                    identity + routeFields.replace("$field=secret-1", "$field=secret%201")
+                )
+                fail("Expected whitespace-mutated relay secret alias $field to throw")
+            } catch (_: IllegalArgumentException) {
+                // Expected.
+            }
+        }
     }
 
     @Test
@@ -474,6 +509,26 @@ class RuntimePairingPayloadParserTest {
     }
 
     @Test
+    fun parsesRouteAliasPrivateOverlayScopeFromQrPayload() {
+        val payload = RuntimePairingPayloadParser.parse(
+            "aetherlink://pair?version=1&pairing_nonce=nonce-1&pairing_code=123456" +
+                "&runtime_device_id=runtime-1&runtime_name=AetherLink+Runtime" +
+                "&runtime_key_fingerprint=fp-1&route_host=100.64.1.10" +
+                "&route_port=443&route_id=relay-1&route_secret=secret-1" +
+                "&route_expires_at=4102444800000&route_nonce=nonce-route-1" +
+                "&route_scope=private_overlay"
+        )
+
+        assertEquals("100.64.1.10", payload.relayHost)
+        assertEquals(443, payload.relayPort)
+        assertEquals("relay-1", payload.relayId)
+        assertEquals("secret-1", payload.relaySecret)
+        assertEquals(4102444800000L, payload.relayExpiresAtEpochMillis)
+        assertEquals("nonce-route-1", payload.relayNonce)
+        assertEquals("private_overlay", payload.relayScope)
+    }
+
+    @Test
     fun parsesRendezvousRouteAliasesFromQrPayload() {
         val payload = RuntimePairingPayloadParser.parse(
             "aetherlink://pair?version=1&pairing_nonce=nonce-1&pairing_code=123456" +
@@ -634,6 +689,32 @@ class RuntimePairingPayloadParserTest {
     }
 
     @Test
+    fun rejectsMixedP2pAliasFamiliesFromQrPayload() {
+        val identity = "aetherlink://pair?version=1&pairing_nonce=nonce-1&pairing_code=123456" +
+            "&runtime_device_id=runtime-1&runtime_name=AetherLink+Runtime" +
+            "&runtime_key_fingerprint=fp-1"
+        listOf(
+            "p2p_class=p2p_rendezvous&prid=p2p-record-1&peb=opaque-candidate-1" +
+                "&px=4102444800000&pn=nonce-p2p-1&pv=1",
+            "pc=p2p_rendezvous&p2p_record_id=p2p-record-1&p2p_encrypted_body=opaque-candidate-1" +
+                "&p2p_expires_at=4102444800000&p2p_anti_replay_nonce=nonce-p2p-1" +
+                "&p2p_protocol_version=1",
+            "p2p_class=p2p_rendezvous&p2p_record_id=p2p-record-1" +
+                "&p2p_encrypted_body=opaque-candidate-1&p2p_expires_at=4102444800000" +
+                "&p2p_anti_replay_nonce=nonce-p2p-1&p2p_protocol_version=1" +
+                "&pc=p2p_rendezvous&prid=p2p-record-2&peb=opaque-candidate-2" +
+                "&px=4102444800000&pn=nonce-p2p-2&pv=1",
+        ).forEach { routeFields ->
+            try {
+                RuntimePairingPayloadParser.parse("$identity&$routeFields")
+                fail("Expected mixed P2P alias families to throw")
+            } catch (_: IllegalArgumentException) {
+                // Expected.
+            }
+        }
+    }
+
+    @Test
     fun rejectsOversizedOpaqueRouteQrValues() {
         val oversizedValue = "r".repeat(OPAQUE_ROUTE_VALUE_MAX_CHARS + 1)
         val oversizedBody = "b".repeat(OPAQUE_ROUTE_BODY_MAX_CHARS + 1)
@@ -691,6 +772,35 @@ class RuntimePairingPayloadParserTest {
     }
 
     @Test
+    fun rejectsMixedRelayAliasFamiliesFromQrPayload() {
+        val identity = "aetherlink://pair?version=1&pairing_nonce=nonce-1&pairing_code=123456" +
+            "&runtime_device_id=runtime-1&runtime_name=AetherLink+Runtime" +
+            "&runtime_key_fingerprint=fp-1"
+        listOf(
+            "remote_host=relay.example.test&remote_port=443&route_id=relay-1" +
+                "&route_secret=secret-1&remote_expires_at=4102444800000" +
+                "&remote_nonce=nonce-route-1",
+            "relay_host=relay.example.test&rp=443&ri=relay-1&rs=secret-1" +
+                "&rx=4102444800000&rrn=nonce-route-1",
+            "rh=relay.example.test&rp=443&rendezvous_id=relay-1" +
+                "&rendezvous_secret=secret-1&rendezvous_expires_at=4102444800000" +
+                "&rendezvous_nonce=nonce-route-1",
+            "remote_host=relay.example.test&remote_port=443&remote_id=relay-1" +
+                "&remote_secret=secret-1&remote_expires_at=4102444800000" +
+                "&remote_nonce=nonce-route-1&route_host=relay.example.test" +
+                "&route_port=443&route_id=relay-2&route_secret=secret-2" +
+                "&route_expires_at=4102444800000&route_nonce=nonce-route-2",
+        ).forEach { routeFields ->
+            try {
+                RuntimePairingPayloadParser.parse("$identity&$routeFields")
+                fail("Expected mixed relay alias families to throw")
+            } catch (error: IllegalArgumentException) {
+                assertEquals("Mixed relay alias families", error.message)
+            }
+        }
+    }
+
+    @Test
     fun rejectsRelayHostsThatCannotWorkAcrossNetworks() {
         listOf(
             "127.0.0.1",
@@ -717,6 +827,33 @@ class RuntimePairingPayloadParserTest {
                 fail("Expected relay host $relayHost to throw")
             } catch (_: IllegalArgumentException) {
                 // Expected.
+            }
+        }
+    }
+
+    @Test
+    fun rejectsNonCanonicalRelayHostsBeforeRouteMaterialAcceptance() {
+        listOf(
+            "%20relay.example.test",
+            "relay.example.test%20",
+            "relay%20example.test",
+            "https%3A%2F%2Frelay.example.test",
+            "relay.example.test%2Fpath",
+            "relay.example.test%3Froute%3D1",
+            "relay.example.test%23fragment",
+            "user%40relay.example.test",
+        ).forEach { relayHost ->
+            try {
+                RuntimePairingPayloadParser.parse(
+                    "aetherlink://pair?version=1&pairing_nonce=nonce-1&pairing_code=123456" +
+                        "&runtime_device_id=runtime-1&runtime_name=AetherLink+Runtime" +
+                        "&runtime_key_fingerprint=fp-1&relay_host=$relayHost" +
+                        "&relay_port=443&relay_id=relay-1&relay_secret=secret-1" +
+                        "&relay_expires_at=4102444800000&relay_nonce=nonce-route-1"
+                )
+                fail("Expected non-canonical relay host $relayHost to throw")
+            } catch (error: IllegalArgumentException) {
+                assertEquals("Invalid relay host", error.message)
             }
         }
     }
@@ -961,6 +1098,36 @@ class RuntimePairingPayloadParserTest {
     }
 
     @Test
+    fun rejectsRelayScopeWithoutRelayRouteMaterial() {
+        try {
+            RuntimePairingPayloadParser.parse(
+                "aetherlink://pair?version=1&pairing_nonce=nonce-1&pairing_code=123456" +
+                    "&runtime_device_id=runtime-1&runtime_name=AetherLink+Runtime" +
+                    "&runtime_key_fingerprint=fp-1&runtime_public_key=public-key-1&route_token=route-1" +
+                    "&p2p_class=p2p_rendezvous&p2p_record_id=p2p-record-1" +
+                    "&p2p_encrypted_body=opaque-candidate-1&p2p_expires_at=4102444800000" +
+                    "&p2p_anti_replay_nonce=nonce-p2p-1&p2p_protocol_version=1" +
+                    "&relay_scope=remote"
+            )
+            fail("Expected stray relay scope on P2P QR to throw")
+        } catch (error: IllegalArgumentException) {
+            assertEquals("Relay scope requires relay route material", error.message)
+        }
+
+        val diagnostic = RuntimePairingPayloadParser.parse(
+            "aetherlink://pair?version=1&pairing_nonce=nonce-1&pairing_code=123456" +
+                "&runtime_device_id=runtime-1&runtime_name=AetherLink+Runtime" +
+                "&runtime_key_fingerprint=fp-1&host=192.168.1.10&port=43170" +
+                "&route_scope=local_diagnostic",
+            allowDiagnosticLocalDirectEndpoint = true,
+        )
+
+        assertEquals("192.168.1.10", diagnostic.host)
+        assertEquals(43170, diagnostic.port)
+        assertEquals("local_diagnostic", diagnostic.relayScope)
+    }
+
+    @Test
     fun rejectsUnsupportedQrPayload() {
         try {
             RuntimePairingPayloadParser.parse("https://example.com/pair?code=123456")
@@ -986,6 +1153,7 @@ class RuntimePairingPayloadParserTest {
             "runtime_public_key" -> "public-key-1"
             "route_token" -> "route-1"
             "relay_id" -> "relay-1"
+            "relay_secret" -> "secret-1"
             "relay_nonce" -> "nonce-route-1"
             "relay_scope" -> "remote"
             "p2p_class" -> "p2p_rendezvous"

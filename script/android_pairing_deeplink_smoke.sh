@@ -19,12 +19,17 @@ EXPECT_RECONNECT=0
 EXPECT_CHAT_CANCEL=0
 LIVE_BACKEND=0
 PROBE_EXTERNAL_RELAY_FROM_DEVICE=0
+CAPTURE_UI_POLISH=0
 CHAT_TEXT="${AETHERLINK_ANDROID_CHAT_SMOKE_TEXT:-AetherLink_physical_cancel_smoke}"
 CHAT_DELTA_TIMEOUT="${AETHERLINK_ANDROID_CHAT_DELTA_TIMEOUT_SECONDS:-15}"
+SELF_TEST_SANITIZE_AM_START_LOG=0
+AM_START_SANITIZER_SELF_TEST_MARKER="am_start_sanitizer_self_test_not_android_intent_or_phone_pairing_proof"
+SELF_TEST_SANITIZE_ANDROID_QA_ARTIFACTS=0
+ANDROID_QA_ARTIFACT_SANITIZER_SELF_TEST_MARKER="android_qa_artifact_sanitizer_self_test_not_phone_logcat_or_activity_proof"
 
 usage() {
   cat <<'USAGE'
-Usage: script/android_pairing_deeplink_smoke.sh [--relay|--direct] [--serial <adb-serial>] [--skip-install] [--keep-app-data] [--expect-reconnect] [--expect-chat-cancel] [--live-backend] [--chat-text <text>] [--chat-delta-timeout <seconds>]
+Usage: script/android_pairing_deeplink_smoke.sh [--relay|--direct] [--serial <adb-serial>] [--skip-install] [--keep-app-data] [--expect-reconnect] [--expect-chat-cancel] [--capture-ui-polish] [--live-backend] [--chat-text <text>] [--chat-delta-timeout <seconds>]
        script/android_pairing_deeplink_smoke.sh --relay --external-relay-host <host> [--external-relay-port <port>] [--allocation-token <token>] [--allow-private-relay] [--allow-direct-fallback] [--probe-external-relay-from-device]
 
 Runs a physical-device smoke for the QR result path by injecting an
@@ -47,6 +52,10 @@ tap the chat input, type a short smoke message, tap Send, wait for streamed
 chat.delta, tap Cancel generation, and verify chat.cancel reaches the runtime.
 This validates physical UI wiring through the runtime. It still injects the
 pairing URI rather than optically scanning a camera QR.
+
+Use --capture-ui-polish to save PNG and uiautomator XML artifacts for the
+physical chat screen, navigation drawer, model selector, Settings screen, and
+best-effort launcher icon placement after the pairing smoke succeeds.
 
 Use --live-backend to start RuntimeDevServer against real Ollama + LM Studio
 providers instead of the fast dev mock backend. Android still talks only to
@@ -132,6 +141,134 @@ if (
 PY
 }
 
+sanitize_android_qa_text_for_route_material() {
+  python3 -c "$(cat <<'PY'
+import re
+import sys
+
+text = sys.stdin.read()
+
+text = re.sub(
+    r"aetherlink://pair\?[^ \t\r\n'\"<>})]+",
+    "aetherlink://pair?<redacted>",
+    text,
+    flags=re.IGNORECASE,
+)
+text = re.sub(
+    r"aetherlink%3A%2F%2Fpair%3F[^ \t\r\n'\"<>})]+",
+    "aetherlink%3A%2F%2Fpair%3F<redacted>",
+    text,
+    flags=re.IGNORECASE,
+)
+
+sensitive_keys = (
+    "AETHERLINK_BOOTSTRAP_RELAY_ALLOCATION_TOKEN",
+    "AETHERLINK_RELAY_ALLOCATION_TOKEN",
+    "allocation_token",
+    "auth",
+    "discovery_token",
+    "fingerprint",
+    "pairing_code",
+    "pairing_nonce",
+    "public_key",
+    "remote_expires_at",
+    "remote_host",
+    "remote_id",
+    "remote_nonce",
+    "remote_port",
+    "remote_secret",
+    "remote_scope",
+    "rendezvous_expires_at",
+    "rendezvous_host",
+    "rendezvous_id",
+    "rendezvous_nonce",
+    "rendezvous_port",
+    "rendezvous_secret",
+    "rendezvous_scope",
+    "relay_expires_at",
+    "relay_host",
+    "relay_id",
+    "relay_nonce",
+    "relay_port",
+    "relay_scope",
+    "relay_secret",
+    "requested_route_token",
+    "route_expires_at",
+    "route_host",
+    "route_id",
+    "route_nonce",
+    "route_port",
+    "route_scope",
+    "route_secret",
+    "route_token",
+    "runtime_device_id",
+    "runtime_key_fingerprint",
+    "runtime_public_key",
+    "network_id",
+    "p2p_record_id",
+    "p2p_encrypted_body",
+    "p2p_expires_at",
+    "p2p_nonce",
+)
+compact_keys = (
+    "c",
+    "n",
+    "pc",
+    "peb",
+    "pn",
+    "prid",
+    "pv",
+    "px",
+    "rf",
+    "rh",
+    "ri",
+    "rid",
+    "rk",
+    "rp",
+    "rrn",
+    "rsc",
+    "rs",
+    "rt",
+    "rx",
+)
+key_pattern = "|".join(re.escape(key) for key in sorted(sensitive_keys + compact_keys, key=len, reverse=True))
+
+text = re.sub(
+    rf"(?i)(?<![A-Za-z0-9_])({key_pattern})=([^ \t\r\n&;,'\"<>}})]+)",
+    lambda match: f"{match.group(1)}=<redacted>",
+    text,
+)
+text = re.sub(
+    rf"(?i)(['\"]?)({key_pattern})\1\s*:\s*(['\"])[^'\"]*\3",
+    lambda match: f"{match.group(1)}{match.group(2)}{match.group(1)}: {match.group(3)}<redacted>{match.group(3)}",
+    text,
+)
+text = re.sub(
+    r"(?i)\b[A-Za-z0-9_.:-]*(?:sensitive|leaked)[A-Za-z0-9_.:-]*\b",
+    "<redacted>",
+    text,
+)
+
+print(text, end="")
+PY
+)"
+}
+
+sanitize_am_start_log_for_qa() {
+  sanitize_android_qa_text_for_route_material
+}
+
+sanitize_android_qa_file_for_route_material() {
+  local path="$1"
+  local sanitized_path
+  if [[ ! -f "$path" ]]; then
+    return 0
+  fi
+  sanitized_path="$path.sanitized"
+  sanitize_android_qa_text_for_route_material <"$path" >"$sanitized_path"
+  mv "$sanitized_path" "$path"
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --relay)
@@ -198,6 +335,10 @@ while [[ $# -gt 0 ]]; do
       EXPECT_CHAT_CANCEL=1
       shift
       ;;
+    --capture-ui-polish)
+      CAPTURE_UI_POLISH=1
+      shift
+      ;;
     --live-backend)
       LIVE_BACKEND=1
       shift
@@ -222,6 +363,14 @@ while [[ $# -gt 0 ]]; do
       CHAT_DELTA_TIMEOUT="$2"
       shift 2
       ;;
+    --self-test-sanitize-am-start-log)
+      SELF_TEST_SANITIZE_AM_START_LOG=1
+      shift
+      ;;
+    --self-test-sanitize-android-qa-artifacts)
+      SELF_TEST_SANITIZE_ANDROID_QA_ARTIFACTS=1
+      shift
+      ;;
     -h|--help)
       usage
       exit 0
@@ -233,6 +382,18 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+if [[ "$SELF_TEST_SANITIZE_AM_START_LOG" -eq 1 ]]; then
+  printf '%s\n' "$AM_START_SANITIZER_SELF_TEST_MARKER"
+  sanitize_am_start_log_for_qa
+  exit 0
+fi
+
+if [[ "$SELF_TEST_SANITIZE_ANDROID_QA_ARTIFACTS" -eq 1 ]]; then
+  printf '%s\n' "$ANDROID_QA_ARTIFACT_SANITIZER_SELF_TEST_MARKER"
+  sanitize_android_qa_text_for_route_material
+  exit 0
+fi
 
 if [[ ! -x "$ADB" ]]; then
   echo "adb not found at $ADB" >&2
@@ -364,9 +525,12 @@ check_relay_allocation() {
     --quiet
   )
   if [[ -n "$token" ]]; then
-    args+=(--allocation-token "$token")
+    AETHERLINK_BOOTSTRAP_RELAY_ALLOCATION_TOKEN="$token" \
+      AETHERLINK_RELAY_ALLOCATION_TOKEN="$token" \
+      "${args[@]}"
+  else
+    "${args[@]}"
   fi
-  "${args[@]}"
 }
 
 diagnose_pairing_failure() {
@@ -402,6 +566,8 @@ dump_android_artifacts() {
   "$ADB" -s "$SERIAL" exec-out screencap -p >"$screenshot" 2>/dev/null || true
   "$ADB" -s "$SERIAL" shell dumpsys activity activities >"$activity_dump" 2>/dev/null || true
   "$ADB" -s "$SERIAL" logcat -d -t 500 >"$logcat_dump" 2>/dev/null || true
+  sanitize_android_qa_file_for_route_material "$activity_dump"
+  sanitize_android_qa_file_for_route_material "$logcat_dump"
 
   echo "Android screenshot: $screenshot" >&2
   echo "Android activity dump: $activity_dump" >&2
@@ -497,6 +663,237 @@ raise SystemExit(1)
 PY
 }
 
+node_center_by_localized_content_description() {
+  local xml_path="$1"
+  local string_name="$2"
+  local strategy="${3:-first}"
+  python3 - "$ROOT_DIR" "$xml_path" "$string_name" "$strategy" <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+from pathlib import Path
+
+root_dir = Path(sys.argv[1])
+xml_path, string_name, strategy = sys.argv[2], sys.argv[3], sys.argv[4]
+expected_values = set()
+resources_dir = root_dir / "apps" / "android" / "app" / "src" / "main" / "res"
+for strings_path in sorted(resources_dir.glob("values*/strings.xml")):
+    try:
+        strings_root = ET.parse(strings_path).getroot()
+    except Exception:
+        continue
+    for item in strings_root.findall("string"):
+        if item.attrib.get("name") != string_name:
+            continue
+        value = "".join(item.itertext()).strip()
+        if value:
+            expected_values.add(value)
+
+if not expected_values:
+    raise SystemExit(1)
+
+try:
+    root = ET.parse(xml_path).getroot()
+except Exception:
+    raise SystemExit(1)
+
+bounds_pattern = re.compile(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]")
+candidates = []
+for node in root.iter("node"):
+    if node.attrib.get("content-desc") not in expected_values:
+        continue
+    if strategy == "bottom-enabled" and node.attrib.get("enabled") == "false":
+        continue
+    bounds = node.attrib.get("bounds", "")
+    match = bounds_pattern.fullmatch(bounds)
+    if not match:
+        continue
+    left, top, right, bottom = map(int, match.groups())
+    if right <= left or bottom <= top:
+        continue
+    if strategy == "bottom-enabled":
+        candidates.append((bottom, top, right, left, node.attrib.get("content-desc", "")))
+        continue
+    print(f"{(left + right) // 2} {(top + bottom) // 2} {node.attrib.get('content-desc', '')}")
+    raise SystemExit(0)
+if candidates:
+    bottom, top, right, left, matched = max(candidates)
+    print(f"{(left + right) // 2} {(top + bottom) // 2} {matched}")
+    raise SystemExit(0)
+raise SystemExit(1)
+PY
+}
+
+node_center_by_localized_text_or_content() {
+  local xml_path="$1"
+  local string_name="$2"
+  local strategy="${3:-first}"
+  python3 - "$ROOT_DIR" "$xml_path" "$string_name" "$strategy" <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+from pathlib import Path
+
+root_dir = Path(sys.argv[1])
+xml_path, string_name, strategy = sys.argv[2], sys.argv[3], sys.argv[4]
+expected_values = set()
+resources_dir = root_dir / "apps" / "android" / "app" / "src" / "main" / "res"
+for strings_path in sorted(resources_dir.glob("values*/strings.xml")):
+    try:
+        strings_root = ET.parse(strings_path).getroot()
+    except Exception:
+        continue
+    for item in strings_root.findall("string"):
+        if item.attrib.get("name") != string_name:
+            continue
+        value = "".join(item.itertext()).strip()
+        if value:
+            expected_values.add(value)
+
+if not expected_values:
+    raise SystemExit(1)
+
+try:
+    root = ET.parse(xml_path).getroot()
+except Exception:
+    raise SystemExit(1)
+
+bounds_pattern = re.compile(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]")
+candidates = []
+for node in root.iter("node"):
+    matched = ""
+    for attribute in ("text", "content-desc"):
+        value = node.attrib.get(attribute, "")
+        if value in expected_values:
+            matched = value
+            break
+    if not matched:
+        continue
+    if strategy == "bottom-enabled" and node.attrib.get("enabled") == "false":
+        continue
+    bounds = node.attrib.get("bounds", "")
+    match = bounds_pattern.fullmatch(bounds)
+    if not match:
+        continue
+    left, top, right, bottom = map(int, match.groups())
+    if right <= left or bottom <= top:
+        continue
+    if strategy == "bottom-enabled":
+        candidates.append((bottom, top, right, left, matched))
+        continue
+    print(f"{(left + right) // 2} {(top + bottom) // 2} {matched}")
+    raise SystemExit(0)
+if candidates:
+    bottom, top, right, left, matched = max(candidates)
+    print(f"{(left + right) // 2} {(top + bottom) // 2} {matched}")
+    raise SystemExit(0)
+raise SystemExit(1)
+PY
+}
+
+node_center_by_localized_content_description_prefix() {
+  local xml_path="$1"
+  local string_name="$2"
+  local strategy="${3:-first}"
+  python3 - "$ROOT_DIR" "$xml_path" "$string_name" "$strategy" <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+from pathlib import Path
+
+root_dir = Path(sys.argv[1])
+xml_path, string_name, strategy = sys.argv[2], sys.argv[3], sys.argv[4]
+prefixes = set()
+resources_dir = root_dir / "apps" / "android" / "app" / "src" / "main" / "res"
+for strings_path in sorted(resources_dir.glob("values*/strings.xml")):
+    try:
+        strings_root = ET.parse(strings_path).getroot()
+    except Exception:
+        continue
+    for item in strings_root.findall("string"):
+        if item.attrib.get("name") != string_name:
+            continue
+        value = "".join(item.itertext()).strip()
+        if not value:
+            continue
+        prefix = value.split("%", 1)[0].strip()
+        if prefix:
+            prefixes.add(prefix)
+        prefixes.add(value)
+
+if not prefixes:
+    raise SystemExit(1)
+
+try:
+    root = ET.parse(xml_path).getroot()
+except Exception:
+    raise SystemExit(1)
+
+bounds_pattern = re.compile(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]")
+candidates = []
+for node in root.iter("node"):
+    content_description = node.attrib.get("content-desc", "")
+    matched = next((prefix for prefix in prefixes if prefix and prefix in content_description), "")
+    if not matched:
+        continue
+    if strategy == "bottom-enabled" and node.attrib.get("enabled") == "false":
+        continue
+    bounds = node.attrib.get("bounds", "")
+    match = bounds_pattern.fullmatch(bounds)
+    if not match:
+        continue
+    left, top, right, bottom = map(int, match.groups())
+    if right <= left or bottom <= top:
+        continue
+    if strategy == "bottom-enabled":
+        candidates.append((bottom, top, right, left, matched))
+        continue
+    print(f"{(left + right) // 2} {(top + bottom) // 2} {matched}")
+    raise SystemExit(0)
+if candidates:
+    bottom, top, right, left, matched = max(candidates)
+    print(f"{(left + right) // 2} {(top + bottom) // 2} {matched}")
+    raise SystemExit(0)
+raise SystemExit(1)
+PY
+}
+
+node_center_by_enabled_edit_text() {
+  local xml_path="$1"
+  python3 - "$xml_path" <<'PY'
+import re
+import sys
+import xml.etree.ElementTree as ET
+
+xml_path = sys.argv[1]
+try:
+    root = ET.parse(xml_path).getroot()
+except Exception:
+    raise SystemExit(1)
+
+bounds_pattern = re.compile(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]")
+candidates = []
+for node in root.iter("node"):
+    if node.attrib.get("class") != "android.widget.EditText":
+        continue
+    if node.attrib.get("enabled") == "false":
+        continue
+    bounds = node.attrib.get("bounds", "")
+    match = bounds_pattern.fullmatch(bounds)
+    if not match:
+        continue
+    left, top, right, bottom = map(int, match.groups())
+    if right <= left or bottom <= top:
+        continue
+    candidates.append((bottom, top, right, left))
+if candidates:
+    bottom, top, right, left = max(candidates)
+    print(f"{(left + right) // 2} {(top + bottom) // 2}")
+    raise SystemExit(0)
+raise SystemExit(1)
+PY
+}
+
 ui_xml_contains_text() {
   local xml_path="$1"
   local expected_text="$2"
@@ -560,6 +957,132 @@ tap_content_description() {
   done
 }
 
+tap_localized_content_description() {
+  local string_name="$1"
+  local label="$2"
+  local timeout="${3:-10}"
+  local strategy="${4:-first}"
+  local start
+  local xml_path
+  local result
+  local coordinates
+  local matched_label
+  start="$(date +%s)"
+
+  while true; do
+    xml_path="$(dump_ui_xml "ui-$(date +%s)-$RANDOM")"
+    if result="$(node_center_by_localized_content_description "$xml_path" "$string_name" "$strategy" 2>/dev/null)"; then
+      coordinates="$(printf '%s\n' "$result" | awk '{ print $1 " " $2 }')"
+      matched_label="$(printf '%s\n' "$result" | cut -d' ' -f3-)"
+      echo "Tapping localized '$label' ('$matched_label') at $coordinates"
+      "$ADB" -s "$SERIAL" shell "input tap $coordinates"
+      return 0
+    fi
+    if (( $(date +%s) - start >= timeout )); then
+      echo "Timed out waiting for Android UI node with localized content description '$label' from string '$string_name'" >&2
+      echo "Last UI XML: $xml_path" >&2
+      return 1
+    fi
+    sleep 0.25
+  done
+}
+
+tap_localized_text_or_content() {
+  local string_name="$1"
+  local label="$2"
+  local timeout="${3:-10}"
+  local strategy="${4:-first}"
+  local start
+  local xml_path
+  local result
+  local coordinates
+  local matched_label
+  start="$(date +%s)"
+
+  while true; do
+    xml_path="$(dump_ui_xml "ui-$(date +%s)-$RANDOM")"
+    if result="$(node_center_by_localized_text_or_content "$xml_path" "$string_name" "$strategy" 2>/dev/null)"; then
+      coordinates="$(printf '%s\n' "$result" | awk '{ print $1 " " $2 }')"
+      matched_label="$(printf '%s\n' "$result" | cut -d' ' -f3-)"
+      echo "Tapping localized '$label' text/content ('$matched_label') at $coordinates"
+      "$ADB" -s "$SERIAL" shell "input tap $coordinates"
+      return 0
+    fi
+    if (( $(date +%s) - start >= timeout )); then
+      echo "Timed out waiting for Android UI node with localized text/content '$label' from string '$string_name'" >&2
+      echo "Last UI XML: $xml_path" >&2
+      return 1
+    fi
+    sleep 0.25
+  done
+}
+
+tap_localized_model_picker() {
+  local timeout="${1:-10}"
+  local start
+  local xml_path
+  local result
+  local coordinates
+  local matched_label
+  start="$(date +%s)"
+
+  while true; do
+    xml_path="$(dump_ui_xml "ui-$(date +%s)-$RANDOM")"
+    if result="$(node_center_by_localized_content_description_prefix "$xml_path" "chat_model_picker_summary_selected" 2>/dev/null)"; then
+      coordinates="$(printf '%s\n' "$result" | awk '{ print $1 " " $2 }')"
+      matched_label="$(printf '%s\n' "$result" | cut -d' ' -f3-)"
+      echo "Tapping localized model picker ('$matched_label') at $coordinates"
+      "$ADB" -s "$SERIAL" shell "input tap $coordinates"
+      return 0
+    fi
+    if result="$(node_center_by_localized_content_description "$xml_path" "chat_model_picker_summary" 2>/dev/null)"; then
+      coordinates="$(printf '%s\n' "$result" | awk '{ print $1 " " $2 }')"
+      matched_label="$(printf '%s\n' "$result" | cut -d' ' -f3-)"
+      echo "Tapping localized model picker ('$matched_label') at $coordinates"
+      "$ADB" -s "$SERIAL" shell "input tap $coordinates"
+      return 0
+    fi
+    if (( $(date +%s) - start >= timeout )); then
+      echo "Timed out waiting for localized Android model picker" >&2
+      echo "Last UI XML: $xml_path" >&2
+      return 1
+    fi
+    sleep 0.25
+  done
+}
+
+tap_chat_input() {
+  local timeout="${1:-15}"
+  local start
+  local xml_path
+  local result
+  local coordinates
+  local matched_label
+  start="$(date +%s)"
+
+  while true; do
+    xml_path="$(dump_ui_xml "ui-$(date +%s)-$RANDOM")"
+    if result="$(node_center_by_localized_content_description "$xml_path" "message" "bottom-enabled" 2>/dev/null)"; then
+      coordinates="$(printf '%s\n' "$result" | awk '{ print $1 " " $2 }')"
+      matched_label="$(printf '%s\n' "$result" | cut -d' ' -f3-)"
+      echo "Tapping localized chat input ('$matched_label') at $coordinates"
+      "$ADB" -s "$SERIAL" shell "input tap $coordinates"
+      return 0
+    fi
+    if coordinates="$(node_center_by_enabled_edit_text "$xml_path" 2>/dev/null)"; then
+      echo "Tapping enabled EditText chat input at $coordinates"
+      "$ADB" -s "$SERIAL" shell "input tap $coordinates"
+      return 0
+    fi
+    if (( $(date +%s) - start >= timeout )); then
+      echo "Timed out waiting for localized Android chat input or enabled EditText" >&2
+      echo "Last UI XML: $xml_path" >&2
+      return 1
+    fi
+    sleep 0.25
+  done
+}
+
 wait_for_log_match_count_quiet() {
   local file="$1"
   local pattern="$2"
@@ -601,6 +1124,13 @@ PY
   "$ADB" -s "$SERIAL" shell "input text '$escaped'"
 }
 
+bring_android_app_to_foreground() {
+  "$ADB" -s "$SERIAL" shell \
+    "monkey -p $PACKAGE_NAME -c android.intent.category.LAUNCHER 1" \
+    >/dev/null 2>&1 || true
+  sleep 1
+}
+
 tap_send_message_until_observed() {
   local expected_count
   local attempt
@@ -609,9 +1139,9 @@ tap_send_message_until_observed() {
   expected_count=$(( $(count_log_matches "$RUNTIME_LOG" "chat.send") + 1 ))
 
   for attempt in 1 2 3; do
-    if ! tap_content_description "Send message" 5 "bottom-enabled"; then
+    if ! tap_localized_content_description "content_desc_send" "send message" 5 "bottom-enabled"; then
       if android_input_shown; then
-        echo "Send message is not visible while the input method is shown; closing input method before retry"
+        echo "Localized send message control is not visible while the input method is shown; closing input method before retry"
         "$ADB" -s "$SERIAL" shell "input keyevent KEYCODE_BACK" >/dev/null 2>&1 || true
         sleep 0.5
         continue
@@ -637,8 +1167,9 @@ run_chat_cancel_smoke() {
     dump_android_artifacts "chat-models-list-missing"
     exit 13
   fi
+  bring_android_app_to_foreground
 
-  if ! tap_content_description "Message" 15; then
+  if ! tap_chat_input 15; then
     dump_android_artifacts "chat-input-missing"
     exit 14
   fi
@@ -656,7 +1187,7 @@ run_chat_cancel_smoke() {
     dump_android_artifacts "chat-delta-not-observed"
     exit 17
   fi
-  if ! tap_content_description "Cancel generation" 5; then
+  if ! tap_localized_content_description "content_desc_cancel_generation" "cancel generation" 5; then
     dump_android_artifacts "chat-cancel-button-missing"
     exit 18
   fi
@@ -672,6 +1203,72 @@ run_chat_cancel_smoke() {
   CHAT_SCREENSHOT="$WORK_DIR/aetherlink-chat-cancel-smoke.png"
   "$ADB" -s "$SERIAL" exec-out screencap -p >"$CHAT_SCREENSHOT" || true
   echo "Chat/cancel screenshot: $CHAT_SCREENSHOT"
+}
+
+capture_ui_artifact() {
+  local prefix="$1"
+  local label="$2"
+  local screenshot="$WORK_DIR/${prefix}.png"
+  local xml_path
+
+  xml_path="$(dump_ui_xml "$prefix")"
+  "$ADB" -s "$SERIAL" exec-out screencap -p >"$screenshot" || true
+  UI_CAPTURE_LAST_XML="$xml_path"
+  echo "Captured $label screenshot: $screenshot"
+  echo "Captured $label UI XML: $xml_path"
+}
+
+run_ui_polish_capture() {
+  echo "Capturing physical Android UI polish screenshots"
+
+  if ! wait_for_log "$RUNTIME_LOG" "models.list" 30; then
+    dump_android_artifacts "ui-polish-models-list-missing"
+    exit 24
+  fi
+
+  "$ADB" -s "$SERIAL" shell "input keyevent KEYCODE_BACK" >/dev/null 2>&1 || true
+  sleep 0.5
+  bring_android_app_to_foreground
+
+  capture_ui_artifact "aetherlink-ui-chat" "chat screen"
+
+  if ! tap_localized_model_picker 10; then
+    dump_android_artifacts "ui-polish-model-picker-missing"
+    exit 25
+  fi
+  sleep 0.75
+  capture_ui_artifact "aetherlink-ui-model-selector" "model selector"
+
+  "$ADB" -s "$SERIAL" shell "input keyevent KEYCODE_BACK" >/dev/null 2>&1 || true
+  sleep 0.5
+  if ! tap_localized_content_description "content_desc_open_navigation" "open navigation" 10; then
+    bring_android_app_to_foreground
+    if ! tap_localized_content_description "content_desc_open_navigation" "open navigation" 10; then
+      dump_android_artifacts "ui-polish-drawer-button-missing"
+      exit 26
+    fi
+  fi
+  sleep 0.75
+  capture_ui_artifact "aetherlink-ui-drawer" "navigation drawer"
+
+  if ! tap_localized_text_or_content "tab_settings" "settings" 10; then
+    dump_android_artifacts "ui-polish-settings-tab-missing"
+    exit 27
+  fi
+  sleep 1
+  capture_ui_artifact "aetherlink-ui-settings" "settings screen"
+
+  "$ADB" -s "$SERIAL" shell "input keyevent HOME" >/dev/null 2>&1 || true
+  sleep 1
+  capture_ui_artifact "aetherlink-ui-launcher" "launcher"
+  if ui_xml_contains_text "$UI_CAPTURE_LAST_XML" "AetherLink"; then
+    echo "Launcher icon check: AetherLink label visible."
+  else
+    echo "Launcher icon check: AetherLink label not visible on the current launcher page; captured launcher XML for review." >&2
+  fi
+
+  bring_android_app_to_foreground
+  echo "UI polish capture: chat, drawer, model selector, settings, and launcher screenshots/XML saved in $WORK_DIR."
 }
 
 relaunch_android_app_without_clearing_data() {
@@ -779,7 +1376,7 @@ if [[ "$MODE" == "relay" && -z "$EXTERNAL_RELAY_HOST" ]]; then
   echo "Starting local allocation-required diagnostic relay on loopback port $RELAY_PORT"
   RELAY_ARGS=("$RELAY_BIN" --host 127.0.0.1 --port "$RELAY_PORT" --require-allocation)
   if [[ -n "$ALLOCATION_TOKEN" ]]; then
-    RELAY_ARGS+=(--allocation-token "$ALLOCATION_TOKEN")
+    export AETHERLINK_RELAY_ALLOCATION_TOKEN="$ALLOCATION_TOKEN"
   fi
   "${RELAY_ARGS[@]}" >"$RELAY_LOG" 2>&1 &
   RELAY_PID="$!"
@@ -1024,13 +1621,18 @@ REMOTE_URI="$(escape_remote_single_quoted "$PAIRING_URI")"
 echo "Injecting pairing URI through Android VIEW intent"
 "$ADB" -s "$SERIAL" logcat -c >/dev/null || true
 AM_START_LOG="$WORK_DIR/am-start.txt"
+RAW_AM_START_LOG="$WORK_DIR/am-start.raw.txt"
 if ! "$ADB" -s "$SERIAL" shell \
   "am start -W -a android.intent.action.VIEW -c android.intent.category.BROWSABLE -d $REMOTE_URI -p $PACKAGE_NAME" \
-  >"$AM_START_LOG" 2>&1; then
+  >"$RAW_AM_START_LOG" 2>&1; then
+  sanitize_am_start_log_for_qa <"$RAW_AM_START_LOG" >"$AM_START_LOG"
+  rm -f "$RAW_AM_START_LOG"
   cat "$AM_START_LOG" >&2
   dump_android_artifacts "pairing-am-start-failed"
   exit 6
 fi
+sanitize_am_start_log_for_qa <"$RAW_AM_START_LOG" >"$AM_START_LOG"
+rm -f "$RAW_AM_START_LOG"
 cat "$AM_START_LOG"
 
 if ! wait_for_log "$RUNTIME_LOG" "Development pairing accepted" 30; then
@@ -1068,6 +1670,10 @@ if [[ "$EXPECT_RECONNECT" -eq 1 ]]; then
   fi
 fi
 
+if [[ "$CAPTURE_UI_POLISH" -eq 1 ]]; then
+  run_ui_polish_capture
+fi
+
 SCREENSHOT="$WORK_DIR/aetherlink-pairing-smoke.png"
 "$ADB" -s "$SERIAL" exec-out screencap -p >"$SCREENSHOT" || true
 
@@ -1077,6 +1683,9 @@ if [[ "$EXPECT_RECONNECT" -eq 1 ]]; then
 fi
 if [[ "$EXPECT_CHAT_CANCEL" -eq 1 ]]; then
   echo "Chat/cancel check: observed chat.send, chat.delta, chat.cancel, and chat.done through the physical Android UI."
+fi
+if [[ "$CAPTURE_UI_POLISH" -eq 1 ]]; then
+  echo "UI polish capture: saved chat, drawer, model selector, settings, and launcher PNG/XML artifacts."
 fi
 echo "Runtime log: $RUNTIME_LOG"
 if [[ "$MODE" == "relay" ]]; then

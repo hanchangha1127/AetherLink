@@ -781,6 +781,9 @@ private fun LocalAgentBridgeApp(
                                     onApproveMemorySummaryDraft = viewModel::approveMemorySummaryDraft,
                                     onDismissMemorySummaryDraft = viewModel::dismissMemorySummaryDraft,
                                     onRefreshMemory = viewModel::refreshRuntimeMemory,
+                                    onSearchMemory = { query ->
+                                        viewModel.refreshRuntimeMemory(query)
+                                    },
                                     onRefreshChatHistory = { query ->
                                         viewModel.refreshRuntimeChatHistory(query)
                                     },

@@ -65,7 +65,8 @@ public final class SQLiteRuntimeChatEventStore: RuntimeChatEventStore, @unchecke
         ownerDeviceID: String?,
         limit: Int,
         includeArchived: Bool,
-        query: String?
+        query: String?,
+        embeddingModelID: String?
     ) throws -> [RuntimeChatStoredSession] {
         guard let searchQuery = RuntimeChatSessionSearchQuery(query) else {
             return try listSessions(ownerDeviceID: ownerDeviceID, limit: limit, includeArchived: includeArchived)

@@ -7,6 +7,7 @@ public struct RuntimeMemoryEntry: Equatable, Sendable {
     public var createdAt: Date
     public var updatedAt: Date
     public var source: RuntimeMemoryEntrySource?
+    public var search: RuntimeMemoryEntrySearch?
 
     public init(
         id: String,
@@ -14,7 +15,8 @@ public struct RuntimeMemoryEntry: Equatable, Sendable {
         enabled: Bool = true,
         createdAt: Date,
         updatedAt: Date,
-        source: RuntimeMemoryEntrySource? = nil
+        source: RuntimeMemoryEntrySource? = nil,
+        search: RuntimeMemoryEntrySearch? = nil
     ) {
         self.id = id
         self.content = content
@@ -22,6 +24,19 @@ public struct RuntimeMemoryEntry: Equatable, Sendable {
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.source = source
+        self.search = search
+    }
+}
+
+public struct RuntimeMemoryEntrySearch: Equatable, Sendable {
+    public var rank: Int
+    public var snippet: String
+    public var matchedFields: [String]
+
+    public init(rank: Int, snippet: String, matchedFields: [String]) {
+        self.rank = rank
+        self.snippet = snippet
+        self.matchedFields = matchedFields
     }
 }
 
@@ -187,6 +202,35 @@ public protocol RuntimeMemoryStore: Sendable {
 public extension RuntimeMemoryStore {
     func list() throws -> [RuntimeMemoryEntry] {
         try list(ownerDeviceID: nil)
+    }
+
+    func list(ownerDeviceID: String?, query: String?) throws -> [RuntimeMemoryEntry] {
+        let entries = try list(ownerDeviceID: ownerDeviceID)
+        guard let searchQuery = RuntimeMemorySearchQuery(query) else {
+            return entries
+        }
+        let matches = entries.compactMap { entry -> (entry: RuntimeMemoryEntry, match: RuntimeMemorySearchMatch)? in
+            guard let match = entry.runtimeMemorySearchMatch(searchQuery) else { return nil }
+            return (entry, match)
+        }
+        let rankedMatches = matches.sorted { lhs, rhs in
+            if lhs.match.score != rhs.match.score {
+                return lhs.match.score > rhs.match.score
+            }
+            if lhs.entry.updatedAt != rhs.entry.updatedAt {
+                return lhs.entry.updatedAt > rhs.entry.updatedAt
+            }
+            return lhs.entry.id < rhs.entry.id
+        }
+        return rankedMatches.enumerated().map { offset, result in
+            var entry = result.entry
+            entry.search = RuntimeMemoryEntrySearch(
+                rank: offset + 1,
+                snippet: result.match.snippet,
+                matchedFields: result.match.matchedFields
+            )
+            return entry
+        }
     }
 
     func upsert(id: String?, content: String, enabled: Bool?, timestamp: Date) throws -> RuntimeMemoryEntry {
@@ -566,6 +610,126 @@ private struct RuntimeMemoryStoredEvent: Codable {
         case createdAt = "created_at"
         case ownerDeviceID = "owner_device_id"
         case source
+    }
+}
+
+private struct RuntimeMemorySearchQuery {
+    let terms: [String]
+
+    init?(_ rawQuery: String?) {
+        let normalizedTerms = rawQuery?
+            .normalizedRuntimeSearchText
+            .split(whereSeparator: { $0.isWhitespace })
+            .map(String.init)
+            ?? []
+        var terms: [String] = []
+        for term in normalizedTerms where !terms.contains(term) {
+            terms.append(term)
+        }
+        guard !terms.isEmpty else { return nil }
+        self.terms = terms
+    }
+}
+
+private struct RuntimeMemorySearchField {
+    var name: String
+    var text: String
+    var weight: Int
+    var order: Int
+}
+
+private struct RuntimeMemorySearchMatch {
+    var score: Int
+    var snippet: String
+    var matchedFields: [String]
+}
+
+private extension RuntimeMemoryEntry {
+    func runtimeMemorySearchMatch(_ query: RuntimeMemorySearchQuery) -> RuntimeMemorySearchMatch? {
+        let fields = runtimeMemorySearchFields()
+        var matchedTerms = Set<String>()
+        var matchedFields: [String] = []
+        var termScores: [String: Int] = [:]
+        var snippetCandidates: [(field: RuntimeMemorySearchField, termCount: Int)] = []
+
+        for field in fields {
+            let normalizedText = field.text.normalizedRuntimeSearchText
+            guard !normalizedText.isEmpty else { continue }
+            let fieldTerms = query.terms.filter { normalizedText.contains($0) }
+            guard !fieldTerms.isEmpty else { continue }
+
+            matchedTerms.formUnion(fieldTerms)
+            if !matchedFields.contains(field.name) {
+                matchedFields.append(field.name)
+            }
+            for term in fieldTerms {
+                termScores[term] = max(termScores[term] ?? 0, field.weight)
+            }
+            snippetCandidates.append((field, fieldTerms.count))
+        }
+
+        guard query.terms.allSatisfy({ matchedTerms.contains($0) }) else { return nil }
+        let score = termScores.values.reduce(0, +)
+            + (snippetCandidates.contains { $0.termCount == query.terms.count } ? 25 : 0)
+            + matchedFields.count
+
+        let bestSnippetField = snippetCandidates
+            .sorted { lhs, rhs in
+                if lhs.termCount != rhs.termCount {
+                    return lhs.termCount > rhs.termCount
+                }
+                if lhs.field.weight != rhs.field.weight {
+                    return lhs.field.weight > rhs.field.weight
+                }
+                return lhs.field.order < rhs.field.order
+            }
+            .first?
+            .field
+        let snippet = bestSnippetField
+            .map { Self.searchSnippet(from: $0.text, terms: query.terms) }
+            ?? content
+
+        return RuntimeMemorySearchMatch(
+            score: score,
+            snippet: snippet,
+            matchedFields: matchedFields
+        )
+    }
+
+    private func runtimeMemorySearchFields() -> [RuntimeMemorySearchField] {
+        var fields: [RuntimeMemorySearchField] = []
+        func append(_ name: String, _ text: String?, weight: Int) {
+            guard let text = text?.runtimeSearchSnippetText, !text.isEmpty else { return }
+            fields.append(RuntimeMemorySearchField(name: name, text: text, weight: weight, order: fields.count))
+        }
+        append("content", content, weight: 100)
+        if let source {
+            append("source_title", source.session.title, weight: 60)
+            append("source_range", source.sourceRange, weight: 20)
+            for pointer in source.sourcePointers {
+                append("source_excerpt", pointer.excerpt, weight: 40)
+            }
+        }
+        return fields
+    }
+
+    private static func searchSnippet(from text: String, terms: [String], maxLength: Int = 160) -> String {
+        let cleanText = text.runtimeSearchSnippetText
+        guard cleanText.count > maxLength else { return cleanText }
+        let normalized = cleanText.normalizedRuntimeSearchText
+        let firstMatch = terms
+            .compactMap { normalized.range(of: $0)?.lowerBound }
+            .map { normalized.distance(from: normalized.startIndex, to: $0) }
+            .min() ?? 0
+        let halfWindow = maxLength / 2
+        let startOffset = max(0, firstMatch - halfWindow)
+        let endOffset = min(cleanText.count, startOffset + maxLength)
+        let start = cleanText.index(cleanText.startIndex, offsetBy: startOffset)
+        let end = cleanText.index(cleanText.startIndex, offsetBy: endOffset)
+        let snippet = cleanText[start..<end].trimmingCharacters(in: .whitespacesAndNewlines)
+        let leading = startOffset > 0 ? "..." : ""
+        let trailing = endOffset < cleanText.count ? "..." : ""
+        return leading + snippet + trailing
     }
 }
 
