@@ -25271,6 +25271,306 @@ class ClientScreensNoDeviceComposeTest {
         }
     }
 
+    @Test
+    fun chatScreenTalkBackOrderProxyKeepsVisibleChatControlsReachableAtLargeFontAcrossSupportedLanguages() {
+        val languageTags = listOf("en", "ko", "ja", "zh-CN", "fr")
+        val languageTag = mutableStateOf(languageTags.first())
+        val streaming = mutableStateOf(false)
+        val fontScale = 1.45f
+        val chatModel = RuntimeModel(
+            id = "ollama:qwen3:8b",
+            name = "Qwen3 8B",
+            modelKind = MODEL_KIND_CHAT,
+            capabilities = listOf("chat"),
+            installed = true,
+            source = "local",
+        )
+        val messages = (1..28).map { index ->
+            RuntimeChatMessage(
+                id = "message-$index",
+                role = if (index % 2 == 0) "assistant" else "user",
+                content = when (index) {
+                    27 -> "Use this latest prompt as the accessibility order draft."
+                    28 -> "Keep the latest answer controls reachable before the composer."
+                    else -> "TalkBack order proxy message $index."
+                },
+            )
+        }
+
+        compose.setContent {
+            MaterialTheme {
+                LocalizedTestContent(languageTag = languageTag.value, fontScale = fontScale) {
+                    key(languageTag.value, streaming.value) {
+                        Surface(
+                            modifier = Modifier
+                                .width(320.dp)
+                                .height(720.dp)
+                                .testTag(chatSurfaceNarrowPhoneRootTestTag),
+                        ) {
+                            ChatScreen(
+                                state = RuntimeUiState(
+                                    isConnected = true,
+                                    runtimeStatus = "authenticated",
+                                    trustedRuntime = RuntimeTrustedRuntime(
+                                        deviceId = "runtime-talkback-order-proxy",
+                                        name = "AetherLink Runtime",
+                                    ),
+                                    backendAvailable = true,
+                                    selectedLanguageTag = languageTag.value,
+                                    selectedModelId = chatModel.id,
+                                    models = listOf(chatModel),
+                                    chatInput = if (streaming.value) {
+                                        "Streaming draft stays locked for cancel."
+                                    } else {
+                                        "Ready draft for send order."
+                                    },
+                                    isStreaming = streaming.value,
+                                    activeRequestId = if (streaming.value) "streaming-request" else null,
+                                    messages = messages,
+                                ),
+                                onInputChange = {},
+                                onSend = {},
+                                onCancel = {},
+                                onConnect = {},
+                                onScanPairingQr = {},
+                                onRefreshHealth = {},
+                                onAttachFiles = {},
+                                onRemoveAttachment = {},
+                                onScanLatestQr = {},
+                                onRegenerateLatestResponse = {},
+                                onReuseLatestUserMessage = {},
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        languageTags.forEach { nextLanguageTag ->
+            compose.runOnUiThread {
+                languageTag.value = nextLanguageTag
+                streaming.value = false
+            }
+            compose.waitForIdle()
+            compose.onNodeWithTag(CHAT_MESSAGE_LIST_TEST_TAG)
+                .performScrollToIndex(messages.lastIndex - 1)
+            compose.waitForIdle()
+
+            val localizedContext = ApplicationProvider
+                .getApplicationContext<Context>()
+                .localizedContext(nextLanguageTag, fontScale = fontScale)
+            val copyLabel = localizedContext.getString(R.string.copy_message)
+            val reuseLabel = localizedContext.getString(R.string.reuse_message)
+            val reuseState = localizedContext.getString(R.string.reuse_message_state_ready)
+            val regenerateLabel = localizedContext.getString(R.string.regenerate_response)
+            val regenerateState = localizedContext.getString(R.string.regenerate_response_state_ready)
+            val attachLabel = localizedContext.getString(R.string.content_desc_attach_files)
+            val attachState = localizedContext.getString(R.string.attach_files_state_ready)
+            val messageLabel = localizedContext.getString(R.string.message)
+            val readyState = localizedContext.getString(R.string.chat_hint_ready)
+            val sendLabel = localizedContext.getString(R.string.content_desc_send)
+            val clearDraftLabel = localizedContext.getString(R.string.clear_draft)
+            val clearDraftState = localizedContext.getString(R.string.clear_draft_state_ready)
+            val jumpLabel = localizedContext.getString(R.string.content_desc_jump_to_latest)
+            val jumpState = localizedContext.getString(R.string.jump_to_latest_state_ready)
+            val cancelLabel = localizedContext.getString(R.string.content_desc_cancel_generation)
+            val cancelState = localizedContext.getString(R.string.cancel_generation_state_ready)
+            val waitForStreamState = localizedContext.getString(R.string.chat_hint_wait_for_stream)
+
+            val rootBounds = compose.onNodeWithTag(chatSurfaceNarrowPhoneRootTestTag)
+                .getUnclippedBoundsInRoot()
+            val messageListBounds = compose.onNodeWithTag(CHAT_MESSAGE_LIST_TEST_TAG)
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+            val latestUserRowBounds = compose.onNodeWithTag(chatMessageRowTestTag("message-27"))
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+            val latestUserActionsTag = chatMessageActionsTestTag("message-27")
+            val latestUserActionsBounds = compose.onNodeWithTag(latestUserActionsTag)
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+            val latestAssistantRowBounds = compose.onNodeWithTag(chatMessageRowTestTag("message-28"))
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+            val latestAssistantActionsTag = chatMessageActionsTestTag("message-28")
+            val latestAssistantActionsBounds = compose.onNodeWithTag(latestAssistantActionsTag)
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+            val composerBounds = compose.onNodeWithTag(CHAT_COMPOSER_CONTAINER_TEST_TAG, useUnmergedTree = true)
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+            val composerRowBounds = compose.onNodeWithTag(CHAT_COMPOSER_CONTROLS_ROW_TEST_TAG, useUnmergedTree = true)
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+            val attachBounds = compose.onNodeWithTag(CHAT_COMPOSER_ATTACH_ACTION_TEST_TAG, useUnmergedTree = true)
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+            val inputBounds = compose.onNodeWithTag(CHAT_COMPOSER_INPUT_TEST_TAG, useUnmergedTree = true)
+                .assert(hasContentDescription(messageLabel) and hasStateDescription(readyState))
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+            val clearDraftBounds = compose.onNodeWithTag(CHAT_COMPOSER_CLEAR_DRAFT_ACTION_TEST_TAG, useUnmergedTree = true)
+                .assert(
+                    hasContentDescription(clearDraftLabel) and
+                        hasStateDescription(clearDraftState) and
+                        hasClickActionLabel(clearDraftLabel),
+                )
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+            val sendBounds = compose.onNodeWithTag(CHAT_COMPOSER_SEND_ACTION_TEST_TAG, useUnmergedTree = true)
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+
+            listOf(
+                "message list" to messageListBounds,
+                "latest user row" to latestUserRowBounds,
+                "latest user actions" to latestUserActionsBounds,
+                "latest assistant row" to latestAssistantRowBounds,
+                "latest assistant actions" to latestAssistantActionsBounds,
+                "composer" to composerBounds,
+                "composer controls row" to composerRowBounds,
+                "attach action" to attachBounds,
+                "composer input" to inputBounds,
+                "clear draft action" to clearDraftBounds,
+                "send action" to sendBounds,
+            ).forEach { (label, bounds) ->
+                assertBoundsInside("$nextLanguageTag TalkBack-order proxy $label", bounds, rootBounds)
+            }
+
+            compose.onNode(
+                hasContentDescription(copyLabel) and hasAnyAncestor(hasTestTag(latestUserActionsTag)),
+                useUnmergedTree = true,
+            ).assertIsDisplayed()
+            compose.onNode(
+                hasContentDescription(reuseLabel) and
+                    hasStateDescription(reuseState) and
+                    hasClickActionLabel(reuseLabel) and
+                    hasAnyAncestor(hasTestTag(latestUserActionsTag)),
+                useUnmergedTree = true,
+            ).assertIsDisplayed()
+            compose.onNode(
+                hasContentDescription(copyLabel) and hasAnyAncestor(hasTestTag(latestAssistantActionsTag)),
+                useUnmergedTree = true,
+            ).assertIsDisplayed()
+            compose.onNode(
+                hasContentDescription(regenerateLabel) and
+                    hasStateDescription(regenerateState) and
+                    hasClickActionLabel(regenerateLabel) and
+                    hasAnyAncestor(hasTestTag(latestAssistantActionsTag)),
+                useUnmergedTree = true,
+            ).assertIsDisplayed()
+            compose.onNode(
+                hasContentDescription(attachLabel) and
+                    hasStateDescription(attachState) and
+                    hasClickActionLabel(attachLabel),
+            ).assertIsDisplayed()
+            compose.onNode(
+                hasContentDescription(sendLabel) and
+                    hasStateDescription(readyState) and
+                    hasClickActionLabel(sendLabel),
+            )
+                .assertIsDisplayed()
+                .assertIsEnabled()
+
+            assertTrue(
+                "$nextLanguageTag latest user row should appear before latest assistant row.",
+                latestUserRowBounds.top < latestAssistantRowBounds.top,
+            )
+            assertTrue(
+                "$nextLanguageTag latest user actions should stay above the composer.",
+                latestUserActionsBounds.bottom <= composerBounds.top,
+            )
+            assertTrue(
+                "$nextLanguageTag latest assistant actions should stay above the composer.",
+                latestAssistantActionsBounds.bottom <= composerBounds.top,
+            )
+            assertFalse(
+                "$nextLanguageTag latest user actions should not overlap the composer.",
+                boundsOverlap(latestUserActionsBounds, composerBounds),
+            )
+            assertFalse(
+                "$nextLanguageTag latest assistant actions should not overlap the composer.",
+                boundsOverlap(latestAssistantActionsBounds, composerBounds),
+            )
+            assertTrue("$nextLanguageTag attach action should precede input.", attachBounds.right <= inputBounds.left)
+            assertTrue("$nextLanguageTag input should precede clear draft.", inputBounds.right <= clearDraftBounds.left)
+            assertTrue("$nextLanguageTag clear draft should precede send.", clearDraftBounds.right <= sendBounds.left)
+
+            compose.onNodeWithTag(CHAT_MESSAGE_LIST_TEST_TAG)
+                .performScrollToIndex(0)
+            compose.waitForIdle()
+
+            val scrolledComposerBounds = compose
+                .onNodeWithTag(CHAT_COMPOSER_CONTAINER_TEST_TAG, useUnmergedTree = true)
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+            val jumpBounds = compose.onNode(
+                hasContentDescription(jumpLabel) and
+                    hasStateDescription(jumpState) and
+                    hasClickActionLabel(jumpLabel),
+            )
+                .assertIsDisplayed()
+                .assertIsEnabled()
+                .getUnclippedBoundsInRoot()
+            assertBoundsInside("$nextLanguageTag TalkBack-order proxy jump action", jumpBounds, rootBounds)
+            assertTrue(
+                "$nextLanguageTag jump action should stay above composer.",
+                jumpBounds.bottom <= scrolledComposerBounds.top,
+            )
+            assertFalse(
+                "$nextLanguageTag jump action should not overlap composer.",
+                boundsOverlap(jumpBounds, scrolledComposerBounds),
+            )
+
+            compose.runOnUiThread {
+                streaming.value = true
+            }
+            compose.waitForIdle()
+
+            val streamingAttachBounds = compose
+                .onNodeWithTag(CHAT_COMPOSER_ATTACH_ACTION_TEST_TAG, useUnmergedTree = true)
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+            val streamingInputBounds = compose
+                .onNodeWithTag(CHAT_COMPOSER_INPUT_TEST_TAG, useUnmergedTree = true)
+                .assert(hasContentDescription(messageLabel) and hasStateDescription(waitForStreamState))
+                .assertIsDisplayed()
+                .assertIsNotEnabled()
+                .getUnclippedBoundsInRoot()
+            val cancelBounds = compose.onNodeWithTag(CHAT_COMPOSER_CANCEL_ACTION_TEST_TAG, useUnmergedTree = true)
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+            compose.onNode(
+                hasContentDescription(cancelLabel) and
+                    hasStateDescription(cancelState) and
+                    hasClickActionLabel(cancelLabel),
+            )
+                .assertIsDisplayed()
+                .assertIsEnabled()
+            compose.onAllNodesWithTag(CHAT_COMPOSER_SEND_ACTION_TEST_TAG, useUnmergedTree = true)
+                .assertCountEquals(0)
+            assertBoundsInside(
+                "$nextLanguageTag TalkBack-order proxy streaming attach",
+                streamingAttachBounds,
+                rootBounds,
+            )
+            assertBoundsInside(
+                "$nextLanguageTag TalkBack-order proxy streaming input",
+                streamingInputBounds,
+                rootBounds,
+            )
+            assertBoundsInside("$nextLanguageTag TalkBack-order proxy cancel", cancelBounds, rootBounds)
+            assertTrue(
+                "$nextLanguageTag streaming attach action should precede input.",
+                streamingAttachBounds.right <= streamingInputBounds.left,
+            )
+            assertTrue(
+                "$nextLanguageTag streaming input should precede cancel.",
+                streamingInputBounds.right <= cancelBounds.left,
+            )
+        }
+    }
+
     @Composable
     private fun LocalizedTestContent(
         languageTag: String,

@@ -510,9 +510,19 @@ struct RelayFrameBodyCipher {
     }
 }
 
-func envelope(_ type: String, requestID: String, payload: [String: Any] = [:]) -> [String: Any] {
+func envelope(_ type: String, requestID: String, payload: [String: Any] = [:], version: Int = 1) -> [String: Any] {
     [
-        "version": 1,
+        "version": version,
+        "type": type,
+        "request_id": requestID,
+        "timestamp": ISO8601DateFormatter().string(from: Date()),
+        "payload": payload
+    ]
+}
+
+func rawPayloadEnvelope(_ type: String, requestID: String, payload: Any, version: Int = 1) -> [String: Any] {
+    [
+        "version": version,
         "type": type,
         "request_id": requestID,
         "timestamp": ISO8601DateFormatter().string(from: Date()),
@@ -655,6 +665,20 @@ func requireErrorCode(
     let errorPayload = try payload(response, context: context)
     guard errorPayload["code"] as? String == expectedCode else {
         throw SmokeFailure.message("\(context) expected error code \(expectedCode), got \(String(describing: errorPayload["code"])): \(response)")
+    }
+    try requireBool(errorPayload, "retryable", retryable, context: context)
+}
+
+func requireDecodeErrorCode(
+    _ response: [String: Any],
+    _ expectedCode: String,
+    context: String,
+    retryable: Bool = false
+) throws {
+    try requireType(response, "error", context: context)
+    let errorPayload = try payload(response, context: context)
+    guard errorPayload["code"] as? String == expectedCode else {
+        throw SmokeFailure.message("\(context) expected decode error code \(expectedCode), got \(String(describing: errorPayload["code"])): \(response)")
     }
     try requireBool(errorPayload, "retryable", retryable, context: context)
 }
@@ -914,11 +938,40 @@ func assertNoBackendLeak(_ value: Any, context: String, keyPath: [String] = []) 
     }
 }
 
-func sendAndRead(_ client: TCPClient, type: String, requestID: String, payload: [String: Any] = [:]) throws -> [String: Any] {
-    try client.send(envelope(type, requestID: requestID, payload: payload))
+func sendAndRead(
+    _ client: TCPClient,
+    type: String,
+    requestID: String,
+    payload: [String: Any] = [:],
+    version: Int = 1
+) throws -> [String: Any] {
+    try client.send(envelope(type, requestID: requestID, payload: payload, version: version))
     let response = try client.readEnvelope()
     try assertNoBackendLeak(response, context: requestID)
     return response
+}
+
+func sendAndReadRawPayload(
+    _ client: TCPClient,
+    type: String,
+    requestID: String,
+    payload: Any,
+    version: Int = 1
+) throws -> [String: Any] {
+    try client.send(rawPayloadEnvelope(type, requestID: requestID, payload: payload, version: version))
+    let response = try client.readEnvelope()
+    try assertNoBackendLeak(response, context: requestID)
+    return response
+}
+
+func requireRuntimeHealthEnvelope(
+    _ response: [String: Any],
+    requestID: String,
+    context: String
+) throws {
+    try requireType(response, "runtime.health", context: context)
+    try requireRequestID(response, requestID, context: context)
+    _ = try payload(response, context: context)
 }
 
 func refreshRelayRoute(
@@ -1294,6 +1347,29 @@ func runRejectedPairingChecks(
         let response = try sendAndRead(
             client,
             type: "pairing.request",
+            requestID: "smoke-pair-blank-allowed-fields",
+            payload: [
+                "pairing_nonce": "   \n\t",
+                "pairing_code": pairingCode,
+                "device_id": deviceID,
+                "device_name": "AetherLink Blank Pairing Field Smoke",
+                "public_key": publicKeyBase64
+            ]
+        )
+        try requireErrorCode(
+            response,
+            "invalid_payload",
+            requestID: "smoke-pair-blank-allowed-fields",
+            context: "pairing.request blank allowed fields"
+        )
+    }
+
+    do {
+        let client = try connectWithRetry(host: host, port: port, relay: relay)
+        defer { client.close() }
+        let response = try sendAndRead(
+            client,
+            type: "pairing.request",
             requestID: "smoke-pair-invalid-code",
             payload: [
                 "pairing_nonce": pairingNonce,
@@ -1362,6 +1438,48 @@ func runPreAuthUnknownMetadataChecks(
     let client = try connectWithRetry(host: host, port: port, relay: relay)
     defer { client.close() }
 
+    let blankEnvelopeRequestID = try sendAndRead(
+        client,
+        type: "runtime.health",
+        requestID: "   \n\t"
+    )
+    try requireErrorCode(
+        blankEnvelopeRequestID,
+        "invalid_payload",
+        requestID: "   \n\t",
+        context: "blank envelope request_id"
+    )
+
+    let unsupportedVersion = try sendAndRead(
+        client,
+        type: "runtime.health",
+        requestID: "smoke-unsupported-version",
+        version: 2
+    )
+    try requireErrorCode(
+        unsupportedVersion,
+        "invalid_payload",
+        requestID: "smoke-unsupported-version",
+        context: "unsupported envelope version"
+    )
+
+    let invalidHelloAllowedFields = try sendAndRead(
+        client,
+        type: "hello",
+        requestID: "smoke-hello-invalid-allowed-types",
+        payload: [
+            "device_id": deviceID,
+            "device_name": "Smoke Test Client",
+            "client_capabilities": ["chat", 1] as [Any]
+        ]
+    )
+    try requireErrorCode(
+        invalidHelloAllowedFields,
+        "invalid_payload",
+        requestID: "smoke-hello-invalid-allowed-types",
+        context: "hello invalid allowed payload types"
+    )
+
     let malformedHello = try sendAndRead(
         client,
         type: "hello",
@@ -1406,6 +1524,23 @@ func runPreAuthUnknownMetadataChecks(
         requestID: "smoke-auth-unknown-metadata-hello"
     )
     let signature = try clientAuthSignature(privateKey: privateKey, deviceID: deviceID, nonce: nonce)
+    let invalidAuthAllowedFields = try sendAndRead(
+        client,
+        type: "auth.response",
+        requestID: "smoke-auth-invalid-allowed-types",
+        payload: [
+            "device_id": deviceID,
+            "nonce": "   \n\t",
+            "signature": signature
+        ]
+    )
+    try requireErrorCode(
+        invalidAuthAllowedFields,
+        "invalid_payload",
+        requestID: "smoke-auth-invalid-allowed-types",
+        context: "auth.response invalid allowed payload types"
+    )
+
     let malformedAuth = try sendAndRead(
         client,
         type: "auth.response",
@@ -2100,6 +2235,8 @@ func relayPlaintextBoundaryMarkers() -> [String] {
         "smoke-invalid-identity-hello",
         "pairing_invalid_device_identity",
         "AetherLink Invalid Identity Smoke",
+        "smoke-pair-blank-allowed-fields",
+        "AetherLink Blank Pairing Field Smoke",
         "smoke-pair-consumed",
         "smoke-pair-consumed-health",
         "pairing_not_active",
@@ -2110,6 +2247,9 @@ func relayPlaintextBoundaryMarkers() -> [String] {
         "authentication_failed",
         "authentication_required",
         "Could not authenticate this device.",
+        "smoke-unsupported-version",
+        "smoke-hello-invalid-allowed-types",
+        "smoke-auth-invalid-allowed-types",
         "runtime.health",
         "models.list",
         "dev-mock-alt",
@@ -2138,22 +2278,61 @@ func relayPlaintextBoundaryMarkers() -> [String] {
         "AETHERLINK_DEV_MEMORY_SUMMARY_MIN_INACTIVE_SECONDS",
         "AETHERLINK_DEV_MEMORY_SUMMARY_MIN_MESSAGES",
         "smoke-memory-summary-drafts",
+        "smoke-memory-summary-approve-invalid-content-type",
+        "smoke-memory-summary-approve-invalid-enabled-type",
+        "smoke-memory-summary-approve-invalid-expected-session-type",
+        "smoke-memory-summary-approve-invalid-expected-count-string",
+        "smoke-memory-summary-approve-invalid-expected-count-fraction",
+        "smoke-memory-summary-approve-blank-draft-id",
         "smoke-memory-summary-approve-stale",
         "smoke-memory-summary-approve",
         "smoke-memory-summary-after-approve",
         "smoke-memory-summary-memory-list",
         "smoke-memory-summary-delete",
+        "smoke-memory-summary-dismiss-invalid-expected-session-type",
+        "smoke-memory-summary-dismiss-invalid-count-string",
+        "smoke-memory-summary-dismiss-invalid-count-type",
+        "smoke-memory-summary-dismiss-blank-draft-id",
         "smoke-sessions-invalid-allowed-types",
+        "smoke-messages-blank-session-id",
         "smoke-messages-invalid-limit-type",
+        "smoke-chat-blank-session-id",
+        "smoke-chat-blank-model",
+        "smoke-cancel-blank-target-request-id",
+        "smoke-title-blank-session-id",
+        "smoke-title-blank-model",
+        "smoke-session-rename-blank-session-id",
+        "smoke-session-rename-invalid-title-type",
+        "smoke-session-lifecycle-blank-session-id",
+        "smoke-session-lifecycle-invalid-session-id-type",
+        "smoke-memory-delete-invalid-id-type",
+        "smoke-memory-delete-empty-id",
+        "smoke-memory-delete-blank-id",
+        "smoke-memory-list-after-invalid-delete",
         "smoke-memory-list-invalid-query-type",
         "smoke-memory-upsert-invalid-enabled-type",
+        "smoke-memory-upsert-invalid-content-type",
+        "smoke-memory-upsert-blank-id",
+        "smoke-memory-upsert-blank-content",
+        "smoke-pull-invalid-model-type",
+        "smoke-pull-invalid-backend-type",
+        "smoke-pull-invalid-backend-value",
+        "smoke-chat-invalid-locale-type",
+        "smoke-chat-invalid-role-value",
+        "smoke-chat-invalid-attachment-type-value",
+        "smoke-chat-invalid-attachment-name-type",
+        "smoke-chat-invalid-attachment-data-base64-type",
+        "smoke-chat-invalid-attachment-text-type",
+        "smoke-title-invalid-locale-type",
         "smoke-memory-upsert-invalid-enabled",
+        "smoke-memory-upsert-invalid-blank-content",
         "smoke-memory-summary-drafts-invalid-limit-type",
         "smoke-memory-source-forgery",
         "smoke-memory-upsert-unknown-metadata",
         "smoke-memory-upsert-unknown-list",
         "smoke-pair-unknown-metadata",
         "smoke-pair-unknown-metadata-health",
+        "   \n\t",
         "smoke-hello-unknown-metadata",
         "smoke-hello-unknown-metadata-health",
         "smoke-auth-unknown-metadata",
@@ -2412,6 +2591,13 @@ func routeRefreshRelayPlaintextBoundaryMarkers() -> [String] {
     return [
         "route.refresh",
         "smoke-route-refresh",
+        "smoke-raw-payload-runtime-health-array",
+        "smoke-raw-payload-runtime-health-array-survival-health",
+        "smoke-raw-payload-models-list-string",
+        "smoke-non-object-payload-string",
+        "smoke-raw-payload-models-list-string-survival-health",
+        "smoke-raw-payload-route-refresh-null",
+        "smoke-raw-payload-route-refresh-null-survival-health",
         "runtime_device_id",
         "runtime_key_fingerprint",
         "aetherlink-dev-runtime",
@@ -3037,6 +3223,67 @@ func runAuthenticatedTitleAndSessionLifecycleChecks(client: TCPClient) throws {
         throw SmokeFailure.message("lifecycle seed chat did not stream mock text: \(seedText)")
     }
 
+    let titleInvalidLocaleTypeResponse = try sendAndRead(
+        client,
+        type: "chat.title.request",
+        requestID: "smoke-title-invalid-locale-type",
+        payload: [
+            "session_id": smokeTitleSessionID,
+            "model": "dev-mock",
+            "locale": ["en"],
+            "messages": [
+                ["role": "user", "content": "Create a session for lifecycle smoke."],
+                ["role": "assistant", "content": "Mock streaming response."]
+            ]
+        ]
+    )
+    try requireErrorCode(
+        titleInvalidLocaleTypeResponse,
+        "invalid_payload",
+        requestID: "smoke-title-invalid-locale-type",
+        context: "chat.title.request invalid locale type"
+    )
+
+    let titleBlankSessionIDResponse = try sendAndRead(
+        client,
+        type: "chat.title.request",
+        requestID: "smoke-title-blank-session-id",
+        payload: [
+            "session_id": "   \n\t",
+            "model": "dev-mock",
+            "messages": [
+                ["role": "user", "content": "Create a session for lifecycle smoke."],
+                ["role": "assistant", "content": "Mock streaming response."]
+            ]
+        ]
+    )
+    try requireErrorCode(
+        titleBlankSessionIDResponse,
+        "invalid_payload",
+        requestID: "smoke-title-blank-session-id",
+        context: "chat.title.request blank session_id"
+    )
+
+    let titleBlankModelResponse = try sendAndRead(
+        client,
+        type: "chat.title.request",
+        requestID: "smoke-title-blank-model",
+        payload: [
+            "session_id": smokeTitleSessionID,
+            "model": "   \n\t",
+            "messages": [
+                ["role": "user", "content": "Create a session for lifecycle smoke."],
+                ["role": "assistant", "content": "Mock streaming response."]
+            ]
+        ]
+    )
+    try requireErrorCode(
+        titleBlankModelResponse,
+        "invalid_payload",
+        requestID: "smoke-title-blank-model",
+        context: "chat.title.request blank model"
+    )
+
     let titleUnknownMetadataResponse = try sendAndRead(
         client,
         type: "chat.title.request",
@@ -3093,6 +3340,38 @@ func runAuthenticatedTitleAndSessionLifecycleChecks(client: TCPClient) throws {
         throw SmokeFailure.message("chat.title.request returned an unexpected title: \(titleResponse)")
     }
 
+    let invalidRenameTitleResponse = try sendAndRead(
+        client,
+        type: "chat.session.rename",
+        requestID: "smoke-session-rename-invalid-title-type",
+        payload: [
+            "session_id": smokeLifecycleSessionID,
+            "title": true
+        ]
+    )
+    try requireErrorCode(
+        invalidRenameTitleResponse,
+        "invalid_payload",
+        requestID: "smoke-session-rename-invalid-title-type",
+        context: "chat.session.rename invalid title type"
+    )
+
+    let blankRenameSessionIDResponse = try sendAndRead(
+        client,
+        type: "chat.session.rename",
+        requestID: "smoke-session-rename-blank-session-id",
+        payload: [
+            "session_id": "   \n\t",
+            "title": "Runtime smoke lifecycle"
+        ]
+    )
+    try requireErrorCode(
+        blankRenameSessionIDResponse,
+        "invalid_payload",
+        requestID: "smoke-session-rename-blank-session-id",
+        context: "chat.session.rename blank session_id"
+    )
+
     let renamedTitle = "Runtime smoke lifecycle"
     let renameResponse = try sendAndRead(
         client,
@@ -3124,6 +3403,32 @@ func runAuthenticatedTitleAndSessionLifecycleChecks(client: TCPClient) throws {
     else {
         throw SmokeFailure.message("chat.session.rename did not update active session summary: \(renamedSession)")
     }
+
+    let invalidLifecycleSessionIDResponse = try sendAndRead(
+        client,
+        type: "chat.session.archive",
+        requestID: "smoke-session-lifecycle-invalid-session-id-type",
+        payload: ["session_id": 42]
+    )
+    try requireErrorCode(
+        invalidLifecycleSessionIDResponse,
+        "invalid_payload",
+        requestID: "smoke-session-lifecycle-invalid-session-id-type",
+        context: "chat.session lifecycle invalid session_id type"
+    )
+
+    let blankLifecycleSessionIDResponse = try sendAndRead(
+        client,
+        type: "chat.session.archive",
+        requestID: "smoke-session-lifecycle-blank-session-id",
+        payload: ["session_id": "   \n\t"]
+    )
+    try requireErrorCode(
+        blankLifecycleSessionIDResponse,
+        "invalid_payload",
+        requestID: "smoke-session-lifecycle-blank-session-id",
+        context: "chat.session lifecycle blank session_id"
+    )
 
     let archiveResponse = try sendAndRead(
         client,
@@ -3437,6 +3742,22 @@ func runAuthenticatedHistoryAndMemoryChecks(client: TCPClient, chatRequestAuditF
         )
     }
 
+    let blankMessagesSessionID = try sendAndRead(
+        client,
+        type: "chat.messages.list",
+        requestID: "smoke-messages-blank-session-id",
+        payload: [
+            "session_id": "   \n\t",
+            "limit": 20
+        ]
+    )
+    try requireErrorCode(
+        blankMessagesSessionID,
+        "invalid_payload",
+        requestID: "smoke-messages-blank-session-id",
+        context: "chat.messages.list blank session_id"
+    )
+
     let invalidMessagesLimit = try sendAndRead(
         client,
         type: "chat.messages.list",
@@ -3523,6 +3844,57 @@ func runAuthenticatedHistoryAndMemoryChecks(client: TCPClient, chatRequestAuditF
         context: "memory.upsert invalid enabled type"
     )
 
+    let invalidContentMemoryUpsertResponse = try sendAndRead(
+        client,
+        type: "memory.upsert",
+        requestID: "smoke-memory-upsert-invalid-content-type",
+        payload: [
+            "id": "smoke-memory-upsert-invalid-content-type",
+            "content": 42,
+            "enabled": true
+        ]
+    )
+    try requireErrorCode(
+        invalidContentMemoryUpsertResponse,
+        "invalid_payload",
+        requestID: "smoke-memory-upsert-invalid-content-type",
+        context: "memory.upsert invalid content type"
+    )
+
+    let blankIDMemoryUpsertResponse = try sendAndRead(
+        client,
+        type: "memory.upsert",
+        requestID: "smoke-memory-upsert-blank-id",
+        payload: [
+            "id": "   \n\t",
+            "content": "This memory should not be created with a blank id.",
+            "enabled": true
+        ]
+    )
+    try requireErrorCode(
+        blankIDMemoryUpsertResponse,
+        "invalid_payload",
+        requestID: "smoke-memory-upsert-blank-id",
+        context: "memory.upsert blank id"
+    )
+
+    let blankContentMemoryUpsertResponse = try sendAndRead(
+        client,
+        type: "memory.upsert",
+        requestID: "smoke-memory-upsert-blank-content",
+        payload: [
+            "id": "smoke-memory-upsert-invalid-blank-content",
+            "content": "   \n\t",
+            "enabled": true
+        ]
+    )
+    try requireErrorCode(
+        blankContentMemoryUpsertResponse,
+        "invalid_payload",
+        requestID: "smoke-memory-upsert-blank-content",
+        context: "memory.upsert blank content"
+    )
+
     let invalidMemoryListQuery = try sendAndRead(
         client,
         type: "memory.list",
@@ -3543,6 +3915,12 @@ func runAuthenticatedHistoryAndMemoryChecks(client: TCPClient, chatRequestAuditF
     let memoryEntries = try requireDictionaryArray(memoryListPayload, key: "entries", context: "memory.list")
     guard !memoryEntries.contains(where: { $0["id"] as? String == "smoke-memory-upsert-invalid-enabled" }) else {
         throw SmokeFailure.message("memory.upsert invalid enabled type created an entry: \(memoryListResponse)")
+    }
+    guard !memoryEntries.contains(where: { $0["id"] as? String == "smoke-memory-upsert-invalid-content-type" }) else {
+        throw SmokeFailure.message("memory.upsert invalid content type created an entry: \(memoryListResponse)")
+    }
+    guard !memoryEntries.contains(where: { $0["id"] as? String == "smoke-memory-upsert-invalid-blank-content" }) else {
+        throw SmokeFailure.message("memory.upsert blank content created an entry: \(memoryListResponse)")
     }
     guard memoryEntries.contains(where: {
         $0["id"] as? String == memoryID
@@ -3570,6 +3948,50 @@ func runAuthenticatedHistoryAndMemoryChecks(client: TCPClient, chatRequestAuditF
         matchedField: "content",
         context: "memory.list query search metadata"
     )
+
+    let invalidMemoryDeleteResponse = try sendAndRead(
+        client,
+        type: "memory.delete",
+        requestID: "smoke-memory-delete-invalid-id-type",
+        payload: ["id": 42]
+    )
+    try requireErrorCode(
+        invalidMemoryDeleteResponse,
+        "invalid_payload",
+        requestID: "smoke-memory-delete-invalid-id-type",
+        context: "memory.delete invalid id type"
+    )
+    let emptyMemoryDeleteResponse = try sendAndRead(
+        client,
+        type: "memory.delete",
+        requestID: "smoke-memory-delete-empty-id",
+        payload: ["id": ""]
+    )
+    try requireErrorCode(
+        emptyMemoryDeleteResponse,
+        "invalid_payload",
+        requestID: "smoke-memory-delete-empty-id",
+        context: "memory.delete empty id"
+    )
+    let blankMemoryDeleteResponse = try sendAndRead(
+        client,
+        type: "memory.delete",
+        requestID: "smoke-memory-delete-blank-id",
+        payload: ["id": "   \n\t"]
+    )
+    try requireErrorCode(
+        blankMemoryDeleteResponse,
+        "invalid_payload",
+        requestID: "smoke-memory-delete-blank-id",
+        context: "memory.delete blank id"
+    )
+    let memoryEntriesAfterInvalidDelete = try listMemoryEntries(
+        client: client,
+        requestID: "smoke-memory-list-after-invalid-delete"
+    )
+    guard memoryEntriesAfterInvalidDelete.contains(where: { $0["id"] as? String == memoryID }) else {
+        throw SmokeFailure.message("memory.delete invalid id values removed the smoke memory entry: \(memoryEntriesAfterInvalidDelete)")
+    }
 
     let memoryDeleteResponse = try sendAndRead(
         client,
@@ -3694,6 +4116,80 @@ func runAuthenticatedHistoryAndMemoryChecks(client: TCPClient, chatRequestAuditF
     }
 
     let approvedSummaryContent = "Smoke summary approval keeps the runtime memory path authenticated."
+    let invalidSummaryApproveAllowedFieldPayloads: [(requestID: String, payload: [String: Any], context: String)] = [
+        (
+            "smoke-memory-summary-approve-invalid-content-type",
+            [
+                "draft_id": summaryDraftID,
+                "content": 42
+            ],
+            "memory.summary.draft.approve invalid content type"
+        ),
+        (
+            "smoke-memory-summary-approve-invalid-enabled-type",
+            [
+                "draft_id": summaryDraftID,
+                "enabled": "true"
+            ],
+            "memory.summary.draft.approve invalid enabled type"
+        ),
+        (
+            "smoke-memory-summary-approve-invalid-expected-session-type",
+            [
+                "draft_id": summaryDraftID,
+                "expected_session_id": 1
+            ],
+            "memory.summary.draft.approve invalid expected session type"
+        ),
+        (
+            "smoke-memory-summary-approve-invalid-expected-count-string",
+            [
+                "draft_id": summaryDraftID,
+                "expected_source_message_count": "\(summaryDraftSourceMessageCount)"
+            ],
+            "memory.summary.draft.approve invalid expected count string"
+        ),
+        (
+            "smoke-memory-summary-approve-invalid-expected-count-fraction",
+            [
+                "draft_id": summaryDraftID,
+                "expected_source_message_count": Double(summaryDraftSourceMessageCount) + 0.5
+            ],
+            "memory.summary.draft.approve invalid expected count fraction"
+        )
+    ]
+    for invalidPayload in invalidSummaryApproveAllowedFieldPayloads {
+        let response = try sendAndRead(
+            client,
+            type: "memory.summary.draft.approve",
+            requestID: invalidPayload.requestID,
+            payload: invalidPayload.payload
+        )
+        try requireErrorCode(
+            response,
+            "invalid_payload",
+            requestID: invalidPayload.requestID,
+            context: invalidPayload.context
+        )
+    }
+
+    let blankSummaryApproveDraftIDResponse = try sendAndRead(
+        client,
+        type: "memory.summary.draft.approve",
+        requestID: "smoke-memory-summary-approve-blank-draft-id",
+        payload: [
+            "draft_id": "   \n\t",
+            "content": approvedSummaryContent,
+            "enabled": true
+        ]
+    )
+    try requireErrorCode(
+        blankSummaryApproveDraftIDResponse,
+        "invalid_payload",
+        requestID: "smoke-memory-summary-approve-blank-draft-id",
+        context: "memory.summary.draft.approve blank draft_id"
+    )
+
     let staleSummaryApproveResponse = try sendAndRead(
         client,
         type: "memory.summary.draft.approve",
@@ -3913,6 +4409,62 @@ func runAuthenticatedHistoryAndMemoryChecks(client: TCPClient, chatRequestAuditF
     }) else {
         throw SmokeFailure.message("memory.list did not preserve approved summary source metadata after edit: \(sourcePreservingEntries)")
     }
+
+    let invalidSummaryDismissAllowedFieldPayloads: [(requestID: String, payload: [String: Any], context: String)] = [
+        (
+            "smoke-memory-summary-dismiss-invalid-expected-session-type",
+            [
+                "draft_id": dismissDraftID,
+                "expected_session_id": 1
+            ],
+            "memory.summary.draft.dismiss invalid expected session type"
+        ),
+        (
+            "smoke-memory-summary-dismiss-invalid-count-string",
+            [
+                "draft_id": dismissDraftID,
+                "expected_source_message_count": "\(dismissDraftSourceMessageCount)"
+            ],
+            "memory.summary.draft.dismiss invalid expected count string"
+        ),
+        (
+            "smoke-memory-summary-dismiss-invalid-count-type",
+            [
+                "draft_id": dismissDraftID,
+                "expected_source_message_count": Double(dismissDraftSourceMessageCount) + 0.5
+            ],
+            "memory.summary.draft.dismiss invalid expected count fraction"
+        )
+    ]
+    for invalidPayload in invalidSummaryDismissAllowedFieldPayloads {
+        let response = try sendAndRead(
+            client,
+            type: "memory.summary.draft.dismiss",
+            requestID: invalidPayload.requestID,
+            payload: invalidPayload.payload
+        )
+        try requireErrorCode(
+            response,
+            "invalid_payload",
+            requestID: invalidPayload.requestID,
+            context: invalidPayload.context
+        )
+    }
+
+    let blankSummaryDismissDraftIDResponse = try sendAndRead(
+        client,
+        type: "memory.summary.draft.dismiss",
+        requestID: "smoke-memory-summary-dismiss-blank-draft-id",
+        payload: [
+            "draft_id": "   \n\t"
+        ]
+    )
+    try requireErrorCode(
+        blankSummaryDismissDraftIDResponse,
+        "invalid_payload",
+        requestID: "smoke-memory-summary-dismiss-blank-draft-id",
+        context: "memory.summary.draft.dismiss blank draft_id"
+    )
 
     let staleSummaryDismissResponse = try sendAndRead(
         client,
@@ -4475,6 +5027,59 @@ func runAuthenticatedFutureRouteNamespaceRejectionChecks(client: TCPClient) thro
     }
 }
 
+func runAuthenticatedNonObjectPayloadChecks(client: TCPClient) throws {
+    print("Checking authenticated non-object payload rejection...")
+    let malformedPayloads: [(type: String, requestID: String, payload: Any, context: String)] = [
+        (
+            "runtime.health",
+            "smoke-raw-payload-runtime-health-array",
+            [],
+            "runtime.health array payload"
+        ),
+        (
+            "models.list",
+            "smoke-raw-payload-models-list-string",
+            "smoke-non-object-payload-string",
+            "models.list string payload"
+        ),
+        (
+            "route.refresh",
+            "smoke-raw-payload-route-refresh-null",
+            NSNull(),
+            "route.refresh null payload"
+        )
+    ]
+
+    for malformed in malformedPayloads {
+        let response = try sendAndReadRawPayload(
+            client,
+            type: malformed.type,
+            requestID: malformed.requestID,
+            payload: malformed.payload
+        )
+        try requireDecodeErrorCode(
+            response,
+            "invalid_payload",
+            context: malformed.context
+        )
+        if "\(response)".contains("smoke-non-object-payload-string") {
+            throw SmokeFailure.message("\(malformed.context) decode error echoed the raw payload string: \(response)")
+        }
+
+        let healthRequestID = "\(malformed.requestID)-survival-health"
+        let health = try sendAndRead(
+            client,
+            type: "runtime.health",
+            requestID: healthRequestID
+        )
+        try requireRuntimeHealthEnvelope(
+            health,
+            requestID: healthRequestID,
+            context: "\(malformed.context) connection survival"
+        )
+    }
+}
+
 func runMultiDeviceOwnerIsolationChecks(
     host: String,
     port: UInt16,
@@ -4819,6 +5424,54 @@ func runMockBackendChecks(
 
     print("Checking models.pull...")
     let pulledModel = smokePulledModelID
+    let invalidPullModel = try sendAndRead(
+        client,
+        type: "models.pull",
+        requestID: "smoke-pull-invalid-model-type",
+        payload: ["model": 42]
+    )
+    try requireErrorCode(
+        invalidPullModel,
+        "invalid_payload",
+        requestID: "smoke-pull-invalid-model-type",
+        context: "models.pull invalid model type"
+    )
+    let blankPullModel = try sendAndRead(
+        client,
+        type: "models.pull",
+        requestID: "smoke-pull-blank-model",
+        payload: ["model": "   \n\t"]
+    )
+    try requireErrorCode(
+        blankPullModel,
+        "invalid_payload",
+        requestID: "smoke-pull-blank-model",
+        context: "models.pull blank model"
+    )
+    let invalidPullBackendType = try sendAndRead(
+        client,
+        type: "models.pull",
+        requestID: "smoke-pull-invalid-backend-type",
+        payload: ["model": pulledModel, "backend": 42]
+    )
+    try requireErrorCode(
+        invalidPullBackendType,
+        "invalid_payload",
+        requestID: "smoke-pull-invalid-backend-type",
+        context: "models.pull invalid backend type"
+    )
+    let invalidPullBackendValue = try sendAndRead(
+        client,
+        type: "models.pull",
+        requestID: "smoke-pull-invalid-backend-value",
+        payload: ["model": pulledModel, "backend": "lm_studio"]
+    )
+    try requireErrorCode(
+        invalidPullBackendValue,
+        "invalid_payload",
+        requestID: "smoke-pull-invalid-backend-value",
+        context: "models.pull invalid backend value"
+    )
     let pull = try sendAndRead(
         client,
         type: "models.pull",
@@ -4866,6 +5519,177 @@ func runMockBackendChecks(
     guard pulledModelStreamedText.contains("Mock streaming response.") else {
         throw SmokeFailure.message(
             "pulled model chat stream did not contain mock response: \(pulledModelStreamedText)"
+        )
+    }
+
+    let chatBlankSessionIDResponse = try sendAndRead(
+        client,
+        type: "chat.send",
+        requestID: "smoke-chat-blank-session-id",
+        payload: [
+            "session_id": "   \n\t",
+            "model": "dev-mock",
+            "messages": [
+                ["role": "user", "content": "Say hello from the smoke test."]
+            ]
+        ]
+    )
+    try requireErrorCode(
+        chatBlankSessionIDResponse,
+        "invalid_payload",
+        requestID: "smoke-chat-blank-session-id",
+        context: "chat.send blank session_id"
+    )
+
+    let chatBlankModelResponse = try sendAndRead(
+        client,
+        type: "chat.send",
+        requestID: "smoke-chat-blank-model",
+        payload: [
+            "session_id": smokeSessionID,
+            "model": "   \n\t",
+            "messages": [
+                ["role": "user", "content": "Say hello from the smoke test."]
+            ]
+        ]
+    )
+    try requireErrorCode(
+        chatBlankModelResponse,
+        "invalid_payload",
+        requestID: "smoke-chat-blank-model",
+        context: "chat.send blank model"
+    )
+
+    let chatInvalidLocaleTypeResponse = try sendAndRead(
+        client,
+        type: "chat.send",
+        requestID: "smoke-chat-invalid-locale-type",
+        payload: [
+            "session_id": smokeSessionID,
+            "model": "dev-mock",
+            "locale": ["en"],
+            "messages": [
+                ["role": "user", "content": "Say hello from the smoke test."]
+            ]
+        ]
+    )
+    try requireErrorCode(
+        chatInvalidLocaleTypeResponse,
+        "invalid_payload",
+        requestID: "smoke-chat-invalid-locale-type",
+        context: "chat.send invalid locale type"
+    )
+
+    let invalidChatSendAllowedFieldPayloads: [(requestID: String, payload: [String: Any], context: String)] = [
+        (
+            "smoke-chat-invalid-role-value",
+            [
+                "session_id": smokeSessionID,
+                "model": "dev-mock",
+                "messages": [
+                    ["role": "tool", "content": "Say hello from the smoke test."]
+                ] as [[String: Any]]
+            ],
+            "chat.send invalid role value"
+        ),
+        (
+            "smoke-chat-invalid-attachment-type-value",
+            [
+                "session_id": smokeSessionID,
+                "model": "dev-mock",
+                "messages": [
+                    [
+                        "role": "user",
+                        "content": "Summarize the attached smoke note.",
+                        "attachments": [
+                            [
+                                "type": "tool_result",
+                                "mime_type": "text/plain",
+                                "text": "private note"
+                            ]
+                        ] as [[String: Any]]
+                    ]
+                ] as [[String: Any]]
+            ],
+            "chat.send invalid attachment type value"
+        ),
+        (
+            "smoke-chat-invalid-attachment-name-type",
+            [
+                "session_id": smokeSessionID,
+                "model": "dev-mock",
+                "messages": [
+                    [
+                        "role": "user",
+                        "content": "Summarize the attached smoke note.",
+                        "attachments": [
+                            [
+                                "type": "document",
+                                "mime_type": "text/plain",
+                                "name": ["notes.txt"],
+                                "text": "private note"
+                            ]
+                        ] as [[String: Any]]
+                    ]
+                ] as [[String: Any]]
+            ],
+            "chat.send invalid attachment name type"
+        ),
+        (
+            "smoke-chat-invalid-attachment-data-base64-type",
+            [
+                "session_id": smokeSessionID,
+                "model": "dev-mock",
+                "messages": [
+                    [
+                        "role": "user",
+                        "content": "Summarize the attached smoke note.",
+                        "attachments": [
+                            [
+                                "type": "document",
+                                "mime_type": "text/plain",
+                                "data_base64": true
+                            ]
+                        ] as [[String: Any]]
+                    ]
+                ] as [[String: Any]]
+            ],
+            "chat.send invalid attachment data_base64 type"
+        ),
+        (
+            "smoke-chat-invalid-attachment-text-type",
+            [
+                "session_id": smokeSessionID,
+                "model": "dev-mock",
+                "messages": [
+                    [
+                        "role": "user",
+                        "content": "Summarize the attached smoke note.",
+                        "attachments": [
+                            [
+                                "type": "document",
+                                "mime_type": "text/plain",
+                                "text": 42
+                            ]
+                        ] as [[String: Any]]
+                    ]
+                ] as [[String: Any]]
+            ],
+            "chat.send invalid attachment text type"
+        ),
+    ]
+    for invalidPayload in invalidChatSendAllowedFieldPayloads {
+        let response = try sendAndRead(
+            client,
+            type: "chat.send",
+            requestID: invalidPayload.requestID,
+            payload: invalidPayload.payload
+        )
+        try requireErrorCode(
+            response,
+            "invalid_payload",
+            requestID: invalidPayload.requestID,
+            context: invalidPayload.context
         )
     }
 
@@ -5003,6 +5827,19 @@ func runMockBackendChecks(
     }
 
     print("Checking chat.cancel...")
+    let blankCancelTargetResponse = try sendAndRead(
+        client,
+        type: "chat.cancel",
+        requestID: "smoke-cancel-blank-target-request-id",
+        payload: ["target_request_id": "   \n\t"]
+    )
+    try requireErrorCode(
+        blankCancelTargetResponse,
+        "invalid_payload",
+        requestID: "smoke-cancel-blank-target-request-id",
+        context: "chat.cancel blank target_request_id"
+    )
+
     try client.send(envelope(
         "chat.send",
         requestID: "smoke-chat-cancel",
@@ -5472,6 +6309,8 @@ func main() throws {
             runtimeProof: runtimeProof
         )
         defer { client.close() }
+
+        try runAuthenticatedNonObjectPayloadChecks(client: client)
 
         if options.transportMode == .relay {
             let expectedEndpoint = bootstrapRelayEndpoint

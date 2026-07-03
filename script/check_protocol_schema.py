@@ -488,6 +488,8 @@ def check_chat_send_payload_schema_contract(schema: dict[str, object]) -> list[s
         return ["$defs.chatSendPayload schema is missing"]
 
     properties = chat_send_payload.get("properties")
+    if chat_send_payload.get("required") != ["session_id", "model", "messages"]:
+        failures.append("$defs.chatSendPayload must require session_id, model, and messages")
     if not isinstance(properties, dict):
         failures.append("$defs.chatSendPayload.properties must be an object")
     else:
@@ -516,6 +518,14 @@ def check_chat_send_payload_schema_contract(schema: dict[str, object]) -> list[s
                 "$defs.chatSendPayload.properties includes future project/RAG/backend metadata "
                 f"{leaked_keys}"
             )
+        if properties.get("session_id", {}).get("$ref") != "#/$defs/nonBlankString":
+            failures.append("$defs.chatSendPayload request session_id must use nonBlankString")
+        if properties.get("model", {}).get("$ref") != "#/$defs/nonBlankString":
+            failures.append("$defs.chatSendPayload request model must use nonBlankString")
+        if properties.get("locale") != {"type": "string"}:
+            failures.append("$defs.chatSendPayload request locale must be an optional string")
+        if properties.get("messages", {}).get("minItems") != 1:
+            failures.append("$defs.chatSendPayload request messages must require at least one item")
     if chat_send_payload.get("additionalProperties") is not False:
         failures.append("$defs.chatSendPayload.additionalProperties must be false")
     return failures
@@ -531,6 +541,8 @@ def check_chat_title_request_payload_schema_contract(schema: dict[str, object]) 
         return ["$defs.chatTitleRequestPayload schema is missing"]
 
     properties = title_payload.get("properties")
+    if title_payload.get("required") != ["session_id", "model", "messages"]:
+        failures.append("$defs.chatTitleRequestPayload must require session_id, model, and messages")
     if not isinstance(properties, dict):
         failures.append("$defs.chatTitleRequestPayload.properties must be an object")
     else:
@@ -560,6 +572,14 @@ def check_chat_title_request_payload_schema_contract(schema: dict[str, object]) 
                 "$defs.chatTitleRequestPayload.properties includes response/project/RAG/backend metadata "
                 f"{leaked_keys}"
             )
+        if properties.get("session_id", {}).get("$ref") != "#/$defs/nonBlankString":
+            failures.append("$defs.chatTitleRequestPayload request session_id must use nonBlankString")
+        if properties.get("model", {}).get("$ref") != "#/$defs/nonBlankString":
+            failures.append("$defs.chatTitleRequestPayload request model must use nonBlankString")
+        if properties.get("locale") != {"type": "string"}:
+            failures.append("$defs.chatTitleRequestPayload request locale must be an optional string")
+        if properties.get("messages", {}).get("minItems") != 1:
+            failures.append("$defs.chatTitleRequestPayload request messages must require at least one item")
     if title_payload.get("additionalProperties") is not False:
         failures.append("$defs.chatTitleRequestPayload.additionalProperties must be false")
     return failures
@@ -597,6 +617,41 @@ def check_pre_auth_payload_schema_contracts(schema: dict[str, object]) -> list[s
             failures.append(f"$defs.{payload_name} request properties must stay limited to {sorted(expected_keys)}")
         if payload_schema.get("additionalProperties") is not False:
             failures.append(f"$defs.{payload_name} request additionalProperties must be false")
+        if payload_name == "pairingRequestPayload" and isinstance(properties, dict):
+            if payload_schema.get("required") != [
+                "pairing_nonce",
+                "pairing_code",
+                "device_id",
+                "device_name",
+                "public_key",
+            ]:
+                failures.append("$defs.pairingRequestPayload request must require only pairing_nonce, pairing_code, device_id, device_name, and public_key")
+            for field in [
+                "pairing_nonce",
+                "pairing_code",
+                "device_id",
+                "device_name",
+                "public_key",
+            ]:
+                if properties.get(field, {}).get("$ref") != "#/$defs/nonBlankString":
+                    failures.append(f"$defs.pairingRequestPayload request {field} must use nonBlankString")
+        if payload_name == "helloPayload" and isinstance(properties, dict):
+            if payload_schema.get("required") != ["device_id"]:
+                failures.append("$defs.helloPayload request must require only device_id")
+            if properties.get("device_id", {}).get("$ref") != "#/$defs/nonBlankString":
+                failures.append("$defs.helloPayload request device_id must use nonBlankString")
+            if properties.get("device_name", {}).get("$ref") != "#/$defs/nonBlankString":
+                failures.append("$defs.helloPayload request device_name must use nonBlankString")
+            client_capabilities = properties.get("client_capabilities", {})
+            if not isinstance(client_capabilities, dict):
+                failures.append("$defs.helloPayload client_capabilities must be an object schema")
+            else:
+                if client_capabilities.get("type") != "array":
+                    failures.append("$defs.helloPayload client_capabilities must be an array")
+                if client_capabilities.get("items", {}).get("$ref") != "#/$defs/nonBlankString":
+                    failures.append("$defs.helloPayload client_capabilities items must use nonBlankString")
+                if client_capabilities.get("uniqueItems") is not True:
+                    failures.append("$defs.helloPayload client_capabilities must keep uniqueItems true")
 
     auth_response_payload = defs.get("authResponsePayload")
     if not isinstance(auth_response_payload, dict):
@@ -623,6 +678,10 @@ def check_pre_auth_payload_schema_contracts(schema: dict[str, object]) -> list[s
         failures.append("$defs.authResponsePayload request properties must be an object")
     elif set(properties.keys()) != {"device_id", "nonce", "signature"}:
         failures.append("$defs.authResponsePayload request properties must stay limited to device_id, nonce, and signature")
+    else:
+        for field in ["device_id", "nonce", "signature"]:
+            if properties.get(field, {}).get("$ref") != "#/$defs/nonBlankString":
+                failures.append(f"$defs.authResponsePayload request {field} must use nonBlankString")
     if request_option.get("additionalProperties") is not False:
         failures.append("$defs.authResponsePayload request additionalProperties must be false")
 
@@ -727,6 +786,10 @@ def check_models_pull_payload_schema_contract(schema: dict[str, object]) -> list
                 "$defs.modelsPullPayload request properties includes future backend/route/workspace metadata "
                 f"{leaked_keys}"
             )
+        if properties.get("model", {}).get("$ref") != "#/$defs/nonBlankString":
+            failures.append("$defs.modelsPullPayload request model must use nonBlankString")
+        if properties.get("backend", {}).get("enum") != ["ollama"]:
+            failures.append("$defs.modelsPullPayload request backend must stay limited to ollama")
     if request_option.get("additionalProperties") is not False:
         failures.append("$defs.modelsPullPayload request additionalProperties must be false")
     return failures
@@ -757,6 +820,18 @@ def check_chat_cancel_payload_schema_contract(schema: dict[str, object]) -> list
     if not isinstance(request_option, dict):
         return ["$defs.chatCancelPayload must include a target_request_id-only request payload option"]
 
+    acknowledgement_option = next(
+        (
+            option
+            for option in options
+            if isinstance(option, dict)
+            and option.get("required") == ["target_request_id", "cancelled"]
+        ),
+        None,
+    )
+    if not isinstance(acknowledgement_option, dict):
+        failures.append("$defs.chatCancelPayload must include a target_request_id plus cancelled acknowledgement payload option")
+
     properties = request_option.get("properties")
     if not isinstance(properties, dict):
         failures.append("$defs.chatCancelPayload request properties must be an object")
@@ -781,8 +856,28 @@ def check_chat_cancel_payload_schema_contract(schema: dict[str, object]) -> list
                 "$defs.chatCancelPayload request properties includes future backend/route/workspace metadata "
                 f"{leaked_keys}"
             )
+        if properties.get("target_request_id", {}).get("$ref") != "#/$defs/nonBlankString":
+            failures.append("$defs.chatCancelPayload request target_request_id must use nonBlankString")
     if request_option.get("additionalProperties") is not False:
         failures.append("$defs.chatCancelPayload request additionalProperties must be false")
+
+    if isinstance(acknowledgement_option, dict):
+        acknowledgement_properties = acknowledgement_option.get("properties")
+        if not isinstance(acknowledgement_properties, dict):
+            failures.append("$defs.chatCancelPayload acknowledgement properties must be an object")
+        else:
+            allowed_acknowledgement_keys = {"target_request_id", "cancelled"}
+            actual_acknowledgement_keys = set(acknowledgement_properties.keys())
+            if actual_acknowledgement_keys != allowed_acknowledgement_keys:
+                failures.append(
+                    "$defs.chatCancelPayload acknowledgement properties must stay limited to target_request_id and cancelled"
+                )
+            if acknowledgement_properties.get("target_request_id", {}).get("$ref") != "#/$defs/nonBlankString":
+                failures.append("$defs.chatCancelPayload acknowledgement target_request_id must use nonBlankString")
+            if acknowledgement_properties.get("cancelled") != {"type": "boolean"}:
+                failures.append("$defs.chatCancelPayload acknowledgement cancelled must stay boolean")
+        if acknowledgement_option.get("additionalProperties") is not False:
+            failures.append("$defs.chatCancelPayload acknowledgement additionalProperties must be false")
     return failures
 
 
@@ -899,6 +994,10 @@ def check_chat_messages_list_payload_schema_contract(schema: dict[str, object]) 
                 "$defs.chatMessagesListPayload request properties includes future backend/route/workspace/source metadata "
                 f"{leaked_keys}"
             )
+        if properties.get("session_id", {}).get("$ref") != "#/$defs/nonBlankString":
+            failures.append("$defs.chatMessagesListPayload request session_id must use nonBlankString")
+        if properties.get("limit") != {"type": "integer", "minimum": 0, "maximum": 500}:
+            failures.append("$defs.chatMessagesListPayload request limit must stay bounded 0...500")
     if request_option.get("additionalProperties") is not False:
         failures.append("$defs.chatMessagesListPayload request additionalProperties must be false")
     return failures
@@ -944,6 +1043,8 @@ def check_chat_session_lifecycle_payload_schema_contract(schema: dict[str, objec
                 "$defs.chatSessionLifecycleRequestPayload properties includes future backend/route/workspace/source metadata "
                 f"{leaked_keys}"
             )
+        if properties.get("session_id", {}).get("$ref") != "#/$defs/nonBlankString":
+            failures.append("$defs.chatSessionLifecycleRequestPayload session_id must use nonBlankString")
     if lifecycle_payload.get("additionalProperties") is not False:
         failures.append("$defs.chatSessionLifecycleRequestPayload additionalProperties must be false")
     return failures
@@ -1014,6 +1115,10 @@ def check_chat_session_rename_payload_schema_contract(schema: dict[str, object])
                 "$defs.chatSessionRenamePayload request properties includes runtime/backend/route/workspace/source metadata "
                 f"{leaked_keys}"
             )
+        if properties.get("session_id", {}).get("$ref") != "#/$defs/nonBlankString":
+            failures.append("$defs.chatSessionRenamePayload request session_id must use nonBlankString")
+        if properties.get("title", {}).get("$ref") != "#/$defs/nonBlankString":
+            failures.append("$defs.chatSessionRenamePayload request title must use nonBlankString")
     if request_option.get("additionalProperties") is not False:
         failures.append("$defs.chatSessionRenamePayload request additionalProperties must be false")
     return failures
@@ -1153,6 +1258,10 @@ def check_memory_upsert_payload_schema_contract(schema: dict[str, object]) -> li
                 "$defs.memoryUpsertPayload request properties includes response/backend/route/workspace/source metadata "
                 f"{leaked_keys}"
             )
+        if properties.get("id", {}).get("$ref") != "#/$defs/nonBlankString":
+            failures.append("$defs.memoryUpsertPayload request id must use nonBlankString")
+        if properties.get("content", {}).get("$ref") != "#/$defs/nonBlankString":
+            failures.append("$defs.memoryUpsertPayload request content must use nonBlankString")
     if request_option.get("additionalProperties") is not False:
         failures.append("$defs.memoryUpsertPayload request additionalProperties must be false")
     return failures
@@ -1221,6 +1330,8 @@ def check_memory_delete_payload_schema_contract(schema: dict[str, object]) -> li
                 "$defs.memoryDeletePayload request properties includes runtime/backend/route/workspace/source metadata "
                 f"{leaked_keys}"
             )
+        if properties.get("id", {}).get("$ref") != "#/$defs/nonBlankString":
+            failures.append("$defs.memoryDeletePayload request id must use nonBlankString")
     if request_option.get("additionalProperties") is not False:
         failures.append("$defs.memoryDeletePayload request additionalProperties must be false")
     return failures
@@ -1350,16 +1461,20 @@ def main() -> int:
             )
         failures.extend(check_platform_message_constants(set(message_enum)))
 
+    version_schema = schema.get("properties", {}).get("version", {})
+    if not isinstance(version_schema, dict):
+        failures.append("properties.version must be an object schema")
+    elif version_schema.get("const") != 1:
+        failures.append("properties.version must require const 1")
+
     request_id_schema = schema.get("properties", {}).get("request_id", {})
     if not isinstance(request_id_schema, dict):
         failures.append("properties.request_id must be an object schema")
     else:
-        if request_id_schema.get("type") != "string":
-            failures.append("properties.request_id must be a string")
+        if request_id_schema.get("$ref") != "#/$defs/nonBlankString":
+            failures.append("properties.request_id must use nonBlankString")
         if request_id_schema.get("format") == "uuid":
             failures.append("properties.request_id must not require UUID format")
-        if request_id_schema.get("minLength") != 1:
-            failures.append("properties.request_id must require minLength 1")
 
     if failures:
         print("Protocol schema check failed:", file=sys.stderr)
@@ -1610,6 +1725,12 @@ def check_memory_summary_draft_schema(schema: dict) -> list[str]:
         properties = approve_response.get("properties", {})
         expect_schema_equal(
             failures,
+            "memorySummaryDraftApprovePayload response draft_id",
+            properties.get("draft_id"),
+            {"$ref": "#/$defs/nonBlankString"},
+        )
+        expect_schema_equal(
+            failures,
             "memorySummaryDraftApprovePayload response status",
             properties.get("status"),
             {"const": "approved"},
@@ -1658,6 +1779,12 @@ def check_memory_summary_draft_schema(schema: dict) -> list[str]:
             {"draft_id", "status", "dismissed_at"},
         )
         properties = dismiss_response.get("properties", {})
+        expect_schema_equal(
+            failures,
+            "memorySummaryDraftDismissPayload response draft_id",
+            properties.get("draft_id"),
+            {"$ref": "#/$defs/nonBlankString"},
+        )
         expect_schema_equal(
             failures,
             "memorySummaryDraftDismissPayload response status",
@@ -1907,7 +2034,7 @@ def require_memory_summary_decision_request_fields(
         failures,
         f"{label} draft_id",
         properties.get("draft_id"),
-        {"$ref": "#/$defs/nonEmptyString"},
+        {"$ref": "#/$defs/nonBlankString"},
     )
     expect_schema_equal(
         failures,

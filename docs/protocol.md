@@ -21,6 +21,8 @@ Every message includes `type`, `timestamp`, and `payload`. Messages tied to a re
 Rules:
 
 - `version` is `1`.
+- `version` must be `1`. Unsupported envelope versions return `invalid_payload` before authentication checks, backend dispatch, route refresh, or runtime store mutation.
+- `request_id` must be a non-blank string. Blank envelope request ids return `invalid_payload` before authentication checks, backend dispatch, route refresh, or runtime store mutation.
 - `timestamp` is ISO-8601 UTC.
 - `payload` is always an object.
 - Responses reuse the originating `request_id`.
@@ -218,6 +220,8 @@ QR trust and routing identifiers are opaque canonical values. Clients must rejec
 
 The runtime applies the same fail-closed policy to the client identity submitted in `pairing.request`. `device_id` is an opaque canonical identifier, `device_name` is normalized only for display, and `public_key` must be a Base64-encoded P-256 DER public key that can later verify `auth.response` signatures. A malformed device id or public key returns `pairing.result` with `accepted: false` and `code: "pairing_invalid_device_identity"`; it must not create or update a trusted-device record.
 
+Blank required `pairing.request` fields return `invalid_payload` before failed-attempt accounting or trust mutation. Nonblank but canonicality-mutated `device_id` or `public_key` values still return the structured non-trusting `pairing.result` rejection described above.
+
 ```json
 {
   "version": 1,
@@ -280,7 +284,7 @@ After pairing, the client app opens a runtime connection and identifies itself w
 }
 ```
 
-`hello.payload` accepts only `device_id`, `device_name`, and `client_capabilities`. Clients must not send challenge or response fields such as `nonce`, `signature`, `runtime_signature`, backend URLs, provider URLs, backend credentials, route tokens, relay secrets, workspace IDs, permission grants, source paths, source-control state, or direct-provider route material in this payload.
+`hello.payload` accepts only `device_id`, `device_name`, and `client_capabilities`. Only `device_id` is required, and it must be a non-blank string. When present, `device_name` must be a non-blank string, and `client_capabilities` must be an array of unique non-blank strings. Malformed allowed fields return `invalid_payload` before challenge creation. Clients must not send challenge or response fields such as `nonce`, `signature`, `runtime_signature`, backend URLs, provider URLs, backend credentials, route tokens, relay secrets, workspace IDs, permission grants, source paths, source-control state, or direct-provider route material in this payload.
 
 If the device is not trusted, the AetherLink Runtime returns `error` with `code = "pairing_required"`.
 
@@ -325,7 +329,7 @@ The client app signs the domain-separated message `AetherLink client auth respon
 }
 ```
 
-`auth.response` request payload accepts only `device_id`, `nonce`, and `signature`. Clients must not send response-only `accepted`, runtime proof fields, backend URLs, provider URLs, backend credentials, route tokens, relay secrets, workspace IDs, permission grants, source paths, source-control state, or direct-provider route material in this payload.
+`auth.response` request payload accepts only `device_id`, `nonce`, and `signature`. Those fields must be non-blank strings. Malformed or blank allowed fields return `invalid_payload` before authentication, challenge consumption, or runtime command access. Clients must not send response-only `accepted`, runtime proof fields, backend URLs, provider URLs, backend credentials, route tokens, relay secrets, workspace IDs, permission grants, source paths, source-control state, or direct-provider route material in this payload.
 
 Accepted response:
 
@@ -499,7 +503,7 @@ Direction: Client -> Runtime, Runtime -> Client.
 
 `models.pull` requests that the AetherLink Runtime pull a model through Ollama. The AetherLink Runtime converts the request to Ollama `/api/pull` on the runtime host. LM Studio downloads are not exposed as client-initiated pulls; users manage them on the runtime host through LM Studio or `lms`. Clients should refresh `models.list` after a successful pull and keep the normal chat picker focused on installed runtime-host-local chat models.
 
-`models.pull.payload` accepts only `model` and optional legacy `backend`. It must not carry backend URLs, provider URLs, backend credentials, route tokens, relay secrets, requested route tokens, workspace IDs, permission grants, or direct-provider route material. Provider routing and credential configuration remain runtime-host concerns, not mobile-client payload metadata.
+`models.pull.payload` accepts only `model` and optional legacy `backend`. `model` must be a non-blank string and legacy `backend`, when present, must be `ollama`. It must not carry backend URLs, provider URLs, backend credentials, route tokens, relay secrets, requested route tokens, workspace IDs, permission grants, or direct-provider route material. Provider routing and credential configuration remain runtime-host concerns, not mobile-client payload metadata.
 
 Request:
 
@@ -565,7 +569,7 @@ The AetherLink Runtime is the authoritative source for runtime-owned user memory
 
 `chat.send.locale` is optional and carries the client's normalized app-language preference for runtime-generated chat side effects, such as automatic chat titles triggered after the response. It does not change transport routing and must not expose backend or device locale details. Current client implementations normalize this to the launch language set: English, Korean, Japanese, Simplified Chinese, and French.
 
-`chat.send.payload` accepts only `session_id`, `model`, `locale`, and `messages`; it must not carry project IDs, workspace IDs, retrieval context, permission grants, backend URLs, backend credentials, route material, tool results, or trusted-source metadata. Future project/RAG/tool workflows must use explicitly designed runtime-owned protocol messages after their permission and audit semantics exist.
+`chat.send.payload` accepts only `session_id`, `model`, `locale`, and `messages`; `session_id` and `model` must be non-blank strings, `locale` must be a string when present, and malformed allowed fields return `invalid_payload` instead of being coerced or treated as omitted. It must not carry project IDs, workspace IDs, retrieval context, permission grants, backend URLs, backend credentials, route material, tool results, or trusted-source metadata. Future project/RAG/tool workflows must use explicitly designed runtime-owned protocol messages after their permission and audit semantics exist.
 
 The AetherLink Runtime is the authoritative processing boundary for chat. After a syntactically valid `chat.send` is parsed, the runtime host refuses to append to an existing archived session unless the client restores it first. Archived-session sends return `error` with `code = "chat_session_must_be_restored_before_send"` before backend dispatch or chat-event mutation. For active or new sessions, the runtime host stores request metadata and client-visible messages before model resolution, attachment capability checks, or generation starts, then stores streamed answer deltas, reasoning deltas, completion usage, cancellation, and errors as processing events. Runtime-only system context, including the AetherLink capability guard and `Runtime user memory:` prompt context, is backend-call context only and must not be stored or returned as user-visible chat history. Inline attachment bytes are not kept in the event log. Client-side history can exist as UI cache, but it is not the only source of processing state. Authenticated clients can read runtime-owned summaries and transcripts through `chat.sessions.list` and `chat.messages.list`.
 
@@ -575,7 +579,9 @@ If the requested model is not installed on the AetherLink Runtime, the AetherLin
 
 Backend adapters that expose reasoning or think content preserve it as a separate protocol field or stream from the final assistant answer text. The AetherLink Runtime does not mix reasoning/think text into the assistant message body; the client app can then render it as a muted, compact/collapsed section that expands on demand. Ollama chat requests opt into this with the runtime-side `/api/chat` request field `"think": true` and map `message.thinking` to protocol reasoning deltas. LM Studio native and OpenAI-compatible streams map common local-model reasoning fields such as `reasoning_content`, `reasoning_delta`, `thinking_delta`, `reasoning`, `thinking`, and `thoughts` to protocol reasoning deltas. If a backend leaks inline `<think>...</think>` or `<thinking>...</thinking>` tags inside ordinary text deltas, the AetherLink Runtime splits those chunks before storage and before forwarding `chat.delta`, so the tagged content becomes `reasoning_delta` and the visible assistant `delta` stays clean. The client app still sends only `chat.send` to the AetherLink Runtime.
 
-`chat.send.messages[]` may include `attachments` when the client has a real ingestion path. Message objects accept only `role`, `content`, and `attachments`; they must not carry source paths, workspace IDs, source-control state, backend URLs, backend credentials, route material, runtime memory context, tool results, or trusted-source metadata. Attachments are optional and default to an empty array. Clients must not expose file/image controls before the runtime can actually ingest and route the selected input.
+`chat.send.messages[]` may include `attachments` when the client has a real ingestion path. Message objects accept only `role`, `content`, and `attachments`; `role` must be one of `system`, `user`, or `assistant`. They must not carry source paths, workspace IDs, source-control state, backend URLs, backend credentials, route material, runtime memory context, tool results, or trusted-source metadata. Attachments are optional and default to an empty array. Clients must not expose file/image controls before the runtime can actually ingest and route the selected input.
+
+Attachment objects accept only `type`, `mime_type`, `name`, `data_base64`, and `text`. `type` must be one of `image`, `document`, or `file`; `mime_type` must be a non-empty string; and optional `name`, `data_base64`, and `text` must be strings when present. Malformed allowed attachment fields return `invalid_payload` before backend dispatch instead of being silently dropped.
 
 ```json
 {
@@ -747,7 +753,7 @@ Direction: Client -> Runtime, Runtime -> Client.
 
 This reads a runtime-host-owned transcript for one session. Stored assistant reasoning is returned separately from assistant answer text so clients can render it in a muted/collapsible reasoning section.
 
-`chat.messages.list.payload` accepts only `session_id` and `limit`. `session_id` must be a non-empty string, and `limit` must be an integer when present; malformed allowed fields return `invalid_payload` instead of being coerced or ignored. It must not carry backend URLs, provider URLs, backend credentials, route tokens, relay secrets, requested route tokens, workspace IDs, permission grants, source paths, source-control state, or direct-store metadata. Transcript listing is a runtime-owned chat store query for one session; backend/provider routing, source indexing, workspace context, and permission grants remain outside this active payload.
+`chat.messages.list.payload` accepts only `session_id` and `limit`. `session_id` must be a non-blank string, and `limit` must be an integer when present; malformed allowed fields return `invalid_payload` instead of being coerced or ignored. It must not carry backend URLs, provider URLs, backend credentials, route tokens, relay secrets, requested route tokens, workspace IDs, permission grants, source paths, source-control state, or direct-store metadata. Transcript listing is a runtime-owned chat store query for one session; backend/provider routing, source indexing, workspace context, and permission grants remain outside this active payload.
 
 Request:
 
@@ -833,7 +839,7 @@ After the first assistant response completes, the client app may ask the AetherL
 
 The AetherLink Runtime should use recent `messages`, the selected `model`, and the optional `locale` to generate one short title. The runtime should return a single non-streaming result; it should not emit `chat.delta` or normal assistant output for title requests.
 
-`chat.title.request.payload` accepts only `session_id`, `model`, `locale`, and `messages`. Clients must not send response-only `title`, project IDs, workspace IDs, retrieval context, permission grants, backend URLs, provider URLs, backend credentials, route tokens, relay secrets, requested route tokens, source paths, source-control state, tool results, or direct-provider route material in this payload.
+`chat.title.request.payload` accepts only `session_id`, `model`, `locale`, and `messages`; `session_id` and `model` must be non-blank strings, `locale` must be a string when present, and malformed allowed fields return `invalid_payload` instead of being coerced or treated as omitted. Clients must not send response-only `title`, project IDs, workspace IDs, retrieval context, permission grants, backend URLs, provider URLs, backend credentials, route tokens, relay secrets, requested route tokens, source paths, source-control state, tool results, or direct-provider route material in this payload.
 
 ## `chat.title.result`
 
@@ -859,7 +865,7 @@ Direction: Client -> Runtime, Runtime -> Client.
 
 This records a user-provided title for a runtime-owned chat session on the runtime host. Client apps may update their local UI cache optimistically, but the runtime remains the source of truth for the title returned by `chat.sessions.list`.
 
-`chat.session.rename` request payloads accept only `session_id` and `title`. Clients must not supply `renamed_at`; it is runtime-generated acknowledgement metadata. Rename requests also must not carry backend URLs, provider URLs, backend credentials, route tokens, relay secrets, requested route tokens, workspace IDs, permission grants, source paths, source-control state, or direct-store metadata.
+`chat.session.rename` request payloads accept only `session_id` and `title`. `session_id` must be a non-blank string, `title` must be a string and remain non-empty after trimming, and malformed allowed fields return `invalid_payload` instead of being coerced or treated as omitted. Clients must not supply `renamed_at`; it is runtime-generated acknowledgement metadata. Rename requests also must not carry backend URLs, provider URLs, backend credentials, route tokens, relay secrets, requested route tokens, workspace IDs, permission grants, source paths, source-control state, or direct-store metadata.
 
 Request:
 
@@ -900,7 +906,7 @@ Direction: Client -> Runtime, Runtime -> Client.
 
 This archives a runtime-owned chat session on the runtime host. Archived sessions are omitted from the default `chat.sessions.list` response, but can be returned to authenticated clients that request `include_archived: true`. They should not be used as active memory/research context unless explicitly restored by the user.
 
-`chat.session.archive`, `chat.session.restore`, and `chat.session.delete` request payloads accept only `session_id`. They must not carry backend URLs, provider URLs, backend credentials, route tokens, relay secrets, requested route tokens, workspace IDs, permission grants, source paths, source-control state, or direct-store metadata. Session lifecycle commands mutate runtime-owned chat store state; backend/provider routing, source indexing, workspace context, and permission grants remain outside these active payloads.
+`chat.session.archive`, `chat.session.restore`, and `chat.session.delete` request payloads accept only `session_id`. `session_id` must be a non-blank string; malformed allowed fields return `invalid_payload` instead of being coerced or treated as omitted. They must not carry backend URLs, provider URLs, backend credentials, route tokens, relay secrets, requested route tokens, workspace IDs, permission grants, source paths, source-control state, or direct-store metadata. Session lifecycle commands mutate runtime-owned chat store state; backend/provider routing, source indexing, workspace context, and permission grants remain outside these active payloads.
 
 Request:
 
@@ -984,7 +990,7 @@ Acknowledgement payload:
 
 Direction: Client -> Runtime, Runtime -> Client.
 
-`chat.cancel.payload` accepts only `target_request_id`. It must not carry backend URLs, provider URLs, backend credentials, route tokens, relay secrets, workspace IDs, permission grants, source-control state, or direct-provider cancel metadata. Cancellation targets runtime-owned in-flight request ids; provider-specific cancellation and routing remain runtime-host concerns.
+`chat.cancel.payload` accepts only `target_request_id`. `target_request_id` must be a non-blank string; malformed or blank allowed fields return `invalid_payload` before backend cancel dispatch, and acknowledgement payloads echo the same non-blank target request id. It must not carry backend URLs, provider URLs, backend credentials, route tokens, relay secrets, workspace IDs, permission grants, source-control state, or direct-provider cancel metadata. Cancellation targets runtime-owned in-flight request ids; provider-specific cancellation and routing remain runtime-host concerns.
 
 Request:
 
@@ -1127,7 +1133,7 @@ When `query` is nonblank, returned entries include `search.rank`, a bounded `sea
 
 Creates or updates one runtime-owned memory entry. If `id` is omitted, the runtime assigns one. `enabled` defaults to `true` for new entries and preserves the previous value for updates when omitted. `source` is runtime-derived output metadata and is not accepted in this request.
 
-`memory.upsert.payload` accepts only optional `id`, required `content`, and optional `enabled`. `id` must be a string when present and `enabled` must be a boolean when present; malformed allowed fields return `invalid_payload` instead of being coerced or treated as omitted. Clients must not supply `entry`; it is response-only saved memory data. Upsert requests also must not carry backend URLs, provider URLs, backend credentials, route tokens, relay secrets, requested route tokens, workspace IDs, permission grants, source paths, source-control state, source metadata, search metadata, or direct-store metadata.
+`memory.upsert.payload` accepts only optional `id`, required `content`, and optional `enabled`. `id` must be a non-blank string when present, `content` must be a non-blank string, and `enabled` must be a boolean when present; malformed or blank allowed fields return `invalid_payload` instead of being coerced or treated as omitted. Clients must not supply `entry`; it is response-only saved memory data. Upsert requests also must not carry backend URLs, provider URLs, backend credentials, route tokens, relay secrets, requested route tokens, workspace IDs, permission grants, source paths, source-control state, source metadata, search metadata, or direct-store metadata.
 
 ```json
 {
@@ -1167,7 +1173,7 @@ The response uses the same `type` and returns the saved entry:
 
 Deletes one runtime-owned memory entry by id. Implementations may keep append-only tombstones internally, but deleted memory entries must not be returned by `memory.list` or injected into chat context.
 
-`memory.delete.payload` accepts only `id`. Clients must not supply `deleted_at`; it is runtime-generated acknowledgement metadata. Delete requests also must not carry backend URLs, provider URLs, backend credentials, route tokens, relay secrets, requested route tokens, workspace IDs, permission grants, source paths, source-control state, or direct-store metadata.
+`memory.delete.payload` accepts only `id`. `id` must be a non-blank string; malformed or blank allowed fields return `invalid_payload` before runtime memory store mutation. Clients must not supply `deleted_at`; it is runtime-generated acknowledgement metadata. Delete requests also must not carry backend URLs, provider URLs, backend credentials, route tokens, relay secrets, requested route tokens, workspace IDs, permission grants, source paths, source-control state, or direct-store metadata.
 
 ```json
 {
@@ -1258,7 +1264,7 @@ Response:
 
 Approves one currently available long-inactivity memory summary draft into runtime-owned memory for the authenticated trusted device. The runtime must look up the draft from its owner-scoped chat store by `draft_id`; it must not trust client-supplied session ids as authority. If `expected_session_id` or `expected_source_message_count` is supplied and no longer matches the recomputed draft, the runtime returns `memory_summary_draft_stale`. If the draft is unavailable or belongs to another owner, the runtime returns `memory_summary_draft_unavailable`.
 
-`memory.summary.draft.approve.payload` accepts only `draft_id`, optional `content`, optional `enabled`, optional `expected_session_id`, and optional `expected_source_message_count`. Clients must not supply `status` or `entry`; they are response-only approval data. Approval requests also must not carry backend URLs, provider URLs, backend credentials, route tokens, relay secrets, requested route tokens, workspace IDs, permission grants, source paths, source-control state, source metadata, or direct-store metadata.
+`memory.summary.draft.approve.payload` accepts only string `draft_id`, optional string `content`, optional boolean `enabled`, optional string `expected_session_id`, and optional integer `expected_source_message_count`. Malformed allowed fields, such as blank `draft_id`, non-string `content`, non-boolean `enabled`, non-string `expected_session_id`, or string/fractional `expected_source_message_count` values, return `invalid_payload` instead of being coerced or treated as omitted. Clients must not supply `status` or `entry`; they are response-only approval data. Approval requests also must not carry backend URLs, provider URLs, backend credentials, route tokens, relay secrets, requested route tokens, workspace IDs, permission grants, source paths, source-control state, source metadata, or direct-store metadata.
 
 Request:
 
@@ -1327,7 +1333,7 @@ Response:
 
 Dismisses one currently available long-inactivity memory summary draft for the authenticated trusted device without creating runtime-owned memory. The runtime must recompute the owner-scoped draft by `draft_id`; it must not trust client-supplied session ids as authority. If `expected_session_id` or `expected_source_message_count` is supplied and no longer matches the recomputed draft, the runtime returns `memory_summary_draft_stale`. If the draft is unavailable or belongs to another owner, the runtime returns `memory_summary_draft_unavailable`. Dismissed drafts are hidden from later draft-list responses for that owner. Repeating dismiss for the same current draft id is idempotent.
 
-`memory.summary.draft.dismiss.payload` accepts only `draft_id`, optional `expected_session_id`, and optional `expected_source_message_count`. Clients must not supply `status` or `dismissed_at`; they are response-only dismissal data. Dismiss requests also must not carry backend URLs, provider URLs, backend credentials, route tokens, relay secrets, requested route tokens, workspace IDs, permission grants, source paths, source-control state, source metadata, or direct-store metadata.
+`memory.summary.draft.dismiss.payload` accepts only string `draft_id`, optional string `expected_session_id`, and optional integer `expected_source_message_count`. Malformed allowed fields, such as blank `draft_id`, non-string `expected_session_id`, or string/fractional `expected_source_message_count` values, return `invalid_payload` instead of being coerced or treated as omitted. Clients must not supply `status` or `dismissed_at`; they are response-only dismissal data. Dismiss requests also must not carry backend URLs, provider URLs, backend credentials, route tokens, relay secrets, requested route tokens, workspace IDs, permission grants, source paths, source-control state, source metadata, or direct-store metadata.
 
 Request:
 

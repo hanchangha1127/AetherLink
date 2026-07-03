@@ -37,6 +37,51 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertTrue(log.contains("[redacted]"))
     }
 
+    func testRejectsBlankEnvelopeRequestIDBeforeRuntimeCommandDispatch() async throws {
+        let sink = RecordingSink()
+        let backend = MockBackend(status: BackendStatus.available)
+        let router = makeRouter(
+            backend: backend,
+            requiresAuthentication: true
+        )
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.runtimeHealth,
+            requestID: "   \n\t"
+        ), sink: sink)
+
+        let message = try await sink.waitForMessages(count: 1).first
+        XCTAssertEqual(message?.type, MessageType.error)
+        XCTAssertEqual(message?.requestID, "   \n\t")
+        XCTAssertEqual(message?.payload["code"], .string("invalid_payload"))
+        XCTAssertEqual(message?.payload["retryable"], .bool(false))
+        XCTAssertTrue(String(describing: message?.payload).contains("request_id"))
+        XCTAssertEqual(backend.healthCheckCallCount, 0)
+    }
+
+    func testRejectsUnsupportedEnvelopeVersionBeforeRuntimeCommandDispatch() async throws {
+        let sink = RecordingSink()
+        let backend = MockBackend(status: BackendStatus.available)
+        let router = makeRouter(
+            backend: backend,
+            requiresAuthentication: true
+        )
+
+        router.handle(ProtocolEnvelope(
+            version: 2,
+            type: MessageType.runtimeHealth,
+            requestID: "unsupported-version"
+        ), sink: sink)
+
+        let message = try await sink.waitForMessages(count: 1).first
+        XCTAssertEqual(message?.type, MessageType.error)
+        XCTAssertEqual(message?.requestID, "unsupported-version")
+        XCTAssertEqual(message?.payload["code"], .string("invalid_payload"))
+        XCTAssertEqual(message?.payload["retryable"], .bool(false))
+        XCTAssertTrue(String(describing: message?.payload).contains("version"))
+        XCTAssertEqual(backend.healthCheckCallCount, 0)
+    }
+
     func testRuntimeHealthResponseUsesRuntimeHealthType() async throws {
         let sink = RecordingSink()
         let router = makeRouter(backend: MockBackend(status: BackendStatus.available))
@@ -380,6 +425,56 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(message?.payload["retryable"], .bool(false))
         XCTAssertTrue(String(describing: message?.payload).contains("backend_url"))
         XCTAssertEqual(backend.pulledModelNames, [])
+    }
+
+    func testModelsPullRejectsInvalidAllowedPayloadTypesBeforeBackendDispatch() async throws {
+        let cases: [(requestID: String, payload: [String: JSONValue])] = [
+            (
+                requestID: "pull-invalid-model-type",
+                payload: ["model": .number(42)]
+            ),
+            (
+                requestID: "pull-empty-model",
+                payload: ["model": .string("")]
+            ),
+            (
+                requestID: "pull-blank-model",
+                payload: ["model": .string("   \n\t")]
+            ),
+            (
+                requestID: "pull-invalid-backend-type",
+                payload: [
+                    "model": .string("llama3.1:8b"),
+                    "backend": .number(1)
+                ]
+            ),
+            (
+                requestID: "pull-invalid-backend-value",
+                payload: [
+                    "model": .string("llama3.1:8b"),
+                    "backend": .string("lm_studio")
+                ]
+            )
+        ]
+
+        for testCase in cases {
+            let sink = RecordingSink()
+            let backend = MockBackend()
+            let router = makeRouter(backend: backend)
+
+            router.handle(ProtocolEnvelope(
+                type: MessageType.modelsPull,
+                requestID: testCase.requestID,
+                payload: testCase.payload
+            ), sink: sink)
+
+            let message = try await sink.waitForMessages(count: 1).first
+            XCTAssertEqual(message?.type, MessageType.error, testCase.requestID)
+            XCTAssertEqual(message?.requestID, testCase.requestID)
+            XCTAssertEqual(message?.payload["code"], .string("invalid_payload"), testCase.requestID)
+            XCTAssertEqual(message?.payload["retryable"], .bool(false), testCase.requestID)
+            XCTAssertEqual(backend.pulledModelNames, [], testCase.requestID)
+        }
     }
 
     func testModelsPullBackendErrorUsesProtocolErrorCodeWithoutBackendURL() async throws {
@@ -2270,6 +2365,14 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
     func testChatMessagesListRejectsInvalidAllowedPayloadTypesBeforeStoreDispatch() async throws {
         let invalidPayloads: [(requestID: String, payload: [String: JSONValue], expectedField: String)] = [
             (
+                "messages-invalid-session-id-whitespace",
+                [
+                    "session_id": .string("   \n\t"),
+                    "limit": .number(20)
+                ],
+                "session_id"
+            ),
+            (
                 "messages-invalid-limit-type",
                 [
                     "session_id": .string("session-1"),
@@ -2534,6 +2637,62 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(store.events, [])
     }
 
+    func testChatSessionLifecycleRejectsInvalidAllowedPayloadTypesBeforeStoreMutation() async throws {
+        let testCases: [(type: String, requestID: String, payload: [String: JSONValue])] = [
+            (
+                MessageType.chatSessionArchive,
+                "archive-invalid-session-id-number",
+                ["session_id": .number(42)]
+            ),
+            (
+                MessageType.chatSessionRestore,
+                "restore-invalid-session-id-bool",
+                ["session_id": .bool(true)]
+            ),
+            (
+                MessageType.chatSessionDelete,
+                "delete-invalid-session-id-empty",
+                ["session_id": .string("")]
+            ),
+            (
+                MessageType.chatSessionArchive,
+                "archive-invalid-session-id-whitespace",
+                ["session_id": .string("   \n\t")]
+            )
+        ]
+
+        for testCase in testCases {
+            let sink = RecordingSink()
+            let store = RecordingRuntimeChatEventStore(sessions: [
+                RuntimeChatStoredSession(
+                    sessionID: "session-lifecycle-invalid",
+                    title: "Runtime lifecycle",
+                    model: "llama3.1:8b",
+                    lastActivityAt: Date(timeIntervalSince1970: 421),
+                    messageCount: 1
+                )
+            ])
+            let router = makeRouter(
+                backend: MockBackend(),
+                chatEventStore: store
+            )
+
+            router.handle(ProtocolEnvelope(
+                type: testCase.type,
+                requestID: testCase.requestID,
+                payload: testCase.payload
+            ), sink: sink)
+
+            let response = try await sink.waitForMessages(count: 1).first
+            XCTAssertEqual(response?.type, MessageType.error, testCase.requestID)
+            XCTAssertEqual(response?.requestID, testCase.requestID, testCase.requestID)
+            XCTAssertEqual(response?.payload["code"], .string("invalid_payload"), testCase.requestID)
+            XCTAssertEqual(response?.payload["retryable"], .bool(false), testCase.requestID)
+            XCTAssertEqual(store.mutationRequests, [], testCase.requestID)
+            XCTAssertEqual(store.events, [], testCase.requestID)
+        }
+    }
+
     func testRuntimeChatSessionRenameStoresRuntimeTitle() async throws {
         let sink = RecordingSink()
         let fileURL = FileManager.default.temporaryDirectory
@@ -2612,6 +2771,70 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(response?.payload["retryable"], .bool(false))
         XCTAssertTrue(String(describing: response?.payload).contains("renamed_at"))
         XCTAssertEqual(store.events, [])
+    }
+
+    func testChatSessionRenameRejectsInvalidAllowedPayloadTypesBeforeTitleStoreMutation() async throws {
+        let testCases: [(requestID: String, payload: [String: JSONValue])] = [
+            (
+                "rename-invalid-session-id-number",
+                [
+                    "session_id": .number(42),
+                    "title": .string("Runtime route notes")
+                ]
+            ),
+            (
+                "rename-invalid-session-id-whitespace",
+                [
+                    "session_id": .string("   \n\t"),
+                    "title": .string("Runtime route notes")
+                ]
+            ),
+            (
+                "rename-invalid-title-bool",
+                [
+                    "session_id": .string("session-rename-invalid"),
+                    "title": .bool(true)
+                ]
+            ),
+            (
+                "rename-invalid-title-empty-after-trim",
+                [
+                    "session_id": .string("session-rename-invalid"),
+                    "title": .string("   ")
+                ]
+            )
+        ]
+
+        for testCase in testCases {
+            let sink = RecordingSink()
+            let store = RecordingRuntimeChatEventStore(sessions: [
+                RuntimeChatStoredSession(
+                    sessionID: "session-rename-invalid",
+                    title: "Runtime rename",
+                    model: "llama3.1:8b",
+                    lastActivityAt: Date(timeIntervalSince1970: 441),
+                    messageCount: 1
+                )
+            ])
+            let router = makeRouter(
+                backend: MockBackend(),
+                chatEventStore: store
+            )
+
+            router.handle(ProtocolEnvelope(
+                type: MessageType.chatSessionRename,
+                requestID: testCase.requestID,
+                payload: testCase.payload
+            ), sink: sink)
+
+            let response = try await sink.waitForMessages(count: 1).first
+            XCTAssertEqual(response?.type, MessageType.error, testCase.requestID)
+            XCTAssertEqual(response?.requestID, testCase.requestID, testCase.requestID)
+            XCTAssertEqual(response?.payload["code"], .string("invalid_payload"), testCase.requestID)
+            XCTAssertEqual(response?.payload["retryable"], .bool(false), testCase.requestID)
+            XCTAssertEqual(store.sessionListRequests, [], testCase.requestID)
+            XCTAssertEqual(store.events, [], testCase.requestID)
+        }
     }
 
     func testRuntimeMemoryMessagesMutateRuntimeStore() async throws {
@@ -2729,6 +2952,45 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(response?.payload["retryable"], .bool(false))
         XCTAssertTrue(String(describing: response?.payload).contains("backend_url"))
         XCTAssertEqual(store.deleteRequests, [])
+    }
+
+    func testMemoryDeleteRejectsInvalidAllowedPayloadTypesBeforeStoreMutation() async throws {
+        let testCases: [(requestID: String, payload: [String: JSONValue])] = [
+            (
+                "memory-delete-invalid-id-number",
+                ["id": .number(42)]
+            ),
+            (
+                "memory-delete-invalid-id-empty",
+                ["id": .string("")]
+            ),
+            (
+                "memory-delete-invalid-id-whitespace",
+                ["id": .string("   \n\t")]
+            )
+        ]
+
+        for testCase in testCases {
+            let sink = RecordingSink()
+            let store = RecordingRuntimeMemoryStore()
+            let router = makeRouter(
+                backend: MockBackend(),
+                memoryStore: store
+            )
+
+            router.handle(ProtocolEnvelope(
+                type: MessageType.memoryDelete,
+                requestID: testCase.requestID,
+                payload: testCase.payload
+            ), sink: sink)
+
+            let response = try await sink.waitForMessages(count: 1).first
+            XCTAssertEqual(response?.type, MessageType.error, testCase.requestID)
+            XCTAssertEqual(response?.requestID, testCase.requestID, testCase.requestID)
+            XCTAssertEqual(response?.payload["code"], .string("invalid_payload"), testCase.requestID)
+            XCTAssertEqual(response?.payload["retryable"], .bool(false), testCase.requestID)
+            XCTAssertEqual(store.deleteRequests, [], testCase.requestID)
+        }
     }
 
     func testMemoryListRejectsUnknownPayloadMetadataBeforeStoreDispatch() async throws {
@@ -2964,6 +3226,24 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
     func testMemoryUpsertRejectsInvalidAllowedPayloadTypesBeforeStoreMutation() async throws {
         let cases: [(requestID: String, payload: [String: JSONValue], expectedField: String)] = [
             (
+                "memory-upsert-invalid-id-empty",
+                [
+                    "id": .string(""),
+                    "content": .string("Client sends an empty memory id."),
+                    "enabled": .bool(true)
+                ],
+                "id"
+            ),
+            (
+                "memory-upsert-invalid-id-whitespace",
+                [
+                    "id": .string("   \n\t"),
+                    "content": .string("Client sends a blank memory id."),
+                    "enabled": .bool(true)
+                ],
+                "id"
+            ),
+            (
                 "memory-upsert-invalid-id-type",
                 [
                     "id": .number(42),
@@ -2971,6 +3251,24 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
                     "enabled": .bool(true)
                 ],
                 "id"
+            ),
+            (
+                "memory-upsert-invalid-content-whitespace",
+                [
+                    "id": .string("memory-invalid-content-whitespace"),
+                    "content": .string("   \n\t"),
+                    "enabled": .bool(true)
+                ],
+                "content"
+            ),
+            (
+                "memory-upsert-invalid-content-type",
+                [
+                    "id": .string("memory-invalid-content-type"),
+                    "content": .number(42),
+                    "enabled": .bool(true)
+                ],
+                "content"
             ),
             (
                 "memory-upsert-invalid-enabled-string",
@@ -3576,6 +3874,106 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(memoryStore.upsertRequests, [])
     }
 
+    func testMemorySummaryDraftApproveRejectsInvalidAllowedPayloadTypesBeforeStoreMutation() async throws {
+        let invalidPayloads: [(requestID: String, payload: [String: JSONValue], expectedField: String)] = [
+            (
+                "summary-draft-approve-invalid-content-type",
+                [
+                    "draft_id": .string("long-inactivity:session-1:1000:6"),
+                    "content": .number(42)
+                ],
+                "content"
+            ),
+            (
+                "summary-draft-approve-invalid-enabled-type",
+                [
+                    "draft_id": .string("long-inactivity:session-1:1000:6"),
+                    "enabled": .string("true")
+                ],
+                "enabled"
+            ),
+            (
+                "summary-draft-approve-invalid-expected-session-type",
+                [
+                    "draft_id": .string("long-inactivity:session-1:1000:6"),
+                    "expected_session_id": .number(1)
+                ],
+                "expected_session_id"
+            ),
+            (
+                "summary-draft-approve-invalid-expected-count-string",
+                [
+                    "draft_id": .string("long-inactivity:session-1:1000:6"),
+                    "expected_source_message_count": .string("6")
+                ],
+                "expected_source_message_count"
+            ),
+            (
+                "summary-draft-approve-invalid-expected-count-fraction",
+                [
+                    "draft_id": .string("long-inactivity:session-1:1000:6"),
+                    "expected_source_message_count": .number(6.5)
+                ],
+                "expected_source_message_count"
+            )
+        ]
+
+        for invalidPayload in invalidPayloads {
+            let sink = RecordingSink()
+            let chatStore = RecordingRuntimeChatEventStore()
+            let memoryStore = RecordingRuntimeMemoryStore()
+            let router = makeRouter(
+                backend: MockBackend(),
+                chatEventStore: chatStore,
+                memoryStore: memoryStore
+            )
+
+            router.handle(ProtocolEnvelope(
+                type: MessageType.memorySummaryDraftApprove,
+                requestID: invalidPayload.requestID,
+                payload: invalidPayload.payload
+            ), sink: sink)
+
+            let response = try await sink.waitForMessages(count: 1).first
+            XCTAssertEqual(response?.type, MessageType.error)
+            XCTAssertEqual(response?.requestID, invalidPayload.requestID)
+            XCTAssertEqual(response?.payload["code"], .string("invalid_payload"))
+            XCTAssertEqual(response?.payload["retryable"], .bool(false))
+            XCTAssertTrue(String(describing: response?.payload).contains(invalidPayload.expectedField))
+            XCTAssertEqual(chatStore.sessionListRequests, [])
+            XCTAssertEqual(memoryStore.upsertRequests, [])
+        }
+    }
+
+    func testMemorySummaryDraftApproveRejectsBlankDraftIDBeforeStoreMutation() async throws {
+        let sink = RecordingSink()
+        let chatStore = RecordingRuntimeChatEventStore()
+        let memoryStore = RecordingRuntimeMemoryStore()
+        let router = makeRouter(
+            backend: MockBackend(),
+            chatEventStore: chatStore,
+            memoryStore: memoryStore
+        )
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.memorySummaryDraftApprove,
+            requestID: "summary-draft-approve-blank-draft-id",
+            payload: [
+                "draft_id": .string("   \n\t"),
+                "content": .string("Client should not reach memory mutation.")
+            ]
+        ), sink: sink)
+
+        let response = try await sink.waitForMessages(count: 1).first
+        XCTAssertEqual(response?.type, MessageType.error)
+        XCTAssertEqual(response?.requestID, "summary-draft-approve-blank-draft-id")
+        XCTAssertEqual(response?.payload["code"], .string("invalid_payload"))
+        XCTAssertEqual(response?.payload["retryable"], .bool(false))
+        XCTAssertTrue(String(describing: response?.payload).contains("draft_id"))
+        XCTAssertEqual(chatStore.sessionListRequests, [])
+        XCTAssertEqual(memoryStore.upsertRequests, [])
+    }
+
     func testMemorySummaryDraftDismissHidesOwnerScopedDraftWithoutWritingMemory() async throws {
         let deviceAKey = P256.Signing.PrivateKey()
         let deviceBKey = P256.Signing.PrivateKey()
@@ -3763,6 +4161,89 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(response?.payload["code"], .string("invalid_payload"))
         XCTAssertEqual(response?.payload["retryable"], .bool(false))
         XCTAssertTrue(String(describing: response?.payload).contains("backend_url"))
+        XCTAssertEqual(chatStore.sessionListRequests, [])
+        XCTAssertEqual(memoryStore.dismissMemorySummaryDraftRequests, [])
+    }
+
+    func testMemorySummaryDraftDismissRejectsInvalidAllowedPayloadTypesBeforeStoreMutation() async throws {
+        let invalidPayloads: [(requestID: String, payload: [String: JSONValue], expectedField: String)] = [
+            (
+                "summary-draft-dismiss-invalid-expected-session-type",
+                [
+                    "draft_id": .string("long-inactivity:session-1:1000:6"),
+                    "expected_session_id": .number(1)
+                ],
+                "expected_session_id"
+            ),
+            (
+                "summary-draft-dismiss-invalid-expected-count-string",
+                [
+                    "draft_id": .string("long-inactivity:session-1:1000:6"),
+                    "expected_source_message_count": .string("6")
+                ],
+                "expected_source_message_count"
+            ),
+            (
+                "summary-draft-dismiss-invalid-expected-count-fraction",
+                [
+                    "draft_id": .string("long-inactivity:session-1:1000:6"),
+                    "expected_source_message_count": .number(6.5)
+                ],
+                "expected_source_message_count"
+            )
+        ]
+
+        for invalidPayload in invalidPayloads {
+            let sink = RecordingSink()
+            let chatStore = RecordingRuntimeChatEventStore()
+            let memoryStore = RecordingRuntimeMemoryStore()
+            let router = makeRouter(
+                backend: MockBackend(),
+                chatEventStore: chatStore,
+                memoryStore: memoryStore
+            )
+
+            router.handle(ProtocolEnvelope(
+                type: MessageType.memorySummaryDraftDismiss,
+                requestID: invalidPayload.requestID,
+                payload: invalidPayload.payload
+            ), sink: sink)
+
+            let response = try await sink.waitForMessages(count: 1).first
+            XCTAssertEqual(response?.type, MessageType.error)
+            XCTAssertEqual(response?.requestID, invalidPayload.requestID)
+            XCTAssertEqual(response?.payload["code"], .string("invalid_payload"))
+            XCTAssertEqual(response?.payload["retryable"], .bool(false))
+            XCTAssertTrue(String(describing: response?.payload).contains(invalidPayload.expectedField))
+            XCTAssertEqual(chatStore.sessionListRequests, [])
+            XCTAssertEqual(memoryStore.dismissMemorySummaryDraftRequests, [])
+        }
+    }
+
+    func testMemorySummaryDraftDismissRejectsBlankDraftIDBeforeStoreMutation() async throws {
+        let sink = RecordingSink()
+        let chatStore = RecordingRuntimeChatEventStore()
+        let memoryStore = RecordingRuntimeMemoryStore()
+        let router = makeRouter(
+            backend: MockBackend(),
+            chatEventStore: chatStore,
+            memoryStore: memoryStore
+        )
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.memorySummaryDraftDismiss,
+            requestID: "summary-draft-dismiss-blank-draft-id",
+            payload: [
+                "draft_id": .string("   \n\t")
+            ]
+        ), sink: sink)
+
+        let response = try await sink.waitForMessages(count: 1).first
+        XCTAssertEqual(response?.type, MessageType.error)
+        XCTAssertEqual(response?.requestID, "summary-draft-dismiss-blank-draft-id")
+        XCTAssertEqual(response?.payload["code"], .string("invalid_payload"))
+        XCTAssertEqual(response?.payload["retryable"], .bool(false))
+        XCTAssertTrue(String(describing: response?.payload).contains("draft_id"))
         XCTAssertEqual(chatStore.sessionListRequests, [])
         XCTAssertEqual(memoryStore.dismissMemorySummaryDraftRequests, [])
     }
@@ -4828,6 +5309,188 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertNil(capturedRequest.value)
     }
 
+    func testChatSendRejectsInvalidAllowedPayloadTypesBeforeBackendDispatch() async throws {
+        let cases: [(requestID: String, payload: [String: JSONValue], expectedMessageField: String)] = [
+            (
+                requestID: "chat-invalid-session-id-whitespace",
+                payload: [
+                    "session_id": .string("   \n\t"),
+                    "model": .string("llama3.1:8b"),
+                    "messages": .array([
+                        .object([
+                            "role": .string("user"),
+                            "content": .string("Use this project context.")
+                        ])
+                    ])
+                ],
+                expectedMessageField: "session_id"
+            ),
+            (
+                requestID: "chat-invalid-model-whitespace",
+                payload: [
+                    "session_id": .string("session-1"),
+                    "model": .string("   \n\t"),
+                    "messages": .array([
+                        .object([
+                            "role": .string("user"),
+                            "content": .string("Use this project context.")
+                        ])
+                    ])
+                ],
+                expectedMessageField: "model"
+            ),
+            (
+                requestID: "chat-invalid-locale-type",
+                payload: [
+                    "session_id": .string("session-1"),
+                    "model": .string("llama3.1:8b"),
+                    "locale": .array([.string("en")]),
+                    "messages": .array([
+                        .object([
+                            "role": .string("user"),
+                            "content": .string("Use this project context.")
+                        ])
+                    ])
+                ],
+                expectedMessageField: "locale"
+            ),
+            (
+                requestID: "chat-invalid-role-value",
+                payload: [
+                    "session_id": .string("session-1"),
+                    "model": .string("llama3.1:8b"),
+                    "messages": .array([
+                        .object([
+                            "role": .string("tool"),
+                            "content": .string("Use this project context.")
+                        ])
+                    ])
+                ],
+                expectedMessageField: "role"
+            ),
+            (
+                requestID: "chat-invalid-attachment-type-value",
+                payload: [
+                    "session_id": .string("session-1"),
+                    "model": .string("llama3.1:8b"),
+                    "messages": .array([
+                        .object([
+                            "role": .string("user"),
+                            "content": .string("Read this."),
+                            "attachments": .array([
+                                .object([
+                                    "type": .string("tool_result"),
+                                    "mime_type": .string("text/plain"),
+                                    "text": .string("private note")
+                                ])
+                            ])
+                        ])
+                    ])
+                ],
+                expectedMessageField: "type"
+            ),
+            (
+                requestID: "chat-invalid-attachment-name-type",
+                payload: [
+                    "session_id": .string("session-1"),
+                    "model": .string("llama3.1:8b"),
+                    "messages": .array([
+                        .object([
+                            "role": .string("user"),
+                            "content": .string("Read this."),
+                            "attachments": .array([
+                                .object([
+                                    "type": .string("document"),
+                                    "mime_type": .string("text/plain"),
+                                    "name": .array([.string("notes.txt")]),
+                                    "text": .string("private note")
+                                ])
+                            ])
+                        ])
+                    ])
+                ],
+                expectedMessageField: "name"
+            ),
+            (
+                requestID: "chat-invalid-attachment-data-type",
+                payload: [
+                    "session_id": .string("session-1"),
+                    "model": .string("llama3.1:8b"),
+                    "messages": .array([
+                        .object([
+                            "role": .string("user"),
+                            "content": .string("Read this."),
+                            "attachments": .array([
+                                .object([
+                                    "type": .string("document"),
+                                    "mime_type": .string("text/plain"),
+                                    "data_base64": .bool(true)
+                                ])
+                            ])
+                        ])
+                    ])
+                ],
+                expectedMessageField: "data_base64"
+            ),
+            (
+                requestID: "chat-invalid-attachment-text-type",
+                payload: [
+                    "session_id": .string("session-1"),
+                    "model": .string("llama3.1:8b"),
+                    "messages": .array([
+                        .object([
+                            "role": .string("user"),
+                            "content": .string("Read this."),
+                            "attachments": .array([
+                                .object([
+                                    "type": .string("document"),
+                                    "mime_type": .string("text/plain"),
+                                    "text": .number(42)
+                                ])
+                            ])
+                        ])
+                    ])
+                ],
+                expectedMessageField: "text"
+            ),
+        ]
+
+        for testCase in cases {
+            let sink = RecordingSink()
+            let capturedRequest = LockedBox<ChatRequest?>(nil)
+            let store = RecordingRuntimeChatEventStore()
+            let router = makeRouter(
+                backend: MockBackend(
+                    models: [ModelInfo(id: "llama3.1:8b", name: "llama3.1:8b", installed: true)],
+                    onChatRequest: { request in
+                        capturedRequest.value = request
+                    }
+                ),
+                chatEventStore: store
+            )
+            let envelope = ProtocolEnvelope(
+                type: MessageType.chatSend,
+                requestID: testCase.requestID,
+                payload: testCase.payload
+            )
+
+            router.handle(envelope, sink: sink)
+
+            let message = try await sink.waitForMessages(count: 1).first
+            XCTAssertEqual(message?.type, MessageType.error, testCase.requestID)
+            XCTAssertEqual(message?.requestID, testCase.requestID)
+            XCTAssertEqual(message?.payload["code"], .string("invalid_payload"), testCase.requestID)
+            XCTAssertEqual(message?.payload["retryable"], .bool(false), testCase.requestID)
+            if case .string(let errorMessage)? = message?.payload["message"] {
+                XCTAssertTrue(errorMessage.contains(testCase.expectedMessageField), testCase.requestID)
+            } else {
+                XCTFail("Expected invalid payload message to mention \(testCase.expectedMessageField).")
+            }
+            XCTAssertNil(capturedRequest.value, testCase.requestID)
+            XCTAssertTrue(store.events.isEmpty, testCase.requestID)
+        }
+    }
+
     func testChatSendImageAttachmentRequiresVisionCapableModel() async throws {
         let sink = RecordingSink()
         let capturedRequest = LockedBox<ChatRequest?>(nil)
@@ -5271,6 +5934,160 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertTrue(store.events.isEmpty)
     }
 
+    func testChatTitleRequestRejectsInvalidAllowedLocaleTypeBeforeBackendDispatch() async throws {
+        let sink = RecordingSink()
+        let capturedRequest = LockedBox<ChatRequest?>(nil)
+        let backend = MockBackend(
+            models: [ModelInfo(id: "llama3.1:8b", name: "llama3.1:8b", installed: true)],
+            chatEvents: [
+                .delta(#"{"title":"Forged"}"#),
+                .done(inputTokens: 4, outputTokens: 8)
+            ],
+            onChatRequest: { request in
+                capturedRequest.value = request
+            }
+        )
+        let store = RecordingRuntimeChatEventStore()
+        let router = makeRouter(backend: backend, chatEventStore: store)
+        let envelope = ProtocolEnvelope(
+            type: MessageType.chatTitleRequest,
+            requestID: "title-invalid-locale-type",
+            payload: [
+                "session_id": .string("session-1"),
+                "model": .string("llama3.1:8b"),
+                "locale": .array([.string("en")]),
+                "messages": .array([
+                    .object([
+                        "role": .string("user"),
+                        "content": .string("Explain the transport.")
+                    ]),
+                    .object([
+                        "role": .string("assistant"),
+                        "content": .string("The runtime mediates all backend access.")
+                    ])
+                ])
+            ]
+        )
+
+        router.handle(envelope, sink: sink)
+
+        let message = try await sink.waitForMessages(count: 1).first
+        XCTAssertEqual(message?.type, MessageType.error)
+        XCTAssertEqual(message?.requestID, "title-invalid-locale-type")
+        XCTAssertEqual(message?.payload["code"], .string("invalid_payload"))
+        XCTAssertEqual(message?.payload["retryable"], .bool(false))
+        if case .string(let errorMessage)? = message?.payload["message"] {
+            XCTAssertTrue(errorMessage.contains("locale"))
+        } else {
+            XCTFail("Expected invalid payload message to mention locale.")
+        }
+        XCTAssertEqual(backend.listModelsCallCount, 0)
+        XCTAssertNil(capturedRequest.value)
+        XCTAssertTrue(store.events.isEmpty)
+    }
+
+    func testChatTitleRequestRejectsBlankSessionIDBeforeBackendDispatch() async throws {
+        let sink = RecordingSink()
+        let capturedRequest = LockedBox<ChatRequest?>(nil)
+        let backend = MockBackend(
+            models: [ModelInfo(id: "llama3.1:8b", name: "llama3.1:8b", installed: true)],
+            chatEvents: [
+                .delta(#"{"title":"Forged"}"#),
+                .done(inputTokens: 4, outputTokens: 8)
+            ],
+            onChatRequest: { request in
+                capturedRequest.value = request
+            }
+        )
+        let store = RecordingRuntimeChatEventStore()
+        let router = makeRouter(backend: backend, chatEventStore: store)
+        let envelope = ProtocolEnvelope(
+            type: MessageType.chatTitleRequest,
+            requestID: "title-blank-session-id",
+            payload: [
+                "session_id": .string("   \n\t"),
+                "model": .string("llama3.1:8b"),
+                "messages": .array([
+                    .object([
+                        "role": .string("user"),
+                        "content": .string("Explain the transport.")
+                    ]),
+                    .object([
+                        "role": .string("assistant"),
+                        "content": .string("The runtime mediates all backend access.")
+                    ])
+                ])
+            ]
+        )
+
+        router.handle(envelope, sink: sink)
+
+        let message = try await sink.waitForMessages(count: 1).first
+        XCTAssertEqual(message?.type, MessageType.error)
+        XCTAssertEqual(message?.requestID, "title-blank-session-id")
+        XCTAssertEqual(message?.payload["code"], .string("invalid_payload"))
+        XCTAssertEqual(message?.payload["retryable"], .bool(false))
+        if case .string(let errorMessage)? = message?.payload["message"] {
+            XCTAssertTrue(errorMessage.contains("session_id"))
+        } else {
+            XCTFail("Expected invalid payload message to mention session_id.")
+        }
+        XCTAssertEqual(backend.listModelsCallCount, 0)
+        XCTAssertNil(capturedRequest.value)
+        XCTAssertTrue(store.events.isEmpty)
+    }
+
+    func testChatTitleRequestRejectsBlankModelBeforeBackendDispatch() async throws {
+        let sink = RecordingSink()
+        let capturedRequest = LockedBox<ChatRequest?>(nil)
+        let backend = MockBackend(
+            models: [ModelInfo(id: "llama3.1:8b", name: "llama3.1:8b", installed: true)],
+            chatEvents: [
+                .delta(#"{"title":"Forged"}"#),
+                .done(inputTokens: 4, outputTokens: 8)
+            ],
+            onChatRequest: { request in
+                capturedRequest.value = request
+            }
+        )
+        let store = RecordingRuntimeChatEventStore()
+        let router = makeRouter(backend: backend, chatEventStore: store)
+        let envelope = ProtocolEnvelope(
+            type: MessageType.chatTitleRequest,
+            requestID: "title-blank-model",
+            payload: [
+                "session_id": .string("session-1"),
+                "model": .string("   \n\t"),
+                "messages": .array([
+                    .object([
+                        "role": .string("user"),
+                        "content": .string("Explain the transport.")
+                    ]),
+                    .object([
+                        "role": .string("assistant"),
+                        "content": .string("The runtime mediates all backend access.")
+                    ])
+                ])
+            ]
+        )
+
+        router.handle(envelope, sink: sink)
+
+        let message = try await sink.waitForMessages(count: 1).first
+        XCTAssertEqual(message?.type, MessageType.error)
+        XCTAssertEqual(message?.requestID, "title-blank-model")
+        XCTAssertEqual(message?.payload["code"], .string("invalid_payload"))
+        XCTAssertEqual(message?.payload["retryable"], .bool(false))
+        if case .string(let errorMessage)? = message?.payload["message"] {
+            XCTAssertTrue(errorMessage.contains("model"))
+        } else {
+            XCTFail("Expected invalid payload message to mention model.")
+        }
+        XCTAssertEqual(backend.listModelsCallCount, 0)
+        XCTAssertNil(capturedRequest.value)
+        XCTAssertTrue(store.events.isEmpty)
+    }
+
     func testChatTitleRequestAcceptsFencedStructuredTitle() async throws {
         let sink = RecordingSink()
         let store = RecordingRuntimeChatEventStore()
@@ -5656,6 +6473,26 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(message?.payload["code"], .string("invalid_payload"))
         XCTAssertEqual(message?.payload["retryable"], .bool(false))
         XCTAssertTrue(String(describing: message?.payload).contains("backend_url"))
+        XCTAssertEqual(backend.cancelledGenerationIDs, [])
+    }
+
+    func testChatCancelRejectsBlankTargetRequestIDBeforeBackendDispatch() async throws {
+        let sink = RecordingSink()
+        let backend = MockBackend(cancelResult: GenerationCancellationResult.cancelled(generationID: "chat-blank"))
+        let router = makeRouter(backend: backend)
+        let envelope = ProtocolEnvelope(
+            type: MessageType.chatCancel,
+            requestID: "cancel-blank",
+            payload: ["target_request_id": .string("   \n\t")]
+        )
+
+        router.handle(envelope, sink: sink)
+
+        let message = try await sink.waitForMessages(count: 1).first
+        XCTAssertEqual(message?.type, MessageType.error)
+        XCTAssertEqual(message?.requestID, "cancel-blank")
+        XCTAssertEqual(message?.payload["code"], .string("invalid_payload"))
+        XCTAssertEqual(message?.payload["retryable"], .bool(false))
         XCTAssertEqual(backend.cancelledGenerationIDs, [])
     }
 
@@ -6209,6 +7046,71 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(devicesAfterAcceptedPayload.map(\.id), ["android-valid-after-unknown"])
     }
 
+    func testPairingRequestRejectsBlankAllowedFieldsBeforeTrusting() async throws {
+        let sink = RecordingSink()
+        let coordinator = PairingCoordinator(maxFailedAttempts: 6)
+        let session = coordinator.beginPairing(
+            macDeviceID: "mac-1",
+            fingerprint: "fp-1",
+            host: "192.168.1.10",
+            port: 43170
+        )
+        let store = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+        let router = LocalRuntimeMessageRouter(
+            backend: MockBackend(),
+            pairingCoordinator: coordinator,
+            trustedDeviceStore: store
+        )
+        let blankPayloads = [
+            pairingEnvelope(requestID: "pair-blank-nonce", session: session, pairingNonce: "   \n\t"),
+            pairingEnvelope(requestID: "pair-blank-code", session: session, pairingCode: "   \n\t"),
+            pairingEnvelope(requestID: "pair-blank-device-id", session: session, deviceID: "   \n\t"),
+            pairingEnvelope(requestID: "pair-blank-device-name", session: session, deviceName: "   \n\t"),
+            pairingEnvelope(requestID: "pair-blank-public-key", session: session, publicKey: "   \n\t")
+        ]
+
+        for (index, envelope) in blankPayloads.enumerated() {
+            router.handle(envelope, sink: sink)
+            let rejection = try await sink.waitForMessages(count: index + 1).last
+            XCTAssertEqual(rejection?.type, MessageType.error, envelope.requestID)
+            XCTAssertEqual(rejection?.requestID, envelope.requestID)
+            XCTAssertEqual(rejection?.payload["code"], .string("invalid_payload"), envelope.requestID)
+            XCTAssertEqual(rejection?.payload["retryable"], .bool(false), envelope.requestID)
+        }
+        let devicesAfterBlankPayloads = try await store.load()
+        XCTAssertTrue(devicesAfterBlankPayloads.isEmpty)
+
+        let invalidCode = session.code == "000000" ? "999999" : "000000"
+        router.handle(pairingEnvelope(
+            requestID: "pair-invalid-code-after-blank-fields",
+            session: session,
+            pairingCode: invalidCode
+        ), sink: sink)
+
+        let invalidCodeRejection = try await sink.waitForMessages(count: blankPayloads.count + 1).last
+        XCTAssertEqual(invalidCodeRejection?.type, MessageType.pairingResult)
+        XCTAssertEqual(invalidCodeRejection?.payload["accepted"], .bool(false))
+        XCTAssertEqual(invalidCodeRejection?.payload["code"], .string(PairingRejectionReason.invalidCredentials.rawValue))
+        XCTAssertEqual(invalidCodeRejection?.payload["failed_attempts"], .number(1))
+        let devicesAfterInvalidCode = try await store.load()
+        XCTAssertEqual(devicesAfterInvalidCode, [])
+
+        let validPublicKey = testClientPublicKeyBase64()
+        router.handle(pairingEnvelope(
+            requestID: "pair-valid-after-blank-fields",
+            session: session,
+            deviceID: "android-valid-after-blank",
+            publicKey: validPublicKey
+        ), sink: sink)
+
+        let accepted = try await sink.waitForMessages(count: blankPayloads.count + 2).last
+        XCTAssertEqual(accepted?.type, MessageType.pairingResult)
+        XCTAssertEqual(accepted?.payload["accepted"], .bool(true))
+        XCTAssertEqual(accepted?.payload["trusted_device_id"], .string("android-valid-after-blank"))
+        let devicesAfterAcceptedPayload = try await store.load()
+        XCTAssertEqual(devicesAfterAcceptedPayload.map(\.id), ["android-valid-after-blank"])
+    }
+
     func testPairingRequestRejectsWhitespaceMutatedDeviceIdentityBeforeTrusting() async throws {
         let sink = RecordingSink()
         let coordinator = PairingCoordinator(maxFailedAttempts: 6)
@@ -6226,7 +7128,6 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         )
         let invalidRequests = [
             pairingEnvelope(requestID: "pair-invalid-device-id", session: session, deviceID: " android-1"),
-            pairingEnvelope(requestID: "pair-whitespace-device-id", session: session, deviceID: " "),
             pairingEnvelope(requestID: "pair-whitespace-public-key", session: session, publicKey: " public-key"),
             pairingEnvelope(requestID: "pair-invalid-public-key", session: session, publicKey: "public-key"),
             pairingEnvelope(requestID: "pair-non-p256-public-key", session: session, publicKey: "bm90LWEtUDI1Ni1rZXk=")
@@ -6586,6 +7487,108 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(challenge?.requestID, "hello-valid-after-unknown-metadata")
     }
 
+    func testHelloRejectsInvalidAllowedPayloadTypesBeforeChallengeCreation() async throws {
+        let privateKey = P256.Signing.PrivateKey()
+        let store = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+        try await store.trust(TrustedDevice(
+            id: "android-trusted",
+            name: "Trusted Android",
+            publicKeyBase64: privateKey.publicKey.derRepresentation.base64EncodedString()
+        ))
+        let sink = RecordingSink()
+        let router = LocalRuntimeMessageRouter(
+            backend: MockBackend(status: .available),
+            trustedDeviceStore: store
+        )
+        let invalidPayloads: [(requestID: String, payload: [String: JSONValue], marker: String)] = [
+            (
+                "hello-blank-device-id",
+                [
+                    "device_id": .string("   \n\t"),
+                    "device_name": .string("Trusted Android"),
+                    "client_capabilities": .array([.string("chat")])
+                ],
+                "device_id"
+            ),
+            (
+                "hello-invalid-device-name-type",
+                [
+                    "device_id": .string("android-trusted"),
+                    "device_name": .number(1),
+                    "client_capabilities": .array([.string("chat")])
+                ],
+                "device_name"
+            ),
+            (
+                "hello-blank-device-name",
+                [
+                    "device_id": .string("android-trusted"),
+                    "device_name": .string("  \n\t"),
+                    "client_capabilities": .array([.string("chat")])
+                ],
+                "device_name"
+            ),
+            (
+                "hello-invalid-capabilities-type",
+                [
+                    "device_id": .string("android-trusted"),
+                    "device_name": .string("Trusted Android"),
+                    "client_capabilities": .string("chat")
+                ],
+                "client_capabilities"
+            ),
+            (
+                "hello-invalid-capability-item",
+                [
+                    "device_id": .string("android-trusted"),
+                    "device_name": .string("Trusted Android"),
+                    "client_capabilities": .array([.string("chat"), .number(1)])
+                ],
+                "client_capabilities"
+            ),
+            (
+                "hello-duplicate-capability",
+                [
+                    "device_id": .string("android-trusted"),
+                    "device_name": .string("Trusted Android"),
+                    "client_capabilities": .array([.string("chat"), .string("chat")])
+                ],
+                "client_capabilities"
+            )
+        ]
+
+        for (index, invalidPayload) in invalidPayloads.enumerated() {
+            router.handle(ProtocolEnvelope(
+                type: MessageType.hello,
+                requestID: invalidPayload.requestID,
+                payload: invalidPayload.payload
+            ), sink: sink)
+
+            let rejected = try await sink.waitForMessages(count: index + 1).last
+            XCTAssertEqual(rejected?.type, MessageType.error)
+            XCTAssertEqual(rejected?.requestID, invalidPayload.requestID)
+            XCTAssertEqual(rejected?.payload["code"], .string("invalid_payload"))
+            XCTAssertEqual(rejected?.payload["retryable"], .bool(false))
+            XCTAssertTrue(String(describing: rejected?.payload).contains(invalidPayload.marker))
+        }
+
+        router.handle(ProtocolEnvelope(type: MessageType.runtimeHealth, requestID: "health-after-invalid-hello"), sink: sink)
+
+        let unauthenticated = try await sink.waitForMessages(count: invalidPayloads.count + 1).last
+        XCTAssertEqual(unauthenticated?.type, MessageType.error)
+        XCTAssertEqual(unauthenticated?.payload["code"], .string("authentication_required"))
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.hello,
+            requestID: "hello-valid-after-invalid-allowed-types",
+            payload: ["device_id": .string("android-trusted")]
+        ), sink: sink)
+
+        let challenge = try await sink.waitForMessages(count: invalidPayloads.count + 2).last
+        XCTAssertEqual(challenge?.type, MessageType.authChallenge)
+        XCTAssertEqual(challenge?.requestID, "hello-valid-after-invalid-allowed-types")
+    }
+
     func testAuthResponseRejectsUnknownPayloadMetadataBeforeAuthentication() async throws {
         let privateKey = P256.Signing.PrivateKey()
         let publicKeyBase64 = privateKey.publicKey.derRepresentation.base64EncodedString()
@@ -6667,6 +7670,118 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
 
         let accepted = try await sink.waitForMessages(count: 4).last
         XCTAssertEqual(accepted?.type, MessageType.authResponse)
+        XCTAssertEqual(accepted?.payload["accepted"], .bool(true))
+    }
+
+    func testAuthResponseRejectsBlankAllowedFieldsBeforeAuthentication() async throws {
+        let privateKey = P256.Signing.PrivateKey()
+        let publicKeyBase64 = privateKey.publicKey.derRepresentation.base64EncodedString()
+        let store = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+        try await store.trust(TrustedDevice(
+            id: "android-trusted",
+            name: "Trusted Android",
+            publicKeyBase64: publicKeyBase64
+        ))
+        let sink = RecordingSink()
+        let router = LocalRuntimeMessageRouter(
+            backend: MockBackend(status: .available),
+            trustedDeviceStore: store
+        )
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.hello,
+            requestID: "hello-before-auth-invalid-allowed-types",
+            payload: ["device_id": .string("android-trusted")]
+        ), sink: sink)
+
+        let challenge = try await sink.waitForMessages(count: 1).first
+        XCTAssertEqual(challenge?.type, MessageType.authChallenge)
+        guard case .string(let nonce)? = challenge?.payload["nonce"] else {
+            XCTFail("Expected nonce in auth challenge")
+            return
+        }
+        let authMessage = LocalRuntimeMessageRouter.clientAuthenticationResponseMessage(
+            deviceID: "android-trusted",
+            nonce: nonce
+        )
+        let authMessageData = try XCTUnwrap(authMessage.data(using: .utf8))
+        let signature = try privateKey
+            .signature(for: SHA256.hash(data: authMessageData))
+            .derRepresentation
+            .base64EncodedString()
+        let invalidPayloads: [(requestID: String, payload: [String: JSONValue], marker: String)] = [
+            (
+                "auth-blank-device-id",
+                [
+                    "device_id": .string("   \n\t"),
+                    "nonce": .string(nonce),
+                    "signature": .string(signature)
+                ],
+                "device_id"
+            ),
+            (
+                "auth-blank-nonce",
+                [
+                    "device_id": .string("android-trusted"),
+                    "nonce": .string("  \n\t"),
+                    "signature": .string(signature)
+                ],
+                "nonce"
+            ),
+            (
+                "auth-blank-signature",
+                [
+                    "device_id": .string("android-trusted"),
+                    "nonce": .string(nonce),
+                    "signature": .string("  \n\t")
+                ],
+                "signature"
+            ),
+            (
+                "auth-invalid-signature-type",
+                [
+                    "device_id": .string("android-trusted"),
+                    "nonce": .string(nonce),
+                    "signature": .number(1)
+                ],
+                "signature"
+            )
+        ]
+
+        for (index, invalidPayload) in invalidPayloads.enumerated() {
+            router.handle(ProtocolEnvelope(
+                type: MessageType.authResponse,
+                requestID: invalidPayload.requestID,
+                payload: invalidPayload.payload
+            ), sink: sink)
+
+            let rejected = try await sink.waitForMessages(count: index + 2).last
+            XCTAssertEqual(rejected?.type, MessageType.error)
+            XCTAssertEqual(rejected?.requestID, invalidPayload.requestID)
+            XCTAssertEqual(rejected?.payload["code"], .string("invalid_payload"))
+            XCTAssertEqual(rejected?.payload["retryable"], .bool(false))
+            XCTAssertTrue(String(describing: rejected?.payload).contains(invalidPayload.marker))
+        }
+
+        router.handle(ProtocolEnvelope(type: MessageType.runtimeHealth, requestID: "health-after-invalid-auth"), sink: sink)
+
+        let unauthenticated = try await sink.waitForMessages(count: invalidPayloads.count + 2).last
+        XCTAssertEqual(unauthenticated?.type, MessageType.error)
+        XCTAssertEqual(unauthenticated?.payload["code"], .string("authentication_required"))
+
+        router.handle(ProtocolEnvelope(
+            type: MessageType.authResponse,
+            requestID: "auth-valid-after-invalid-allowed-types",
+            payload: [
+                "device_id": .string("android-trusted"),
+                "nonce": .string(nonce),
+                "signature": .string(signature)
+            ]
+        ), sink: sink)
+
+        let accepted = try await sink.waitForMessages(count: invalidPayloads.count + 3).last
+        XCTAssertEqual(accepted?.type, MessageType.authResponse)
+        XCTAssertEqual(accepted?.requestID, "auth-valid-after-invalid-allowed-types")
         XCTAssertEqual(accepted?.payload["accepted"], .bool(true))
     }
 

@@ -150,6 +150,14 @@ def validate_canonical_response_value(payload, key, host, port):
         raise RuntimeError(f"Relay {host}:{port} returned invalid {key}")
 
 
+def validate_relay_expires_at(payload, host, port):
+    expires_at = payload["relay_expires_at"]
+    if type(expires_at) is not int:
+        raise RuntimeError(f"Relay {host}:{port} returned invalid relay_expires_at")
+    if expires_at <= 0:
+        raise RuntimeError(f"Relay {host}:{port} returned expired relay_expires_at")
+
+
 def parse_response(host, port, line, requested_route_token=""):
     if not line.startswith(RESPONSE_PREFIX):
         raise RuntimeError(
@@ -185,12 +193,7 @@ def parse_response(host, port, line, requested_route_token=""):
             f"Relay {host}:{port} echoed the requested route token as relay_id; "
             "allocation relay IDs must be opaque"
         )
-    try:
-        expires_at = int(payload["relay_expires_at"])
-    except (TypeError, ValueError) as error:
-        raise RuntimeError(f"Relay {host}:{port} returned invalid relay_expires_at") from error
-    if expires_at <= 0:
-        raise RuntimeError(f"Relay {host}:{port} returned expired relay_expires_at")
+    validate_relay_expires_at(payload, host, port)
     return payload
 
 

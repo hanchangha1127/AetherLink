@@ -13181,6 +13181,24 @@ def attachment_ingestion_guard_failures() -> list[str]:
             "Runtime router tests must prove pairing.request unknown metadata is rejected before trust mutation.",
         ),
         (
+            macos_router_text,
+            macos_router_path,
+            "pairingNonce: try requiredNonBlankString(\"pairing_nonce\"",
+            "Runtime router must reject blank pairing.request nonce values before pairing validation.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "publicKeyBase64: try requiredNonBlankString(\"public_key\"",
+            "Runtime router must reject blank pairing.request public keys before pairing validation.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "testPairingRequestRejectsBlankAllowedFieldsBeforeTrusting",
+            "Runtime router tests must prove blank pairing.request allowed fields are rejected before trust mutation.",
+        ),
+        (
             macos_router_test_text,
             macos_router_test_path,
             "testHelloRejectsUnknownPayloadMetadataBeforeChallengeCreation",
@@ -13255,6 +13273,12 @@ def attachment_ingestion_guard_failures() -> list[str]:
         (
             runtime_smoke_text,
             runtime_smoke_path,
+            "smoke-pair-blank-allowed-fields",
+            "RuntimeDevServer smoke must reject blank pairing.request allowed fields before failed-attempt accounting.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
             "smoke-hello-unknown-metadata",
             "RuntimeDevServer smoke must reject hello unknown metadata before auth challenge creation.",
         ),
@@ -13263,6 +13287,234 @@ def attachment_ingestion_guard_failures() -> list[str]:
             runtime_smoke_path,
             "smoke-auth-unknown-metadata",
             "RuntimeDevServer smoke must reject auth.response unknown metadata before authentication.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "Envelope request_id must be a non-blank string",
+            "Runtime router must reject blank envelope request_id values before command dispatch.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "testRejectsBlankEnvelopeRequestIDBeforeRuntimeCommandDispatch",
+            "Runtime router tests must prove blank envelope request_id values are rejected before command dispatch.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "blank envelope request_id",
+            "RuntimeDevServer smoke must reject blank envelope request_id values before pre-auth command handling.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "`request_id` must be a non-blank string",
+            "Protocol docs must document blank envelope request_id rejection.",
+        ),
+        (
+            protocol_schema_text,
+            protocol_schema_path,
+            '"request_id": { "$ref": "#/$defs/nonBlankString" }',
+            "Protocol schema must reject blank envelope request_id values.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "properties.request_id must use nonBlankString",
+            "Protocol schema checker must fail if request_id stops using nonBlankString.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "LocalRuntimeMessageRouterTests/testRejectsBlankEnvelopeRequestIDBeforeRuntimeCommandDispatch",
+            "Default no-device gate must run the blank envelope request_id rejection regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "envelope request_id blank rejection addendum",
+            "Default no-device summary must name blank envelope request_id rejection coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Envelope Request Identifier Blank Rejection No-Device Gate",
+            "Progress docs must record the envelope request_id blank rejection no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Envelope Request Identifier Blank Rejection No-Device Gate",
+            "QA evidence must record the envelope request_id blank rejection no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "envelope request_id blank rejection",
+            "Roadmap smoke coverage queue must name envelope request_id blank rejection coverage.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "Envelope version must be 1",
+            "Runtime router must reject unsupported envelope versions before command dispatch.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "testRejectsUnsupportedEnvelopeVersionBeforeRuntimeCommandDispatch",
+            "Runtime router tests must prove unsupported envelope versions are rejected before command dispatch.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "unsupported envelope version",
+            "RuntimeDevServer smoke must reject unsupported envelope versions before pre-auth command handling.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "`version` must be `1`",
+            "Protocol docs must document unsupported envelope version rejection.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "properties.version must require const 1",
+            "Protocol schema checker must fail if envelope version stops being pinned to 1.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "LocalRuntimeMessageRouterTests/testRejectsUnsupportedEnvelopeVersionBeforeRuntimeCommandDispatch",
+            "Default no-device gate must run the unsupported envelope version rejection regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "envelope version rejection addendum",
+            "Default no-device summary must name unsupported envelope version rejection coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Envelope Version And Pre-Auth Allowed Field Rejection No-Device Gate",
+            "Progress docs must record the envelope version and pre-auth allowed field rejection no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Envelope Version And Pre-Auth Allowed Field Rejection No-Device Gate",
+            "QA evidence must record the envelope version and pre-auth allowed field rejection no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "envelope version rejection",
+            "Roadmap smoke coverage queue must name envelope version rejection coverage.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "optionalNonBlankStringArray(\"client_capabilities\"",
+            "Runtime router must type-check optional hello client_capabilities before challenge creation.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "let nonce = try requiredNonBlankString(\"nonce\", in: envelope.payload)",
+            "Runtime router must reject blank auth.response nonce values before authentication.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "let signature = try requiredNonBlankString(\"signature\", in: envelope.payload)",
+            "Runtime router must reject blank auth.response signature values before authentication.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "testHelloRejectsInvalidAllowedPayloadTypesBeforeChallengeCreation",
+            "Runtime router tests must prove malformed allowed hello fields are rejected before challenge creation.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "testAuthResponseRejectsBlankAllowedFieldsBeforeAuthentication",
+            "Runtime router tests must prove blank or malformed auth.response fields are rejected before authentication.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "hello invalid allowed payload types",
+            "RuntimeDevServer smoke must reject malformed allowed hello fields before challenge creation.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "auth.response invalid allowed payload types",
+            "RuntimeDevServer smoke must reject blank or malformed auth.response fields before authentication.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "Malformed allowed fields return `invalid_payload` before challenge creation",
+            "Protocol docs must document malformed hello allowed-field rejection.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "Malformed or blank allowed fields return `invalid_payload` before authentication",
+            "Protocol docs must document malformed auth.response allowed-field rejection.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "$defs.helloPayload request must require only device_id",
+            "Protocol schema checker must keep hello minimal with only device_id required.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "Only `device_id` is required, and it must be a non-blank string",
+            "Protocol docs must document the minimal valid hello request shape.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "$defs.helloPayload client_capabilities items must use nonBlankString",
+            "Protocol schema checker must fail if hello client_capabilities items stop being non-blank strings.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "for field in [\"device_id\", \"nonce\", \"signature\"]",
+            "Protocol schema checker must fail if auth.response nonce stops being non-blank.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "LocalRuntimeMessageRouterTests/testHelloRejectsInvalidAllowedPayloadTypesBeforeChallengeCreation",
+            "Default no-device gate must run the malformed hello allowed-field rejection regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "LocalRuntimeMessageRouterTests/testAuthResponseRejectsBlankAllowedFieldsBeforeAuthentication",
+            "Default no-device gate must run the malformed auth.response allowed-field rejection regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "pre-auth invalid allowed type rejection addendum",
+            "Default no-device summary must name pre-auth invalid allowed-field rejection coverage.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "pre-auth invalid allowed type rejection",
+            "Roadmap smoke coverage queue must name pre-auth invalid allowed-field rejection coverage.",
         ),
         (
             docs_protocol_text,
@@ -13287,6 +13539,54 @@ def attachment_ingestion_guard_failures() -> list[str]:
             protocol_schema_check_path,
             "check_pre_auth_payload_schema_contracts",
             "Protocol schema checker must keep pre-auth request closed-schema self-checks.",
+        ),
+        (
+            protocol_schema_text,
+            protocol_schema_path,
+            '"pairing_nonce": { "$ref": "#/$defs/nonBlankString" }',
+            "Protocol schema must reject blank pairing.request nonce values.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "$defs.pairingRequestPayload request {field} must use nonBlankString",
+            "Protocol schema checker must fail if pairing.request nonce stops being non-blank.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "Blank required `pairing.request` fields return `invalid_payload` before failed-attempt accounting or trust mutation.",
+            "Protocol docs must document blank pairing.request allowed-field rejection.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "LocalRuntimeMessageRouterTests/testPairingRequestRejectsBlankAllowedFieldsBeforeTrusting",
+            "Default no-device gate must run the blank pairing.request allowed-field regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "pairing.request blank allowed field rejection addendum",
+            "Default no-device summary must name blank pairing.request allowed-field rejection coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Pairing Request Blank Allowed Field Rejection No-Device Gate",
+            "Progress docs must record the pairing.request blank allowed-field no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Pairing Request Blank Allowed Field Rejection No-Device Gate",
+            "QA evidence must record the pairing.request blank allowed-field no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "pairing.request blank allowed field rejection",
+            "Roadmap smoke coverage queue must name pairing.request blank allowed-field coverage.",
         ),
         (
             protocol_schema_check_text,
@@ -13577,6 +13877,12 @@ def attachment_ingestion_guard_failures() -> list[str]:
             "Protocol schema checker must require modelsPullPayload request additionalProperties=false.",
         ),
         (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "$defs.modelsPullPayload request backend must stay limited to ollama",
+            "Protocol schema checker must fail if modelsPullPayload backend stops being limited to ollama.",
+        ),
+        (
             no_device_text,
             no_device_path,
             "LocalRuntimeMessageRouterTests/testModelsPullRejectsUnknownPayloadMetadataBeforeBackendDispatch",
@@ -13605,6 +13911,120 @@ def attachment_ingestion_guard_failures() -> list[str]:
             docs_roadmap_path,
             "models.pull unknown metadata rejection",
             "Roadmap smoke coverage queue must name models.pull unknown metadata rejection coverage.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "allowedModelsPullBackends",
+            "Runtime router must keep a models.pull legacy backend allowlist.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            'let model = try requiredNonBlankString("model", in: envelope.payload)',
+            "Runtime router must reject blank models.pull model values before backend pull dispatch.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "requiredString(\"backend\", in: envelope.payload, allowedValues: allowedModelsPullBackends)",
+            "Runtime router must reject malformed or unsupported models.pull backend values before backend pull dispatch.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "testModelsPullRejectsInvalidAllowedPayloadTypesBeforeBackendDispatch",
+            "Runtime router tests must prove invalid models.pull allowed fields are rejected before backend dispatch.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            '"backend": .number(1)',
+            "Runtime router regression must cover non-string models.pull backend values.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            'requestID: "pull-blank-model"',
+            "Runtime router regression must cover blank models.pull model values.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            '"backend": .string("lm_studio")',
+            "Runtime router regression must cover unsupported models.pull legacy backend values.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "smoke-pull-invalid-model-type",
+            "RuntimeDevServer smoke must reject non-string models.pull model values.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "smoke-pull-blank-model",
+            "RuntimeDevServer smoke must reject blank models.pull model values.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "smoke-pull-invalid-backend-type",
+            "RuntimeDevServer smoke must reject non-string models.pull backend values.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "smoke-pull-invalid-backend-value",
+            "RuntimeDevServer smoke must reject unsupported models.pull backend values.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "LocalRuntimeMessageRouterTests/testModelsPullRejectsInvalidAllowedPayloadTypesBeforeBackendDispatch",
+            "Default no-device gate must run the models.pull invalid allowed type regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "models.pull invalid allowed type rejection addendum",
+            "Default no-device summary must name models.pull invalid allowed type rejection coverage.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "`model` must be a non-blank string and legacy `backend`, when present, must be `ollama`",
+            "Protocol docs must document models.pull allowed field type and backend enum strictness.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "$defs.modelsPullPayload request model must use nonBlankString",
+            "Protocol schema checker must fail if models.pull model stops using nonBlankString.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "non-string, empty, or blank model values",
+            "Default no-device summary must name blank models.pull model rejection coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Models Pull Invalid Allowed Type Runtime Rejection No-Device Gate",
+            "Progress docs must record the models.pull invalid allowed type no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Models Pull Invalid Allowed Type Runtime Rejection No-Device Gate",
+            "QA evidence must record the models.pull invalid allowed type no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "models.pull invalid allowed type rejection",
+            "Roadmap smoke coverage queue must name models.pull invalid allowed type rejection coverage.",
         ),
         (
             macos_router_text,
@@ -13643,10 +14063,46 @@ def attachment_ingestion_guard_failures() -> list[str]:
             "Runtime router regression must prove rejected chat.cancel metadata never reaches backend cancel dispatch.",
         ),
         (
+            macos_router_text,
+            macos_router_path,
+            'let targetRequestID = try requiredNonBlankString("target_request_id", in: envelope.payload)',
+            "Runtime router must reject blank chat.cancel target_request_id values before backend cancel dispatch.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "private func requiredNonBlankString",
+            "Runtime router must keep a scoped non-blank string helper for command identifiers.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "testChatCancelRejectsBlankTargetRequestIDBeforeBackendDispatch",
+            "Runtime router tests must prove blank chat.cancel targets are rejected before backend dispatch.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "smoke-cancel-blank-target-request-id",
+            "RuntimeDevServer smoke must reject blank chat.cancel target ids.",
+        ),
+        (
             docs_protocol_text,
             docs_protocol_path,
             "`chat.cancel.payload` accepts only `target_request_id`",
             "Protocol docs must document the active chat.cancel request allowlist.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "`target_request_id` must be a non-blank string",
+            "Protocol docs must document blank chat.cancel target rejection.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "acknowledgement payloads echo the same non-blank target request id",
+            "Protocol docs must document chat.cancel acknowledgement target id schema parity.",
         ),
         (
             docs_protocol_text,
@@ -13673,6 +14129,24 @@ def attachment_ingestion_guard_failures() -> list[str]:
             "Protocol schema checker must require chatCancelPayload request additionalProperties=false.",
         ),
         (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "$defs.chatCancelPayload request target_request_id must use nonBlankString",
+            "Protocol schema checker must fail if chat.cancel target_request_id stops using nonBlankString.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "$defs.chatCancelPayload acknowledgement target_request_id must use nonBlankString",
+            "Protocol schema checker must fail if chat.cancel acknowledgement target_request_id stops using nonBlankString.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "chat.cancel acknowledgement target id schema parity addendum",
+            "Default no-device summary must name chat.cancel acknowledgement target id schema parity coverage.",
+        ),
+        (
             no_device_text,
             no_device_path,
             "LocalRuntimeMessageRouterTests/testChatCancelRejectsUnknownPayloadMetadataBeforeBackendDispatch",
@@ -13683,6 +14157,18 @@ def attachment_ingestion_guard_failures() -> list[str]:
             no_device_path,
             "chat.cancel unknown metadata rejection addendum",
             "Default no-device summary must name chat.cancel unknown-metadata rejection coverage.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "LocalRuntimeMessageRouterTests/testChatCancelRejectsBlankTargetRequestIDBeforeBackendDispatch",
+            "Default no-device gate must run the chat.cancel blank target regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "chat.cancel blank target rejection addendum",
+            "Default no-device summary must name chat.cancel blank target rejection coverage.",
         ),
         (
             docs_progress_text,
@@ -13701,6 +14187,42 @@ def attachment_ingestion_guard_failures() -> list[str]:
             docs_roadmap_path,
             "chat.cancel unknown metadata rejection",
             "Roadmap smoke coverage queue must name chat.cancel unknown metadata rejection coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Runtime Mutation Identifier Invalid Value Rejection No-Device Gate",
+            "Progress docs must record runtime mutation identifier invalid value rejection coverage.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Runtime Mutation Identifier Invalid Value Rejection No-Device Gate",
+            "QA evidence must record runtime mutation identifier invalid value rejection coverage.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "chat.cancel blank target rejection",
+            "Roadmap smoke coverage queue must name chat.cancel blank target rejection coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Chat Cancel Acknowledgement Target ID Schema Parity No-Device Gate",
+            "Progress docs must record chat.cancel acknowledgement target id schema parity.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Chat Cancel Acknowledgement Target ID Schema Parity No-Device Gate",
+            "QA evidence must record chat.cancel acknowledgement target id schema parity.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "chat.cancel acknowledgement target id schema parity",
+            "Roadmap smoke coverage queue must name chat.cancel acknowledgement target id schema parity.",
         ),
         (
             macos_router_text,
@@ -14069,6 +14591,24 @@ def attachment_ingestion_guard_failures() -> list[str]:
             "Protocol docs must document the active chat.session lifecycle request allowlist.",
         ),
         (
+            macos_router_test_text,
+            macos_router_test_path,
+            "testChatSessionLifecycleRejectsInvalidAllowedPayloadTypesBeforeStoreMutation",
+            "Runtime router tests must prove malformed allowed chat.session lifecycle fields are rejected before store mutation.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "smoke-session-lifecycle-invalid-session-id-type",
+            "RuntimeDevServer smoke must reject invalid allowed chat.session lifecycle payload types.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "`session_id` must be a non-blank string; malformed allowed fields return `invalid_payload`",
+            "Protocol docs must document strict chat.session lifecycle allowed-field rejection.",
+        ),
+        (
             docs_protocol_text,
             docs_protocol_path,
             "Session lifecycle commands mutate runtime-owned chat store state",
@@ -14105,6 +14645,18 @@ def attachment_ingestion_guard_failures() -> list[str]:
             "Default no-device summary must name chat.session lifecycle unknown-metadata rejection coverage.",
         ),
         (
+            no_device_text,
+            no_device_path,
+            "LocalRuntimeMessageRouterTests/testChatSessionLifecycleRejectsInvalidAllowedPayloadTypesBeforeStoreMutation",
+            "Default no-device gate must run the chat.session lifecycle invalid allowed type regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "chat.session lifecycle invalid allowed type rejection addendum",
+            "Default no-device summary must name chat.session lifecycle invalid allowed type coverage.",
+        ),
+        (
             docs_progress_text,
             docs_progress_path,
             "Chat Session Lifecycle Unknown Metadata Runtime Rejection No-Device Gate",
@@ -14121,6 +14673,12 @@ def attachment_ingestion_guard_failures() -> list[str]:
             docs_roadmap_path,
             "chat.session lifecycle unknown metadata rejection",
             "Roadmap smoke coverage queue must name chat.session lifecycle unknown metadata rejection coverage.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "chat.session lifecycle invalid allowed type rejection",
+            "Roadmap smoke coverage queue must name chat.session lifecycle invalid allowed type rejection coverage.",
         ),
         (
             macos_router_text,
@@ -14171,6 +14729,24 @@ def attachment_ingestion_guard_failures() -> list[str]:
             "Protocol docs must document the active chat.session.rename request allowlist.",
         ),
         (
+            macos_router_test_text,
+            macos_router_test_path,
+            "testChatSessionRenameRejectsInvalidAllowedPayloadTypesBeforeTitleStoreMutation",
+            "Runtime router tests must prove malformed allowed chat.session.rename fields are rejected before title store mutation.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "smoke-session-rename-invalid-title-type",
+            "RuntimeDevServer smoke must reject invalid allowed chat.session.rename payload types.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "`session_id` must be a non-blank string, `title` must be a string and remain non-empty after trimming",
+            "Protocol docs must document strict chat.session.rename allowed-field rejection.",
+        ),
+        (
             docs_protocol_text,
             docs_protocol_path,
             "Clients must not supply `renamed_at`; it is runtime-generated acknowledgement metadata",
@@ -14189,6 +14765,18 @@ def attachment_ingestion_guard_failures() -> list[str]:
             "Default no-device summary must name chat.session.rename unknown-metadata rejection coverage.",
         ),
         (
+            no_device_text,
+            no_device_path,
+            "LocalRuntimeMessageRouterTests/testChatSessionRenameRejectsInvalidAllowedPayloadTypesBeforeTitleStoreMutation",
+            "Default no-device gate must run the chat.session.rename invalid allowed type regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "chat.session.rename invalid allowed type rejection addendum",
+            "Default no-device summary must name chat.session.rename invalid allowed type coverage.",
+        ),
+        (
             docs_progress_text,
             docs_progress_path,
             "Chat Session Rename Unknown Metadata Runtime Rejection No-Device Gate",
@@ -14205,6 +14793,12 @@ def attachment_ingestion_guard_failures() -> list[str]:
             docs_roadmap_path,
             "chat.session rename unknown metadata rejection",
             "Roadmap smoke coverage queue must name chat.session.rename unknown metadata rejection coverage.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "chat.session rename invalid allowed type rejection",
+            "Roadmap smoke coverage queue must name chat.session.rename invalid allowed type rejection coverage.",
         ),
         (
             macos_router_text,
@@ -14389,8 +14983,20 @@ def attachment_ingestion_guard_failures() -> list[str]:
         (
             macos_router_text,
             macos_router_path,
-            'id: try optionalRequestString("id", in: envelope.payload)',
-            "Runtime router must parse memory.upsert id with a strict request string helper.",
+            'id: try optionalNonBlankString("id", in: envelope.payload)',
+            "Runtime router must reject blank memory.upsert ids before runtime memory store mutation.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            'content: try requiredNonBlankString("content", in: envelope.payload)',
+            "Runtime router must reject blank memory.upsert content before runtime memory store mutation.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "private func optionalNonBlankString",
+            "Runtime router must keep a scoped optional non-blank string helper for optional command identifiers.",
         ),
         (
             macos_router_text,
@@ -14419,6 +15025,24 @@ def attachment_ingestion_guard_failures() -> list[str]:
         (
             macos_router_test_text,
             macos_router_test_path,
+            '"memory-upsert-invalid-id-whitespace"',
+            "Runtime router regression must include whitespace-only memory.upsert id rejection.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            '"memory-upsert-invalid-content-whitespace"',
+            "Runtime router regression must include whitespace-only memory.upsert content rejection.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            '"memory-upsert-invalid-content-type"',
+            "Runtime router regression must include non-string memory.upsert content rejection.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
             '"entry": .object([',
             "Runtime router regression must include entry as forbidden client-supplied memory.upsert response metadata.",
         ),
@@ -14443,7 +15067,7 @@ def attachment_ingestion_guard_failures() -> list[str]:
         (
             docs_protocol_text,
             docs_protocol_path,
-            "`id` must be a string when present and `enabled` must be a boolean when present",
+            "`id` must be a non-blank string when present, `content` must be a non-blank string, and `enabled` must be a boolean when present",
             "Protocol docs must document strict memory.upsert allowed-field type rejection.",
         ),
         (
@@ -14471,6 +15095,36 @@ def attachment_ingestion_guard_failures() -> list[str]:
             "Protocol schema checker must require memoryUpsertPayload request additionalProperties=false.",
         ),
         (
+            protocol_schema_text,
+            protocol_schema_path,
+            '"nonBlankString":',
+            "Protocol schema must define a non-blank string helper for request fields that reject whitespace-only values.",
+        ),
+        (
+            protocol_schema_text,
+            protocol_schema_path,
+            '"id": { "$ref": "#/$defs/nonBlankString" }',
+            "Protocol schema must reject blank memory.upsert id values.",
+        ),
+        (
+            protocol_schema_text,
+            protocol_schema_path,
+            '"content": { "$ref": "#/$defs/nonBlankString" }',
+            "Protocol schema must reject blank memory.upsert content values.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "$defs.memoryUpsertPayload request id must use nonBlankString",
+            "Protocol schema checker must fail if memoryUpsertPayload id stops using nonBlankString.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "$defs.memoryUpsertPayload request content must use nonBlankString",
+            "Protocol schema checker must fail if memoryUpsertPayload content stops using nonBlankString.",
+        ),
+        (
             runtime_smoke_text,
             runtime_smoke_path,
             "smoke-memory-upsert-unknown-metadata",
@@ -14485,8 +15139,38 @@ def attachment_ingestion_guard_failures() -> list[str]:
         (
             runtime_smoke_text,
             runtime_smoke_path,
+            "smoke-memory-upsert-invalid-content-type",
+            "RuntimeDevServer smoke must reject non-string memory.upsert content values.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "smoke-memory-upsert-blank-id",
+            "RuntimeDevServer smoke must reject blank memory.upsert id values.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "smoke-memory-upsert-blank-content",
+            "RuntimeDevServer smoke must reject blank memory.upsert content values.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
             "memory.upsert invalid enabled type created an entry",
             "RuntimeDevServer smoke must prove rejected memory.upsert allowed-type errors do not create memory entries.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "memory.upsert invalid content type created an entry",
+            "RuntimeDevServer smoke must prove rejected memory.upsert content type errors do not create memory entries.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "memory.upsert blank content created an entry",
+            "RuntimeDevServer smoke must prove rejected blank memory.upsert content does not create memory entries.",
         ),
         (
             runtime_smoke_text,
@@ -14519,6 +15203,12 @@ def attachment_ingestion_guard_failures() -> list[str]:
             "Default no-device summary must name memory.upsert invalid allowed type coverage.",
         ),
         (
+            no_device_text,
+            no_device_path,
+            "memory.upsert payloads reject non-string, empty, or blank id values, non-string or blank content values, and non-boolean enabled values",
+            "Default no-device summary must name memory.upsert blank id/content rejection coverage.",
+        ),
+        (
             docs_progress_text,
             docs_progress_path,
             "Memory Upsert Unknown Metadata Runtime Rejection No-Device Gate",
@@ -14529,6 +15219,12 @@ def attachment_ingestion_guard_failures() -> list[str]:
             docs_progress_path,
             "Memory Upsert Invalid Allowed Type Runtime Rejection No-Device Gate",
             "Progress docs must record the memory.upsert invalid allowed type no-device gate.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Memory Upsert Blank Allowed-Field Rejection No-Device Gate",
+            "Progress docs must record the memory.upsert blank allowed-field no-device gate.",
         ),
         (
             docs_qa_evidence_text,
@@ -14543,6 +15239,12 @@ def attachment_ingestion_guard_failures() -> list[str]:
             "QA evidence must record the memory.upsert invalid allowed type no-device gate.",
         ),
         (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Memory Upsert Blank Allowed-Field Rejection No-Device Gate",
+            "QA evidence must record the memory.upsert blank allowed-field no-device gate.",
+        ),
+        (
             docs_roadmap_text,
             docs_roadmap_path,
             "memory.upsert unknown metadata rejection",
@@ -14553,6 +15255,12 @@ def attachment_ingestion_guard_failures() -> list[str]:
             docs_roadmap_path,
             "memory.upsert invalid allowed type rejection",
             "Roadmap smoke coverage queue must name memory.upsert invalid allowed type rejection coverage.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "memory.upsert blank allowed-field rejection",
+            "Roadmap smoke coverage queue must name memory.upsert blank allowed-field rejection coverage.",
         ),
         (
             macos_router_text,
@@ -14591,10 +15299,58 @@ def attachment_ingestion_guard_failures() -> list[str]:
             "Runtime router regression must prove rejected memory.delete metadata never reaches runtime memory store mutation.",
         ),
         (
+            macos_router_text,
+            macos_router_path,
+            'id: try requiredNonBlankString("id", in: envelope.payload)',
+            "Runtime router must reject blank memory.delete ids before runtime memory store mutation.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "testMemoryDeleteRejectsInvalidAllowedPayloadTypesBeforeStoreMutation",
+            "Runtime router tests must prove malformed allowed memory.delete fields are rejected before store mutation.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            '"memory-delete-invalid-id-whitespace"',
+            "Runtime router regression must include whitespace-only memory.delete id rejection.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "smoke-memory-delete-invalid-id-type",
+            "RuntimeDevServer smoke must reject invalid allowed memory.delete payload types.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "smoke-memory-delete-empty-id",
+            "RuntimeDevServer smoke must reject empty memory.delete id values.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "smoke-memory-delete-blank-id",
+            "RuntimeDevServer smoke must reject blank memory.delete id values.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "smoke-memory-list-after-invalid-delete",
+            "RuntimeDevServer smoke must prove rejected memory.delete ids do not remove entries.",
+        ),
+        (
             docs_protocol_text,
             docs_protocol_path,
             "`memory.delete.payload` accepts only `id`",
             "Protocol docs must document the active memory.delete request allowlist.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "`id` must be a non-blank string",
+            "Protocol docs must document blank memory.delete id rejection.",
         ),
         (
             docs_protocol_text,
@@ -14621,6 +15377,12 @@ def attachment_ingestion_guard_failures() -> list[str]:
             "Protocol schema checker must require memoryDeletePayload request additionalProperties=false.",
         ),
         (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "$defs.memoryDeletePayload request id must use nonBlankString",
+            "Protocol schema checker must fail if memoryDeletePayload id stops using nonBlankString.",
+        ),
+        (
             no_device_text,
             no_device_path,
             "LocalRuntimeMessageRouterTests/testMemoryDeleteRejectsUnknownPayloadMetadataBeforeStoreMutation",
@@ -14631,6 +15393,18 @@ def attachment_ingestion_guard_failures() -> list[str]:
             no_device_path,
             "memory.delete unknown metadata rejection addendum",
             "Default no-device summary must name memory.delete unknown-metadata rejection coverage.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "LocalRuntimeMessageRouterTests/testMemoryDeleteRejectsInvalidAllowedPayloadTypesBeforeStoreMutation",
+            "Default no-device gate must run the memory.delete invalid allowed type regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "memory.delete invalid allowed type rejection addendum",
+            "Default no-device summary must name memory.delete invalid allowed type coverage.",
         ),
         (
             docs_progress_text,
@@ -14649,6 +15423,12 @@ def attachment_ingestion_guard_failures() -> list[str]:
             docs_roadmap_path,
             "memory.delete unknown metadata rejection",
             "Roadmap smoke coverage queue must name memory.delete unknown metadata rejection coverage.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "memory.delete invalid allowed type rejection",
+            "Roadmap smoke coverage queue must name memory.delete invalid allowed type rejection coverage.",
         ),
         (
             macos_router_text,
@@ -14827,6 +15607,24 @@ def attachment_ingestion_guard_failures() -> list[str]:
         (
             macos_router_text,
             macos_router_path,
+            'let rawExpectedSessionID = try optionalRequestString("expected_session_id", in: envelope.payload)?\n                .trimmingCharacters(in: .whitespacesAndNewlines)',
+            "Runtime router must strictly parse memory.summary.draft.approve expected_session_id before runtime chat-store recomputation.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            'let expectedSourceMessageCount = try optionalRequestInt("expected_source_message_count", in: envelope.payload)\n            let rawContent = try optionalRequestString("content", in: envelope.payload)?',
+            "Runtime router must strictly parse memory.summary.draft.approve expected_source_message_count before runtime chat-store recomputation.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            'let requestedEnabled = try optionalRequestBool("enabled", in: envelope.payload) ?? true',
+            "Runtime router must strictly parse memory.summary.draft.approve enabled before runtime memory mutation.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
             "allowedMemorySummaryDraftDismissPayloadKeys",
             "Runtime router must keep a memory.summary.draft.dismiss payload key allowlist before runtime store mutation.",
         ),
@@ -14841,6 +15639,12 @@ def attachment_ingestion_guard_failures() -> list[str]:
             macos_router_path,
             "Set(envelope.payload.keys).subtracting(allowedMemorySummaryDraftDismissPayloadKeys)",
             "Runtime router must reject memory.summary.draft.dismiss response/backend/route/workspace metadata before runtime store mutation.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            'let expectedSourceMessageCount = try optionalRequestInt("expected_source_message_count", in: envelope.payload)\n            let policy = memorySummaryPolicy(50)',
+            "Runtime router must strictly parse memory.summary.draft.dismiss expected_source_message_count before runtime chat-store recomputation.",
         ),
         (
             macos_router_test_text,
@@ -14863,6 +15667,42 @@ def attachment_ingestion_guard_failures() -> list[str]:
         (
             macos_router_test_text,
             macos_router_test_path,
+            "testMemorySummaryDraftApproveRejectsInvalidAllowedPayloadTypesBeforeStoreMutation",
+            "Runtime router tests must prove malformed memory.summary.draft.approve allowed fields are rejected before runtime store mutation.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            'let draftID = try requiredNonBlankString("draft_id", in: envelope.payload)',
+            "Runtime router must reject blank memory.summary.draft decision draft_id values before store lookup.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "testMemorySummaryDraftApproveRejectsBlankDraftIDBeforeStoreMutation",
+            "Runtime router tests must prove blank memory.summary.draft.approve draft_id is rejected before runtime store mutation.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "summary-draft-approve-blank-draft-id",
+            "Runtime router regression must include a blank memory.summary.draft.approve draft_id canary.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "summary-draft-approve-invalid-enabled-type",
+            "Runtime router regression must prove string memory.summary.draft.approve enabled values are rejected.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "summary-draft-approve-invalid-expected-count-fraction",
+            "Runtime router regression must prove fractional memory.summary.draft.approve expected_source_message_count values are rejected.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
             "testMemorySummaryDraftDismissRejectsUnknownPayloadMetadataBeforeStoreMutation",
             "Runtime router tests must prove unknown memory.summary.draft.dismiss metadata is rejected before runtime store mutation.",
         ),
@@ -14879,10 +15719,100 @@ def attachment_ingestion_guard_failures() -> list[str]:
             "Runtime router regression must prove rejected memory.summary.draft.dismiss metadata never reaches runtime memory mutation.",
         ),
         (
+            macos_router_test_text,
+            macos_router_test_path,
+            "testMemorySummaryDraftDismissRejectsInvalidAllowedPayloadTypesBeforeStoreMutation",
+            "Runtime router tests must prove malformed memory.summary.draft.dismiss allowed fields are rejected before runtime store mutation.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "testMemorySummaryDraftDismissRejectsBlankDraftIDBeforeStoreMutation",
+            "Runtime router tests must prove blank memory.summary.draft.dismiss draft_id is rejected before runtime store mutation.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "summary-draft-dismiss-blank-draft-id",
+            "Runtime router regression must include a blank memory.summary.draft.dismiss draft_id canary.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "summary-draft-dismiss-invalid-expected-count-fraction",
+            "Runtime router regression must prove fractional memory.summary.draft.dismiss expected_source_message_count values are rejected.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "smoke-memory-summary-approve-invalid-content-type",
+            "RuntimeDevServer relay smoke must reject malformed memory.summary.draft.approve content values.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "smoke-memory-summary-approve-invalid-enabled-type",
+            "RuntimeDevServer relay smoke must reject malformed memory.summary.draft.approve enabled values.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "smoke-memory-summary-approve-invalid-expected-session-type",
+            "RuntimeDevServer relay smoke must reject malformed memory.summary.draft.approve expected session values.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "smoke-memory-summary-approve-invalid-expected-count-string",
+            "RuntimeDevServer relay smoke must reject string memory.summary.draft.approve expected count values.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "smoke-memory-summary-approve-invalid-expected-count-fraction",
+            "RuntimeDevServer relay smoke must reject fractional memory.summary.draft.approve expected count values.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "smoke-memory-summary-approve-blank-draft-id",
+            "RuntimeDevServer relay smoke must reject blank memory.summary.draft.approve draft ids.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "smoke-memory-summary-dismiss-invalid-expected-session-type",
+            "RuntimeDevServer relay smoke must reject malformed memory.summary.draft.dismiss expected session values.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "smoke-memory-summary-dismiss-invalid-count-string",
+            "RuntimeDevServer relay smoke must reject string memory.summary.draft.dismiss expected count values.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "smoke-memory-summary-dismiss-invalid-count-type",
+            "RuntimeDevServer relay smoke must reject fractional memory.summary.draft.dismiss expected count values.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "smoke-memory-summary-dismiss-blank-draft-id",
+            "RuntimeDevServer relay smoke must reject blank memory.summary.draft.dismiss draft ids.",
+        ),
+        (
             docs_protocol_text,
             docs_protocol_path,
-            "`memory.summary.draft.approve.payload` accepts only `draft_id`, optional `content`, optional `enabled`, optional `expected_session_id`, and optional `expected_source_message_count`",
+            "`memory.summary.draft.approve.payload` accepts only string `draft_id`, optional string `content`, optional boolean `enabled`, optional string `expected_session_id`, and optional integer `expected_source_message_count`",
             "Protocol docs must document the active memory.summary.draft.approve request allowlist.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "Malformed allowed fields, such as blank `draft_id`, non-string `content`, non-boolean `enabled`, non-string `expected_session_id`, or string/fractional `expected_source_message_count` values, return `invalid_payload`",
+            "Protocol docs must document malformed memory.summary.draft.approve allowed field rejection.",
         ),
         (
             docs_protocol_text,
@@ -14893,8 +15823,14 @@ def attachment_ingestion_guard_failures() -> list[str]:
         (
             docs_protocol_text,
             docs_protocol_path,
-            "`memory.summary.draft.dismiss.payload` accepts only `draft_id`, optional `expected_session_id`, and optional `expected_source_message_count`",
+            "`memory.summary.draft.dismiss.payload` accepts only string `draft_id`, optional string `expected_session_id`, and optional integer `expected_source_message_count`",
             "Protocol docs must document the active memory.summary.draft.dismiss request allowlist.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "Malformed allowed fields, such as blank `draft_id`, non-string `expected_session_id`, or string/fractional `expected_source_message_count` values, return `invalid_payload`",
+            "Protocol docs must document malformed memory.summary.draft.dismiss allowed field rejection.",
         ),
         (
             docs_protocol_text,
@@ -14915,10 +15851,28 @@ def attachment_ingestion_guard_failures() -> list[str]:
             "Protocol schema checker must reject future memory-summary draft decision metadata fields.",
         ),
         (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            '{"$ref": "#/$defs/nonBlankString"}',
+            "Protocol schema checker must require memory-summary draft decision draft_id to be non-blank.",
+        ),
+        (
             no_device_text,
             no_device_path,
             "LocalRuntimeMessageRouterTests/testMemorySummaryDraftApproveRejectsUnknownPayloadMetadataBeforeStoreMutation",
             "Default no-device gate must run the memory.summary.draft.approve unknown-metadata rejection regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "LocalRuntimeMessageRouterTests/testMemorySummaryDraftApproveRejectsInvalidAllowedPayloadTypesBeforeStoreMutation",
+            "Default no-device gate must run the memory.summary.draft.approve invalid allowed type regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "LocalRuntimeMessageRouterTests/testMemorySummaryDraftApproveRejectsBlankDraftIDBeforeStoreMutation",
+            "Default no-device gate must run the memory.summary.draft.approve blank draft_id regression.",
         ),
         (
             no_device_text,
@@ -14929,8 +15883,26 @@ def attachment_ingestion_guard_failures() -> list[str]:
         (
             no_device_text,
             no_device_path,
+            "LocalRuntimeMessageRouterTests/testMemorySummaryDraftDismissRejectsInvalidAllowedPayloadTypesBeforeStoreMutation",
+            "Default no-device gate must run the memory.summary.draft.dismiss invalid allowed type regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "LocalRuntimeMessageRouterTests/testMemorySummaryDraftDismissRejectsBlankDraftIDBeforeStoreMutation",
+            "Default no-device gate must run the memory.summary.draft.dismiss blank draft_id regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
             "memory.summary.draft.approve unknown metadata rejection addendum",
             "Default no-device summary must name memory.summary.draft.approve unknown-metadata rejection coverage.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "memory.summary.draft.approve invalid allowed type rejection addendum",
+            "Default no-device summary must name memory.summary.draft.approve invalid allowed type rejection coverage.",
         ),
         (
             no_device_text,
@@ -14939,10 +15911,28 @@ def attachment_ingestion_guard_failures() -> list[str]:
             "Default no-device summary must name memory.summary.draft.dismiss unknown-metadata rejection coverage.",
         ),
         (
+            no_device_text,
+            no_device_path,
+            "memory.summary.draft.dismiss invalid allowed type rejection addendum",
+            "Default no-device summary must name memory.summary.draft.dismiss invalid allowed type rejection coverage.",
+        ),
+        (
             docs_progress_text,
             docs_progress_path,
             "Memory Summary Draft Decision Unknown Metadata Runtime Rejection No-Device Gate",
             "Progress docs must record the memory-summary draft decision unknown metadata rejection no-device gate.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Memory Summary Draft Decision Invalid Allowed Type Runtime Rejection No-Device Gate",
+            "Progress docs must record the memory-summary draft decision invalid allowed type rejection no-device gate.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Memory Summary Draft Decision Blank Draft ID No-Device Gate",
+            "Progress docs must record the memory-summary draft decision blank draft_id no-device gate.",
         ),
         (
             docs_qa_evidence_text,
@@ -14951,10 +15941,34 @@ def attachment_ingestion_guard_failures() -> list[str]:
             "QA evidence must record the memory-summary draft decision unknown metadata rejection no-device gate.",
         ),
         (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Memory Summary Draft Decision Invalid Allowed Type Runtime Rejection No-Device Gate",
+            "QA evidence must record the memory-summary draft decision invalid allowed type rejection no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Memory Summary Draft Decision Blank Draft ID No-Device Gate",
+            "QA evidence must record the memory-summary draft decision blank draft_id no-device gate.",
+        ),
+        (
             docs_roadmap_text,
             docs_roadmap_path,
             "memory.summary draft decision unknown metadata rejection",
             "Roadmap smoke coverage queue must name memory-summary draft decision unknown metadata rejection coverage.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "memory.summary draft decision invalid allowed type rejection",
+            "Roadmap smoke coverage queue must name memory-summary draft decision invalid allowed type rejection coverage.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "memory.summary draft decision blank draft_id rejection",
+            "Roadmap smoke coverage queue must name memory-summary draft decision blank draft_id rejection coverage.",
         ),
         (
             macos_router_text,
@@ -14973,6 +15987,12 @@ def attachment_ingestion_guard_failures() -> list[str]:
             macos_router_path,
             "Set(envelope.payload.keys).subtracting(allowedChatRequestPayloadKeys)",
             "Runtime router must reject chat.send payload project/RAG/backend metadata before parsing messages.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            'let model = try requiredNonBlankString("model", in: envelope.payload)',
+            "Runtime router must reject blank chat.send/chat.title.request model values before backend dispatch.",
         ),
         (
             macos_router_test_text,
@@ -15005,6 +16025,18 @@ def attachment_ingestion_guard_failures() -> list[str]:
             "Protocol docs must document the active chat.send payload allowlist.",
         ),
         (
+            macos_router_text,
+            macos_router_path,
+            'let locale = try optionalRequestString("locale", in: envelope.payload)',
+            "Runtime router must strictly parse optional chat locale fields.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "`session_id` and `model` must be non-blank strings, `locale` must be a string when present",
+            "Protocol docs must document malformed chat.send allowed field rejection.",
+        ),
+        (
             docs_protocol_text,
             docs_protocol_path,
             "must not carry project IDs, workspace IDs, retrieval context, permission grants, backend URLs, backend credentials, route material, tool results, or trusted-source metadata",
@@ -15025,6 +16057,12 @@ def attachment_ingestion_guard_failures() -> list[str]:
         (
             protocol_schema_check_text,
             protocol_schema_check_path,
+            "$defs.chatSendPayload request model must use nonBlankString",
+            "Protocol schema checker must fail if chatSendPayload model stops using nonBlankString.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
             "$defs.chatSendPayload.additionalProperties must be false",
             "Protocol schema checker must require chatSendPayload.additionalProperties=false.",
         ),
@@ -15035,10 +16073,82 @@ def attachment_ingestion_guard_failures() -> list[str]:
             "Default no-device gate must run the top-level chat.send payload metadata rejection regression.",
         ),
         (
+            macos_router_test_text,
+            macos_router_test_path,
+            "testChatSendRejectsInvalidAllowedPayloadTypesBeforeBackendDispatch",
+            "Runtime router tests must prove malformed chat.send allowed fields are rejected before backend dispatch.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            '"chat-invalid-model-whitespace"',
+            "Runtime router tests must include blank chat.send model rejection before backend dispatch.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "smoke-chat-blank-model",
+            "RuntimeDevServer smoke must reject blank chat.send model values.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "smoke-chat-invalid-locale-type",
+            "RuntimeDevServer smoke must reject malformed chat.send locale values.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "smoke-chat-invalid-role-value",
+            "RuntimeDevServer smoke must reject non-enum chat.send message role values.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "smoke-chat-invalid-attachment-type-value",
+            "RuntimeDevServer smoke must reject non-enum chat.send attachment type values.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "smoke-chat-invalid-attachment-name-type",
+            "RuntimeDevServer smoke must reject malformed chat.send attachment name values.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "smoke-chat-invalid-attachment-data-base64-type",
+            "RuntimeDevServer smoke must reject malformed chat.send attachment data_base64 values.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "smoke-chat-invalid-attachment-text-type",
+            "RuntimeDevServer smoke must reject malformed chat.send attachment text values.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "LocalRuntimeMessageRouterTests/testChatSendRejectsInvalidAllowedPayloadTypesBeforeBackendDispatch",
+            "Default no-device gate must run the chat.send invalid allowed type regression.",
+        ),
+        (
             no_device_text,
             no_device_path,
             "chat.send top-level payload metadata rejection addendum",
             "Default no-device summary must name top-level chat.send payload metadata rejection coverage.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "chat.send invalid allowed type rejection addendum",
+            "Default no-device summary must name chat.send invalid allowed type coverage.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "chat.send payloads reject blank session_id, blank model",
+            "Default no-device summary must name chat.send blank model rejection coverage.",
         ),
         (
             docs_progress_text,
@@ -15047,16 +16157,34 @@ def attachment_ingestion_guard_failures() -> list[str]:
             "Progress docs must record the top-level chat.send payload metadata rejection no-device gate.",
         ),
         (
+            docs_progress_text,
+            docs_progress_path,
+            "Chat Send Invalid Allowed Type Runtime Rejection No-Device Gate",
+            "Progress docs must record the chat.send invalid allowed type no-device gate.",
+        ),
+        (
             docs_qa_evidence_text,
             docs_qa_evidence_path,
             "Chat Send Top-Level Payload Metadata Runtime Rejection No-Device Gate",
             "QA evidence must record the top-level chat.send payload metadata rejection no-device gate.",
         ),
         (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Chat Send Invalid Allowed Type Runtime Rejection No-Device Gate",
+            "QA evidence must record the chat.send invalid allowed type no-device gate.",
+        ),
+        (
             docs_roadmap_text,
             docs_roadmap_path,
             "chat.send top-level payload metadata rejection",
             "Roadmap smoke coverage queue must name top-level chat.send payload metadata rejection coverage.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "chat.send invalid allowed type rejection",
+            "Roadmap smoke coverage queue must name chat.send invalid allowed type coverage.",
         ),
         (
             macos_router_test_text,
@@ -15089,6 +16217,30 @@ def attachment_ingestion_guard_failures() -> list[str]:
             "RuntimeDevServer smoke must reject chat.title.request unknown metadata before normal title generation.",
         ),
         (
+            macos_router_test_text,
+            macos_router_test_path,
+            "testChatTitleRequestRejectsBlankModelBeforeBackendDispatch",
+            "Runtime router tests must prove blank chat.title.request model values are rejected before backend dispatch.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "smoke-title-blank-model",
+            "RuntimeDevServer smoke must reject blank chat.title.request model values.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "testChatTitleRequestRejectsInvalidAllowedLocaleTypeBeforeBackendDispatch",
+            "Runtime router tests must prove malformed chat.title.request locale is rejected before backend dispatch.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "smoke-title-invalid-locale-type",
+            "RuntimeDevServer smoke must reject malformed chat.title.request locale values.",
+        ),
+        (
             runtime_smoke_text,
             runtime_smoke_path,
             "chat.title.request unknown metadata",
@@ -15099,6 +16251,12 @@ def attachment_ingestion_guard_failures() -> list[str]:
             docs_protocol_path,
             "`chat.title.request.payload` accepts only `session_id`, `model`, `locale`, and `messages`",
             "Protocol docs must document the active chat.title.request payload allowlist.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "`chat.title.request.payload` accepts only `session_id`, `model`, `locale`, and `messages`; `session_id` and `model` must be non-blank strings",
+            "Protocol docs must document malformed chat.title.request allowed field rejection.",
         ),
         (
             docs_protocol_text,
@@ -15119,6 +16277,12 @@ def attachment_ingestion_guard_failures() -> list[str]:
             "Protocol schema checker must fail if chatTitleRequestPayload grows future metadata fields.",
         ),
         (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "$defs.chatTitleRequestPayload request model must use nonBlankString",
+            "Protocol schema checker must fail if chatTitleRequestPayload model stops using nonBlankString.",
+        ),
+        (
             no_device_text,
             no_device_path,
             "LocalRuntimeMessageRouterTests/testChatTitleRequestRejectsUnknownPayloadMetadataBeforeBackendDispatch",
@@ -15127,8 +16291,32 @@ def attachment_ingestion_guard_failures() -> list[str]:
         (
             no_device_text,
             no_device_path,
+            "LocalRuntimeMessageRouterTests/testChatTitleRequestRejectsInvalidAllowedLocaleTypeBeforeBackendDispatch",
+            "Default no-device gate must run the chat.title.request invalid allowed type regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "LocalRuntimeMessageRouterTests/testChatTitleRequestRejectsBlankModelBeforeBackendDispatch",
+            "Default no-device gate must run the chat.title.request blank model regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
             "chat.title.request unknown metadata rejection addendum",
             "Default no-device summary must name chat.title.request unknown-metadata rejection coverage.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "chat.title.request invalid allowed type rejection addendum",
+            "Default no-device summary must name chat.title.request invalid allowed type coverage.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "chat.title.request payloads reject blank model and non-string locale",
+            "Default no-device summary must name chat.title.request blank model rejection coverage.",
         ),
         (
             docs_progress_text,
@@ -15137,16 +16325,232 @@ def attachment_ingestion_guard_failures() -> list[str]:
             "Progress docs must record the chat.title.request unknown metadata rejection no-device gate.",
         ),
         (
+            docs_progress_text,
+            docs_progress_path,
+            "Chat Title Request Invalid Allowed Type Runtime Rejection No-Device Gate",
+            "Progress docs must record the chat.title.request invalid allowed type no-device gate.",
+        ),
+        (
             docs_qa_evidence_text,
             docs_qa_evidence_path,
             "Chat Title Request Unknown Metadata Runtime Rejection No-Device Gate",
             "QA evidence must record the chat.title.request unknown metadata rejection no-device gate.",
         ),
         (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Chat Title Request Invalid Allowed Type Runtime Rejection No-Device Gate",
+            "QA evidence must record the chat.title.request invalid allowed type no-device gate.",
+        ),
+        (
             docs_roadmap_text,
             docs_roadmap_path,
             "chat.title.request unknown metadata rejection",
             "Roadmap smoke coverage queue must name chat.title.request unknown metadata rejection coverage.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "chat.title.request invalid allowed type rejection",
+            "Roadmap smoke coverage queue must name chat.title.request invalid allowed type coverage.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            '"chat-invalid-session-id-whitespace"',
+            "Runtime router tests must include blank chat.send session_id rejection before backend dispatch.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "testChatTitleRequestRejectsBlankSessionIDBeforeBackendDispatch",
+            "Runtime router tests must prove blank chat.title.request session_id is rejected before backend dispatch.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            '"messages-invalid-session-id-whitespace"',
+            "Runtime router tests must include blank chat.messages.list session_id rejection before store dispatch.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            '"archive-invalid-session-id-whitespace"',
+            "Runtime router tests must include blank chat.session lifecycle session_id rejection before store mutation.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            '"rename-invalid-session-id-whitespace"',
+            "Runtime router tests must include blank chat.session.rename session_id rejection before title store mutation.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "smoke-chat-blank-session-id",
+            "RuntimeDevServer smoke must reject blank chat.send session_id values.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "smoke-title-blank-session-id",
+            "RuntimeDevServer smoke must reject blank chat.title.request session_id values.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "smoke-messages-blank-session-id",
+            "RuntimeDevServer smoke must reject blank chat.messages.list session_id values.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "smoke-session-rename-blank-session-id",
+            "RuntimeDevServer smoke must reject blank chat.session.rename session_id values.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "smoke-session-lifecycle-blank-session-id",
+            "RuntimeDevServer smoke must reject blank chat.session lifecycle session_id values.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "LocalRuntimeMessageRouterTests/testChatTitleRequestRejectsBlankSessionIDBeforeBackendDispatch",
+            "Default no-device gate must run the chat.title.request blank session_id regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "chat.title.request blank session_id rejection addendum",
+            "Default no-device summary must name chat.title.request blank session_id coverage.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "chat.send payloads reject blank session_id",
+            "Default no-device summary must name chat.send blank session_id coverage.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "chat.messages.list payloads reject blank session_id",
+            "Default no-device summary must name chat.messages.list blank session_id coverage.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "chat.session.rename payloads reject non-string or blank session_id",
+            "Default no-device summary must name chat.session.rename blank session_id coverage.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "chat.session archive/restore/delete payloads reject non-string, empty, or blank session_id",
+            "Default no-device summary must name chat.session lifecycle blank session_id coverage.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "`chat.send.payload` accepts only `session_id`, `model`, `locale`, and `messages`; `session_id` and `model` must be non-blank strings",
+            "Protocol docs must document blank chat.send session_id and model rejection.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "`chat.messages.list.payload` accepts only `session_id` and `limit`. `session_id` must be a non-blank string",
+            "Protocol docs must document blank chat.messages.list session_id rejection.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "`chat.title.request.payload` accepts only `session_id`, `model`, `locale`, and `messages`; `session_id` and `model` must be non-blank strings",
+            "Protocol docs must document blank chat.title.request session_id and model rejection.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "`chat.session.rename` request payloads accept only `session_id` and `title`. `session_id` must be a non-blank string",
+            "Protocol docs must document blank chat.session.rename session_id rejection.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "`chat.session.archive`, `chat.session.restore`, and `chat.session.delete` request payloads accept only `session_id`. `session_id` must be a non-blank string",
+            "Protocol docs must document blank chat.session lifecycle session_id rejection.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "$defs.chatSendPayload request session_id must use nonBlankString",
+            "Protocol schema checker must fail if chat.send session_id stops using nonBlankString.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "$defs.chatTitleRequestPayload request session_id must use nonBlankString",
+            "Protocol schema checker must fail if chat.title.request session_id stops using nonBlankString.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "$defs.chatMessagesListPayload request session_id must use nonBlankString",
+            "Protocol schema checker must fail if chat.messages.list session_id stops using nonBlankString.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "$defs.chatSessionRenamePayload request session_id must use nonBlankString",
+            "Protocol schema checker must fail if chat.session.rename session_id stops using nonBlankString.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "$defs.chatSessionLifecycleRequestPayload session_id must use nonBlankString",
+            "Protocol schema checker must fail if chat.session lifecycle session_id stops using nonBlankString.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "protocol schema active request contract parity addendum",
+            "Default no-device summary must name active request schema parity coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Protocol Schema Active Request Contract Parity No-Device Gate",
+            "Progress docs must record the active request schema parity no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Protocol Schema Active Request Contract Parity No-Device Gate",
+            "QA evidence must record the active request schema parity no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "protocol schema active request contract parity",
+            "Roadmap smoke coverage queue must name active request schema parity coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Chat Session Identifier Blank Rejection No-Device Gate",
+            "Progress docs must record the chat session_id blank rejection no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Chat Session Identifier Blank Rejection No-Device Gate",
+            "QA evidence must record the chat session_id blank rejection no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "chat session_id blank rejection",
+            "Roadmap smoke coverage queue must name chat session_id blank rejection coverage.",
         ),
         (
             macos_router_text,
@@ -15167,6 +16571,18 @@ def attachment_ingestion_guard_failures() -> list[str]:
             "Runtime router must reject chat message source/workspace/backend metadata before constructing ChatMessage.",
         ),
         (
+            macos_router_text,
+            macos_router_path,
+            "allowedChatMessageRoles",
+            "Runtime router must keep chat message role values aligned with the protocol enum.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            'requiredString("role", in: object, allowedValues: allowedChatMessageRoles)',
+            "Runtime router must reject non-enum chat message role values.",
+        ),
+        (
             macos_router_test_text,
             macos_router_test_path,
             "testChatSendRejectsMessageSourceMetadataBeforeBackendDispatch",
@@ -15183,6 +16599,12 @@ def attachment_ingestion_guard_failures() -> list[str]:
             docs_protocol_path,
             "Message objects accept only `role`, `content`, and `attachments`",
             "Protocol docs must document the active chat message allowlist.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "`role` must be one of `system`, `user`, or `assistant`",
+            "Protocol docs must document the active chat message role enum.",
         ),
         (
             docs_protocol_text,
@@ -15237,6 +16659,36 @@ def attachment_ingestion_guard_failures() -> list[str]:
             macos_router_path,
             "Set(attachmentObject.keys).subtracting(allowedChatAttachmentKeys)",
             "Runtime router must reject attachment source/workspace/backend metadata before constructing ChatAttachment.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            "allowedChatAttachmentTypes",
+            "Runtime router must keep attachment type values aligned with the protocol enum.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            'requiredString("type", in: attachmentObject, allowedValues: allowedChatAttachmentTypes)',
+            "Runtime router must reject non-enum attachment type values.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            'try optionalRequestString("name", in: attachmentObject)',
+            "Runtime router must strictly parse optional attachment names.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            'try optionalRequestString("data_base64", in: attachmentObject)',
+            "Runtime router must strictly parse optional attachment data_base64 values.",
+        ),
+        (
+            macos_router_text,
+            macos_router_path,
+            'try optionalRequestString("text", in: attachmentObject)',
+            "Runtime router must strictly parse optional attachment text values.",
         ),
         (
             macos_router_test_text,
@@ -15313,6 +16765,18 @@ def attachment_ingestion_guard_failures() -> list[str]:
         (
             docs_protocol_text,
             docs_protocol_path,
+            "`type` must be one of `image`, `document`, or `file`",
+            "Protocol docs must document the active attachment type enum.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "optional `name`, `data_base64`, and `text` must be strings when present",
+            "Protocol docs must document malformed attachment allowed field rejection.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
             "must not carry source paths, workspace IDs, source-control state, backend URLs, backend credentials, route material, or trusted-source metadata",
             "Protocol docs must document forbidden attachment source/workspace/backend metadata.",
         ),
@@ -15350,6 +16814,11 @@ def attachment_ingestion_guard_failures() -> list[str]:
     for haystack, path, snippet, guidance in required_attachment_source_metadata_snippets:
         if snippet not in haystack:
             failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    if macos_router_text.count('let sessionID = try requiredNonBlankString("session_id", in: envelope.payload)') < 4:
+        failures.append(
+            f"{macos_router_path.relative_to(ROOT)}: Runtime router must parse active chat session_id "
+            "fields with the non-blank string helper before backend dispatch or chat-store access."
+        )
 
     required_lm_studio_vision_image_snippets = (
         (
@@ -16923,11 +18392,11 @@ def runtime_history_storage_guard_failures() -> list[str]:
         failures.append(
             f"{no_device_relative}: Default no-device gate must mention deterministic long-inactivity memory draft coverage."
         )
-    if "LocalRuntimeMessageRouterTests/testMemorySummaryDraftsListRequiresAuthentication|LocalRuntimeMessageRouterTests/testMemorySummaryDraftsListReturnsOwnerScopedActiveVisibleDraftsOnly|LocalRuntimeMessageRouterTests/testMemorySummaryDraftsListRejectsUnknownPayloadMetadataBeforeStoreDispatch|LocalRuntimeMessageRouterTests/testMemorySummaryDraftsListRejectsInvalidAllowedPayloadTypesBeforeStoreDispatch|LocalRuntimeMessageRouterTests/testMemorySummaryDraftApproveRequiresAuthentication|LocalRuntimeMessageRouterTests/testMemorySummaryDraftApproveWritesIdempotentOwnerScopedMemoryAndHidesApprovedDraft" not in no_device_text:
+    if "LocalRuntimeMessageRouterTests/testMemorySummaryDraftsListRequiresAuthentication|LocalRuntimeMessageRouterTests/testMemorySummaryDraftsListReturnsOwnerScopedActiveVisibleDraftsOnly|LocalRuntimeMessageRouterTests/testMemorySummaryDraftsListRejectsUnknownPayloadMetadataBeforeStoreDispatch|LocalRuntimeMessageRouterTests/testMemorySummaryDraftsListRejectsInvalidAllowedPayloadTypesBeforeStoreDispatch|LocalRuntimeMessageRouterTests/testMemorySummaryDraftApproveRequiresAuthentication|LocalRuntimeMessageRouterTests/testMemorySummaryDraftApproveWritesIdempotentOwnerScopedMemoryAndHidesApprovedDraft|LocalRuntimeMessageRouterTests/testMemorySummaryDraftApproveRejectsUnknownPayloadMetadataBeforeStoreMutation|LocalRuntimeMessageRouterTests/testMemorySummaryDraftApproveRejectsInvalidAllowedPayloadTypesBeforeStoreMutation" not in no_device_text:
         failures.append(
             f"{no_device_relative}: Default no-device gate must run memory summary draft protocol listing and approval regressions."
         )
-    if "LocalRuntimeMessageRouterTests/testMemorySummaryDraftDismissRequiresAuthentication|LocalRuntimeMessageRouterTests/testMemorySummaryDraftDismissHidesOwnerScopedDraftWithoutWritingMemory" not in no_device_text:
+    if "LocalRuntimeMessageRouterTests/testMemorySummaryDraftDismissRequiresAuthentication|LocalRuntimeMessageRouterTests/testMemorySummaryDraftDismissHidesOwnerScopedDraftWithoutWritingMemory|LocalRuntimeMessageRouterTests/testMemorySummaryDraftDismissRejectsUnknownPayloadMetadataBeforeStoreMutation|LocalRuntimeMessageRouterTests/testMemorySummaryDraftDismissRejectsInvalidAllowedPayloadTypesBeforeStoreMutation" not in no_device_text:
         failures.append(
             f"{no_device_relative}: Default no-device gate must run memory summary draft dismiss regressions."
         )
@@ -19650,6 +21119,59 @@ def no_device_quality_gate_guard_failures() -> list[str]:
     for haystack, path, snippet, guidance in required_relay_preflight_response_value_canonicality_snippets:
         if snippet not in haystack:
             failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_relay_preflight_expiry_type_snippets = (
+        (
+            relay_allocation_preflight_text,
+            relay_allocation_preflight_path,
+            "validate_relay_expires_at",
+            "Relay allocation preflight must keep relay_expires_at type validation explicit.",
+        ),
+        (
+            relay_allocation_preflight_text,
+            relay_allocation_preflight_path,
+            "type(expires_at) is not int",
+            "Relay allocation preflight must reject numeric-string and boolean relay_expires_at values without coercion.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            "case-relay-expires-numeric-string",
+            "Default no-device gate must exercise numeric-string relay_expires_at responses.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            "case-relay-expires-bool",
+            "Default no-device gate must exercise boolean relay_expires_at responses.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            "relay preflight expiry type strictness addendum",
+            "Default no-device gate summary must mention relay preflight expiry type strictness.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Relay Preflight Expiry Type Strictness No-Device Gate",
+            "Progress docs must record relay preflight expiry type strictness coverage.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Relay Preflight Expiry Type Strictness No-Device Gate",
+            "QA evidence must record relay preflight expiry type strictness coverage.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "relay preflight expiry type strictness",
+            "Roadmap smoke coverage queue must name relay preflight expiry type strictness coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_relay_preflight_expiry_type_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
     required_relay_preflight_host_input_snippets = (
         (
             relay_allocation_preflight_text,
@@ -21069,6 +22591,14 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         (
             "ClientScreensNoDeviceComposeTest.chatScreenCoreControlsRemainReachableAtLargeFontScaleAcrossSupportedLanguages",
             "Default no-device gate must run the Android large-font multilingual Chat render regression.",
+        ),
+        (
+            "ClientScreensNoDeviceComposeTest.chatScreenTalkBackOrderProxyKeepsVisibleChatControlsReachableAtLargeFontAcrossSupportedLanguages",
+            "Default no-device gate must run the Android Chat TalkBack-order proxy regression.",
+        ),
+        (
+            "Android Chat transcript, latest message actions, jump-to-latest, send composer, and cancel composer controls keep localized semantics and bounds order at large font",
+            "Default no-device gate coverage summary must mention Android Chat TalkBack-order proxy coverage.",
         ),
         (
             "ClientScreensNoDeviceComposeTest.parseMessageContentPreservesCodeBlocksAndNormalizesMarkdownTextBlocks",
@@ -25944,6 +27474,14 @@ def runtime_mock_history_memory_smoke_guard_failures() -> list[str]:
     for snippet in (
         "func runAuthenticatedHistoryAndMemoryChecks",
         "func runAuthenticatedTitleAndSessionLifecycleChecks",
+        "func rawPayloadEnvelope",
+        "func sendAndReadRawPayload",
+        "func runAuthenticatedNonObjectPayloadChecks",
+        '"smoke-raw-payload-runtime-health-array"',
+        '"smoke-raw-payload-models-list-string"',
+        '"smoke-raw-payload-route-refresh-null"',
+        '"smoke-non-object-payload-string"',
+        "try runAuthenticatedNonObjectPayloadChecks(client: client)",
         "smokeCompactionSessionID",
         "mockChatRequestAuditFile",
         "mockChatRequestAuditMessages",
@@ -26008,6 +27546,7 @@ def runtime_mock_history_memory_smoke_guard_failures() -> list[str]:
         '"memory.summary.drafts.list"',
         '"smoke-memory-summary-drafts"',
         '"memory.summary.draft.approve"',
+        '"smoke-memory-summary-approve-blank-draft-id"',
         '"smoke-memory-summary-approve-stale"',
         '"smoke-memory-summary-approve"',
         '"smoke-memory-summary-after-approve"',
@@ -26021,6 +27560,7 @@ def runtime_mock_history_memory_smoke_guard_failures() -> list[str]:
         '"Client tries to forge source metadata."',
         '"Edited approved smoke summary keeps source audit metadata."',
         '"smoke-memory-summary-dismiss-seed"',
+        '"smoke-memory-summary-dismiss-blank-draft-id"',
         '"smoke-memory-summary-dismiss-stale"',
         '"smoke-memory-summary-dismiss"',
         '"smoke-memory-summary-after-dismiss"',
@@ -26085,6 +27625,8 @@ def runtime_mock_history_memory_smoke_guard_failures() -> list[str]:
         "archived chat.send restore-required rejection",
         "RuntimeDevServer multi-device owner isolation smoke addendum",
         "authenticated relay smoke validates memory, chat session, message, and session mutation owner-device boundaries across two trusted devices",
+        "RuntimeDevServer non-object payload decode rejection addendum",
+        "authenticated relay smoke rejects runtime.health array payloads, models.list string payloads, and route.refresh null payloads with invalid_payload while keeping the connection usable for follow-up runtime.health",
     ):
         if snippet not in no_device_text:
             failures.append(
@@ -26103,6 +27645,10 @@ def runtime_mock_history_memory_smoke_guard_failures() -> list[str]:
     if "RuntimeDevServer memory source-audit immutability" not in roadmap_text:
         failures.append(
             f"{roadmap_path.relative_to(ROOT)}: Roadmap smoke coverage queue must name RuntimeDevServer memory source-audit immutability coverage."
+        )
+    if "RuntimeDevServer non-object payload decode rejection" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap smoke coverage queue must name RuntimeDevServer non-object payload decode rejection coverage."
         )
 
     for path, text in (
@@ -26152,6 +27698,7 @@ def runtime_mock_history_memory_smoke_guard_failures() -> list[str]:
             "dismissed draft hiding",
             "dismissed draft no memory.list entry",
             "smoke-memory-summary-approve-stale",
+            "smoke-memory-summary-approve-blank-draft-id",
             "smoke-memory-summary-approve",
             "smoke-memory-summary-after-approve",
             "smoke-memory-summary-memory-list",
@@ -26159,6 +27706,7 @@ def runtime_mock_history_memory_smoke_guard_failures() -> list[str]:
             "smoke-memory-source-preserving-edit",
             "smoke-memory-source-preserving-list",
             "smoke-memory-summary-dismiss-stale",
+            "smoke-memory-summary-dismiss-blank-draft-id",
             "smoke-memory-summary-dismiss",
             "smoke-memory-summary-after-dismiss",
             "smoke-memory-summary-dismiss-memory-list",
@@ -26169,6 +27717,12 @@ def runtime_mock_history_memory_smoke_guard_failures() -> list[str]:
             "RuntimeDevServer Memory Summary Stale Guard No-Device Gate",
             "RuntimeDevServer Memory Source Audit Immutability No-Device Gate",
             "RuntimeDevServer Multi-Device Owner Isolation Smoke",
+            "RuntimeDevServer Non-Object Payload Decode Rejection No-Device Gate",
+            "Memory Summary Draft Decision Blank Draft ID No-Device Gate",
+            "smoke-raw-payload-runtime-health-array",
+            "smoke-raw-payload-models-list-string",
+            "smoke-raw-payload-route-refresh-null",
+            "connection survival",
             "multi-device owner isolation",
             "two trusted devices",
             "chat_session_not_found",
@@ -27829,12 +29383,15 @@ def relay_allocation_token_authorization_guard_failures() -> list[str]:
             "hasUnexpectedMetadata",
             "AnyCodingKey",
             "looksLikeUnknownOption",
+            "isRecognizedOptionName",
+            "suffix.allSatisfy { $0 == \"=\" }",
             "rejectedRequestMetadataKeys",
         ),
         "apps/macos/RelayServerCore/Tests/RelayAllocationTests.swift": (
             "testParsesAllocationRequestWithAuthAlias",
             "testParsesAllocationRequestWithBase64RequestedRelaySecret",
             "secret+with/symbols=",
+            "dGVzdA==",
             "auth=allocation-token-1",
             "testRejectsBlankAllocationTokenAndRelaySecret",
             "testRejectsUnexpectedAllocationRequestMetadata",
@@ -27856,6 +29413,9 @@ def relay_allocation_token_authorization_guard_failures() -> list[str]:
             "provider_url=https://provider.example.test/v1/models",
             "requested_route_token=leaked-route-token",
             "relay_secret_debug=leaked-relay-secret",
+            "debug=leaked-relay-secret",
+            "preflight=false",
+            "relay-debug=enabled",
             "\"relay_secret\": \"leaked-relay-secret\"",
             "\"requested_route_token\": \"leaked-route-token\"",
             "\"backend_url\": \"http://127.0.0.1:11434/api/tags\"",
@@ -27948,6 +29508,7 @@ def relay_allocation_token_authorization_guard_failures() -> list[str]:
             "base64-style requested relay secrets with `+`, `/`, and `=` padding",
             "child process argv omits `--allocation-token` and the raw token",
             "unknown key=value request metadata",
+            "option-shaped `debug=`, invalid `preflight=`, and hyphenated future option names",
             "relay_id, relay_secret, relay_expires_at, and relay_nonce validation",
             "extra backend, provider, route-token, allocation-token, or relay-secret metadata fields",
             "skips persisted tickets that contain backend, provider, route-token, allocation-token, or relay-secret metadata fields",
@@ -27970,6 +29531,7 @@ def relay_allocation_token_authorization_guard_failures() -> list[str]:
             "base64-style requested relay secrets with `+`, `/`, and `=` padding",
             "child process argv omits `--allocation-token` and the raw token",
             "unknown key=value request metadata",
+            "option-shaped `debug=`, invalid `preflight=`, and hyphenated future option names",
             "relay_id, relay_secret, relay_expires_at, and relay_nonce validation",
             "extra backend, provider, route-token, allocation-token, or relay-secret metadata fields",
             "skips persisted tickets that contain backend, provider, route-token, allocation-token, or relay-secret metadata fields",

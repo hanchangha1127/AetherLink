@@ -93,6 +93,13 @@ final class RelayAllocationTests: XCTestCase {
         XCTAssertEqual(request.routeToken, "route-token-1")
         XCTAssertEqual(request.requestedRelaySecret, "secret+with/symbols=")
         XCTAssertEqual(request.allocationToken, "allocation-token-1")
+
+        let paddedRequest = try RelayAllocationRequest.parse(
+            "AETHERLINK_RELAY allocate route-token-1 dGVzdA== allocation_token=allocation-token-1\n"
+        )
+        XCTAssertEqual(paddedRequest.routeToken, "route-token-1")
+        XCTAssertEqual(paddedRequest.requestedRelaySecret, "dGVzdA==")
+        XCTAssertEqual(paddedRequest.allocationToken, "allocation-token-1")
     }
 
     func testParsesAllocationRequestWithAllocationToken() throws {
@@ -189,7 +196,10 @@ final class RelayAllocationTests: XCTestCase {
             "AETHERLINK_RELAY allocate route-token-1 backend_url=http://127.0.0.1:11434/api/tags allocation_token=allocation-token-1\n",
             "AETHERLINK_RELAY allocate route-token-1 provider_url=https://provider.example.test/v1/models allocation_token=allocation-token-1\n",
             "AETHERLINK_RELAY allocate route-token-1 requested_route_token=leaked-route-token allocation_token=allocation-token-1\n",
-            "AETHERLINK_RELAY allocate route-token-1 relay_secret_debug=leaked-relay-secret allocation_token=allocation-token-1\n"
+            "AETHERLINK_RELAY allocate route-token-1 relay_secret_debug=leaked-relay-secret allocation_token=allocation-token-1\n",
+            "AETHERLINK_RELAY allocate route-token-1 debug=leaked-relay-secret allocation_token=allocation-token-1\n",
+            "AETHERLINK_RELAY allocate route-token-1 preflight=false allocation_token=allocation-token-1\n",
+            "AETHERLINK_RELAY allocate route-token-1 relay-debug=enabled allocation_token=allocation-token-1\n"
         ] {
             XCTAssertThrowsError(
                 try RelayAllocationRequest.parse(line)

@@ -40,7 +40,7 @@
         "error"
       ]
     },
-    "request_id": { "type": "string", "minLength": 1 },
+    "request_id": { "$ref": "#/$defs/nonBlankString" },
     "timestamp": { "type": "string", "format": "date-time" },
     "payload": { "type": "object" }
   },
@@ -171,6 +171,11 @@
       "type": "string",
       "minLength": 1
     },
+    "nonBlankString": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S"
+    },
     "opaqueRouteValue": {
       "type": "string",
       "minLength": 1,
@@ -201,13 +206,13 @@
     },
     "helloPayload": {
       "type": "object",
-      "required": ["device_id", "device_name", "client_capabilities"],
+      "required": ["device_id"],
       "properties": {
-        "device_id": { "$ref": "#/$defs/nonEmptyString" },
-        "device_name": { "$ref": "#/$defs/nonEmptyString" },
+        "device_id": { "$ref": "#/$defs/nonBlankString" },
+        "device_name": { "$ref": "#/$defs/nonBlankString" },
         "client_capabilities": {
           "type": "array",
-          "items": { "$ref": "#/$defs/nonEmptyString" },
+          "items": { "$ref": "#/$defs/nonBlankString" },
           "uniqueItems": true
         }
       },
@@ -230,9 +235,9 @@
           "type": "object",
           "required": ["device_id", "nonce", "signature"],
           "properties": {
-            "device_id": { "$ref": "#/$defs/nonEmptyString" },
-            "nonce": { "$ref": "#/$defs/nonEmptyString" },
-            "signature": { "$ref": "#/$defs/nonEmptyString" }
+            "device_id": { "$ref": "#/$defs/nonBlankString" },
+            "nonce": { "$ref": "#/$defs/nonBlankString" },
+            "signature": { "$ref": "#/$defs/nonBlankString" }
           },
           "additionalProperties": false
         },
@@ -251,11 +256,11 @@
       "type": "object",
       "required": ["pairing_nonce", "pairing_code", "device_id", "device_name", "public_key"],
       "properties": {
-        "pairing_nonce": { "$ref": "#/$defs/nonEmptyString" },
-        "pairing_code": { "$ref": "#/$defs/nonEmptyString" },
-        "device_id": { "$ref": "#/$defs/nonEmptyString" },
-        "device_name": { "$ref": "#/$defs/nonEmptyString" },
-        "public_key": { "$ref": "#/$defs/nonEmptyString" }
+        "pairing_nonce": { "$ref": "#/$defs/nonBlankString" },
+        "pairing_code": { "$ref": "#/$defs/nonBlankString" },
+        "device_id": { "$ref": "#/$defs/nonBlankString" },
+        "device_name": { "$ref": "#/$defs/nonBlankString" },
+        "public_key": { "$ref": "#/$defs/nonBlankString" }
       },
       "additionalProperties": false
     },
@@ -377,7 +382,7 @@
           "type": "object",
           "required": ["model"],
           "properties": {
-            "model": { "$ref": "#/$defs/nonEmptyString" },
+            "model": { "$ref": "#/$defs/nonBlankString" },
             "backend": { "enum": ["ollama"] }
           },
           "additionalProperties": false
@@ -508,8 +513,8 @@
       "type": "object",
       "required": ["session_id", "model", "messages"],
       "properties": {
-        "session_id": { "$ref": "#/$defs/nonEmptyString" },
-        "model": { "$ref": "#/$defs/nonEmptyString" },
+        "session_id": { "$ref": "#/$defs/nonBlankString" },
+        "model": { "$ref": "#/$defs/nonBlankString" },
         "locale": { "type": "string" },
         "messages": {
           "type": "array",
@@ -556,7 +561,7 @@
           "type": "object",
           "required": ["target_request_id"],
           "properties": {
-            "target_request_id": { "$ref": "#/$defs/nonEmptyString" }
+            "target_request_id": { "$ref": "#/$defs/nonBlankString" }
           },
           "additionalProperties": false
         },
@@ -564,7 +569,7 @@
           "type": "object",
           "required": ["target_request_id", "cancelled"],
           "properties": {
-            "target_request_id": { "$ref": "#/$defs/nonEmptyString" },
+            "target_request_id": { "$ref": "#/$defs/nonBlankString" },
             "cancelled": { "type": "boolean" }
           },
           "additionalProperties": false
@@ -645,7 +650,7 @@
           "type": "object",
           "required": ["session_id"],
           "properties": {
-            "session_id": { "$ref": "#/$defs/nonEmptyString" },
+            "session_id": { "$ref": "#/$defs/nonBlankString" },
             "limit": { "type": "integer", "minimum": 0, "maximum": 500 }
           },
           "additionalProperties": false
@@ -694,8 +699,8 @@
       "type": "object",
       "required": ["session_id", "model", "messages"],
       "properties": {
-        "session_id": { "$ref": "#/$defs/nonEmptyString" },
-        "model": { "$ref": "#/$defs/nonEmptyString" },
+        "session_id": { "$ref": "#/$defs/nonBlankString" },
+        "model": { "$ref": "#/$defs/nonBlankString" },
         "locale": { "type": "string" },
         "messages": {
           "type": "array",
@@ -719,8 +724,8 @@
           "type": "object",
           "required": ["session_id", "title"],
           "properties": {
-            "session_id": { "$ref": "#/$defs/nonEmptyString" },
-            "title": { "$ref": "#/$defs/nonEmptyString" }
+            "session_id": { "$ref": "#/$defs/nonBlankString" },
+            "title": { "$ref": "#/$defs/nonBlankString" }
           },
           "additionalProperties": false
         },
@@ -785,7 +790,7 @@
       "type": "object",
       "required": ["session_id"],
       "properties": {
-        "session_id": { "$ref": "#/$defs/nonEmptyString" }
+        "session_id": { "$ref": "#/$defs/nonBlankString" }
       },
       "additionalProperties": false
     },
@@ -857,8 +862,8 @@
           "type": "object",
           "required": ["content"],
           "properties": {
-            "id": { "type": "string" },
-            "content": { "$ref": "#/$defs/nonEmptyString" },
+            "id": { "$ref": "#/$defs/nonBlankString" },
+            "content": { "$ref": "#/$defs/nonBlankString" },
             "enabled": { "type": "boolean" }
           },
           "additionalProperties": false
@@ -879,7 +884,7 @@
           "type": "object",
           "required": ["id"],
           "properties": {
-            "id": { "$ref": "#/$defs/nonEmptyString" }
+            "id": { "$ref": "#/$defs/nonBlankString" }
           },
           "additionalProperties": false
         },
@@ -922,7 +927,7 @@
           "type": "object",
           "required": ["draft_id"],
           "properties": {
-            "draft_id": { "$ref": "#/$defs/nonEmptyString" },
+            "draft_id": { "$ref": "#/$defs/nonBlankString" },
             "content": { "$ref": "#/$defs/nonEmptyString" },
             "enabled": { "type": "boolean" },
             "expected_session_id": { "$ref": "#/$defs/nonEmptyString" },
@@ -934,7 +939,7 @@
           "type": "object",
           "required": ["draft_id", "status", "entry"],
           "properties": {
-            "draft_id": { "$ref": "#/$defs/nonEmptyString" },
+            "draft_id": { "$ref": "#/$defs/nonBlankString" },
             "status": { "const": "approved" },
             "entry": { "$ref": "#/$defs/memoryEntry" }
           },
@@ -948,7 +953,7 @@
           "type": "object",
           "required": ["draft_id"],
           "properties": {
-            "draft_id": { "$ref": "#/$defs/nonEmptyString" },
+            "draft_id": { "$ref": "#/$defs/nonBlankString" },
             "expected_session_id": { "$ref": "#/$defs/nonEmptyString" },
             "expected_source_message_count": { "type": "integer", "minimum": 1 }
           },
@@ -958,7 +963,7 @@
           "type": "object",
           "required": ["draft_id", "status", "dismissed_at"],
           "properties": {
-            "draft_id": { "$ref": "#/$defs/nonEmptyString" },
+            "draft_id": { "$ref": "#/$defs/nonBlankString" },
             "status": { "const": "dismissed" },
             "dismissed_at": { "type": "string", "format": "date-time" }
           },

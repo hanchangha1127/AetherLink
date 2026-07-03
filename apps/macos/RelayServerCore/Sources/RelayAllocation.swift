@@ -111,7 +111,23 @@ public struct RelayAllocationRequest: Equatable, Sendable {
             return false
         }
         let key = String(value[..<separator])
-        return rejectedRequestMetadataKeys.contains(key)
+        if rejectedRequestMetadataKeys.contains(key) {
+            return true
+        }
+        guard isRecognizedOptionName(key) else {
+            return false
+        }
+        let suffix = value[value.index(after: separator)...]
+        return !suffix.allSatisfy { $0 == "=" }
+    }
+
+    private static func isRecognizedOptionName(_ value: String) -> Bool {
+        guard let first = value.first, first.isLetter || first == "_" else {
+            return false
+        }
+        return value.allSatisfy { character in
+            character.isLetter || character.isNumber || character == "_" || character == "-"
+        }
     }
 
     private static let rejectedRequestMetadataKeys: Set<String> = [
