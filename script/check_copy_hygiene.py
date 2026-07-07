@@ -780,6 +780,8 @@ def android_runtime_boundary_guard_failures() -> list[str]:
     docs_progress_path = ROOT / "docs/progress.md"
     docs_qa_evidence_path = ROOT / "docs/qa-evidence.md"
     docs_roadmap_path = ROOT / "docs/roadmap.md"
+    docs_security_path = ROOT / "docs/security.md"
+    docs_connection_overlay_path = ROOT / "docs/connection-overlay.md"
     test_path = ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/AppNavigationTest.kt"
     client_screens_test_path = (
         ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/ui/"
@@ -795,6 +797,14 @@ def android_runtime_boundary_guard_failures() -> list[str]:
     runtime_connection_manager_path = (
         ROOT / "apps/android/core/transport/src/main/java/com/localagentbridge/android/core/transport/"
         "RuntimeConnectionManager.kt"
+    )
+    bonjour_discovery_path = (
+        ROOT / "apps/android/core/transport/src/main/java/com/localagentbridge/android/core/transport/"
+        "BonjourDiscovery.kt"
+    )
+    bonjour_discovery_test_path = (
+        ROOT / "apps/android/core/transport/src/test/java/com/localagentbridge/android/core/transport/"
+        "BonjourDiscoveryTest.kt"
     )
     runtime_connection_manager_test_path = (
         ROOT / "apps/android/core/transport/src/test/java/com/localagentbridge/android/core/transport/"
@@ -832,6 +842,8 @@ def android_runtime_boundary_guard_failures() -> list[str]:
     docs_progress_text = docs_progress_path.read_text(encoding="utf-8", errors="replace")
     docs_qa_evidence_text = docs_qa_evidence_path.read_text(encoding="utf-8", errors="replace")
     docs_roadmap_text = docs_roadmap_path.read_text(encoding="utf-8", errors="replace")
+    docs_security_text = docs_security_path.read_text(encoding="utf-8", errors="replace")
+    docs_connection_overlay_text = docs_connection_overlay_path.read_text(encoding="utf-8", errors="replace")
     runtime_text = runtime_path.read_text(encoding="utf-8", errors="replace")
     runtime_remote_route_planner_text = runtime_remote_route_planner_path.read_text(
         encoding="utf-8",
@@ -849,6 +861,11 @@ def android_runtime_boundary_guard_failures() -> list[str]:
         errors="replace",
     )
     runtime_connection_manager_text = runtime_connection_manager_path.read_text(encoding="utf-8", errors="replace")
+    bonjour_discovery_text = bonjour_discovery_path.read_text(encoding="utf-8", errors="replace")
+    bonjour_discovery_test_text = bonjour_discovery_test_path.read_text(
+        encoding="utf-8",
+        errors="replace",
+    )
     runtime_connection_manager_test_text = runtime_connection_manager_test_path.read_text(
         encoding="utf-8",
         errors="replace",
@@ -1099,6 +1116,809 @@ def android_runtime_boundary_guard_failures() -> list[str]:
             f"{pairing_parser_test_path.relative_to(ROOT)}: Missing Android QR trust-value whitespace "
             "rejection regression test."
         )
+    required_service_type_discovery_hint_snippets = (
+        (
+            pairing_parser_text,
+            pairing_parser_path,
+            "optionalDiscoveryServiceType()",
+            "Android pairing parser must validate QR service_type as a narrow discovery hint.",
+        ),
+        (
+            pairing_parser_text,
+            pairing_parser_path,
+            "ALLOWED_DISCOVERY_SERVICE_TYPES",
+            "Android pairing parser must keep an explicit service_type discovery hint allowlist.",
+        ),
+        (
+            pairing_parser_text,
+            pairing_parser_path,
+            '"Invalid service type"',
+            "Android pairing parser must reject malformed service_type hints with a focused error.",
+        ),
+        (
+            pairing_parser_test_text,
+            pairing_parser_test_path,
+            "parsesAllowedDiscoveryServiceTypeHints",
+            "Android pairing parser tests must preserve allowed AetherLink discovery service_type hints.",
+        ),
+        (
+            pairing_parser_test_text,
+            pairing_parser_test_path,
+            "rejectsBackendProviderOrUrlShapedServiceTypeHints",
+            "Android pairing parser tests must reject backend/provider/model service_type hints.",
+        ),
+        (
+            pairing_parser_test_text,
+            pairing_parser_test_path,
+            "backend_url%3Dhttp%3A%2F%2F127.0.0.1%3A11434",
+            "Android pairing parser tests must cover backend URL metadata in service_type.",
+        ),
+        (
+            pairing_parser_test_text,
+            pairing_parser_test_path,
+            "_ollama._tcp.local.",
+            "Android pairing parser tests must cover provider-ish service_type hints.",
+        ),
+        (
+            pairing_qr_schema_text,
+            pairing_qr_schema_path,
+            "Legacy or diagnostic discovery hint only. It must not carry backend, provider, model, or runtime payload metadata.",
+            "Shared pairing QR schema must document service_type as discovery-only metadata.",
+        ),
+        (
+            pairing_qr_schema_text,
+            pairing_qr_schema_path,
+            '"_localagentbridge._tcp.local."',
+            "Shared pairing QR schema must preserve legacy AetherLink discovery service_type hints.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "PAIRING_QR_ALLOWED_SERVICE_TYPES",
+            "Protocol schema checker must pin the service_type discovery hint allowlist.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "pairing QR schema service_type must allow only AetherLink discovery service hints",
+            "Protocol schema checker must fail when service_type is not allowlisted.",
+        ),
+        (
+            protocol_doc_text,
+            protocol_doc_path,
+            "`service_type`, when present from legacy or diagnostic emitters, is a discovery hint only and is limited to the AetherLink mDNS service names",
+            "Protocol docs must state the service_type discovery hint boundary.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimePairingPayloadParserTest.rejectsBackendProviderOrUrlShapedServiceTypeHints",
+            "Default no-device gate must run focused Android service_type discovery hint coverage.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "Android pairing QR service_type discovery-hint sanitization addendum",
+            "Default no-device gate summary must mention service_type discovery hint sanitization.",
+        ),
+        (
+            progress_text,
+            progress_path,
+            "Android Pairing QR Service-Type Discovery-Hint Sanitization No-Device Gate",
+            "Progress docs must record Android service_type discovery hint sanitization coverage.",
+        ),
+        (
+            qa_evidence_text,
+            qa_evidence_path,
+            "Android Pairing QR Service-Type Discovery-Hint Sanitization No-Device Gate",
+            "QA evidence must record Android service_type discovery hint sanitization coverage.",
+        ),
+        (
+            roadmap_text,
+            roadmap_path,
+            "Android pairing QR service_type discovery-hint sanitization",
+            "Roadmap smoke coverage queue must name Android service_type discovery hint sanitization.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_service_type_discovery_hint_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_duplicate_qr_query_key_snippets = (
+        (
+            pairing_parser_text,
+            pairing_parser_path,
+            "linkedMapOf<String, String>()",
+            "Android pairing parser must preserve decoded query-key order while checking duplicates.",
+        ),
+        (
+            pairing_parser_text,
+            pairing_parser_path,
+            "query.containsKey(key)",
+            "Android pairing parser must reject duplicate decoded QR query keys before field selection.",
+        ),
+        (
+            pairing_parser_text,
+            pairing_parser_path,
+            '"Duplicate pairing QR query key"',
+            "Android pairing parser must use a focused duplicate query-key error.",
+        ),
+        (
+            qr_verifier_text,
+            qr_verifier_path,
+            "case duplicateQueryKey(String)",
+            "QR verifier must have a focused duplicate query-key failure.",
+        ),
+        (
+            qr_verifier_text,
+            qr_verifier_path,
+            "seenQueryKeys.insert(item.name)",
+            "QR verifier must reject repeated decoded query keys before building the route-material dictionary.",
+        ),
+        (
+            pairing_parser_test_text,
+            pairing_parser_test_path,
+            "rejectsDuplicateQueryKeysBeforeFieldSelection",
+            "Android pairing parser tests must reject duplicate decoded QR query keys.",
+        ),
+        (
+            pairing_parser_test_text,
+            pairing_parser_test_path,
+            "route%5Ftoken=route-2",
+            "Android pairing parser tests must cover percent-decoded duplicate query keys.",
+        ),
+        (
+            protocol_doc_text,
+            protocol_doc_path,
+            "a decoded QR query key must not appear more than once",
+            "Protocol docs must state that decoded QR query keys cannot repeat.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimePairingPayloadParserTest.rejectsDuplicateQueryKeysBeforeFieldSelection",
+            "Default no-device gate must run focused Android duplicate QR query-key coverage.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "QR_SMOKE_DUPLICATE_QUERY_KEY_VERIFY_OUTPUT",
+            "Default no-device gate must reject rendered duplicate query-key QR artifacts.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "route%5Ftoken=route-duplicate-artifact",
+            "Default no-device gate must prove percent-decoded duplicate query-key QR artifacts fail verification.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "Android pairing QR duplicate query-key rejection addendum",
+            "Default no-device gate summary must mention duplicate QR query-key rejection.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "shared QR verifier duplicate query-key rejection addendum",
+            "Default no-device gate summary must mention rendered QR verifier duplicate query-key rejection.",
+        ),
+        (
+            progress_text,
+            progress_path,
+            "Android Pairing QR Duplicate Query-Key Rejection No-Device Gate",
+            "Progress docs must record duplicate QR query-key rejection coverage.",
+        ),
+        (
+            progress_text,
+            progress_path,
+            "Shared QR Verifier Duplicate Query-Key Rejection No-Device Gate",
+            "Progress docs must record rendered QR verifier duplicate query-key rejection coverage.",
+        ),
+        (
+            qa_evidence_text,
+            qa_evidence_path,
+            "Android Pairing QR Duplicate Query-Key Rejection No-Device Gate",
+            "QA evidence must record duplicate QR query-key rejection coverage.",
+        ),
+        (
+            qa_evidence_text,
+            qa_evidence_path,
+            "Shared QR Verifier Duplicate Query-Key Rejection No-Device Gate",
+            "QA evidence must record rendered QR verifier duplicate query-key rejection coverage.",
+        ),
+        (
+            roadmap_text,
+            roadmap_path,
+            "Android pairing QR duplicate query-key rejection",
+            "Roadmap smoke coverage queue must name duplicate QR query-key rejection.",
+        ),
+        (
+            roadmap_text,
+            roadmap_path,
+            "shared QR verifier duplicate query-key rejection",
+            "Roadmap smoke coverage queue must name rendered QR verifier duplicate query-key rejection.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_duplicate_qr_query_key_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_unknown_qr_query_key_snippets = (
+        (
+            pairing_parser_text,
+            pairing_parser_path,
+            "ALLOWED_PAIRING_QR_QUERY_KEYS",
+            "Android pairing parser must define the shared-schema QR query-key allowlist.",
+        ),
+        (
+            pairing_parser_text,
+            pairing_parser_path,
+            "key in ALLOWED_PAIRING_QR_QUERY_KEYS",
+            "Android pairing parser must reject unknown decoded QR query keys before field selection.",
+        ),
+        (
+            pairing_parser_text,
+            pairing_parser_path,
+            '"Unknown pairing QR query key"',
+            "Android pairing parser must use a focused unknown query-key error.",
+        ),
+        (
+            qr_verifier_text,
+            qr_verifier_path,
+            "case unknownQueryKey(String)",
+            "QR verifier must have a focused unknown query-key failure.",
+        ),
+        (
+            qr_verifier_text,
+            qr_verifier_path,
+            "allowedPairingQRQueryKeys.contains(item.name)",
+            "QR verifier must reject decoded query keys outside the shared schema allowlist.",
+        ),
+        (
+            pairing_parser_test_text,
+            pairing_parser_test_path,
+            "rejectsUnknownQueryKeysBeforeFieldSelection",
+            "Android pairing parser tests must reject unknown decoded QR query keys.",
+        ),
+        (
+            pairing_parser_test_text,
+            pairing_parser_test_path,
+            "backend_url=http%3A%2F%2F127.0.0.1%3A11434",
+            "Android pairing parser tests must reject backend URL-shaped unknown QR keys.",
+        ),
+        (
+            pairing_parser_test_text,
+            pairing_parser_test_path,
+            "p2p_session_key=session-key-1",
+            "Android pairing parser tests must reject future P2P-shaped unknown QR keys.",
+        ),
+        (
+            pairing_parser_test_text,
+            pairing_parser_test_path,
+            "backend%5Furl=http%3A%2F%2Fprovider.example.test%2Fv1%2Fmodels",
+            "Android pairing parser tests must reject percent-decoded unknown QR keys.",
+        ),
+        (
+            pairing_qr_schema_text,
+            pairing_qr_schema_path,
+            '"additionalProperties": false',
+            "Shared pairing QR schema must reject unknown query keys.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "pairing QR schema must reject additional properties",
+            "Protocol schema checker must pin pairing QR additionalProperties=false.",
+        ),
+        (
+            protocol_doc_text,
+            protocol_doc_path,
+            "Unknown decoded query keys are rejected",
+            "Protocol docs must state that unknown decoded QR query keys are rejected.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimePairingPayloadParserTest.rejectsUnknownQueryKeysBeforeFieldSelection",
+            "Default no-device gate must run focused Android unknown QR query-key coverage.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "Android pairing QR unknown query-key rejection addendum",
+            "Default no-device gate summary must mention unknown QR query-key rejection.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "QR_SMOKE_UNKNOWN_QUERY_KEY_VERIFY_OUTPUT",
+            "Default no-device gate must reject rendered unknown query-key QR artifacts.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "backend_url=http%3A%2F%2F127.0.0.1%3A11434%2Fapi%2Ftags",
+            "Default no-device gate must prove backend-shaped unknown query-key QR artifacts fail verification.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "shared QR verifier unknown query-key rejection addendum",
+            "Default no-device gate summary must mention rendered QR verifier unknown query-key rejection.",
+        ),
+        (
+            progress_text,
+            progress_path,
+            "Android Pairing QR Unknown Query-Key Rejection No-Device Gate",
+            "Progress docs must record unknown QR query-key rejection coverage.",
+        ),
+        (
+            progress_text,
+            progress_path,
+            "Shared QR Verifier Unknown Query-Key Rejection No-Device Gate",
+            "Progress docs must record rendered QR verifier unknown query-key rejection coverage.",
+        ),
+        (
+            qa_evidence_text,
+            qa_evidence_path,
+            "Android Pairing QR Unknown Query-Key Rejection No-Device Gate",
+            "QA evidence must record unknown QR query-key rejection coverage.",
+        ),
+        (
+            qa_evidence_text,
+            qa_evidence_path,
+            "Shared QR Verifier Unknown Query-Key Rejection No-Device Gate",
+            "QA evidence must record rendered QR verifier unknown query-key rejection coverage.",
+        ),
+        (
+            roadmap_text,
+            roadmap_path,
+            "Android pairing QR unknown query-key rejection",
+            "Roadmap smoke coverage queue must name unknown QR query-key rejection.",
+        ),
+        (
+            roadmap_text,
+            roadmap_path,
+            "shared QR verifier unknown query-key rejection",
+            "Roadmap smoke coverage queue must name rendered QR verifier unknown query-key rejection.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_unknown_qr_query_key_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    if '"backend_url"' in qr_verifier_text:
+        failures.append(
+            f"{qr_verifier_path.relative_to(ROOT)}: "
+            "QR verifier allowlist must not include backend/provider-shaped query keys."
+        )
+    required_semantic_alias_conflict_snippets = (
+        (
+            pairing_parser_text,
+            pairing_parser_path,
+            "PAIRING_QR_SEMANTIC_ALIAS_GROUPS",
+            "Android pairing parser must define semantic QR alias groups.",
+        ),
+        (
+            pairing_parser_text,
+            pairing_parser_path,
+            "requireSingleSemanticAliasPerField",
+            "Android pairing parser must reject mixed semantic aliases before field selection.",
+        ),
+        (
+            pairing_parser_text,
+            pairing_parser_path,
+            '"Mixed pairing QR semantic alias fields"',
+            "Android pairing parser must use a focused semantic alias conflict error.",
+        ),
+        (
+            pairing_parser_text,
+            pairing_parser_path,
+            '"relay_scope" to setOf("relay_scope", "remote_scope", "route_scope", "rsc")',
+            "Android pairing parser must include relay-scope aliases in the semantic alias guard.",
+        ),
+        (
+            pairing_parser_test_text,
+            pairing_parser_test_path,
+            "rejectsMixedSemanticAliasesBeforeFieldSelection",
+            "Android pairing parser tests must reject mixed semantic QR aliases.",
+        ),
+        (
+            pairing_parser_test_text,
+            pairing_parser_test_path,
+            "relay_scope=remote&rsc=private_overlay",
+            "Android pairing parser tests must cover conflicting relay-scope aliases.",
+        ),
+        (
+            qr_verifier_text,
+            qr_verifier_path,
+            "case mixedSemanticAliasFields",
+            "QR verifier must expose a focused mixed semantic alias failure.",
+        ),
+        (
+            qr_verifier_text,
+            qr_verifier_path,
+            "pairingQRSemanticAliasGroups",
+            "QR verifier must define semantic QR alias groups.",
+        ),
+        (
+            qr_verifier_text,
+            qr_verifier_path,
+            "try requireSingleSemanticAliasPerField(query)",
+            "QR verifier must reject mixed semantic aliases before field selection.",
+        ),
+        (
+            qr_verifier_text,
+            qr_verifier_path,
+            '"Mixed pairing QR semantic alias fields',
+            "QR verifier must use the Android-compatible semantic alias failure phrase.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "QR_SMOKE_MIXED_SEMANTIC_ALIAS_VERIFY_OUTPUT",
+            "Default no-device gate must verify rendered QR mixed semantic alias rejection.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "rt=semantic-alias-artifact",
+            "Default no-device gate must render a route-token mixed alias QR artifact.",
+        ),
+        (
+            pairing_qr_schema_text,
+            pairing_qr_schema_path,
+            '"dependentSchemas"',
+            "Shared pairing QR schema must express semantic alias exclusivity.",
+        ),
+        (
+            pairing_qr_schema_text,
+            pairing_qr_schema_path,
+            '"runtime_public_key":',
+            "Shared pairing QR schema must include runtime public-key aliases in semantic alias exclusivity.",
+        ),
+        (
+            pairing_qr_schema_text,
+            pairing_qr_schema_path,
+            "Relay scope aliases describe one semantic route-scope field",
+            "Shared pairing QR schema must document relay-scope alias exclusivity.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "PAIRING_QR_SEMANTIC_ALIAS_GROUPS",
+            "Protocol schema checker must define semantic alias groups.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "check_pairing_qr_semantic_alias_exclusivity",
+            "Protocol schema checker must pin full semantic alias exclusivity.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "pairing QR schema must reject mixed semantic aliases",
+            "Protocol schema checker must fail if semantic aliases can be mixed.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "check_pairing_qr_scope_alias_exclusivity",
+            "Protocol schema checker must pin relay-scope alias exclusivity.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "pairing QR schema must reject mixed relay-scope aliases",
+            "Protocol schema checker must fail if relay-scope aliases can be mixed.",
+        ),
+        (
+            protocol_doc_text,
+            protocol_doc_path,
+            "Semantic aliases for the same QR field must not be mixed",
+            "Protocol docs must state that semantic QR aliases cannot be mixed.",
+        ),
+        (
+            protocol_doc_text,
+            protocol_doc_path,
+            "Rendered QR artifact verification applies the same semantic alias rejection",
+            "Protocol docs must state rendered QR verifier semantic alias parity.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimePairingPayloadParserTest.rejectsMixedSemanticAliasesBeforeFieldSelection",
+            "Default no-device gate must run focused Android semantic alias conflict coverage.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "Android pairing QR semantic alias conflict rejection addendum",
+            "Default no-device gate summary must mention Android semantic alias conflict rejection.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "shared pairing QR semantic alias exclusivity schema addendum",
+            "Default no-device gate summary must mention shared semantic alias exclusivity.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "shared pairing QR relay-scope alias exclusivity schema addendum",
+            "Default no-device gate summary must mention shared relay-scope alias exclusivity.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "shared QR verifier semantic alias rejection addendum",
+            "Default no-device gate summary must mention shared QR verifier semantic alias rejection.",
+        ),
+        (
+            progress_text,
+            progress_path,
+            "Shared Pairing QR Semantic Alias Exclusivity Schema No-Device Gate",
+            "Progress docs must record shared semantic alias schema coverage.",
+        ),
+        (
+            progress_text,
+            progress_path,
+            "Android Pairing QR Semantic Alias Conflict Rejection No-Device Gate",
+            "Progress docs must record semantic QR alias conflict coverage.",
+        ),
+        (
+            progress_text,
+            progress_path,
+            "Shared QR Verifier Semantic Alias Rejection No-Device Gate",
+            "Progress docs must record rendered QR verifier semantic alias rejection coverage.",
+        ),
+        (
+            qa_evidence_text,
+            qa_evidence_path,
+            "Shared Pairing QR Semantic Alias Exclusivity Schema No-Device Gate",
+            "QA evidence must record shared semantic alias schema coverage.",
+        ),
+        (
+            qa_evidence_text,
+            qa_evidence_path,
+            "Android Pairing QR Semantic Alias Conflict Rejection No-Device Gate",
+            "QA evidence must record semantic QR alias conflict coverage.",
+        ),
+        (
+            qa_evidence_text,
+            qa_evidence_path,
+            "Shared QR Verifier Semantic Alias Rejection No-Device Gate",
+            "QA evidence must record rendered QR verifier semantic alias rejection coverage.",
+        ),
+        (
+            roadmap_text,
+            roadmap_path,
+            "shared pairing QR semantic alias exclusivity schema",
+            "Roadmap smoke coverage queue must name shared semantic alias schema coverage.",
+        ),
+        (
+            roadmap_text,
+            roadmap_path,
+            "Android pairing QR semantic alias conflict rejection",
+            "Roadmap smoke coverage queue must name semantic QR alias conflict rejection.",
+        ),
+        (
+            roadmap_text,
+            roadmap_path,
+            "shared QR verifier semantic alias rejection",
+            "Roadmap smoke coverage queue must name rendered QR verifier semantic alias rejection.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_semantic_alias_conflict_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_qr_verifier_alias_family_parity_snippets = (
+        (
+            qr_verifier_text,
+            qr_verifier_path,
+            "case mixedRelayAliasFamilies",
+            "QR verifier must expose a focused mixed relay alias-family failure.",
+        ),
+        (
+            qr_verifier_text,
+            qr_verifier_path,
+            "case mixedP2PAliasFamilies",
+            "QR verifier must expose a focused mixed P2P alias-family failure.",
+        ),
+        (
+            qr_verifier_text,
+            qr_verifier_path,
+            "try requireSingleRelayAliasFamily(query)",
+            "QR verifier must reject mixed relay alias families before route material selection.",
+        ),
+        (
+            qr_verifier_text,
+            qr_verifier_path,
+            "try requireSingleP2PAliasFamily(query)",
+            "QR verifier must reject mixed P2P alias families before route material selection.",
+        ),
+        (
+            qr_verifier_text,
+            qr_verifier_path,
+            "let relayRouteAliasFamilies",
+            "QR verifier must define relay alias-family groups.",
+        ),
+        (
+            qr_verifier_text,
+            qr_verifier_path,
+            "let p2pRouteAliasFamilies",
+            "QR verifier must define P2P alias-family groups.",
+        ),
+        (
+            qr_verifier_text,
+            qr_verifier_path,
+            'QRField(canonical: "relay_id", aliases: ["remote_id", "route_id", "rendezvous_id", "network_id", "ri"])',
+            "QR verifier must treat rendezvous_id as a relay id alias.",
+        ),
+        (
+            qr_verifier_text,
+            qr_verifier_path,
+            'QRField(canonical: "relay_secret", aliases: ["remote_secret", "route_secret", "rendezvous_secret", "rs"])',
+            "QR verifier must treat rendezvous_secret as a relay secret alias.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "QR_SMOKE_MIXED_RELAY_ALIAS_FAMILY_VERIFY_OUTPUT",
+            "Default no-device gate must verify rendered QR mixed relay alias-family rejection.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "QR_SMOKE_MIXED_P2P_ALIAS_FAMILY_VERIFY_OUTPUT",
+            "Default no-device gate must verify rendered QR mixed P2P alias-family rejection.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "QR_SMOKE_RENDEZVOUS_RELAY_URI_FILE",
+            "Default no-device gate must verify complete rendezvous relay QR artifacts.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "rendezvous_secret=secret%20rendezvous-1",
+            "Default no-device gate must verify whitespace-mutated rendezvous relay-secret rejection.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "shared QR verifier alias-family parity addendum",
+            "Default no-device gate summary must mention shared QR verifier alias-family parity.",
+        ),
+        (
+            protocol_doc_text,
+            protocol_doc_path,
+            "Rendered QR artifact verification also rejects mixed relay and P2P alias families",
+            "Protocol docs must state rendered QR verifier alias-family parity.",
+        ),
+        (
+            progress_text,
+            progress_path,
+            "Shared QR Verifier Alias-Family Parity No-Device Gate",
+            "Progress docs must record rendered QR verifier alias-family parity coverage.",
+        ),
+        (
+            qa_evidence_text,
+            qa_evidence_path,
+            "Shared QR Verifier Alias-Family Parity No-Device Gate",
+            "QA evidence must record rendered QR verifier alias-family parity coverage.",
+        ),
+        (
+            roadmap_text,
+            roadmap_path,
+            "shared QR verifier alias-family parity",
+            "Roadmap smoke coverage queue must name rendered QR verifier alias-family parity.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_qr_verifier_alias_family_parity_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_shared_pairing_qr_usb_reverse_scope_snippets = (
+        (
+            pairing_qr_schema_text,
+            pairing_qr_schema_path,
+            "debug-only for loopback relay routes through adb reverse",
+            "Shared pairing QR schema must document usb_reverse as debug USB reverse relay-scope material.",
+        ),
+        (
+            pairing_qr_schema_text,
+            pairing_qr_schema_path,
+            '"pairingRelayHost"',
+            "Shared pairing QR schema must route QR relay hosts through pairingRelayHost.",
+        ),
+        (
+            pairing_qr_schema_text,
+            pairing_qr_schema_path,
+            '"loopbackRelayHost"',
+            "Shared pairing QR schema must define loopbackRelayHost for debug USB reverse artifacts.",
+        ),
+        (
+            pairing_qr_schema_text,
+            pairing_qr_schema_path,
+            '"usbReverseScopeRequired"',
+            "Shared pairing QR schema must require usb_reverse scope for debug loopback artifacts.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            'for expected_scope in ["remote", "private_overlay", "usb_reverse"]',
+            "Protocol schema checker must pin usb_reverse for all pairing QR relay-scope aliases.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "pairing QR schema {scope_field} must allow {expected_scope} route scope",
+            "Protocol schema checker must fail when a pairing QR relay-scope alias drops an allowed scope.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "pairing_qr_relay_host_schema_allows_remote_or_usb_loopback",
+            "Protocol schema checker must pin pairingRelayHost's remote-or-loopback shape.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "check_usb_reverse_qr_scope_contract",
+            "Protocol schema checker must pin loopback QR usb_reverse scope conditionals.",
+        ),
+        (
+            qr_verifier_text,
+            qr_verifier_path,
+            "isLoopbackRelayHost",
+            "QR verifier must classify loopback relay hosts before allowing local relay diagnostics.",
+        ),
+        (
+            qr_verifier_text,
+            qr_verifier_path,
+            'relayScope == "usb_reverse"',
+            "QR verifier --allow-local-relay must require exact usb_reverse scope.",
+        ),
+        (
+            protocol_doc_text,
+            protocol_doc_path,
+            "Development USB smoke tests may add `relay_scope=usb_reverse`",
+            "Protocol docs must document the debug USB reverse QR scope.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "QR_SMOKE_MUTATED_SCOPE_VERIFY_OUTPUT",
+            "Default no-device gate must reject remote-scoped loopback local-relay QR artifacts.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "shared pairing QR usb-reverse loopback host schema addendum",
+            "Default no-device gate summary must mention shared pairing QR usb_reverse loopback schema coverage.",
+        ),
+        (
+            progress_text,
+            progress_path,
+            "Shared Pairing QR USB-Reverse Loopback Host Schema No-Device Gate",
+            "Progress docs must record shared pairing QR usb_reverse loopback host schema coverage.",
+        ),
+        (
+            qa_evidence_text,
+            qa_evidence_path,
+            "Shared Pairing QR USB-Reverse Loopback Host Schema No-Device Gate",
+            "QA evidence must record shared pairing QR usb_reverse loopback host schema coverage.",
+        ),
+        (
+            roadmap_text,
+            roadmap_path,
+            "shared pairing QR usb-reverse loopback host schema",
+            "Roadmap smoke coverage queue must name shared pairing QR usb_reverse loopback host schema coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_shared_pairing_qr_usb_reverse_scope_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
     required_relay_secret_canonicality_snippets = (
         (
             pairing_parser_test_text,
@@ -1369,6 +2189,18 @@ def android_runtime_boundary_guard_failures() -> list[str]:
             "Android pairing parser must use a focused mixed P2P alias-family error.",
         ),
         (
+            pairing_parser_text,
+            pairing_parser_path,
+            "optionalP2pProtocolVersion()",
+            "Android pairing parser must validate P2P protocol versions before numeric coercion.",
+        ),
+        (
+            pairing_parser_text,
+            pairing_parser_path,
+            'require(value == "1") { "Invalid P2P protocol version" }',
+            "Android pairing parser must accept only exact P2P protocol version 1.",
+        ),
+        (
             pairing_parser_test_text,
             pairing_parser_test_path,
             "rejectsMixedP2pAliasFamiliesFromQrPayload",
@@ -1387,6 +2219,30 @@ def android_runtime_boundary_guard_failures() -> list[str]:
             "Android pairing parser tests must cover compact/canonical P2P alias mixing.",
         ),
         (
+            pairing_parser_test_text,
+            pairing_parser_test_path,
+            "rejectsNonCanonicalP2pProtocolVersionAliasesInQrPayload",
+            "Android pairing parser tests must reject non-canonical P2P protocol version aliases.",
+        ),
+        (
+            pairing_parser_test_text,
+            pairing_parser_test_path,
+            "p2p_protocol_version=01",
+            "Android pairing parser tests must reject leading-zero P2P protocol versions.",
+        ),
+        (
+            pairing_parser_test_text,
+            pairing_parser_test_path,
+            "p2p_protocol_version=%2B1",
+            "Android pairing parser tests must reject plus-prefixed P2P protocol versions.",
+        ),
+        (
+            pairing_parser_test_text,
+            pairing_parser_test_path,
+            "pv=01",
+            "Android pairing parser tests must reject compact leading-zero P2P protocol versions.",
+        ),
+        (
             no_device_text,
             no_device_path,
             "RuntimePairingPayloadParserTest.rejectsMixedP2pAliasFamiliesFromQrPayload",
@@ -1395,8 +2251,20 @@ def android_runtime_boundary_guard_failures() -> list[str]:
         (
             no_device_text,
             no_device_path,
+            "RuntimePairingPayloadParserTest.rejectsNonCanonicalP2pProtocolVersionAliasesInQrPayload",
+            "Default no-device gate must run focused Android P2P protocol-version canonicality coverage.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
             "Android pairing QR P2P alias-family isolation addendum",
             "Default no-device gate summary must mention Android P2P alias-family isolation.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "Android pairing QR P2P protocol-version canonicality addendum",
+            "Default no-device gate summary must mention Android P2P protocol-version canonicality.",
         ),
         (
             no_device_text,
@@ -1423,10 +2291,22 @@ def android_runtime_boundary_guard_failures() -> list[str]:
             "Protocol schema checker must fail when mixed P2P alias-family schema rejection is missing.",
         ),
         (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            'p2p_protocol_version.get("anyOf") != [{"const": 1}, {"const": "1"}]',
+            "Protocol schema checker must pin exact P2P protocol version values.",
+        ),
+        (
             protocol_doc_text,
             protocol_doc_path,
             "P2P rendezvous route material from canonical and compact alias families is not combined",
             "Protocol docs must state that P2P alias families cannot be mixed.",
+        ),
+        (
+            protocol_doc_text,
+            protocol_doc_path,
+            "must be exactly `p2p_protocol_version=1` or `pv=1`",
+            "Protocol docs must state exact P2P protocol-version query values.",
         ),
         (
             protocol_doc_text,
@@ -1447,6 +2327,12 @@ def android_runtime_boundary_guard_failures() -> list[str]:
             "Progress docs must record shared P2P alias-family schema coverage.",
         ),
         (
+            progress_text,
+            progress_path,
+            "Android Pairing QR P2P Protocol-Version Canonicality No-Device Gate",
+            "Progress docs must record Android P2P protocol-version canonicality coverage.",
+        ),
+        (
             qa_evidence_text,
             qa_evidence_path,
             "Android Pairing QR P2P Alias-Family Isolation No-Device Gate",
@@ -1459,10 +2345,22 @@ def android_runtime_boundary_guard_failures() -> list[str]:
             "QA evidence must record shared P2P alias-family schema coverage.",
         ),
         (
+            qa_evidence_text,
+            qa_evidence_path,
+            "Android Pairing QR P2P Protocol-Version Canonicality No-Device Gate",
+            "QA evidence must record Android P2P protocol-version canonicality coverage.",
+        ),
+        (
             roadmap_text,
             roadmap_path,
             "Android pairing QR P2P alias-family isolation",
             "Roadmap smoke coverage queue must name Android P2P alias-family isolation.",
+        ),
+        (
+            roadmap_text,
+            roadmap_path,
+            "Android pairing QR P2P protocol-version canonicality",
+            "Roadmap smoke coverage queue must name Android P2P protocol-version canonicality.",
         ),
         (
             roadmap_text,
@@ -1472,6 +2370,172 @@ def android_runtime_boundary_guard_failures() -> list[str]:
         ),
     )
     for haystack, path, snippet, guidance in required_p2p_alias_family_isolation_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_route_expiration_canonicality_snippets = (
+        (
+            pairing_parser_text,
+            pairing_parser_path,
+            "optionalRouteExpirationEpochMillis",
+            "Android pairing parser must validate route expiration strings before numeric coercion.",
+        ),
+        (
+            pairing_parser_text,
+            pairing_parser_path,
+            'Regex("^[1-9][0-9]*$")',
+            "Android pairing parser must reject signed or zero-padded QR route expiration strings.",
+        ),
+        (
+            pairing_parser_test_text,
+            pairing_parser_test_path,
+            "rejectsNonCanonicalRouteExpirationAliasesInQrPayload",
+            "Android pairing parser tests must reject non-canonical QR route expiration aliases.",
+        ),
+        (
+            pairing_parser_test_text,
+            pairing_parser_test_path,
+            "relay_expires_at=04102444800000",
+            "Android pairing parser tests must reject leading-zero relay expiration strings.",
+        ),
+        (
+            pairing_parser_test_text,
+            pairing_parser_test_path,
+            "px=%2B4102444800000",
+            "Android pairing parser tests must reject plus-prefixed compact P2P expiration strings.",
+        ),
+        (
+            qr_verifier_text,
+            qr_verifier_path,
+            "isCanonicalRouteExpirationEpochMillisValue",
+            "QR verifier must reject signed or zero-padded relay expiration strings.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "pairing QR schema epochMillisValue must reject signed or zero-padded expiration strings",
+            "Protocol schema checker must pin pairing QR route expiration string canonicality.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimePairingPayloadParserTest.rejectsNonCanonicalRouteExpirationAliasesInQrPayload",
+            "Default no-device gate must run focused Android route expiration canonicality coverage.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "QR_SMOKE_MUTATED_EXPIRATION_VERIFY_OUTPUT",
+            "Default no-device gate must reject rendered zero-padded relay expiration QR artifacts.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "Android pairing QR route expiration canonicality addendum",
+            "Default no-device gate summary must mention Android route expiration canonicality.",
+        ),
+        (
+            progress_text,
+            progress_path,
+            "Android Pairing QR Route Expiration Canonicality No-Device Gate",
+            "Progress docs must record Android route expiration canonicality coverage.",
+        ),
+        (
+            qa_evidence_text,
+            qa_evidence_path,
+            "Android Pairing QR Route Expiration Canonicality No-Device Gate",
+            "QA evidence must record Android route expiration canonicality coverage.",
+        ),
+        (
+            roadmap_text,
+            roadmap_path,
+            "Android pairing QR route expiration canonicality",
+            "Roadmap smoke coverage queue must name Android route expiration canonicality.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_route_expiration_canonicality_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_relay_port_canonicality_snippets = (
+        (
+            pairing_parser_text,
+            pairing_parser_path,
+            "optionalQrPortValue",
+            "Android pairing parser must validate QR relay port strings before numeric coercion.",
+        ),
+        (
+            pairing_parser_text,
+            pairing_parser_path,
+            "CANONICAL_QR_PORT_PATTERN",
+            "Android pairing parser must reject signed or zero-padded QR relay port strings.",
+        ),
+        (
+            pairing_parser_test_text,
+            pairing_parser_test_path,
+            "rejectsNonCanonicalRelayPortAliasesInQrPayload",
+            "Android pairing parser tests must reject non-canonical QR relay port aliases.",
+        ),
+        (
+            pairing_parser_test_text,
+            pairing_parser_test_path,
+            "relay_port=0443",
+            "Android pairing parser tests must reject leading-zero relay port strings.",
+        ),
+        (
+            pairing_parser_test_text,
+            pairing_parser_test_path,
+            "rp=%2B443",
+            "Android pairing parser tests must reject plus-prefixed compact relay port strings.",
+        ),
+        (
+            qr_verifier_text,
+            qr_verifier_path,
+            "isCanonicalQrPortValue",
+            "QR verifier must reject signed or zero-padded relay port strings.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "pairing QR schema portValue must reject signed, zero-padded, or out-of-range port strings",
+            "Protocol schema checker must pin pairing QR port string canonicality.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimePairingPayloadParserTest.rejectsNonCanonicalRelayPortAliasesInQrPayload",
+            "Default no-device gate must run focused Android relay port canonicality coverage.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "QR_SMOKE_MUTATED_PORT_VERIFY_OUTPUT",
+            "Default no-device gate must reject rendered zero-padded relay port QR artifacts.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "Android pairing QR relay port canonicality addendum",
+            "Default no-device gate summary must mention Android relay port canonicality.",
+        ),
+        (
+            progress_text,
+            progress_path,
+            "Android Pairing QR Relay Port Canonicality No-Device Gate",
+            "Progress docs must record Android relay port canonicality coverage.",
+        ),
+        (
+            qa_evidence_text,
+            qa_evidence_path,
+            "Android Pairing QR Relay Port Canonicality No-Device Gate",
+            "QA evidence must record Android relay port canonicality coverage.",
+        ),
+        (
+            roadmap_text,
+            roadmap_path,
+            "Android pairing QR relay port canonicality",
+            "Roadmap smoke coverage queue must name Android relay port canonicality.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_relay_port_canonicality_snippets:
         if snippet not in haystack:
             failures.append(f"{path.relative_to(ROOT)}: {guidance}")
     if "RUNTIME_NAME_MAX_CHARS = 80" not in pairing_parser_text or "normalizedRuntimeName()" not in pairing_parser_text:
@@ -1536,6 +2600,42 @@ def android_runtime_boundary_guard_failures() -> list[str]:
         (
             pairing_store_text,
             pairing_store_path,
+            "val id = rawId.takeIf(::isCanonicalOpaqueRouteValue)",
+            "PairingStore must canonicalize stored runtime device ids before trusted restore.",
+        ),
+        (
+            pairing_store_text,
+            pairing_store_path,
+            "val fingerprint = rawFingerprint.takeIf(::isCanonicalOpaqueRouteValue)",
+            "PairingStore must canonicalize stored runtime fingerprints before trusted restore.",
+        ),
+        (
+            pairing_store_text,
+            pairing_store_path,
+            "val publicKeyBase64 = rawPublicKeyBase64?.takeIf(::isCanonicalOpaqueRouteValue)",
+            "PairingStore must canonicalize stored runtime public keys before trusted restore.",
+        ),
+        (
+            pairing_store_text,
+            pairing_store_path,
+            "shouldRemoveStoredTrustedRuntime",
+            "PairingStore must clear trusted runtime storage when persisted identity material is non-canonical.",
+        ),
+        (
+            pairing_store_text,
+            pairing_store_path,
+            "val deviceId = runtime.deviceId.takeIf(::isCanonicalOpaqueRouteValue)",
+            "PairingStore must reject non-canonical runtime device ids before persistence.",
+        ),
+        (
+            pairing_store_text,
+            pairing_store_path,
+            "val hasInvalidPublicKeyBase64 = !rawPublicKeyBase64.isNullOrBlank() && publicKeyBase64 == null",
+            "PairingStore must reject non-canonical runtime public keys before persistence.",
+        ),
+        (
+            pairing_store_text,
+            pairing_store_path,
             "isCanonicalOpaqueRouteValue(relayId)",
             "PairingStore must canonicalize stored relay ids before trusted restore.",
         ),
@@ -1580,6 +2680,30 @@ def android_runtime_boundary_guard_failures() -> list[str]:
             pairing_store_test_path,
             "assertNoStoredRouteToken",
             "PairingStore tests must assert current and legacy route-token keys are removed.",
+        ),
+        (
+            pairing_store_test_text,
+            pairing_store_test_path,
+            "pairingStoreDropsNonCanonicalStoredTrustedIdentityOnRead",
+            "PairingStore tests must drop non-canonical stored runtime device ids and fingerprints on read.",
+        ),
+        (
+            pairing_store_test_text,
+            pairing_store_test_path,
+            "pairingStoreDropsNonCanonicalStoredRuntimePublicKeyOnRead",
+            "PairingStore tests must drop non-canonical stored runtime public keys on read.",
+        ),
+        (
+            pairing_store_test_text,
+            pairing_store_test_path,
+            "pairingStoreDropsNonCanonicalTrustedIdentityOnWrite",
+            "PairingStore tests must reject non-canonical trusted identity material on write.",
+        ),
+        (
+            pairing_store_test_text,
+            pairing_store_test_path,
+            "assertNoStoredTrustedRuntime",
+            "PairingStore tests must assert non-canonical trusted identity material clears stored trust.",
         ),
         (
             pairing_store_test_text,
@@ -1680,6 +2804,18 @@ def android_runtime_boundary_guard_failures() -> list[str]:
         (
             protocol_schema_text,
             protocol_schema_path,
+            '"runtime_device_id": { "$ref": "#/$defs/opaqueRouteValue" }',
+            "Shared route.refresh schema must cap runtime device ids before runtime handling.",
+        ),
+        (
+            protocol_schema_text,
+            protocol_schema_path,
+            '"runtime_key_fingerprint": { "$ref": "#/$defs/opaqueRouteValue" }',
+            "Shared route.refresh schema must cap runtime key fingerprints before runtime handling.",
+        ),
+        (
+            protocol_schema_text,
+            protocol_schema_path,
             '"relay_id": { "$ref": "#/$defs/opaqueRouteValue" }',
             "Shared route.refresh schema must cap relay identifiers before runtime handling.",
         ),
@@ -1706,6 +2842,12 @@ def android_runtime_boundary_guard_failures() -> list[str]:
             protocol_schema_check_path,
             "PAIRING_QR_OPAQUE_VALUE_FIELDS",
             "Protocol schema checker must pin pairing QR opaque route value size-bound fields.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            '"runtime_device_id",\n    "runtime_key_fingerprint",',
+            "Protocol schema checker must pin route.refresh runtime identity size-bound fields.",
         ),
         (
             protocol_schema_check_text,
@@ -1746,6 +2888,12 @@ def android_runtime_boundary_guard_failures() -> list[str]:
         (
             no_device_text,
             no_device_path,
+            "shared route.refresh runtime identity canonicality schema addendum",
+            "Default no-device gate summary must mention shared route.refresh runtime identity canonicality.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
             "shared route material schema size-bound addendum",
             "Default no-device gate summary must mention shared pairing QR and route.refresh schema size bounds.",
         ),
@@ -1764,14 +2912,32 @@ def android_runtime_boundary_guard_failures() -> list[str]:
         (
             progress_text,
             progress_path,
+            "Shared Route Refresh Runtime Identity Canonicality Schema No-Device Gate",
+            "Progress docs must record the shared route.refresh runtime identity canonicality schema gate.",
+        ),
+        (
+            progress_text,
+            progress_path,
             "Shared Route Material Schema Size Bound No-Device Gate",
             "Progress docs must record the shared route-material schema size-bound no-device gate.",
         ),
         (
             qa_evidence_text,
             qa_evidence_path,
+            "Shared Route Refresh Runtime Identity Canonicality Schema No-Device Gate",
+            "QA evidence must record the shared route.refresh runtime identity canonicality schema gate.",
+        ),
+        (
+            qa_evidence_text,
+            qa_evidence_path,
             "Shared Route Material Schema Size Bound No-Device Gate",
             "QA evidence must record the shared route-material schema size-bound no-device gate.",
+        ),
+        (
+            roadmap_text,
+            roadmap_path,
+            "shared route.refresh runtime identity canonicality schema",
+            "Roadmap smoke coverage queue must name shared route.refresh runtime identity canonicality schema coverage.",
         ),
         (
             roadmap_text,
@@ -1784,6 +2950,18 @@ def android_runtime_boundary_guard_failures() -> list[str]:
             no_device_path,
             "Android stored route-token canonicality addendum",
             "Default no-device gate summary must mention Android stored route-token canonicality.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "PairingStoreTest.pairingStoreDropsNonCanonicalStoredTrustedIdentityOnRead",
+            "Default no-device gate must run Android stored trusted identity canonicality regressions.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "Android stored trusted identity canonicality addendum",
+            "Default no-device gate summary must mention Android stored trusted identity canonicality.",
         ),
         (
             no_device_text,
@@ -1812,6 +2990,12 @@ def android_runtime_boundary_guard_failures() -> list[str]:
         (
             progress_text,
             progress_path,
+            "Android Stored Trusted Identity Canonicality No-Device Gate",
+            "Progress docs must record Android stored trusted identity canonicality coverage.",
+        ),
+        (
+            progress_text,
+            progress_path,
             "Android Opaque Route Material Size Bound No-Device Gate",
             "Progress docs must record the Android opaque route material size-bound no-device gate.",
         ),
@@ -1836,6 +3020,12 @@ def android_runtime_boundary_guard_failures() -> list[str]:
         (
             qa_evidence_text,
             qa_evidence_path,
+            "Android Stored Trusted Identity Canonicality No-Device Gate",
+            "QA evidence must record Android stored trusted identity canonicality coverage.",
+        ),
+        (
+            qa_evidence_text,
+            qa_evidence_path,
             "Android Opaque Route Material Size Bound No-Device Gate",
             "QA evidence must record the Android opaque route material size-bound no-device gate.",
         ),
@@ -1856,6 +3046,12 @@ def android_runtime_boundary_guard_failures() -> list[str]:
             roadmap_path,
             "Android stored route-token canonicality",
             "Roadmap smoke coverage queue must name Android stored route-token canonicality coverage.",
+        ),
+        (
+            roadmap_text,
+            roadmap_path,
+            "Android stored trusted identity canonicality",
+            "Roadmap smoke coverage queue must name Android stored trusted identity canonicality coverage.",
         ),
         (
             roadmap_text,
@@ -2114,12 +3310,12 @@ def android_runtime_boundary_guard_failures() -> list[str]:
         "public var p2pExpiresAtEpochMillis: Int64?",
         "public var p2pAntiReplayNonce: String?",
         "public var p2pProtocolVersion: Int?",
-        'URLQueryItem(name: compact ? "pc" : "p2p_class", value: p2pRouteClass)',
-        'URLQueryItem(name: compact ? "prid" : "p2p_record_id", value: p2pRecordID)',
-        'URLQueryItem(name: compact ? "peb" : "p2p_encrypted_body", value: p2pEncryptedBody)',
-        'URLQueryItem(name: compact ? "px" : "p2p_expires_at", value: String(p2pExpiresAtEpochMillis))',
-        'URLQueryItem(name: compact ? "pn" : "p2p_anti_replay_nonce", value: p2pAntiReplayNonce)',
-        'URLQueryItem(name: compact ? "pv" : "p2p_protocol_version", value: String(p2pProtocolVersion))',
+        'URLQueryItem(name: compact ? "pc" : "p2p_class", value: p2pMaterial.routeClass)',
+        'URLQueryItem(name: compact ? "prid" : "p2p_record_id", value: p2pMaterial.recordID)',
+        'URLQueryItem(name: compact ? "peb" : "p2p_encrypted_body", value: p2pMaterial.encryptedBody)',
+        'URLQueryItem(name: compact ? "px" : "p2p_expires_at", value: String(p2pMaterial.expiresAtEpochMillis))',
+        'URLQueryItem(name: compact ? "pn" : "p2p_anti_replay_nonce", value: p2pMaterial.antiReplayNonce)',
+        'URLQueryItem(name: compact ? "pv" : "p2p_protocol_version", value: String(p2pMaterial.protocolVersion))',
         "testPairingQRCodePayloadIncludesP2PRendezvousRecordWhenPresent",
         "testCompactPairingQRCodePayloadMatchesSharedP2PRendezvousFixture",
         "macos-compact-p2p-rendezvous-pairing-uri.txt",
@@ -2177,12 +3373,12 @@ def android_runtime_boundary_guard_failures() -> list[str]:
         (
             macos_pairing_text,
             macos_pairing_path,
-            'URLQueryItem(name: compact ? "rh" : "relay_host", value: relayHost)',
+            'URLQueryItem(name: compact ? "rh" : "relay_host", value: relayMaterial.host)',
         ),
         (
             macos_pairing_text,
             macos_pairing_path,
-            'URLQueryItem(name: compact ? "rs" : "relay_secret", value: relaySecret)',
+            'URLQueryItem(name: compact ? "rs" : "relay_secret", value: relayMaterial.secret)',
         ),
         (
             macos_runtime_test_text,
@@ -2286,8 +3482,8 @@ def android_runtime_boundary_guard_failures() -> list[str]:
         (
             macos_pairing_test_text,
             macos_pairing_test_path,
-            "testPairingQRCodeEmitsOnlyAllowedRelayScopes",
-            "PairingTests must preserve the allowed remote/private-overlay/USB relay scopes.",
+            "testPairingQRCodeEmitsRelayHostsWithMatchingScopeBeforeEmission",
+            "PairingTests must preserve the allowed remote/private-overlay/USB relay scopes with matching hosts.",
         ),
         (
             macos_pairing_test_text,
@@ -2327,6 +3523,320 @@ def android_runtime_boundary_guard_failures() -> list[str]:
         ),
     )
     for haystack, path, snippet, guidance in required_macos_qr_scope_allowlist_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_macos_qr_relay_host_scope_snippets = (
+        (
+            macos_pairing_text,
+            macos_pairing_path,
+            "relayHostMatchesRelayScope",
+            "PairingCoordinator must validate relay host and scope together before QR route emission.",
+        ),
+        (
+            macos_pairing_text,
+            macos_pairing_path,
+            "canonicalRelayHostValue",
+            "PairingCoordinator must reject non-canonical relay hosts before QR route emission.",
+        ),
+        (
+            macos_pairing_text,
+            macos_pairing_path,
+            "isPrivateOverlayRelayLiteral",
+            "PairingCoordinator must classify private-overlay relay literals before QR route emission.",
+        ),
+        (
+            macos_pairing_text,
+            macos_pairing_path,
+            "isLoopbackRelayHost",
+            "PairingCoordinator must classify loopback relay hosts before QR route emission.",
+        ),
+        (
+            macos_pairing_test_text,
+            macos_pairing_test_path,
+            "testPairingQRCodeEmitsRelayHostsWithMatchingScopeBeforeEmission",
+            "PairingTests must prove matching relay host/scope QR material is emitted.",
+        ),
+        (
+            macos_pairing_test_text,
+            macos_pairing_test_path,
+            "testPairingQRCodeOmitsRelayHostsWithoutMatchingScopeBeforeEmission",
+            "PairingTests must prove mismatched relay host/scope QR material is omitted.",
+        ),
+        (
+            macos_pairing_test_text,
+            macos_pairing_test_path,
+            '"100.64.1.10", "private_overlay"',
+            "PairingTests must cover CGNAT private-overlay relay host eligibility.",
+        ),
+        (
+            macos_pairing_test_text,
+            macos_pairing_test_path,
+            '"127.0.0.1", "usb_reverse"',
+            "PairingTests must cover loopback USB reverse relay host eligibility.",
+        ),
+        (
+            macos_pairing_test_text,
+            macos_pairing_test_path,
+            '"relay.example.test:43171", "remote"',
+            "PairingTests must reject port-suffixed relay hosts before QR emission.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "macOS pairing QR relay host-scope eligibility addendum",
+            "Default no-device summary must name macOS pairing QR relay host/scope eligibility coverage.",
+        ),
+        (
+            protocol_doc_text,
+            protocol_doc_path,
+            "macOS QR generation also omits relay route families when `relay_host` and `relay_scope` do not match",
+            "Protocol docs must state the macOS QR producer's relay host/scope eligibility boundary.",
+        ),
+        (
+            progress_text,
+            progress_path,
+            "macOS Pairing QR Relay Host-Scope Eligibility No-Device Gate",
+            "Progress docs must record macOS pairing QR relay host/scope eligibility coverage.",
+        ),
+        (
+            qa_evidence_text,
+            qa_evidence_path,
+            "macOS Pairing QR Relay Host-Scope Eligibility No-Device Gate",
+            "QA evidence must record macOS pairing QR relay host/scope eligibility coverage.",
+        ),
+        (
+            roadmap_text,
+            roadmap_path,
+            "macOS pairing QR relay host-scope eligibility",
+            "Roadmap smoke coverage queue must name macOS pairing QR relay host/scope eligibility coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_macos_qr_relay_host_scope_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_macos_qr_relay_host_canonical_emission_snippets = (
+        (
+            macos_pairing_text,
+            macos_pairing_path,
+            "let rawRelayHost = relayHost",
+            "PairingCoordinator must keep raw relay host input separate from canonical QR emission.",
+        ),
+        (
+            macos_pairing_text,
+            macos_pairing_path,
+            "let relayHost = Self.canonicalRelayHostValue(rawRelayHost)",
+            "PairingCoordinator must emit relay QR material from the canonical relay host value.",
+        ),
+        (
+            macos_pairing_text,
+            macos_pairing_path,
+            "host: relayHost",
+            "PairingCoordinator relay QR material must carry the normalized relay host.",
+        ),
+        (
+            macos_pairing_test_text,
+            macos_pairing_test_path,
+            "testPairingQRCodeEmitsCanonicalRelayHostsBeforeEmission",
+            "PairingTests must prove relay host normalization before QR emission.",
+        ),
+        (
+            macos_pairing_test_text,
+            macos_pairing_test_path,
+            '"RELAY.EXAMPLE.TEST.", nil, "relay.example.test"',
+            "PairingTests must cover lowercased no-trailing-dot DNS relay host emission.",
+        ),
+        (
+            macos_pairing_test_text,
+            macos_pairing_test_path,
+            '"[fd00::1]", "private_overlay", "fd00::1"',
+            "PairingTests must cover bracketless private-overlay IPv6 relay host emission.",
+        ),
+        (
+            macos_pairing_test_text,
+            macos_pairing_test_path,
+            '"[::1]", "usb_reverse", "::1"',
+            "PairingTests must cover bracketless USB reverse IPv6 loopback relay host emission.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "macOS pairing QR relay host canonical emission addendum",
+            "Default no-device summary must name macOS pairing QR relay host canonical emission coverage.",
+        ),
+        (
+            protocol_doc_text,
+            protocol_doc_path,
+            "macOS QR generation emits the normalized relay host value",
+            "Protocol docs must state the macOS QR producer's relay host canonical emission boundary.",
+        ),
+        (
+            progress_text,
+            progress_path,
+            "macOS Pairing QR Relay Host Canonical Emission No-Device Gate",
+            "Progress docs must record macOS pairing QR relay host canonical emission coverage.",
+        ),
+        (
+            qa_evidence_text,
+            qa_evidence_path,
+            "macOS Pairing QR Relay Host Canonical Emission No-Device Gate",
+            "QA evidence must record macOS pairing QR relay host canonical emission coverage.",
+        ),
+        (
+            roadmap_text,
+            roadmap_path,
+            "macOS pairing QR relay host canonical emission",
+            "Roadmap smoke coverage queue must name macOS pairing QR relay host canonical emission coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_macos_qr_relay_host_canonical_emission_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_macos_qr_opaque_material_snippets = (
+        (
+            macos_pairing_text,
+            macos_pairing_path,
+            "canonicalOpaqueQRCodeValue",
+            "PairingCoordinator must validate optional opaque QR route values before emission.",
+        ),
+        (
+            macos_pairing_text,
+            macos_pairing_path,
+            "opaqueQRValueMaxLength = 512",
+            "PairingCoordinator must keep the shared 512-character opaque QR value ceiling.",
+        ),
+        (
+            macos_pairing_text,
+            macos_pairing_path,
+            "opaqueQRBodyMaxLength = 2_048",
+            "PairingCoordinator must keep the shared 2048-character P2P body ceiling.",
+        ),
+        (
+            macos_pairing_text,
+            macos_pairing_path,
+            "relayQRCodeMaterial()",
+            "PairingCoordinator must omit incomplete relay QR families when opaque material is invalid.",
+        ),
+        (
+            macos_pairing_text,
+            macos_pairing_path,
+            "p2pQRCodeMaterial()",
+            "PairingCoordinator must omit incomplete P2P QR families when opaque material is invalid.",
+        ),
+        (
+            macos_pairing_test_text,
+            macos_pairing_test_path,
+            "testPairingQRCodeOmitsNonCanonicalOpaqueRouteMaterialBeforeEmission",
+            "PairingTests must cover malformed optional opaque QR material omission.",
+        ),
+        (
+            macos_pairing_test_text,
+            macos_pairing_test_path,
+            "testPairingQRCodePreservesCanonicalOpaqueRouteSymbolsBeforeEmission",
+            "PairingTests must preserve canonical +, /, and = opaque QR symbols.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "macOS pairing QR opaque route-material canonicality addendum",
+            "Default no-device summary must name macOS QR opaque route-material canonicality coverage.",
+        ),
+        (
+            protocol_doc_text,
+            protocol_doc_path,
+            "macOS QR generation omits malformed optional opaque route material before emission",
+            "Protocol docs must state the macOS QR producer's opaque route-material canonicality boundary.",
+        ),
+        (
+            progress_text,
+            progress_path,
+            "macOS Pairing QR Opaque Route-Material Canonicality No-Device Gate",
+            "Progress docs must record the macOS QR opaque route-material canonicality no-device gate.",
+        ),
+        (
+            qa_evidence_text,
+            qa_evidence_path,
+            "macOS Pairing QR Opaque Route-Material Canonicality No-Device Gate",
+            "QA evidence must record the macOS QR opaque route-material canonicality no-device gate.",
+        ),
+        (
+            roadmap_text,
+            roadmap_path,
+            "macOS pairing QR opaque route-material canonicality",
+            "Roadmap smoke coverage queue must name macOS QR opaque route-material canonicality coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_macos_qr_opaque_material_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_macos_qr_route_material_numeric_validity_snippets = (
+        (
+            macos_pairing_text,
+            macos_pairing_path,
+            "(1...65_535).contains(relayPort)",
+            "PairingCoordinator must reject out-of-range relay ports before QR emission.",
+        ),
+        (
+            macos_pairing_text,
+            macos_pairing_path,
+            "relayExpiresAtEpochMillis > 0",
+            "PairingCoordinator must reject non-positive relay QR expiries before QR emission.",
+        ),
+        (
+            macos_pairing_text,
+            macos_pairing_path,
+            "p2pExpiresAtEpochMillis > 0",
+            "PairingCoordinator must reject non-positive P2P QR expiries before QR emission.",
+        ),
+        (
+            macos_pairing_test_text,
+            macos_pairing_test_path,
+            "testPairingQRCodeOmitsInvalidRouteExpirationAndRelayPortBeforeEmission",
+            "PairingTests must cover invalid relay ports and non-positive route expiries.",
+        ),
+        (
+            macos_pairing_test_text,
+            macos_pairing_test_path,
+            "65_536",
+            "PairingTests must cover an above-range relay port before QR emission.",
+        ),
+        (
+            macos_pairing_test_text,
+            macos_pairing_test_path,
+            "p2pExpiresAtEpochMillis in [0, -1]",
+            "PairingTests must cover non-positive P2P QR route expiries.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "macOS pairing QR route-material numeric validity addendum",
+            "Default no-device summary must name macOS QR numeric route-material validity coverage.",
+        ),
+        (
+            protocol_doc_text,
+            protocol_doc_path,
+            "macOS QR generation also omits relay/P2P route families with invalid relay ports or non-positive route expiries",
+            "Protocol docs must state the macOS QR producer's route-material numeric validity boundary.",
+        ),
+        (
+            progress_text,
+            progress_path,
+            "macOS Pairing QR Route-Material Numeric Validity No-Device Gate",
+            "Progress docs must record the macOS QR route-material numeric validity no-device gate.",
+        ),
+        (
+            qa_evidence_text,
+            qa_evidence_path,
+            "macOS Pairing QR Route-Material Numeric Validity No-Device Gate",
+            "QA evidence must record the macOS QR route-material numeric validity no-device gate.",
+        ),
+        (
+            roadmap_text,
+            roadmap_path,
+            "macOS pairing QR route-material numeric validity",
+            "Roadmap smoke coverage queue must name macOS QR route-material numeric validity coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_macos_qr_route_material_numeric_validity_snippets:
         if snippet not in haystack:
             failures.append(f"{path.relative_to(ROOT)}: {guidance}")
     if "loaded.shouldRemoveStoredRelayRoute" not in pairing_store_text or "editPrefs.removeRelayRouteKeys()" not in pairing_store_text:
@@ -2768,7 +4278,7 @@ def android_runtime_boundary_guard_failures() -> list[str]:
         (
             relay_tcp_client_test_text,
             relay_tcp_client_test_path,
-            "74f16ae572397183106c40e09692c529475b5c71a6a65351177bb184968dd94a16bb1366ba73ef68614d722cebc79e67782e9b5f797bfc3d0b59a6ba9a5d48873303037e1866b51a32fb9d",
+            "74f168f9702f3ad65c2315b5dfdcc27e5b570d3fa6e71e471766b7cf8990f55750b50b36a967f9797d4b0074adc986356f329444776df3365208f9de7d25aa1387c574d3c7beb9e4e339ef3f974686d67dfc2c19d3abf398af4c4867b2ccfe44b54f80647e18a4e64f9b15c76989a56f23d99d30b227fc9ea2a2",
             "Android relay frame cryptor tests must keep the nonce-bound client ciphertext vector stable.",
         ),
         (
@@ -4318,6 +5828,113 @@ def android_runtime_boundary_guard_failures() -> list[str]:
     for haystack, path, snippet, guidance in required_route_refresh_qr_expired_incomplete_p2p_rejection_snippets:
         if snippet not in haystack:
             failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_route_refresh_qr_stale_material_rejection_snippets = (
+        (
+            runtime_text,
+            runtime_path,
+            "payload.isFreshRelayRouteRefreshQr(current, nowEpochMillis)",
+            "Android route-refresh QR conversion must reject stale relay QR material before trusted storage.",
+        ),
+        (
+            runtime_text,
+            runtime_path,
+            "payload.isFreshPeerToPeerRouteRefreshQr(current, nowEpochMillis)",
+            "Android route-refresh QR conversion must reject stale P2P QR material before trusted storage.",
+        ),
+        (
+            runtime_text,
+            runtime_path,
+            "relayNonce != null && relayNonce == current.relayNonce",
+            "Android route-refresh QR relay freshness must reject reused relay nonces.",
+        ),
+        (
+            runtime_text,
+            runtime_path,
+            "p2pRecordId != null && p2pRecordId == current.p2pRecordId",
+            "Android route-refresh QR P2P freshness must reject reused P2P record IDs.",
+        ),
+        (
+            runtime_text,
+            runtime_path,
+            "p2pAntiReplayNonce != null && p2pAntiReplayNonce == current.p2pAntiReplayNonce",
+            "Android route-refresh QR P2P freshness must reject reused P2P anti-replay nonces.",
+        ),
+        (
+            runtime_text,
+            runtime_path,
+            "return refreshedExpiry > currentExpiry",
+            "Android route-refresh QR freshness must require advancing route expiry.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "routeRefreshQrRejectsReusedOrNonAdvancingRemoteRouteMaterial",
+            "Android ViewModel tests must reject stale route-refresh QR relay and P2P material.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "current-relay-nonce",
+            "Android stale route-refresh QR regression must cover reused relay nonces.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "fresh-relay-nonce-same-expiry",
+            "Android stale route-refresh QR regression must cover non-advancing relay expiry.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "current-p2p-record",
+            "Android stale route-refresh QR regression must cover reused P2P record IDs.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "current-p2p-nonce",
+            "Android stale route-refresh QR regression must cover reused P2P anti-replay nonces.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "fresh-p2p-nonce-same-expiry",
+            "Android stale route-refresh QR regression must cover non-advancing P2P expiry.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeClientViewModelTest.routeRefreshQrRejectsReusedOrNonAdvancingRemoteRouteMaterial",
+            "Default no-device gate must run the Android route-refresh QR stale material rejection regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "Android route-refresh QR stale material rejection addendum",
+            "Default no-device gate summary must mention Android route-refresh QR stale material rejection coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Android Route Refresh QR Stale Material Rejection No-Device Gate",
+            "Progress docs must record the Android route-refresh QR stale material rejection no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Android Route Refresh QR Stale Material Rejection No-Device Gate",
+            "QA evidence must record the Android route-refresh QR stale material rejection no-device gate.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "Android route-refresh QR stale material rejection",
+            "Roadmap smoke coverage queue must name Android route-refresh QR stale material rejection coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_route_refresh_qr_stale_material_rejection_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
     required_route_refresh_qr_p2p_relay_scope_isolation_snippets = (
         (
             pairing_parser_text,
@@ -4796,6 +6413,18 @@ def android_runtime_boundary_guard_failures() -> list[str]:
         (
             runtime_test_text,
             runtime_test_path,
+            "runtimeRouteCandidatesRejectUnpinnedDiscoveryRouteTokenEvenWhenLegacyIdentityMatches",
+            "Android route candidates must reject advertised discovery route tokens that were not pinned by QR/trust identity.",
+        ),
+        (
+            runtime_text,
+            runtime_path,
+            "return targetRouteToken != null && advertisedRouteToken == targetRouteToken",
+            "Android discovery identity matching must require a pinned target route token when Bonjour advertises route_token.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
             "trustedDiscoveredRuntimeConnectionTargetRejectsMetadataLessDiscovery",
             "Android trusted discovered target tests must reject metadata-less Bonjour/local discovery.",
         ),
@@ -4838,6 +6467,18 @@ def android_runtime_boundary_guard_failures() -> list[str]:
         (
             no_device_text,
             no_device_path,
+            "RuntimeClientViewModelTest.runtimeRouteCandidatesRejectUnpinnedDiscoveryRouteTokenEvenWhenLegacyIdentityMatches",
+            "Default no-device gate must run the unpinned discovery route-token regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "advertised route-token cannot fall back to legacy identity metadata when unpinned",
+            "Default no-device gate summary must mention unpinned discovery route-token strictness.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
             "RuntimeClientViewModelTest.runtimeRouteCandidatesRejectSelectedBonjourEndpointMissingCurrentDiscoveryMetadata",
             "Default no-device gate must run the selected Bonjour missing-metadata regression.",
         ),
@@ -4854,10 +6495,22 @@ def android_runtime_boundary_guard_failures() -> list[str]:
             "Progress docs must record the Android Bonjour discovery identity metadata no-device gate.",
         ),
         (
+            docs_progress_text,
+            docs_progress_path,
+            "Android Bonjour Discovery Unpinned Route-Token Strictness No-Device Gate",
+            "Progress docs must record the unpinned Bonjour route-token strictness no-device gate.",
+        ),
+        (
             docs_qa_evidence_text,
             docs_qa_evidence_path,
             "Android Bonjour Discovery Identity Metadata Boundary No-Device Gate",
             "QA evidence must record the Android Bonjour discovery identity metadata no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Android Bonjour Discovery Unpinned Route-Token Strictness No-Device Gate",
+            "QA evidence must record the unpinned Bonjour route-token strictness no-device gate.",
         ),
         (
             docs_roadmap_text,
@@ -4865,8 +6518,115 @@ def android_runtime_boundary_guard_failures() -> list[str]:
             "Android Bonjour discovery identity metadata boundary",
             "Roadmap smoke coverage queue must name Android Bonjour discovery identity metadata coverage.",
         ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "Android Bonjour discovery unpinned route-token strictness",
+            "Roadmap smoke coverage queue must name unpinned Bonjour route-token strictness coverage.",
+        ),
     )
     for haystack, path, snippet, guidance in required_bonjour_identity_metadata_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_bonjour_txt_receive_snippets = (
+        (
+            bonjour_discovery_text,
+            bonjour_discovery_path,
+            "toBonjourTxtMetadataOrNull",
+            "Android Bonjour discovery must parse TXT through a receive-side sanitizer.",
+        ),
+        (
+            bonjour_discovery_text,
+            bonjour_discovery_path,
+            "canonicalIdentityTxtValueOrNull",
+            "Android Bonjour identity TXT hints must use canonical value parsing.",
+        ),
+        (
+            bonjour_discovery_text,
+            bonjour_discovery_path,
+            "candidate.none(Char::isWhitespace)",
+            "Android Bonjour route_token and legacy identity hints must reject whitespace instead of trimming.",
+        ),
+        (
+            bonjour_discovery_text,
+            bonjour_discovery_path,
+            "containsForbiddenDiscoveryTxtAttribute",
+            "Android Bonjour TXT receive parsing must drop forbidden discovery metadata before row creation.",
+        ),
+        (
+            bonjour_discovery_text,
+            bonjour_discovery_path,
+            "REPLACEMENT_CHARACTER",
+            "Android Bonjour TXT receive parsing must reject malformed UTF-8 replacement characters.",
+        ),
+        (
+            bonjour_discovery_test_text,
+            bonjour_discovery_test_path,
+            "bonjourTxtRouteTokenRejectsWhitespaceMutationsInsteadOfTrimming",
+            "Android Bonjour TXT tests must prove route_token whitespace is rejected, not normalized.",
+        ),
+        (
+            bonjour_discovery_test_text,
+            bonjour_discovery_test_path,
+            "bonjourTxtRouteTokenRejectsOversizedAndMalformedValues",
+            "Android Bonjour TXT tests must reject oversized and malformed route_token values.",
+        ),
+        (
+            bonjour_discovery_test_text,
+            bonjour_discovery_test_path,
+            "bonjourTxtMetadataRejectsForbiddenDiscoveryMaterial",
+            "Android Bonjour TXT tests must reject backend/provider/secret/runtime-command metadata.",
+        ),
+        (
+            bonjour_discovery_test_text,
+            bonjour_discovery_test_path,
+            "bonjourTxtMetadataSanitizesLegacyIdentityHints",
+            "Android Bonjour TXT tests must sanitize legacy device_id and fingerprint hints.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "BonjourDiscoveryTest.bonjourTxtRouteTokenRejectsWhitespaceMutationsInsteadOfTrimming",
+            "Default no-device gate must run the Bonjour TXT route-token whitespace regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "Android Bonjour TXT receive canonicality addendum",
+            "Default no-device gate summary must mention Android Bonjour TXT receive canonicality.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Android Bonjour TXT Receive Canonicality No-Device Gate",
+            "Progress docs must record Android Bonjour TXT receive canonicality.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Android Bonjour TXT Receive Canonicality No-Device Gate",
+            "QA evidence must record Android Bonjour TXT receive canonicality.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "Android Bonjour TXT receive canonicality",
+            "Roadmap smoke coverage queue must name Android Bonjour TXT receive canonicality coverage.",
+        ),
+        (
+            docs_security_text,
+            docs_security_path,
+            "Android Bonjour TXT receive canonicality",
+            "Security docs must describe Android Bonjour TXT receive canonicality.",
+        ),
+        (
+            docs_connection_overlay_text,
+            docs_connection_overlay_path,
+            "Android Bonjour TXT receive canonicality",
+            "Connection overlay docs must describe Android Bonjour TXT receive canonicality.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_bonjour_txt_receive_snippets:
         if snippet not in haystack:
             failures.append(f"{path.relative_to(ROOT)}: {guidance}")
     if "relayPairingQrPersistsPendingRouteAfterInitialConnectionFailure" not in runtime_test_text:
@@ -4924,7 +6684,7 @@ def android_runtime_boundary_guard_failures() -> list[str]:
     required_pending_direct_endpoint_cleanup_snippets = (
         (
             runtime_store_text,
-            "host = null,\n        port = null,\n        relayHost = relayHost?.takeIf(String::isNotBlank)",
+            "host = null,\n        port = null,\n        relayHost = relayHost,",
             runtime_store_path,
         ),
         (
@@ -4944,6 +6704,273 @@ def android_runtime_boundary_guard_failures() -> list[str]:
                 f"{path.relative_to(ROOT)}: Missing Android pending pairing direct endpoint "
                 f"storage cleanup guard {snippet}."
             )
+    required_pending_pairing_identity_canonicality_snippets = (
+        (
+            runtime_store_text,
+            runtime_store_path,
+            "val cleanNonce = pairingNonce.takeIf(::isCanonicalOpaqueRouteValue)",
+            "Android pending pairing route storage must reject non-canonical pairing_nonce values before restore.",
+        ),
+        (
+            runtime_store_text,
+            runtime_store_path,
+            "val cleanCode = pairingCode",
+            "Android pending pairing route storage must not trim pairing_code values into trusted identity state.",
+        ),
+        (
+            runtime_store_text,
+            runtime_store_path,
+            "val cleanRuntimeDeviceId = runtimeDeviceId.takeIf(::isCanonicalOpaqueRouteValue)",
+            "Android pending pairing route storage must reject non-canonical runtime device ids before restore.",
+        ),
+        (
+            runtime_store_text,
+            runtime_store_path,
+            "val cleanFingerprint = fingerprint.takeIf(::isCanonicalOpaqueRouteValue)",
+            "Android pending pairing route storage must reject non-canonical runtime fingerprints before restore.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "persistedRuntimeDataRejectsNonCanonicalPendingPairingIdentityValues",
+            "Android pending pairing route tests must reject non-canonical pending identity values.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "runtimePairingPayload(runtimeDeviceId = \"runtime-1 \")",
+            "Android pending pairing route tests must cover programmatic payload identity canonicality.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeClientViewModelTest.persistedRuntimeDataRejectsNonCanonicalPendingPairingIdentityValues",
+            "Default no-device gate must run the pending pairing identity canonicality regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "Android pending pairing identity canonicality addendum",
+            "Default no-device summary must mention pending pairing identity canonicality coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Android Pending Pairing Identity Canonicality No-Device Gate",
+            "Progress docs must record Android pending pairing identity canonicality coverage.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Android Pending Pairing Identity Canonicality No-Device Gate",
+            "QA evidence must record Android pending pairing identity canonicality coverage.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "Android pending pairing identity canonicality",
+            "Roadmap smoke coverage queue must name Android pending pairing identity canonicality coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_pending_pairing_identity_canonicality_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_pending_route_token_canonicality_snippets = (
+        (
+            runtime_store_text,
+            runtime_store_path,
+            "val cleanRouteToken = routeToken?.takeIf(::isCanonicalOpaqueRouteValue)",
+            "Android pending pairing route storage must canonicalize route_token values before restore.",
+        ),
+        (
+            runtime_store_text,
+            runtime_store_path,
+            "if (routeToken != null && cleanRouteToken == null) return null",
+            "Android pending pairing route storage must drop non-canonical route_token routes instead of trimming.",
+        ),
+        (
+            runtime_store_text,
+            runtime_store_path,
+            "routeToken = cleanRouteToken",
+            "Android pending pairing route storage must persist only canonical route_token material.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "persistedRuntimeDataRejectsNonCanonicalPendingPairingRouteToken",
+            "Android pending pairing route tests must reject whitespace-mutated and oversized route_token values.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "runtimePairingPayload(routeToken = \"route-1 \")",
+            "Android pending pairing route tests must cover programmatic payload route_token canonicality.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeClientViewModelTest.persistedRuntimeDataRejectsNonCanonicalPendingPairingRouteToken",
+            "Default no-device gate must run the pending pairing route-token canonicality regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "Android pending pairing route-token canonicality addendum",
+            "Default no-device summary must mention pending pairing route-token canonicality coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Android Pending Pairing Route-Token Canonicality No-Device Gate",
+            "Progress docs must record Android pending pairing route-token canonicality coverage.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Android Pending Pairing Route-Token Canonicality No-Device Gate",
+            "QA evidence must record Android pending pairing route-token canonicality coverage.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "Android pending pairing route-token canonicality",
+            "Roadmap smoke coverage queue must name Android pending pairing route-token canonicality coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_pending_route_token_canonicality_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_app_relay_route_material_canonicality_snippets = (
+        (
+            runtime_store_text,
+            runtime_store_path,
+            "import com.localagentbridge.android.core.pairing.isAllowedRemoteRelayScope",
+            "Android pending relay route storage must import the shared relay-scope allowlist.",
+        ),
+        (
+            runtime_store_text,
+            runtime_store_path,
+            "import com.localagentbridge.android.core.pairing.isCanonicalRelayHostValue",
+            "Android pending relay route storage must import the shared relay-host canonicality guard.",
+        ),
+        (
+            runtime_store_text,
+            runtime_store_path,
+            "val cleanRelayHost = relayHost?.takeIf(::isCanonicalRelayHostValue)",
+            "Android pending relay route storage must reject non-canonical relay hosts.",
+        ),
+        (
+            runtime_store_text,
+            runtime_store_path,
+            "val cleanRelayId = relayId?.takeIf(::isCanonicalOpaqueRouteValue)",
+            "Android pending relay route storage must reject non-canonical relay ids.",
+        ),
+        (
+            runtime_store_text,
+            runtime_store_path,
+            "val cleanRelaySecret = relaySecret?.takeIf(::isCanonicalOpaqueRouteValue)",
+            "Android pending relay route storage must reject non-canonical relay secrets.",
+        ),
+        (
+            runtime_store_text,
+            runtime_store_path,
+            "val cleanRelayNonce = relayNonce?.takeIf(::isCanonicalOpaqueRouteValue)",
+            "Android pending relay route storage must reject non-canonical relay nonces.",
+        ),
+        (
+            runtime_store_text,
+            runtime_store_path,
+            "val cleanRelayScope = relayScope?.takeIf(::isAllowedRemoteRelayScope)",
+            "Android pending relay route storage must reject non-allowlisted relay scopes.",
+        ),
+        (
+            runtime_store_text,
+            runtime_store_path,
+            "if (relaySecret != null && cleanRelaySecret == null) return null",
+            "Android pending relay route storage must drop present-but-invalid relay secrets.",
+        ),
+        (
+            runtime_store_text,
+            runtime_store_path,
+            "val relaySecret = pending.relaySecret?.takeIf(::isCanonicalOpaqueRouteValue)",
+            "Android pending relay secret-store writes must not trim invalid relay secrets into handles.",
+        ),
+        (
+            runtime_store_text,
+            runtime_store_path,
+            "?.takeIf(::isCanonicalOpaqueRouteValue)\n        ?: return withoutPendingPairingRoute()",
+            "Android pending relay secret-store loads must reject non-canonical loaded relay secrets.",
+        ),
+        (
+            runtime_remote_route_planner_text,
+            runtime_remote_route_planner_path,
+            "isCanonicalOpaqueRouteValue(relayId)",
+            "Android RuntimeRemoteRoutePlanner must reject non-canonical relay ids before route-present state.",
+        ),
+        (
+            runtime_remote_route_planner_text,
+            runtime_remote_route_planner_path,
+            "isCanonicalOpaqueRouteValue(relaySecret)",
+            "Android RuntimeRemoteRoutePlanner must reject non-canonical relay secrets before route-present state.",
+        ),
+        (
+            runtime_remote_route_planner_text,
+            runtime_remote_route_planner_path,
+            "isCanonicalOpaqueRouteValue(relayNonce)",
+            "Android RuntimeRemoteRoutePlanner must reject non-canonical relay nonces before route-present state.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "persistedRuntimeDataRejectsNonCanonicalPendingRelayRouteMaterial",
+            "Android app tests must reject non-canonical pending relay route material in storage.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "runtimeRemoteRoutePlannerRejectsNonCanonicalSavedRelayMaterial",
+            "Android app tests must reject non-canonical saved relay material in remote route planning.",
+        ),
+        (
+            runtime_test_text,
+            runtime_test_path,
+            "runtimeRemoteRoutePlannerRejectsNonCanonicalPendingRelayMaterial",
+            "Android app tests must reject non-canonical pending relay material in remote route planning.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeClientViewModelTest.persistedRuntimeDataRejectsNonCanonicalPendingRelayRouteMaterial",
+            "Default no-device gate must run Android app relay route-material canonicality regressions.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "Android app relay route-material canonicality addendum",
+            "Default no-device summary must mention Android app relay route-material canonicality coverage.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "Android App Relay Route-Material Canonicality No-Device Gate",
+            "Progress docs must record Android app relay route-material canonicality coverage.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Android App Relay Route-Material Canonicality No-Device Gate",
+            "QA evidence must record Android app relay route-material canonicality coverage.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "Android app relay route-material canonicality",
+            "Roadmap smoke coverage queue must name Android app relay route-material canonicality coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_app_relay_route_material_canonicality_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
     if "compactRelayQrPairingResultPersistsTrustedRelayAndClearsPendingRoute" not in runtime_test_text:
         failures.append(
             f"{runtime_test_path.relative_to(ROOT)}: Missing Android relay QR completion test that "
@@ -13373,16 +15400,220 @@ def attachment_ingestion_guard_failures() -> list[str]:
             "RuntimeDevServer smoke must reject unsupported envelope versions before pre-auth command handling.",
         ),
         (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "smoke-missing-envelope-version",
+            "RuntimeDevServer smoke must reject missing envelope version values before pre-auth command handling.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "smoke-invalid-envelope-version-type",
+            "RuntimeDevServer smoke must reject mistyped envelope version values before pre-auth command handling.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "smoke-missing-envelope-request-id",
+            "RuntimeDevServer smoke must reject missing envelope request_id values before pre-auth command handling.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "smoke-invalid-envelope-request-id-type",
+            "RuntimeDevServer smoke must reject mistyped envelope request_id values before pre-auth command handling.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "malformed_envelope_marker",
+            "RuntimeDevServer malformed envelope smoke must carry encrypted markers for ciphertext-boundary checks.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "timestampOverrideEnvelope",
+            "RuntimeDevServer smoke must be able to construct malformed envelope timestamp frames.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "smoke-missing-envelope-timestamp",
+            "RuntimeDevServer smoke must reject missing envelope timestamp values before pre-auth command handling.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "smoke-invalid-envelope-timestamp-type",
+            "RuntimeDevServer smoke must reject non-string envelope timestamp values before pre-auth command handling.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "smoke-invalid-envelope-timestamp-format",
+            "RuntimeDevServer smoke must reject malformed envelope timestamp values before pre-auth command handling.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "malformed envelope timestamp",
+            "RuntimeDevServer smoke must name malformed envelope timestamp decode coverage.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "smoke-missing-envelope-type",
+            "RuntimeDevServer smoke must reject missing envelope type values before pre-auth command handling.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "smoke-invalid-envelope-type",
+            "RuntimeDevServer smoke must reject non-string envelope type values before pre-auth command handling.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "smoke-missing-envelope-payload",
+            "RuntimeDevServer smoke must reject missing envelope payload values before pre-auth command handling.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "smoke-invalid-envelope-payload-array",
+            "RuntimeDevServer smoke must reject array envelope payload values before pre-auth command handling.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "smoke-invalid-envelope-payload-string",
+            "RuntimeDevServer smoke must reject string envelope payload values before pre-auth command handling.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "smoke-invalid-envelope-payload-null",
+            "RuntimeDevServer smoke must reject null envelope payload values before pre-auth command handling.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "smoke-non-object-envelope-payload-string",
+            "RuntimeDevServer smoke must keep non-object envelope payload redaction canaries covered.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "missing envelope payload",
+            "RuntimeDevServer smoke must name missing envelope payload decode coverage.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "smoke-envelope-unknown-top-level-metadata",
+            "RuntimeDevServer smoke must reject unknown top-level envelope metadata before pre-auth command handling.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "smoke-envelope-unknown-top-level-metadata-survival-health",
+            "RuntimeDevServer smoke must prove connection survival after unknown top-level envelope metadata decode rejection.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "unknown top-level envelope metadata",
+            "RuntimeDevServer smoke must name unknown top-level envelope metadata decode coverage.",
+        ),
+        (
             docs_protocol_text,
             docs_protocol_path,
-            "`version` must be `1`",
-            "Protocol docs must document unsupported envelope version rejection.",
+            "Missing or mistyped envelope versions return `invalid_payload` at decode time",
+            "Protocol docs must document missing or mistyped envelope version decode rejection.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "unsupported integer envelope versions return `invalid_payload` after decode",
+            "Protocol docs must document unsupported envelope version rejection after decode.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "Missing or non-string envelope request ids return `invalid_payload` at decode time",
+            "Protocol docs must document missing or mistyped envelope request_id decode rejection.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "blank envelope request ids return `invalid_payload` after decode",
+            "Protocol docs must document blank envelope request_id rejection after decode.",
         ),
         (
             protocol_schema_check_text,
             protocol_schema_check_path,
             "properties.version must require const 1",
             "Protocol schema checker must fail if envelope version stops being pinned to 1.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "`timestamp` must be an ISO-8601 UTC string",
+            "Protocol docs must document envelope timestamp decode rejection.",
+        ),
+        (
+            protocol_schema_text,
+            protocol_schema_path,
+            '"timestamp": { "type": "string", "format": "date-time" }',
+            "Protocol schema must require envelope timestamp date-time strings.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "properties.timestamp must require date-time format",
+            "Protocol schema checker must fail if timestamp stops requiring date-time format.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "top-level required fields missing",
+            "Protocol schema checker must fail if timestamp stops being a required envelope field.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "properties.type must require string values",
+            "Protocol schema checker must fail if envelope type stops requiring string values.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "`type` must be a string",
+            "Protocol docs must document envelope type decode rejection.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "Missing or non-object payload values return `invalid_payload`",
+            "Protocol docs must document envelope payload decode rejection.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "properties.payload must require object values",
+            "Protocol schema checker must fail if payload stops requiring object values.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "top-level additionalProperties must be false",
+            "Protocol schema checker must fail if top-level envelope metadata stops being closed.",
+        ),
+        (
+            docs_protocol_text,
+            docs_protocol_path,
+            "Unknown top-level envelope metadata fields return `invalid_payload` at decode time",
+            "Protocol docs must document unknown top-level envelope metadata decode rejection.",
         ),
         (
             no_device_text,
@@ -13397,10 +15628,70 @@ def attachment_ingestion_guard_failures() -> list[str]:
             "Default no-device summary must name unsupported envelope version rejection coverage.",
         ),
         (
+            no_device_text,
+            no_device_path,
+            "RuntimeDevServer envelope version/request_id decode rejection addendum",
+            "Default no-device summary must name envelope version/request_id decode rejection coverage.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeDevServer envelope timestamp decode rejection addendum",
+            "Default no-device summary must name envelope timestamp decode rejection coverage.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeDevServer envelope type/payload decode rejection addendum",
+            "Default no-device summary must name envelope type/payload decode rejection coverage.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeDevServer rejects missing or non-string envelope type values and missing or non-object payload values with invalid_payload",
+            "Default no-device summary must name non-object envelope payload decode rejection coverage.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeDevServer envelope unknown top-level metadata decode rejection addendum",
+            "Default no-device summary must name unknown top-level envelope metadata decode rejection coverage.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeDevServer rejects unknown top-level envelope metadata with invalid_payload",
+            "Default no-device summary must describe unknown top-level envelope metadata decode rejection coverage.",
+        ),
+        (
             docs_progress_text,
             docs_progress_path,
             "Envelope Version And Pre-Auth Allowed Field Rejection No-Device Gate",
             "Progress docs must record the envelope version and pre-auth allowed field rejection no-device gate.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "RuntimeDevServer Envelope Version Request Decode Rejection No-Device Gate",
+            "Progress docs must record the envelope version/request_id decode rejection no-device gate.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "RuntimeDevServer Envelope Timestamp Decode Rejection No-Device Gate",
+            "Progress docs must record the envelope timestamp decode rejection no-device gate.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "RuntimeDevServer Envelope Type Payload Decode Rejection No-Device Gate",
+            "Progress docs must record the envelope type/payload decode rejection no-device gate.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_path,
+            "RuntimeDevServer Envelope Unknown Top-Level Metadata Decode Rejection No-Device Gate",
+            "Progress docs must record the unknown top-level envelope metadata decode rejection no-device gate.",
         ),
         (
             docs_qa_evidence_text,
@@ -13409,10 +15700,58 @@ def attachment_ingestion_guard_failures() -> list[str]:
             "QA evidence must record the envelope version and pre-auth allowed field rejection no-device gate.",
         ),
         (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "RuntimeDevServer Envelope Version Request Decode Rejection No-Device Gate",
+            "QA evidence must record the envelope version/request_id decode rejection no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "RuntimeDevServer Envelope Timestamp Decode Rejection No-Device Gate",
+            "QA evidence must record the envelope timestamp decode rejection no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "RuntimeDevServer Envelope Type Payload Decode Rejection No-Device Gate",
+            "QA evidence must record the envelope type/payload decode rejection no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "RuntimeDevServer Envelope Unknown Top-Level Metadata Decode Rejection No-Device Gate",
+            "QA evidence must record the unknown top-level envelope metadata decode rejection no-device gate.",
+        ),
+        (
             docs_roadmap_text,
             docs_roadmap_path,
             "envelope version rejection",
             "Roadmap smoke coverage queue must name envelope version rejection coverage.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "RuntimeDevServer envelope version/request_id decode rejection",
+            "Roadmap smoke coverage queue must name envelope version/request_id decode rejection coverage.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "RuntimeDevServer envelope timestamp decode rejection",
+            "Roadmap smoke coverage queue must name envelope timestamp decode rejection coverage.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "RuntimeDevServer envelope type/payload decode rejection",
+            "Roadmap smoke coverage queue must name envelope type/payload decode rejection coverage.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "RuntimeDevServer envelope unknown top-level metadata decode rejection",
+            "Roadmap smoke coverage queue must name unknown top-level envelope metadata decode rejection coverage.",
         ),
         (
             macos_router_text,
@@ -14845,8 +17184,8 @@ def attachment_ingestion_guard_failures() -> list[str]:
         (
             macos_router_text,
             macos_router_path,
-            'query: try optionalRequestString("query", in: envelope.payload)',
-            "Runtime router must parse memory.list query with a strict request string helper.",
+            'let query = try optionalRequestString("query", in: envelope.payload)',
+            "Runtime router must parse memory.list query with a strict request string helper before resource-bound validation.",
         ),
         (
             macos_router_text,
@@ -15607,13 +17946,13 @@ def attachment_ingestion_guard_failures() -> list[str]:
         (
             macos_router_text,
             macos_router_path,
-            'let rawExpectedSessionID = try optionalRequestString("expected_session_id", in: envelope.payload)?\n                .trimmingCharacters(in: .whitespacesAndNewlines)',
+            'let rawExpectedSessionID = try optionalNonBlankString("expected_session_id", in: envelope.payload)?\n                .trimmingCharacters(in: .whitespacesAndNewlines)',
             "Runtime router must strictly parse memory.summary.draft.approve expected_session_id before runtime chat-store recomputation.",
         ),
         (
             macos_router_text,
             macos_router_path,
-            'let expectedSourceMessageCount = try optionalRequestInt("expected_source_message_count", in: envelope.payload)\n            let rawContent = try optionalRequestString("content", in: envelope.payload)?',
+            'let expectedSourceMessageCount = try optionalRequestInt("expected_source_message_count", in: envelope.payload)\n            let rawContent = try optionalNonBlankString("content", in: envelope.payload)?',
             "Runtime router must strictly parse memory.summary.draft.approve expected_source_message_count before runtime chat-store recomputation.",
         ),
         (
@@ -15691,6 +18030,18 @@ def attachment_ingestion_guard_failures() -> list[str]:
         (
             macos_router_test_text,
             macos_router_test_path,
+            "summary-draft-approve-blank-content",
+            "Runtime router regression must prove blank memory.summary.draft.approve content values are rejected.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
+            "summary-draft-approve-blank-expected-session",
+            "Runtime router regression must prove blank memory.summary.draft.approve expected_session_id values are rejected.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
             "summary-draft-approve-invalid-enabled-type",
             "Runtime router regression must prove string memory.summary.draft.approve enabled values are rejected.",
         ),
@@ -15739,6 +18090,12 @@ def attachment_ingestion_guard_failures() -> list[str]:
         (
             macos_router_test_text,
             macos_router_test_path,
+            "summary-draft-dismiss-blank-expected-session",
+            "Runtime router regression must prove blank memory.summary.draft.dismiss expected_session_id values are rejected.",
+        ),
+        (
+            macos_router_test_text,
+            macos_router_test_path,
             "summary-draft-dismiss-invalid-expected-count-fraction",
             "Runtime router regression must prove fractional memory.summary.draft.dismiss expected_source_message_count values are rejected.",
         ),
@@ -15751,6 +18108,12 @@ def attachment_ingestion_guard_failures() -> list[str]:
         (
             runtime_smoke_text,
             runtime_smoke_path,
+            "smoke-memory-summary-approve-blank-content",
+            "RuntimeDevServer relay smoke must reject blank memory.summary.draft.approve content values.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
             "smoke-memory-summary-approve-invalid-enabled-type",
             "RuntimeDevServer relay smoke must reject malformed memory.summary.draft.approve enabled values.",
         ),
@@ -15759,6 +18122,12 @@ def attachment_ingestion_guard_failures() -> list[str]:
             runtime_smoke_path,
             "smoke-memory-summary-approve-invalid-expected-session-type",
             "RuntimeDevServer relay smoke must reject malformed memory.summary.draft.approve expected session values.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
+            "smoke-memory-summary-approve-blank-expected-session",
+            "RuntimeDevServer relay smoke must reject blank memory.summary.draft.approve expected session values.",
         ),
         (
             runtime_smoke_text,
@@ -15787,6 +18156,12 @@ def attachment_ingestion_guard_failures() -> list[str]:
         (
             runtime_smoke_text,
             runtime_smoke_path,
+            "smoke-memory-summary-dismiss-blank-expected-session",
+            "RuntimeDevServer relay smoke must reject blank memory.summary.draft.dismiss expected session values.",
+        ),
+        (
+            runtime_smoke_text,
+            runtime_smoke_path,
             "smoke-memory-summary-dismiss-invalid-count-string",
             "RuntimeDevServer relay smoke must reject string memory.summary.draft.dismiss expected count values.",
         ),
@@ -15811,7 +18186,7 @@ def attachment_ingestion_guard_failures() -> list[str]:
         (
             docs_protocol_text,
             docs_protocol_path,
-            "Malformed allowed fields, such as blank `draft_id`, non-string `content`, non-boolean `enabled`, non-string `expected_session_id`, or string/fractional `expected_source_message_count` values, return `invalid_payload`",
+            "Malformed allowed fields, such as blank `draft_id`, non-string or blank `content`, non-boolean `enabled`, non-string or blank `expected_session_id`, or string/fractional `expected_source_message_count` values, return `invalid_payload`",
             "Protocol docs must document malformed memory.summary.draft.approve allowed field rejection.",
         ),
         (
@@ -15829,7 +18204,7 @@ def attachment_ingestion_guard_failures() -> list[str]:
         (
             docs_protocol_text,
             docs_protocol_path,
-            "Malformed allowed fields, such as blank `draft_id`, non-string `expected_session_id`, or string/fractional `expected_source_message_count` values, return `invalid_payload`",
+            "Malformed allowed fields, such as blank `draft_id`, non-string or blank `expected_session_id`, or string/fractional `expected_source_message_count` values, return `invalid_payload`",
             "Protocol docs must document malformed memory.summary.draft.dismiss allowed field rejection.",
         ),
         (
@@ -15853,8 +18228,14 @@ def attachment_ingestion_guard_failures() -> list[str]:
         (
             protocol_schema_check_text,
             protocol_schema_check_path,
+            'f"{label} expected_session_id"',
+            "Protocol schema checker must inspect memory-summary draft expected_session_id.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
             '{"$ref": "#/$defs/nonBlankString"}',
-            "Protocol schema checker must require memory-summary draft decision draft_id to be non-blank.",
+            "Protocol schema checker must require memory-summary draft decision string fields to be non-blank.",
         ),
         (
             no_device_text,
@@ -15903,6 +18284,18 @@ def attachment_ingestion_guard_failures() -> list[str]:
             no_device_path,
             "memory.summary.draft.approve invalid allowed type rejection addendum",
             "Default no-device summary must name memory.summary.draft.approve invalid allowed type rejection coverage.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "non-string or blank content",
+            "Default no-device summary must name blank memory.summary.draft.approve content rejection coverage.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "non-string or blank expected_session_id",
+            "Default no-device summary must name blank memory.summary.draft decision expected_session_id rejection coverage.",
         ),
         (
             no_device_text,
@@ -17441,6 +19834,38 @@ def runtime_history_storage_guard_failures() -> list[str]:
             "SQLiteRuntimeChatEventStore(\n            databaseURL: sqliteDatabaseURL,\n            legacyJSONLFileURL: legacyJSONLFileURL",
             "Runtime chat production defaults must instantiate the SQLite/FTS store, not the legacy JSONL store.",
         ),
+        (
+            "public struct RuntimeChatRetentionPolicy",
+            "Runtime chat production defaults must expose an explicit retention policy seam.",
+        ),
+        (
+            "deletedSessionRetentionInterval: 90 * 24 * 60 * 60",
+            "Runtime chat production retention must keep the conservative 90-day deleted-session default.",
+        ),
+        (
+            "deletedSessionPruneLimit: 100",
+            "Runtime chat production retention must keep the bounded 100-session prune default.",
+        ),
+        (
+            "public struct RuntimeChatRetentionMaintenanceResult",
+            "Runtime chat production maintenance must return structured retention evidence.",
+        ),
+        (
+            "public static func runProductionMaintenance(",
+            "Runtime chat production defaults must expose a production maintenance entry point.",
+        ),
+        (
+            "let sqliteStore = store as? SQLiteRuntimeChatEventStore",
+            "Runtime chat production maintenance must only prune when the production store is SQLite-backed.",
+        ),
+        (
+            "now.addingTimeInterval(-policy.deletedSessionRetentionInterval)",
+            "Runtime chat production maintenance must derive the deleted-session cutoff from the policy.",
+        ),
+        (
+            "limit: policy.deletedSessionPruneLimit",
+            "Runtime chat production maintenance must pass the bounded prune limit to SQLite retention.",
+        ),
     )
     for snippet, guidance in required_macos_store_snippets:
         if snippet not in macos_store_text:
@@ -17470,8 +19895,8 @@ def runtime_history_storage_guard_failures() -> list[str]:
 
     required_macos_router_memory_search_snippets = (
         (
-            'query: try optionalRequestString("query", in: envelope.payload)',
-            "Runtime memory.list must pass the optional query to the runtime memory store.",
+            "query: boundedQuery",
+            "Runtime memory.list must pass only resource-bounded queries to the runtime memory store.",
         ),
         (
             "memory.upsert payload contains unsupported field(s):",
@@ -17773,6 +20198,26 @@ def runtime_history_storage_guard_failures() -> list[str]:
             "chat.sessions.list must pass search query through the owner-scoped store boundary.",
         ),
         (
+            "private let memoryListQueryMaxCharacters = 256",
+            "memory.list query resource guard must keep the bounded lexical query character limit.",
+        ),
+        (
+            "private let memoryListQueryMaxDistinctTerms = 16",
+            "memory.list query resource guard must keep the bounded lexical query term limit.",
+        ),
+        (
+            "let boundedQuery = try boundedMemoryListQuery(query)",
+            "memory.list must validate query resource bounds before runtime memory-store dispatch.",
+        ),
+        (
+            "private func boundedMemoryListQuery(_ rawQuery: String?) throws -> String?",
+            "memory.list must keep a dedicated lexical query resource guard.",
+        ),
+        (
+            "distinctTerms.count <= memoryListQueryMaxDistinctTerms",
+            "memory.list query resource guard must bound distinct normalized terms before store dispatch.",
+        ),
+        (
             "chatEventStore: any RuntimeChatEventStore = RuntimeChatEventStoreDefaults.productionStore()",
             "LocalRuntimeMessageRouter defaults must use the production SQLite/FTS chat store.",
         ),
@@ -18034,6 +20479,11 @@ def runtime_history_storage_guard_failures() -> list[str]:
         'XCTAssertEqual(try memoryStore.dismissedMemorySummaryDraftIDs(ownerDeviceID: "device-a"), Set([draftID]))',
         'XCTAssertEqual(sourcePayload["draft_id"], .string(draftID))',
         "testMemoryListQueryFiltersRuntimeOwnedMemoryWithSearchMetadata",
+        "testMemoryListRejectsOversizedQueryBeforeStoreDispatch",
+        '"memory-list-overlong-query"',
+        '"memory-list-excessive-term-query"',
+        '"at most 256 characters"',
+        '"at most 16 distinct terms"',
         'payload: ["query": .string("relay recovery")]',
         'XCTAssertEqual(firstSearch["matched_fields"], .array([.string("content")]))',
         "testMemoryUpsertRejectsClientSuppliedSourceMetadataAndPreservesRuntimeSource",
@@ -18071,6 +20521,13 @@ def runtime_history_storage_guard_failures() -> list[str]:
         "Imported follow-up after marker refresh.",
         "testSQLiteRetentionPrunesDeletedSessionsByOwnerScopeAndCutoff",
         "testSQLiteRetentionTombstonePreventsLegacyBackfillResurrection",
+        "testProductionRuntimeChatRetentionPolicyPrunesOnlyExpiredDeletedSessions",
+        "RuntimeChatRetentionPolicy(",
+        "deletedSessionPruneLimit: 1",
+        "policy-old-deleted-1",
+        "policy-recent-deleted",
+        'ownerDeviceID: "device-a"',
+        'ownerDeviceID: "device-b"',
         "XCTAssertEqual(result.prunedEventCount, 3)",
         "XCTAssertTrue(error.localizedDescription.contains(\"pruned by retention\"))",
         "legacy-retention-deleted",
@@ -18175,6 +20632,98 @@ def runtime_history_storage_guard_failures() -> list[str]:
         failures.append(
             f"{no_device_relative}: Default no-device gate must mention SQLite runtime chat deleted-session retention pruning coverage."
         )
+    if "SQLiteRuntimeChatEventStoreTests/testProductionRuntimeChatRetentionPolicyPrunesOnlyExpiredDeletedSessions" not in no_device_text:
+        failures.append(
+            f"{no_device_relative}: Default no-device gate must run the production SQLite retention policy regression."
+        )
+    if "SQLite runtime chat retention policy addendum" not in no_device_text:
+        failures.append(
+            f"{no_device_relative}: Default no-device gate must mention production SQLite retention policy coverage."
+        )
+    if "LocalRuntimeMessageRouterTests/testMemoryListRejectsOversizedQueryBeforeStoreDispatch" not in no_device_text:
+        failures.append(
+            f"{no_device_relative}: Default no-device gate must run the runtime memory.list query resource guard regression."
+        )
+    if "runtime memory.list query resource guard addendum" not in no_device_text:
+        failures.append(
+            f"{no_device_relative}: Default no-device gate must mention runtime memory.list query resource guard coverage."
+        )
+    required_memory_list_query_resource_guard_docs = (
+        (
+            docs_protocol_text,
+            docs_protocol_relative,
+            "Nonblank lexical queries are bounded to 256 characters and 16 distinct normalized terms",
+            "Protocol docs must document runtime memory.list query resource bounds.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_relative,
+            "Runtime Memory.List Query Resource Guard No-Device Gate",
+            "Progress docs must record the runtime memory.list query resource guard no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_relative,
+            "Runtime Memory.List Query Resource Guard No-Device Gate",
+            "QA evidence must record the runtime memory.list query resource guard no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_relative,
+            "runtime memory.list query resource guard addendum",
+            "QA evidence must record the no-device summary phrase for runtime memory.list query resource guard coverage.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_relative,
+            "runtime memory.list query resource guard",
+            "Roadmap smoke coverage queue must name runtime memory.list query resource guard coverage.",
+        ),
+    )
+    for haystack, relative, snippet, guidance in required_memory_list_query_resource_guard_docs:
+        if snippet not in haystack:
+            failures.append(f"{relative}: {guidance}")
+    required_sqlite_retention_policy_docs = (
+        (
+            docs_progress_text,
+            docs_progress_relative,
+            "SQLite Runtime Chat Retention Policy No-Device Gate",
+            "Progress docs must record the SQLite runtime chat retention policy no-device gate.",
+        ),
+        (
+            docs_progress_text,
+            docs_progress_relative,
+            "RuntimeChatEventStoreDefaults.runProductionMaintenance",
+            "Progress docs must name the production runtime chat maintenance seam.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_relative,
+            "SQLite Runtime Chat Retention Policy No-Device Gate",
+            "QA evidence must record the SQLite runtime chat retention policy no-device gate.",
+        ),
+        (
+            docs_qa_evidence_text,
+            docs_qa_evidence_relative,
+            "SQLite runtime chat retention policy addendum",
+            "QA evidence must record the no-device summary phrase for production SQLite retention policy coverage.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_relative,
+            "SQLite runtime chat retention policy",
+            "Roadmap smoke coverage queue must name SQLite runtime chat retention policy coverage.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_relative,
+            "production maintenance seam now invokes that primitive",
+            "Roadmap v0.2 must state that production maintenance invokes the retention primitive.",
+        ),
+    )
+    for haystack, relative, snippet, guidance in required_sqlite_retention_policy_docs:
+        if snippet not in haystack:
+            failures.append(f"{relative}: {guidance}")
     required_selected_embedding_search_hint_docs = (
         (
             docs_progress_text,
@@ -18677,6 +21226,7 @@ def macos_runtime_local_chat_routing_guard_failures() -> list[str]:
     aggregate_test_path = ROOT / "apps/macos/CompanionCore/Tests/AggregatingLlmBackendResidencyTests.swift"
     router_test_path = ROOT / "apps/macos/CompanionCore/Tests/LocalRuntimeMessageRouterTests.swift"
     no_device_path = ROOT / "script/check_no_device_quality.sh"
+    protocol_doc_path = ROOT / "docs/protocol.md"
     progress_path = ROOT / "docs/progress.md"
     qa_evidence_path = ROOT / "docs/qa-evidence.md"
     roadmap_path = ROOT / "docs/roadmap.md"
@@ -20198,6 +22748,7 @@ def no_device_quality_gate_guard_failures() -> list[str]:
     docs_progress_path = ROOT / "docs/progress.md"
     docs_qa_evidence_path = ROOT / "docs/qa-evidence.md"
     docs_roadmap_path = ROOT / "docs/roadmap.md"
+    qr_verifier_path = ROOT / "script/verify_pairing_qr.swift"
     relay_allocation_preflight_path = ROOT / "script/relay_allocation_preflight.py"
     different_network_runtime_path = ROOT / "script/run_different_network_dev_runtime.sh"
     runtime_mutation_test_path = ROOT / (
@@ -20269,6 +22820,7 @@ def no_device_quality_gate_guard_failures() -> list[str]:
     docs_progress_text = docs_progress_path.read_text(encoding="utf-8", errors="replace")
     docs_qa_evidence_text = docs_qa_evidence_path.read_text(encoding="utf-8", errors="replace")
     docs_roadmap_text = docs_roadmap_path.read_text(encoding="utf-8", errors="replace")
+    qr_verifier_text = qr_verifier_path.read_text(encoding="utf-8", errors="replace")
     required_remote_route_identity_snippets = (
         (
             runtime_view_model_text,
@@ -21572,6 +24124,24 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             failures.append(f"{path.relative_to(ROOT)}: {guidance}")
     required_private_overlay_qr_artifact_snippets = (
         (
+            qr_verifier_text,
+            qr_verifier_path,
+            "case invalidRelayScope(String)",
+            "QR verifier must have a focused invalid relay_scope failure.",
+        ),
+        (
+            qr_verifier_text,
+            qr_verifier_path,
+            '!["remote", "private_overlay", "usb_reverse"].contains(relayScope)',
+            "QR verifier must reject non-exact relay_scope values instead of normalizing them.",
+        ),
+        (
+            qr_verifier_text,
+            qr_verifier_path,
+            'return relayScope == "private_overlay" &&',
+            "QR verifier must require exact private_overlay scope for private-overlay relay literals.",
+        ),
+        (
             gate_text,
             gate_path,
             "macos-compact-private-overlay-pairing-uri.txt",
@@ -21598,8 +24168,32 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         (
             gate_text,
             gate_path,
+            "PRIVATE_OVERLAY_MUTATED_SCOPE_URI_FILE",
+            "Default no-device gate must create a mutated private-overlay QR URI fixture.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            "rsc=PRIVATE_OVERLAY%20",
+            "Default no-device gate must cover case/whitespace-mutated compact relay scope.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            '"invalid relay_scope"',
+            "Default no-device gate must assert the QR verifier reports invalid relay_scope.",
+        ),
+        (
+            gate_text,
+            gate_path,
             "private-overlay QR artifact addendum",
             "Default no-device gate summary must mention private-overlay QR artifact coverage.",
+        ),
+        (
+            gate_text,
+            gate_path,
+            "private-overlay QR scope canonicality addendum",
+            "Default no-device gate summary must mention private-overlay QR scope canonicality coverage.",
         ),
         (
             docs_progress_text,
@@ -21608,16 +24202,34 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Progress docs must record the private-overlay QR artifact no-device gate.",
         ),
         (
+            docs_progress_text,
+            docs_progress_path,
+            "Private Overlay QR Scope Canonicality No-Device Gate",
+            "Progress docs must record the private-overlay QR scope canonicality no-device gate.",
+        ),
+        (
             docs_qa_evidence_text,
             docs_qa_evidence_path,
             "Private Overlay QR Artifact No-Device Gate",
             "QA evidence must record the private-overlay QR artifact no-device gate.",
         ),
         (
+            docs_qa_evidence_text,
+            docs_qa_evidence_path,
+            "Private Overlay QR Scope Canonicality No-Device Gate",
+            "QA evidence must record the private-overlay QR scope canonicality no-device gate.",
+        ),
+        (
             docs_roadmap_text,
             docs_roadmap_path,
             "private-overlay QR artifact",
             "Roadmap smoke coverage queue must name private-overlay QR artifact coverage.",
+        ),
+        (
+            docs_roadmap_text,
+            docs_roadmap_path,
+            "private-overlay QR scope canonicality",
+            "Roadmap smoke coverage queue must name private-overlay QR scope canonicality coverage.",
         ),
     )
     for haystack, path, snippet, guidance in required_private_overlay_qr_artifact_snippets:
@@ -22189,6 +24801,18 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device quality gate must run the Android pending pairing direct endpoint cleanup regression.",
         ),
         (
+            "RuntimeClientViewModelTest.persistedRuntimeDataRejectsNonCanonicalPendingPairingIdentityValues",
+            "Default no-device quality gate must run the Android pending pairing identity canonicality regression.",
+        ),
+        (
+            "RuntimeClientViewModelTest.persistedRuntimeDataRejectsNonCanonicalPendingPairingRouteToken",
+            "Default no-device quality gate must run the Android pending pairing route-token canonicality regression.",
+        ),
+        (
+            "RuntimeClientViewModelTest.persistedRuntimeDataRejectsNonCanonicalPendingRuntimePublicKey",
+            "Default no-device quality gate must run the Android pending pairing runtime public-key canonicality regression.",
+        ),
+        (
             "RuntimeClientViewModelTest.persistedRuntimeDataRemovesPendingPairingRelaySecretWhenRouteClearsOrReplaces",
             "Default no-device quality gate must run the Android pending relay QR secret cleanup regression.",
         ),
@@ -22315,6 +24939,18 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         (
             "Android pending pairing route storage drops direct QR host/port fields",
             "Default no-device gate coverage summary must mention Android pending pairing direct endpoint cleanup coverage.",
+        ),
+        (
+            "Android pending pairing identity canonicality",
+            "Default no-device gate coverage summary must mention Android pending pairing identity canonicality coverage.",
+        ),
+        (
+            "Android pending pairing route-token canonicality",
+            "Default no-device gate coverage summary must mention Android pending pairing route-token canonicality coverage.",
+        ),
+        (
+            "Android pending pairing runtime public-key canonicality",
+            "Default no-device gate coverage summary must mention Android pending pairing runtime public-key canonicality coverage.",
         ),
         (
             "Android pending relay QR secret cleanup",
@@ -22741,6 +25377,10 @@ def no_device_quality_gate_guard_failures() -> list[str]:
             "Default no-device gate must run the Android Settings auto-reconnect compact row layout regression.",
         ),
         (
+            "ClientScreensNoDeviceComposeTest.settingsConnectionStatusTalkBackOrderProxyKeepsVisibleControlsReachableAtLargeFontAcrossSupportedLanguages",
+            "Default no-device gate must run the Android Settings embedded Connection Status TalkBack-order proxy regression.",
+        ),
+        (
             "ClientScreensNoDeviceComposeTest.settingsDeveloperDiagnosticsToggleRowStaysBoundedAtLargeFontAcrossSupportedLanguages",
             "Default no-device gate must run the Android Settings developer diagnostics toggle compact layout regression.",
         ),
@@ -22835,6 +25475,10 @@ def no_device_quality_gate_guard_failures() -> list[str]:
         (
             "Android Settings auto-reconnect compact row layout",
             "Default no-device gate coverage summary must mention Android Settings auto-reconnect compact row layout.",
+        ),
+        (
+            "Android Settings embedded QR scan, route recovery notice, refresh, disconnect, and auto-reconnect controls keep localized semantics and reachable bounds order at large font",
+            "Default no-device gate coverage summary must mention Android Settings Connection Status TalkBack-order proxy coverage.",
         ),
         (
             "Android Settings developer diagnostics toggle compact layout",
@@ -24806,6 +27450,8 @@ def runtime_auth_domain_separation_guard_failures() -> list[str]:
         "loadOrCreateReusesDeviceIdNameAndPublicKeyAcrossStoreInstances",
         "loadOrCreateDoesNotPersistPrivateKeyMaterialInDataStore",
         "keyPairFailureSurfacesWithoutRotatingStoredDeviceIdentity",
+        "firstRunKeyPairFailureDoesNotPersistOrphanDeviceIdentity",
+        "assertTrue(prefs.asMap().isEmpty())",
         "assertEquals(first.deviceId, second.deviceId)",
         "assertEquals(first.publicKeyBase64, second.publicKeyBase64)",
         "setOf(\"android_device_id\", \"android_device_name\")",
@@ -24818,6 +27464,26 @@ def runtime_auth_domain_separation_guard_failures() -> list[str]:
                 f"persistence tests must cover stable id/key reuse, secret non-persistence, and "
                 f"keystore failure behavior; missing {snippet}."
             )
+    if "Android device identity atomic persistence addendum" not in path_texts[no_device_path]:
+        failures.append(
+            f"{no_device_path.relative_to(ROOT)}: Default no-device gate summary must mention "
+            "Android first-run device identity atomic persistence coverage."
+        )
+    if "Android device identity atomic persistence" not in path_texts[progress_path]:
+        failures.append(
+            f"{progress_path.relative_to(ROOT)}: Progress docs must record Android first-run "
+            "device identity atomic persistence evidence."
+        )
+    if "Android device identity atomic persistence" not in path_texts[qa_evidence_path]:
+        failures.append(
+            f"{qa_evidence_path.relative_to(ROOT)}: QA evidence must record Android first-run "
+            "device identity atomic persistence evidence."
+        )
+    if "Android device identity atomic persistence" not in path_texts[docs_roadmap_path]:
+        failures.append(
+            f"{docs_roadmap_path.relative_to(ROOT)}: Roadmap must name Android first-run "
+            "device identity atomic persistence coverage."
+        )
     if "clientAuthenticationResponseMessage(deviceID: deviceID, nonce: nonce)" not in path_texts[macos_router_path]:
         failures.append(
             f"{macos_router_path.relative_to(ROOT)}: macOS auth.response verifier must validate the "
@@ -26621,6 +29287,7 @@ def route_refresh_relay_scope_guard_failures() -> list[str]:
     )
     android_runtime_path = ROOT / "apps/android/app/src/main/java/com/localagentbridge/android/runtime/RuntimeClientViewModel.kt"
     android_test_path = ROOT / "apps/android/app/src/test/java/com/localagentbridge/android/runtime/RuntimeClientViewModelTest.kt"
+    macos_app_model_path = ROOT / "apps/macos/CompanionCore/Sources/CompanionAppModel.swift"
     macos_refresh_path = ROOT / "apps/macos/CompanionCore/Sources/RuntimeRouteRefresh.swift"
     macos_router_path = ROOT / "apps/macos/CompanionCore/Sources/LocalRuntimeMessageRouter.swift"
     macos_test_path = ROOT / "apps/macos/CompanionCore/Tests/LocalRuntimeMessageRouterTests.swift"
@@ -26629,6 +29296,7 @@ def route_refresh_relay_scope_guard_failures() -> list[str]:
     relay_peer_client_test_path = ROOT / "apps/macos/Transport/Tests/RelayPeerClientTests.swift"
     runtime_mock_smoke_path = ROOT / "script/runtime_authenticated_mock_smoke.swift"
     no_device_path = ROOT / "script/check_no_device_quality.sh"
+    protocol_doc_path = ROOT / "docs/protocol.md"
     progress_path = ROOT / "docs/progress.md"
     qa_evidence_path = ROOT / "docs/qa-evidence.md"
     roadmap_path = ROOT / "docs/roadmap.md"
@@ -26639,6 +29307,7 @@ def route_refresh_relay_scope_guard_failures() -> list[str]:
         android_protocol_path,
         android_runtime_path,
         android_test_path,
+        macos_app_model_path,
         macos_refresh_path,
         macos_router_path,
         macos_test_path,
@@ -26647,6 +29316,7 @@ def route_refresh_relay_scope_guard_failures() -> list[str]:
         relay_peer_client_test_path,
         runtime_mock_smoke_path,
         no_device_path,
+        protocol_doc_path,
         progress_path,
         qa_evidence_path,
         roadmap_path,
@@ -26660,6 +29330,7 @@ def route_refresh_relay_scope_guard_failures() -> list[str]:
     android_protocol_text = android_protocol_path.read_text(encoding="utf-8", errors="replace")
     android_runtime_text = android_runtime_path.read_text(encoding="utf-8", errors="replace")
     android_test_text = android_test_path.read_text(encoding="utf-8", errors="replace")
+    macos_app_model_text = macos_app_model_path.read_text(encoding="utf-8", errors="replace")
     macos_refresh_text = macos_refresh_path.read_text(encoding="utf-8", errors="replace")
     macos_router_text = macos_router_path.read_text(encoding="utf-8", errors="replace")
     macos_test_text = macos_test_path.read_text(encoding="utf-8", errors="replace")
@@ -26668,6 +29339,7 @@ def route_refresh_relay_scope_guard_failures() -> list[str]:
     relay_peer_client_test_text = relay_peer_client_test_path.read_text(encoding="utf-8", errors="replace")
     runtime_mock_smoke_text = runtime_mock_smoke_path.read_text(encoding="utf-8", errors="replace")
     no_device_text = no_device_path.read_text(encoding="utf-8", errors="replace")
+    protocol_doc_text = protocol_doc_path.read_text(encoding="utf-8", errors="replace")
     progress_text = progress_path.read_text(encoding="utf-8", errors="replace")
     qa_evidence_text = qa_evidence_path.read_text(encoding="utf-8", errors="replace")
     roadmap_text = roadmap_path.read_text(encoding="utf-8", errors="replace")
@@ -26741,6 +29413,166 @@ def route_refresh_relay_scope_guard_failures() -> list[str]:
     for haystack, path, snippet, guidance in required_shared_route_refresh_private_overlay_scope_snippets:
         if snippet not in haystack:
             failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_shared_route_refresh_relay_host_canonicality_snippets = (
+        (
+            protocol_schema_text,
+            protocol_schema_path,
+            '"routeRefreshRelayHost"',
+            "Protocol route.refresh schema must define a canonical relay_host schema.",
+        ),
+        (
+            protocol_schema_text,
+            protocol_schema_path,
+            "Authenticated route.refresh relay host values are route material, not URLs",
+            "Protocol route.refresh schema must document relay_host as route material, not URLs.",
+        ),
+        (
+            protocol_schema_text,
+            protocol_schema_path,
+            '"relay_host": { "$ref": "#/$defs/routeRefreshRelayHost" }',
+            "Protocol route.refresh schema relay_host must use routeRefreshRelayHost.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "ROUTE_REFRESH_RELAY_HOST_FORBIDDEN_PATTERNS",
+            "Protocol schema checker must pin forbidden route.refresh relay_host markers.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "route_refresh_relay_host_schema_is_canonical",
+            "Protocol schema checker must structurally verify route.refresh relay_host canonicality.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "route.refresh schema relay_host must use routeRefreshRelayHost",
+            "Protocol schema checker must fail when route.refresh relay_host uses a loose schema.",
+        ),
+        (
+            protocol_doc_text,
+            protocol_doc_path,
+            "`relay_host` is route material, not a URL or endpoint.",
+            "Protocol docs must state route.refresh relay_host is route material, not a URL.",
+        ),
+        (
+            protocol_doc_text,
+            protocol_doc_path,
+            "path-shaped, query, fragment, and user-info-shaped relay hosts",
+            "Protocol docs must name rejected route.refresh relay_host shapes.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "shared route.refresh relay_host canonicality schema addendum",
+            "Default no-device gate summary must mention shared route.refresh relay_host canonicality schema coverage.",
+        ),
+        (
+            progress_text,
+            progress_path,
+            "Shared Route Refresh Relay Host Canonicality Schema No-Device Gate",
+            "Progress docs must record the shared route.refresh relay_host canonicality schema gate.",
+        ),
+        (
+            qa_evidence_text,
+            qa_evidence_path,
+            "Shared Route Refresh Relay Host Canonicality Schema No-Device Gate",
+            "QA evidence must record the shared route.refresh relay_host canonicality schema gate.",
+        ),
+        (
+            roadmap_text,
+            roadmap_path,
+            "shared route.refresh relay_host canonicality schema",
+            "Roadmap smoke coverage queue must name shared route.refresh relay_host canonicality schema coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_shared_route_refresh_relay_host_canonicality_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_shared_route_refresh_relay_host_scope_eligibility_snippets = (
+        (
+            protocol_schema_text,
+            protocol_schema_path,
+            '"loopbackRelayHost"',
+            "Protocol route.refresh schema must define loopback relay host patterns.",
+        ),
+        (
+            protocol_schema_text,
+            protocol_schema_path,
+            '"relay_scope": { "const": "usb_reverse" }',
+            "Protocol route.refresh schema must require relay_scope=usb_reverse for loopback relay hosts.",
+        ),
+        (
+            protocol_schema_text,
+            protocol_schema_path,
+            '"not": { "pattern": "(^|\\\\.)local$" }',
+            "Protocol route.refresh schema must reject mDNS-local relay hosts.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "ROUTE_REFRESH_RELAY_HOST_FORBIDDEN_ENUMS",
+            "Protocol schema checker must pin forbidden route.refresh relay_host enum values.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "route_refresh_loopback_host_schema_is_canonical",
+            "Protocol schema checker must structurally verify route.refresh loopback host matching.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "is_route_refresh_loopback_usb_reverse_scope_rule",
+            "Protocol schema checker must structurally verify route.refresh loopback usb_reverse scope.",
+        ),
+        (
+            protocol_schema_check_text,
+            protocol_schema_check_path,
+            "route.refresh schema must require relay_scope=usb_reverse",
+            "Protocol schema checker must fail when route.refresh loopback usb_reverse scope coverage is missing.",
+        ),
+        (
+            protocol_doc_text,
+            protocol_doc_path,
+            "mDNS-local, unspecified, link-local, multicast, and broadcast relay hosts",
+            "Protocol docs must name rejected route.refresh local and multicast relay hosts.",
+        ),
+        (
+            protocol_doc_text,
+            protocol_doc_path,
+            "Loopback route.refresh relay hosts require `relay_scope=usb_reverse`",
+            "Protocol docs must state the route.refresh loopback usb_reverse scope requirement.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "shared route.refresh relay_host scope eligibility schema addendum",
+            "Default no-device gate summary must mention shared route.refresh relay_host scope eligibility coverage.",
+        ),
+        (
+            progress_text,
+            progress_path,
+            "Shared Route Refresh Relay Host Scope Eligibility Schema No-Device Gate",
+            "Progress docs must record the shared route.refresh relay_host scope eligibility schema gate.",
+        ),
+        (
+            qa_evidence_text,
+            qa_evidence_path,
+            "Shared Route Refresh Relay Host Scope Eligibility Schema No-Device Gate",
+            "QA evidence must record the shared route.refresh relay_host scope eligibility schema gate.",
+        ),
+        (
+            roadmap_text,
+            roadmap_path,
+            "shared route.refresh relay_host scope eligibility schema",
+            "Roadmap smoke coverage queue must name shared route.refresh relay_host scope eligibility schema coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_shared_route_refresh_relay_host_scope_eligibility_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
     for snippet in (
         '@SerialName("p2p_class") val p2pRouteClass: String? = null',
         '@SerialName("p2p_record_id") val p2pRecordId: String? = null',
@@ -26797,6 +29629,239 @@ def route_refresh_relay_scope_guard_failures() -> list[str]:
                 f"enum regression {snippet}."
             )
     for snippet in (
+        "ROUTE_REFRESH_RESPONSE_PAYLOAD_KEYS",
+        "hasOnlyRouteRefreshResponsePayloadKeys",
+        "if (!envelope.payload.hasOnlyRouteRefreshResponsePayloadKeys())",
+        "decodeRouteRefreshPayloadForRetry(envelope.payload)",
+        "private fun decodeRouteRefreshPayloadForRetry(payload: JsonObject): RouteRefreshPayload?",
+        "scheduleRuntimeRouteRefreshRetry()",
+        "isCanonicalOpaqueRouteValue(payload.runtimeDeviceId)",
+        "isCanonicalOpaqueRouteValue(payload.runtimeKeyFingerprint)",
+    ):
+        if snippet not in android_runtime_text:
+            failures.append(
+                f"{android_runtime_path.relative_to(ROOT)}: Android route.refresh response handling must "
+                f"reject unknown payload metadata before trusted route storage; missing {snippet}."
+            )
+    for snippet in (
+        "authenticatedTrustedRuntimeRejectsRouteRefreshPayloadWithUnknownMetadataBeforeStorage",
+        '"backend_url" to JsonPrimitive("http://127.0.0.1:11434")',
+        'assertEquals("relay.example.test", trustedStore.trusted?.relayHost)',
+        'assertEquals("nonce-route-1", trustedStore.trusted?.relayNonce)',
+    ):
+        if snippet not in android_test_text:
+            failures.append(
+                f"{android_test_path.relative_to(ROOT)}: Missing Android route.refresh response unknown "
+                f"metadata storage-boundary regression {snippet}."
+            )
+    for snippet in (
+        "authenticatedTrustedRuntimeRetriesMalformedRouteRefreshAllowedFieldPayloadBeforeLeaseExpiry",
+        '"runtime_device_id" to JsonPrimitive(7)',
+        '"relay_port" to JsonPrimitive("43171")',
+        '"relay_expires_at" to JsonPrimitive("not-an-integer")',
+        '"p2p_protocol_version" to JsonPrimitive("1")',
+        'assertNull(viewModel.state.value.error)',
+    ):
+        if snippet not in android_test_text:
+            failures.append(
+                f"{android_test_path.relative_to(ROOT)}: Missing Android route.refresh malformed "
+                f"allowed-field retry regression {snippet}."
+            )
+    for snippet in (
+        "routeRefreshPayloadRejectsNonCanonicalRuntimeIdentity",
+        'runtimeDeviceId = "runtime-1 "',
+        'runtimeKeyFingerprint = " runtime-fingerprint"',
+        '"r".repeat(513)',
+        '"f".repeat(513)',
+    ):
+        if snippet not in android_test_text:
+            failures.append(
+                f"{android_test_path.relative_to(ROOT)}: Missing Android route.refresh runtime identity "
+                f"canonicality regression {snippet}."
+            )
+    required_android_route_refresh_unknown_response_metadata_snippets = (
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeClientViewModelTest.authenticatedTrustedRuntimeRejectsRouteRefreshPayloadWithUnknownMetadataBeforeStorage",
+            "Default no-device gate must run the Android route.refresh response unknown metadata regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "Android route.refresh response unknown metadata addendum",
+            "Default no-device gate summary must name Android route.refresh response unknown metadata coverage.",
+        ),
+        (
+            progress_text,
+            progress_path,
+            "Android Route.Refresh Response Unknown Metadata No-Device Gate",
+            "Progress docs must record the Android route.refresh response unknown metadata no-device gate.",
+        ),
+        (
+            qa_evidence_text,
+            qa_evidence_path,
+            "Android Route.Refresh Response Unknown Metadata No-Device Gate",
+            "QA evidence must record the Android route.refresh response unknown metadata no-device gate.",
+        ),
+        (
+            roadmap_text,
+            roadmap_path,
+            "Android route.refresh response unknown metadata rejection",
+            "Roadmap smoke coverage queue must name Android route.refresh response unknown metadata coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_android_route_refresh_unknown_response_metadata_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_android_route_refresh_runtime_identity_canonicality_snippets = (
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeClientViewModelTest.routeRefreshPayloadRejectsNonCanonicalRuntimeIdentity",
+            "Default no-device gate must run the Android route.refresh runtime identity canonicality regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "Android route.refresh runtime identity canonicality addendum",
+            "Default no-device gate summary must name Android route.refresh runtime identity canonicality coverage.",
+        ),
+        (
+            progress_text,
+            progress_path,
+            "Android Route Refresh Runtime Identity Canonicality No-Device Gate",
+            "Progress docs must record the Android route.refresh runtime identity canonicality no-device gate.",
+        ),
+        (
+            qa_evidence_text,
+            qa_evidence_path,
+            "Android Route Refresh Runtime Identity Canonicality No-Device Gate",
+            "QA evidence must record the Android route.refresh runtime identity canonicality no-device gate.",
+        ),
+        (
+            roadmap_text,
+            roadmap_path,
+            "Android route.refresh runtime identity canonicality",
+            "Roadmap smoke coverage queue must name Android route.refresh runtime identity canonicality coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_android_route_refresh_runtime_identity_canonicality_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_android_route_refresh_malformed_allowed_field_retry_snippets = (
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeClientViewModelTest.authenticatedTrustedRuntimeRetriesMalformedRouteRefreshAllowedFieldPayloadBeforeLeaseExpiry",
+            "Default no-device gate must run the Android route.refresh malformed allowed-field retry regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "Android route.refresh malformed allowed-field retry addendum",
+            "Default no-device gate summary must name Android route.refresh malformed allowed-field retry coverage.",
+        ),
+        (
+            progress_text,
+            progress_path,
+            "Android Route Refresh Malformed Allowed-Field Retry No-Device Gate",
+            "Progress docs must record the Android route.refresh malformed allowed-field retry no-device gate.",
+        ),
+        (
+            qa_evidence_text,
+            qa_evidence_path,
+            "Android Route Refresh Malformed Allowed-Field Retry No-Device Gate",
+            "QA evidence must record the Android route.refresh malformed allowed-field retry no-device gate.",
+        ),
+        (
+            roadmap_text,
+            roadmap_path,
+            "Android route.refresh malformed allowed-field retry",
+            "Roadmap smoke coverage queue must name Android route.refresh malformed allowed-field retry coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_android_route_refresh_malformed_allowed_field_retry_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_macos_route_refresh_diagnostic_opt_in_snippets = (
+        (
+            macos_app_model_text,
+            macos_app_model_path,
+            "allowsAuthenticatedRouteRefresh: Bool = false",
+            "CompanionAppModel must keep authenticated route.refresh disabled by default.",
+        ),
+        (
+            macos_app_model_text,
+            macos_app_model_path,
+            "routeRefresher: allowsAuthenticatedRouteRefresh ? self : nil",
+            "CompanionAppModel must expose authenticated route.refresh only behind explicit diagnostic opt-in.",
+        ),
+        (
+            macos_test_text,
+            macos_test_path,
+            "testCompanionAppModelDoesNotExposeAuthenticatedRouteRefreshByDefault",
+            "macOS app model tests must prove authenticated route.refresh is unavailable by default.",
+        ),
+        (
+            macos_test_text,
+            macos_test_path,
+            "testCompanionAppModelExposesAuthenticatedRouteRefreshWhenDiagnosticOptInIsEnabled",
+            "macOS app model tests must prove explicit diagnostic route.refresh opt-in can emit route material.",
+        ),
+        (
+            macos_test_text,
+            macos_test_path,
+            "allowsAuthenticatedRouteRefresh: true",
+            "macOS app model opt-in regression must construct CompanionAppModel with diagnostic route.refresh enabled.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "LocalRuntimeMessageRouterTests/testCompanionAppModelDoesNotExposeAuthenticatedRouteRefreshByDefault",
+            "Default no-device gate must run the macOS authenticated route.refresh default-off regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "LocalRuntimeMessageRouterTests/testCompanionAppModelExposesAuthenticatedRouteRefreshWhenDiagnosticOptInIsEnabled",
+            "Default no-device gate must run the macOS authenticated route.refresh diagnostic opt-in regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "macOS authenticated route.refresh diagnostic opt-in addendum",
+            "Default no-device gate summary must mention macOS authenticated route.refresh diagnostic opt-in coverage.",
+        ),
+        (
+            progress_text,
+            progress_path,
+            "macOS Authenticated Route.Refresh Diagnostic Opt-In No-Device Gate",
+            "Progress docs must record the macOS authenticated route.refresh diagnostic opt-in no-device gate.",
+        ),
+        (
+            qa_evidence_text,
+            qa_evidence_path,
+            "macOS Authenticated Route.Refresh Diagnostic Opt-In No-Device Gate",
+            "QA evidence must record the macOS authenticated route.refresh diagnostic opt-in no-device gate.",
+        ),
+        (
+            protocol_doc_text,
+            protocol_doc_path,
+            "The macOS app runtime also keeps authenticated `route.refresh` unavailable by default",
+            "Protocol docs must state that macOS app runtime route.refresh exposure is diagnostic opt-in.",
+        ),
+        (
+            roadmap_text,
+            roadmap_path,
+            "macOS authenticated route.refresh diagnostic opt-in",
+            "Roadmap smoke coverage queue must name macOS authenticated route.refresh diagnostic opt-in coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_macos_route_refresh_diagnostic_opt_in_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    for snippet in (
         "public var p2pRouteClass: String?",
         "public var p2pRecordID: String?",
         "public var p2pEncryptedBody: String?",
@@ -26848,6 +29913,14 @@ def route_refresh_relay_scope_guard_failures() -> list[str]:
         'String(repeating: "p", count: 2_049)',
         "testRouteRefreshFailureRedactsRelaySecretsAndProviderEndpoints",
         'relayScope: "public"',
+        'routeRefreshResult(relayHost: "https://relay.example.test")',
+        'routeRefreshResult(relayHost: "relay.example.test/path")',
+        'routeRefreshResult(relayHost: "relay.example.test?token=x")',
+        'routeRefreshResult(relayHost: "relay.example.test#frag")',
+        'routeRefreshResult(relayHost: "user@relay.example.test")',
+        'routeRefreshResult(relayHost: "relay.example.test:43171")',
+        'routeRefreshResult(relayHost: " relay.example.test")',
+        'routeRefreshResult(relayHost: "relay.example.test ")',
         'routeRefreshResult(relayHost: "127.0.0.1", relayScope: "remote")',
         'routeRefreshResult(relayHost: "100.64.1.10", relayScope: "private_overlay")',
         'routeRefreshResult(relayHost: "127.0.0.1", relayScope: "usb_reverse")',
@@ -26861,6 +29934,41 @@ def route_refresh_relay_scope_guard_failures() -> list[str]:
                 f"{macos_test_path.relative_to(ROOT)}: Missing macOS route.refresh relay_scope "
                 f"fail-closed validation regression {snippet}."
             )
+    required_macos_route_refresh_relay_host_producer_canonicality_snippets = (
+        (
+            no_device_text,
+            no_device_path,
+            "macOS route.refresh relay host producer canonicality addendum",
+            "Default no-device gate summary must mention macOS route.refresh relay host producer canonicality coverage.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "route.refresh rejects URL-shaped, path, query, fragment, user-info, port-suffixed, and whitespace-mutated relay hosts returned by the runtime provider before emitting route material",
+            "Default no-device gate summary must describe the route.refresh relay host producer canonicality contract.",
+        ),
+        (
+            progress_text,
+            progress_path,
+            "macOS route.refresh relay host producer canonicality",
+            "Progress docs must record the macOS route.refresh relay host producer canonicality no-device gate.",
+        ),
+        (
+            qa_evidence_text,
+            qa_evidence_path,
+            "macOS route.refresh relay host producer canonicality",
+            "QA evidence must record the macOS route.refresh relay host producer canonicality no-device gate.",
+        ),
+        (
+            roadmap_text,
+            roadmap_path,
+            "macOS route.refresh relay host producer canonicality",
+            "Roadmap smoke coverage queue must name macOS route.refresh relay host producer canonicality coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_macos_route_refresh_relay_host_producer_canonicality_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
     required_macos_route_refresh_failure_redaction_snippets = (
         (
             no_device_text,
@@ -27048,6 +30156,83 @@ def route_refresh_relay_scope_guard_failures() -> list[str]:
         ),
     )
     for haystack, path, snippet, guidance in required_route_refresh_relay_payload_acceptance_rejection_snippets:
+        if snippet not in haystack:
+            failures.append(f"{path.relative_to(ROOT)}: {guidance}")
+    required_route_refresh_relay_material_canonicality_snippets = (
+        (
+            android_test_text,
+            android_test_path,
+            "routeRefreshPayloadRejectsScopedRelayHostScopeMismatch",
+            "Android ViewModel tests must reject scoped relay host mismatches in authenticated route.refresh payloads.",
+        ),
+        (
+            android_test_text,
+            android_test_path,
+            'payload(relayHost = "100.64.1.10", relayScope = null)',
+            "Android route.refresh relay scope mismatch regression must cover private-overlay hosts without private_overlay scope.",
+        ),
+        (
+            android_test_text,
+            android_test_path,
+            'payload(relayHost = "127.0.0.1", relayScope = "remote")',
+            "Android route.refresh relay scope mismatch regression must cover loopback hosts without usb_reverse scope.",
+        ),
+        (
+            android_test_text,
+            android_test_path,
+            "routeRefreshPayloadRejectsNonCanonicalRelayMaterial",
+            "Android ViewModel tests must reject non-canonical authenticated route.refresh relay material.",
+        ),
+        (
+            android_test_text,
+            android_test_path,
+            'relayHost = "https://fresh-relay.example.test"',
+            "Android route.refresh relay canonicality regression must reject URL-shaped relay hosts.",
+        ),
+        (
+            android_test_text,
+            android_test_path,
+            'relayNonce = "n".repeat(513)',
+            "Android route.refresh relay canonicality regression must reject oversized relay nonces.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeClientViewModelTest.routeRefreshPayloadRejectsScopedRelayHostScopeMismatch",
+            "Default no-device gate must run the Android authenticated route.refresh relay scope mismatch regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "RuntimeClientViewModelTest.routeRefreshPayloadRejectsNonCanonicalRelayMaterial",
+            "Default no-device gate must run the Android authenticated route.refresh relay canonicality regression.",
+        ),
+        (
+            no_device_text,
+            no_device_path,
+            "Android route.refresh relay material canonicality addendum",
+            "Default no-device gate summary must mention Android route.refresh relay material canonicality coverage.",
+        ),
+        (
+            progress_text,
+            progress_path,
+            "Android Route Refresh Relay Material Canonicality No-Device Gate",
+            "Progress docs must record the Android route.refresh relay material canonicality no-device gate.",
+        ),
+        (
+            qa_evidence_text,
+            qa_evidence_path,
+            "Android Route Refresh Relay Material Canonicality No-Device Gate",
+            "QA evidence must record the Android route.refresh relay material canonicality no-device gate.",
+        ),
+        (
+            roadmap_text,
+            roadmap_path,
+            "Android route.refresh relay material canonicality",
+            "Roadmap smoke coverage queue must name Android route.refresh relay material canonicality coverage.",
+        ),
+    )
+    for haystack, path, snippet, guidance in required_route_refresh_relay_material_canonicality_snippets:
         if snippet not in haystack:
             failures.append(f"{path.relative_to(ROOT)}: {guidance}")
     required_route_refresh_rejected_payload_retry_snippets = (
@@ -27288,6 +30473,8 @@ def route_refresh_relay_scope_guard_failures() -> list[str]:
             )
     for snippet in (
         "RuntimeClientViewModelTest.routeRefreshPayloadRejectsUnknownRelayScope",
+        "RuntimeClientViewModelTest.routeRefreshPayloadRejectsScopedRelayHostScopeMismatch",
+        "RuntimeClientViewModelTest.routeRefreshPayloadRejectsNonCanonicalRelayMaterial",
         "RuntimeClientViewModelTest.routeRefreshPayloadAllowsStableRelayIdAndSecretWithFreshNonceAndExpiry",
         "RuntimeClientViewModelTest.routeRefreshPayloadRejectsReusedRelayNonce",
         "RuntimeClientViewModelTest.routeRefreshPayloadRejectsNonAdvancingRelayExpiry",
@@ -27314,6 +30501,8 @@ def route_refresh_relay_scope_guard_failures() -> list[str]:
         "LocalRuntimeMessageRouterTests/testRouteRefreshReturnsFreshP2PRendezvousMaterialFromRuntimeProvider",
         "LocalRuntimeMessageRouterTests/testRouteRefreshAllowsBoundedP2PEncryptedBodyLargerThanRouteValues",
         "LocalRuntimeMessageRouterTests/testRouteRefreshRejectsMalformedP2PRendezvousMaterialFromRuntimeProvider",
+        "LocalRuntimeMessageRouterTests/testCompanionAppModelDoesNotExposeAuthenticatedRouteRefreshByDefault",
+        "LocalRuntimeMessageRouterTests/testCompanionAppModelExposesAuthenticatedRouteRefreshWhenDiagnosticOptInIsEnabled",
         "route.refresh relay-scope enum validation",
         "route.refresh malformed relay material validation",
         "route.refresh private-overlay and usb-reverse scoped relay material validation",
@@ -27328,6 +30517,7 @@ def route_refresh_relay_scope_guard_failures() -> list[str]:
         "Android pending, trusted, and route.refresh P2P rendezvous records reject whitespace-mutated opaque route values",
         "Android route.refresh rejects reused or non-advancing P2P rendezvous records before storage",
         "Android authenticated route.refresh keeps the current P2P rendezvous route and schedules retry when refreshed P2P material reuses the active record or lease",
+        "macOS app runtime returns route_refresh_unavailable by default and emits route material only when diagnostic route refresh is explicitly enabled",
         "Android remote route identity mismatch QR recovery",
         "authenticated relay smoke checks encrypted frame bodies for AI protocol payloads, model lists, prompts, files, memory, backend credentials, backend URLs, model commands, cancel, history, memory.list query/search, pairing bootstrap, and route.refresh route-material plaintext markers",
         "authenticated relay smoke checks encrypted frame bodies for backend credential, backend URL, model command payload, prompt, file payload label, model-list response, and memory plaintext markers",
@@ -27532,6 +30722,7 @@ def runtime_mock_history_memory_smoke_guard_failures() -> list[str]:
         '"smoke-memory-upsert"',
         '"memory.list"',
         '"smoke-memory-list-search-metadata"',
+        '"smoke-memory-list-query-resource-guard"',
         'query: " smoke-tested concise "',
         '"smoke-memory-route"',
         '"smoke-tested concise"',
@@ -27620,6 +30811,7 @@ def runtime_mock_history_memory_smoke_guard_failures() -> list[str]:
         "RuntimeDevServer authenticated relay smoke sends embedding_model_id with chat.sessions.list query and verifies no response echo or chat model override",
         "RuntimeDevServer memory.list query search metadata smoke addendum",
         "authenticated relay smoke validates memory.list query ranking, snippet, and matched_fields metadata over RuntimeDevServer",
+        "runtime memory.list query resource guard addendum",
         "RuntimeDevServer memory.list query ciphertext marker addendum",
         "authenticated relay ciphertext boundary includes the memory.list query request id, memory id, trimmed query text, and query/search/snippet JSON keys",
         "archived chat.send restore-required rejection",
@@ -29173,6 +32365,122 @@ def macos_protocol_model_metadata_guard_failures() -> list[str]:
     return failures
 
 
+def macos_protocol_envelope_decode_guard_failures() -> list[str]:
+    failures: list[str] = []
+    protocol_source_path = ROOT / "apps/macos/Protocol/Sources/ProtocolEnvelope.swift"
+    protocol_tests_path = ROOT / "apps/macos/Protocol/Tests/ProtocolCodecTests.swift"
+    no_device_path = ROOT / "script/check_no_device_quality.sh"
+    roadmap_path = ROOT / "docs/roadmap.md"
+    progress_path = ROOT / "docs/progress.md"
+    qa_evidence_path = ROOT / "docs/qa-evidence.md"
+
+    required_paths = (
+        protocol_source_path,
+        protocol_tests_path,
+        no_device_path,
+        roadmap_path,
+        progress_path,
+        qa_evidence_path,
+    )
+    for path in required_paths:
+        if not path.exists():
+            failures.append(f"{path.relative_to(ROOT)} is missing for macOS protocol envelope decode guard.")
+            return failures
+
+    protocol_source_text = protocol_source_path.read_text(encoding="utf-8", errors="replace")
+    protocol_tests_text = protocol_tests_path.read_text(encoding="utf-8", errors="replace")
+    no_device_text = no_device_path.read_text(encoding="utf-8", errors="replace")
+    roadmap_text = roadmap_path.read_text(encoding="utf-8", errors="replace")
+    progress_text = progress_path.read_text(encoding="utf-8", errors="replace")
+    qa_evidence_text = qa_evidence_path.read_text(encoding="utf-8", errors="replace")
+
+    required_source_snippets = (
+        "DynamicCodingKey",
+        "public init(from decoder: Decoder) throws",
+        "dynamicContainer.allKeys",
+        "Unknown envelope field",
+        "CaseIterable",
+    )
+    for snippet in required_source_snippets:
+        if snippet not in protocol_source_text:
+            failures.append(
+                f"{protocol_source_path.relative_to(ROOT)}: Missing protocol envelope strict decode snippet {snippet!r}."
+            )
+
+    required_test_snippets = (
+        "testProtocolEnvelopeDecodeRejectsMalformedRequiredFields",
+        "testProtocolEnvelopeDecodeRejectsUnknownTopLevelFields",
+        "missing version",
+        "non-integer version",
+        "missing request_id",
+        "non-string request_id",
+        "missing timestamp",
+        "non-string timestamp",
+        "malformed timestamp",
+        "missing type",
+        "non-string type",
+        "missing payload",
+        "non-object payload",
+        "unknown-top-level-envelope-field",
+        '"backend_url"',
+        '"route_token"',
+        "codec.decodeEnvelope",
+    )
+    for snippet in required_test_snippets:
+        if snippet not in protocol_tests_text:
+            failures.append(
+                f"{protocol_tests_path.relative_to(ROOT)}: Missing protocol envelope decode regression {snippet!r}."
+            )
+
+    required_no_device_snippets = (
+        "ProtocolCodecTests/testProtocolEnvelopeDecodeRejectsMalformedRequiredFields",
+        "ProtocolCodecTests/testProtocolEnvelopeDecodeRejectsUnknownTopLevelFields",
+        "macOS protocol envelope required-field decode addendum",
+        "macOS protocol envelope unknown top-level field decode addendum",
+        "BridgeProtocol ProtocolCodec rejects missing, mistyped, and malformed required envelope version, request_id, timestamp, type, and payload fields",
+        "BridgeProtocol ProtocolCodec rejects unknown top-level envelope metadata fields",
+    )
+    for snippet in required_no_device_snippets:
+        if snippet not in no_device_text:
+            failures.append(
+                f"{no_device_path.relative_to(ROOT)}: Default no-device gate must mention macOS protocol "
+                f"envelope required-field decode coverage; missing {snippet!r}."
+            )
+
+    if "macOS protocol envelope required-field decode" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap smoke coverage queue must name macOS protocol "
+            "envelope required-field decode coverage."
+        )
+    if "macOS protocol envelope unknown top-level field decode" not in roadmap_text:
+        failures.append(
+            f"{roadmap_path.relative_to(ROOT)}: Roadmap smoke coverage queue must name macOS protocol "
+            "envelope unknown top-level field decode coverage."
+        )
+
+    for path, text in (
+        (progress_path, progress_text),
+        (qa_evidence_path, qa_evidence_text),
+    ):
+        for snippet in (
+            "macOS Protocol Envelope Required-Field Decode No-Device Gate",
+            "ProtocolCodecTests/testProtocolEnvelopeDecodeRejectsMalformedRequiredFields",
+            "missing, mistyped, and malformed required envelope fields",
+            "macOS protocol envelope required-field decode addendum",
+            "macOS Protocol Envelope Unknown Top-Level Field Decode No-Device Gate",
+            "ProtocolCodecTests/testProtocolEnvelopeDecodeRejectsUnknownTopLevelFields",
+            "unknown top-level envelope metadata fields",
+            "macOS protocol envelope unknown top-level field decode addendum",
+        ):
+            if snippet not in text:
+                failures.append(
+                    f"{path.relative_to(ROOT)}: Docs must record macOS protocol envelope required-field "
+                    f"decode no-device evidence; missing {snippet!r}."
+                )
+
+    return failures
+
+
 def android_protocol_model_metadata_guard_failures() -> list[str]:
     failures: list[str] = []
     android_protocol_path = (
@@ -29276,6 +32584,159 @@ def android_protocol_model_metadata_guard_failures() -> list[str]:
                 failures.append(
                     f"{path.relative_to(ROOT)}: Docs must record Android protocol model metadata parity "
                     f"no-device evidence; missing {snippet!r}."
+                )
+
+    return failures
+
+
+def android_protocol_envelope_decode_guard_failures() -> list[str]:
+    failures: list[str] = []
+    android_protocol_path = (
+        ROOT / "apps/android/core/protocol/src/main/java/com/localagentbridge/android/core/protocol/ProtocolCodec.kt"
+    )
+    android_protocol_test_path = (
+        ROOT / "apps/android/core/protocol/src/test/java/com/localagentbridge/android/core/protocol/ProtocolCodecTest.kt"
+    )
+    no_device_path = ROOT / "script/check_no_device_quality.sh"
+    roadmap_path = ROOT / "docs/roadmap.md"
+    progress_path = ROOT / "docs/progress.md"
+    qa_evidence_path = ROOT / "docs/qa-evidence.md"
+    required_paths = (
+        android_protocol_path,
+        android_protocol_test_path,
+        no_device_path,
+        roadmap_path,
+        progress_path,
+        qa_evidence_path,
+    )
+    for path in required_paths:
+        if not path.exists():
+            failures.append(f"{path.relative_to(ROOT)} is missing for Android protocol envelope decode guard.")
+            return failures
+
+    android_protocol_text = android_protocol_path.read_text(encoding="utf-8", errors="replace")
+    android_protocol_test_text = android_protocol_test_path.read_text(encoding="utf-8", errors="replace")
+    no_device_text = no_device_path.read_text(encoding="utf-8", errors="replace")
+    roadmap_text = roadmap_path.read_text(encoding="utf-8", errors="replace")
+    progress_text = progress_path.read_text(encoding="utf-8", errors="replace")
+    qa_evidence_text = qa_evidence_path.read_text(encoding="utf-8", errors="replace")
+
+    required_source_snippets = (
+        "validateEnvelopeFields",
+        "validateVersion",
+        "validateRequestId",
+        "validateTimestamp",
+        "PROTOCOL_VERSION",
+        "Unsupported protocol envelope version",
+        "isNotBlank",
+        "Instant.parse",
+        "DateTimeParseException",
+        "REQUIRED_ENVELOPE_FIELDS",
+        "STRING_ENVELOPE_FIELDS",
+        "ALLOWED_ENVELOPE_FIELDS",
+        "json.parseToJsonElement",
+        "json.decodeFromJsonElement(ProtocolEnvelope.serializer(), envelopeObject)",
+        "Missing protocol envelope field",
+        "Invalid protocol envelope field",
+        "Unknown protocol envelope field",
+        '"version"',
+        '"type"',
+        '"request_id"',
+        '"timestamp"',
+        '"payload"',
+    )
+    for snippet in required_source_snippets:
+        if snippet not in android_protocol_text:
+            failures.append(
+                f"{android_protocol_path.relative_to(ROOT)}: Missing Android envelope strict decode snippet {snippet!r}."
+            )
+
+    required_test_snippets = (
+        "decodeRejectsMalformedRequiredEnvelopeFields",
+        "decodeRejectsUnsupportedVersionAndBlankRequestId",
+        "decodeRejectsUnknownTopLevelEnvelopeFields",
+        "decodeAllowsMessageSpecificMetadataInsidePayloadObject",
+        "Missing protocol envelope field: $missingField",
+        "missingCases",
+        "mistypedCases",
+        "bad-type",
+        "unsupported-version",
+        "Unsupported protocol envelope version: 2",
+        "Invalid protocol envelope field: request_id",
+        "malformed-timestamp",
+        '"timestamp":"not-a-date"',
+        "android-unknown-top-level-envelope-field",
+        "android-payload-object-boundary",
+        '"backend_url"',
+        '"route_token"',
+        "Unknown protocol envelope field: backend_url",
+    )
+    for snippet in required_test_snippets:
+        if snippet not in android_protocol_test_text:
+            failures.append(
+                f"{android_protocol_test_path.relative_to(ROOT)}: Missing Android envelope decode regression "
+                f"{snippet!r}."
+            )
+
+    required_no_device_snippets = (
+        "ProtocolCodecTest.decodeRejectsMalformedRequiredEnvelopeFields",
+        "ProtocolCodecTest.decodeRejectsUnsupportedVersionAndBlankRequestId",
+        "ProtocolCodecTest.decodeRejectsUnknownTopLevelEnvelopeFields",
+        "Android protocol envelope required-field decode addendum",
+        "Android ProtocolCodec rejects missing and mistyped required envelope version, type, request_id, timestamp, and payload fields before default values can hide malformed frames",
+        "Android protocol envelope version/request_id semantic decode addendum",
+        "Android ProtocolCodec rejects unsupported envelope version values and blank envelope request_id strings before message dispatch or relay transport handling",
+        "Android protocol envelope timestamp format decode addendum",
+        "Android ProtocolCodec rejects malformed envelope timestamp strings before ProtocolEnvelope defaults, message dispatch, or relay transport handling can accept them",
+        "Android protocol envelope unknown top-level field decode addendum",
+        "Android ProtocolCodec rejects unknown top-level envelope metadata fields while preserving message-specific payload object handling",
+    )
+    for snippet in required_no_device_snippets:
+        if snippet not in no_device_text:
+            failures.append(
+                f"{no_device_path.relative_to(ROOT)}: Default no-device gate must mention Android protocol "
+                f"envelope unknown top-level field decode coverage; missing {snippet!r}."
+            )
+
+    for snippet in (
+        "Android protocol envelope required-field decode",
+        "Android protocol envelope version/request_id semantic decode",
+        "Android protocol envelope timestamp format decode",
+        "Android protocol envelope unknown top-level field decode",
+    ):
+        if snippet not in roadmap_text:
+            failures.append(
+                f"{roadmap_path.relative_to(ROOT)}: Roadmap smoke coverage queue must name Android protocol "
+                f"envelope decode coverage; missing {snippet!r}."
+            )
+
+    for path, text in (
+        (progress_path, progress_text),
+        (qa_evidence_path, qa_evidence_text),
+    ):
+        for snippet in (
+            "Android Protocol Envelope Required-Field Decode No-Device Gate",
+            "Android Protocol Envelope Version Request Semantic Decode No-Device Gate",
+            "Android Protocol Envelope Timestamp Format Decode No-Device Gate",
+            "Android Protocol Envelope Unknown Top-Level Field Decode No-Device Gate",
+            "ProtocolCodecTest.decodeRejectsMalformedRequiredEnvelopeFields",
+            "ProtocolCodecTest.decodeRejectsUnsupportedVersionAndBlankRequestId",
+            "ProtocolCodecTest.decodeRejectsUnknownTopLevelEnvelopeFields",
+            "missing and mistyped required envelope",
+            "unsupported envelope version values",
+            "blank envelope request_id strings",
+            "Android protocol envelope version/request_id semantic decode addendum",
+            "malformed envelope timestamp strings",
+            "Android protocol envelope timestamp format decode addendum",
+            "unknown top-level envelope metadata fields",
+            "Android protocol envelope required-field decode addendum",
+            "Android protocol envelope unknown top-level field decode addendum",
+            "message-specific payload object handling",
+        ):
+            if snippet not in text:
+                failures.append(
+                    f"{path.relative_to(ROOT)}: Docs must record Android protocol envelope unknown top-level "
+                    f"field decode no-device evidence; missing {snippet!r}."
                 )
 
     return failures
@@ -29816,6 +33277,61 @@ def relay_control_line_relay_id_canonicality_guard_failures() -> list[str]:
     return failures
 
 
+def swift_relay_allocation_relay_id_canonicality_guard_failures() -> list[str]:
+    failures: list[str] = []
+    required_files = {
+        "apps/macos/RelayServerCore/Sources/RelayAllocation.swift": (
+            "guard isCanonicalRelayControlLineID(relayID) else",
+            "isCanonicalRelayControlLineID(relayID) &&",
+        ),
+        "apps/macos/RelayServerCore/Tests/RelayAllocationTests.swift": (
+            "testRejectsInvalidAllocationResponseLineFields",
+            "testAllocationRegistrySkipsMalformedPersistedTicketsOnLoad",
+            "nonCanonicalAllocationResponseRelayIDs",
+            "relayControlLineRelayIDMaxCharacters + 1",
+            "https://relay.example.test/room?route_token=secret",
+            "relay/id",
+            "relay?query",
+            "relay#fragment",
+            "user@relay-id",
+            "relay.example.test:443",
+            "nonce-oversized-relay",
+        ),
+        "script/check_no_device_quality.sh": (
+            "RelayAllocationTests/testRejectsInvalidAllocationResponseLineFields",
+            "RelayAllocationTests/testAllocationRegistrySkipsMalformedPersistedTicketsOnLoad",
+            "Swift relay allocation relay-id canonicality addendum",
+            "URL-shaped, path-shaped, query, fragment, user-info, host:port, oversized, blank, and whitespace-mutated relay IDs",
+        ),
+        "docs/progress.md": (
+            "Swift Relay Allocation Relay-ID Canonicality No-Device Gate",
+            "RelayAllocation now uses the shared relay control-line relay-id canonicality helper for allocation response decoding",
+            "persisted ticket loading rejects URL-shaped, path-shaped, query, fragment, user-info, host:port, oversized, blank, and whitespace-mutated relay IDs before allocation response or persisted ticket use",
+        ),
+        "docs/qa-evidence.md": (
+            "Swift Relay Allocation Relay-ID Canonicality No-Device Gate",
+            "No-device focused evidence: Swift relay allocation response decoding and persisted ticket loading now share the relay control-line relay-id canonicality rule.",
+            "persisted ticket loading rejects URL-shaped, path-shaped, query, fragment, user-info, host:port, oversized, blank, and whitespace-mutated relay IDs",
+        ),
+        "docs/roadmap.md": (
+            "Latest Swift relay allocation relay-id canonicality",
+            "Swift relay allocation relay-id canonicality",
+        ),
+    }
+    for relative, snippets in required_files.items():
+        path = ROOT / relative
+        if not path.exists():
+            failures.append(f"{relative} is missing for Swift relay allocation relay-id canonicality guard.")
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace")
+        for snippet in snippets:
+            if snippet not in text:
+                failures.append(
+                    f"{relative}: Missing Swift relay allocation relay-id canonicality guard snippet {snippet!r}."
+                )
+    return failures
+
+
 def app_icon_readability_guard_failures() -> list[str]:
     failures: list[str] = []
     icon_check_path = ROOT / "script/check_app_icons.py"
@@ -29945,6 +33461,126 @@ def app_icon_readability_guard_failures() -> list[str]:
     return failures
 
 
+def macos_bonjour_txt_metadata_boundary_guard_failures() -> list[str]:
+    failures: list[str] = []
+    required_files = {
+        "apps/macos/Transport/Sources/RuntimeTransport.swift": (
+            "record[\"route_token\"] = routeToken",
+            "safeDiscoveryTXTValue",
+            "normalizesDisplayWhitespace: false",
+            "rejectsWhitespace: true",
+            "value.rangeOfCharacter(from: .whitespacesAndNewlines)",
+            "containsForbiddenDiscoveryMaterial",
+            "\"backend_url\"",
+            "\"requested_route_token\"",
+            "\"requested-route-token\"",
+            "\"relay_secret\"",
+            "\"chat.send\"",
+        ),
+        "apps/macos/Transport/Tests/RuntimeAdvertisementMetadataTests.swift": (
+            "testRuntimeAdvertisementMetadataPublishesOnlyRouteTokenIdentityHint",
+            "testRejectsWhitespaceMutatedRouteTokenInsteadOfNormalizing",
+            "XCTAssertNil(leadingWhitespace.txtRecord[\"route_token\"])",
+            "XCTAssertNil(trailingWhitespace.txtRecord[\"route_token\"])",
+            "XCTAssertNil(embeddedWhitespace.txtRecord[\"route_token\"])",
+            "XCTAssertNil(metadata.txtRecord[\"device_id\"])",
+            "XCTAssertNil(metadata.txtRecord[\"fingerprint\"])",
+            "testRejectsUnsafeDiscoveryTxtMetadata",
+            "testRejectsRuntimeCommandAndBackendHintsFromDiscoveryTxtMetadata",
+            "testRejectsRequestedRouteTokenHintsFromDiscoveryTxtMetadata",
+            "requested_route_token=debug-token",
+            "requested-route-token=debug-token",
+        ),
+        "apps/macos/CompanionCore/Tests/LocalRuntimeMessageRouterTests.swift": (
+            "testCompanionAppModelAdvertisesRouteTokenWithoutStableIdentityTXTMetadata",
+            "XCTAssertFalse(metadata.routeToken?.isEmpty ?? true)",
+            "XCTAssertNil(metadata.deviceID)",
+            "XCTAssertNil(metadata.fingerprint)",
+            "XCTAssertNil(metadata.txtRecord[\"device_id\"])",
+            "XCTAssertNil(metadata.txtRecord[\"fingerprint\"])",
+        ),
+        "script/check_no_device_quality.sh": (
+            "RuntimeAdvertisementMetadataTests/testRuntimeAdvertisementMetadataPublishesOnlyRouteTokenIdentityHint",
+            "RuntimeAdvertisementMetadataTests/testRejectsWhitespaceMutatedRouteTokenInsteadOfNormalizing",
+            "RuntimeAdvertisementMetadataTests/testRejectsRequestedRouteTokenHintsFromDiscoveryTxtMetadata",
+            "LocalRuntimeMessageRouterTests/testCompanionAppModelAdvertisesRouteTokenWithoutStableIdentityTXTMetadata",
+            "macOS Bonjour TXT metadata boundary addendum",
+            "macOS Bonjour route-token canonicality addendum",
+            "macOS Bonjour requested-route-token metadata addendum",
+        ),
+        "docs/progress.md": (
+            "macOS Bonjour TXT Metadata Boundary No-Device Gate",
+            "macOS Bonjour Route-Token Canonicality No-Device Gate",
+            "Bonjour/local discovery TXT now publishes `route_token` as the identity hint and omits stable `device_id` and `fingerprint` metadata",
+            "whitespace-mutated `route_token` values are omitted instead of trimmed into trusted discovery identity hints",
+            "`requested_route_token` and `requested-route-token` debug metadata are rejected before route-token, app, or version TXT hints are published",
+            "does not prove live Bonjour discovery on a real LAN",
+        ),
+        "docs/qa-evidence.md": (
+            "macOS Bonjour TXT Metadata Boundary No-Device Gate",
+            "macOS Bonjour Route-Token Canonicality No-Device Gate",
+            "No-device focused evidence: macOS Bonjour/local discovery TXT metadata now keeps route-token matching while avoiding stable runtime identity broadcast.",
+            "No-device focused evidence: macOS Bonjour/local discovery TXT now rejects whitespace-mutated route_token values instead of normalizing them into trusted discovery hints.",
+            "No-device focused evidence: macOS Bonjour/local discovery TXT rejects requested_route_token and requested-route-token debug metadata before publishing route-token, app, or version hints.",
+            "Static evidence: `script/check_copy_hygiene.py` pins the source boundary, focused SwiftPM regressions, no-device gate entry, progress, QA evidence, and roadmap coverage.",
+        ),
+        "docs/roadmap.md": (
+            "macOS Bonjour TXT metadata boundary",
+            "macOS Bonjour route-token canonicality",
+            "macOS Bonjour requested-route-token metadata",
+            "Bonjour/local discovery TXT metadata publishes only the pairing-derived route token as the identity hint",
+            "whitespace-mutated route_token values are omitted instead of normalized",
+            "requested_route_token and requested-route-token debug metadata are rejected before TXT publication",
+        ),
+    }
+    texts: dict[str, str] = {}
+    for relative, snippets in required_files.items():
+        path = ROOT / relative
+        text = path.read_text(encoding="utf-8", errors="replace")
+        texts[relative] = text
+        for snippet in snippets:
+            if snippet not in text:
+                failures.append(
+                    f"{relative}: Missing macOS Bonjour TXT metadata boundary snippet {snippet!r}."
+                )
+
+    runtime_transport_text = texts.get("apps/macos/Transport/Sources/RuntimeTransport.swift", "")
+    if 'record["device_id"]' in runtime_transport_text:
+        failures.append(
+            "apps/macos/Transport/Sources/RuntimeTransport.swift: macOS Bonjour TXT metadata must not "
+            "publish stable device_id values."
+        )
+    if 'record["fingerprint"]' in runtime_transport_text:
+        failures.append(
+            "apps/macos/Transport/Sources/RuntimeTransport.swift: macOS Bonjour TXT metadata must not "
+            "publish stable fingerprint values."
+        )
+
+    companion_path = ROOT / "apps/macos/CompanionCore/Sources/CompanionAppModel.swift"
+    companion_text = companion_path.read_text(encoding="utf-8", errors="replace")
+    block_start = companion_text.find("private var runtimeAdvertisementMetadata: RuntimeAdvertisementMetadata")
+    block_end = companion_text.find("private static func loadDevelopmentRelaySettings", block_start)
+    if block_start == -1 or block_end == -1:
+        failures.append(
+            "apps/macos/CompanionCore/Sources/CompanionAppModel.swift: Missing runtimeAdvertisementMetadata block."
+        )
+    else:
+        runtime_advertisement_block = companion_text[block_start:block_end]
+        if "routeToken: discoveryRouteToken" not in runtime_advertisement_block:
+            failures.append(
+                "apps/macos/CompanionCore/Sources/CompanionAppModel.swift: runtimeAdvertisementMetadata must "
+                "publish the pairing-derived discovery route token."
+            )
+        for forbidden in ("deviceID:", "fingerprint:"):
+            if forbidden in runtime_advertisement_block:
+                failures.append(
+                    "apps/macos/CompanionCore/Sources/CompanionAppModel.swift: runtimeAdvertisementMetadata must "
+                    f"not pass stable identity field {forbidden!r} into Bonjour advertisement metadata."
+                )
+
+    return failures
+
+
 def main() -> int:
     failures: list[str] = []
 
@@ -29975,6 +33611,13 @@ def main() -> int:
             print(f" - {failure}", file=sys.stderr)
         return 1
 
+    macos_bonjour_txt_metadata_boundary_failures = macos_bonjour_txt_metadata_boundary_guard_failures()
+    if macos_bonjour_txt_metadata_boundary_failures:
+        print("macOS Bonjour TXT metadata boundary guard failed:", file=sys.stderr)
+        for failure in macos_bonjour_txt_metadata_boundary_failures:
+            print(f" - {failure}", file=sys.stderr)
+        return 1
+
     app_icon_readability_failures = app_icon_readability_guard_failures()
     if app_icon_readability_failures:
         print("App icon readability guard failed:", file=sys.stderr)
@@ -29996,6 +33639,13 @@ def main() -> int:
             print(f" - {failure}", file=sys.stderr)
         return 1
 
+    macos_protocol_envelope_decode_failures = macos_protocol_envelope_decode_guard_failures()
+    if macos_protocol_envelope_decode_failures:
+        print("macOS protocol envelope decode guard failed:", file=sys.stderr)
+        for failure in macos_protocol_envelope_decode_failures:
+            print(f" - {failure}", file=sys.stderr)
+        return 1
+
     macos_protocol_model_metadata_failures = macos_protocol_model_metadata_guard_failures()
     if macos_protocol_model_metadata_failures:
         print("macOS protocol model metadata guard failed:", file=sys.stderr)
@@ -30007,6 +33657,13 @@ def main() -> int:
     if android_protocol_model_metadata_failures:
         print("Android protocol model metadata guard failed:", file=sys.stderr)
         for failure in android_protocol_model_metadata_failures:
+            print(f" - {failure}", file=sys.stderr)
+        return 1
+
+    android_protocol_envelope_decode_failures = android_protocol_envelope_decode_guard_failures()
+    if android_protocol_envelope_decode_failures:
+        print("Android protocol envelope decode guard failed:", file=sys.stderr)
+        for failure in android_protocol_envelope_decode_failures:
             print(f" - {failure}", file=sys.stderr)
         return 1
 
@@ -30042,6 +33699,15 @@ def main() -> int:
     if relay_control_line_relay_id_canonicality_failures:
         print("Relay control-line relay-id canonicality guard failed:", file=sys.stderr)
         for failure in relay_control_line_relay_id_canonicality_failures:
+            print(f" - {failure}", file=sys.stderr)
+        return 1
+
+    swift_relay_allocation_relay_id_canonicality_failures = (
+        swift_relay_allocation_relay_id_canonicality_guard_failures()
+    )
+    if swift_relay_allocation_relay_id_canonicality_failures:
+        print("Swift relay allocation relay-id canonicality guard failed:", file=sys.stderr)
+        for failure in swift_relay_allocation_relay_id_canonicality_failures:
             print(f" - {failure}", file=sys.stderr)
         return 1
 

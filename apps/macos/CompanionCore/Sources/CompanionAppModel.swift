@@ -723,7 +723,8 @@ public final class CompanionAppModel: ObservableObject {
         trustedDeviceStore: TrustedDeviceStore = TrustedDeviceStore(),
         runtimeChatEventStore: any RuntimeChatEventStore = RuntimeChatEventStoreDefaults.productionStore(),
         runtimeMemoryStore: any RuntimeMemoryStore = JSONLRuntimeMemoryStore(),
-        runtimeRouteHostProvider: (() -> String?)? = nil
+        runtimeRouteHostProvider: (() -> String?)? = nil,
+        allowsAuthenticatedRouteRefresh: Bool = false
     ) {
         let loadedBootstrapRelaySettings = Self.loadBootstrapRelaySettings(
             defaults: userDefaults,
@@ -781,7 +782,7 @@ public final class CompanionAppModel: ObservableObject {
             trustedDeviceStore: trustedDeviceStore,
             chatEventStore: runtimeChatEventStore,
             memoryStore: runtimeMemoryStore,
-            routeRefresher: self,
+            routeRefresher: allowsAuthenticatedRouteRefresh ? self : nil,
             runtimeChallengeSigner: runtimeIdentity.signer,
             onPairingAccepted: { [weak self] device in
                 Task { @MainActor in
@@ -1820,9 +1821,7 @@ public final class CompanionAppModel: ObservableObject {
 
     private var runtimeAdvertisementMetadata: RuntimeAdvertisementMetadata {
         RuntimeAdvertisementMetadata(
-            routeToken: discoveryRouteToken,
-            deviceID: macDeviceID,
-            fingerprint: macFingerprint
+            routeToken: discoveryRouteToken
         )
     }
 

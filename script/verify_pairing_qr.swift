@@ -7,12 +7,18 @@ enum QRVerifyFailure: Error, CustomStringConvertible {
     case missingImage(String)
     case emptyExpected
     case invalidPairingURI
+    case unknownQueryKey(String)
+    case duplicateQueryKey(String)
+    case mixedSemanticAliasFields(String)
+    case mixedRelayAliasFamilies
+    case mixedP2PAliasFamilies
     case missingQueryField(String)
     case invalidRelayHost(String)
     case relayHostMismatch(actual: String, expected: String)
     case invalidRelayPort(String)
     case relayPortMismatch(actual: String, expected: String)
     case invalidRelayExpiration(String)
+    case invalidRelayScope(String)
     case invalidRelayToken(String)
     case invalidBootstrapToken(String)
     case directEndpointForbidden
@@ -34,6 +40,16 @@ enum QRVerifyFailure: Error, CustomStringConvertible {
             return "Expected QR value was empty."
         case .invalidPairingURI:
             return "Decoded QR value must be an aetherlink://pair URI with query parameters."
+        case .unknownQueryKey(let key):
+            return "Decoded pairing URI contains unknown query key \(key)."
+        case .duplicateQueryKey(let key):
+            return "Decoded pairing URI contains duplicate query key \(key)."
+        case .mixedSemanticAliasFields(let field):
+            return "Mixed pairing QR semantic alias fields for \(field)."
+        case .mixedRelayAliasFamilies:
+            return "Mixed relay alias families."
+        case .mixedP2PAliasFamilies:
+            return "Mixed P2P alias families."
         case .missingQueryField(let field):
             return "Decoded pairing URI is missing required field \(field)."
         case .invalidRelayHost(let host):
@@ -46,6 +62,8 @@ enum QRVerifyFailure: Error, CustomStringConvertible {
             return "Decoded pairing URI relay_port=\(actual) did not match expected \(expected)."
         case .invalidRelayExpiration(let value):
             return "Decoded pairing URI contains invalid relay_expires_at: \(value)"
+        case .invalidRelayScope(let value):
+            return "Decoded pairing URI contains invalid relay_scope: \(value)"
         case .invalidRelayToken(let field):
             return "Decoded pairing URI contains invalid \(field)."
         case .invalidBootstrapToken(let field):
@@ -188,10 +206,23 @@ func validatePairingURI(_ value: String, options: Options) throws {
         throw QRVerifyFailure.invalidPairingURI
     }
 
+    var seenQueryKeys = Set<String>()
+    for item in queryItems {
+        guard allowedPairingQRQueryKeys.contains(item.name) else {
+            throw QRVerifyFailure.unknownQueryKey(item.name)
+        }
+        guard seenQueryKeys.insert(item.name).inserted else {
+            throw QRVerifyFailure.duplicateQueryKey(item.name)
+        }
+    }
+
     let query = Dictionary(
         queryItems.map { ($0.name, $0.value ?? "") },
         uniquingKeysWith: { _, latest in latest }
     )
+    try requireSingleSemanticAliasPerField(query)
+    try requireSingleRelayAliasFamily(query)
+    try requireSingleP2PAliasFamily(query)
 
     for field in [
         QRField(canonical: "version", aliases: ["v"]),
@@ -227,6 +258,34 @@ func validatePairingURI(_ value: String, options: Options) throws {
     }
 }
 
+func requireSingleSemanticAliasPerField(_ query: [String: String]) throws {
+    for group in pairingQRSemanticAliasGroups {
+        let aliases = [group.field.canonical] + group.field.aliases
+        let presentAliases = aliases.filter { query[$0] != nil }
+        if presentAliases.count > 1 {
+            throw QRVerifyFailure.mixedSemanticAliasFields(group.name)
+        }
+    }
+}
+
+func requireSingleRelayAliasFamily(_ query: [String: String]) throws {
+    let activeFamilies = relayRouteAliasFamilies.filter { family in
+        family.fields.contains { query[$0] != nil }
+    }
+    if activeFamilies.count > 1 {
+        throw QRVerifyFailure.mixedRelayAliasFamilies
+    }
+}
+
+func requireSingleP2PAliasFamily(_ query: [String: String]) throws {
+    let activeFamilies = p2pRouteAliasFamilies.filter { family in
+        family.fields.contains { query[$0] != nil }
+    }
+    if activeFamilies.count > 1 {
+        throw QRVerifyFailure.mixedP2PAliasFamilies
+    }
+}
+
 func validateProductionBootstrap(query: [String: String]) throws {
     let requiredBootstrapFields = [
         QRField(canonical: "runtime_public_key", aliases: ["mac_public_key", "public_key", "rk"]),
@@ -246,8 +305,8 @@ func validateRelayRoute(query: [String: String], options: Options) throws {
     let requiredRelayFields = [
         QRField(canonical: "relay_host", aliases: ["remote_host", "route_host", "rendezvous_host", "rh"]),
         QRField(canonical: "relay_port", aliases: ["remote_port", "route_port", "rendezvous_port", "rp"]),
-        QRField(canonical: "relay_id", aliases: ["remote_id", "route_id", "network_id", "ri"]),
-        QRField(canonical: "relay_secret", aliases: ["remote_secret", "route_secret", "rs"]),
+        QRField(canonical: "relay_id", aliases: ["remote_id", "route_id", "rendezvous_id", "network_id", "ri"]),
+        QRField(canonical: "relay_secret", aliases: ["remote_secret", "route_secret", "rendezvous_secret", "rs"]),
         QRField(canonical: "relay_expires_at", aliases: ["remote_expires_at", "route_expires_at", "rendezvous_expires_at", "rx"]),
         QRField(canonical: "relay_nonce", aliases: ["remote_nonce", "route_nonce", "rendezvous_nonce", "rrn"])
     ]
@@ -257,7 +316,15 @@ func validateRelayRoute(query: [String: String], options: Options) throws {
 
     let relayHost = query.value(for: QRField(canonical: "relay_host", aliases: ["remote_host", "route_host", "rendezvous_host", "rh"]))!
     let relayScope = query.value(for: QRField(canonical: "relay_scope", aliases: ["remote_scope", "route_scope", "rsc"]))
-    if !options.allowLocalRelay, !isEligibleRemoteRelayHost(relayHost, relayScope: relayScope) {
+    if let relayScope,
+       !["remote", "private_overlay", "usb_reverse"].contains(relayScope) {
+        throw QRVerifyFailure.invalidRelayScope(relayScope)
+    }
+    let isRemoteReachableRelayHost = isEligibleRemoteRelayHost(relayHost, relayScope: relayScope)
+    let isAllowedDebugLoopbackRelay = options.allowLocalRelay &&
+        relayScope == "usb_reverse" &&
+        isLoopbackRelayHost(relayHost)
+    if !isRemoteReachableRelayHost && !isAllowedDebugLoopbackRelay {
         throw QRVerifyFailure.invalidRelayHost(relayHost)
     }
     if let expectedRelayHost = options.expectedRelayHost,
@@ -266,7 +333,8 @@ func validateRelayRoute(query: [String: String], options: Options) throws {
     }
 
     let relayPort = query.value(for: QRField(canonical: "relay_port", aliases: ["remote_port", "route_port", "rendezvous_port", "rp"]))!
-    guard let relayPortNumber = Int(relayPort),
+    guard relayPort.isCanonicalQrPortValue(),
+          let relayPortNumber = Int(relayPort),
           (1...65_535).contains(relayPortNumber)
     else {
         throw QRVerifyFailure.invalidRelayPort(relayPort)
@@ -277,12 +345,14 @@ func validateRelayRoute(query: [String: String], options: Options) throws {
     }
 
     let relayExpiration = query.value(for: QRField(canonical: "relay_expires_at", aliases: ["remote_expires_at", "route_expires_at", "rendezvous_expires_at", "rx"]))!
-    guard let expiresAt = Int64(relayExpiration), expiresAt > 0 else {
+    guard relayExpiration.isCanonicalRouteExpirationEpochMillisValue(),
+          let expiresAt = Int64(relayExpiration), expiresAt > 0 else {
         throw QRVerifyFailure.invalidRelayExpiration(relayExpiration)
     }
 
     for field in [
-        QRField(canonical: "relay_id", aliases: ["remote_id", "route_id", "network_id", "ri"]),
+        QRField(canonical: "relay_id", aliases: ["remote_id", "route_id", "rendezvous_id", "network_id", "ri"]),
+        QRField(canonical: "relay_secret", aliases: ["remote_secret", "route_secret", "rendezvous_secret", "rs"]),
         QRField(canonical: "relay_nonce", aliases: ["remote_nonce", "route_nonce", "rendezvous_nonce", "rrn"])
     ] {
         guard query.value(for: field)?.rangeOfCharacter(from: .whitespacesAndNewlines) == nil else {
@@ -300,6 +370,168 @@ struct QRField: CustomStringConvertible {
     }
 }
 
+let pairingQRSemanticAliasGroups: [(name: String, field: QRField)] = [
+    ("version", QRField(canonical: "version", aliases: ["v"])),
+    ("pairing_nonce", QRField(canonical: "pairing_nonce", aliases: ["nonce", "n"])),
+    ("pairing_code", QRField(canonical: "pairing_code", aliases: ["code", "c"])),
+    ("runtime_device_id", QRField(canonical: "runtime_device_id", aliases: ["mac_device_id", "device_id", "rid"])),
+    ("runtime_name", QRField(canonical: "runtime_name", aliases: ["mac_name", "name", "rn"])),
+    ("runtime_key_fingerprint", QRField(canonical: "runtime_key_fingerprint", aliases: ["fingerprint", "cert_fingerprint", "rf"])),
+    ("runtime_public_key", QRField(canonical: "runtime_public_key", aliases: ["mac_public_key", "public_key", "rk"])),
+    ("route_token", QRField(canonical: "route_token", aliases: ["discovery_token", "rt"])),
+    ("host", QRField(canonical: "host", aliases: ["runtime_host", "h"])),
+    ("port", QRField(canonical: "port", aliases: ["runtime_port", "p"])),
+    ("relay_id", QRField(canonical: "relay_id", aliases: ["network_id"])),
+    ("relay_scope", QRField(canonical: "relay_scope", aliases: ["remote_scope", "route_scope", "rsc"]))
+]
+
+let relayRouteAliasFamilies: [(name: String, fields: Set<String>)] = [
+    ("canonical", [
+        "relay_host",
+        "relay_port",
+        "relay_id",
+        "network_id",
+        "relay_secret",
+        "relay_expires_at",
+        "relay_nonce"
+    ]),
+    ("remote", [
+        "remote_host",
+        "remote_port",
+        "remote_id",
+        "remote_secret",
+        "remote_expires_at",
+        "remote_nonce"
+    ]),
+    ("route", [
+        "route_host",
+        "route_port",
+        "route_id",
+        "route_secret",
+        "route_expires_at",
+        "route_nonce"
+    ]),
+    ("rendezvous", [
+        "rendezvous_host",
+        "rendezvous_port",
+        "rendezvous_id",
+        "rendezvous_secret",
+        "rendezvous_expires_at",
+        "rendezvous_nonce"
+    ]),
+    ("compact", [
+        "rh",
+        "rp",
+        "ri",
+        "rs",
+        "rx",
+        "rrn"
+    ])
+]
+
+let p2pRouteAliasFamilies: [(name: String, fields: Set<String>)] = [
+    ("canonical", [
+        "p2p_class",
+        "p2p_record_id",
+        "p2p_encrypted_body",
+        "p2p_expires_at",
+        "p2p_anti_replay_nonce",
+        "p2p_protocol_version"
+    ]),
+    ("compact", [
+        "pc",
+        "prid",
+        "peb",
+        "px",
+        "pn",
+        "pv"
+    ])
+]
+
+let allowedPairingQRQueryKeys: Set<String> = [
+    "version",
+    "v",
+    "pairing_nonce",
+    "nonce",
+    "n",
+    "pairing_code",
+    "code",
+    "c",
+    "runtime_device_id",
+    "mac_device_id",
+    "device_id",
+    "rid",
+    "runtime_name",
+    "mac_name",
+    "name",
+    "rn",
+    "runtime_key_fingerprint",
+    "fingerprint",
+    "cert_fingerprint",
+    "rf",
+    "runtime_public_key",
+    "mac_public_key",
+    "public_key",
+    "rk",
+    "route_token",
+    "discovery_token",
+    "rt",
+    "host",
+    "runtime_host",
+    "h",
+    "port",
+    "runtime_port",
+    "p",
+    "relay_scope",
+    "remote_scope",
+    "route_scope",
+    "rsc",
+    "service_type",
+    "relay_host",
+    "relay_port",
+    "relay_id",
+    "network_id",
+    "relay_secret",
+    "relay_expires_at",
+    "relay_nonce",
+    "remote_host",
+    "remote_port",
+    "remote_id",
+    "remote_secret",
+    "remote_expires_at",
+    "remote_nonce",
+    "route_host",
+    "route_port",
+    "route_id",
+    "route_secret",
+    "route_expires_at",
+    "route_nonce",
+    "rendezvous_host",
+    "rendezvous_port",
+    "rendezvous_id",
+    "rendezvous_secret",
+    "rendezvous_expires_at",
+    "rendezvous_nonce",
+    "rh",
+    "rp",
+    "ri",
+    "rs",
+    "rx",
+    "rrn",
+    "p2p_class",
+    "p2p_record_id",
+    "p2p_encrypted_body",
+    "p2p_expires_at",
+    "p2p_anti_replay_nonce",
+    "p2p_protocol_version",
+    "pc",
+    "prid",
+    "peb",
+    "px",
+    "pn",
+    "pv"
+]
+
 extension Dictionary where Key == String, Value == String {
     func value(for field: QRField) -> String? {
         for key in [field.canonical] + field.aliases {
@@ -311,12 +543,18 @@ extension Dictionary where Key == String, Value == String {
     }
 }
 
+extension String {
+    func isCanonicalQrPortValue() -> Bool {
+        range(of: "^([1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])$", options: .regularExpression) != nil
+    }
+
+    func isCanonicalRouteExpirationEpochMillisValue() -> Bool {
+        range(of: "^[1-9][0-9]*$", options: .regularExpression) != nil
+    }
+}
+
 func isEligibleRemoteRelayHost(_ host: String, relayScope: String? = nil) -> Bool {
-    let normalized = host
-        .trimmingCharacters(in: .whitespacesAndNewlines)
-        .trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
-        .trimmingCharacters(in: CharacterSet(charactersIn: "."))
-        .lowercased()
+    let normalized = normalizedRelayHost(host)
     guard !normalized.isEmpty else { return false }
     if normalized == "localhost" ||
         normalized == "::1" ||
@@ -331,10 +569,27 @@ func isEligibleRemoteRelayHost(_ host: String, relayScope: String? = nil) -> Boo
     }
     if normalized.isPrivateOrLocalIPv4RelayLiteral() ||
         normalized.isPrivateOrLocalIPv6RelayLiteral() {
-        return relayScope?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "private_overlay" &&
+        return relayScope == "private_overlay" &&
             normalized.isPrivateOverlayRelayLiteral()
     }
     return true
+}
+
+func isLoopbackRelayHost(_ host: String) -> Bool {
+    let normalized = normalizedRelayHost(host)
+    guard !normalized.isEmpty else { return false }
+    return normalized == "localhost" ||
+        normalized == "::1" ||
+        normalized == "0:0:0:0:0:0:0:1" ||
+        normalized.hasPrefix("127.")
+}
+
+func normalizedRelayHost(_ host: String) -> String {
+    host
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+        .trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
+        .trimmingCharacters(in: CharacterSet(charactersIn: "."))
+        .lowercased()
 }
 
 extension String {
@@ -423,12 +678,18 @@ do {
         QRVerifyFailure.missingImage,
         QRVerifyFailure.emptyExpected,
         QRVerifyFailure.invalidPairingURI,
+        QRVerifyFailure.unknownQueryKey,
+        QRVerifyFailure.duplicateQueryKey,
+        QRVerifyFailure.mixedSemanticAliasFields,
+        QRVerifyFailure.mixedRelayAliasFamilies,
+        QRVerifyFailure.mixedP2PAliasFamilies,
         QRVerifyFailure.missingQueryField,
         QRVerifyFailure.invalidRelayHost,
         QRVerifyFailure.relayHostMismatch,
         QRVerifyFailure.invalidRelayPort,
         QRVerifyFailure.relayPortMismatch,
         QRVerifyFailure.invalidRelayExpiration,
+        QRVerifyFailure.invalidRelayScope,
         QRVerifyFailure.invalidRelayToken,
         QRVerifyFailure.invalidBootstrapToken,
         QRVerifyFailure.directEndpointForbidden,

@@ -407,6 +407,102 @@ class PairingStoreTest {
     }
 
     @Test
+    fun pairingStoreDropsNonCanonicalStoredTrustedIdentityOnRead() = runTest {
+        val store = pairingStore()
+        val invalidStoredIdentities = listOf(
+            Pair(stringPreferencesKey("runtime_device_id"), " runtime-1"),
+            Pair(stringPreferencesKey("runtime_device_id"), "r".repeat(OPAQUE_ROUTE_VALUE_MAX_CHARS + 1)),
+            Pair(stringPreferencesKey("runtime_fingerprint"), "runtime fingerprint"),
+            Pair(stringPreferencesKey("runtime_fingerprint"), " runtime-fingerprint"),
+        )
+
+        invalidStoredIdentities.forEach { (key, invalidValue) ->
+            store.forgetRuntime()
+
+            ApplicationProvider.getApplicationContext<android.content.Context>()
+                .localAgentBridgeDataStore
+                .edit { prefs ->
+                    prefs[stringPreferencesKey("runtime_device_id")] = "runtime-1"
+                    prefs[stringPreferencesKey("runtime_name")] = "AetherLink Runtime"
+                    prefs[stringPreferencesKey("runtime_fingerprint")] = "runtime-fingerprint"
+                    prefs[stringPreferencesKey("runtime_public_key")] = "runtime-public-key"
+                    prefs[stringPreferencesKey("runtime_route_token")] = "route-token"
+                    prefs[key] = invalidValue
+                }
+
+            assertNull(store.trustedRuntime.first())
+
+            val prefs = ApplicationProvider.getApplicationContext<android.content.Context>()
+                .localAgentBridgeDataStore
+                .data
+                .first()
+            assertNoStoredTrustedRuntime(prefs)
+        }
+
+        store.forgetRuntime()
+    }
+
+    @Test
+    fun pairingStoreDropsNonCanonicalStoredRuntimePublicKeyOnRead() = runTest {
+        val store = pairingStore()
+        val invalidStoredValues = listOf(
+            "runtime public key",
+            " runtime-public-key",
+            "p".repeat(OPAQUE_ROUTE_VALUE_MAX_CHARS + 1),
+        )
+
+        invalidStoredValues.forEach { invalidValue ->
+            store.forgetRuntime()
+
+            ApplicationProvider.getApplicationContext<android.content.Context>()
+                .localAgentBridgeDataStore
+                .edit { prefs ->
+                    prefs[stringPreferencesKey("runtime_device_id")] = "runtime-1"
+                    prefs[stringPreferencesKey("runtime_name")] = "AetherLink Runtime"
+                    prefs[stringPreferencesKey("runtime_fingerprint")] = "runtime-fingerprint"
+                    prefs[stringPreferencesKey("runtime_public_key")] = invalidValue
+                    prefs[stringPreferencesKey("runtime_route_token")] = "route-token"
+                }
+
+            assertNull(store.trustedRuntime.first())
+
+            val prefs = ApplicationProvider.getApplicationContext<android.content.Context>()
+                .localAgentBridgeDataStore
+                .data
+                .first()
+            assertNoStoredTrustedRuntime(prefs)
+        }
+
+        store.forgetRuntime()
+    }
+
+    @Test
+    fun pairingStoreDropsNonCanonicalTrustedIdentityOnWrite() = runTest {
+        val store = pairingStore()
+        val invalidRuntimes = listOf(
+            trustedRuntime(host = null, port = null).copy(deviceId = " runtime-1"),
+            trustedRuntime(host = null, port = null).copy(fingerprint = "runtime fingerprint"),
+            trustedRuntime(host = null, port = null).copy(publicKeyBase64 = " runtime-public-key"),
+        )
+
+        invalidRuntimes.forEach { runtime ->
+            store.forgetRuntime()
+
+            store.trustRuntime(runtime)
+
+            assertNull(store.trustedRuntime.first())
+
+            val prefs = ApplicationProvider.getApplicationContext<android.content.Context>()
+                .localAgentBridgeDataStore
+                .data
+                .first()
+            assertNoStoredTrustedRuntime(prefs)
+        }
+
+        store.forgetRuntime()
+    }
+
+    @Test
     fun pairingStoreDropsNonCanonicalRelayHostOnWrite() = runTest {
         val secretStore = FakeRelaySecretStore()
         val store = pairingStore(secretStore)
@@ -1072,6 +1168,22 @@ class PairingStoreTest {
     private fun assertNoStoredRouteToken(prefs: androidx.datastore.preferences.core.Preferences) {
         assertNull(prefs[stringPreferencesKey("runtime_route_token")])
         assertNull(prefs[stringPreferencesKey("mac_route_token")])
+    }
+
+    private fun assertNoStoredTrustedRuntime(prefs: Preferences) {
+        assertNull(prefs[stringPreferencesKey("runtime_device_id")])
+        assertNull(prefs[stringPreferencesKey("runtime_name")])
+        assertNull(prefs[stringPreferencesKey("runtime_fingerprint")])
+        assertNull(prefs[stringPreferencesKey("runtime_public_key")])
+        assertNull(prefs[stringPreferencesKey("runtime_route_token")])
+        assertNull(prefs[stringPreferencesKey("mac_device_id")])
+        assertNull(prefs[stringPreferencesKey("mac_name")])
+        assertNull(prefs[stringPreferencesKey("mac_fingerprint")])
+        assertNull(prefs[stringPreferencesKey("mac_public_key")])
+        assertNull(prefs[stringPreferencesKey("mac_route_token")])
+        assertNoStoredDirectEndpoint(prefs)
+        assertNoStoredRelayRoute(prefs)
+        assertNoStoredP2pRoute(prefs)
     }
 
     private class FakeRelaySecretStore : RelaySecretStore {

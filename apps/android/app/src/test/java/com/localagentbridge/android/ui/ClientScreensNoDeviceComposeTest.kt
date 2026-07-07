@@ -6030,6 +6030,325 @@ class ClientScreensNoDeviceComposeTest {
     }
 
     @Test
+    fun settingsConnectionStatusTalkBackOrderProxyKeepsVisibleControlsReachableAtLargeFontAcrossSupportedLanguages() {
+        data class SettingsConnectionTalkBackCase(
+            val name: String,
+            val state: RuntimeUiState,
+            val expectsConnectedActions: Boolean,
+            val expectsRouteRecovery: Boolean,
+        )
+
+        val languageTags = listOf("en", "ko", "ja", "zh-CN", "fr")
+        val currentLanguageTag = mutableStateOf(languageTags.first())
+        val fontScale = 1.45f
+        val longRuntimeName = "AetherLink Runtime With A Long Accessible Connection Status Name"
+        val cases = listOf(
+            SettingsConnectionTalkBackCase(
+                name = "route-recovery",
+                state = RuntimeUiState(
+                    trustedRuntime = RuntimeTrustedRuntime(
+                        deviceId = "runtime-settings-talkback-route-recovery",
+                        name = longRuntimeName,
+                        relayHost = "relay.example.test",
+                        relayPort = 443,
+                        relayId = "relay-settings-talkback-route-recovery",
+                        relaySecret = null,
+                        relayExpiresAtEpochMillis = Long.MAX_VALUE,
+                        relayNonce = "nonce-settings-talkback-route-recovery",
+                        relayScope = "remote",
+                    ),
+                    backendAvailable = true,
+                    trustedRuntimeAutoReconnectEnabled = true,
+                ),
+                expectsConnectedActions = false,
+                expectsRouteRecovery = true,
+            ),
+            SettingsConnectionTalkBackCase(
+                name = "connected",
+                state = RuntimeUiState(
+                    isConnected = true,
+                    runtimeStatus = "authenticated",
+                    trustedRuntime = RuntimeTrustedRuntime(
+                        deviceId = "runtime-settings-talkback-connected",
+                        name = longRuntimeName,
+                    ),
+                    backendAvailable = true,
+                    trustedRuntimeAutoReconnectEnabled = true,
+                ),
+                expectsConnectedActions = true,
+                expectsRouteRecovery = false,
+            ),
+        )
+        val currentCase = mutableStateOf(cases.first())
+        var refreshClicks = 0
+        var disconnectClicks = 0
+        var scanQrClicks = 0
+        var autoReconnectChanges = 0
+
+        compose.setContent {
+            val activeCase = currentCase.value
+            MaterialTheme {
+                LocalizedTestContent(languageTag = currentLanguageTag.value, fontScale = fontScale) {
+                    key(currentLanguageTag.value, activeCase.name) {
+                        Surface(
+                            modifier = Modifier
+                                .width(320.dp)
+                                .height(760.dp)
+                                .testTag(settingsConnectionStatusTalkBackOrderNarrowRootTestTag),
+                        ) {
+                            SettingsScreen(
+                                state = activeCase.state.copy(selectedLanguageTag = currentLanguageTag.value),
+                                onHostChange = {},
+                                onPortChange = {},
+                                onUseUsbReverse = {},
+                                onUseEmulator = {},
+                                onStartDiscovery = {},
+                                onStopDiscovery = {},
+                                onUseDiscoveredRuntime = {},
+                                onForgetTrustedRuntime = {},
+                                onScanPairingQr = { scanQrClicks += 1 },
+                                onSubmitPairingPayload = {},
+                                onConnect = {},
+                                onRefreshHealth = { refreshClicks += 1 },
+                                onRequestModels = {},
+                                onDisconnect = { disconnectClicks += 1 },
+                                onSetAutoReconnectEnabled = { autoReconnectChanges += 1 },
+                                onSetLanguageTag = {},
+                                onSetTheme = {},
+                                onSelectEmbeddingModel = {},
+                                onAddMemoryEntry = {},
+                                onRemoveMemoryEntry = {},
+                                onSetMemoryEntryEnabled = { _, _ -> },
+                                onArchiveChatSession = {},
+                                onRestoreChatSession = {},
+                                onPermanentlyDeleteChatSession = {},
+                                onArchiveAllChatSessions = {},
+                                onPermanentlyDeleteArchivedChatSessions = {},
+                                showDeveloperDiagnostics = false,
+                                modifier = Modifier.testTag(settingsConnectionStatusTalkBackOrderListTestTag),
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        fun rootBounds(): DpRect {
+            return compose.onNodeWithTag(settingsConnectionStatusTalkBackOrderNarrowRootTestTag)
+                .getUnclippedBoundsInRoot()
+        }
+
+        fun scrollToTag(tag: String) {
+            compose.onNodeWithTag(settingsConnectionStatusTalkBackOrderListTestTag)
+                .performScrollToNode(hasTestTag(tag))
+            compose.waitForIdle()
+        }
+
+        fun assertVisibleTagInsideRoot(label: String, tag: String): DpRect {
+            scrollToTag(tag)
+            val bounds = compose.onNodeWithTag(tag, useUnmergedTree = true)
+                .assertIsDisplayed()
+                .getUnclippedBoundsInRoot()
+            assertBoundsInside(label, bounds, rootBounds())
+            return bounds
+        }
+
+        languageTags.forEach { languageTag ->
+            cases.forEach { settingsCase ->
+                compose.runOnUiThread {
+                    currentLanguageTag.value = languageTag
+                    currentCase.value = settingsCase
+                }
+                compose.waitForIdle()
+
+                val localizedContext = ApplicationProvider
+                    .getApplicationContext<Context>()
+                    .localizedContext(languageTag, fontScale = fontScale)
+                val statusTitle = localizedContext.getString(R.string.status_title)
+                val expandedState = localizedContext.getString(R.string.section_state_expanded)
+                val collapsedState = localizedContext.getString(R.string.section_state_collapsed)
+                val expandSection = localizedContext.getString(R.string.expand_section)
+                val sectionHeaderTag = settingsExpandableSectionHeaderTestTag(R.string.status_title)
+
+                val sectionHeaderNode = compose.onNodeWithTag(sectionHeaderTag, useUnmergedTree = true)
+                    .assert(hasHeading())
+                    .assertIsDisplayed()
+                compose.onNodeWithTag(settingsExpandableSectionTitleTestTag(R.string.status_title), useUnmergedTree = true)
+                    .assertTextContains(statusTitle)
+                    .assertIsDisplayed()
+                if (settingsCase.expectsConnectedActions) {
+                    sectionHeaderNode
+                        .assert(hasStateDescription(collapsedState) and hasClickActionLabel(expandSection))
+                        .performClick()
+                    compose.waitForIdle()
+                } else {
+                    sectionHeaderNode.assert(hasStateDescription(expandedState))
+                }
+
+                val qrAction = localizedContext.getString(R.string.scan_qr)
+                val qrState = localizedContext.getString(R.string.scan_qr_state_ready)
+                val qrButtonBounds = assertVisibleTagInsideRoot(
+                    "$languageTag ${settingsCase.name} Settings QR scan action",
+                    SETTINGS_QR_PAIRING_SCAN_BUTTON_TEST_TAG,
+                )
+                compose.onNodeWithTag(SETTINGS_QR_PAIRING_SCAN_BUTTON_TEST_TAG, useUnmergedTree = true)
+                    .assert(hasStateDescription(qrState) and hasClickActionLabel(qrAction))
+                    .assertIsEnabled()
+
+                val heroTitle = localizedContext.getString(connectionStatusHeroTitleRes(settingsCase.state))
+                val heroDetail = localizedContext.getString(
+                    connectionStatusHeroDetailRes(settingsCase.state),
+                    longRuntimeName,
+                )
+                val heroSummary = localizedContext.getString(
+                    R.string.status_hero_accessibility_summary,
+                    heroTitle,
+                    heroDetail,
+                )
+                val heroBounds = assertVisibleTagInsideRoot(
+                    "$languageTag ${settingsCase.name} Settings connection hero",
+                    CONNECTION_STATUS_HERO_TEST_TAG,
+                )
+                compose.onNodeWithTag(CONNECTION_STATUS_HERO_TEST_TAG, useUnmergedTree = true)
+                    .assert(hasContentDescription(heroSummary))
+
+                assertTrue(
+                    "$languageTag ${settingsCase.name} Settings QR action should precede connection hero.",
+                    qrButtonBounds.top <= heroBounds.top,
+                )
+
+                if (settingsCase.expectsRouteRecovery) {
+                    val title = localizedContext.getString(R.string.route_notice_title)
+                    val status = localizedContext.getString(R.string.route_notice_status_refresh_needed)
+                    val detail = localizedContext.getString(R.string.route_notice_relay_without_secret)
+                    val recoverySteps = localizedContext.getString(R.string.route_notice_recovery_steps)
+                    val scanLatestQr = localizedContext.getString(R.string.route_notice_action_scan_qr)
+                    val noticeSummary = localizedContext.getString(
+                        R.string.route_notice_accessibility_summary_with_steps,
+                        title,
+                        status,
+                        detail,
+                        recoverySteps,
+                    )
+                    val noticeBounds = assertVisibleTagInsideRoot(
+                        "$languageTag ${settingsCase.name} Settings route notice",
+                        RUNTIME_ROUTE_NOTICE_TEST_TAG,
+                    )
+                    compose.onNodeWithTag(RUNTIME_ROUTE_NOTICE_TEST_TAG, useUnmergedTree = true)
+                        .assert(
+                            hasContentDescription(noticeSummary) and
+                                hasStateDescription(status) and
+                                hasPoliteLiveRegion() and
+                                hasClickActionLabel(scanLatestQr),
+                        )
+                        .assertIsDisplayed()
+                    val actionBounds = compose
+                        .onNodeWithTag(RUNTIME_ROUTE_NOTICE_ACTION_TEST_TAG, useUnmergedTree = true)
+                        .assertTextContains(scanLatestQr)
+                        .assertIsDisplayed()
+                        .getUnclippedBoundsInRoot()
+
+                    assertBoundsInside(
+                        "$languageTag ${settingsCase.name} Settings route notice action",
+                        actionBounds,
+                        noticeBounds,
+                    )
+                    compose.onNodeWithTag(RUNTIME_ROUTE_NOTICE_TEST_TAG)
+                        .performClick()
+                    compose.waitForIdle()
+                }
+
+                if (settingsCase.expectsConnectedActions) {
+                    val refreshAction = localizedContext.getString(R.string.refresh_health)
+                    val refreshState = localizedContext.getString(R.string.refresh_health_state_ready)
+                    val disconnectAction = localizedContext.getString(R.string.disconnect)
+                    val disconnectState = localizedContext.getString(R.string.disconnect_runtime_state_ready)
+                    val actionsBounds = assertVisibleTagInsideRoot(
+                        "$languageTag ${settingsCase.name} Settings connection actions",
+                        CONNECTION_STATUS_ACTIONS_TEST_TAG,
+                    )
+                    val refreshBounds = compose
+                        .onNodeWithTag(CONNECTION_STATUS_REFRESH_ACTION_TEST_TAG, useUnmergedTree = true)
+                        .assert(
+                            hasStateDescription(refreshState) and
+                                hasClickActionLabel(refreshAction),
+                        )
+                        .assertIsDisplayed()
+                        .getUnclippedBoundsInRoot()
+                    val disconnectBounds = compose
+                        .onNodeWithTag(CONNECTION_STATUS_DISCONNECT_ACTION_TEST_TAG, useUnmergedTree = true)
+                        .assert(
+                            hasStateDescription(disconnectState) and
+                                hasClickActionLabel(disconnectAction),
+                        )
+                        .assertIsDisplayed()
+                        .getUnclippedBoundsInRoot()
+
+                    assertBoundsInside(
+                        "$languageTag ${settingsCase.name} Settings refresh action",
+                        refreshBounds,
+                        actionsBounds,
+                    )
+                    assertBoundsInside(
+                        "$languageTag ${settingsCase.name} Settings disconnect action",
+                        disconnectBounds,
+                        actionsBounds,
+                    )
+                    assertTrue(
+                        "$languageTag ${settingsCase.name} Settings refresh should precede disconnect.",
+                        refreshBounds.bottom <= disconnectBounds.top,
+                    )
+                    compose.onNodeWithTag(CONNECTION_STATUS_REFRESH_ACTION_TEST_TAG)
+                        .performClick()
+                    compose.onNodeWithTag(CONNECTION_STATUS_DISCONNECT_ACTION_TEST_TAG)
+                        .performClick()
+                    compose.waitForIdle()
+                }
+
+                val autoReconnectLabel = localizedContext.getString(R.string.auto_reconnect)
+                val autoReconnectState = localizedContext.getString(R.string.setting_state_on)
+                val autoReconnectAction = localizedContext.getString(
+                    R.string.setting_action_disable_named,
+                    autoReconnectLabel,
+                )
+                val autoReconnectBounds = assertVisibleTagInsideRoot(
+                    "$languageTag ${settingsCase.name} Settings auto reconnect",
+                    AUTO_RECONNECT_CARD_TEST_TAG,
+                )
+                val switchBounds = compose
+                    .onNode(
+                        hasContentDescription(autoReconnectLabel) and
+                            hasStateDescription(autoReconnectState) and
+                            hasClickActionLabel(autoReconnectAction) and
+                            hasAnyAncestor(hasTestTag(AUTO_RECONNECT_SWITCH_TEST_TAG)),
+                        useUnmergedTree = true,
+                    )
+                    .assertIsDisplayed()
+                    .getUnclippedBoundsInRoot()
+                assertBoundsInside(
+                    "$languageTag ${settingsCase.name} Settings auto reconnect switch",
+                    switchBounds,
+                    autoReconnectBounds,
+                )
+                compose.onNode(
+                    hasContentDescription(autoReconnectLabel) and
+                        hasStateDescription(autoReconnectState) and
+                        hasClickActionLabel(autoReconnectAction) and
+                        hasAnyAncestor(hasTestTag(AUTO_RECONNECT_SWITCH_TEST_TAG)),
+                    useUnmergedTree = true,
+                )
+                    .performClick()
+                compose.waitForIdle()
+            }
+        }
+
+        assertEquals(languageTags.size, scanQrClicks)
+        assertEquals(languageTags.size, refreshClicks)
+        assertEquals(languageTags.size, disconnectClicks)
+        assertEquals(languageTags.size * cases.size, autoReconnectChanges)
+    }
+
+    @Test
     fun settingsScreenHidesDiagnosticEndpointControlsByDefault() {
         compose.setContent {
             MaterialTheme {
@@ -25838,6 +26157,10 @@ class ClientScreensNoDeviceComposeTest {
         "settings_discovery_actions_list"
     private val settingsAutoReconnectRowNarrowRootTestTag =
         "settings_auto_reconnect_row_narrow_root"
+    private val settingsConnectionStatusTalkBackOrderNarrowRootTestTag =
+        "settings_connection_status_talkback_order_narrow_root"
+    private val settingsConnectionStatusTalkBackOrderListTestTag =
+        "settings_connection_status_talkback_order_list"
     private val settingsPreferenceRowsNarrowRootTestTag =
         "settings_preference_rows_narrow_root"
     private val settingsMemorySummaryDraftsNarrowRootTestTag =

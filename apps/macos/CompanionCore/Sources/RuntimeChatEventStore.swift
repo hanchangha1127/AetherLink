@@ -236,6 +236,36 @@ public protocol RuntimeChatEventStore: Sendable {
     ) throws -> RuntimeChatSessionMutationResult
 }
 
+public struct RuntimeChatRetentionPolicy: Equatable, Sendable {
+    public var deletedSessionRetentionInterval: TimeInterval
+    public var deletedSessionPruneLimit: Int
+
+    public init(
+        deletedSessionRetentionInterval: TimeInterval,
+        deletedSessionPruneLimit: Int
+    ) {
+        self.deletedSessionRetentionInterval = deletedSessionRetentionInterval
+        self.deletedSessionPruneLimit = deletedSessionPruneLimit
+    }
+
+    public static let productionDefault = RuntimeChatRetentionPolicy(
+        deletedSessionRetentionInterval: 90 * 24 * 60 * 60,
+        deletedSessionPruneLimit: 100
+    )
+}
+
+public struct RuntimeChatRetentionMaintenanceResult: Equatable, Sendable {
+    public var deletedSessionPruneResult: RuntimeChatDeletedSessionPruneResult
+
+    public var prunedDeletedSessionCount: Int {
+        deletedSessionPruneResult.prunedSessionCount
+    }
+
+    public init(deletedSessionPruneResult: RuntimeChatDeletedSessionPruneResult) {
+        self.deletedSessionPruneResult = deletedSessionPruneResult
+    }
+}
+
 public enum RuntimeChatEventStoreDefaults {
     public static func productionStore(
         sqliteDatabaseURL: URL = SQLiteRuntimeChatEventStore.defaultDatabaseURL(),
@@ -244,6 +274,33 @@ public enum RuntimeChatEventStoreDefaults {
         SQLiteRuntimeChatEventStore(
             databaseURL: sqliteDatabaseURL,
             legacyJSONLFileURL: legacyJSONLFileURL
+        )
+    }
+
+    public static func runProductionMaintenance(
+        on store: any RuntimeChatEventStore,
+        ownerDeviceID: String?,
+        now: Date = Date(),
+        policy: RuntimeChatRetentionPolicy = .productionDefault
+    ) throws -> RuntimeChatRetentionMaintenanceResult {
+        guard policy.deletedSessionRetentionInterval > 0,
+              policy.deletedSessionPruneLimit > 0,
+              let sqliteStore = store as? SQLiteRuntimeChatEventStore else {
+            return RuntimeChatRetentionMaintenanceResult(
+                deletedSessionPruneResult: RuntimeChatDeletedSessionPruneResult(
+                    prunedSessionIDs: [],
+                    prunedEventCount: 0
+                )
+            )
+        }
+
+        let cutoff = now.addingTimeInterval(-policy.deletedSessionRetentionInterval)
+        return RuntimeChatRetentionMaintenanceResult(
+            deletedSessionPruneResult: try sqliteStore.pruneDeletedSessions(
+                ownerDeviceID: ownerDeviceID,
+                deletedBefore: cutoff,
+                limit: policy.deletedSessionPruneLimit
+            )
         )
     }
 }

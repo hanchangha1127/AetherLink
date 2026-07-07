@@ -204,6 +204,37 @@
         { "pattern": "^(\\[)?f[c-d]" }
       ]
     },
+    "loopbackRelayHost": {
+      "description": "Loopback relay hosts are valid for authenticated route refresh only when explicitly scoped to USB reverse debugging.",
+      "anyOf": [
+        {
+          "enum": [
+            "localhost",
+            "127.0.0.1",
+            "::1",
+            "[::1]",
+            "0:0:0:0:0:0:0:1",
+            "[0:0:0:0:0:0:0:1]"
+          ]
+        },
+        { "pattern": "^127\\." }
+      ]
+    },
+    "routeRefreshRelayHost": {
+      "description": "Authenticated route.refresh relay host values are route material, not URLs. They must be non-empty, whitespace-free host literals or names without paths, queries, fragments, user-info, mDNS-local names, unspecified addresses, link-local addresses, multicast addresses, or broadcast literals.",
+      "allOf": [
+        { "$ref": "#/$defs/nonEmptyString" },
+        { "pattern": "^\\S+$" },
+        { "not": { "pattern": "://" } },
+        { "not": { "pattern": "[/?#@]" } },
+        { "not": { "enum": ["0.0.0.0", "::", "[::]", "255.255.255.255"] } },
+        { "not": { "pattern": "^0\\." } },
+        { "not": { "pattern": "^169\\.254\\." } },
+        { "not": { "pattern": "^(22[4-9]|23[0-9]|24[0-9]|25[0-5])\\." } },
+        { "not": { "pattern": "^(\\[)?fe80:" } },
+        { "not": { "pattern": "(^|\\.)local$" } }
+      ]
+    },
     "helloPayload": {
       "type": "object",
       "required": ["device_id"],
@@ -414,6 +445,20 @@
             {
               "if": {
                 "properties": {
+                  "relay_host": { "$ref": "#/$defs/loopbackRelayHost" }
+                },
+                "required": ["relay_host"]
+              },
+              "then": {
+                "properties": {
+                  "relay_scope": { "const": "usb_reverse" }
+                },
+                "required": ["relay_scope"]
+              }
+            },
+            {
+              "if": {
+                "properties": {
                   "relay_host": { "$ref": "#/$defs/privateOverlayRelayHost" }
                 },
                 "required": ["relay_host"]
@@ -464,9 +509,9 @@
             "p2p_protocol_version": ["p2p_class", "p2p_record_id", "p2p_encrypted_body", "p2p_expires_at", "p2p_anti_replay_nonce"]
           },
           "properties": {
-            "runtime_device_id": { "$ref": "#/$defs/nonEmptyString" },
-            "runtime_key_fingerprint": { "$ref": "#/$defs/nonEmptyString" },
-            "relay_host": { "$ref": "#/$defs/nonEmptyString" },
+            "runtime_device_id": { "$ref": "#/$defs/opaqueRouteValue" },
+            "runtime_key_fingerprint": { "$ref": "#/$defs/opaqueRouteValue" },
+            "relay_host": { "$ref": "#/$defs/routeRefreshRelayHost" },
             "relay_port": { "type": "integer", "minimum": 1, "maximum": 65535 },
             "relay_id": { "$ref": "#/$defs/opaqueRouteValue" },
             "relay_secret": { "$ref": "#/$defs/opaqueRouteSecret" },
@@ -928,9 +973,9 @@
           "required": ["draft_id"],
           "properties": {
             "draft_id": { "$ref": "#/$defs/nonBlankString" },
-            "content": { "$ref": "#/$defs/nonEmptyString" },
+            "content": { "$ref": "#/$defs/nonBlankString" },
             "enabled": { "type": "boolean" },
-            "expected_session_id": { "$ref": "#/$defs/nonEmptyString" },
+            "expected_session_id": { "$ref": "#/$defs/nonBlankString" },
             "expected_source_message_count": { "type": "integer", "minimum": 1 }
           },
           "additionalProperties": false
@@ -954,7 +999,7 @@
           "required": ["draft_id"],
           "properties": {
             "draft_id": { "$ref": "#/$defs/nonBlankString" },
-            "expected_session_id": { "$ref": "#/$defs/nonEmptyString" },
+            "expected_session_id": { "$ref": "#/$defs/nonBlankString" },
             "expected_source_message_count": { "type": "integer", "minimum": 1 }
           },
           "additionalProperties": false

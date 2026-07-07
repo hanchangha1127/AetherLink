@@ -1265,9 +1265,11 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
         }
         do {
             let ownerDeviceID = commandOwnerDeviceID(connectionID: sink.connectionID)
+            let query = try optionalRequestString("query", in: envelope.payload)
+            let boundedQuery = try boundedMemoryListQuery(query)
             let entries = try memoryStore.list(
                 ownerDeviceID: ownerDeviceID,
-                query: try optionalRequestString("query", in: envelope.payload)
+                query: boundedQuery
             )
             sink.send(ProtocolEnvelope(
                 type: MessageType.memoryList,
@@ -1430,11 +1432,11 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
             }
             let ownerDeviceID = commandOwnerDeviceID(connectionID: sink.connectionID)
             let draftID = try requiredNonBlankString("draft_id", in: envelope.payload)
-            let rawExpectedSessionID = try optionalRequestString("expected_session_id", in: envelope.payload)?
+            let rawExpectedSessionID = try optionalNonBlankString("expected_session_id", in: envelope.payload)?
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             let expectedSessionID = rawExpectedSessionID.flatMap { $0.isEmpty ? nil : $0 }
             let expectedSourceMessageCount = try optionalRequestInt("expected_source_message_count", in: envelope.payload)
-            let rawContent = try optionalRequestString("content", in: envelope.payload)?
+            let rawContent = try optionalNonBlankString("content", in: envelope.payload)?
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             let requestedEnabled = try optionalRequestBool("enabled", in: envelope.payload) ?? true
             let policy = memorySummaryPolicy(50)
@@ -1485,7 +1487,7 @@ public final class LocalRuntimeMessageRouter: @unchecked Sendable {
             }
             let ownerDeviceID = commandOwnerDeviceID(connectionID: sink.connectionID)
             let draftID = try requiredNonBlankString("draft_id", in: envelope.payload)
-            let rawExpectedSessionID = try optionalRequestString("expected_session_id", in: envelope.payload)?
+            let rawExpectedSessionID = try optionalNonBlankString("expected_session_id", in: envelope.payload)?
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             let expectedSessionID = rawExpectedSessionID.flatMap { $0.isEmpty ? nil : $0 }
             let expectedSourceMessageCount = try optionalRequestInt("expected_source_message_count", in: envelope.payload)
@@ -2747,6 +2749,9 @@ private let allowedMemoryListPayloadKeys: Set<String> = [
     "query",
 ]
 
+private let memoryListQueryMaxCharacters = 256
+private let memoryListQueryMaxDistinctTerms = 16
+
 private let allowedMemoryUpsertPayloadKeys: Set<String> = [
     "id",
     "content",
@@ -3216,6 +3221,32 @@ private func optionalRequestString(_ key: String, in payload: [String: JSONValue
         throw LocalRuntimeRouterError.invalidPayload("Payload field \(key) must be a string")
     }
     return string.isEmpty ? nil : string
+}
+
+private func boundedMemoryListQuery(_ rawQuery: String?) throws -> String? {
+    guard let rawQuery else { return nil }
+    let trimmedQuery = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmedQuery.isEmpty else { return nil }
+    guard trimmedQuery.count <= memoryListQueryMaxCharacters else {
+        throw LocalRuntimeRouterError.invalidPayload(
+            "Payload field query must be at most \(memoryListQueryMaxCharacters) characters"
+        )
+    }
+
+    let normalizedTerms = trimmedQuery
+        .normalizedRuntimeSearchText
+        .split(whereSeparator: { $0.isWhitespace })
+        .map(String.init)
+    var distinctTerms: [String] = []
+    for term in normalizedTerms where !distinctTerms.contains(term) {
+        distinctTerms.append(term)
+    }
+    guard distinctTerms.count <= memoryListQueryMaxDistinctTerms else {
+        throw LocalRuntimeRouterError.invalidPayload(
+            "Payload field query must contain at most \(memoryListQueryMaxDistinctTerms) distinct terms"
+        )
+    }
+    return rawQuery
 }
 
 private func optionalNonBlankString(_ key: String, in payload: [String: JSONValue]) throws -> String? {

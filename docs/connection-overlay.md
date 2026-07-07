@@ -102,6 +102,8 @@ Bonjour/mDNS records may carry minimal route hints:
 - Legacy/development fallback: runtime device id or public-key fingerprint.
 - Forbidden: backend URLs, model names, provider status, prompts, files, memory, runtime commands, or user account data.
 
+Current macOS Bonjour TXT advertisement follows that boundary by publishing only the pairing-derived `route_token` identity hint and omitting stable runtime `device_id` and `fingerprint` values from local discovery TXT records. Whitespace-mutated `route_token` values are omitted instead of normalized into discovery identity hints. Android Bonjour TXT receive canonicality drops discovered peers with whitespace-mutated, oversized, malformed UTF-8, or forbidden identity TXT material before trusted discovery matching can fall back to legacy metadata.
+
 The client may automatically try a discovered endpoint only when its route hints match the pinned trusted runtime record. Metadata-less endpoints can remain useful for local development and manual diagnostics, but they are not automatic trusted-runtime matches.
 
 ## Phase 2: QR-Only Remote Route

@@ -697,6 +697,14 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
             routeRefreshResult(relayHost: "relay.example.test", relayExpiresAtEpochMillis: 1),
             routeRefreshResult(relayHost: "relay.example.test", relayNonce: ""),
             routeRefreshResult(relayHost: "relay.example.test", relayNonce: String(repeating: "n", count: 513)),
+            routeRefreshResult(relayHost: "https://relay.example.test"),
+            routeRefreshResult(relayHost: "relay.example.test/path"),
+            routeRefreshResult(relayHost: "relay.example.test?token=x"),
+            routeRefreshResult(relayHost: "relay.example.test#frag"),
+            routeRefreshResult(relayHost: "user@relay.example.test"),
+            routeRefreshResult(relayHost: "relay.example.test:43171"),
+            routeRefreshResult(relayHost: " relay.example.test"),
+            routeRefreshResult(relayHost: "relay.example.test "),
             routeRefreshResult(relayHost: "aetherlink.local"),
             routeRefreshResult(relayHost: "127.0.0.1", relayScope: "remote"),
             routeRefreshResult(relayHost: "100.64.1.10", relayScope: nil),
@@ -3073,6 +3081,54 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         }
     }
 
+    func testMemoryListRejectsOversizedQueryBeforeStoreDispatch() async throws {
+        let overlongQuery = String(repeating: "a", count: 257)
+        let excessiveTermQuery = (1...17).map { "term\($0)" }.joined(separator: " ")
+        let cases: [(requestID: String, query: String, expectedMessage: String)] = [
+            (
+                "memory-list-overlong-query",
+                overlongQuery,
+                "at most 256 characters"
+            ),
+            (
+                "memory-list-excessive-term-query",
+                excessiveTermQuery,
+                "at most 16 distinct terms"
+            )
+        ]
+
+        for testCase in cases {
+            let sink = RecordingSink()
+            let store = RecordingRuntimeMemoryStore(entries: [
+                RuntimeMemoryEntry(
+                    id: "memory-query-resource-guard",
+                    content: "Use latest QR recovery for relay route failures.",
+                    createdAt: Date(timeIntervalSince1970: 1_000),
+                    updatedAt: Date(timeIntervalSince1970: 1_000)
+                )
+            ])
+            let router = makeRouter(
+                backend: MockBackend(),
+                memoryStore: store
+            )
+
+            router.handle(ProtocolEnvelope(
+                type: MessageType.memoryList,
+                requestID: testCase.requestID,
+                payload: ["query": .string(testCase.query)]
+            ), sink: sink)
+
+            let response = try await sink.waitForMessages(count: 1).first
+            XCTAssertEqual(response?.type, MessageType.error, testCase.requestID)
+            XCTAssertEqual(response?.requestID, testCase.requestID, testCase.requestID)
+            XCTAssertEqual(response?.payload["code"], .string("invalid_payload"), testCase.requestID)
+            XCTAssertEqual(response?.payload["retryable"], .bool(false), testCase.requestID)
+            XCTAssertTrue(String(describing: response?.payload).contains("query"), testCase.requestID)
+            XCTAssertTrue(String(describing: response?.payload).contains(testCase.expectedMessage), testCase.requestID)
+            XCTAssertEqual(store.listRequests, [], testCase.requestID)
+        }
+    }
+
     func testMemoryListQueryFiltersRuntimeOwnedMemoryWithSearchMetadata() async throws {
         let sink = RecordingSink()
         let fileURL = FileManager.default.temporaryDirectory
@@ -3885,6 +3941,14 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
                 "content"
             ),
             (
+                "summary-draft-approve-blank-content",
+                [
+                    "draft_id": .string("long-inactivity:session-1:1000:6"),
+                    "content": .string("   \n\t")
+                ],
+                "content"
+            ),
+            (
                 "summary-draft-approve-invalid-enabled-type",
                 [
                     "draft_id": .string("long-inactivity:session-1:1000:6"),
@@ -3897,6 +3961,14 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
                 [
                     "draft_id": .string("long-inactivity:session-1:1000:6"),
                     "expected_session_id": .number(1)
+                ],
+                "expected_session_id"
+            ),
+            (
+                "summary-draft-approve-blank-expected-session",
+                [
+                    "draft_id": .string("long-inactivity:session-1:1000:6"),
+                    "expected_session_id": .string("   \n\t")
                 ],
                 "expected_session_id"
             ),
@@ -4172,6 +4244,14 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
                 [
                     "draft_id": .string("long-inactivity:session-1:1000:6"),
                     "expected_session_id": .number(1)
+                ],
+                "expected_session_id"
+            ),
+            (
+                "summary-draft-dismiss-blank-expected-session",
+                [
+                    "draft_id": .string("long-inactivity:session-1:1000:6"),
+                    "expected_session_id": .string("   \n\t")
                 ],
                 "expected_session_id"
             ),
@@ -6725,10 +6805,10 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
             relayHost: "relay.example.test",
             relayPort: 43171,
             relayID: "relay-id-1",
-            relaySecret: "secret with symbols + / =",
+            relaySecret: "secret+with/symbols=",
             relayExpiresAtEpochMillis: 1_780_000_000_000,
             relayNonce: "relay-nonce-1",
-            relayScope: "usb_reverse"
+            relayScope: "remote"
         )
 
         let components = try XCTUnwrap(URLComponents(string: session.qrPayload))
@@ -6739,11 +6819,11 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(queryItems["relay_host"], "relay.example.test")
         XCTAssertEqual(queryItems["relay_port"], "43171")
         XCTAssertEqual(queryItems["relay_id"], "relay-id-1")
-        XCTAssertEqual(queryItems["relay_secret"], "secret with symbols + / =")
+        XCTAssertEqual(queryItems["relay_secret"], "secret+with/symbols=")
         XCTAssertEqual(queryItems["relay_expires_at"], "1780000000000")
         XCTAssertEqual(queryItems["relay_nonce"], "relay-nonce-1")
-        XCTAssertEqual(queryItems["relay_scope"], "usb_reverse")
-        XCTAssertTrue(session.qrPayload.contains("relay_secret=secret%20with%20symbols%20%2B%20/%20%3D"))
+        XCTAssertEqual(queryItems["relay_scope"], "remote")
+        XCTAssertTrue(session.qrPayload.contains("relay_secret=secret%2Bwith/symbols%3D"))
     }
 
     func testCompactPairingQRCodePayloadUsesShortAliasesForCameraScanning() throws {
@@ -10906,6 +10986,136 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
     }
 
     @MainActor
+    func testCompanionAppModelDoesNotExposeAuthenticatedRouteRefreshByDefault() async throws {
+        let privateKey = P256.Signing.PrivateKey()
+        let trustedStore = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+        try await trustedStore.trust(TrustedDevice(
+            id: "android-trusted",
+            name: "Trusted Android",
+            publicKeyBase64: privateKey.publicKey.derRepresentation.base64EncodedString()
+        ))
+        let transport = FakeRuntimeTransport()
+        let serviceAllocator = FakeRelayServiceRouteAllocator(
+            allocation: CompanionRemoteRelayRouteAllocation(
+                configuration: RelayPeerConfiguration(
+                    host: "relay.example.test",
+                    port: 443,
+                    relayID: "allocated-refresh-relay",
+                    relaySecret: "allocated-refresh-secret"
+                ),
+                lease: CompanionRemoteRouteLease(
+                    expiresAtEpochMillis: 4_102_444_800_000,
+                    nonce: "allocated-refresh-nonce"
+                )
+            )
+        )
+        let model = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: transport,
+            advertiser: FakeRuntimeAdvertiser(),
+            relayServiceRouteAllocator: serviceAllocator,
+            userDefaults: try isolatedDefaults(),
+            trustedDeviceStore: trustedStore,
+            runtimeRouteHostProvider: { "192.168.1.44" }
+        )
+
+        model.configureDevelopmentRelay(
+            host: "relay.example.test",
+            port: 443,
+            relaySecret: "preferred-secret"
+        )
+        model.start(port: 43210)
+        defer { model.stop() }
+        let handler = try XCTUnwrap(transport.onMessage)
+        let sink = RecordingSink()
+        try await authenticateTrustedDevice(
+            handler: handler,
+            sink: sink,
+            deviceID: "android-trusted",
+            privateKey: privateKey
+        )
+
+        handler(ProtocolEnvelope(type: MessageType.routeRefresh, requestID: "route-refresh-default-off"), sink)
+
+        let messages = try await sink.waitForMessages(count: 3)
+        let message = messages.last
+        XCTAssertEqual(message?.type, MessageType.error)
+        XCTAssertEqual(message?.requestID, "route-refresh-default-off")
+        XCTAssertEqual(message?.payload["code"], .string("route_refresh_unavailable"))
+        XCTAssertEqual(message?.payload["retryable"], .bool(true))
+        XCTAssertEqual(serviceAllocator.calls.count, 0)
+        XCTAssertFalse(model.isDevelopmentRelayRoutePreparedForQRCode)
+    }
+
+    @MainActor
+    func testCompanionAppModelExposesAuthenticatedRouteRefreshWhenDiagnosticOptInIsEnabled() async throws {
+        let privateKey = P256.Signing.PrivateKey()
+        let trustedStore = TrustedDeviceStore(fileURL: trustedDeviceStoreURL())
+        try await trustedStore.trust(TrustedDevice(
+            id: "android-trusted",
+            name: "Trusted Android",
+            publicKeyBase64: privateKey.publicKey.derRepresentation.base64EncodedString()
+        ))
+        let transport = FakeRuntimeTransport()
+        let serviceAllocator = FakeRelayServiceRouteAllocator(
+            allocation: CompanionRemoteRelayRouteAllocation(
+                configuration: RelayPeerConfiguration(
+                    host: "relay.example.test",
+                    port: 443,
+                    relayID: "allocated-refresh-relay",
+                    relaySecret: "allocated-refresh-secret"
+                ),
+                lease: CompanionRemoteRouteLease(
+                    expiresAtEpochMillis: 4_102_444_800_000,
+                    nonce: "allocated-refresh-nonce"
+                )
+            )
+        )
+        let model = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: transport,
+            advertiser: FakeRuntimeAdvertiser(),
+            relayServiceRouteAllocator: serviceAllocator,
+            userDefaults: try isolatedDefaults(),
+            trustedDeviceStore: trustedStore,
+            runtimeRouteHostProvider: { "192.168.1.44" },
+            allowsAuthenticatedRouteRefresh: true
+        )
+
+        model.configureDevelopmentRelay(
+            host: "relay.example.test",
+            port: 443,
+            relaySecret: "preferred-secret"
+        )
+        model.start(port: 43210)
+        defer { model.stop() }
+        let handler = try XCTUnwrap(transport.onMessage)
+        let sink = RecordingSink()
+        try await authenticateTrustedDevice(
+            handler: handler,
+            sink: sink,
+            deviceID: "android-trusted",
+            privateKey: privateKey
+        )
+
+        handler(ProtocolEnvelope(type: MessageType.routeRefresh, requestID: "route-refresh-opt-in"), sink)
+
+        let messages = try await sink.waitForMessages(count: 3)
+        let message = messages.last
+        XCTAssertEqual(message?.type, MessageType.routeRefresh)
+        XCTAssertEqual(message?.requestID, "route-refresh-opt-in")
+        XCTAssertEqual(message?.payload["relay_host"], .string("relay.example.test"))
+        XCTAssertEqual(message?.payload["relay_port"], .number(443))
+        XCTAssertEqual(message?.payload["relay_id"], .string("allocated-refresh-relay"))
+        XCTAssertEqual(message?.payload["relay_secret"], .string("allocated-refresh-secret"))
+        XCTAssertEqual(message?.payload["relay_expires_at"], .number(4_102_444_800_000))
+        XCTAssertEqual(message?.payload["relay_nonce"], .string("allocated-refresh-nonce"))
+        XCTAssertEqual(message?.payload["relay_scope"], .string("remote"))
+        XCTAssertEqual(serviceAllocator.calls.count, 1)
+        XCTAssertTrue(model.isDevelopmentRelayRoutePreparedForQRCode)
+    }
+
+    @MainActor
     func testCompanionAppModelStopsRelayClientWhenRelayIsCleared() async throws {
         let relayClient = FakeRelayPeerClient()
         let model = CompanionAppModel(
@@ -10931,6 +11141,30 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
     }
 
     @MainActor
+    func testCompanionAppModelAdvertisesRouteTokenWithoutStableIdentityTXTMetadata() async throws {
+        let advertiser = FakeRuntimeAdvertiser()
+        let model = CompanionAppModel(
+            backend: MockBackend(status: .available),
+            peerServer: FakeRuntimeTransport(),
+            advertiser: advertiser,
+            userDefaults: try isolatedDefaults()
+        )
+
+        model.start(port: 43210)
+        defer { model.stop() }
+
+        let metadata = try XCTUnwrap(advertiser.startedMetadata)
+        XCTAssertEqual(metadata.version, "1")
+        XCTAssertEqual(metadata.app, "AetherLink")
+        XCTAssertFalse(metadata.routeToken?.isEmpty ?? true)
+        XCTAssertNil(metadata.deviceID)
+        XCTAssertNil(metadata.fingerprint)
+        XCTAssertEqual(metadata.txtRecord["route_token"], metadata.routeToken)
+        XCTAssertNil(metadata.txtRecord["device_id"])
+        XCTAssertNil(metadata.txtRecord["fingerprint"])
+    }
+
+    @MainActor
     func testCompanionAppModelStartsReplaceableTransportAndStopsIt() async throws {
         let transport = FakeRuntimeTransport()
         let advertiser = FakeRuntimeAdvertiser()
@@ -10947,8 +11181,8 @@ final class LocalRuntimeMessageRouterTests: XCTestCase {
         XCTAssertEqual(advertiser.startedMetadata?.version, "1")
         XCTAssertEqual(advertiser.startedMetadata?.app, "AetherLink")
         XCTAssertFalse(advertiser.startedMetadata?.routeToken?.isEmpty ?? true)
-        XCTAssertFalse(advertiser.startedMetadata?.deviceID?.isEmpty ?? true)
-        XCTAssertFalse(advertiser.startedMetadata?.fingerprint?.isEmpty ?? true)
+        XCTAssertNil(advertiser.startedMetadata?.deviceID)
+        XCTAssertNil(advertiser.startedMetadata?.fingerprint)
         XCTAssertEqual(model.transportState.state, .advertising)
         XCTAssertEqual(model.transportState.serviceName, "_aetherlink._tcp.local.")
         XCTAssertEqual(model.transportState.port, 43210)
@@ -11050,11 +11284,39 @@ private func authenticateTrustedDevice(
     deviceID: String,
     privateKey: P256.Signing.PrivateKey
 ) async throws {
-    router.handle(ProtocolEnvelope(
+    try await authenticateTrustedDevice(
+        send: { envelope, sink in router.handle(envelope, sink: sink) },
+        sink: sink,
+        deviceID: deviceID,
+        privateKey: privateKey
+    )
+}
+
+private func authenticateTrustedDevice(
+    handler: LocalPeerMessageHandler,
+    sink: RecordingSink,
+    deviceID: String,
+    privateKey: P256.Signing.PrivateKey
+) async throws {
+    try await authenticateTrustedDevice(
+        send: handler,
+        sink: sink,
+        deviceID: deviceID,
+        privateKey: privateKey
+    )
+}
+
+private func authenticateTrustedDevice(
+    send: (ProtocolEnvelope, any RuntimeMessageSink) -> Void,
+    sink: RecordingSink,
+    deviceID: String,
+    privateKey: P256.Signing.PrivateKey
+) async throws {
+    send(ProtocolEnvelope(
         type: MessageType.hello,
         requestID: "hello-\(deviceID)",
         payload: ["device_id": .string(deviceID)]
-    ), sink: sink)
+    ), sink)
 
     let challenge = try await sink.waitForMessages(count: 1).last
     XCTAssertEqual(challenge?.type, MessageType.authChallenge)
@@ -11071,7 +11333,7 @@ private func authenticateTrustedDevice(
         .signature(for: SHA256.hash(data: authMessageData))
         .derRepresentation
         .base64EncodedString()
-    router.handle(ProtocolEnvelope(
+    send(ProtocolEnvelope(
         type: MessageType.authResponse,
         requestID: "auth-\(deviceID)",
         payload: [
@@ -11079,7 +11341,7 @@ private func authenticateTrustedDevice(
             "nonce": .string(nonce),
             "signature": .string(signature)
         ]
-    ), sink: sink)
+    ), sink)
 
     let authResponse = try await sink.waitForMessages(count: 2).last
     XCTAssertEqual(authResponse?.type, MessageType.authResponse)

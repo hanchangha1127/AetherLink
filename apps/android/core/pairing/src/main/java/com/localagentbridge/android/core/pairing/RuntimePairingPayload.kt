@@ -48,6 +48,7 @@ object RuntimePairingPayloadParser {
         }
 
         val query = parseQuery(uri.rawQuery)
+        query.requireSingleSemanticAliasPerField()
         query.requireSingleRelayAliasFamily()
         query.requireSingleP2pAliasFamily()
         val version = query["version"] ?: query["v"]
@@ -81,7 +82,7 @@ object RuntimePairingPayloadParser {
                 ?: query["rendezvous_port"]
                 ?: query["rp"]
             )?.takeIf { it.isNotBlank() }
-        val relayPort = rawRelayPort?.toIntOrNull()
+        val relayPort = rawRelayPort.optionalQrPortValue("Invalid relay port")
         val explicitRelayId = (
             query["relay_id"]
                 ?: query["remote_id"]
@@ -104,9 +105,7 @@ object RuntimePairingPayloadParser {
             ?: query["rendezvous_expires_at"]
             ?: query["rx"]
         val relayExpiresAtEpochMillis = rawRelayExpiresAt
-            ?.takeIf { it.isNotBlank() }
-            ?.toLongOrNull()
-            ?.normalizeRouteExpirationEpochMillis()
+            .optionalRouteExpirationEpochMillis("Invalid relay expiration")
         val rawRelayNonce = query["relay_nonce"]
             ?: query["remote_nonce"]
             ?: query["route_nonce"]
@@ -130,15 +129,12 @@ object RuntimePairingPayloadParser {
             )
         val rawP2pExpiresAt = query["p2p_expires_at"] ?: query["px"]
         val p2pExpiresAtEpochMillis = rawP2pExpiresAt
-            ?.takeIf { it.isNotBlank() }
-            ?.toLongOrNull()
-            ?.normalizeRouteExpirationEpochMillis()
+            .optionalRouteExpirationEpochMillis("Invalid P2P expiration")
         val p2pAntiReplayNonce = (query["p2p_anti_replay_nonce"] ?: query["pn"])
             .optionalOpaqueQrValue("Invalid P2P anti-replay nonce")
         val rawP2pProtocolVersion = query["p2p_protocol_version"] ?: query["pv"]
-        val p2pProtocolVersion = rawP2pProtocolVersion
-            ?.takeIf { it.isNotBlank() }
-            ?.toIntOrNull()
+        val p2pProtocolVersion = rawP2pProtocolVersion.optionalP2pProtocolVersion()
+        val serviceType = query["service_type"].optionalDiscoveryServiceType()
         val hasExplicitRelayField =
             relayHost != null ||
                 rawRelayPort != null ||
@@ -232,24 +228,33 @@ object RuntimePairingPayloadParser {
             p2pExpiresAtEpochMillis = p2pExpiresAtEpochMillis,
             p2pAntiReplayNonce = p2pAntiReplayNonce,
             p2pProtocolVersion = p2pProtocolVersion,
-            serviceType = query["service_type"],
+            serviceType = serviceType,
         )
     }
 
     private fun parseQuery(rawQuery: String?): Map<String, String> {
         if (rawQuery.isNullOrBlank()) return emptyMap()
-        return rawQuery
+        val query = linkedMapOf<String, String>()
+        rawQuery
             .split("&")
-            .mapNotNull { part ->
-                if (part.isBlank()) return@mapNotNull null
+            .forEach { part ->
+                if (part.isBlank()) return@forEach
                 val separator = part.indexOf('=')
                 val rawKey = if (separator >= 0) part.substring(0, separator) else part
                 val rawValue = if (separator >= 0) part.substring(separator + 1) else ""
                 val key = rawKey.uriQueryDecode()
                 val value = rawValue.uriQueryDecode()
-                key to value
+                require(key in ALLOWED_PAIRING_QR_QUERY_KEYS) { "Unknown pairing QR query key" }
+                require(!query.containsKey(key)) { "Duplicate pairing QR query key" }
+                query[key] = value
             }
-            .toMap()
+        return query
+    }
+
+    private fun Map<String, String>.requireSingleSemanticAliasPerField() {
+        PAIRING_QR_SEMANTIC_ALIAS_GROUPS.values.forEach { fields ->
+            require(fields.count(::containsKey) <= 1) { "Mixed pairing QR semantic alias fields" }
+        }
     }
 
     private fun Map<String, String>.requireSingleRelayAliasFamily() {
@@ -290,6 +295,26 @@ object RuntimePairingPayloadParser {
         return value
     }
 
+    private fun String?.optionalP2pProtocolVersion(): Int? {
+        val value = this?.takeIf { it.isNotBlank() } ?: return null
+        require(value == "1") { "Invalid P2P protocol version" }
+        return 1
+    }
+
+    private fun String?.optionalQrPortValue(invalidMessage: String): Int? {
+        val value = this?.takeIf { it.isNotBlank() } ?: return null
+        require(value.matches(CANONICAL_QR_PORT_PATTERN)) { invalidMessage }
+        return value.toIntOrNull()
+    }
+
+    private fun String?.optionalRouteExpirationEpochMillis(invalidMessage: String): Long? {
+        val value = this?.takeIf { it.isNotBlank() } ?: return null
+        require(value.matches(CANONICAL_ROUTE_EXPIRATION_PATTERN)) { invalidMessage }
+        val parsed = value.toLongOrNull()
+        require(parsed != null) { invalidMessage }
+        return parsed.normalizeRouteExpirationEpochMillis()
+    }
+
     private fun String?.normalizedRuntimeName(): String =
         this
             ?.decodeLegacyNamePlus()
@@ -299,13 +324,35 @@ object RuntimePairingPayloadParser {
             ?.takeIf { it.isNotBlank() }
             ?: DEFAULT_RUNTIME_NAME
 
+    private fun String?.optionalDiscoveryServiceType(): String? {
+        val value = this?.takeIf { it.isNotBlank() } ?: return null
+        require(isAllowedDiscoveryServiceType(value)) { "Invalid service type" }
+        return value
+    }
+
+    private fun isAllowedDiscoveryServiceType(value: String): Boolean =
+        value.isNotBlank() &&
+            value.length <= DISCOVERY_SERVICE_TYPE_MAX_CHARS &&
+            value == value.trim() &&
+            value.none(Char::isWhitespace) &&
+            value in ALLOWED_DISCOVERY_SERVICE_TYPES
+
     private fun Long.normalizeRouteExpirationEpochMillis(): Long =
         if (this in 1 until MIN_REASONABLE_EPOCH_MILLIS) this * MILLIS_PER_SECOND else this
 
     private const val DEFAULT_RUNTIME_NAME = "AetherLink Runtime"
     private const val RUNTIME_NAME_MAX_CHARS = 80
+    private const val DISCOVERY_SERVICE_TYPE_MAX_CHARS = 64
     private const val MILLIS_PER_SECOND = 1_000L
     private const val MIN_REASONABLE_EPOCH_MILLIS = 100_000_000_000L
+    private val CANONICAL_QR_PORT_PATTERN = Regex("^([1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])$")
+    private val CANONICAL_ROUTE_EXPIRATION_PATTERN = Regex("^[1-9][0-9]*$")
+    private val ALLOWED_DISCOVERY_SERVICE_TYPES = setOf(
+        "_aetherlink._tcp.",
+        "_aetherlink._tcp.local.",
+        "_localagentbridge._tcp.",
+        "_localagentbridge._tcp.local.",
+    )
 
     private val RELAY_ROUTE_ALIAS_FAMILIES = mapOf(
         "canonical" to setOf(
@@ -369,6 +416,66 @@ object RuntimePairingPayloadParser {
             "pv",
         ),
     )
+
+    private val PAIRING_QR_SEMANTIC_ALIAS_GROUPS =
+        mapOf(
+            "version" to setOf("version", "v"),
+            "pairing_nonce" to setOf("pairing_nonce", "nonce", "n"),
+            "pairing_code" to setOf("pairing_code", "code", "c"),
+            "runtime_device_id" to setOf("runtime_device_id", "mac_device_id", "device_id", "rid"),
+            "runtime_name" to setOf("runtime_name", "mac_name", "name", "rn"),
+            "runtime_key_fingerprint" to setOf("runtime_key_fingerprint", "fingerprint", "cert_fingerprint", "rf"),
+            "runtime_public_key" to setOf("runtime_public_key", "mac_public_key", "public_key", "rk"),
+            "route_token" to setOf("route_token", "discovery_token", "rt"),
+            "host" to setOf("host", "runtime_host", "h"),
+            "port" to setOf("port", "runtime_port", "p"),
+            "relay_id" to setOf("relay_id", "network_id"),
+            "relay_scope" to setOf("relay_scope", "remote_scope", "route_scope", "rsc"),
+        )
+
+    private val ALLOWED_PAIRING_QR_QUERY_KEYS =
+        setOf(
+            "version",
+            "v",
+            "pairing_nonce",
+            "nonce",
+            "n",
+            "pairing_code",
+            "code",
+            "c",
+            "runtime_device_id",
+            "mac_device_id",
+            "device_id",
+            "rid",
+            "runtime_name",
+            "mac_name",
+            "name",
+            "rn",
+            "runtime_key_fingerprint",
+            "fingerprint",
+            "cert_fingerprint",
+            "rf",
+            "runtime_public_key",
+            "mac_public_key",
+            "public_key",
+            "rk",
+            "route_token",
+            "discovery_token",
+            "rt",
+            "host",
+            "runtime_host",
+            "h",
+            "port",
+            "runtime_port",
+            "p",
+            "relay_scope",
+            "remote_scope",
+            "route_scope",
+            "rsc",
+            "service_type",
+        ) +
+            RELAY_ROUTE_ALIAS_FAMILIES.values.flatten() +
+            P2P_ROUTE_ALIAS_FAMILIES.values.flatten()
 }
 
 const val OPAQUE_ROUTE_VALUE_MAX_CHARS = 512

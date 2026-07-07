@@ -12,7 +12,9 @@ import com.localagentbridge.android.core.pairing.AndroidKeystoreRelaySecretStore
 import com.localagentbridge.android.core.pairing.OPAQUE_ROUTE_BODY_MAX_CHARS
 import com.localagentbridge.android.core.pairing.RelaySecretStore
 import com.localagentbridge.android.core.pairing.RuntimePairingPayload
+import com.localagentbridge.android.core.pairing.isAllowedRemoteRelayScope
 import com.localagentbridge.android.core.pairing.isCanonicalOpaqueRouteValue
+import com.localagentbridge.android.core.pairing.isCanonicalRelayHostValue
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.decodeFromString
@@ -405,10 +407,10 @@ private fun RuntimePairingPayload.toPersistedPendingPairingRoute(nowMillis: Long
         routeToken = routeToken?.takeIf(String::isNotBlank),
         host = null,
         port = null,
-        relayHost = relayHost?.takeIf(String::isNotBlank),
+        relayHost = relayHost,
         relayPort = relayPort,
-        relayId = relayId?.takeIf(String::isNotBlank),
-        relaySecret = relaySecret?.takeIf(String::isNotBlank),
+        relayId = relayId,
+        relaySecret = relaySecret,
         relaySecretRef = relaySecret
             ?.takeIf(String::isNotBlank)
             ?.let {
@@ -419,8 +421,8 @@ private fun RuntimePairingPayload.toPersistedPendingPairingRoute(nowMillis: Long
                 )
             },
         relayExpiresAtEpochMillis = relayRouteExpiresAt,
-        relayNonce = relayNonce?.takeIf(String::isNotBlank),
-        relayScope = relayScope?.takeIf(String::isNotBlank),
+        relayNonce = relayNonce,
+        relayScope = relayScope,
         p2pRouteClass = p2pRouteClass?.takeIf(String::isNotBlank),
         p2pRecordId = p2pRecordId?.takeIf(String::isNotBlank),
         p2pEncryptedBody = p2pEncryptedBody?.takeIf(String::isNotBlank),
@@ -434,16 +436,16 @@ private fun RuntimePairingPayload.toPersistedPendingPairingRoute(nowMillis: Long
 }
 
 private fun PersistedPendingPairingRoute.sanitizedOrNull(): PersistedPendingPairingRoute? {
-    val cleanNonce = pairingNonce.trim()
-    val cleanCode = pairingCode.trim()
-    val cleanRuntimeDeviceId = runtimeDeviceId.trim()
+    val cleanNonce = pairingNonce.takeIf(::isCanonicalOpaqueRouteValue)
+    val cleanCode = pairingCode
+    val cleanRuntimeDeviceId = runtimeDeviceId.takeIf(::isCanonicalOpaqueRouteValue)
     val cleanRuntimeName = runtimeName.trim().ifBlank { "AetherLink Runtime" }
-    val cleanFingerprint = fingerprint.trim()
+    val cleanFingerprint = fingerprint.takeIf(::isCanonicalOpaqueRouteValue)
     if (
-        cleanNonce.isBlank() ||
+        cleanNonce == null ||
         !cleanCode.matches(Regex("\\d{6}")) ||
-        cleanRuntimeDeviceId.isBlank() ||
-        cleanFingerprint.isBlank() ||
+        cleanRuntimeDeviceId == null ||
+        cleanFingerprint == null ||
         capturedAtEpochMillis <= 0L ||
         expiresAtEpochMillis <= capturedAtEpochMillis
     ) {
@@ -453,18 +455,29 @@ private fun PersistedPendingPairingRoute.sanitizedOrNull(): PersistedPendingPair
     val cleanRelayPort = relayPort?.takeIf { it in 1..65535 }
     val cleanHost = host?.trim()?.takeIf(String::isNotBlank)
     if ((cleanHost == null) != (cleanPort == null)) return null
-    val cleanRelayHost = relayHost?.trim()?.takeIf(String::isNotBlank)
-    val cleanRelayId = relayId?.trim()?.takeIf(String::isNotBlank)
-    val cleanRelaySecret = relaySecret?.trim()?.takeIf(String::isNotBlank)
-    val cleanRelaySecretRef = relaySecretRef?.trim()?.takeIf(String::isNotBlank)
+    val cleanRelayHost = relayHost?.takeIf(::isCanonicalRelayHostValue)
+    val cleanRelayId = relayId?.takeIf(::isCanonicalOpaqueRouteValue)
+    val cleanRelaySecret = relaySecret?.takeIf(::isCanonicalOpaqueRouteValue)
+    val cleanRelaySecretRef = relaySecretRef?.takeIf(::isCanonicalOpaqueRouteValue)
     val cleanRelayExpiresAt = relayExpiresAtEpochMillis?.takeIf { it > 0L }
-    val cleanRelayNonce = relayNonce?.trim()?.takeIf(String::isNotBlank)
+    val cleanRelayNonce = relayNonce?.takeIf(::isCanonicalOpaqueRouteValue)
+    val cleanRelayScope = relayScope?.takeIf(::isAllowedRemoteRelayScope)
     val cleanP2pRouteClass = p2pRouteClass?.takeIf(::isCanonicalOpaqueRouteValue)
     val cleanP2pRecordId = p2pRecordId?.takeIf(::isCanonicalOpaqueRouteValue)
     val cleanP2pEncryptedBody = p2pEncryptedBody
         ?.takeIf { isCanonicalOpaqueRouteValue(it, maxChars = OPAQUE_ROUTE_BODY_MAX_CHARS) }
     val cleanP2pExpiresAt = p2pExpiresAtEpochMillis?.takeIf { it > 0L }
     val cleanP2pAntiReplayNonce = p2pAntiReplayNonce?.takeIf(::isCanonicalOpaqueRouteValue)
+    val cleanRouteToken = routeToken?.takeIf(::isCanonicalOpaqueRouteValue)
+    val cleanRuntimePublicKeyBase64 = runtimePublicKeyBase64?.takeIf(::isCanonicalOpaqueRouteValue)
+    if (runtimePublicKeyBase64 != null && cleanRuntimePublicKeyBase64 == null) return null
+    if (routeToken != null && cleanRouteToken == null) return null
+    if (relayHost != null && cleanRelayHost == null) return null
+    if (relayId != null && cleanRelayId == null) return null
+    if (relaySecret != null && cleanRelaySecret == null) return null
+    if (relaySecretRef != null && cleanRelaySecretRef == null) return null
+    if (relayNonce != null && cleanRelayNonce == null) return null
+    if (relayScope != null && cleanRelayScope == null) return null
     val hasRelayField = listOf(
         cleanRelayHost,
         cleanRelayPort,
@@ -514,8 +527,8 @@ private fun PersistedPendingPairingRoute.sanitizedOrNull(): PersistedPendingPair
         runtimeDeviceId = cleanRuntimeDeviceId,
         runtimeName = cleanRuntimeName,
         fingerprint = cleanFingerprint,
-        runtimePublicKeyBase64 = runtimePublicKeyBase64?.trim()?.takeIf(String::isNotBlank),
-        routeToken = routeToken?.trim()?.takeIf(String::isNotBlank),
+        runtimePublicKeyBase64 = cleanRuntimePublicKeyBase64,
+        routeToken = cleanRouteToken,
         host = null,
         port = null,
         relayHost = cleanRelayHost,
@@ -525,7 +538,7 @@ private fun PersistedPendingPairingRoute.sanitizedOrNull(): PersistedPendingPair
         relaySecretRef = cleanRelaySecretRef,
         relayExpiresAtEpochMillis = cleanRelayExpiresAt,
         relayNonce = cleanRelayNonce,
-        relayScope = relayScope?.trim()?.takeIf(String::isNotBlank),
+        relayScope = cleanRelayScope,
         p2pRouteClass = cleanP2pRouteClass,
         p2pRecordId = cleanP2pRecordId,
         p2pEncryptedBody = cleanP2pEncryptedBody,
@@ -540,7 +553,7 @@ internal fun PersistedRuntimeData.withStoredPendingPairingRelaySecret(
     relaySecretStore: RelaySecretStore,
 ): PersistedRuntimeData {
     val pending = pendingPairingRoute?.sanitizedOrNull() ?: return withoutPendingPairingRoute()
-    val relaySecret = pending.relaySecret?.trim()?.takeIf(String::isNotBlank)
+    val relaySecret = pending.relaySecret?.takeIf(::isCanonicalOpaqueRouteValue)
     val relaySecretRef = when {
         relaySecret != null -> pending.relaySecretRef
             ?: pendingPairingRelaySecretHandle(
@@ -569,8 +582,7 @@ internal fun PersistedRuntimeData.withLoadedPendingPairingRelaySecret(
     if (!pending.relaySecret.isNullOrBlank()) return copy(pendingPairingRoute = pending).sanitized()
     val relaySecret = pending.relaySecretRef
         ?.let(relaySecretStore::readSecret)
-        ?.trim()
-        ?.takeIf(String::isNotBlank)
+        ?.takeIf(::isCanonicalOpaqueRouteValue)
         ?: return withoutPendingPairingRoute()
     return copy(
         pendingPairingRoute = pending.copy(relaySecret = relaySecret),

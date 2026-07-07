@@ -30,6 +30,7 @@ class PairingStore(
         context.localAgentBridgeDataStore.data.collect { prefs ->
             val loaded = loadTrustedRuntime(prefs)
             if (
+                loaded.shouldRemoveStoredTrustedRuntime ||
                 loaded.shouldRemoveStoredRouteToken ||
                 loaded.shouldRemoveStoredRelayRoute ||
                 loaded.shouldRemoveStoredP2pRoute ||
@@ -37,22 +38,28 @@ class PairingStore(
                 loaded.relaySecretRefToPersist != null
             ) {
                 context.localAgentBridgeDataStore.edit { editPrefs ->
-                    if (loaded.shouldRemoveStoredRouteToken) {
-                        editPrefs.removeRouteTokenKeys()
-                    }
-                    if (loaded.shouldRemoveStoredRelayRoute) {
-                        loaded.relaySecretRefsToRemove.forEach(relaySecretStore::removeSecret)
-                        editPrefs.removeRelayRouteKeys()
-                    }
-                    if (loaded.shouldRemoveStoredP2pRoute) {
-                        editPrefs.removeP2pRouteKeys()
-                    }
-                    if (loaded.shouldRemoveStoredDirectEndpoint) {
-                        editPrefs.removeDirectEndpointKeys()
-                    }
-                    if (loaded.relaySecretRefToPersist != null) {
-                        editPrefs[Keys.runtimeRelaySecretRef] = loaded.relaySecretRefToPersist
-                        editPrefs.remove(Keys.runtimeRelaySecret)
+                    if (loaded.shouldRemoveStoredTrustedRuntime) {
+                        editPrefs[Keys.runtimeRelaySecretRef]?.let(relaySecretStore::removeSecret)
+                        editPrefs.removeRuntimeKeys()
+                        editPrefs.removeLegacyRuntimeKeys()
+                    } else {
+                        if (loaded.shouldRemoveStoredRouteToken) {
+                            editPrefs.removeRouteTokenKeys()
+                        }
+                        if (loaded.shouldRemoveStoredRelayRoute) {
+                            loaded.relaySecretRefsToRemove.forEach(relaySecretStore::removeSecret)
+                            editPrefs.removeRelayRouteKeys()
+                        }
+                        if (loaded.shouldRemoveStoredP2pRoute) {
+                            editPrefs.removeP2pRouteKeys()
+                        }
+                        if (loaded.shouldRemoveStoredDirectEndpoint) {
+                            editPrefs.removeDirectEndpointKeys()
+                        }
+                        if (loaded.relaySecretRefToPersist != null) {
+                            editPrefs[Keys.runtimeRelaySecretRef] = loaded.relaySecretRefToPersist
+                            editPrefs.remove(Keys.runtimeRelaySecret)
+                        }
                     }
                 }
             }
@@ -64,22 +71,30 @@ class PairingStore(
         val hasStoredRelayRoute = prefs.hasStoredRelayRoute()
         val hasStoredP2pRoute = prefs.hasStoredP2pRoute()
         val hasStoredDirectEndpoint = prefs.hasStoredDirectEndpoint()
-        val id = prefs[Keys.runtimeDeviceId] ?: prefs[LegacyKeys.runtimeDeviceId]
+        val rawId = prefs[Keys.runtimeDeviceId] ?: prefs[LegacyKeys.runtimeDeviceId]
             ?: return LoadedTrustedRuntime(
                 null,
                 shouldRemoveStoredRelayRoute = false,
                 shouldRemoveStoredP2pRoute = hasStoredP2pRoute,
                 shouldRemoveStoredDirectEndpoint = hasStoredDirectEndpoint,
             )
+        val id = rawId.takeIf(::isCanonicalOpaqueRouteValue)
+            ?: return invalidStoredTrustedRuntime()
         val name = prefs[Keys.runtimeName] ?: prefs[LegacyKeys.runtimeName] ?: "AetherLink Runtime"
-        val fingerprint = prefs[Keys.runtimeFingerprint] ?: prefs[LegacyKeys.runtimeFingerprint]
+        val rawFingerprint = prefs[Keys.runtimeFingerprint] ?: prefs[LegacyKeys.runtimeFingerprint]
             ?: return LoadedTrustedRuntime(
                 null,
                 shouldRemoveStoredRelayRoute = false,
                 shouldRemoveStoredP2pRoute = hasStoredP2pRoute,
                 shouldRemoveStoredDirectEndpoint = hasStoredDirectEndpoint,
             )
-        val publicKeyBase64 = prefs[Keys.runtimePublicKey] ?: prefs[LegacyKeys.runtimePublicKey]
+        val fingerprint = rawFingerprint.takeIf(::isCanonicalOpaqueRouteValue)
+            ?: return invalidStoredTrustedRuntime()
+        val rawPublicKeyBase64 = prefs[Keys.runtimePublicKey] ?: prefs[LegacyKeys.runtimePublicKey]
+        val publicKeyBase64 = rawPublicKeyBase64?.takeIf(::isCanonicalOpaqueRouteValue)
+        if (rawPublicKeyBase64 != null && publicKeyBase64 == null) {
+            return invalidStoredTrustedRuntime()
+        }
         val rawRouteToken = prefs[Keys.runtimeRouteToken] ?: prefs[LegacyKeys.runtimeRouteToken]
         val routeToken = rawRouteToken?.takeIf(::isCanonicalOpaqueRouteValue)
         val shouldRemoveStoredRouteToken = rawRouteToken != null && routeToken == null
@@ -153,12 +168,24 @@ class PairingStore(
     }
 
     suspend fun trustRuntime(runtime: TrustedRuntime) {
+        val deviceId = runtime.deviceId.takeIf(::isCanonicalOpaqueRouteValue)
+        val fingerprint = runtime.fingerprint.takeIf(::isCanonicalOpaqueRouteValue)
+        val rawPublicKeyBase64 = runtime.publicKeyBase64
+        val publicKeyBase64 = rawPublicKeyBase64
+            ?.takeIf { it.isNotBlank() }
+            ?.takeIf(::isCanonicalOpaqueRouteValue)
+        val hasInvalidPublicKeyBase64 = !rawPublicKeyBase64.isNullOrBlank() && publicKeyBase64 == null
         context.localAgentBridgeDataStore.edit { prefs ->
-            prefs[Keys.runtimeDeviceId] = runtime.deviceId
+            if (deviceId == null || fingerprint == null || hasInvalidPublicKeyBase64) {
+                prefs[Keys.runtimeRelaySecretRef]?.let(relaySecretStore::removeSecret)
+                prefs.removeRuntimeKeys()
+                prefs.removeLegacyRuntimeKeys()
+                return@edit
+            }
+            prefs[Keys.runtimeDeviceId] = deviceId
             prefs[Keys.runtimeName] = runtime.name
-            prefs[Keys.runtimeFingerprint] = runtime.fingerprint
-            val publicKeyBase64 = runtime.publicKeyBase64
-            if (!publicKeyBase64.isNullOrBlank()) {
+            prefs[Keys.runtimeFingerprint] = fingerprint
+            if (publicKeyBase64 != null) {
                 prefs[Keys.runtimePublicKey] = publicKeyBase64
             } else {
                 prefs.remove(Keys.runtimePublicKey)
@@ -344,8 +371,17 @@ class PairingStore(
             this[LegacyKeys.runtimePort] != null
     }
 
+    private fun invalidStoredTrustedRuntime(): LoadedTrustedRuntime {
+        return LoadedTrustedRuntime(
+            null,
+            shouldRemoveStoredTrustedRuntime = true,
+            shouldRemoveStoredRelayRoute = false,
+        )
+    }
+
     private data class LoadedTrustedRuntime(
         val trustedRuntime: TrustedRuntime?,
+        val shouldRemoveStoredTrustedRuntime: Boolean = false,
         val shouldRemoveStoredRouteToken: Boolean = false,
         val shouldRemoveStoredRelayRoute: Boolean,
         val shouldRemoveStoredP2pRoute: Boolean = false,

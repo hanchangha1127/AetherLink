@@ -115,6 +115,16 @@ PAIRING_QR_REQUIRED_FIELD_GROUPS = {
         "rf",
     },
 }
+PAIRING_QR_SEMANTIC_ALIAS_GROUPS = {
+    **PAIRING_QR_REQUIRED_FIELD_GROUPS,
+    "runtime_name": {"runtime_name", "mac_name", "name", "rn"},
+    "runtime_public_key": {"runtime_public_key", "mac_public_key", "public_key", "rk"},
+    "route_token": {"route_token", "discovery_token", "rt"},
+    "host": {"host", "runtime_host", "h"},
+    "port": {"port", "runtime_port", "p"},
+    "relay_id": {"relay_id", "network_id"},
+    "relay_scope": {"relay_scope", "remote_scope", "route_scope", "rsc"},
+}
 COMPACT_RELAY_QR_FIELDS = {"rh", "rp", "ri", "rs", "rx", "rrn"}
 RELAY_QR_ALIAS_FAMILIES = {
     "canonical": REQUIRED_RELAY_QR_FIELDS,
@@ -197,6 +207,8 @@ PAIRING_QR_OPAQUE_BODY_FIELDS = {
     "peb",
 }
 ROUTE_REFRESH_OPAQUE_VALUE_FIELDS = {
+    "runtime_device_id",
+    "runtime_key_fingerprint",
     "relay_id",
     "relay_nonce",
     "p2p_record_id",
@@ -211,7 +223,39 @@ PRIVATE_OVERLAY_RELAY_HOST_PATTERNS = [
     "^192\\.168\\.",
     "f[c-d]",
 ]
+LOOPBACK_RELAY_HOST_ENUMS = [
+    "localhost",
+    "127.0.0.1",
+    "::1",
+    "[::1]",
+    "0:0:0:0:0:0:0:1",
+    "[0:0:0:0:0:0:0:1]",
+]
+LOOPBACK_RELAY_HOST_PATTERNS = [
+    "^127\\.",
+]
+ROUTE_REFRESH_RELAY_HOST_FORBIDDEN_ENUMS = [
+    "0.0.0.0",
+    "::",
+    "[::]",
+    "255.255.255.255",
+]
+ROUTE_REFRESH_RELAY_HOST_FORBIDDEN_PATTERNS = [
+    "://",
+    "[/?#@]",
+    "^0\\.",
+    "^169\\.254\\.",
+    "^(22[4-9]|23[0-9]|24[0-9]|25[0-5])\\.",
+    "^(\\[)?fe80:",
+    "(^|\\.)local$",
+]
 PAIRING_QR_REMOTE_RELAY_SCOPE_FIELDS = ["relay_scope", "remote_scope", "route_scope", "rsc"]
+PAIRING_QR_ALLOWED_SERVICE_TYPES = [
+    "_aetherlink._tcp.",
+    "_aetherlink._tcp.local.",
+    "_localagentbridge._tcp.",
+    "_localagentbridge._tcp.local.",
+]
 
 
 def reserved_future_message_types(message_types: list[str] | tuple[str, ...]) -> list[str]:
@@ -1461,6 +1505,27 @@ def main() -> int:
             )
         failures.extend(check_platform_message_constants(set(message_enum)))
 
+    required_envelope_fields = schema.get("required", [])
+    if not isinstance(required_envelope_fields, list):
+        failures.append("top-level required fields must be a list")
+    else:
+        missing_envelope_fields = [
+            field
+            for field in ("version", "type", "request_id", "timestamp", "payload")
+            if field not in required_envelope_fields
+        ]
+        if missing_envelope_fields:
+            failures.append(f"top-level required fields missing {missing_envelope_fields}")
+
+    if schema.get("additionalProperties") is not False:
+        failures.append("top-level additionalProperties must be false")
+
+    type_schema = schema.get("properties", {}).get("type", {})
+    if not isinstance(type_schema, dict):
+        failures.append("properties.type must be an object schema")
+    elif type_schema.get("type") != "string":
+        failures.append("properties.type must require string values")
+
     version_schema = schema.get("properties", {}).get("version", {})
     if not isinstance(version_schema, dict):
         failures.append("properties.version must be an object schema")
@@ -1475,6 +1540,21 @@ def main() -> int:
             failures.append("properties.request_id must use nonBlankString")
         if request_id_schema.get("format") == "uuid":
             failures.append("properties.request_id must not require UUID format")
+
+    timestamp_schema = schema.get("properties", {}).get("timestamp", {})
+    if not isinstance(timestamp_schema, dict):
+        failures.append("properties.timestamp must be an object schema")
+    else:
+        if timestamp_schema.get("type") != "string":
+            failures.append("properties.timestamp must require string values")
+        if timestamp_schema.get("format") != "date-time":
+            failures.append("properties.timestamp must require date-time format")
+
+    payload_schema = schema.get("properties", {}).get("payload", {})
+    if not isinstance(payload_schema, dict):
+        failures.append("properties.payload must be an object schema")
+    elif payload_schema.get("type") != "object":
+        failures.append("properties.payload must require object values")
 
     if failures:
         print("Protocol schema check failed:", file=sys.stderr)
@@ -2040,7 +2120,7 @@ def require_memory_summary_decision_request_fields(
         failures,
         f"{label} expected_session_id",
         properties.get("expected_session_id"),
-        {"$ref": "#/$defs/nonEmptyString"},
+        {"$ref": "#/$defs/nonBlankString"},
     )
     expect_schema_equal(
         failures,
@@ -2053,7 +2133,7 @@ def require_memory_summary_decision_request_fields(
             failures,
             f"{label} content",
             properties.get("content"),
-            {"$ref": "#/$defs/nonEmptyString"},
+            {"$ref": "#/$defs/nonBlankString"},
         )
         expect_schema_equal(
             failures,
@@ -2164,6 +2244,8 @@ def check_pairing_qr_schema(schema: dict) -> list[str]:
     schema_id = schema.get("$id")
     if schema_id != "https://aetherlink.dev/schema/pairing-qr.v1.json":
         failures.append("pairing QR schema must use the v1 AetherLink schema id")
+    if schema.get("additionalProperties") is not False:
+        failures.append("pairing QR schema must reject additional properties")
 
     properties = schema.get("properties", {})
     required_groups = pairing_qr_required_groups(schema)
@@ -2212,10 +2294,16 @@ def check_pairing_qr_schema(schema: dict) -> list[str]:
 
     for scope_field in PAIRING_QR_REMOTE_RELAY_SCOPE_FIELDS:
         scope_enum = properties.get(scope_field, {}).get("enum", [])
-        if "remote" not in scope_enum:
-            failures.append(f"pairing QR schema {scope_field} must allow remote route scope")
-        if "private_overlay" not in scope_enum:
-            failures.append(f"pairing QR schema {scope_field} must allow private_overlay route scope")
+        for expected_scope in ["remote", "private_overlay", "usb_reverse"]:
+            if expected_scope not in scope_enum:
+                failures.append(
+                    f"pairing QR schema {scope_field} must allow {expected_scope} route scope"
+                )
+
+    if properties.get("service_type", {}).get("enum") != PAIRING_QR_ALLOWED_SERVICE_TYPES:
+        failures.append(
+            "pairing QR schema service_type must allow only AetherLink discovery service hints"
+        )
 
     defs = schema.get("$defs", {})
     no_whitespace_def = defs.get("noWhitespaceString", {})
@@ -2223,6 +2311,30 @@ def check_pairing_qr_schema(schema: dict) -> list[str]:
         failures.append("pairing QR schema noWhitespaceString must be a non-empty string")
     if no_whitespace_def.get("pattern") != "^\\S+$":
         failures.append("pairing QR schema noWhitespaceString must reject whitespace")
+    port_value = defs.get("portValue", {})
+    if port_value.get("anyOf") != [
+        {"type": "integer", "minimum": 1, "maximum": 65535},
+        {
+            "type": "string",
+            "pattern": "^([1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])$",
+        },
+    ]:
+        failures.append(
+            "pairing QR schema portValue must reject signed, zero-padded, or out-of-range port strings"
+        )
+    p2p_protocol_version = defs.get("p2pProtocolVersionValue", {})
+    if p2p_protocol_version.get("anyOf") != [{"const": 1}, {"const": "1"}]:
+        failures.append(
+            'pairing QR schema p2pProtocolVersionValue must allow only exact 1 or "1"'
+        )
+    epoch_millis_value = defs.get("epochMillisValue", {})
+    if epoch_millis_value.get("anyOf") != [
+        {"type": "integer", "minimum": 1},
+        {"type": "string", "pattern": "^[1-9][0-9]*$"},
+    ]:
+        failures.append(
+            "pairing QR schema epochMillisValue must reject signed or zero-padded expiration strings"
+        )
     failures.extend(check_opaque_route_material_defs(defs, label="pairing QR schema"))
     for field in PAIRING_QR_NO_WHITESPACE_FIELDS:
         if not pairing_qr_schema_disallows_whitespace(properties.get(field, {})):
@@ -2290,11 +2402,18 @@ def check_pairing_qr_schema(schema: dict) -> list[str]:
 
     failures.extend(check_pairing_qr_relay_alias_family_isolation(schema))
     failures.extend(check_pairing_qr_p2p_alias_family_isolation(schema))
+    failures.extend(check_pairing_qr_semantic_alias_exclusivity(schema))
 
-    relay_host = properties.get("relay_host", {})
-    relay_ref = relay_host.get("$ref")
-    if relay_ref != "#/$defs/eligibleRelayHost":
-        failures.append("relay_host must use eligibleRelayHost")
+    for field in PRIVATE_RELAY_HOST_FIELDS:
+        if properties.get(field, {}).get("$ref") != "#/$defs/pairingRelayHost":
+            failures.append(f"pairing QR schema {field} must use pairingRelayHost")
+
+    pairing_host = schema.get("$defs", {}).get("pairingRelayHost", {})
+    if not pairing_qr_relay_host_schema_allows_remote_or_usb_loopback(pairing_host):
+        failures.append(
+            "pairing QR schema pairingRelayHost must allow normal eligible relay hosts "
+            "or explicit debug USB reverse loopback relay hosts"
+        )
 
     eligible_host = schema.get("$defs", {}).get("eligibleRelayHost", {})
     forbidden_enums: set[str] = set()
@@ -2312,11 +2431,19 @@ def check_pairing_qr_schema(schema: dict) -> list[str]:
         if forbidden not in forbidden_enums:
             failures.append(f"eligibleRelayHost must reject {forbidden}")
 
+    loopback_host = schema.get("$defs", {}).get("loopbackRelayHost", {})
+    if not route_refresh_loopback_host_schema_is_canonical(loopback_host):
+        failures.append(
+            "pairing QR schema loopbackRelayHost must match localhost, IPv4 loopback, "
+            "and IPv6 loopback relay hosts"
+        )
+
     joined_patterns = "\n".join(forbidden_patterns)
     for forbidden in ["local$", "169\\.254", "fe80"]:
         if forbidden not in joined_patterns:
             failures.append(f"eligibleRelayHost must reject {forbidden}")
 
+    failures.extend(check_usb_reverse_qr_scope_contract(schema))
     failures.extend(check_private_overlay_qr_scope_contract(schema))
 
     failures.extend(check_compact_relay_fixture(
@@ -2389,6 +2516,112 @@ def check_pairing_qr_p2p_alias_family_isolation(schema: dict) -> list[str]:
             )
             break
     return failures
+
+
+def check_pairing_qr_scope_alias_exclusivity(schema: dict) -> list[str]:
+    failures: list[str] = []
+    scope_fields = list(PAIRING_QR_REMOTE_RELAY_SCOPE_FIELDS)
+    for index, left_field in enumerate(scope_fields):
+        for right_field in scope_fields[index + 1:]:
+            if not pairing_qr_rejects_required_field_pair(schema, left_field, right_field):
+                failures.append(
+                    "pairing QR schema must reject mixed relay-scope aliases "
+                    f"between {left_field} and {right_field}"
+                )
+    return failures
+
+
+def check_pairing_qr_semantic_alias_exclusivity(schema: dict) -> list[str]:
+    failures: list[str] = []
+    for canonical, fields in PAIRING_QR_SEMANTIC_ALIAS_GROUPS.items():
+        ordered_fields = sorted(fields)
+        for index, left_field in enumerate(ordered_fields):
+            for right_field in ordered_fields[index + 1:]:
+                if not pairing_qr_rejects_required_field_pair(schema, left_field, right_field):
+                    failures.append(
+                        "pairing QR schema must reject mixed semantic aliases "
+                        f"for {canonical} between {left_field} and {right_field}"
+                    )
+    return failures
+
+
+def pairing_qr_rejects_required_field_pair(schema: dict, left_field: str, right_field: str) -> bool:
+    if pairing_qr_dependent_schema_rejects_field_pair(schema, left_field, right_field):
+        return True
+    for rule in schema.get("allOf", []):
+        if not isinstance(rule, dict):
+            continue
+        not_rule = rule.get("not", {})
+        if not isinstance(not_rule, dict):
+            continue
+        if required_field_pair_all_of_matches(not_rule.get("allOf", []), left_field, right_field):
+            return True
+        any_of = not_rule.get("anyOf", [])
+        if isinstance(any_of, list):
+            for option in any_of:
+                if not isinstance(option, dict):
+                    continue
+                if required_field_pair_all_of_matches(option.get("allOf", []), left_field, right_field):
+                    return True
+    return False
+
+
+def pairing_qr_dependent_schema_rejects_field_pair(
+    schema: dict,
+    left_field: str,
+    right_field: str,
+) -> bool:
+    dependent_schemas = schema.get("dependentSchemas", {})
+    if not isinstance(dependent_schemas, dict):
+        return False
+    return (
+        dependent_schema_rejects_required_field(dependent_schemas, left_field, right_field)
+        or dependent_schema_rejects_required_field(dependent_schemas, right_field, left_field)
+    )
+
+
+def dependent_schema_rejects_required_field(
+    dependent_schemas: dict,
+    present_field: str,
+    rejected_field: str,
+) -> bool:
+    rule = dependent_schemas.get(present_field)
+    if not isinstance(rule, dict):
+        return False
+    return schema_not_rejects_required_field(rule.get("not"), rejected_field)
+
+
+def schema_not_rejects_required_field(not_rule: object, rejected_field: str) -> bool:
+    if not isinstance(not_rule, dict):
+        return False
+    if single_required_field_matches(not_rule, rejected_field):
+        return True
+    any_of = not_rule.get("anyOf", [])
+    if isinstance(any_of, list):
+        return any(
+            isinstance(option, dict) and single_required_field_matches(option, rejected_field)
+            for option in any_of
+        )
+    return False
+
+
+def single_required_field_matches(condition: dict, expected_field: str) -> bool:
+    required = condition.get("required", [])
+    return isinstance(required, list) and required == [expected_field]
+
+
+def required_field_pair_all_of_matches(all_of: object, left_field: str, right_field: str) -> bool:
+    if not isinstance(all_of, list) or len(all_of) != 2:
+        return False
+    required_fields = []
+    for condition in all_of:
+        if not isinstance(condition, dict):
+            return False
+        required = condition.get("required", [])
+        if not isinstance(required, list) or len(required) != 1:
+            return False
+        required_fields.append(required[0])
+    return set(required_fields) == {left_field, right_field}
 
 
 def pairing_qr_has_mixed_alias_family_rejection(schema: dict, payload_keys: set[str]) -> bool:
@@ -2504,6 +2737,21 @@ def check_route_refresh_route_material_schema(schema: dict) -> list[str]:
                 f"missing {expected_pattern}"
             )
 
+    loopback_host = defs.get("loopbackRelayHost", {})
+    if not route_refresh_loopback_host_schema_is_canonical(loopback_host):
+        failures.append(
+            "protocol route.refresh loopbackRelayHost must match localhost, IPv4 loopback, "
+            "and IPv6 loopback relay hosts"
+        )
+
+    relay_host_schema = defs.get("routeRefreshRelayHost", {})
+    if not route_refresh_relay_host_schema_is_canonical(relay_host_schema):
+        failures.append(
+            "protocol route.refresh routeRefreshRelayHost must require a non-empty, "
+            "whitespace-free host and reject URL, path, query, fragment, user-info, "
+            "mDNS-local, unspecified, link-local, multicast, and broadcast markers"
+        )
+
     route_refresh = defs.get("routeRefreshPayload", {})
     route_refresh_options = route_refresh.get("oneOf", [])
     material_schema = None
@@ -2515,6 +2763,11 @@ def check_route_refresh_route_material_schema(schema: dict) -> list[str]:
         return ["route.refresh schema must include a route-material payload option"]
 
     private_overlay_rules = material_schema.get("allOf", [])
+    if not any(is_route_refresh_loopback_usb_reverse_scope_rule(rule) for rule in private_overlay_rules):
+        failures.append(
+            "route.refresh schema must require relay_scope=usb_reverse when relay_host "
+            "uses a loopback relay literal"
+        )
     if not any(is_route_refresh_private_overlay_scope_rule(rule) for rule in private_overlay_rules):
         failures.append(
             "route.refresh schema must require relay_scope=private_overlay when relay_host "
@@ -2522,6 +2775,8 @@ def check_route_refresh_route_material_schema(schema: dict) -> list[str]:
         )
 
     properties = material_schema.get("properties", {})
+    if properties.get("relay_host", {}).get("$ref") != "#/$defs/routeRefreshRelayHost":
+        failures.append("route.refresh schema relay_host must use routeRefreshRelayHost")
     for field in ROUTE_REFRESH_OPAQUE_VALUE_FIELDS:
         if properties.get(field, {}).get("$ref") != "#/$defs/opaqueRouteValue":
             failures.append(
@@ -2543,7 +2798,85 @@ def check_route_refresh_route_material_schema(schema: dict) -> list[str]:
     return failures
 
 
+def route_refresh_relay_host_schema_is_canonical(schema: object) -> bool:
+    if not isinstance(schema, dict):
+        return False
+    all_of = schema.get("allOf", [])
+    if not isinstance(all_of, list):
+        return False
+    has_non_empty_ref = any(
+        isinstance(rule, dict) and rule.get("$ref") == "#/$defs/nonEmptyString"
+        for rule in all_of
+    )
+    has_no_whitespace_pattern = any(
+        isinstance(rule, dict) and rule.get("pattern") == "^\\S+$"
+        for rule in all_of
+    )
+    forbidden_patterns = {
+        rule.get("not", {}).get("pattern")
+        for rule in all_of
+        if isinstance(rule, dict) and isinstance(rule.get("not"), dict)
+    }
+    forbidden_enums: set[str] = set()
+    for rule in all_of:
+        if not isinstance(rule, dict) or not isinstance(rule.get("not"), dict):
+            continue
+        enum_values = rule["not"].get("enum", [])
+        if isinstance(enum_values, list):
+            forbidden_enums.update(value for value in enum_values if isinstance(value, str))
+    return (
+        has_non_empty_ref
+        and has_no_whitespace_pattern
+        and set(ROUTE_REFRESH_RELAY_HOST_FORBIDDEN_ENUMS) <= forbidden_enums
+        and set(ROUTE_REFRESH_RELAY_HOST_FORBIDDEN_PATTERNS) <= forbidden_patterns
+    )
+
+
+def route_refresh_loopback_host_schema_is_canonical(schema: object) -> bool:
+    if not isinstance(schema, dict):
+        return False
+    any_of = schema.get("anyOf", [])
+    if not isinstance(any_of, list):
+        return False
+    enum_values: set[str] = set()
+    patterns: set[str] = set()
+    for option in any_of:
+        if not isinstance(option, dict):
+            continue
+        option_enum = option.get("enum", [])
+        if isinstance(option_enum, list):
+            enum_values.update(value for value in option_enum if isinstance(value, str))
+        pattern = option.get("pattern")
+        if isinstance(pattern, str):
+            patterns.add(pattern)
+    return (
+        set(LOOPBACK_RELAY_HOST_ENUMS) <= enum_values
+        and set(LOOPBACK_RELAY_HOST_PATTERNS) <= patterns
+    )
+
+
+def is_route_refresh_loopback_usb_reverse_scope_rule(rule: object) -> bool:
+    return is_route_refresh_relay_scope_rule(
+        rule,
+        host_ref="#/$defs/loopbackRelayHost",
+        expected_scope="usb_reverse",
+    )
+
+
 def is_route_refresh_private_overlay_scope_rule(rule: object) -> bool:
+    return is_route_refresh_relay_scope_rule(
+        rule,
+        host_ref="#/$defs/privateOverlayRelayHost",
+        expected_scope="private_overlay",
+    )
+
+
+def is_route_refresh_relay_scope_rule(
+    rule: object,
+    *,
+    host_ref: str,
+    expected_scope: str,
+) -> bool:
     if not isinstance(rule, dict):
         return False
     condition = rule.get("if", {})
@@ -2558,11 +2891,57 @@ def is_route_refresh_private_overlay_scope_rule(rule: object) -> bool:
     then = rule.get("then", {})
     return (
         isinstance(field_schema, dict)
-        and field_schema.get("$ref") == "#/$defs/privateOverlayRelayHost"
+        and field_schema.get("$ref") == host_ref
         and isinstance(then, dict)
         and then.get("required") == ["relay_scope"]
-        and then.get("properties", {}).get("relay_scope", {}).get("const") == "private_overlay"
+        and then.get("properties", {}).get("relay_scope", {}).get("const") == expected_scope
     )
+
+
+def pairing_qr_relay_host_schema_allows_remote_or_usb_loopback(schema: object) -> bool:
+    if not isinstance(schema, dict):
+        return False
+    any_of = schema.get("anyOf", [])
+    if not isinstance(any_of, list):
+        return False
+    refs = {
+        option.get("$ref")
+        for option in any_of
+        if isinstance(option, dict)
+    }
+    return {
+        "#/$defs/eligibleRelayHost",
+        "#/$defs/loopbackRelayHost",
+    } <= refs
+
+
+def check_usb_reverse_qr_scope_contract(schema: dict) -> list[str]:
+    failures: list[str] = []
+    defs = schema.get("$defs", {})
+    loopback_host = defs.get("loopbackRelayHost", {})
+    if not route_refresh_loopback_host_schema_is_canonical(loopback_host):
+        failures.append(
+            "loopbackRelayHost must match localhost, IPv4 loopback, and IPv6 loopback relay hosts"
+        )
+
+    usb_reverse_scope = defs.get("usbReverseScopeRequired", {})
+    usb_reverse_scope_json = json.dumps(usb_reverse_scope, sort_keys=True)
+    for scope_field in PAIRING_QR_REMOTE_RELAY_SCOPE_FIELDS:
+        if scope_field not in usb_reverse_scope_json:
+            failures.append(
+                f"usbReverseScopeRequired must allow {scope_field}=usb_reverse"
+            )
+    if "usb_reverse" not in usb_reverse_scope_json:
+        failures.append("usbReverseScopeRequired must require usb_reverse")
+
+    conditional_rules = schema.get("allOf", [])
+    for field in PRIVATE_RELAY_HOST_FIELDS:
+        if not any(is_usb_reverse_scope_rule(rule, field) for rule in conditional_rules):
+            failures.append(
+                f"pairing QR schema must require usb_reverse scope when {field} "
+                "uses a loopback relay literal"
+            )
+    return failures
 
 
 def check_private_overlay_qr_scope_contract(schema: dict) -> list[str]:
@@ -2607,7 +2986,31 @@ def check_private_overlay_qr_scope_contract(schema: dict) -> list[str]:
     return failures
 
 
+def is_usb_reverse_scope_rule(rule: object, field: str) -> bool:
+    return is_pairing_qr_scope_requirement_rule(
+        rule,
+        field=field,
+        host_ref="#/$defs/loopbackRelayHost",
+        scope_ref="#/$defs/usbReverseScopeRequired",
+    )
+
+
 def is_private_overlay_scope_rule(rule: object, field: str) -> bool:
+    return is_pairing_qr_scope_requirement_rule(
+        rule,
+        field=field,
+        host_ref="#/$defs/privateOverlayRelayHost",
+        scope_ref="#/$defs/privateOverlayScopeRequired",
+    )
+
+
+def is_pairing_qr_scope_requirement_rule(
+    rule: object,
+    *,
+    field: str,
+    host_ref: str,
+    scope_ref: str,
+) -> bool:
     if not isinstance(rule, dict):
         return False
     condition = rule.get("if", {})
@@ -2622,9 +3025,9 @@ def is_private_overlay_scope_rule(rule: object, field: str) -> bool:
         return False
     then = rule.get("then", {})
     return (
-        field_schema.get("$ref") == "#/$defs/privateOverlayRelayHost"
+        field_schema.get("$ref") == host_ref
         and isinstance(then, dict)
-        and then.get("$ref") == "#/$defs/privateOverlayScopeRequired"
+        and then.get("$ref") == scope_ref
     )
 
 

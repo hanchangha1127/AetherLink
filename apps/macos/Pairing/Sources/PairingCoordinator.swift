@@ -3,6 +3,23 @@ import Foundation
 import TrustedDevices
 
 public struct PairingSession: Identifiable, Equatable, Sendable {
+    private typealias RelayQRCodeMaterial = (
+        host: String,
+        port: Int,
+        id: String,
+        secret: String,
+        expiresAtEpochMillis: Int64,
+        nonce: String
+    )
+    private typealias P2PQRCodeMaterial = (
+        routeClass: String,
+        recordID: String,
+        encryptedBody: String,
+        expiresAtEpochMillis: Int64,
+        antiReplayNonce: String,
+        protocolVersion: Int
+    )
+
     public var id: String { nonce }
     public var code: String
     public var nonce: String
@@ -49,29 +66,19 @@ public struct PairingSession: Identifiable, Equatable, Sendable {
             URLQueryItem(name: compact ? "rn" : "runtime_name", value: macName),
             URLQueryItem(name: compact ? "rf" : "runtime_key_fingerprint", value: fingerprint)
         ]
-        if let runtimePublicKeyBase64, !runtimePublicKeyBase64.isEmpty {
+        if let runtimePublicKeyBase64 = Self.canonicalOpaqueQRCodeValue(runtimePublicKeyBase64) {
             queryItems.append(URLQueryItem(name: compact ? "rk" : "runtime_public_key", value: runtimePublicKeyBase64))
         }
-        if let routeToken, !routeToken.isEmpty {
+        if let routeToken = Self.canonicalOpaqueQRCodeValue(routeToken) {
             queryItems.append(URLQueryItem(name: compact ? "rt" : "route_token", value: routeToken))
         }
-        if let p2pRouteClass, !p2pRouteClass.isEmpty {
-            queryItems.append(URLQueryItem(name: compact ? "pc" : "p2p_class", value: p2pRouteClass))
-        }
-        if let p2pRecordID, !p2pRecordID.isEmpty {
-            queryItems.append(URLQueryItem(name: compact ? "prid" : "p2p_record_id", value: p2pRecordID))
-        }
-        if let p2pEncryptedBody, !p2pEncryptedBody.isEmpty {
-            queryItems.append(URLQueryItem(name: compact ? "peb" : "p2p_encrypted_body", value: p2pEncryptedBody))
-        }
-        if let p2pExpiresAtEpochMillis {
-            queryItems.append(URLQueryItem(name: compact ? "px" : "p2p_expires_at", value: String(p2pExpiresAtEpochMillis)))
-        }
-        if let p2pAntiReplayNonce, !p2pAntiReplayNonce.isEmpty {
-            queryItems.append(URLQueryItem(name: compact ? "pn" : "p2p_anti_replay_nonce", value: p2pAntiReplayNonce))
-        }
-        if let p2pProtocolVersion {
-            queryItems.append(URLQueryItem(name: compact ? "pv" : "p2p_protocol_version", value: String(p2pProtocolVersion)))
+        if let p2pMaterial = p2pQRCodeMaterial() {
+            queryItems.append(URLQueryItem(name: compact ? "pc" : "p2p_class", value: p2pMaterial.routeClass))
+            queryItems.append(URLQueryItem(name: compact ? "prid" : "p2p_record_id", value: p2pMaterial.recordID))
+            queryItems.append(URLQueryItem(name: compact ? "peb" : "p2p_encrypted_body", value: p2pMaterial.encryptedBody))
+            queryItems.append(URLQueryItem(name: compact ? "px" : "p2p_expires_at", value: String(p2pMaterial.expiresAtEpochMillis)))
+            queryItems.append(URLQueryItem(name: compact ? "pn" : "p2p_anti_replay_nonce", value: p2pMaterial.antiReplayNonce))
+            queryItems.append(URLQueryItem(name: compact ? "pv" : "p2p_protocol_version", value: String(p2pMaterial.protocolVersion)))
         }
         if let host {
             queryItems.append(URLQueryItem(name: compact ? "h" : "host", value: host))
@@ -79,26 +86,17 @@ public struct PairingSession: Identifiable, Equatable, Sendable {
         if let port {
             queryItems.append(URLQueryItem(name: compact ? "p" : "port", value: String(port)))
         }
-        if let relayHost, !relayHost.isEmpty {
-            queryItems.append(URLQueryItem(name: compact ? "rh" : "relay_host", value: relayHost))
+        let relayMaterial = relayQRCodeMaterial()
+        if let relayMaterial {
+            queryItems.append(URLQueryItem(name: compact ? "rh" : "relay_host", value: relayMaterial.host))
+            queryItems.append(URLQueryItem(name: compact ? "rp" : "relay_port", value: String(relayMaterial.port)))
+            queryItems.append(URLQueryItem(name: compact ? "ri" : "relay_id", value: relayMaterial.id))
+            queryItems.append(URLQueryItem(name: compact ? "rs" : "relay_secret", value: relayMaterial.secret))
+            queryItems.append(URLQueryItem(name: compact ? "rx" : "relay_expires_at", value: String(relayMaterial.expiresAtEpochMillis)))
+            queryItems.append(URLQueryItem(name: compact ? "rrn" : "relay_nonce", value: relayMaterial.nonce))
         }
-        if let relayPort {
-            queryItems.append(URLQueryItem(name: compact ? "rp" : "relay_port", value: String(relayPort)))
-        }
-        if let relayID, !relayID.isEmpty {
-            queryItems.append(URLQueryItem(name: compact ? "ri" : "relay_id", value: relayID))
-        }
-        if let relaySecret, !relaySecret.isEmpty {
-            queryItems.append(URLQueryItem(name: compact ? "rs" : "relay_secret", value: relaySecret))
-        }
-        if let relayExpiresAtEpochMillis {
-            queryItems.append(URLQueryItem(name: compact ? "rx" : "relay_expires_at", value: String(relayExpiresAtEpochMillis)))
-        }
-        if let relayNonce, !relayNonce.isEmpty {
-            queryItems.append(URLQueryItem(name: compact ? "rrn" : "relay_nonce", value: relayNonce))
-        }
-        if let relayScope, !relayScope.isEmpty {
-            let canonicalScopeName = relayHost == nil ? "route_scope" : "relay_scope"
+        if let relayScope, !relayScope.isEmpty, relayMaterial != nil || relayHost == nil {
+            let canonicalScopeName = relayMaterial == nil ? "route_scope" : "relay_scope"
             queryItems.append(URLQueryItem(name: compact ? "rsc" : canonicalScopeName, value: relayScope))
         }
         components.queryItems = queryItems
@@ -106,6 +104,203 @@ public struct PairingSession: Identifiable, Equatable, Sendable {
             components.percentEncodedQuery = percentEncodedQuery.replacingOccurrences(of: "+", with: "%2B")
         }
         return components.string ?? "aetherlink://pair"
+    }
+
+    private func relayQRCodeMaterial() -> RelayQRCodeMaterial? {
+        guard let rawRelayHost = relayHost,
+              let relayHost = Self.canonicalRelayHostValue(rawRelayHost),
+              Self.relayHostMatchesRelayScope(relayHost, relayScope: relayScope),
+              let relayPort,
+              (1...65_535).contains(relayPort),
+              let relayID = Self.canonicalOpaqueQRCodeValue(relayID),
+              let relaySecret = Self.canonicalOpaqueQRCodeValue(relaySecret),
+              let relayExpiresAtEpochMillis,
+              relayExpiresAtEpochMillis > 0,
+              let relayNonce = Self.canonicalOpaqueQRCodeValue(relayNonce)
+        else {
+            return nil
+        }
+        return (
+            host: relayHost,
+            port: relayPort,
+            id: relayID,
+            secret: relaySecret,
+            expiresAtEpochMillis: relayExpiresAtEpochMillis,
+            nonce: relayNonce
+        )
+    }
+
+    private static func relayHostMatchesRelayScope(_ relayHost: String, relayScope: String?) -> Bool {
+        guard let normalizedHost = canonicalRelayHostValue(relayHost) else { return false }
+        if isLoopbackRelayHost(normalizedHost) {
+            return relayScope == "usb_reverse"
+        }
+        if isLocalOnlyRelayHost(normalizedHost) {
+            return false
+        }
+        if normalizedHost.isPrivateOrLocalIPv4RelayLiteral() ||
+            normalizedHost.isPrivateOrLocalIPv6RelayLiteral() {
+            return relayScope == "private_overlay" &&
+                normalizedHost.isPrivateOverlayRelayLiteral()
+        }
+        return relayScope == nil || relayScope == "remote"
+    }
+
+    private static func canonicalRelayHostValue(_ relayHost: String) -> String? {
+        let normalizedHost = relayHost
+            .trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
+            .trimmingCharacters(in: CharacterSet(charactersIn: "."))
+            .lowercased()
+        guard !relayHost.isEmpty,
+              relayHost.trimmingCharacters(in: .whitespacesAndNewlines) == relayHost,
+              relayHost.rangeOfCharacter(from: .whitespacesAndNewlines) == nil,
+              !relayHost.contains("://"),
+              relayHost.allSatisfy({ !["/", "?", "#", "@"].contains($0) }),
+              !normalizedHost.contains(":") || normalizedHost.isIPv6RelayLiteralShape
+        else {
+            return nil
+        }
+        return normalizedHost
+    }
+
+    private static func isLoopbackRelayHost(_ host: String) -> Bool {
+        host == "localhost" ||
+            host == "::1" ||
+            host == "0:0:0:0:0:0:0:1" ||
+            host.hasPrefix("127.")
+    }
+
+    private static func isLocalOnlyRelayHost(_ host: String) -> Bool {
+        host == "local" ||
+            host.hasSuffix(".local") ||
+            host == "0.0.0.0" ||
+            host == "::" ||
+            host == "0:0:0:0:0:0:0:0" ||
+            host.hasPrefix("169.254.") ||
+            host.hasPrefix("fe80:") ||
+            host.isIPv4MulticastRelayLiteral() ||
+            host.isIPv6MulticastRelayLiteral()
+    }
+
+    private func p2pQRCodeMaterial() -> P2PQRCodeMaterial? {
+        guard p2pRouteClass == "p2p_rendezvous",
+              let p2pRecordID = Self.canonicalOpaqueQRCodeValue(p2pRecordID),
+              let p2pEncryptedBody = Self.canonicalOpaqueQRCodeValue(
+                  p2pEncryptedBody,
+                  maxLength: Self.opaqueQRBodyMaxLength
+              ),
+              let p2pExpiresAtEpochMillis,
+              p2pExpiresAtEpochMillis > 0,
+              let p2pAntiReplayNonce = Self.canonicalOpaqueQRCodeValue(p2pAntiReplayNonce),
+              p2pProtocolVersion == 1
+        else {
+            return nil
+        }
+        return (
+            routeClass: "p2p_rendezvous",
+            recordID: p2pRecordID,
+            encryptedBody: p2pEncryptedBody,
+            expiresAtEpochMillis: p2pExpiresAtEpochMillis,
+            antiReplayNonce: p2pAntiReplayNonce,
+            protocolVersion: 1
+        )
+    }
+
+    private static func canonicalOpaqueQRCodeValue(_ value: String?) -> String? {
+        canonicalOpaqueQRCodeValue(value, maxLength: opaqueQRValueMaxLength)
+    }
+
+    private static func canonicalOpaqueQRCodeValue(_ value: String?, maxLength: Int) -> String? {
+        guard let value,
+              !value.isEmpty,
+              value.count <= maxLength,
+              value.trimmingCharacters(in: .whitespacesAndNewlines) == value,
+              value.rangeOfCharacter(from: .whitespacesAndNewlines) == nil
+        else {
+            return nil
+        }
+        return value
+    }
+
+    private static let opaqueQRValueMaxLength = 512
+    private static let opaqueQRBodyMaxLength = 2_048
+}
+
+private extension String {
+    func isPrivateOverlayRelayLiteral() -> Bool {
+        isPrivateOverlayIPv4RelayLiteral() || isPrivateOverlayIPv6RelayLiteral()
+    }
+
+    func isPrivateOrLocalIPv4RelayLiteral() -> Bool {
+        guard let octets = ipv4Octets else { return false }
+        let first = octets[0]
+        let second = octets[1]
+        return first == 0 ||
+            first == 10 ||
+            first == 127 ||
+            first >= 224 ||
+            (first == 100 && (64...127).contains(second)) ||
+            (first == 169 && second == 254) ||
+            (first == 172 && (16...31).contains(second)) ||
+            (first == 192 && second == 168)
+    }
+
+    func isPrivateOrLocalIPv6RelayLiteral() -> Bool {
+        guard contains(":") else { return false }
+        return self == "::" ||
+            self == "::1" ||
+            self == "0:0:0:0:0:0:0:0" ||
+            self == "0:0:0:0:0:0:0:1" ||
+            hasPrefix("fe80:") ||
+            hasPrefix("fc") ||
+            hasPrefix("fd") ||
+            hasPrefix("ff")
+    }
+
+    func isIPv4MulticastRelayLiteral() -> Bool {
+        guard let octets = ipv4Octets else { return false }
+        return octets[0] >= 224
+    }
+
+    func isIPv6MulticastRelayLiteral() -> Bool {
+        contains(":") && hasPrefix("ff")
+    }
+
+    private func isPrivateOverlayIPv4RelayLiteral() -> Bool {
+        guard let octets = ipv4Octets else { return false }
+        let first = octets[0]
+        let second = octets[1]
+        return first == 10 ||
+            (first == 100 && (64...127).contains(second)) ||
+            (first == 172 && (16...31).contains(second)) ||
+            (first == 192 && second == 168)
+    }
+
+    private func isPrivateOverlayIPv6RelayLiteral() -> Bool {
+        guard contains(":") else { return false }
+        return hasPrefix("fc") || hasPrefix("fd")
+    }
+
+    private var ipv4Octets: [Int]? {
+        let octets = split(separator: ".", omittingEmptySubsequences: false)
+        guard octets.count == 4 else { return nil }
+        let values = octets.compactMap { part -> Int? in
+            guard !part.isEmpty,
+                  part.allSatisfy(\.isNumber),
+                  let value = Int(part),
+                  (0...255).contains(value)
+            else {
+                return nil
+            }
+            return value
+        }
+        return values.count == 4 ? values : nil
+    }
+
+    var isIPv6RelayLiteralShape: Bool {
+        allSatisfy { character in
+            character.isHexDigit || character == ":"
+        }
     }
 }
 

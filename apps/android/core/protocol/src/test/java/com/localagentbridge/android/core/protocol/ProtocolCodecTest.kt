@@ -9,6 +9,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
 import org.junit.Test
 import java.io.ByteArrayInputStream
 
@@ -33,6 +34,131 @@ class ProtocolCodecTest {
         val framedBody = codec.readFrameBody(ByteArrayInputStream(codec.encodeFrameBody(body)))
 
         assertEquals(envelope, codec.decode(framedBody))
+    }
+
+    @Test
+    fun decodeRejectsUnknownTopLevelEnvelopeFields() {
+        val codec = ProtocolCodec()
+        val json = """
+            {
+              "version": 1,
+              "type": "runtime.health",
+              "request_id": "android-unknown-top-level-envelope-field",
+              "timestamp": "2026-07-07T00:00:00Z",
+              "payload": {},
+              "backend_url": "http://127.0.0.1:11434",
+              "route_token": "client-supplied-route-token"
+            }
+        """.trimIndent()
+
+        val error = assertThrows(IllegalArgumentException::class.java) {
+            codec.decode(json.encodeToByteArray())
+        }
+
+        assertEquals("Unknown protocol envelope field: backend_url", error.message)
+    }
+
+    @Test
+    fun decodeRejectsMalformedRequiredEnvelopeFields() {
+        val codec = ProtocolCodec()
+        val validEnvelope = linkedMapOf(
+            "version" to "1",
+            "type" to "\"runtime.health\"",
+            "request_id" to "\"android-required-envelope-field\"",
+            "timestamp" to "\"2026-07-07T00:00:00Z\"",
+            "payload" to "{}",
+        )
+        val missingCases = listOf(
+            "version",
+            "type",
+            "request_id",
+            "timestamp",
+            "payload",
+        )
+
+        missingCases.forEach { missingField ->
+            val json = validEnvelope
+                .filterKeys { it != missingField }
+                .entries
+                .joinToString(prefix = "{", postfix = "}") { (key, value) -> "\"$key\":$value" }
+
+            val error = assertThrows(IllegalArgumentException::class.java) {
+                codec.decode(json.encodeToByteArray())
+            }
+
+            assertEquals("Missing protocol envelope field: $missingField", error.message)
+        }
+
+        val mistypedCases = listOf(
+            """{"version":"1","type":"runtime.health","request_id":"bad-version","timestamp":"2026-07-07T00:00:00Z","payload":{}}""",
+            """{"version":1,"type":7,"request_id":"bad-type","timestamp":"2026-07-07T00:00:00Z","payload":{}}""",
+            """{"version":1,"type":"runtime.health","request_id":7,"timestamp":"2026-07-07T00:00:00Z","payload":{}}""",
+            """{"version":1,"type":"runtime.health","request_id":"bad-timestamp","timestamp":123,"payload":{}}""",
+            """{"version":1,"type":"runtime.health","request_id":"malformed-timestamp","timestamp":"not-a-date","payload":{}}""",
+            """{"version":1,"type":"runtime.health","request_id":"bad-payload","timestamp":"2026-07-07T00:00:00Z","payload":[]}""",
+        )
+        mistypedCases.forEach { json ->
+            assertThrows(Exception::class.java) {
+                codec.decode(json.encodeToByteArray())
+            }
+        }
+    }
+
+    @Test
+    fun decodeRejectsUnsupportedVersionAndBlankRequestId() {
+        val codec = ProtocolCodec()
+
+        val unsupportedVersion = """
+            {
+              "version": 2,
+              "type": "runtime.health",
+              "request_id": "unsupported-version",
+              "timestamp": "2026-07-07T00:00:00Z",
+              "payload": {}
+            }
+        """.trimIndent()
+        val versionError = assertThrows(IllegalArgumentException::class.java) {
+            codec.decode(unsupportedVersion.encodeToByteArray())
+        }
+        assertEquals("Unsupported protocol envelope version: 2", versionError.message)
+
+        listOf("", "   ").forEach { requestId ->
+            val blankRequestId = """
+                {
+                  "version": 1,
+                  "type": "runtime.health",
+                  "request_id": "$requestId",
+                  "timestamp": "2026-07-07T00:00:00Z",
+                  "payload": {}
+                }
+            """.trimIndent()
+
+            val requestIdError = assertThrows(IllegalArgumentException::class.java) {
+                codec.decode(blankRequestId.encodeToByteArray())
+            }
+            assertEquals("Invalid protocol envelope field: request_id", requestIdError.message)
+        }
+    }
+
+    @Test
+    fun decodeAllowsMessageSpecificMetadataInsidePayloadObject() {
+        val codec = ProtocolCodec()
+        val json = """
+            {
+              "version": 1,
+              "type": "runtime.health",
+              "request_id": "android-payload-object-boundary",
+              "timestamp": "2026-07-07T00:00:00Z",
+              "payload": {
+                "backend_url": "http://127.0.0.1:11434"
+              }
+            }
+        """.trimIndent()
+
+        val decoded = codec.decode(json.encodeToByteArray())
+
+        assertEquals(MessageType.RuntimeHealth, decoded.type)
+        assertEquals("http://127.0.0.1:11434", decoded.payload["backend_url"]?.jsonPrimitive?.content)
     }
 
     @Test

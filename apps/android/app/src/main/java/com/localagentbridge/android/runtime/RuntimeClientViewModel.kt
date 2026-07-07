@@ -61,6 +61,7 @@ import com.localagentbridge.android.core.pairing.RuntimePairingPayloadParser
 import com.localagentbridge.android.core.pairing.PairingStore
 import com.localagentbridge.android.core.pairing.RuntimeIdentityProofVerifier
 import com.localagentbridge.android.core.pairing.TrustedRuntime
+import com.localagentbridge.android.core.pairing.isCanonicalOpaqueRouteValue
 import com.localagentbridge.android.core.transport.BonjourDiscovery
 import com.localagentbridge.android.core.transport.DiscoveredRuntime
 import com.localagentbridge.android.core.transport.RuntimeTransportClient
@@ -381,6 +382,27 @@ private fun runtimeClientJson(): Json = Json {
     explicitNulls = false
     encodeDefaults = true
 }
+
+private val ROUTE_REFRESH_RESPONSE_PAYLOAD_KEYS = setOf(
+    "runtime_device_id",
+    "runtime_key_fingerprint",
+    "relay_host",
+    "relay_port",
+    "relay_id",
+    "relay_secret",
+    "relay_expires_at",
+    "relay_nonce",
+    "relay_scope",
+    "p2p_class",
+    "p2p_record_id",
+    "p2p_encrypted_body",
+    "p2p_expires_at",
+    "p2p_anti_replay_nonce",
+    "p2p_protocol_version",
+)
+
+private fun JsonObject.hasOnlyRouteRefreshResponsePayloadKeys(): Boolean =
+    keys.all { it in ROUTE_REFRESH_RESPONSE_PAYLOAD_KEYS }
 
 internal val RUNTIME_CLIENT_CAPABILITIES = listOf(
     MessageType.RuntimeHealth,
@@ -1250,6 +1272,7 @@ class RuntimeClientViewModel internal constructor(
             val refreshedTrustedRuntime = trustedRuntimeFromRouteRefreshQr(
                 current = state.value.trustedRuntime,
                 payload = payload,
+                nowEpochMillis = nowMillis(),
             )
             if (refreshedTrustedRuntime != null) {
                 cancelPendingPairingDiscoveryTimeout()
@@ -2723,7 +2746,14 @@ class RuntimeClientViewModel internal constructor(
     private fun handleRouteRefresh(envelope: ProtocolEnvelope) {
         if (pendingRouteRefreshRequestId != envelope.requestId) return
         pendingRouteRefreshRequestId = null
-        val payload = decodePayload(RouteRefreshPayload.serializer(), envelope.payload) ?: return
+        if (!envelope.payload.hasOnlyRouteRefreshResponsePayloadKeys()) {
+            scheduleRuntimeRouteRefreshRetry()
+            return
+        }
+        val payload = decodeRouteRefreshPayloadForRetry(envelope.payload) ?: run {
+            scheduleRuntimeRouteRefreshRetry()
+            return
+        }
         val current = state.value.trustedRuntime ?: return
         val trusted = trustedRuntimeFromRouteRefreshPayload(
             current = current,
@@ -3465,6 +3495,16 @@ class RuntimeClientViewModel internal constructor(
             null
         } catch (error: IllegalArgumentException) {
             showError("invalid_payload", error.message)
+            null
+        }
+    }
+
+    private fun decodeRouteRefreshPayloadForRetry(payload: JsonObject): RouteRefreshPayload? {
+        return try {
+            json.decodeFromJsonElement(RouteRefreshPayload.serializer(), payload)
+        } catch (_: SerializationException) {
+            null
+        } catch (_: IllegalArgumentException) {
             null
         }
     }
@@ -4212,8 +4252,8 @@ private fun RuntimeDiscoveredRuntime.matchesTrustedIdentity(
         return allowMissingMetadata
     }
     val targetRouteToken = identity.routeToken.normalizedIdentityOrNull()
-    if (advertisedRouteToken != null && targetRouteToken != null) {
-        return advertisedRouteToken == targetRouteToken
+    if (advertisedRouteToken != null) {
+        return targetRouteToken != null && advertisedRouteToken == targetRouteToken
     }
     val targetDeviceId = identity.deviceId.normalizedIdentityOrNull()
     val targetFingerprint = identity.fingerprint.normalizedIdentityOrNull()
@@ -4661,15 +4701,22 @@ internal fun trustedRuntimeFromAcceptedPairing(
 internal fun trustedRuntimeFromRouteRefreshQr(
     current: RuntimeTrustedRuntime?,
     payload: RuntimePairingPayload,
+    nowEpochMillis: Long = System.currentTimeMillis(),
 ): TrustedRuntime? {
     current ?: return null
-    if (payload.hasExpiredRemoteRoute()) return null
-    val hasRelayRoute = payload.hasRelayRoute()
-    val hasPeerToPeerRoute = payload.hasPeerToPeerRoute()
-    if (!payload.hasRemoteRoute()) return null
+    if (payload.hasExpiredRemoteRoute(nowEpochMillis)) return null
+    val hasRelayRoute = payload.hasRelayRoute(nowEpochMillis)
+    val hasPeerToPeerRoute = payload.hasPeerToPeerRoute(nowEpochMillis)
+    if (!payload.hasRemoteRoute(nowEpochMillis)) return null
     if (!hasRelayRoute && payload.relayScope != null) return null
     if (!hasRelayRoute && payload.hasAnyRelayRouteMaterial()) return null
     if (!hasPeerToPeerRoute && payload.hasAnyPeerToPeerRouteMaterial()) return null
+    if (hasRelayRoute && !payload.isFreshRelayRouteRefreshQr(current, nowEpochMillis)) {
+        return null
+    }
+    if (hasPeerToPeerRoute && !payload.isFreshPeerToPeerRouteRefreshQr(current, nowEpochMillis)) {
+        return null
+    }
     if (current.deviceId != payload.runtimeDeviceId) return null
     if (current.fingerprint != null && current.fingerprint != payload.fingerprint) return null
     if (!runtimePublicKeyMatches(current.publicKeyBase64, payload.runtimePublicKeyBase64)) {
@@ -4699,6 +4746,29 @@ internal fun trustedRuntimeFromRouteRefreshQr(
     )
 }
 
+private fun RuntimePairingPayload.isFreshRelayRouteRefreshQr(
+    current: RuntimeTrustedRuntime,
+    nowEpochMillis: Long,
+): Boolean {
+    if (!current.hasRelayRoute(nowEpochMillis)) return true
+    if (relayNonce != null && relayNonce == current.relayNonce) return false
+    val currentExpiry = current.relayExpiresAtEpochMillis ?: return true
+    val refreshedExpiry = relayExpiresAtEpochMillis ?: return true
+    return refreshedExpiry > currentExpiry
+}
+
+private fun RuntimePairingPayload.isFreshPeerToPeerRouteRefreshQr(
+    current: RuntimeTrustedRuntime,
+    nowEpochMillis: Long,
+): Boolean {
+    if (!current.hasPeerToPeerRoute(nowEpochMillis)) return true
+    if (p2pRecordId != null && p2pRecordId == current.p2pRecordId) return false
+    if (p2pAntiReplayNonce != null && p2pAntiReplayNonce == current.p2pAntiReplayNonce) return false
+    val currentExpiry = current.p2pExpiresAtEpochMillis ?: return true
+    val refreshedExpiry = p2pExpiresAtEpochMillis ?: return true
+    return refreshedExpiry > currentExpiry
+}
+
 internal fun trustedRuntimeFromRouteRefreshPayload(
     current: RuntimeTrustedRuntime?,
     payload: RouteRefreshPayload,
@@ -4706,6 +4776,8 @@ internal fun trustedRuntimeFromRouteRefreshPayload(
 ): TrustedRuntime? {
     current ?: return null
     val fingerprint = current.fingerprint ?: return null
+    if (!isCanonicalOpaqueRouteValue(payload.runtimeDeviceId)) return null
+    if (!isCanonicalOpaqueRouteValue(payload.runtimeKeyFingerprint)) return null
     if (payload.runtimeDeviceId != current.deviceId) return null
     if (payload.runtimeKeyFingerprint != fingerprint) return null
     val hasRelayMaterial = payload.hasAnyRouteRefreshRelayMaterial()

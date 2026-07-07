@@ -25,10 +25,10 @@ class RuntimeRelayTcpClientTest {
         val codec = ProtocolCodec()
         val clientCryptor = RelayFrameBodyCryptor("relay-secret-1")
         val runtimeCryptor = RelayFrameBodyCryptor("relay-secret-1")
-        val clientBody = """{"type":"models.list","request_id":"request-1","payload":{}}""".encodeToByteArray()
+        val clientBody = envelopeBody(type = "models.list", requestId = "request-1")
         val encryptedClientBody = clientCryptor.encryptClientFrameBody(clientBody)
         val decryptedClientBody = runtimeCryptor.decryptClientFrameBodyForTest(encryptedClientBody)
-        val runtimeBody = """{"type":"runtime.health","request_id":"request-2","payload":{}}""".encodeToByteArray()
+        val runtimeBody = envelopeBody(type = "runtime.health", requestId = "request-2")
         val encryptedRuntimeBody = runtimeCryptor.encryptRuntimeFrameBodyForTest(runtimeBody)
         val framedRuntimeBody = codec.readFrameBody(ByteArrayInputStream(codec.encodeFrameBody(encryptedRuntimeBody)))
         val decryptedRuntimeBody = clientCryptor.decryptRuntimeFrameBody(framedRuntimeBody)
@@ -43,15 +43,15 @@ class RuntimeRelayTcpClientTest {
     fun relayFrameCryptorMatchesSharedCiphertextVectors() {
         val clientCryptor = RelayFrameBodyCryptor("relay-secret-vector")
         val runtimeCryptor = RelayFrameBodyCryptor("relay-secret-vector")
-        val clientBody = """{"type":"models.list","request_id":"vector-1","payload":{}}""".encodeToByteArray()
-        val runtimeBody = """{"type":"runtime.health","request_id":"vector-2","payload":{}}""".encodeToByteArray()
+        val clientBody = envelopeBody(type = "models.list", requestId = "vector-1")
+        val runtimeBody = envelopeBody(type = "runtime.health", requestId = "vector-2")
 
         assertEquals(
-            "445732376c183bb714bed5bb30570b16dd468e63392137eabc0259c1cc49f1c79c7babcf4ded6e05c91707bf1168823708c670b888a3319140063f1900d799afa5ad81bfa7df52c96f88c1",
+            "4457302b6e0e70e258f180ee79190c41c14adf2d39607afcbc1f5f8ad354dddada75b39f5ef97814d51175e757669a651fda7fa386b53e9a1957608bec1ee575f365fee212e8ccde9e5a23e7cf47de8158f69db5fb2abe3cd20cfed775ef7f1464a2657fdc0a920e2fe563addbd472c93730fb106d9d48b51b4e",
             clientCryptor.encryptClientFrameBody(clientBody).toHex(),
         )
         assertEquals(
-            "ec6f782db28fe4e5bc8a0bfd9c8944051dbaeceea6bd1d3ec34b1ef9cf265f728a76ef7f24dcad7daaa516cb1f756d24d686df0b05806e436524baf6f4d27f6fb86e25b5eae90f83ccf30718cf68",
+            "ec6f7a31b099afb0f0da44a2c4c25d1943b7abb5e8bb00729b0001f9903b5f60925dee392ac4fd6ebeb307d719073662d89e8d1c198f754d732bb2afa58dc0278b69ce81c6d3e87f48caf26707488d0f3b980bd0a8ab21809e13dec4ab8867a0eeee4166d732d39bb932b3ed437e8908e61fbb33d83a59089f217505da",
             runtimeCryptor.encryptRuntimeFrameBodyForTest(runtimeBody).toHex(),
         )
     }
@@ -61,7 +61,7 @@ class RuntimeRelayTcpClientTest {
         val clientCryptor = RelayFrameBodyCryptor("relay-secret-1", "relay-nonce-1")
         val runtimeCryptor = RelayFrameBodyCryptor("relay-secret-1", "relay-nonce-1")
         val wrongNonceRuntimeCryptor = RelayFrameBodyCryptor("relay-secret-1", "relay-nonce-2")
-        val clientBody = """{"type":"models.list","request_id":"request-1","payload":{}}""".encodeToByteArray()
+        val clientBody = envelopeBody(type = "models.list", requestId = "request-1")
         val encryptedClientBody = clientCryptor.encryptClientFrameBody(clientBody)
 
         assertEquals(
@@ -77,15 +77,15 @@ class RuntimeRelayTcpClientTest {
     fun relayFrameCryptorMatchesNonceBoundSharedCiphertextVectors() {
         val clientCryptor = RelayFrameBodyCryptor("relay-secret-vector", "relay-nonce-vector")
         val runtimeCryptor = RelayFrameBodyCryptor("relay-secret-vector", "relay-nonce-vector")
-        val clientBody = """{"type":"models.list","request_id":"vector-1","payload":{}}""".encodeToByteArray()
-        val runtimeBody = """{"type":"runtime.health","request_id":"vector-2","payload":{}}""".encodeToByteArray()
+        val clientBody = envelopeBody(type = "models.list", requestId = "vector-1")
+        val runtimeBody = envelopeBody(type = "runtime.health", requestId = "vector-2")
 
         assertEquals(
-            "74f16ae572397183106c40e09692c529475b5c71a6a65351177bb184968dd94a16bb1366ba73ef68614d722cebc79e67782e9b5f797bfc3d0b59a6ba9a5d48873303037e1866b51a32fb9d",
+            "74f168f9702f3ad65c2315b5dfdcc27e5b570d3fa6e71e471766b7cf8990f55750b50b36a967f9797d4b0074adc986356f329444776df3365208f9de7d25aa1387c574d3c7beb9e4e339ef3f974686d67dfc2c19d3abf398af4c4867b2ccfe44b54f80647e18a4e64f9b15c76989a56f23d99d30b227fc9ea2a2",
             clientCryptor.encryptClientFrameBody(clientBody).toHex(),
         )
         assertEquals(
-            "aae3d45d8054aeccfbe0af5e5f9193ec1812a9d7c2cd2f9456b0e8e5cde3f991382e886940bc3f1e3a7004b1fc55d72ed295a1b03f670c765b92f3bb7be947f27f3f4572eff0aeb6a541e1c263c5",
+            "aae3d6418242e599b7b0e00107da8af0461fee8c8ccb32d80efbf7e592fef9832005892f4ea46f0d2e6615adfa278c68dc8df3a7236817784d9dfbe22ab6da43ae564e34c2d41df80a866ebbc7f60e3258f50af91235842f92a56137c6e48d83be96821c54f8c37e9c801c29419047e1296e5b48ea12b32e56426f4abf",
             runtimeCryptor.encryptRuntimeFrameBodyForTest(runtimeBody).toHex(),
         )
     }
@@ -335,6 +335,11 @@ class RuntimeRelayTcpClientTest {
         serverThread.join(1_500)
         assertEquals(frameCount, requestIds.size)
         assertEquals((0 until frameCount).map { "request-$it" }.toSet(), requestIds.toSet())
+    }
+
+    private fun envelopeBody(type: String, requestId: String): ByteArray {
+        return """{"version":1,"type":"$type","request_id":"$requestId","timestamp":"2026-07-07T00:00:00Z","payload":{}}"""
+            .encodeToByteArray()
     }
 }
 

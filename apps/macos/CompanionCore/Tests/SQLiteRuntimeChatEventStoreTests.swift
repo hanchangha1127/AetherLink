@@ -692,6 +692,184 @@ final class SQLiteRuntimeChatEventStoreTests: XCTestCase {
         )
     }
 
+    func testProductionRuntimeChatRetentionPolicyPrunesOnlyExpiredDeletedSessions() throws {
+        let databaseURL = try temporaryDatabaseURL()
+        let store = RuntimeChatEventStoreDefaults.productionStore(
+            sqliteDatabaseURL: databaseURL,
+            legacyJSONLFileURL: nil
+        )
+        let policy = RuntimeChatRetentionPolicy(
+            deletedSessionRetentionInterval: 1_000,
+            deletedSessionPruneLimit: 1
+        )
+
+        try store.append(RuntimeChatStoredEvent(
+            id: "policy-active-request",
+            timestamp: Date(timeIntervalSince1970: 200),
+            kind: .request,
+            requestID: "policy-active-turn",
+            sessionID: "policy-active",
+            model: "ollama:llama3.1:8b",
+            messages: [ChatMessage(role: "user", content: "active production keeper")],
+            ownerDeviceID: "device-a"
+        ))
+        try store.append(RuntimeChatStoredEvent(
+            id: "policy-archived-request",
+            timestamp: Date(timeIntervalSince1970: 210),
+            kind: .request,
+            requestID: "policy-archived-turn",
+            sessionID: "policy-archived",
+            model: "ollama:llama3.1:8b",
+            messages: [ChatMessage(role: "user", content: "archived production keeper")],
+            ownerDeviceID: "device-a"
+        ))
+        _ = try store.mutateSession(
+            ownerDeviceID: "device-a",
+            sessionID: "policy-archived",
+            requestID: "policy-archived-archive",
+            mutation: .archive,
+            timestamp: Date(timeIntervalSince1970: 220)
+        )
+        try store.append(RuntimeChatStoredEvent(
+            id: "policy-old-deleted-1-request",
+            timestamp: Date(timeIntervalSince1970: 300),
+            kind: .request,
+            requestID: "policy-old-deleted-1-turn",
+            sessionID: "policy-old-deleted-1",
+            model: "ollama:llama3.1:8b",
+            messages: [ChatMessage(role: "user", content: "old deleted one")],
+            ownerDeviceID: "device-a"
+        ))
+        _ = try store.mutateSession(
+            ownerDeviceID: "device-a",
+            sessionID: "policy-old-deleted-1",
+            requestID: "policy-old-deleted-1-archive",
+            mutation: .archive,
+            timestamp: Date(timeIntervalSince1970: 310)
+        )
+        _ = try store.mutateSession(
+            ownerDeviceID: "device-a",
+            sessionID: "policy-old-deleted-1",
+            requestID: "policy-old-deleted-1-delete",
+            mutation: .delete,
+            timestamp: Date(timeIntervalSince1970: 320)
+        )
+        try store.append(RuntimeChatStoredEvent(
+            id: "policy-old-deleted-2-request",
+            timestamp: Date(timeIntervalSince1970: 330),
+            kind: .request,
+            requestID: "policy-old-deleted-2-turn",
+            sessionID: "policy-old-deleted-2",
+            model: "ollama:llama3.1:8b",
+            messages: [ChatMessage(role: "user", content: "old deleted two")],
+            ownerDeviceID: "device-a"
+        ))
+        _ = try store.mutateSession(
+            ownerDeviceID: "device-a",
+            sessionID: "policy-old-deleted-2",
+            requestID: "policy-old-deleted-2-archive",
+            mutation: .archive,
+            timestamp: Date(timeIntervalSince1970: 340)
+        )
+        _ = try store.mutateSession(
+            ownerDeviceID: "device-a",
+            sessionID: "policy-old-deleted-2",
+            requestID: "policy-old-deleted-2-delete",
+            mutation: .delete,
+            timestamp: Date(timeIntervalSince1970: 350)
+        )
+        try store.append(RuntimeChatStoredEvent(
+            id: "policy-recent-deleted-request",
+            timestamp: Date(timeIntervalSince1970: 1_200),
+            kind: .request,
+            requestID: "policy-recent-deleted-turn",
+            sessionID: "policy-recent-deleted",
+            model: "ollama:llama3.1:8b",
+            messages: [ChatMessage(role: "user", content: "recent deleted stays until cutoff")],
+            ownerDeviceID: "device-a"
+        ))
+        _ = try store.mutateSession(
+            ownerDeviceID: "device-a",
+            sessionID: "policy-recent-deleted",
+            requestID: "policy-recent-deleted-archive",
+            mutation: .archive,
+            timestamp: Date(timeIntervalSince1970: 1_210)
+        )
+        _ = try store.mutateSession(
+            ownerDeviceID: "device-a",
+            sessionID: "policy-recent-deleted",
+            requestID: "policy-recent-deleted-delete",
+            mutation: .delete,
+            timestamp: Date(timeIntervalSince1970: 1_220)
+        )
+        try store.append(RuntimeChatStoredEvent(
+            id: "policy-device-b-same-id-request",
+            timestamp: Date(timeIntervalSince1970: 360),
+            kind: .request,
+            requestID: "policy-device-b-same-id-turn",
+            sessionID: "policy-old-deleted-1",
+            model: "ollama:llama3.1:8b",
+            messages: [ChatMessage(role: "user", content: "device b same session id keeper")],
+            ownerDeviceID: "device-b"
+        ))
+
+        let firstResult = try RuntimeChatEventStoreDefaults.runProductionMaintenance(
+            on: store,
+            ownerDeviceID: "device-a",
+            now: Date(timeIntervalSince1970: 1_500),
+            policy: policy
+        )
+
+        XCTAssertEqual(firstResult.deletedSessionPruneResult.prunedSessionIDs, ["policy-old-deleted-1"])
+        XCTAssertEqual(firstResult.prunedDeletedSessionCount, 1)
+        XCTAssertEqual(firstResult.deletedSessionPruneResult.prunedEventCount, 3)
+        XCTAssertEqual(
+            try store.listSessions(ownerDeviceID: "device-a", limit: 10, includeArchived: true).map(\.sessionID),
+            ["policy-archived", "policy-active"]
+        )
+        XCTAssertEqual(
+            try store.listMessages(ownerDeviceID: "device-a", sessionID: "policy-old-deleted-1", limit: 10).map(\.content),
+            []
+        )
+        XCTAssertEqual(
+            try store.listMessages(ownerDeviceID: "device-b", sessionID: "policy-old-deleted-1", limit: 10).map(\.content),
+            ["device b same session id keeper"]
+        )
+
+        let secondResult = try RuntimeChatEventStoreDefaults.runProductionMaintenance(
+            on: store,
+            ownerDeviceID: "device-a",
+            now: Date(timeIntervalSince1970: 1_500),
+            policy: RuntimeChatRetentionPolicy(
+                deletedSessionRetentionInterval: 1_000,
+                deletedSessionPruneLimit: 10
+            )
+        )
+        XCTAssertEqual(secondResult.deletedSessionPruneResult.prunedSessionIDs, ["policy-old-deleted-2"])
+        let thirdResult = try RuntimeChatEventStoreDefaults.runProductionMaintenance(
+            on: store,
+            ownerDeviceID: "device-a",
+            now: Date(timeIntervalSince1970: 3_000),
+            policy: RuntimeChatRetentionPolicy(
+                deletedSessionRetentionInterval: 1_000,
+                deletedSessionPruneLimit: 10
+            )
+        )
+        XCTAssertEqual(thirdResult.deletedSessionPruneResult.prunedSessionIDs, ["policy-recent-deleted"])
+        XCTAssertThrowsError(try store.append(RuntimeChatStoredEvent(
+            id: "policy-old-deleted-1-after-prune",
+            timestamp: Date(timeIntervalSince1970: 1_600),
+            kind: .request,
+            requestID: "policy-old-deleted-1-after-prune",
+            sessionID: "policy-old-deleted-1",
+            model: "ollama:llama3.1:8b",
+            messages: [ChatMessage(role: "user", content: "should not resurrect")],
+            ownerDeviceID: "device-a"
+        ))) { error in
+            XCTAssertTrue(error.localizedDescription.contains("pruned by retention"))
+        }
+    }
+
     func testSQLiteStoreBackfillsExistingJSONLIdempotently() throws {
         let databaseURL = try temporaryDatabaseURL()
         let legacyURL = try temporaryJSONLURL()

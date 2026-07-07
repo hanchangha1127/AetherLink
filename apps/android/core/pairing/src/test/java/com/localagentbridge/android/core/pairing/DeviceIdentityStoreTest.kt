@@ -89,6 +89,22 @@ class DeviceIdentityStoreTest {
         assertEquals("AetherLink Test Client", prefs[stringPreferencesKey("android_device_name")])
     }
 
+    @Test
+    fun firstRunKeyPairFailureDoesNotPersistOrphanDeviceIdentity() = runTest {
+        val failure = IllegalStateException("keystore unavailable")
+        val store = DeviceIdentityStore(context, FailingDeviceIdentityKeyPairStore(failure))
+
+        try {
+            store.loadOrCreate()
+            fail("Expected keypair failure")
+        } catch (error: IllegalStateException) {
+            assertEquals(failure.message, error.message)
+        }
+
+        val prefs = context.localAgentBridgeDataStore.data.first()
+        assertTrue(prefs.asMap().isEmpty())
+    }
+
     private fun verifyClientAuthSignature(
         publicKeyBase64: String,
         deviceId: String,

@@ -12,6 +12,80 @@ final class ProtocolCodecTests: XCTestCase {
         XCTAssertEqual(decoded.requestID, envelope.requestID)
     }
 
+    func testProtocolEnvelopeDecodeRejectsMalformedRequiredFields() throws {
+        let codec = ProtocolCodec()
+        let cases: [(name: String, json: String)] = [
+            (
+                "missing version",
+                #"{"type":"runtime.health","request_id":"missing-version","timestamp":"2026-07-07T00:00:00Z","payload":{}}"#
+            ),
+            (
+                "non-integer version",
+                #"{"version":"1","type":"runtime.health","request_id":"non-integer-version","timestamp":"2026-07-07T00:00:00Z","payload":{}}"#
+            ),
+            (
+                "missing request_id",
+                #"{"version":1,"type":"runtime.health","timestamp":"2026-07-07T00:00:00Z","payload":{}}"#
+            ),
+            (
+                "non-string request_id",
+                #"{"version":1,"type":"runtime.health","request_id":7,"timestamp":"2026-07-07T00:00:00Z","payload":{}}"#
+            ),
+            (
+                "missing timestamp",
+                #"{"version":1,"type":"runtime.health","request_id":"missing-timestamp","payload":{}}"#
+            ),
+            (
+                "non-string timestamp",
+                #"{"version":1,"type":"runtime.health","request_id":"non-string-timestamp","timestamp":123,"payload":{}}"#
+            ),
+            (
+                "malformed timestamp",
+                #"{"version":1,"type":"runtime.health","request_id":"malformed-timestamp","timestamp":"not-a-date","payload":{}}"#
+            ),
+            (
+                "missing type",
+                #"{"version":1,"request_id":"missing-type","timestamp":"2026-07-07T00:00:00Z","payload":{}}"#
+            ),
+            (
+                "non-string type",
+                #"{"version":1,"type":42,"request_id":"non-string-type","timestamp":"2026-07-07T00:00:00Z","payload":{}}"#
+            ),
+            (
+                "missing payload",
+                #"{"version":1,"type":"runtime.health","request_id":"missing-payload","timestamp":"2026-07-07T00:00:00Z"}"#
+            ),
+            (
+                "non-object payload",
+                #"{"version":1,"type":"runtime.health","request_id":"non-object-payload","timestamp":"2026-07-07T00:00:00Z","payload":[]}"#
+            ),
+        ]
+
+        for testCase in cases {
+            XCTAssertThrowsError(
+                try codec.decodeEnvelope(Data(testCase.json.utf8)),
+                testCase.name
+            )
+        }
+    }
+
+    func testProtocolEnvelopeDecodeRejectsUnknownTopLevelFields() throws {
+        let codec = ProtocolCodec()
+        let json = """
+        {
+          "version": 1,
+          "type": "runtime.health",
+          "request_id": "unknown-top-level-envelope-field",
+          "timestamp": "2026-07-07T00:00:00Z",
+          "payload": {},
+          "backend_url": "http://127.0.0.1:11434",
+          "route_token": "client-supplied-route-token"
+        }
+        """
+
+        XCTAssertThrowsError(try codec.decodeEnvelope(Data(json.utf8)))
+    }
+
     func testModelInfoCodablePreservesProviderAndEmbeddingMetadata() throws {
         let modifiedAt = Date(timeIntervalSince1970: 1_720_000_000)
         let model = ModelInfo(
@@ -111,7 +185,7 @@ final class ProtocolCodecTests: XCTestCase {
     }
 
     func testRelayFrameCipherBindsRouteNonceIntoKey() throws {
-        let body = Data(#"{"type":"models.list","request_id":"request-1","payload":{}}"#.utf8)
+        let body = envelopeBody(type: "models.list", requestID: "request-1")
         var clientCipher = RelayFrameCipher(relaySecret: "test relay secret", routeNonce: "relay-nonce-1")
         var runtimeCipher = RelayFrameCipher(relaySecret: "test relay secret", routeNonce: "relay-nonce-1")
         var wrongNonceRuntimeCipher = RelayFrameCipher(relaySecret: "test relay secret", routeNonce: "relay-nonce-2")
@@ -125,33 +199,37 @@ final class ProtocolCodecTests: XCTestCase {
     func testRelayFrameCipherMatchesSharedCiphertextVectors() throws {
         var clientCipher = RelayFrameCipher(relaySecret: "relay-secret-vector")
         var runtimeCipher = RelayFrameCipher(relaySecret: "relay-secret-vector")
-        let clientBody = Data(#"{"type":"models.list","request_id":"vector-1","payload":{}}"#.utf8)
-        let runtimeBody = Data(#"{"type":"runtime.health","request_id":"vector-2","payload":{}}"#.utf8)
+        let clientBody = envelopeBody(type: "models.list", requestID: "vector-1")
+        let runtimeBody = envelopeBody(type: "runtime.health", requestID: "vector-2")
 
         XCTAssertEqual(
             try clientCipher.encryptClientBody(clientBody).hexString,
-            "445732376c183bb714bed5bb30570b16dd468e63392137eabc0259c1cc49f1c79c7babcf4ded6e05c91707bf1168823708c670b888a3319140063f1900d799afa5ad81bfa7df52c96f88c1"
+            "4457302b6e0e70e258f180ee79190c41c14adf2d39607afcbc1f5f8ad354dddada75b39f5ef97814d51175e757669a651fda7fa386b53e9a1957608bec1ee575f365fee212e8ccde9e5a23e7cf47de8158f69db5fb2abe3cd20cfed775ef7f1464a2657fdc0a920e2fe563addbd472c93730fb106d9d48b51b4e"
         )
         XCTAssertEqual(
             try runtimeCipher.encryptRuntimeBody(runtimeBody).hexString,
-            "ec6f782db28fe4e5bc8a0bfd9c8944051dbaeceea6bd1d3ec34b1ef9cf265f728a76ef7f24dcad7daaa516cb1f756d24d686df0b05806e436524baf6f4d27f6fb86e25b5eae90f83ccf30718cf68"
+            "ec6f7a31b099afb0f0da44a2c4c25d1943b7abb5e8bb00729b0001f9903b5f60925dee392ac4fd6ebeb307d719073662d89e8d1c198f754d732bb2afa58dc0278b69ce81c6d3e87f48caf26707488d0f3b980bd0a8ab21809e13dec4ab8867a0eeee4166d732d39bb932b3ed437e8908e61fbb33d83a59089f217505da"
         )
     }
 
     func testRelayFrameCipherMatchesNonceBoundSharedCiphertextVectors() throws {
         var clientCipher = RelayFrameCipher(relaySecret: "relay-secret-vector", routeNonce: "relay-nonce-vector")
         var runtimeCipher = RelayFrameCipher(relaySecret: "relay-secret-vector", routeNonce: "relay-nonce-vector")
-        let clientBody = Data(#"{"type":"models.list","request_id":"vector-1","payload":{}}"#.utf8)
-        let runtimeBody = Data(#"{"type":"runtime.health","request_id":"vector-2","payload":{}}"#.utf8)
+        let clientBody = envelopeBody(type: "models.list", requestID: "vector-1")
+        let runtimeBody = envelopeBody(type: "runtime.health", requestID: "vector-2")
 
         XCTAssertEqual(
             try clientCipher.encryptClientBody(clientBody).hexString,
-            "74f16ae572397183106c40e09692c529475b5c71a6a65351177bb184968dd94a16bb1366ba73ef68614d722cebc79e67782e9b5f797bfc3d0b59a6ba9a5d48873303037e1866b51a32fb9d"
+            "74f168f9702f3ad65c2315b5dfdcc27e5b570d3fa6e71e471766b7cf8990f55750b50b36a967f9797d4b0074adc986356f329444776df3365208f9de7d25aa1387c574d3c7beb9e4e339ef3f974686d67dfc2c19d3abf398af4c4867b2ccfe44b54f80647e18a4e64f9b15c76989a56f23d99d30b227fc9ea2a2"
         )
         XCTAssertEqual(
             try runtimeCipher.encryptRuntimeBody(runtimeBody).hexString,
-            "aae3d45d8054aeccfbe0af5e5f9193ec1812a9d7c2cd2f9456b0e8e5cde3f991382e886940bc3f1e3a7004b1fc55d72ed295a1b03f670c765b92f3bb7be947f27f3f4572eff0aeb6a541e1c263c5"
+            "aae3d6418242e599b7b0e00107da8af0461fee8c8ccb32d80efbf7e592fef9832005892f4ea46f0d2e6615adfa278c68dc8df3a7236817784d9dfbe22ab6da43ae564e34c2d41df80a866ebbc7f60e3258f50af91235842f92a56137c6e48d83be96821c54f8c37e9c801c29419047e1296e5b48ea12b32e56426f4abf"
         )
+    }
+
+    private func envelopeBody(type: String, requestID: String) -> Data {
+        Data("{\"version\":1,\"type\":\"\(type)\",\"request_id\":\"\(requestID)\",\"timestamp\":\"2026-07-07T00:00:00Z\",\"payload\":{}}".utf8)
     }
 }
 

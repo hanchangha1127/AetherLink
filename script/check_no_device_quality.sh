@@ -2188,11 +2188,19 @@ run python3 script/check_protocol_schema.py
 run ./gradlew --no-daemon \
 	  :core:pairing:testDebugUnitTest \
 	  --tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.rejectsWhitespaceMutatedRelaySecretAliasesInQrPayload \
+	  --tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.parsesAllowedDiscoveryServiceTypeHints \
+	  --tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.rejectsBackendProviderOrUrlShapedServiceTypeHints \
+	  --tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.rejectsDuplicateQueryKeysBeforeFieldSelection \
+	  --tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.rejectsUnknownQueryKeysBeforeFieldSelection \
+	  --tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.rejectsMixedSemanticAliasesBeforeFieldSelection \
 	  --tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.rejectsNonCanonicalRelayHostsBeforeRouteMaterialAcceptance \
 	  --tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.rejectsMixedRelayAliasFamiliesFromQrPayload \
-	  --tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.parsesRouteAliasPrivateOverlayScopeFromQrPayload \
-	  --tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.rejectsMixedP2pAliasFamiliesFromQrPayload \
-	  --tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.rejectsRelayScopeWithoutRelayRouteMaterial \
+		  --tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.parsesRouteAliasPrivateOverlayScopeFromQrPayload \
+		  --tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.rejectsMixedP2pAliasFamiliesFromQrPayload \
+		  --tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.rejectsNonCanonicalP2pProtocolVersionAliasesInQrPayload \
+		  --tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.rejectsNonCanonicalRouteExpirationAliasesInQrPayload \
+		  --tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.rejectsNonCanonicalRelayPortAliasesInQrPayload \
+		  --tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.rejectsRelayScopeWithoutRelayRouteMaterial \
 	  --tests com.localagentbridge.android.core.pairing.RuntimePairingPayloadParserTest.preservesLiteralPlusInOpaqueQrValues \
 	  -Pkotlin.incremental=false
 run python3 script/check_copy_hygiene.py
@@ -2221,9 +2229,411 @@ run ./script/verify_pairing_qr.swift \
   --forbid-direct-endpoint \
   --allow-local-relay \
   >/dev/null
+QR_SMOKE_DUPLICATE_QUERY_KEY_URI_FILE="$QR_SMOKE_WORK_DIR/pairing-uri-duplicate-query-key.txt"
+QR_SMOKE_DUPLICATE_QUERY_KEY_QR_FILE="$QR_SMOKE_WORK_DIR/pairing-qr-duplicate-query-key.png"
+run python3 - "$QR_SMOKE_WORK_DIR/pairing-uri.txt" "$QR_SMOKE_DUPLICATE_QUERY_KEY_URI_FILE" <<'PY'
+from pathlib import Path
+import sys
+
+source = Path(sys.argv[1])
+target = Path(sys.argv[2])
+text = source.read_text(encoding="utf-8")
+if "route_token=" in text:
+    mutated = text + "&route%5Ftoken=route-duplicate-artifact"
+elif "rt=" in text:
+    mutated = text + "&rt=route-duplicate-artifact"
+else:
+    raise SystemExit("loopback QR fixture did not contain route token material")
+target.write_text(mutated, encoding="utf-8")
+PY
+run ./script/render_pairing_qr.swift \
+  --input "$QR_SMOKE_DUPLICATE_QUERY_KEY_URI_FILE" \
+  --output "$QR_SMOKE_DUPLICATE_QUERY_KEY_QR_FILE"
+set +e
+QR_SMOKE_DUPLICATE_QUERY_KEY_VERIFY_OUTPUT="$(./script/verify_pairing_qr.swift \
+  --image "$QR_SMOKE_DUPLICATE_QUERY_KEY_QR_FILE" \
+  --expected "$QR_SMOKE_DUPLICATE_QUERY_KEY_URI_FILE" \
+  --require-relay-route \
+  --require-production-bootstrap \
+  --expected-relay-host 127.0.0.1 \
+  --expected-relay-port "$QR_SMOKE_RELAY_PORT" \
+  --forbid-direct-endpoint \
+  --allow-local-relay \
+  2>&1 >/dev/null)"
+QR_SMOKE_DUPLICATE_QUERY_KEY_VERIFY_STATUS=$?
+set -e
+if [[ "$QR_SMOKE_DUPLICATE_QUERY_KEY_VERIFY_STATUS" -eq 0 ]]; then
+  echo "Pairing QR verifier should reject duplicate decoded query-key artifacts." >&2
+  exit 1
+fi
+if [[ "$QR_SMOKE_DUPLICATE_QUERY_KEY_VERIFY_OUTPUT" != *"duplicate query key"* ]]; then
+  echo "Pairing QR verifier did not report duplicate query key for a duplicate decoded query-key artifact." >&2
+  echo "$QR_SMOKE_DUPLICATE_QUERY_KEY_VERIFY_OUTPUT" >&2
+  exit 1
+fi
+QR_SMOKE_UNKNOWN_QUERY_KEY_URI_FILE="$QR_SMOKE_WORK_DIR/pairing-uri-unknown-query-key.txt"
+QR_SMOKE_UNKNOWN_QUERY_KEY_QR_FILE="$QR_SMOKE_WORK_DIR/pairing-qr-unknown-query-key.png"
+run python3 - "$QR_SMOKE_WORK_DIR/pairing-uri.txt" "$QR_SMOKE_UNKNOWN_QUERY_KEY_URI_FILE" <<'PY'
+from pathlib import Path
+import sys
+
+source = Path(sys.argv[1])
+target = Path(sys.argv[2])
+text = source.read_text(encoding="utf-8")
+target.write_text(
+    text + "&backend_url=http%3A%2F%2F127.0.0.1%3A11434%2Fapi%2Ftags",
+    encoding="utf-8",
+)
+PY
+run ./script/render_pairing_qr.swift \
+  --input "$QR_SMOKE_UNKNOWN_QUERY_KEY_URI_FILE" \
+  --output "$QR_SMOKE_UNKNOWN_QUERY_KEY_QR_FILE"
+set +e
+QR_SMOKE_UNKNOWN_QUERY_KEY_VERIFY_OUTPUT="$(./script/verify_pairing_qr.swift \
+  --image "$QR_SMOKE_UNKNOWN_QUERY_KEY_QR_FILE" \
+  --expected "$QR_SMOKE_UNKNOWN_QUERY_KEY_URI_FILE" \
+  --require-relay-route \
+  --require-production-bootstrap \
+  --expected-relay-host 127.0.0.1 \
+  --expected-relay-port "$QR_SMOKE_RELAY_PORT" \
+  --forbid-direct-endpoint \
+  --allow-local-relay \
+  2>&1 >/dev/null)"
+QR_SMOKE_UNKNOWN_QUERY_KEY_VERIFY_STATUS=$?
+set -e
+if [[ "$QR_SMOKE_UNKNOWN_QUERY_KEY_VERIFY_STATUS" -eq 0 ]]; then
+  echo "Pairing QR verifier should reject unknown decoded query-key artifacts." >&2
+  exit 1
+fi
+if [[ "$QR_SMOKE_UNKNOWN_QUERY_KEY_VERIFY_OUTPUT" != *"unknown query key"* ]]; then
+  echo "Pairing QR verifier did not report unknown query key for an unknown decoded query-key artifact." >&2
+  echo "$QR_SMOKE_UNKNOWN_QUERY_KEY_VERIFY_OUTPUT" >&2
+  exit 1
+fi
+QR_SMOKE_MIXED_SEMANTIC_ALIAS_URI_FILE="$QR_SMOKE_WORK_DIR/pairing-uri-mixed-semantic-alias.txt"
+QR_SMOKE_MIXED_SEMANTIC_ALIAS_QR_FILE="$QR_SMOKE_WORK_DIR/pairing-qr-mixed-semantic-alias.png"
+run python3 - "$QR_SMOKE_WORK_DIR/pairing-uri.txt" "$QR_SMOKE_MIXED_SEMANTIC_ALIAS_URI_FILE" <<'PY'
+from pathlib import Path
+import sys
+
+source = Path(sys.argv[1])
+target = Path(sys.argv[2])
+text = source.read_text(encoding="utf-8")
+if "route_token=" in text:
+    mutated = text + "&rt=semantic-alias-artifact"
+elif "rt=" in text:
+    mutated = text + "&route_token=semantic-alias-artifact"
+else:
+    raise SystemExit("loopback QR fixture did not contain route token material")
+target.write_text(mutated, encoding="utf-8")
+PY
+run ./script/render_pairing_qr.swift \
+  --input "$QR_SMOKE_MIXED_SEMANTIC_ALIAS_URI_FILE" \
+  --output "$QR_SMOKE_MIXED_SEMANTIC_ALIAS_QR_FILE"
+set +e
+QR_SMOKE_MIXED_SEMANTIC_ALIAS_VERIFY_OUTPUT="$(./script/verify_pairing_qr.swift \
+  --image "$QR_SMOKE_MIXED_SEMANTIC_ALIAS_QR_FILE" \
+  --expected "$QR_SMOKE_MIXED_SEMANTIC_ALIAS_URI_FILE" \
+  --require-relay-route \
+  --require-production-bootstrap \
+  --expected-relay-host 127.0.0.1 \
+  --expected-relay-port "$QR_SMOKE_RELAY_PORT" \
+  --forbid-direct-endpoint \
+  --allow-local-relay \
+  2>&1 >/dev/null)"
+QR_SMOKE_MIXED_SEMANTIC_ALIAS_VERIFY_STATUS=$?
+set -e
+if [[ "$QR_SMOKE_MIXED_SEMANTIC_ALIAS_VERIFY_STATUS" -eq 0 ]]; then
+  echo "Pairing QR verifier should reject mixed semantic alias artifacts." >&2
+  exit 1
+fi
+if [[ "$QR_SMOKE_MIXED_SEMANTIC_ALIAS_VERIFY_OUTPUT" != *"Mixed pairing QR semantic alias fields"* ]]; then
+  echo "Pairing QR verifier did not report mixed semantic alias fields for a mixed alias artifact." >&2
+  echo "$QR_SMOKE_MIXED_SEMANTIC_ALIAS_VERIFY_OUTPUT" >&2
+  exit 1
+fi
+QR_SMOKE_MIXED_RELAY_ALIAS_FAMILY_URI_FILE="$QR_SMOKE_WORK_DIR/pairing-uri-mixed-relay-alias-family.txt"
+QR_SMOKE_MIXED_RELAY_ALIAS_FAMILY_QR_FILE="$QR_SMOKE_WORK_DIR/pairing-qr-mixed-relay-alias-family.png"
+run python3 - "$QR_SMOKE_WORK_DIR/pairing-uri.txt" "$QR_SMOKE_MIXED_RELAY_ALIAS_FAMILY_URI_FILE" <<'PY'
+from pathlib import Path
+import sys
+
+source = Path(sys.argv[1])
+target = Path(sys.argv[2])
+text = source.read_text(encoding="utf-8")
+if "relay_port=" in text:
+    mutated = text + "&rp=443"
+elif "rp=" in text:
+    mutated = text + "&relay_port=443"
+else:
+    raise SystemExit("loopback QR fixture did not contain relay port material")
+target.write_text(mutated, encoding="utf-8")
+PY
+run ./script/render_pairing_qr.swift \
+  --input "$QR_SMOKE_MIXED_RELAY_ALIAS_FAMILY_URI_FILE" \
+  --output "$QR_SMOKE_MIXED_RELAY_ALIAS_FAMILY_QR_FILE"
+set +e
+QR_SMOKE_MIXED_RELAY_ALIAS_FAMILY_VERIFY_OUTPUT="$(./script/verify_pairing_qr.swift \
+  --image "$QR_SMOKE_MIXED_RELAY_ALIAS_FAMILY_QR_FILE" \
+  --expected "$QR_SMOKE_MIXED_RELAY_ALIAS_FAMILY_URI_FILE" \
+  --require-relay-route \
+  --require-production-bootstrap \
+  --expected-relay-host 127.0.0.1 \
+  --expected-relay-port "$QR_SMOKE_RELAY_PORT" \
+  --forbid-direct-endpoint \
+  --allow-local-relay \
+  2>&1 >/dev/null)"
+QR_SMOKE_MIXED_RELAY_ALIAS_FAMILY_VERIFY_STATUS=$?
+set -e
+if [[ "$QR_SMOKE_MIXED_RELAY_ALIAS_FAMILY_VERIFY_STATUS" -eq 0 ]]; then
+  echo "Pairing QR verifier should reject mixed relay alias family artifacts." >&2
+  exit 1
+fi
+if [[ "$QR_SMOKE_MIXED_RELAY_ALIAS_FAMILY_VERIFY_OUTPUT" != *"Mixed relay alias families"* ]]; then
+  echo "Pairing QR verifier did not report mixed relay alias families for a mixed relay alias family artifact." >&2
+  echo "$QR_SMOKE_MIXED_RELAY_ALIAS_FAMILY_VERIFY_OUTPUT" >&2
+  exit 1
+fi
+QR_SMOKE_MIXED_P2P_ALIAS_FAMILY_URI_FILE="$QR_SMOKE_WORK_DIR/pairing-uri-mixed-p2p-alias-family.txt"
+QR_SMOKE_MIXED_P2P_ALIAS_FAMILY_QR_FILE="$QR_SMOKE_WORK_DIR/pairing-qr-mixed-p2p-alias-family.png"
+run python3 - "shared/protocol/fixtures/macos-compact-p2p-rendezvous-pairing-uri.txt" "$QR_SMOKE_MIXED_P2P_ALIAS_FAMILY_URI_FILE" <<'PY'
+from pathlib import Path
+import sys
+
+source = Path(sys.argv[1])
+target = Path(sys.argv[2])
+text = source.read_text(encoding="utf-8").strip()
+if "pc=p2p_rendezvous" not in text:
+    raise SystemExit("compact P2P QR fixture did not contain compact P2P material")
+target.write_text(text + "&p2p_class=p2p_rendezvous", encoding="utf-8")
+PY
+run ./script/render_pairing_qr.swift \
+  --input "$QR_SMOKE_MIXED_P2P_ALIAS_FAMILY_URI_FILE" \
+  --output "$QR_SMOKE_MIXED_P2P_ALIAS_FAMILY_QR_FILE"
+set +e
+QR_SMOKE_MIXED_P2P_ALIAS_FAMILY_VERIFY_OUTPUT="$(./script/verify_pairing_qr.swift \
+  --image "$QR_SMOKE_MIXED_P2P_ALIAS_FAMILY_QR_FILE" \
+  --expected "$QR_SMOKE_MIXED_P2P_ALIAS_FAMILY_URI_FILE" \
+  --require-production-bootstrap \
+  --forbid-direct-endpoint \
+  2>&1 >/dev/null)"
+QR_SMOKE_MIXED_P2P_ALIAS_FAMILY_VERIFY_STATUS=$?
+set -e
+if [[ "$QR_SMOKE_MIXED_P2P_ALIAS_FAMILY_VERIFY_STATUS" -eq 0 ]]; then
+  echo "Pairing QR verifier should reject mixed P2P alias family artifacts." >&2
+  exit 1
+fi
+if [[ "$QR_SMOKE_MIXED_P2P_ALIAS_FAMILY_VERIFY_OUTPUT" != *"Mixed P2P alias families"* ]]; then
+  echo "Pairing QR verifier did not report mixed P2P alias families for a mixed P2P alias family artifact." >&2
+  echo "$QR_SMOKE_MIXED_P2P_ALIAS_FAMILY_VERIFY_OUTPUT" >&2
+  exit 1
+fi
+QR_SMOKE_RENDEZVOUS_RELAY_URI_FILE="$QR_SMOKE_WORK_DIR/pairing-uri-rendezvous-relay.txt"
+QR_SMOKE_RENDEZVOUS_RELAY_QR_FILE="$QR_SMOKE_WORK_DIR/pairing-qr-rendezvous-relay.png"
+run python3 - "$QR_SMOKE_RENDEZVOUS_RELAY_URI_FILE" <<'PY'
+from pathlib import Path
+import sys
+
+target = Path(sys.argv[1])
+target.write_text(
+    "aetherlink://pair?v=1&n=nonce-rendezvous-1&c=123456"
+    "&rid=runtime-1&rn=AetherLink%20Runtime&rf=runtime-fingerprint"
+    "&rk=runtime%2Bpublic/key%3D&rt=route-token-rendezvous-1"
+    "&rendezvous_host=relay.example.test&rendezvous_port=443"
+    "&rendezvous_id=relay-rendezvous-1&rendezvous_secret=secret-rendezvous-1"
+    "&rendezvous_expires_at=4102444800000&rendezvous_nonce=nonce-rendezvous-route-1",
+    encoding="utf-8",
+)
+PY
+run ./script/render_pairing_qr.swift \
+  --input "$QR_SMOKE_RENDEZVOUS_RELAY_URI_FILE" \
+  --output "$QR_SMOKE_RENDEZVOUS_RELAY_QR_FILE"
+run ./script/verify_pairing_qr.swift \
+  --image "$QR_SMOKE_RENDEZVOUS_RELAY_QR_FILE" \
+  --expected "$QR_SMOKE_RENDEZVOUS_RELAY_URI_FILE" \
+  --require-relay-route \
+  --require-production-bootstrap \
+  --expected-relay-host relay.example.test \
+  --expected-relay-port 443 \
+  --forbid-direct-endpoint \
+  >/dev/null
+QR_SMOKE_MUTATED_RENDEZVOUS_SECRET_URI_FILE="$QR_SMOKE_WORK_DIR/pairing-uri-mutated-rendezvous-secret.txt"
+QR_SMOKE_MUTATED_RENDEZVOUS_SECRET_QR_FILE="$QR_SMOKE_WORK_DIR/pairing-qr-mutated-rendezvous-secret.png"
+run python3 - "$QR_SMOKE_RENDEZVOUS_RELAY_URI_FILE" "$QR_SMOKE_MUTATED_RENDEZVOUS_SECRET_URI_FILE" <<'PY'
+from pathlib import Path
+import sys
+
+source = Path(sys.argv[1])
+target = Path(sys.argv[2])
+text = source.read_text(encoding="utf-8")
+mutated = text.replace(
+    "rendezvous_secret=secret-rendezvous-1",
+    "rendezvous_secret=secret%20rendezvous-1",
+)
+if mutated == text:
+    raise SystemExit("rendezvous relay QR fixture did not contain rendezvous_secret material")
+target.write_text(mutated, encoding="utf-8")
+PY
+run ./script/render_pairing_qr.swift \
+  --input "$QR_SMOKE_MUTATED_RENDEZVOUS_SECRET_URI_FILE" \
+  --output "$QR_SMOKE_MUTATED_RENDEZVOUS_SECRET_QR_FILE"
+set +e
+QR_SMOKE_MUTATED_RENDEZVOUS_SECRET_VERIFY_OUTPUT="$(./script/verify_pairing_qr.swift \
+  --image "$QR_SMOKE_MUTATED_RENDEZVOUS_SECRET_QR_FILE" \
+  --expected "$QR_SMOKE_MUTATED_RENDEZVOUS_SECRET_URI_FILE" \
+  --require-relay-route \
+  --require-production-bootstrap \
+  --expected-relay-host relay.example.test \
+  --expected-relay-port 443 \
+  --forbid-direct-endpoint \
+  2>&1 >/dev/null)"
+QR_SMOKE_MUTATED_RENDEZVOUS_SECRET_VERIFY_STATUS=$?
+set -e
+if [[ "$QR_SMOKE_MUTATED_RENDEZVOUS_SECRET_VERIFY_STATUS" -eq 0 ]]; then
+  echo "Pairing QR verifier should reject whitespace-mutated rendezvous relay secrets." >&2
+  exit 1
+fi
+if [[ "$QR_SMOKE_MUTATED_RENDEZVOUS_SECRET_VERIFY_OUTPUT" != *"invalid relay_secret"* ]]; then
+  echo "Pairing QR verifier did not report invalid relay_secret for a whitespace-mutated rendezvous secret artifact." >&2
+  echo "$QR_SMOKE_MUTATED_RENDEZVOUS_SECRET_VERIFY_OUTPUT" >&2
+  exit 1
+fi
+QR_SMOKE_MUTATED_SCOPE_URI_FILE="$QR_SMOKE_WORK_DIR/pairing-uri-remote-scope.txt"
+QR_SMOKE_MUTATED_SCOPE_QR_FILE="$QR_SMOKE_WORK_DIR/pairing-qr-remote-scope.png"
+run python3 - "$QR_SMOKE_WORK_DIR/pairing-uri.txt" "$QR_SMOKE_MUTATED_SCOPE_URI_FILE" <<'PY'
+from pathlib import Path
+import sys
+
+source = Path(sys.argv[1])
+target = Path(sys.argv[2])
+text = source.read_text(encoding="utf-8")
+mutated = text.replace("relay_scope=usb_reverse", "relay_scope=remote").replace(
+    "rsc=usb_reverse",
+    "rsc=remote",
+)
+if mutated == text:
+    raise SystemExit("loopback QR fixture did not contain usb_reverse scope")
+target.write_text(mutated, encoding="utf-8")
+PY
+run ./script/render_pairing_qr.swift \
+  --input "$QR_SMOKE_MUTATED_SCOPE_URI_FILE" \
+  --output "$QR_SMOKE_MUTATED_SCOPE_QR_FILE"
+set +e
+QR_SMOKE_MUTATED_SCOPE_VERIFY_OUTPUT="$(./script/verify_pairing_qr.swift \
+  --image "$QR_SMOKE_MUTATED_SCOPE_QR_FILE" \
+  --expected "$QR_SMOKE_MUTATED_SCOPE_URI_FILE" \
+  --require-relay-route \
+  --require-production-bootstrap \
+  --expected-relay-host 127.0.0.1 \
+  --expected-relay-port "$QR_SMOKE_RELAY_PORT" \
+  --forbid-direct-endpoint \
+  --allow-local-relay \
+  2>&1 >/dev/null)"
+QR_SMOKE_MUTATED_SCOPE_VERIFY_STATUS=$?
+set -e
+if [[ "$QR_SMOKE_MUTATED_SCOPE_VERIFY_STATUS" -eq 0 ]]; then
+  echo "Loopback local-relay QR verifier should reject remote-scoped loopback artifacts." >&2
+  exit 1
+fi
+if [[ "$QR_SMOKE_MUTATED_SCOPE_VERIFY_OUTPUT" != *"relay_host is not a remote-reachable relay host"* ]]; then
+  echo "Loopback local-relay QR verifier did not report invalid relay_host for a remote-scoped loopback artifact." >&2
+  echo "$QR_SMOKE_MUTATED_SCOPE_VERIFY_OUTPUT" >&2
+  exit 1
+fi
+QR_SMOKE_MUTATED_PORT_URI_FILE="$QR_SMOKE_WORK_DIR/pairing-uri-zero-padded-port.txt"
+QR_SMOKE_MUTATED_PORT_QR_FILE="$QR_SMOKE_WORK_DIR/pairing-qr-zero-padded-port.png"
+run python3 - "$QR_SMOKE_WORK_DIR/pairing-uri.txt" "$QR_SMOKE_MUTATED_PORT_URI_FILE" <<'PY'
+from pathlib import Path
+import re
+import sys
+
+source = Path(sys.argv[1])
+target = Path(sys.argv[2])
+text = source.read_text(encoding="utf-8")
+mutated = None
+for field in ("relay_port", "rp"):
+    candidate, count = re.subn(rf"({field}=)([1-9][0-9]*)", r"\g<1>0\2", text, count=1)
+    if count == 1:
+        mutated = candidate
+        break
+if mutated is None:
+    raise SystemExit("loopback QR fixture did not contain a relay port field")
+target.write_text(mutated, encoding="utf-8")
+PY
+run ./script/render_pairing_qr.swift \
+  --input "$QR_SMOKE_MUTATED_PORT_URI_FILE" \
+  --output "$QR_SMOKE_MUTATED_PORT_QR_FILE"
+set +e
+QR_SMOKE_MUTATED_PORT_VERIFY_OUTPUT="$(./script/verify_pairing_qr.swift \
+  --image "$QR_SMOKE_MUTATED_PORT_QR_FILE" \
+  --expected "$QR_SMOKE_MUTATED_PORT_URI_FILE" \
+  --require-relay-route \
+  --require-production-bootstrap \
+  --expected-relay-host 127.0.0.1 \
+  --forbid-direct-endpoint \
+  --allow-local-relay \
+  2>&1 >/dev/null)"
+QR_SMOKE_MUTATED_PORT_VERIFY_STATUS=$?
+set -e
+if [[ "$QR_SMOKE_MUTATED_PORT_VERIFY_STATUS" -eq 0 ]]; then
+  echo "Pairing QR verifier should reject zero-padded relay port artifacts." >&2
+  exit 1
+fi
+if [[ "$QR_SMOKE_MUTATED_PORT_VERIFY_OUTPUT" != *"invalid relay_port"* ]]; then
+  echo "Pairing QR verifier did not report invalid relay_port for a zero-padded port artifact." >&2
+  echo "$QR_SMOKE_MUTATED_PORT_VERIFY_OUTPUT" >&2
+  exit 1
+fi
+QR_SMOKE_MUTATED_EXPIRATION_URI_FILE="$QR_SMOKE_WORK_DIR/pairing-uri-zero-padded-expiration.txt"
+QR_SMOKE_MUTATED_EXPIRATION_QR_FILE="$QR_SMOKE_WORK_DIR/pairing-qr-zero-padded-expiration.png"
+run python3 - "$QR_SMOKE_WORK_DIR/pairing-uri.txt" "$QR_SMOKE_MUTATED_EXPIRATION_URI_FILE" <<'PY'
+from pathlib import Path
+import re
+import sys
+
+source = Path(sys.argv[1])
+target = Path(sys.argv[2])
+text = source.read_text(encoding="utf-8")
+mutated = None
+for field in ("relay_expires_at", "rx"):
+    candidate, count = re.subn(rf"({field}=)([1-9][0-9]*)", r"\g<1>0\2", text, count=1)
+    if count == 1:
+        mutated = candidate
+        break
+if mutated is None:
+    raise SystemExit("loopback QR fixture did not contain a relay expiration field")
+target.write_text(mutated, encoding="utf-8")
+PY
+run ./script/render_pairing_qr.swift \
+  --input "$QR_SMOKE_MUTATED_EXPIRATION_URI_FILE" \
+  --output "$QR_SMOKE_MUTATED_EXPIRATION_QR_FILE"
+set +e
+QR_SMOKE_MUTATED_EXPIRATION_VERIFY_OUTPUT="$(./script/verify_pairing_qr.swift \
+  --image "$QR_SMOKE_MUTATED_EXPIRATION_QR_FILE" \
+  --expected "$QR_SMOKE_MUTATED_EXPIRATION_URI_FILE" \
+  --require-relay-route \
+  --require-production-bootstrap \
+  --expected-relay-host 127.0.0.1 \
+  --expected-relay-port "$QR_SMOKE_RELAY_PORT" \
+  --forbid-direct-endpoint \
+  --allow-local-relay \
+  2>&1 >/dev/null)"
+QR_SMOKE_MUTATED_EXPIRATION_VERIFY_STATUS=$?
+set -e
+if [[ "$QR_SMOKE_MUTATED_EXPIRATION_VERIFY_STATUS" -eq 0 ]]; then
+  echo "Pairing QR verifier should reject zero-padded relay expiration artifacts." >&2
+  exit 1
+fi
+if [[ "$QR_SMOKE_MUTATED_EXPIRATION_VERIFY_OUTPUT" != *"invalid relay_expires_at"* ]]; then
+  echo "Pairing QR verifier did not report invalid relay_expires_at for a zero-padded expiration artifact." >&2
+  echo "$QR_SMOKE_MUTATED_EXPIRATION_VERIFY_OUTPUT" >&2
+  exit 1
+fi
 PRIVATE_OVERLAY_QR_WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/aetherlink-no-device-qr.private-overlay.XXXXXX")"
 TEMP_DIRS+=("$PRIVATE_OVERLAY_QR_WORK_DIR")
 PRIVATE_OVERLAY_QR_FILE="$PRIVATE_OVERLAY_QR_WORK_DIR/private-overlay-pairing-qr.png"
+PRIVATE_OVERLAY_MUTATED_SCOPE_URI_FILE="$PRIVATE_OVERLAY_QR_WORK_DIR/private-overlay-mutated-scope-uri.txt"
+PRIVATE_OVERLAY_MUTATED_SCOPE_QR_FILE="$PRIVATE_OVERLAY_QR_WORK_DIR/private-overlay-mutated-scope-qr.png"
 PRIVATE_OVERLAY_URI_FILE="shared/protocol/fixtures/macos-compact-private-overlay-pairing-uri.txt"
 run ./script/render_pairing_qr.swift \
   --input "$PRIVATE_OVERLAY_URI_FILE" \
@@ -2237,6 +2647,42 @@ run ./script/verify_pairing_qr.swift \
   --expected-relay-port 43171 \
   --forbid-direct-endpoint \
   >/dev/null
+run python3 - "$PRIVATE_OVERLAY_URI_FILE" "$PRIVATE_OVERLAY_MUTATED_SCOPE_URI_FILE" <<'PY'
+from pathlib import Path
+import sys
+
+source = Path(sys.argv[1])
+target = Path(sys.argv[2])
+text = source.read_text(encoding="utf-8")
+mutated = text.replace("rsc=private_overlay", "rsc=PRIVATE_OVERLAY%20")
+if mutated == text:
+    raise SystemExit("private-overlay fixture did not contain compact private_overlay scope")
+target.write_text(mutated, encoding="utf-8")
+PY
+run ./script/render_pairing_qr.swift \
+  --input "$PRIVATE_OVERLAY_MUTATED_SCOPE_URI_FILE" \
+  --output "$PRIVATE_OVERLAY_MUTATED_SCOPE_QR_FILE"
+set +e
+PRIVATE_OVERLAY_MUTATED_SCOPE_VERIFY_OUTPUT="$(./script/verify_pairing_qr.swift \
+  --image "$PRIVATE_OVERLAY_MUTATED_SCOPE_QR_FILE" \
+  --expected "$PRIVATE_OVERLAY_MUTATED_SCOPE_URI_FILE" \
+  --require-relay-route \
+  --require-production-bootstrap \
+  --expected-relay-host 100.64.1.10 \
+  --expected-relay-port 43171 \
+  --forbid-direct-endpoint \
+  2>&1 >/dev/null)"
+PRIVATE_OVERLAY_MUTATED_SCOPE_VERIFY_STATUS=$?
+set -e
+if [[ "$PRIVATE_OVERLAY_MUTATED_SCOPE_VERIFY_STATUS" -eq 0 ]]; then
+  echo "Private-overlay QR verifier should reject case/whitespace-mutated relay_scope artifacts." >&2
+  exit 1
+fi
+if [[ "$PRIVATE_OVERLAY_MUTATED_SCOPE_VERIFY_OUTPUT" != *"invalid relay_scope"* ]]; then
+  echo "Private-overlay QR verifier did not report invalid relay_scope for a mutated scope artifact." >&2
+  echo "$PRIVATE_OVERLAY_MUTATED_SCOPE_VERIFY_OUTPUT" >&2
+  exit 1
+fi
 run python3 - "$QR_SMOKE_WORK_DIR/summary.json" <<'PY'
 import json
 import sys
@@ -2567,10 +3013,16 @@ run ./gradlew --no-daemon \
   --tests com.localagentbridge.android.core.pairing.RuntimeIdentityProofVerifierTest \
   --tests com.localagentbridge.android.core.pairing.DeviceIdentityStoreTest \
   --tests com.localagentbridge.android.core.pairing.PairingStoreTest \
+  --tests com.localagentbridge.android.core.pairing.PairingStoreTest.pairingStoreDropsNonCanonicalStoredTrustedIdentityOnRead \
+  --tests com.localagentbridge.android.core.pairing.PairingStoreTest.pairingStoreDropsNonCanonicalStoredRuntimePublicKeyOnRead \
+  --tests com.localagentbridge.android.core.pairing.PairingStoreTest.pairingStoreDropsNonCanonicalTrustedIdentityOnWrite \
   -Pkotlin.incremental=false
 
 run ./gradlew --no-daemon \
   :core:protocol:testDebugUnitTest \
+  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.decodeRejectsMalformedRequiredEnvelopeFields \
+  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.decodeRejectsUnsupportedVersionAndBlankRequestId \
+  --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.decodeRejectsUnknownTopLevelEnvelopeFields \
   --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.modelInfoPayloadPreservesProviderAndEmbeddingMetadata \
   --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.modelInfoPayloadDefaultsMissingCapabilitiesToEmptyList \
   --tests com.localagentbridge.android.core.protocol.ProtocolCodecTest.memoryPayloadsUseProtocolFieldNames \
@@ -2582,6 +3034,10 @@ run ./gradlew --no-daemon \
 
 run ./gradlew --no-daemon \
   :core:transport:testDebugUnitTest \
+  --tests com.localagentbridge.android.core.transport.BonjourDiscoveryTest.bonjourTxtRouteTokenRejectsWhitespaceMutationsInsteadOfTrimming \
+  --tests com.localagentbridge.android.core.transport.BonjourDiscoveryTest.bonjourTxtRouteTokenRejectsOversizedAndMalformedValues \
+  --tests com.localagentbridge.android.core.transport.BonjourDiscoveryTest.bonjourTxtMetadataRejectsForbiddenDiscoveryMaterial \
+  --tests com.localagentbridge.android.core.transport.BonjourDiscoveryTest.bonjourTxtMetadataSanitizesLegacyIdentityHints \
   --tests com.localagentbridge.android.core.transport.RuntimePeerToPeerRoutePreparationTest \
   --tests com.localagentbridge.android.core.transport.RuntimeRelayRoutePreparationTest \
   --tests com.localagentbridge.android.core.transport.RuntimeConnectionManagerTest.remoteRouteSecurityContextRejectsMissingOrExpiredRouteMetadata \
@@ -2668,6 +3124,7 @@ run ./gradlew --no-daemon \
 						  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsHistoryAndMemoryRenderRepresentativeNarrowPhoneAcrossSupportedLanguages \
 						  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.renameChatSessionDialogStaysBoundedAtLargeFontAcrossSupportedLanguages \
 				  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsCoreControlsRemainReachableAtLargeFontScaleAcrossSupportedLanguages \
+				  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsConnectionStatusTalkBackOrderProxyKeepsVisibleControlsReachableAtLargeFontAcrossSupportedLanguages \
 				  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsAutoReconnectRowStaysBoundedAtLargeFontAcrossSupportedLanguages \
 				  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsEmbeddingModelRowsStayBoundedAtLargeFontAcrossSupportedLanguages \
 				  --tests com.localagentbridge.android.ui.ClientScreensNoDeviceComposeTest.settingsScreenEmbeddingModelRowsStayBoundedWhenExpandedAtLargeFontAcrossSupportedLanguages \
@@ -2760,6 +3217,7 @@ run ./gradlew --no-daemon \
 		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRouteCandidatesDoNotAutoUseMetadataLessDiscoveryForTrustedIdentity \
 		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRouteCandidatesUseRouteTokenBeforeLegacyIdentityMetadata \
 		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRouteCandidatesIgnoreRouteTokenMismatchEvenWhenLegacyIdentityMatches \
+		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRouteCandidatesRejectUnpinnedDiscoveryRouteTokenEvenWhenLegacyIdentityMatches \
 		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedDiscoveredRuntimeConnectionTargetRequiresMatchingDiscoveryIdentity \
 		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedDiscoveredRuntimeConnectionTargetRejectsMetadataLessDiscovery \
 		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRouteCandidatesIgnoreDiscoveredEndpointWithMismatchedIdentityMetadata \
@@ -2784,6 +3242,12 @@ run ./gradlew --no-daemon \
   --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.relayPairingQrPersistsPendingRouteAfterInitialConnectionFailure \
   --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.persistedRuntimeDataStoresPendingPairingRouteUntilShorterRelayExpiry \
   --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.persistedRuntimeDataStoresPendingP2pRendezvousRouteUntilShorterRecordExpiry \
+  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.persistedRuntimeDataRejectsNonCanonicalPendingPairingIdentityValues \
+  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.persistedRuntimeDataRejectsNonCanonicalPendingPairingRouteToken \
+  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.persistedRuntimeDataRejectsNonCanonicalPendingRuntimePublicKey \
+  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.persistedRuntimeDataRejectsNonCanonicalPendingRelayRouteMaterial \
+  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRemoteRoutePlannerRejectsNonCanonicalSavedRelayMaterial \
+  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRemoteRoutePlannerRejectsNonCanonicalPendingRelayMaterial \
   --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRemoteRoutePlannerPlansPendingP2pRendezvousBeforeRelayRoute \
   --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRemoteRoutePlannerUsesInjectedClockForPendingP2pRendezvousRecord \
 	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.trustedRuntimeP2pReconnectUsesStoredQrRendezvousMetadata \
@@ -2902,11 +3366,16 @@ run ./gradlew --no-daemon \
 		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.runtimeRouteRefreshRetryDelayStaysInsideActiveLease \
 		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.authenticatedTrustedRuntimeSchedulesRouteRefreshBeforeLeaseExpiry \
 			  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.authenticatedTrustedRuntimeRetriesRouteRefreshErrorBeforeLeaseExpiry \
-			  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshPayloadRejectsMismatchedRuntimeIdentity \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshPayloadRejectsUnknownRelayScope \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshPayloadAddsFreshRelayRouteToCurrentTrustedRuntime \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshPayloadRejectsExpiredOrIncompleteRelayMaterial \
-	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshPayloadAllowsStableRelayIdAndSecretWithFreshNonceAndExpiry \
+			  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.authenticatedTrustedRuntimeRejectsRouteRefreshPayloadWithUnknownMetadataBeforeStorage \
+			  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.authenticatedTrustedRuntimeRetriesMalformedRouteRefreshAllowedFieldPayloadBeforeLeaseExpiry \
+				  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshPayloadRejectsMismatchedRuntimeIdentity \
+				  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshPayloadRejectsNonCanonicalRuntimeIdentity \
+		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshPayloadRejectsUnknownRelayScope \
+		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshPayloadRejectsScopedRelayHostScopeMismatch \
+		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshPayloadRejectsNonCanonicalRelayMaterial \
+		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshPayloadAddsFreshRelayRouteToCurrentTrustedRuntime \
+		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshPayloadRejectsExpiredOrIncompleteRelayMaterial \
+		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshPayloadAllowsStableRelayIdAndSecretWithFreshNonceAndExpiry \
 	  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshPayloadRejectsReusedRelayNonce \
   --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshPayloadRejectsNonAdvancingRelayExpiry \
   --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshPayloadAddsFreshP2pRendezvousRouteToCurrentTrustedRuntime \
@@ -2920,6 +3389,7 @@ run ./gradlew --no-daemon \
 			  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshQrWithoutPublicKeyCanRefreshPinnedRuntimeRelayRoute \
 			  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshQrWithoutPublicKeyCanRefreshPinnedRuntimeP2pRendezvousRoute \
 			  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshQrAddsRelayRouteToExistingTrustedRuntime \
+			  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshQrRejectsReusedOrNonAdvancingRemoteRouteMaterial \
 			  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshQrDropsTrustedEndpointFallbackWhenRelayRouteIsSaved \
 		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshQrRejectsDirectRouteForExistingTrustedRuntime \
 		  --tests com.localagentbridge.android.runtime.RuntimeClientViewModelTest.routeRefreshQrCanRotateRouteTokenForPinnedRuntimeIdentity \
@@ -2983,15 +3453,18 @@ run swift test --filter 'RelayAllocationTests/testAllocationRegistryIgnoresNonAd
 run swift test --filter RelayAllocationTests/testAllocationRegistrySkipsPersistedTicketsWithUnexpectedMetadata
 run swift test --filter 'RelayAllocationTests/testRelayServerConfigurationUsesShortDefaultAllocationTTL|RelayAllocationTests/testAllocationRegistryExpiresAndRemovesRelayIDs|RelayAllocationTests/testAllocationRegistryPersistsAndReloadsRelayIDs|RelayAllocationTests/testAllocationRegistryPrunesExpiredPersistedRelayIDs'
 run swift test --filter TransportTests
+run swift test --filter 'RuntimeAdvertisementMetadataTests/testRuntimeAdvertisementMetadataPublishesOnlyRouteTokenIdentityHint|RuntimeAdvertisementMetadataTests/testRejectsWhitespaceMutatedRouteTokenInsteadOfNormalizing|RuntimeAdvertisementMetadataTests/testRejectsRequestedRouteTokenHintsFromDiscoveryTxtMetadata|LocalRuntimeMessageRouterTests/testCompanionAppModelAdvertisesRouteTokenWithoutStableIdentityTXTMetadata'
 run swift test --filter 'LocalRuntimeMessageRouterTests/testRuntimeHealthIncludesAggregateProviderStatuses|LocalRuntimeMessageRouterTests/testRuntimeHealthIncludesModelResidencyLastUnloadFailureWithoutRawErrorMessage'
 run swift test --filter AetherLinkLocalizationTests
 run swift test --filter 'AetherLinkLocalizationTests/testActivityTechnicalDetailsRedactRouteSecrets|AetherLinkLocalizationTests/testRouteDiagnosticDisclosureRedactsSensitiveDetails'
 run swift test --filter AetherLinkRenderSmokeTests
 run swift test --filter 'AetherLinkLocalizationTests/testRuntimeMemoryInspectorCopyLocalizesAcrossSupportedLanguages|AetherLinkRenderSmokeTests/testRuntimeMemoryInspectorRendersAcrossLanguagesAndAppearances'
 run swift test --filter DocumentTextExtractorTests/testRejectsArchiveExtractionWhenResourcePolicyLimitIsExceeded
-run swift test --filter DocumentTextExtractorTests/testRejectsExtractedTextWhenResourcePolicyLimitIsExceeded
-run swift test --filter DocumentTextExtractorTests
-run swift test --filter ProtocolCodecTests/testModelInfoCodablePreservesProviderAndEmbeddingMetadata
+	run swift test --filter DocumentTextExtractorTests/testRejectsExtractedTextWhenResourcePolicyLimitIsExceeded
+	run swift test --filter DocumentTextExtractorTests
+	run swift test --filter ProtocolCodecTests/testProtocolEnvelopeDecodeRejectsMalformedRequiredFields
+	run swift test --filter ProtocolCodecTests/testProtocolEnvelopeDecodeRejectsUnknownTopLevelFields
+	run swift test --filter ProtocolCodecTests/testModelInfoCodablePreservesProviderAndEmbeddingMetadata
 		run swift test --filter 'OllamaBackendTests/testListModelsUsesShowCapabilitiesToSeparateEmbeddingModels|OllamaBackendTests/testUnloadModelPostsEmptyChatWithKeepAliveZero|OllamaBackendTests/testUnloadModelHTTPStatusReturnsStructuredError|LMStudioBackendTests/testListModelsParsesNativeLocalLLMAndEmbeddingModelsSeparately|LMStudioBackendTests/testListModelsFallsBackToOpenAICompatibleModels|LMStudioBackendTests/testUnloadModelPostsLoadedInstanceID|LMStudioBackendTests/testUnloadModelHTTPStatusReturnsStructuredError|AggregatingLlmBackendResidencyTests/testSwitchingModelsUnloadsPreviousInactiveModel|AggregatingLlmBackendResidencyTests/testRepeatedSameModelDoesNotUnloadBetweenChats|AggregatingLlmBackendResidencyTests/testIdlePolicyUnloadsActiveModelAfterDelay|AggregatingLlmBackendResidencyTests/testDoneEventClearsInFlightResidencyBeforeClientObservesCompletion|AggregatingLlmBackendResidencyTests/testManualUnloadClearsActiveResidentModelAndEmitsManualEvent|AggregatingLlmBackendResidencyTests/testManualUnloadFailureKeepsStructuredManualFailureReason|AggregatingLlmBackendResidencyTests/testManualUnloadSkipsWhileGenerationIsInFlight|AggregatingLlmBackendResidencyTests/testUnloadFailureEmitsProviderSpecificFailureEventWithoutBreakingNextChat|AggregatingLlmBackendResidencyTests/testInstalledEmbeddingModelIsNotRoutedAsChat|AggregatingLlmBackendResidencyTests/testInstalledCloudChatModelIsNotRoutedAsChat|AggregatingLlmBackendResidencyTests/testUnknownUnqualifiedModelDoesNotFallbackToOllama|AggregatingLlmBackendResidencyTests/testQualifiedModelMustBeReportedByThatProvider|AggregatingLlmBackendResidencyTests/testDuplicateProviderBackendsKeepFirstProviderInsteadOfCrashing'
 	run swift test --filter 'LMStudioBackendTests/testChatWithImageAttachmentUsesNativeImageInput|LMStudioBackendTests/testChatWithImageAttachmentFallsBackToOpenAICompatibleVisionContentWhenNativeRejects'
 	run swift test --filter 'RuntimeIdentityKeyStoreTests/testFileStoreLoadOrCreatePersistsRuntimeIdentity|RuntimeIdentityKeyStoreTests/testFileStoreCorrectsBroadPermissionsWithoutRotatingIdentity|RuntimeIdentityKeyStoreTests/testFileStoreSignsVerifiableAuthChallenge'
@@ -3000,8 +3473,9 @@ run swift test --filter 'LocalRuntimeMessageRouterTests/testTrustedHelloAndAuthR
 run swift test --filter LocalRuntimeMessageRouterTests/testUntrustedHelloReturnsPairingRequired
 run swift test --filter 'LocalRuntimeMessageRouterTests/testRepeatedInvalidPairingAttemptsInvalidateActiveSession|LocalRuntimeMessageRouterTests/testExpiredAndNoActivePairingRequestsReturnStructuredRejections'
 run swift test --filter PairingCoordinatorTests
-	run swift test --filter 'LocalRuntimeMessageRouterTests/testCompanionLogSanitizerRedactsProviderEndpointsAndSecrets|LocalRuntimeMessageRouterTests/testPairingQRCodePayloadCanOmitEndpointHints|LocalRuntimeMessageRouterTests/testPairingQRCodePayloadIncludesRelaySecretWhenPresent|LocalRuntimeMessageRouterTests/testPairingQRCodePayloadIncludesP2PRendezvousRecordWhenPresent|LocalRuntimeMessageRouterTests/testCompactPairingQRCodePayloadUsesShortAliasesForCameraScanning|LocalRuntimeMessageRouterTests/testCompactPairingQRCodePayloadMatchesSharedRelayFixture|LocalRuntimeMessageRouterTests/testCompactPairingQRCodePayloadMatchesSharedPrivateOverlayRelayFixture|LocalRuntimeMessageRouterTests/testCompactPairingQRCodePayloadMatchesSharedP2PRendezvousFixture|LocalRuntimeMessageRouterTests/testEnvironmentRemoteRelayRouteAllocatorUsesStoredBootstrapSettingsWhenEnvironmentIsEmpty|LocalRuntimeMessageRouterTests/testCompanionAppModelDefaultPairingFallsBackAcrossBootstrapRelayEndpointsBeforeQRCode|LocalRuntimeMessageRouterTests/testCompanionAppModelDefaultPairingUsesSavedBootstrapRelayEndpointBeforeQRCode|LocalRuntimeMessageRouterTests/testCompanionAppModelStartRenewsSavedBootstrapRelayRouteBeforeRelayStart|LocalRuntimeMessageRouterTests/testCompanionAppModelRenewsBootstrapRelayRouteAfterRelayFailure|LocalRuntimeMessageRouterTests/testCompanionAppModelSavesBootstrapRelaySettingsAndAllocatesRoute|LocalRuntimeMessageRouterTests/testCompanionAppModelPersistsBootstrapAllocationLeaseForRestoredQRCode|LocalRuntimeMessageRouterTests/testCompanionAppModelAcceptsAdvancingSavedBootstrapLeaseForStableRelayID|LocalRuntimeMessageRouterTests/testCompanionAppModelRejectsNonAdvancingSavedBootstrapLeaseForStableRelayID|LocalRuntimeMessageRouterTests/testCompanionAppModelDoesNotReuseSavedLeaseForDifferentRelayRoute|LocalRuntimeMessageRouterTests/testCompanionAppModelRegeneratesBootstrapQRCodeWithExpiredSavedLease|LocalRuntimeMessageRouterTests/testCompanionAppModelRequiresRemoteQRCodeForLoopbackSavedRelayHost|LocalRuntimeMessageRouterTests/testCompanionAppModelAllowsEnvironmentPrivateOverlayRelayButWaitsForLease|LocalRuntimeMessageRouterTests/testCompanionAppModelWaitsForLeaseBeforeUsingCGNATPrivateOverlayRelayQRCode|LocalRuntimeMessageRouterTests/testCompanionAppModelRefreshRuntimeRouteReturnsNilWithoutFreshRelayLease|LocalRuntimeMessageRouterTests/testCompanionAppModelRefreshRuntimeRouteAllocatesFreshRelayMaterial|LocalRuntimeMessageRouterTests/testCompanionAppModelKeepsLeasePreparationIssueWhenRelayIsReadyWithoutLease|LocalRuntimeMessageRouterTests/testRouteRefreshReturnsFreshRelayMaterialFromRuntimeProvider|LocalRuntimeMessageRouterTests/testRouteRefreshRejectsUnknownRelayScopeFromRuntimeProvider|LocalRuntimeMessageRouterTests/testChatSendStoresRuntimeSideProcessingEvents|LocalRuntimeMessageRouterTests/testChatSendIntoArchivedRuntimeSessionReturnsStructuredErrorWithoutMutatingStore|LocalRuntimeMessageRouterTests/testChatCancelAcknowledgementPersistsRuntimeOwnedCancelledEvent|LocalRuntimeMessageRouterTests/testConnectionCloseCancelsActiveChatGenerationAndPersistsCancelledEvent|LocalRuntimeMessageRouterTests/testRuntimeChatHistoryMessagesAreAuthenticatedAndReturnedFromStore|LocalRuntimeMessageRouterTests/testChatMessagesListRejectsUnknownPayloadMetadataBeforeStoreDispatch|LocalRuntimeMessageRouterTests/testChatMessagesListRejectsInvalidAllowedPayloadTypesBeforeStoreDispatch|LocalRuntimeMessageRouterTests/testRuntimeChatHistoryHandlersReturnEmptyForNonPositiveLimitsWithoutReadingStore|LocalRuntimeMessageRouterTests/testRuntimeChatStoreAppliesArchiveRestoreAndDeleteLifecycle|LocalRuntimeMessageRouterTests/testRuntimeChatStoreScopesSessionsMessagesAndMutationsByOwnerDevice|LocalRuntimeMessageRouterTests/testRuntimeChatStoreSearchesSessionSummariesAndTranscriptWithinOwnerScope|LocalRuntimeMessageRouterTests/testRuntimeChatStoreTreatsNonPositiveLimitsAsEmptyHistoryWindows|LocalRuntimeMessageRouterTests/testRuntimeChatStoreZeroLimitsReturnEmptyWithoutReadingLog|LocalRuntimeMessageRouterTests/testRuntimeChatStoreReportsCorruptJSONLLineInsteadOfDroppingIt|LocalRuntimeMessageRouterTests/testRuntimeChatEventLogIsCreatedWithOwnerOnlyPermissions|LocalRuntimeMessageRouterTests/testRuntimeChatEventLogPermissionsAreCorrectedOnAppend|LocalRuntimeMessageRouterTests/testRuntimeChatHistorySemanticallyInvalidEventReturnsStructuredError|LocalRuntimeMessageRouterTests/testRuntimeChatHistoryCorruptStoreReturnsStructuredError|LocalRuntimeMessageRouterTests/testRuntimeChatSessionLifecycleMessagesMutateRuntimeStore|LocalRuntimeMessageRouterTests/testChatSessionLifecycleRejectsUnknownPayloadMetadataBeforeStoreMutation|LocalRuntimeMessageRouterTests/testRuntimeChatSessionRenameStoresRuntimeTitle|LocalRuntimeMessageRouterTests/testChatSessionRenameRejectsUnknownPayloadMetadataBeforeTitleStoreMutation|LocalRuntimeMessageRouterTests/testChatSessionsListQueryFiltersRuntimeOwnedSummaries|LocalRuntimeMessageRouterTests/testChatSessionsListEmbeddingModelHintStaysSearchOnly|LocalRuntimeMessageRouterTests/testChatSessionsListRejectsUnknownPayloadMetadataBeforeStoreDispatch|LocalRuntimeMessageRouterTests/testChatSessionsListRejectsInvalidAllowedPayloadTypesBeforeStoreDispatch|LocalRuntimeMessageRouterTests/testChatSessionsListQueryMatchesReasoningWhileMessagesKeepAnswerSeparate|LocalRuntimeMessageRouterTests/testRuntimeMemoryMessagesMutateRuntimeStore|LocalRuntimeMessageRouterTests/testMemoryListRejectsUnknownPayloadMetadataBeforeStoreDispatch|LocalRuntimeMessageRouterTests/testMemoryUpsertRejectsUnknownPayloadMetadataBeforeStoreMutation|LocalRuntimeMessageRouterTests/testMemoryDeleteRejectsUnknownPayloadMetadataBeforeStoreMutation|LocalRuntimeMessageRouterTests/testMemoryListQueryFiltersRuntimeOwnedMemoryWithSearchMetadata|LocalRuntimeMessageRouterTests/testMemoryUpsertRejectsClientSuppliedSourceMetadataAndPreservesRuntimeSource|LocalRuntimeMessageRouterTests/testRuntimeMemoryStoreReportsCorruptJSONLLineInsteadOfDroppingIt|LocalRuntimeMessageRouterTests/testRuntimeMemoryStoreReportsSemanticallyInvalidUpsertLine|LocalRuntimeMessageRouterTests/testRuntimeMemoryStoreScopesEntriesByOwnerDevice|LocalRuntimeMessageRouterTests/testRuntimeMemoryEventLogIsCreatedWithOwnerOnlyPermissions|LocalRuntimeMessageRouterTests/testRuntimeMemoryEventLogPermissionsAreCorrectedOnAppend|LocalRuntimeMessageRouterTests/testRuntimeMemoryListCorruptStoreReturnsStructuredError|LocalRuntimeMessageRouterTests/testAuthenticatedDevicesCannotCrossReadInjectOrMutateChatAndMemory|LocalRuntimeMessageRouterTests/testChatSendInjectsEnabledRuntimeMemoryFromRuntimeStore|LocalRuntimeMessageRouterTests/testChatSendRuntimeMemoryOverridesClientSuppliedMemory|LocalRuntimeMessageRouterTests/testChatSendStoresOnlyClientVisibleMessagesWhileBackendReceivesRuntimeContext|LocalRuntimeMessageRouterTests/testChatSendDoesNotCompactShortConversation|LocalRuntimeMessageRouterTests/testChatSendCompactsOlderTurnsBeforeBackendRequestWhenContextIsLarge|LocalRuntimeMessageRouterTests/testChatSendCompactionAnnotatesBackendOnlySourceSpanWithoutPersisting|LocalRuntimeMessageRouterTests/testChatSendUsesModelContextWindowMetadataForCompactionBudget|LocalRuntimeMessageRouterTests/testChatSendCompactionKeepsRuntimeMemoryAndCapabilityGuardSeparate|LocalRuntimeMessageRouterTests/testChatSendReturnsStructuredErrorWhenRuntimeMemoryCannotLoad|LocalRuntimeMessageRouterTests/testChatSendStreamsReasoningDeltaSeparatelyFromAnswerDelta|LocalRuntimeMessageRouterTests/testChatSendSplitsInlineThinkTagsBeforeStreamingAnswer|LocalRuntimeMessageRouterTests/testChatSendInstalledEmbeddingModelReturnsModelNotInstalled|LocalRuntimeMessageRouterTests/testChatSendInstalledCloudModelReturnsModelNotInstalled|LocalRuntimeMessageRouterTests/testChatSendGeneratesRuntimeTitleAfterFirstAssistantResponse|LocalRuntimeMessageRouterTests/testChatSendGeneratedRuntimeTitleStripsInlineThinking|LocalRuntimeMessageRouterTests/testChatSendTitleGenerationUsesDeterministicFallbackWhenBackendTitleIsInvalid'
-	run swift test --filter LocalRuntimeMessageRouterTests/testMemoryListRejectsInvalidAllowedPayloadTypesBeforeStoreDispatch
+		run swift test --filter 'LocalRuntimeMessageRouterTests/testCompanionLogSanitizerRedactsProviderEndpointsAndSecrets|LocalRuntimeMessageRouterTests/testPairingQRCodePayloadCanOmitEndpointHints|LocalRuntimeMessageRouterTests/testPairingQRCodePayloadIncludesRelaySecretWhenPresent|LocalRuntimeMessageRouterTests/testPairingQRCodePayloadIncludesP2PRendezvousRecordWhenPresent|LocalRuntimeMessageRouterTests/testCompactPairingQRCodePayloadUsesShortAliasesForCameraScanning|LocalRuntimeMessageRouterTests/testCompactPairingQRCodePayloadMatchesSharedRelayFixture|LocalRuntimeMessageRouterTests/testCompactPairingQRCodePayloadMatchesSharedPrivateOverlayRelayFixture|LocalRuntimeMessageRouterTests/testCompactPairingQRCodePayloadMatchesSharedP2PRendezvousFixture|LocalRuntimeMessageRouterTests/testEnvironmentRemoteRelayRouteAllocatorUsesStoredBootstrapSettingsWhenEnvironmentIsEmpty|LocalRuntimeMessageRouterTests/testCompanionAppModelDefaultPairingFallsBackAcrossBootstrapRelayEndpointsBeforeQRCode|LocalRuntimeMessageRouterTests/testCompanionAppModelDefaultPairingUsesSavedBootstrapRelayEndpointBeforeQRCode|LocalRuntimeMessageRouterTests/testCompanionAppModelStartRenewsSavedBootstrapRelayRouteBeforeRelayStart|LocalRuntimeMessageRouterTests/testCompanionAppModelRenewsBootstrapRelayRouteAfterRelayFailure|LocalRuntimeMessageRouterTests/testCompanionAppModelSavesBootstrapRelaySettingsAndAllocatesRoute|LocalRuntimeMessageRouterTests/testCompanionAppModelPersistsBootstrapAllocationLeaseForRestoredQRCode|LocalRuntimeMessageRouterTests/testCompanionAppModelAcceptsAdvancingSavedBootstrapLeaseForStableRelayID|LocalRuntimeMessageRouterTests/testCompanionAppModelRejectsNonAdvancingSavedBootstrapLeaseForStableRelayID|LocalRuntimeMessageRouterTests/testCompanionAppModelDoesNotReuseSavedLeaseForDifferentRelayRoute|LocalRuntimeMessageRouterTests/testCompanionAppModelRegeneratesBootstrapQRCodeWithExpiredSavedLease|LocalRuntimeMessageRouterTests/testCompanionAppModelRequiresRemoteQRCodeForLoopbackSavedRelayHost|LocalRuntimeMessageRouterTests/testCompanionAppModelAllowsEnvironmentPrivateOverlayRelayButWaitsForLease|LocalRuntimeMessageRouterTests/testCompanionAppModelWaitsForLeaseBeforeUsingCGNATPrivateOverlayRelayQRCode|LocalRuntimeMessageRouterTests/testCompanionAppModelRefreshRuntimeRouteReturnsNilWithoutFreshRelayLease|LocalRuntimeMessageRouterTests/testCompanionAppModelRefreshRuntimeRouteAllocatesFreshRelayMaterial|LocalRuntimeMessageRouterTests/testCompanionAppModelKeepsLeasePreparationIssueWhenRelayIsReadyWithoutLease|LocalRuntimeMessageRouterTests/testRouteRefreshReturnsFreshRelayMaterialFromRuntimeProvider|LocalRuntimeMessageRouterTests/testRouteRefreshRejectsUnknownRelayScopeFromRuntimeProvider|LocalRuntimeMessageRouterTests/testChatSendStoresRuntimeSideProcessingEvents|LocalRuntimeMessageRouterTests/testChatSendIntoArchivedRuntimeSessionReturnsStructuredErrorWithoutMutatingStore|LocalRuntimeMessageRouterTests/testChatCancelAcknowledgementPersistsRuntimeOwnedCancelledEvent|LocalRuntimeMessageRouterTests/testConnectionCloseCancelsActiveChatGenerationAndPersistsCancelledEvent|LocalRuntimeMessageRouterTests/testRuntimeChatHistoryMessagesAreAuthenticatedAndReturnedFromStore|LocalRuntimeMessageRouterTests/testChatMessagesListRejectsUnknownPayloadMetadataBeforeStoreDispatch|LocalRuntimeMessageRouterTests/testChatMessagesListRejectsInvalidAllowedPayloadTypesBeforeStoreDispatch|LocalRuntimeMessageRouterTests/testRuntimeChatHistoryHandlersReturnEmptyForNonPositiveLimitsWithoutReadingStore|LocalRuntimeMessageRouterTests/testRuntimeChatStoreAppliesArchiveRestoreAndDeleteLifecycle|LocalRuntimeMessageRouterTests/testRuntimeChatStoreScopesSessionsMessagesAndMutationsByOwnerDevice|LocalRuntimeMessageRouterTests/testRuntimeChatStoreSearchesSessionSummariesAndTranscriptWithinOwnerScope|LocalRuntimeMessageRouterTests/testRuntimeChatStoreTreatsNonPositiveLimitsAsEmptyHistoryWindows|LocalRuntimeMessageRouterTests/testRuntimeChatStoreZeroLimitsReturnEmptyWithoutReadingLog|LocalRuntimeMessageRouterTests/testRuntimeChatStoreReportsCorruptJSONLLineInsteadOfDroppingIt|LocalRuntimeMessageRouterTests/testRuntimeChatEventLogIsCreatedWithOwnerOnlyPermissions|LocalRuntimeMessageRouterTests/testRuntimeChatEventLogPermissionsAreCorrectedOnAppend|LocalRuntimeMessageRouterTests/testRuntimeChatHistorySemanticallyInvalidEventReturnsStructuredError|LocalRuntimeMessageRouterTests/testRuntimeChatHistoryCorruptStoreReturnsStructuredError|LocalRuntimeMessageRouterTests/testRuntimeChatSessionLifecycleMessagesMutateRuntimeStore|LocalRuntimeMessageRouterTests/testChatSessionLifecycleRejectsUnknownPayloadMetadataBeforeStoreMutation|LocalRuntimeMessageRouterTests/testRuntimeChatSessionRenameStoresRuntimeTitle|LocalRuntimeMessageRouterTests/testChatSessionRenameRejectsUnknownPayloadMetadataBeforeTitleStoreMutation|LocalRuntimeMessageRouterTests/testChatSessionsListQueryFiltersRuntimeOwnedSummaries|LocalRuntimeMessageRouterTests/testChatSessionsListEmbeddingModelHintStaysSearchOnly|LocalRuntimeMessageRouterTests/testChatSessionsListRejectsUnknownPayloadMetadataBeforeStoreDispatch|LocalRuntimeMessageRouterTests/testChatSessionsListRejectsInvalidAllowedPayloadTypesBeforeStoreDispatch|LocalRuntimeMessageRouterTests/testChatSessionsListQueryMatchesReasoningWhileMessagesKeepAnswerSeparate|LocalRuntimeMessageRouterTests/testRuntimeMemoryMessagesMutateRuntimeStore|LocalRuntimeMessageRouterTests/testMemoryListRejectsUnknownPayloadMetadataBeforeStoreDispatch|LocalRuntimeMessageRouterTests/testMemoryUpsertRejectsUnknownPayloadMetadataBeforeStoreMutation|LocalRuntimeMessageRouterTests/testMemoryDeleteRejectsUnknownPayloadMetadataBeforeStoreMutation|LocalRuntimeMessageRouterTests/testMemoryListQueryFiltersRuntimeOwnedMemoryWithSearchMetadata|LocalRuntimeMessageRouterTests/testMemoryUpsertRejectsClientSuppliedSourceMetadataAndPreservesRuntimeSource|LocalRuntimeMessageRouterTests/testRuntimeMemoryStoreReportsCorruptJSONLLineInsteadOfDroppingIt|LocalRuntimeMessageRouterTests/testRuntimeMemoryStoreReportsSemanticallyInvalidUpsertLine|LocalRuntimeMessageRouterTests/testRuntimeMemoryStoreScopesEntriesByOwnerDevice|LocalRuntimeMessageRouterTests/testRuntimeMemoryEventLogIsCreatedWithOwnerOnlyPermissions|LocalRuntimeMessageRouterTests/testRuntimeMemoryEventLogPermissionsAreCorrectedOnAppend|LocalRuntimeMessageRouterTests/testRuntimeMemoryListCorruptStoreReturnsStructuredError|LocalRuntimeMessageRouterTests/testAuthenticatedDevicesCannotCrossReadInjectOrMutateChatAndMemory|LocalRuntimeMessageRouterTests/testChatSendInjectsEnabledRuntimeMemoryFromRuntimeStore|LocalRuntimeMessageRouterTests/testChatSendRuntimeMemoryOverridesClientSuppliedMemory|LocalRuntimeMessageRouterTests/testChatSendStoresOnlyClientVisibleMessagesWhileBackendReceivesRuntimeContext|LocalRuntimeMessageRouterTests/testChatSendDoesNotCompactShortConversation|LocalRuntimeMessageRouterTests/testChatSendCompactsOlderTurnsBeforeBackendRequestWhenContextIsLarge|LocalRuntimeMessageRouterTests/testChatSendCompactionAnnotatesBackendOnlySourceSpanWithoutPersisting|LocalRuntimeMessageRouterTests/testChatSendUsesModelContextWindowMetadataForCompactionBudget|LocalRuntimeMessageRouterTests/testChatSendCompactionKeepsRuntimeMemoryAndCapabilityGuardSeparate|LocalRuntimeMessageRouterTests/testChatSendReturnsStructuredErrorWhenRuntimeMemoryCannotLoad|LocalRuntimeMessageRouterTests/testChatSendStreamsReasoningDeltaSeparatelyFromAnswerDelta|LocalRuntimeMessageRouterTests/testChatSendSplitsInlineThinkTagsBeforeStreamingAnswer|LocalRuntimeMessageRouterTests/testChatSendInstalledEmbeddingModelReturnsModelNotInstalled|LocalRuntimeMessageRouterTests/testChatSendInstalledCloudModelReturnsModelNotInstalled|LocalRuntimeMessageRouterTests/testChatSendGeneratesRuntimeTitleAfterFirstAssistantResponse|LocalRuntimeMessageRouterTests/testChatSendGeneratedRuntimeTitleStripsInlineThinking|LocalRuntimeMessageRouterTests/testChatSendTitleGenerationUsesDeterministicFallbackWhenBackendTitleIsInvalid'
+		run swift test --filter 'LocalRuntimeMessageRouterTests/testMemoryListRejectsInvalidAllowedPayloadTypesBeforeStoreDispatch|LocalRuntimeMessageRouterTests/testMemoryListRejectsOversizedQueryBeforeStoreDispatch|LocalRuntimeMessageRouterTests/testMemoryListQueryFiltersRuntimeOwnedMemoryWithSearchMetadata'
+		run swift test --filter LocalRuntimeMessageRouterTests/testMemoryListRejectsInvalidAllowedPayloadTypesBeforeStoreDispatch
 	run swift test --filter LocalRuntimeMessageRouterTests/testMemoryUpsertRejectsInvalidAllowedPayloadTypesBeforeStoreMutation
 	run swift test --filter LocalRuntimeMessageRouterTests/testRejectsBlankEnvelopeRequestIDBeforeRuntimeCommandDispatch
 	run swift test --filter LocalRuntimeMessageRouterTests/testRejectsUnsupportedEnvelopeVersionBeforeRuntimeCommandDispatch
@@ -3013,17 +3487,20 @@ run swift test --filter PairingCoordinatorTests
 run swift test --filter 'LocalRuntimeMessageRouterTests/testCompanionAppModelReplacesReadyStaleRelayBeforeGeneratingAllocatedRouteQRCode|LocalRuntimeMessageRouterTests/testCompanionAppModelRegeneratesGUIAllocatedQRCodeWithExpiredLease'
 run swift test --filter 'LocalRuntimeMessageRouterTests/testRouteRefreshRejectsMalformedRelayMaterialFromRuntimeProvider|LocalRuntimeMessageRouterTests/testRouteRefreshAllowsPrivateOverlayAndUsbReverseScopedRelayMaterial|LocalRuntimeMessageRouterTests/testRouteRefreshFailureRedactsRelaySecretsAndProviderEndpoints'
 run swift test --filter 'LocalRuntimeMessageRouterTests/testRouteRefreshReturnsFreshP2PRendezvousMaterialFromRuntimeProvider|LocalRuntimeMessageRouterTests/testRouteRefreshAllowsBoundedP2PEncryptedBodyLargerThanRouteValues|LocalRuntimeMessageRouterTests/testRouteRefreshRejectsMalformedP2PRendezvousMaterialFromRuntimeProvider'
+run swift test --filter 'LocalRuntimeMessageRouterTests/testCompanionAppModelDoesNotExposeAuthenticatedRouteRefreshByDefault|LocalRuntimeMessageRouterTests/testCompanionAppModelExposesAuthenticatedRouteRefreshWhenDiagnosticOptInIsEnabled'
 run swift test --filter 'LocalRuntimeMessageRouterTests/testCompanionAppModelPublishesRuntimeDataSummaryFromInjectedStores|LocalRuntimeMessageRouterTests/testCompanionAppModelPublishesRuntimeHistoryTranscriptPreviewAcrossOwners|LocalRuntimeMessageRouterTests/testCompanionAppModelRefreshRuntimeMemoryEntriesClearsRecoveredSummaryError|LocalRuntimeMessageRouterTests/testCompanionAppModelRefreshRuntimeChatSessionsClearsRecoveredSummaryError|LocalRuntimeMessageRouterTests/testCompanionAppModelRefreshRuntimeMemoryEntriesPreservesChatSummaryError|LocalRuntimeMessageRouterTests/testCompanionAppModelRefreshRuntimeChatSessionsPreservesMemorySummaryError'
 run swift test --filter 'LocalRuntimeMessageRouterTests/testCompanionAppModelDefaultPairingRequiresRemoteQRCodeRoute|LocalRuntimeMessageRouterTests/testCompanionAppModelPublishesRemoteRoutePreparationIssueWhenBootstrapAllocationThrows'
 run swift test --filter 'LocalRuntimeMessageRouterTests/testMemorySummaryDraftsListRequiresAuthentication|LocalRuntimeMessageRouterTests/testMemorySummaryDraftsListReturnsOwnerScopedActiveVisibleDraftsOnly|LocalRuntimeMessageRouterTests/testMemorySummaryDraftsListRejectsUnknownPayloadMetadataBeforeStoreDispatch|LocalRuntimeMessageRouterTests/testMemorySummaryDraftsListRejectsInvalidAllowedPayloadTypesBeforeStoreDispatch|LocalRuntimeMessageRouterTests/testMemorySummaryDraftApproveRequiresAuthentication|LocalRuntimeMessageRouterTests/testMemorySummaryDraftApproveWritesIdempotentOwnerScopedMemoryAndHidesApprovedDraft|LocalRuntimeMessageRouterTests/testMemorySummaryDraftApproveRejectsUnknownPayloadMetadataBeforeStoreMutation|LocalRuntimeMessageRouterTests/testMemorySummaryDraftApproveRejectsInvalidAllowedPayloadTypesBeforeStoreMutation|LocalRuntimeMessageRouterTests/testMemorySummaryDraftApproveRejectsBlankDraftIDBeforeStoreMutation|LocalRuntimeMessageRouterTests/testMemorySummaryDraftDismissRequiresAuthentication|LocalRuntimeMessageRouterTests/testMemorySummaryDraftDismissHidesOwnerScopedDraftWithoutWritingMemory|LocalRuntimeMessageRouterTests/testMemorySummaryDraftDismissRejectsUnknownPayloadMetadataBeforeStoreMutation|LocalRuntimeMessageRouterTests/testMemorySummaryDraftDismissRejectsInvalidAllowedPayloadTypesBeforeStoreMutation|LocalRuntimeMessageRouterTests/testMemorySummaryDraftDismissRejectsBlankDraftIDBeforeStoreMutation'
 run swift test --filter 'RelayPeerClientTests/testRelayPeerClientRetireKeepsCurrentConnectionAndSuppressesReconnect|RelayPeerClientTests/testRelayPeerConfigurationDefaultControlLineTimeoutAllowsPhysicalQrStartup|RelayPeerClientTests/testRelayPeerClientTimesOutWhenRegistrationLineNeverArrives|RelayPeerClientTests/testRelayPeerClientTimesOutWhenReadyLineNeverArrivesAfterRegistration'
 run swift test --filter SQLiteRuntimeChatEventStoreTests
+run swift test --filter 'SQLiteRuntimeChatEventStoreTests/testSQLiteRetentionPrunesDeletedSessionsByOwnerScopeAndCutoff|SQLiteRuntimeChatEventStoreTests/testSQLiteRetentionTombstonePreventsLegacyBackfillResurrection|SQLiteRuntimeChatEventStoreTests/testProductionRuntimeChatRetentionPolicyPrunesOnlyExpiredDeletedSessions'
 run swift test --filter RuntimeLongInactivityMemorySummarizationPolicyTests
 
 echo
 echo "No-device quality checks passed."
 echo "Covered: local emit-only pairing QR artifact generation, QR PNG decode, canonical pairing URI policy, authenticated mock relay E2E, QR candidate structured-error routing, identity-only QR USB reverse fallback, public relay remote-scope QR contract, private-overlay relay scope schema guard, Android private-overlay QR missing-scope diagnostic, link-local relay preflight rejection, relay preflight allocation non-persistence, bootstrap relay endpoint failover before QR generation, saved bootstrap relay endpoint allocation, remote relay lease renewal and QR eligibility, QR relay alias-family completeness, release-mode diagnostic direct-route rejection, invalid QR auto-reconnect state guard, relay-route payload validation, PairingStore complete and expired relay-route persistence, relay preparation host eligibility guard, expired relay lease reconnect guard, fresh relay QR recovery, Android QR route refresh public-key optional binding, macOS remote QR lease route binding, route.refresh runtime-identity binding, route.refresh relay-scope enum validation, route.refresh rejected-payload retry, cross-network QR readiness copy, diagnostic QR text fallback copy, macOS remote QR lease failure visibility, macOS first-launch pairing priority, macOS first-run diagnostics hiding, macOS Pairing QR accessibility state, macOS Pairing QR image accessibility element, macOS Pairing QR unavailable accessibility value, macOS Pairing QR time remaining accessibility value, macOS Pairing QR remote-route expiry accessibility hint, macOS Pairing QR generation action accessibility reason, macOS active Pairing QR renewal accessibility hint, macOS sidebar brand accessibility label, macOS sidebar brand heading trait, macOS page header accessibility labels, macOS page header heading trait, macOS panel header heading trait, macOS empty-state accessibility labels, macOS sidebar preference picker accessibility values, macOS sidebar preference picker accessibility hints, macOS nearby-only connection guidance copy, macOS global QR generation availability gate, macOS app-language date formatting, macOS app-language byte-count formatting, macOS app-language region tag normalization, macOS connection recovery form field accessibility, macOS connection recovery QR action accessibility reason, macOS Connection Recovery result tone accessibility label, macOS trusted-device remove accessibility labels, macOS trusted-device remove accessibility hints, macOS trusted-device row accessibility labels, macOS trusted-device row accessibility visual-summary separation, macOS trusted-device removal confirmation localization, macOS trusted-device confirm-remove action accessibility labels, macOS Activity trusted-device audit copy, macOS Activity model-residency event summaries, macOS Activity row tone accessibility labels, macOS Activity log list accessibility summary, macOS Activity diagnostic disclosure separate focus, macOS Activity route-success ready tone, macOS Activity technical-details accessibility state, macOS saved connection details removal accessibility label, macOS Activity technical-details accessibility labels, macOS provider technical-details accessibility labels, macOS provider technical-details accessibility state, macOS provider status pill accessibility labels, macOS provider row accessibility summaries, macOS runtime overview accessibility labels, macOS status card accessibility labels, macOS model row accessibility labels, macOS model group header accessibility labels, macOS model group header heading trait, macOS relay status row accessibility labels, macOS route diagnostic technical-details accessibility labels, macOS readiness row accessibility labels, macOS natural count/plural copy guard, macOS visible localization anchors with zh-Hans bundle fallback, macOS raw SwiftUI visible-string localization guard, macOS five-language system/light/dark detail render smoke including Connection Recovery, macOS active Pairing QR compact render smoke, macOS compact Quick Actions render smoke, macOS native language picker labels, macOS installed-local model visibility, macOS runtime-local chat routing, macOS corrupt chat-store visibility, macOS runtime-owned memory injection, stale-client-memory replacement, runtime-only context history filtering, and heuristic runtime chat context compaction, Android natural message-count plural resources, Android raw Compose visible-string localization guard, platform-neutral app copy guard, Android native language picker labels, Android first-run language picker before pairing, Android app System/Light/Dark theme path, Android refresh-health action copy, Android localized model-status resources, Android provider-managed model label suppression, Android strict local model metadata guard, Android drawer runtime session status, Android drawer runtime summary accessibility, Android drawer settings footer layout, Android app top-bar shell chrome, Android screen heading semantics, Android QR scanner heading semantics, Android chat top-bar install action cue, Android chat top-bar model search interaction, Android chat top-bar model row accessibility summaries, Android drawer chat options contextual accessibility, Android drawer chat options action labels, Android drawer chat menu contextual action labels, Android drawer chat row accessibility summaries, Android drawer chat search interaction, Android drawer streaming lockout visual-disabled state, Settings chat history search interaction, Android Settings chat-history runtime search metadata compact layout, Android QR scanner permission/settings/torch/cancel chrome, Android QR scanner close action accessibility label, Android QR scanner five-language chrome accessibility, QR scanner torch state accessibility, Android QR-first chat empty state, Android QR pairing live-region accessibility, Android Settings QR scan disabled reason, Android diagnostic QR text state accessibility, Android diagnostic QR text contextual action labels, Android connect action disabled reason, Android platform-neutral connect guidance copy, Android connection status hero accessibility summary, Android model refresh action accessibility state, Android New Chat disabled reason, Android chat empty route guidance full-wrap layout, Android expired remote-route QR recovery action, Android trusted composer readiness lock, Android composer readiness hint, Android composer input readiness accessibility state, Android send button readiness accessibility state, Android composer primary action click labels, Android composer attach action accessibility state, Android composer attachment count limit accessibility, Android attachment-only prompt resource localization, Android attachment picker single-dispatch guard, Android bounded attachment read guard, Android streaming cancel Compose action, Android attachment chip accessibility state, Android attachment remove disabled reason, Android attachment size locale formatting, Android message attachment accessibility state, Android message role accessibility summaries, Android assistant identity marker, Android assistant identity marker compact layout, Android message copy accessibility labels, Android copy success live-region accessibility, Android code block copy accessibility labels, Android multi-code-block copy action labels, Android backend readiness banner accessibility summary, Android generic error banner accessibility summary, Android provider diagnostics expanded state, Android provider diagnostics named accessibility labels, Android provider diagnostics action labels, Android provider row accessibility summaries, Android reasoning accessibility summary, Android jump-to-latest Compose interaction, Android jump-to-latest compact layout, Settings expandable section accessibility state, Settings expandable section duplicate icon semantics guard, Settings preference option accessibility summaries, Settings diagnostic endpoint expander accessibility state, Settings connection switch state accessibility, Settings discovered route contextual action accessibility, Settings discovered route unavailable accessibility summaries, Android discovered trusted-route row compact layout, Android embedding model row accessibility summaries, Settings embedding model streaming lockout accessibility state, Settings memory contextual action accessibility, Settings memory capped action accessibility labels, Settings memory add readiness accessibility state, Settings memory destructive confirmation haptic timing, chat history destructive confirmation haptic timing, confirmation-open lightweight haptic timing, Settings expired-route primary QR action, Android connected Settings redundant-connect guard, Android trusted-runtime forget confirmation, Settings pairing section resync, language alias selection normalization, legacy Python relay allocation-guard, Android no-device Compose screen smoke with five-language pairing copy, Settings diagnostic endpoint visibility guard, chat history bulk action hiding and two-step confirmation, chat history bulk expander accessibility state, chat history bulk action disabled accessibility state, chat history per-chat contextual action accessibility, chat history per-chat disabled accessibility state, chat history row accessibility summaries, Android rename chat readiness accessibility state, Android rename chat action labels, Android rename chat compact dialog layout, full five-language light/dark Chat/Settings/Connection layout matrix, reasoning toggle, chat top-bar model/embedding picker separation, selected model-picker plus Settings preference and embedding-model accessibility state, fake haptic callback dispatch, connection notice haptic callback dispatch, runtime-owned streaming storage redaction, pending relay QR retry, Android pending relay QR secret-store boundary, Android pending relay QR secret cleanup, relay QR completion persistence, real RuntimeRelayTcpClient app pairing path, relay-before-Bonjour fallback, and trusted relay app-init auto-reconnect."
 echo "Covered private-overlay QR artifact addendum: shared compact private-overlay relay QR fixture renders to PNG and verifies with production bootstrap, relay route, CGNAT private-overlay scope, and no direct endpoint."
+echo "Covered private-overlay QR scope canonicality addendum: QR artifact verification rejects case- or whitespace-mutated relay_scope/rsc values before private-overlay QR evidence is counted."
 echo "Covered addendum: Android OS app-language handoff, Android follow system language preference, Android translated Memory noun, macOS menu-bar status and command localization, macOS quick action accessibility hints, macOS menu-bar quick action accessibility parity, macOS menu-bar model-residency controls, macOS menu-bar window and quit accessibility hints, macOS first-run Pairing QR primary action ordering, macOS Connection Recovery private-overlay toggle accessibility labels, macOS Connection Recovery and diagnostics disclosure accessibility state, macOS Connection Recovery Save Connection input state, macOS Connection Recovery Save Bootstrap Relay input state, macOS Connection Recovery bootstrap allocation token warning, macOS Connection Recovery host warning accessibility status, macOS Connection Recovery bootstrap relay removal accessibility labels, macOS Connection Recovery destructive removal action hints, macOS menu-bar Pairing QR active-session title, macOS Pairing QR route notice accessibility status, macOS Connection Recovery fallback-action accessibility hints, macOS CJK page-header accessibility spacing, macOS trusted-device refresh accessibility hint, Android trusted-runtime forget named accessibility label, Android trusted-runtime forget named click label, Android trusted-runtime forget confirmation action labels, Android trusted-runtime forget confirmation named message, Settings discovery action accessibility states, Settings discovery action accessibility labels, Android streaming cancel accessibility state, Android jump-to-latest accessibility state, Android jump-to-latest action labels, Android connected action accessibility states, Android connected action accessibility labels, Android connected action reconnect lockout, Android connected action compact layout, Android backend readiness refresh accessibility state, Android backend readiness refresh action labels, Android backend readiness banner bounded layout, Android generic runtime error banner bounded layout, Android model refresh action accessibility labels, Android route notice action accessibility labels, Android route notice accessibility summaries, Android route notice accessibility state, Android route notice QR recovery steps, Android connection status incomplete relay route live-region recovery, Android primary pairing cross-network route copy, Android pairing primary action accessibility labels, Android trusted-route connect label, Android manual diagnostic host QR-first guard, Android relay auth failure QR recovery notice, Android relay auth failure auto-retry stop, Android relay auth failure post-clear QR action, Android relay auth failure empty-chat copy, Android route rejection empty-chat copy, Android expired route empty-chat copy, Android expired remote-route QR recovery localization, Android expired relay route purge, Android relay secret store boundary, Android relay secret Base64 boundary, macOS relay secret store boundary, Android route.refresh terminal expiry state guard, Android QR runtime-name normalization, Android PairingStore incomplete relay cleanup, Android New Chat pairing-required disabled reason, Android New Chat action labels, Android permanent rail New Chat pairing gate, Android permanent rail Chat pairing gate, Android drawer rich chat search, Android drawer chat date grouping, Android drawer chat model metadata, Android chat history display-model search, Android drawer saved missing model recovery, Android drawer streaming lockout accessibility state, Android chat top-bar model picker streaming disabled state, Android chat top-bar model picker streaming transition lockout, Android chat top-bar stale saved model suppression, Android chat top-bar saved missing model recovery, Android chat top-bar compact long model name, Android chat top-bar model refresh action accessibility state, Android unknown model install guard, Android chat top-bar active chat title, Android chat top-bar model picker closed-button accessibility summary, Android chat top-bar model row action labels, Android search clear action labels, Android composer keyboard Send action, Android composer latest QR readiness hint, Android attachment-only composer readiness state, Android composer readiness live-region accessibility, Android route-recovery empty-state live-region accessibility, Android latest QR empty-state callback routing, Android chat empty-state primary action labels, Android reasoning toggle action labels, Android streaming assistant live-region accessibility, Settings expandable section action accessibility labels, Settings switch action accessibility labels, Settings memory action accessibility labels, Settings memory streaming lockout accessibility state, Settings memory add action accessibility labels, Settings memory add success live-region accessibility, Settings memory empty-state live-region accessibility, Settings memory delete confirmation action labels, Settings chat history model metadata, Android memory input readiness accessibility state, chat history bulk expander action labels, chat history bulk action accessibility labels, chat history destructive confirmation and cancel action labels."
 echo "Covered Settings compact addendum: Android Settings trusted-runtime panel compact layout, Android trusted-runtime forget compact dialog layout, Android chat-history confirmation compact dialog layout, and Android memory delete compact dialog layout."
 echo "Covered QR lease addendum: near-expiry remote relay lease QR renewal."
@@ -3069,6 +3546,7 @@ echo "Covered Android client-side runtime proof rejection addendum: trusted rela
 echo "Covered relay allocation request input rejection addendum: AETHERLINK_RELAY allocate rejects blank allocation_token/auth values and blank or whitespace requested relay secrets before issuing route material."
 echo "Covered relay allocation base64 requested-secret addendum: AETHERLINK_RELAY allocate accepts base64-style requested relay secrets with +, /, and = padding while still rejecting backend/provider/request metadata fields."
 echo "Covered relay allocation response field validation addendum: allocation response lines re-run relay_id, relay_secret, relay_expires_at, and relay_nonce validation after JSON decoding."
+echo "Covered Swift relay allocation relay-id canonicality addendum: RelayAllocation rejects URL-shaped, path-shaped, query, fragment, user-info, host:port, oversized, blank, and whitespace-mutated relay IDs before allocation response or persisted ticket use."
 echo "Covered Android accepted-pairing incomplete relay route addendum: accepted pairing rejects incomplete relay route material instead of falling back to a diagnostic direct endpoint."
 echo "Covered Android accepted-pairing incomplete P2P route addendum: accepted pairing rejects incomplete p2p_rendezvous material instead of falling back to a diagnostic direct endpoint."
 echo "Covered Android initial pairing QR expired relay lease rejection addendum: accepted pairing refuses to create trusted runtime storage from already-expired relay QR material."
@@ -3083,18 +3561,32 @@ echo "Covered Android authenticated relay route.refresh scheduling/retry addendu
 echo "Covered Android authenticated route.refresh default-off addendum: production Android does not advertise or send authenticated route.refresh unless explicitly enabled for diagnostic coverage."
 echo "Covered PairingStore direct endpoint cleanup addendum: Android trusted runtime persistence drops current and legacy direct host/port fields."
 echo "Covered pending pairing direct-endpoint cleanup addendum: Android pending pairing route storage drops direct QR host/port fields."
+echo "Covered Android pending pairing identity canonicality addendum: pending pairing route storage rejects whitespace-mutated or oversized pairing nonce, runtime device id, and fingerprint values, and whitespace-mutated pairing codes, instead of trimming them into pending trusted identity material."
+echo "Covered Android pending pairing route-token canonicality addendum: pending pairing route storage rejects whitespace-mutated or oversized route_token values instead of trimming them into pending trusted identity material."
+echo "Covered Android app relay route-material canonicality addendum: pending route storage and RuntimeRemoteRoutePlanner reject whitespace-mutated or oversized relay hosts, relay ids, frame secrets, nonces, and scopes before pending restore, trusted reconnect target state, or prepared route planning."
 echo "Covered trusted route fallback addendum: Android trusted reconnect drops trusted last-known direct endpoint fallback."
 echo "Covered trusted route UI addendum: Android route UI treats trusted last-known direct endpoints as latest-QR recovery."
 echo "Covered trusted route core addendum: Android core transport default resolver ignores trusted last-known direct endpoints."
 echo "Covered Android relay route-material canonicality addendum: relay route preparation rejects whitespace-mutated relay hosts, URL-shaped hosts, relay IDs, frame secrets, anti-replay nonces, and oversized opaque relay route material before connector use."
 echo "Covered Android pairing/trusted relay host canonicality addendum: QR parsing, PairingStore persistence/restore, route planning, and route UI reject whitespace-mutated, URL-shaped, path, query, fragment, or userinfo relay hosts before trusted route use."
 echo "Covered Android stored route-token canonicality addendum: PairingStore rejects whitespace-mutated or oversized stored route tokens on read and write before trusted discovery or remote route preparation can use them."
+echo "Covered Android stored trusted identity canonicality addendum: PairingStore rejects whitespace-mutated or oversized stored runtime device ids, fingerprints, and public keys before trusted runtime restore or persistence."
 echo "Covered Android trusted relay scope canonicality addendum: PairingStore rejects blank, unknown, case-mutated, and whitespace-mutated runtime_relay_scope values on write/read before trusted relay restore or persistence."
 echo "Covered Android pairing QR relay-secret canonicality addendum: relay_secret, remote_secret, route_secret, rendezvous_secret, and rs reject whitespace-mutated values while preserving base64-style +, /, and = characters."
+echo "Covered Android pairing QR service_type discovery-hint sanitization addendum: pairing QR parsing and the shared QR schema accept only AetherLink discovery service hints and reject URL-shaped, backend, provider, model, or whitespace-mutated service_type values."
+echo "Covered Android pairing QR duplicate query-key rejection addendum: decoded pairing QR query keys cannot repeat before field selection, alias handling, or route material assembly."
+echo "Covered shared QR verifier duplicate query-key rejection addendum: rendered QR artifact verification rejects repeated decoded query keys before route material validation, matching Android parser duplicate-key rejection."
+echo "Covered Android pairing QR unknown query-key rejection addendum: decoded pairing QR query keys outside the shared schema allowlist fail before identity, relay, P2P, backend, or model-shaped metadata can be ignored."
+echo "Covered shared QR verifier unknown query-key rejection addendum: rendered QR artifact verification rejects decoded query keys outside the shared schema allowlist before route material validation."
+echo "Covered Android pairing QR semantic alias conflict rejection addendum: decoded QR aliases for the same semantic field, including relay scope aliases, fail before field selection or route material assembly."
 echo "Covered Android pairing QR relay alias-family isolation addendum: relay, remote, route, rendezvous, and compact relay material families cannot be mixed to assemble one QR route."
 echo "Covered shared pairing QR relay alias-family schema addendum: protocol schema rejects mixed canonical, remote, route, rendezvous, and compact relay aliases while preserving valid single-family QR payloads."
+echo "Covered shared pairing QR semantic alias exclusivity schema addendum: protocol schema rejects multiple decoded aliases for the same QR field before artifacts can satisfy conflicting identity, route-token, local-endpoint, relay-id, or relay-scope values."
+echo "Covered shared pairing QR relay-scope alias exclusivity schema addendum: protocol schema rejects multiple relay_scope, remote_scope, route_scope, or rsc aliases before QR artifacts can satisfy conflicting scopes."
+echo "Covered shared pairing QR usb-reverse loopback host schema addendum: protocol schema checker pins usb_reverse across relay_scope, remote_scope, route_scope, and rsc as explicit debug USB reverse route material, and QR verification rejects loopback local-relay artifacts unless the scope is exactly usb_reverse."
 echo "Covered shared pairing QR route-scope private-overlay schema addendum: protocol schema accepts route_scope=private_overlay for route_* relay aliases and requires it for private route_host literals like Android parsing."
 echo "Covered Android pairing QR P2P alias-family isolation addendum: pairing QR parsing rejects mixed canonical and compact P2P rendezvous aliases before route material is assembled."
+echo "Covered Android pairing QR P2P protocol-version canonicality addendum: pairing QR parsing rejects leading-zero, plus-prefixed, and compact non-canonical P2P protocol version values before route material is accepted."
 echo "Covered shared pairing QR P2P alias-family schema addendum: protocol schema rejects mixed canonical and compact P2P rendezvous aliases while preserving valid single-family QR payloads."
 echo "Covered P2P route prep addendum: Android p2p_rendezvous route preparation contract and relay fallback ordering."
 echo "Covered Android P2P route-family isolation addendum: p2p_rendezvous route preparation carries opaque record/body/nonce material without relay ids, relay frame secrets, direct host/port fields, or paired route-token session material."
@@ -3117,6 +3609,7 @@ echo "Covered Android route-refresh QR route-token rotation addendum: latest QR 
 echo "Covered Android route-refresh QR pinned-identity rejection addendum: route-refresh QR must match an existing trusted runtime identity and public key before route storage changes."
 echo "Covered Android route-refresh QR expired-or-incomplete relay rejection addendum: expired route-refresh QR leases and relay routes missing relay_secret fail closed before trusted storage changes."
 echo "Covered Android route-refresh QR expired-or-incomplete P2P rejection addendum: expired P2P route-refresh QR records and incomplete p2p_rendezvous material fail closed before trusted storage changes."
+echo "Covered Android route-refresh QR stale material rejection addendum: route-refresh QR rejects reused relay nonces, reused P2P record IDs, reused P2P anti-replay nonces, and non-advancing relay or P2P expiries before trusted route storage changes."
 echo "Covered Android route-refresh QR P2P relay-scope isolation addendum: P2P route-refresh QR material with stray relay scope fails closed unless complete relay material is present."
 echo "Covered Android app P2P encrypted body 2048-byte route material addendum: app route planning, trusted reconnect dispatch, authenticated route.refresh, and pending route storage preserve max-sized opaque P2P bodies."
 echo "Covered Android P2P connector dispatch addendum: identity-only trusted targets with prepared P2P material use RuntimePeerToPeerConnector without direct TCP fallback."
@@ -3131,10 +3624,10 @@ echo "Covered memory.summary.drafts.list invalid allowed type rejection addendum
 echo "Covered Android memory summary draft review addendum: Android requests memory.summary.drafts.list, renders suggested memories in Settings Memory, approves memory.summary.draft.approve, and keeps draft previews out of device storage."
 echo "Covered long-inactivity memory summary draft approval addendum: authenticated memory.summary.draft.approve writes idempotent owner-scoped runtime memory and hides approved drafts from later review lists."
 echo "Covered memory.summary.draft.approve unknown metadata rejection addendum: RuntimeDevServer memory.summary.draft.approve payloads reject response-only status and entry, backend_url, route_token, relay_secret, workspace_id, permission_grant, source_path, and source_control_status before runtime chat store recomputation or memory store mutation."
-echo "Covered memory.summary.draft.approve invalid allowed type rejection addendum: RuntimeDevServer memory.summary.draft.approve payloads reject blank draft_id, non-string content, non-boolean enabled, non-string expected_session_id, and string or fractional expected_source_message_count before runtime chat store recomputation or memory store mutation."
+echo "Covered memory.summary.draft.approve invalid allowed type rejection addendum: RuntimeDevServer memory.summary.draft.approve payloads reject blank draft_id, non-string or blank content, non-boolean enabled, non-string or blank expected_session_id, and string or fractional expected_source_message_count before runtime chat store recomputation or memory store mutation."
 echo "Covered long-inactivity memory summary draft dismiss addendum: authenticated memory.summary.draft.dismiss stores owner-scoped dismiss decisions, hides dismissed drafts, and does not write runtime memory."
 echo "Covered memory.summary.draft.dismiss unknown metadata rejection addendum: RuntimeDevServer memory.summary.draft.dismiss payloads reject response-only status and dismissed_at, backend_url, route_token, relay_secret, workspace_id, permission_grant, source_path, and source_control_status before runtime chat store recomputation or memory store mutation."
-echo "Covered memory.summary.draft.dismiss invalid allowed type rejection addendum: RuntimeDevServer memory.summary.draft.dismiss payloads reject blank draft_id, non-string expected_session_id, and string or fractional expected_source_message_count before runtime chat store recomputation or memory store mutation."
+echo "Covered memory.summary.draft.dismiss invalid allowed type rejection addendum: RuntimeDevServer memory.summary.draft.dismiss payloads reject blank draft_id, non-string or blank expected_session_id, and string or fractional expected_source_message_count before runtime chat store recomputation or memory store mutation."
 echo "Covered approved memory source metadata addendum: approved long-inactivity memory entries preserve bounded visible-transcript source metadata through runtime storage, memory.list, protocol DTOs, and Android in-memory state while device storage remains redacted."
 echo "Covered approved memory source review UI addendum: Android Settings Memory shows approved-memory source metadata on demand without exposing the full transcript by default."
 echo "Covered macOS Runtime Memory approved source review UI addendum: Runtime Memory Inspector shows approved-memory source title/range metadata, keeps source excerpts collapsed and bounded, and avoids draft/session/debug identifiers."
@@ -3154,6 +3647,10 @@ echo "Covered Android remote route expiry connector guard addendum: prepared rem
 echo "Covered Android remote route identity binding addendum: prepared P2P or relay route material must match the trusted runtime identity before any connector attempt."
 echo "Covered macOS pairing QR payload shape addendum: canonical QR payloads can omit diagnostic endpoint hints, include relay secrets when route material is present, and compact camera QR payloads use short aliases."
 echo "Covered macOS pairing QR relay-scope allowlist addendum: PairingCoordinator emits only remote, private_overlay, usb_reverse, or local_diagnostic route scopes before QR payload generation."
+echo "Covered macOS pairing QR relay host-scope eligibility addendum: PairingCoordinator emits relay QR route material only when public hosts use remote or no scope, private-overlay hosts use private_overlay, and loopback hosts use usb_reverse."
+echo "Covered macOS pairing QR relay host canonical emission addendum: PairingCoordinator emits normalized relay_host values after host/scope eligibility checks, including lowercased no-trailing-dot DNS names and bracketless IPv6 literals."
+echo "Covered macOS pairing QR opaque route-material canonicality addendum: PairingCoordinator omits whitespace-mutated or oversized optional opaque QR values before emitting relay, P2P, runtime public-key, or route-token query material."
+echo "Covered macOS pairing QR route-material numeric validity addendum: PairingCoordinator omits invalid relay ports and non-positive relay or P2P route expiries before emitting relay or P2P QR families."
 echo "Covered macOS P2P QR canonical generation addendum: canonical macOS pairing QR payloads emit complete p2p_rendezvous route material while keeping relay and direct endpoint aliases absent."
 echo "Covered macOS P2P QR generation addendum: macOS pairing QR generation emits the shared opaque P2P rendezvous record family."
 echo "Covered relay control-line framing addendum: relay handshake, allocation, and probe control lines require trailing newlines, and readiness probes do not consume waiting runtimes."
@@ -3212,7 +3709,8 @@ echo "Covered Android QR pairing preemption addendum: new QR pairing can preempt
 echo "Covered Android product QR scanner policy addendum: scanner raw-value handling accepts route-capable compact relay QR and rejects identity-only or expired product QR before consuming camera results."
 echo "Covered Android QR policy addendum: Android product QR remote-route requirement and identity-only scanner rejection."
 echo "Covered Android direct model-provider route block addendum: selected, discovered, USB reverse, and emulator direct routes reject Ollama and LM Studio backend ports before any client-side TCP connection."
-echo "Covered Android Bonjour discovery identity metadata boundary addendum: trusted Bonjour/local discovery routes require matching route-token or pinned identity metadata, while metadata-less or mismatched discoveries remain non-trusted diagnostics."
+echo "Covered Android Bonjour discovery identity metadata boundary addendum: trusted Bonjour/local discovery routes require matching route-token or pinned identity metadata, advertised route-token cannot fall back to legacy identity metadata when unpinned, and metadata-less or mismatched discoveries remain non-trusted diagnostics."
+echo "Covered Android Bonjour TXT receive canonicality addendum: Bonjour TXT route_token values reject whitespace mutation, oversized values, malformed UTF-8, and forbidden discovery metadata before trusted discovery matching."
 echo "Covered Android pending route-less QR no saved relay fallback addendum: pending pairing QR without remote route material does not borrow a saved relay route from the trusted runtime."
 echo "Covered Android diagnostic identity-only discovery wait addendum: diagnostic identity-only QR starts discovery and waits for a route instead of manufacturing a connection target."
 echo "Covered Android relay frame cryptor nonce-bound vector addendum: fixed ciphertext vectors bind relay_secret and relay_nonce, and mismatched route nonces cannot decrypt relay frames."
@@ -3233,12 +3731,18 @@ echo "Covered macOS unknown unqualified model routing addendum: runtime-host mod
 echo "Covered macOS qualified provider model routing rejection addendum: provider-qualified chat model ids must be reported by that exact local provider before runtime routing."
 echo "Covered runtime auth gate addendum: unauthenticated models.list, models.pull, chat.send, chat.cancel, route.refresh, chat history/title/session mutation, memory list/upsert/delete, and memory-summary draft command rejection."
 echo "Covered route.refresh addendum: route.refresh malformed relay material validation, route.refresh private-overlay and usb-reverse scoped relay material validation."
+echo "Covered macOS route.refresh relay host producer canonicality addendum: route.refresh rejects URL-shaped, path, query, fragment, user-info, port-suffixed, and whitespace-mutated relay hosts returned by the runtime provider before emitting route material."
 echo "Covered shared route.refresh private-overlay scope schema addendum: protocol schema requires relay_scope=private_overlay when authenticated route.refresh relay_host is a private, CGNAT, or ULA relay literal."
+echo "Covered shared route.refresh runtime identity canonicality schema addendum: protocol schema caps runtime_device_id and runtime_key_fingerprint with the same whitespace-free opaque route value rule as route.refresh route material."
+echo "Covered shared route.refresh relay_host canonicality schema addendum: protocol schema rejects whitespace-mutated, URL-shaped, path, query, fragment, or user-info relay_host values before authenticated route.refresh artifacts can validate."
+echo "Covered shared route.refresh relay_host scope eligibility schema addendum: protocol schema rejects mDNS-local, unspecified, link-local, multicast, and broadcast relay_host values and requires relay_scope=usb_reverse for loopback route-refresh material."
 echo "Covered Android route.refresh relay payload acceptance/incomplete rejection addendum: authenticated relay route.refresh stores fresh relay material and rejects expired or missing relay_secret material before trusted storage changes."
+echo "Covered Android route.refresh relay material canonicality addendum: authenticated relay route.refresh rejects whitespace-mutated, URL-shaped, oversized, private-overlay scope-mismatched, and loopback scope-mismatched relay material before trusted storage changes."
 echo "Covered route.refresh relay freshness addendum: Android route.refresh rejects reused relay nonces or non-advancing relay leases before storage while allowing stable relay id/secret reuse."
 echo "Covered Android route.refresh rejected-payload retry addendum: authenticated relay route.refresh responses rejected by identity or route-material validation keep the current trusted relay route and retry inside the active lease."
 echo "Covered route.refresh P2P addendum: authenticated route.refresh can carry complete opaque P2P rendezvous material without claiming real P2P traversal."
 echo "Covered macOS route.refresh opaque material size-bound addendum: route.refresh caps runtime, relay, and P2P route values at 512 characters while allowing p2p_encrypted_body up to 2048 characters."
+echo "Covered macOS authenticated route.refresh diagnostic opt-in addendum: macOS app runtime returns route_refresh_unavailable by default and emits route material only when diagnostic route refresh is explicitly enabled."
 echo "Covered RuntimeDevServer route.refresh P2P smoke addendum: authenticated relay smoke validates complete opaque P2P rendezvous material from RuntimeDevServer."
 echo "Covered RuntimeDevServer route.refresh relay lease freshness smoke addendum: authenticated relay smoke requires route.refresh to advance the QR relay lease expiry and use a fresh relay nonce while allowing stable relay id/secret reuse."
 echo "Covered macOS route.refresh failure redaction addendum: route.refresh failures return fixed retryable recovery copy without relay secrets, route tokens, provider URLs, or backend endpoints."
@@ -3248,6 +3752,7 @@ echo "Covered no-device production session proof-boundary addendum: no-ADB QR an
 echo "Covered RuntimeDevServer history/title/session lifecycle/memory smoke addendum: authenticated relay smoke positively validates chat.sessions.list, chat.messages.list, chat.title.request, chat.session rename/archive/restore/delete, archived chat.send restore-required rejection, chat.send context compaction backend-only audit, visible history separation, memory.upsert, memory.list, memory.delete, memory.summary.drafts.list, memory.summary.draft.approve, memory.summary.draft.dismiss, approved memory-summary memory.list visibility, memory-summary stale expected-metadata rejection, client-supplied memory source rejection, approved memory source-preserving edit/list visibility, dismissed draft hiding, dismissed draft no memory.list entry, and memory.summary draft unavailable errors over RuntimeDevServer."
 echo "Covered RuntimeDevServer chat compaction backend-only audit addendum: authenticated relay smoke validates chat.send context compaction backend-only audit and visible history separation over RuntimeDevServer."
 echo "Covered runtime session search addendum: chat.sessions.list query filters runtime-owned titles, model ids, and sanitized transcript text inside owner/archive/delete boundaries, with deterministic ranking, bounded snippets, Android query/search DTO serialization, selected embedding-model search hint plumbing, trimmed request plumbing, Settings chat-history search refresh query forwarding, Settings chat-history runtime search match metadata, RuntimeDevServer chat.sessions.list query search metadata smoke, and SQLite/FTS event-store parity plus JSONL-to-SQLite backfill, SQLite default-store rollout, and SQLite deleted-session retention pruning for sessions, messages, owner/archive/delete lifecycle, inline-byte redaction, corrupt-log handling, idempotency, legacy-file freshness, tombstone-backed legacy resurrection prevention, and search metadata."
+echo "Covered SQLite runtime chat retention policy addendum: production runtime chat maintenance prunes only cutoff-eligible deleted sessions, preserves active/archived sessions, keeps owner scope, and preserves tombstone-backed legacy resurrection prevention."
 echo "Covered chat.session.rename unknown metadata rejection addendum: RuntimeDevServer chat.session.rename payloads reject renamed_at, backend_url, route_token, relay_secret, workspace_id, permission_grant, source_path, and source_control_status before runtime title store mutation."
 echo "Covered chat.session lifecycle unknown metadata rejection addendum: RuntimeDevServer chat.session archive/restore/delete payloads reject backend_url, route_token, relay_secret, workspace_id, permission_grant, source_path, and source_control_status before runtime chat store mutation."
 echo "Covered chat.session lifecycle invalid allowed type rejection addendum: RuntimeDevServer chat.session archive/restore/delete payloads reject non-string, empty, or blank session_id values before runtime chat store mutation."
@@ -3258,10 +3763,21 @@ echo "Covered chat.messages.list unknown metadata rejection addendum: RuntimeDev
 echo "Covered chat.messages.list invalid allowed type rejection addendum: RuntimeDevServer chat.messages.list payloads reject blank session_id plus string and fractional limit values before runtime chat store dispatch."
 echo "Covered memory.list unknown metadata rejection addendum: RuntimeDevServer memory.list payloads reject response-only entries, backend_url, route_token, relay_secret, workspace_id, permission_grant, source_path, and source_control_status before runtime memory store dispatch."
 echo "Covered memory.list invalid allowed type rejection addendum: RuntimeDevServer memory.list payloads reject non-string query values before runtime memory store dispatch."
+echo "Covered runtime memory.list query resource guard addendum: memory.list rejects overlong or excessive-term lexical queries before runtime memory-store search dispatch."
 echo "Covered memory.upsert unknown metadata rejection addendum: RuntimeDevServer memory.upsert payloads reject response-only entry, source, backend_url, backend_credentials, provider_url, route_token, relay_secret, requested_route_token, workspace_id, permission_grant, source_path, and source_control_status before runtime memory store mutation."
 echo "Covered memory.upsert invalid allowed type rejection addendum: RuntimeDevServer memory.upsert payloads reject non-string, empty, or blank id values, non-string or blank content values, and non-boolean enabled values before runtime memory store mutation."
 echo "Covered envelope request_id blank rejection addendum: RuntimeDevServer rejects blank envelope request_id values before authentication checks, backend dispatch, route refresh, or runtime store mutation."
 echo "Covered envelope version rejection addendum: RuntimeDevServer rejects unsupported envelope version values before authentication checks, backend dispatch, route refresh, or runtime store mutation."
+echo "Covered macOS protocol envelope required-field decode addendum: BridgeProtocol ProtocolCodec rejects missing, mistyped, and malformed required envelope version, request_id, timestamp, type, and payload fields before RuntimeDevServer or router command handling."
+echo "Covered macOS protocol envelope unknown top-level field decode addendum: BridgeProtocol ProtocolCodec rejects unknown top-level envelope metadata fields before RuntimeDevServer or router command handling."
+echo "Covered Android protocol envelope required-field decode addendum: Android ProtocolCodec rejects missing and mistyped required envelope version, type, request_id, timestamp, and payload fields before default values can hide malformed frames."
+echo "Covered Android protocol envelope version/request_id semantic decode addendum: Android ProtocolCodec rejects unsupported envelope version values and blank envelope request_id strings before message dispatch or relay transport handling."
+echo "Covered Android protocol envelope timestamp format decode addendum: Android ProtocolCodec rejects malformed envelope timestamp strings before ProtocolEnvelope defaults, message dispatch, or relay transport handling can accept them."
+echo "Covered Android protocol envelope unknown top-level field decode addendum: Android ProtocolCodec rejects unknown top-level envelope metadata fields while preserving message-specific payload object handling."
+echo "Covered RuntimeDevServer envelope version/request_id decode rejection addendum: RuntimeDevServer rejects missing or mistyped envelope version and request_id values with invalid_payload while keeping the connection usable for follow-up pre-auth runtime.health."
+echo "Covered RuntimeDevServer envelope timestamp decode rejection addendum: RuntimeDevServer rejects missing, non-string, and malformed envelope timestamp values with invalid_payload while keeping the connection usable for follow-up pre-auth runtime.health."
+echo "Covered RuntimeDevServer envelope type/payload decode rejection addendum: RuntimeDevServer rejects missing or non-string envelope type values and missing or non-object payload values with invalid_payload while keeping the connection usable for follow-up pre-auth runtime.health."
+echo "Covered RuntimeDevServer envelope unknown top-level metadata decode rejection addendum: RuntimeDevServer rejects unknown top-level envelope metadata with invalid_payload while keeping the connection usable for follow-up pre-auth runtime.health."
 echo "Covered pre-auth invalid allowed type rejection addendum: RuntimeDevServer hello and auth.response payloads reject blank or malformed allowed fields before challenge creation or authentication."
 echo "Covered protocol schema active request contract parity addendum: shared protocol schema mirrors minimal hello, active request nonblank identifier fields, and models.pull backend enum contracts enforced by the schema gate."
 echo "Covered memory.delete unknown metadata rejection addendum: RuntimeDevServer memory.delete payloads reject deleted_at, backend_url, route_token, relay_secret, workspace_id, permission_grant, source_path, and source_control_status before runtime memory store mutation."
@@ -3293,17 +3809,30 @@ echo "Covered macOS route recovery addendum: macOS failed saved connection recov
 echo "Covered macOS QR-only pairing addendum: clean first-run Pairing hides Connection Recovery unless saved route diagnostics or a route-preparation issue exists, and does not expose setup only because automatic route preparation is unavailable."
 echo "Covered runtime history addendum: Android runtime history message-count clamp, macOS runtime history message-count clamp, macOS chat.cancel runtime-owned cancelled event, macOS chat.cancel immediate done closure, macOS connection-close generation cancellation."
 echo "Covered macOS P2P route material redaction addendum: macOS Activity diagnostics, route diagnostics, and companion logs redact p2p_rendezvous record IDs, encrypted bodies, anti-replay nonces, expiries, protocol versions, and compact P2P aliases."
+echo "Covered macOS Bonjour TXT metadata boundary addendum: Bonjour/local discovery TXT publishes route_token as the identity hint and omits stable device_id, fingerprint, backend, provider, model, and runtime payload metadata."
+echo "Covered macOS Bonjour route-token canonicality addendum: Bonjour/local discovery TXT rejects whitespace-mutated route_token values instead of trimming them into trusted discovery identity hints."
+echo "Covered macOS Bonjour requested-route-token metadata addendum: Bonjour/local discovery TXT rejects requested_route_token and requested-route-token debug metadata before publishing route_token, app, or version hints."
+echo "Covered Android device identity atomic persistence addendum: first-run keypair creation failure leaves no orphan android_device_id or android_device_name in DataStore."
+echo "Covered Android pending pairing runtime public-key canonicality addendum: Android pending pairing route storage rejects whitespace-mutated or oversized runtime public keys before pending route restore, route planning, or accepted-pairing identity comparison."
 echo "Covered readiness addendum: macOS runtime overview installed-local model readiness, macOS readiness row fallback accessibility, macOS trusted-device missing-date ID accessibility, Android streaming chat input mutation guard, Android streaming send reentrancy guard, Android streaming attachment mutation guard, Android streaming embedding-model selection guard, Android streaming memory mutation guard, Android streaming route/trust mutation guard, Android stream termination reasoning closure, Android runtime-owned stale message resurrection guard, Android runtime-owned local memory storage redaction, Android runtime memory client-prompt suppression, Android runtime lifecycle local-session collision guard, Android unreachable route-refresh QR cleanup guard, Android route.refresh sensitive detail minimization, Android pending relay QR secret-store boundary, Android pending relay QR secret cleanup, Android runtime technical error detail storage boundary, Android safe runtime technical diagnostics surface, Android share-sheet intake, Android explicit share-sheet MIME scope, Android private-overlay real relay TCP pairing path, Android private-overlay real relay TCP reconnect path, Android device identity Base64 signature guard, Android device identity persistence guard, Android QR trust value whitespace guard, Android/macOS client auth domain separation, macOS pairing trusted-device identity validation, macOS auth session disconnect cleanup, macOS trusted-device removal live-session revocation, macOS relay line framing newline guard, macOS relay disconnect callback idempotency, macOS local peer disconnect callback idempotency, macOS route material diagnostic redaction, macOS attachment prompt storage separation, macOS trusted-device store file permission hardening, macOS runtime identity fallback file permission hardening, macOS runtime event-log file permission hardening, macOS runtime history router nonpositive-limit guard, macOS runtime history nonpositive limit guard, macOS runtime history zero-limit corrupt-log bypass, macOS runtime history semantic corruption visibility, macOS runtime memory corrupt-log visibility, macOS runtime memory semantic corruption visibility, macOS authenticated runtime history and memory owner-device scoping."
 echo "Covered Android settings addendum: Android preference group heading semantics, Android Settings panel heading semantics, Settings preference option action labels, Android Settings private model access live-region summary, Android drawer section heading semantics, Android drawer empty-history live-region accessibility, Android drawer Settings footer action semantics, Android drawer Settings footer readiness state, Android permanent rail Settings action semantics, Android permanent rail Settings readiness state, Android chat search no-results live-region accessibility, Android model search no-results live-region accessibility, Android streaming assistant content live-region accessibility, Android model picker empty-state live-region accessibility, Android embedding model empty-state live-region accessibility, Android open reasoning collapsed live-region accessibility, Android open reasoning live-region accessibility, Android short reasoning static accessibility state, Android memory delete confirmation named message, Android memory manual runtime refresh, Android chat history manual runtime refresh, Android Settings chat history open-chat action, Android Settings chat-history search result action context, Android runtime chat mutation error resync, Android runtime data load error surfacing."
 echo "Covered Android Settings embedding model compact row layout."
 echo "Covered Android SettingsScreen embedding model compact row layout."
 echo "Covered Android Settings auto-reconnect compact row layout."
+echo "Covered Android Settings Connection Status TalkBack-order proxy addendum: Android Settings embedded QR scan, route recovery notice, refresh, disconnect, and auto-reconnect controls keep localized semantics and reachable bounds order at large font."
 echo "Covered Android Settings preference compact row layout."
 echo "Covered Android Settings section header compact layout."
 echo "Covered language/trust copy addendum: Android appearance system detail copy, Android follow-system language callback dispatch, Android follow-system selected preference state, and macOS Trusted Devices runtime requests empty-state copy."
 echo "Covered Android localization addendum: Android French chat accessibility copy."
 echo "Covered Android accessibility addendum: Android attachment-only message role accessibility."
 echo "Covered suggested-question removal tombstone addendum: active code/protocol/current docs/ops paths forbid chat.suggestions and suggested-question UI symbols."
+echo "Covered Android pairing QR relay port canonicality addendum: Android parser and QR verifier reject signed or zero-padded relay port strings before route material acceptance."
+echo "Covered Android pairing QR route expiration canonicality addendum: Android parser and QR verifier reject signed or zero-padded relay/P2P route expiration strings before route material acceptance."
+echo "Covered shared QR verifier semantic alias rejection addendum: rendered QR verification rejects route_token plus rt mixed semantic aliases before route material validation."
+echo "Covered shared QR verifier alias-family parity addendum: rendered QR verification rejects mixed relay and P2P alias families, accepts complete rendezvous_* relay route material, and rejects whitespace-mutated relay secrets."
+echo "Covered Android route.refresh response unknown metadata addendum: Android rejects authenticated route.refresh response payload fields outside the route material allowlist before trusted runtime storage and keeps the current route for retry."
+echo "Covered Android route.refresh runtime identity canonicality addendum: authenticated route.refresh rejects whitespace-mutated or oversized runtime identity fields before trusted route storage changes."
+echo "Covered Android route.refresh malformed allowed-field retry addendum: authenticated route.refresh responses with allowed keys but invalid JSON types keep the current trusted route and retry inside the active lease before trusted storage changes."
 echo "Covered Android layout addendum: Android ChatGPT-like chat surface narrow-phone layout regression, Android representative populated chat surface compact layout, Android populated Settings history and Memory narrow-phone render, Android drawer chat row compact layout, Android drawer overflow menu compact layout, Android drawer empty-history compact layout, Android drawer chat-search no-results compact layout, Android drawer runtime summary compact layout, Android provider status compact diagnostic layout, Android connection status panel compact layout, Android Connection Status route notice compact layout, Android Settings QR pairing panel compact first-run layout, Android Settings pending pairing route compact layout, Android Settings route-refresh saved notice compact layout, Android Settings companion-only compact layout, Android Settings discovery actions compact layout, Android Settings developer diagnostics toggle compact layout, Android Settings memory compact long-content actions layout, Android Settings memory approved-source compact layout, Android Settings memory add controls compact layout, Android Settings memory empty-state compact layout, Android Settings chat-history search-refresh header compact layout, Android Settings chat-history compact row actions, Android Settings chat-history bulk action compact layout, Android memory summary draft compact review layout, Android assistant reasoning compact layout, Android read-only attachment chip wrapping, Android pending attachment chip wrapping, Android text-only draft composer controls compact layout, Android streaming cancel composer controls compact layout, Android streaming assistant progress decorative compact layout, Android composer readiness status compact layout, Android chat route availability notice compact layout, Android route-refresh saved notice compact layout, Android QR recovery diagnostics compact layout, Android chat empty-state compact layout, Android markdown table and code block compact layout, Android Settings memory saved/paused summary localization, Android markdown message rendering, Android assistant response regenerate action, Android latest user-message draft reuse action, Android latest message action localized states, Android latest message action wrapping, Android transcript role-change spacing rhythm, Android chat top-bar active-title compact layout, Android chat top-bar streaming-disabled model picker compact layout, Android model picker general row compact layout, Android model picker vision recovery compact row layout, Android model picker search no-results compact layout, Android model picker refresh compact row layout, Android localized clipboard payload labels, Android composer clear-draft action, Android composer clear-draft localized state, Android clear-draft attachment cleanup, Android composer draft persistence, Android session-scoped composer draft switching, Android transient attachment cleanup on chat switching, Android transient attachment cleanup on chat lifecycle exits, Android runtime transcript loading state, Android runtime transcript loading compact layout, Android runtime transcript lifecycle mutation lockout, Android empty-state latest-QR composer alignment."
 echo "Covered Android large-font chat addendum: Android large-font multilingual Chat render."
 echo "Covered Android TalkBack-order proxy addendum: Android Chat transcript, latest message actions, jump-to-latest, send composer, and cancel composer controls keep localized semantics and bounds order at large font."

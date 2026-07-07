@@ -26,6 +26,7 @@ class DeviceIdentityStore internal constructor(
         val prefs = context.localAgentBridgeDataStore.data.first()
         val deviceId = prefs[Keys.deviceId] ?: UUID.randomUUID().toString()
         val deviceName = prefs[Keys.deviceName] ?: defaultDeviceName()
+        val keyPair = keyPairStore.loadOrCreate()
 
         if (prefs[Keys.deviceId] == null || prefs[Keys.deviceName] == null) {
             context.localAgentBridgeDataStore.edit { updated ->
@@ -34,7 +35,6 @@ class DeviceIdentityStore internal constructor(
             }
         }
 
-        val keyPair = keyPairStore.loadOrCreate()
         DeviceIdentity(
             deviceId = deviceId,
             deviceName = deviceName,

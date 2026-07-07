@@ -29,6 +29,131 @@ class RuntimePairingPayloadParserTest {
     }
 
     @Test
+    fun parsesAllowedDiscoveryServiceTypeHints() {
+        listOf(
+            "_aetherlink._tcp.",
+            "_aetherlink._tcp.local.",
+            "_localagentbridge._tcp.",
+            "_localagentbridge._tcp.local.",
+        ).forEach { serviceType ->
+            val payload = RuntimePairingPayloadParser.parse(
+                "aetherlink://pair?version=1&pairing_nonce=nonce-1&pairing_code=123456" +
+                    "&runtime_device_id=runtime-1&runtime_name=AetherLink+Runtime" +
+                    "&runtime_key_fingerprint=fp-1&service_type=$serviceType"
+            )
+
+            assertEquals(serviceType, payload.serviceType)
+        }
+    }
+
+    @Test
+    fun rejectsBackendProviderOrUrlShapedServiceTypeHints() {
+        listOf(
+            "https%3A%2F%2Fprovider.example.test%2Fv1%2Fmodels",
+            "_ollama._tcp.local.",
+            "_lmstudio._tcp.local.",
+            "provider%3Dollama",
+            "backend_url%3Dhttp%3A%2F%2F127.0.0.1%3A11434",
+            "model%3Dgemma4%3Ae4b-mlx",
+            "_aetherlink._tcp.local.%20",
+            "_aetherlink%20._tcp.local.",
+        ).forEach { serviceType ->
+            try {
+                RuntimePairingPayloadParser.parse(
+                    "aetherlink://pair?version=1&pairing_nonce=nonce-1&pairing_code=123456" +
+                        "&runtime_device_id=runtime-1&runtime_name=AetherLink+Runtime" +
+                        "&runtime_key_fingerprint=fp-1&service_type=$serviceType"
+                )
+                fail("Expected invalid service_type $serviceType to throw")
+            } catch (error: IllegalArgumentException) {
+                assertEquals("Invalid service type", error.message)
+            }
+        }
+    }
+
+    @Test
+    fun rejectsDuplicateQueryKeysBeforeFieldSelection() {
+        val identity = "aetherlink://pair?version=1&pairing_nonce=nonce-1&pairing_code=123456" +
+            "&runtime_device_id=runtime-1&runtime_name=AetherLink+Runtime" +
+            "&runtime_key_fingerprint=fp-1"
+        listOf(
+            "$identity&pairing_code=654321",
+            "$identity&route_token=route-1&route%5Ftoken=route-2",
+            identity +
+                "&service_type=_aetherlink._tcp.local." +
+                "&service_type=_localagentbridge._tcp.local.",
+            identity +
+                "&relay_host=relay.example.test&relay_port=443&relay_id=relay-1" +
+                "&relay_secret=secret-1&relay_expires_at=4102444800000" +
+                "&relay_nonce=nonce-route-1&relay_id=relay-2",
+            identity +
+                "&p2p_class=p2p_rendezvous&p2p_record_id=p2p-record-1" +
+                "&p2p_encrypted_body=opaque-candidate-1&p2p_expires_at=4102444800000" +
+                "&p2p_anti_replay_nonce=nonce-p2p-1&p2p_protocol_version=1" +
+                "&p2p_record_id=p2p-record-2",
+        ).forEach { payload ->
+            try {
+                RuntimePairingPayloadParser.parse(payload)
+                fail("Expected duplicate QR query key to throw")
+            } catch (error: IllegalArgumentException) {
+                assertEquals("Duplicate pairing QR query key", error.message)
+            }
+        }
+    }
+
+    @Test
+    fun rejectsUnknownQueryKeysBeforeFieldSelection() {
+        val identity = "aetherlink://pair?version=1&pairing_nonce=nonce-1&pairing_code=123456" +
+            "&runtime_device_id=runtime-1&runtime_name=AetherLink+Runtime" +
+            "&runtime_key_fingerprint=fp-1"
+        listOf(
+            "backend_url=http%3A%2F%2F127.0.0.1%3A11434",
+            "model=gemma4%3Ae4b-mlx",
+            "route_secret2=secret-1",
+            "p2p_session_key=session-key-1",
+            "backend%5Furl=http%3A%2F%2Fprovider.example.test%2Fv1%2Fmodels",
+        ).forEach { unknownField ->
+            try {
+                RuntimePairingPayloadParser.parse("$identity&$unknownField")
+                fail("Expected unknown QR query field $unknownField to throw")
+            } catch (error: IllegalArgumentException) {
+                assertEquals("Unknown pairing QR query key", error.message)
+            }
+        }
+    }
+
+    @Test
+    fun rejectsMixedSemanticAliasesBeforeFieldSelection() {
+        val identity = "aetherlink://pair?version=1&pairing_nonce=nonce-1&pairing_code=123456" +
+            "&runtime_device_id=runtime-1&runtime_name=AetherLink+Runtime" +
+            "&runtime_key_fingerprint=fp-1"
+        val relayRoute = "&relay_host=relay.example.test&relay_port=443&relay_id=relay-1" +
+            "&relay_secret=secret-1&relay_expires_at=4102444800000" +
+            "&relay_nonce=nonce-route-1"
+        listOf(
+            "$identity&v=1",
+            "$identity&n=nonce-2",
+            "$identity&code=654321",
+            "$identity&rid=runtime-2",
+            "$identity&rn=Other+Runtime",
+            "$identity&rf=fp-2",
+            "$identity&runtime_public_key=public-key-1&rk=public-key-2",
+            "$identity&route_token=route-1&rt=route-2",
+            "$identity&host=192.168.1.10&runtime_host=192.168.1.11",
+            "$identity&port=43170&p=43171",
+            "$identity$relayRoute&network_id=relay-2",
+            "$identity$relayRoute&relay_scope=remote&rsc=private_overlay",
+        ).forEach { payload ->
+            try {
+                RuntimePairingPayloadParser.parse(payload)
+                fail("Expected mixed semantic QR aliases to throw")
+            } catch (error: IllegalArgumentException) {
+                assertEquals("Mixed pairing QR semantic alias fields", error.message)
+            }
+        }
+    }
+
+    @Test
     fun parsesPairActionCaseInsensitively() {
         val payload = RuntimePairingPayloadParser.parse(
             "aetherlink://PAIR?version=1&pairing_nonce=nonce-1&pairing_code=123456" +
@@ -685,6 +810,109 @@ class RuntimePairingPayloadParserTest {
             } catch (_: IllegalArgumentException) {
                 // Expected.
             }
+        }
+    }
+
+    @Test
+    fun rejectsNonCanonicalRouteExpirationAliasesInQrPayload() {
+        val identity = "aetherlink://pair?version=1&pairing_nonce=nonce-1&pairing_code=123456" +
+            "&runtime_device_id=runtime-1&runtime_name=AetherLink+Runtime" +
+            "&runtime_key_fingerprint=fp-1"
+        listOf(
+            "relay_host=relay.example.test&relay_port=443&relay_id=relay-1" +
+                "&relay_secret=secret-1&relay_expires_at=04102444800000" +
+                "&relay_nonce=nonce-route-1" to "Invalid relay expiration",
+            "relay_host=relay.example.test&relay_port=443&relay_id=relay-1" +
+                "&relay_secret=secret-1&relay_expires_at=%2B4102444800000" +
+                "&relay_nonce=nonce-route-1" to "Invalid relay expiration",
+            "rh=relay.example.test&rp=443&ri=relay-1&rs=secret-1&rx=04102444800000" +
+                "&rrn=nonce-route-1" to "Invalid relay expiration",
+            "rh=relay.example.test&rp=443&ri=relay-1&rs=secret-1&rx=%2B4102444800000" +
+                "&rrn=nonce-route-1" to "Invalid relay expiration",
+            "p2p_class=p2p_rendezvous&p2p_record_id=p2p-record-1" +
+                "&p2p_encrypted_body=opaque-candidate-1&p2p_expires_at=04102444800000" +
+                "&p2p_anti_replay_nonce=nonce-p2p-1&p2p_protocol_version=1" to "Invalid P2P expiration",
+            "p2p_class=p2p_rendezvous&p2p_record_id=p2p-record-1" +
+                "&p2p_encrypted_body=opaque-candidate-1&p2p_expires_at=%2B4102444800000" +
+                "&p2p_anti_replay_nonce=nonce-p2p-1&p2p_protocol_version=1" to "Invalid P2P expiration",
+            "pc=p2p_rendezvous&prid=p2p-record-1&peb=opaque-candidate-1" +
+                "&px=04102444800000&pn=nonce-p2p-1&pv=1" to "Invalid P2P expiration",
+            "pc=p2p_rendezvous&prid=p2p-record-1&peb=opaque-candidate-1" +
+                "&px=%2B4102444800000&pn=nonce-p2p-1&pv=1" to "Invalid P2P expiration",
+        ).forEach { (routeFields, expectedMessage) ->
+            try {
+                RuntimePairingPayloadParser.parse("$identity&$routeFields")
+                fail("Expected non-canonical route expiration to throw")
+            } catch (error: IllegalArgumentException) {
+                assertEquals(expectedMessage, error.message)
+            }
+        }
+    }
+
+    @Test
+    fun rejectsNonCanonicalRelayPortAliasesInQrPayload() {
+        val identity = "aetherlink://pair?version=1&pairing_nonce=nonce-1&pairing_code=123456" +
+            "&runtime_device_id=runtime-1&runtime_name=AetherLink+Runtime" +
+            "&runtime_key_fingerprint=fp-1"
+        listOf(
+            "relay_host=relay.example.test&relay_port=0443&relay_id=relay-1" +
+                "&relay_secret=secret-1&relay_expires_at=4102444800000" +
+                "&relay_nonce=nonce-route-1",
+            "relay_host=relay.example.test&relay_port=%2B443&relay_id=relay-1" +
+                "&relay_secret=secret-1&relay_expires_at=4102444800000" +
+                "&relay_nonce=nonce-route-1",
+            "remote_host=relay.example.test&remote_port=%2B443&remote_id=relay-1" +
+                "&remote_secret=secret-1&remote_expires_at=4102444800000" +
+                "&remote_nonce=nonce-route-1",
+            "route_host=relay.example.test&route_port=0443&route_id=relay-1" +
+                "&route_secret=secret-1&route_expires_at=4102444800000" +
+                "&route_nonce=nonce-route-1",
+            "rendezvous_host=relay.example.test&rendezvous_port=%2B443&rendezvous_id=relay-1" +
+                "&rendezvous_secret=secret-1&rendezvous_expires_at=4102444800000" +
+                "&rendezvous_nonce=nonce-route-1",
+            "rh=relay.example.test&rp=0443&ri=relay-1&rs=secret-1" +
+                "&rx=4102444800000&rrn=nonce-route-1",
+            "rh=relay.example.test&rp=%2B443&ri=relay-1&rs=secret-1" +
+                "&rx=4102444800000&rrn=nonce-route-1",
+        ).forEach { routeFields ->
+            try {
+                RuntimePairingPayloadParser.parse("$identity&$routeFields")
+                fail("Expected non-canonical relay port to throw")
+            } catch (error: IllegalArgumentException) {
+                assertEquals("Invalid relay port", error.message)
+            }
+        }
+    }
+
+    @Test
+    fun rejectsNonCanonicalP2pProtocolVersionAliasesInQrPayload() {
+        val canonicalBase = "aetherlink://pair?version=1&pairing_nonce=nonce-1&pairing_code=123456" +
+            "&runtime_device_id=runtime-1&runtime_name=AetherLink+Runtime" +
+            "&runtime_key_fingerprint=fp-1&p2p_class=p2p_rendezvous" +
+            "&p2p_record_id=p2p-record-1&p2p_encrypted_body=opaque-candidate-1" +
+            "&p2p_expires_at=4102444800000&p2p_anti_replay_nonce=nonce-p2p-1" +
+            "&p2p_protocol_version=1"
+        listOf("p2p_protocol_version=01", "p2p_protocol_version=%2B1").forEach { mutation ->
+            try {
+                RuntimePairingPayloadParser.parse(
+                    canonicalBase.replace("p2p_protocol_version=1", mutation)
+                )
+                fail("Expected non-canonical P2P protocol version $mutation to throw")
+            } catch (_: IllegalArgumentException) {
+                // Expected.
+            }
+        }
+
+        try {
+            RuntimePairingPayloadParser.parse(
+                "aetherlink://pair?version=1&pairing_nonce=nonce-1&pairing_code=123456" +
+                    "&runtime_device_id=runtime-1&runtime_name=AetherLink+Runtime" +
+                    "&runtime_key_fingerprint=fp-1&pc=p2p_rendezvous&prid=p2p-record-1" +
+                    "&peb=opaque-candidate-1&px=4102444800000&pn=nonce-p2p-1&pv=01"
+            )
+            fail("Expected non-canonical compact P2P protocol version to throw")
+        } catch (_: IllegalArgumentException) {
+            // Expected.
         }
     }
 

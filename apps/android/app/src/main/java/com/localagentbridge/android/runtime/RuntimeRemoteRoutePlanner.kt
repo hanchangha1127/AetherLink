@@ -70,11 +70,11 @@ internal fun RuntimeTrustedRuntime?.hasRelayRoute(
         (isEligibleRemoteRelayHost(host, relayScope) || isDebugUsbReverseRelayRoute(host, relayScope)) &&
         relayPort != null &&
         relayPort in 1..65535 &&
-        !relayId.isNullOrBlank() &&
-        !relaySecret.isNullOrBlank() &&
+        isCanonicalOpaqueRouteValue(relayId) &&
+        isCanonicalOpaqueRouteValue(relaySecret) &&
         expiresAt != null &&
         expiresAt > nowEpochMillis &&
-        !relayNonce.isNullOrBlank()
+        isCanonicalOpaqueRouteValue(relayNonce)
 }
 
 internal fun RuntimeTrustedRuntime?.hasPeerToPeerRoute(
@@ -155,11 +155,11 @@ internal fun RuntimePairingPayload.hasRelayRoute(
         (isEligibleRemoteRelayHost(host, relayScope) || isDebugUsbReverseRelayRoute(host, relayScope)) &&
         relayPort != null &&
         relayPort in 1..65535 &&
-        !relayId.isNullOrBlank() &&
-        !relaySecret.isNullOrBlank() &&
+        isCanonicalOpaqueRouteValue(relayId) &&
+        isCanonicalOpaqueRouteValue(relaySecret) &&
         expiresAt != null &&
         expiresAt > nowEpochMillis &&
-        !relayNonce.isNullOrBlank()
+        isCanonicalOpaqueRouteValue(relayNonce)
 }
 
 internal fun RuntimePairingPayload.hasRemoteRoute(
@@ -194,11 +194,11 @@ private fun RuntimeTrustedRuntime.hasCompleteRelayRoute(): Boolean {
         (isEligibleRemoteRelayHost(host, relayScope) || isDebugUsbReverseRelayRoute(host, relayScope)) &&
         relayPort != null &&
         relayPort in 1..65535 &&
-        !relayId.isNullOrBlank() &&
-        !relaySecret.isNullOrBlank() &&
+        isCanonicalOpaqueRouteValue(relayId) &&
+        isCanonicalOpaqueRouteValue(relaySecret) &&
         expiresAt != null &&
         expiresAt > 0L &&
-        !relayNonce.isNullOrBlank()
+        isCanonicalOpaqueRouteValue(relayNonce)
 }
 
 private fun RuntimeTrustedRuntime.hasCompletePeerToPeerRoute(): Boolean {

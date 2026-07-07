@@ -45,6 +45,51 @@
       "if": {
         "required": ["relay_host"],
         "properties": {
+          "relay_host": { "$ref": "#/$defs/loopbackRelayHost" }
+        }
+      },
+      "then": { "$ref": "#/$defs/usbReverseScopeRequired" }
+    },
+    {
+      "if": {
+        "required": ["remote_host"],
+        "properties": {
+          "remote_host": { "$ref": "#/$defs/loopbackRelayHost" }
+        }
+      },
+      "then": { "$ref": "#/$defs/usbReverseScopeRequired" }
+    },
+    {
+      "if": {
+        "required": ["route_host"],
+        "properties": {
+          "route_host": { "$ref": "#/$defs/loopbackRelayHost" }
+        }
+      },
+      "then": { "$ref": "#/$defs/usbReverseScopeRequired" }
+    },
+    {
+      "if": {
+        "required": ["rendezvous_host"],
+        "properties": {
+          "rendezvous_host": { "$ref": "#/$defs/loopbackRelayHost" }
+        }
+      },
+      "then": { "$ref": "#/$defs/usbReverseScopeRequired" }
+    },
+    {
+      "if": {
+        "required": ["rh"],
+        "properties": {
+          "rh": { "$ref": "#/$defs/loopbackRelayHost" }
+        }
+      },
+      "then": { "$ref": "#/$defs/usbReverseScopeRequired" }
+    },
+    {
+      "if": {
+        "required": ["relay_host"],
+        "properties": {
           "relay_host": { "$ref": "#/$defs/privateOverlayRelayHost" }
         }
       },
@@ -85,6 +130,49 @@
         }
       },
       "then": { "$ref": "#/$defs/privateOverlayScopeRequired" }
+    },
+    {
+      "description": "Relay scope aliases describe one semantic route-scope field; a QR payload must not include multiple scope aliases with competing interpretations.",
+      "not": {
+        "anyOf": [
+          {
+            "allOf": [
+              { "required": ["relay_scope"] },
+              { "required": ["remote_scope"] }
+            ]
+          },
+          {
+            "allOf": [
+              { "required": ["relay_scope"] },
+              { "required": ["route_scope"] }
+            ]
+          },
+          {
+            "allOf": [
+              { "required": ["relay_scope"] },
+              { "required": ["rsc"] }
+            ]
+          },
+          {
+            "allOf": [
+              { "required": ["remote_scope"] },
+              { "required": ["route_scope"] }
+            ]
+          },
+          {
+            "allOf": [
+              { "required": ["remote_scope"] },
+              { "required": ["rsc"] }
+            ]
+          },
+          {
+            "allOf": [
+              { "required": ["route_scope"] },
+              { "required": ["rsc"] }
+            ]
+          }
+        ]
+      }
     },
     {
       "description": "Relay route material must use one relay alias family: canonical relay_* fields, remote_* fields, route_* fields, rendezvous_* fields, or compact rh/rp/ri/rs/rx/rrn fields, not a mix.",
@@ -419,11 +507,11 @@
     "p": {
       "$ref": "#/$defs/portValue"
     },
-    "relay_host": { "$ref": "#/$defs/eligibleRelayHost" },
-    "remote_host": { "$ref": "#/$defs/eligibleRelayHost" },
-    "route_host": { "$ref": "#/$defs/eligibleRelayHost" },
-    "rendezvous_host": { "$ref": "#/$defs/eligibleRelayHost" },
-    "rh": { "$ref": "#/$defs/eligibleRelayHost" },
+    "relay_host": { "$ref": "#/$defs/pairingRelayHost" },
+    "remote_host": { "$ref": "#/$defs/pairingRelayHost" },
+    "route_host": { "$ref": "#/$defs/pairingRelayHost" },
+    "rendezvous_host": { "$ref": "#/$defs/pairingRelayHost" },
+    "rh": { "$ref": "#/$defs/pairingRelayHost" },
     "relay_port": {
       "$ref": "#/$defs/portValue"
     },
@@ -516,7 +604,16 @@
       "type": "string",
       "enum": ["remote", "private_overlay", "usb_reverse", "local_diagnostic"]
     },
-    "service_type": { "$ref": "#/$defs/nonEmptyString" }
+    "service_type": {
+      "description": "Legacy or diagnostic discovery hint only. It must not carry backend, provider, model, or runtime payload metadata.",
+      "type": "string",
+      "enum": [
+        "_aetherlink._tcp.",
+        "_aetherlink._tcp.local.",
+        "_localagentbridge._tcp.",
+        "_localagentbridge._tcp.local."
+      ]
+    }
   },
   "dependentRequired": {
     "host": ["port"],
@@ -567,6 +664,320 @@
     "px": ["pc", "prid", "peb", "pn", "pv"],
     "pn": ["pc", "prid", "peb", "px", "pv"],
     "pv": ["pc", "prid", "peb", "px", "pn"]
+  },
+  "dependentSchemas": {
+    "version": {
+      "not": { "required": ["v"] }
+    },
+    "v": {
+      "not": { "required": ["version"] }
+    },
+    "pairing_nonce": {
+      "not": {
+        "anyOf": [
+          { "required": ["nonce"] },
+          { "required": ["n"] }
+        ]
+      }
+    },
+    "nonce": {
+      "not": {
+        "anyOf": [
+          { "required": ["pairing_nonce"] },
+          { "required": ["n"] }
+        ]
+      }
+    },
+    "n": {
+      "not": {
+        "anyOf": [
+          { "required": ["pairing_nonce"] },
+          { "required": ["nonce"] }
+        ]
+      }
+    },
+    "pairing_code": {
+      "not": {
+        "anyOf": [
+          { "required": ["code"] },
+          { "required": ["c"] }
+        ]
+      }
+    },
+    "code": {
+      "not": {
+        "anyOf": [
+          { "required": ["pairing_code"] },
+          { "required": ["c"] }
+        ]
+      }
+    },
+    "c": {
+      "not": {
+        "anyOf": [
+          { "required": ["pairing_code"] },
+          { "required": ["code"] }
+        ]
+      }
+    },
+    "runtime_device_id": {
+      "not": {
+        "anyOf": [
+          { "required": ["mac_device_id"] },
+          { "required": ["device_id"] },
+          { "required": ["rid"] }
+        ]
+      }
+    },
+    "mac_device_id": {
+      "not": {
+        "anyOf": [
+          { "required": ["runtime_device_id"] },
+          { "required": ["device_id"] },
+          { "required": ["rid"] }
+        ]
+      }
+    },
+    "device_id": {
+      "not": {
+        "anyOf": [
+          { "required": ["runtime_device_id"] },
+          { "required": ["mac_device_id"] },
+          { "required": ["rid"] }
+        ]
+      }
+    },
+    "rid": {
+      "not": {
+        "anyOf": [
+          { "required": ["runtime_device_id"] },
+          { "required": ["mac_device_id"] },
+          { "required": ["device_id"] }
+        ]
+      }
+    },
+    "runtime_name": {
+      "not": {
+        "anyOf": [
+          { "required": ["mac_name"] },
+          { "required": ["name"] },
+          { "required": ["rn"] }
+        ]
+      }
+    },
+    "mac_name": {
+      "not": {
+        "anyOf": [
+          { "required": ["runtime_name"] },
+          { "required": ["name"] },
+          { "required": ["rn"] }
+        ]
+      }
+    },
+    "name": {
+      "not": {
+        "anyOf": [
+          { "required": ["runtime_name"] },
+          { "required": ["mac_name"] },
+          { "required": ["rn"] }
+        ]
+      }
+    },
+    "rn": {
+      "not": {
+        "anyOf": [
+          { "required": ["runtime_name"] },
+          { "required": ["mac_name"] },
+          { "required": ["name"] }
+        ]
+      }
+    },
+    "runtime_key_fingerprint": {
+      "not": {
+        "anyOf": [
+          { "required": ["fingerprint"] },
+          { "required": ["cert_fingerprint"] },
+          { "required": ["rf"] }
+        ]
+      }
+    },
+    "fingerprint": {
+      "not": {
+        "anyOf": [
+          { "required": ["runtime_key_fingerprint"] },
+          { "required": ["cert_fingerprint"] },
+          { "required": ["rf"] }
+        ]
+      }
+    },
+    "cert_fingerprint": {
+      "not": {
+        "anyOf": [
+          { "required": ["runtime_key_fingerprint"] },
+          { "required": ["fingerprint"] },
+          { "required": ["rf"] }
+        ]
+      }
+    },
+    "rf": {
+      "not": {
+        "anyOf": [
+          { "required": ["runtime_key_fingerprint"] },
+          { "required": ["fingerprint"] },
+          { "required": ["cert_fingerprint"] }
+        ]
+      }
+    },
+    "runtime_public_key": {
+      "not": {
+        "anyOf": [
+          { "required": ["mac_public_key"] },
+          { "required": ["public_key"] },
+          { "required": ["rk"] }
+        ]
+      }
+    },
+    "mac_public_key": {
+      "not": {
+        "anyOf": [
+          { "required": ["runtime_public_key"] },
+          { "required": ["public_key"] },
+          { "required": ["rk"] }
+        ]
+      }
+    },
+    "public_key": {
+      "not": {
+        "anyOf": [
+          { "required": ["runtime_public_key"] },
+          { "required": ["mac_public_key"] },
+          { "required": ["rk"] }
+        ]
+      }
+    },
+    "rk": {
+      "not": {
+        "anyOf": [
+          { "required": ["runtime_public_key"] },
+          { "required": ["mac_public_key"] },
+          { "required": ["public_key"] }
+        ]
+      }
+    },
+    "route_token": {
+      "not": {
+        "anyOf": [
+          { "required": ["discovery_token"] },
+          { "required": ["rt"] }
+        ]
+      }
+    },
+    "discovery_token": {
+      "not": {
+        "anyOf": [
+          { "required": ["route_token"] },
+          { "required": ["rt"] }
+        ]
+      }
+    },
+    "rt": {
+      "not": {
+        "anyOf": [
+          { "required": ["route_token"] },
+          { "required": ["discovery_token"] }
+        ]
+      }
+    },
+    "host": {
+      "not": {
+        "anyOf": [
+          { "required": ["runtime_host"] },
+          { "required": ["h"] }
+        ]
+      }
+    },
+    "runtime_host": {
+      "not": {
+        "anyOf": [
+          { "required": ["host"] },
+          { "required": ["h"] }
+        ]
+      }
+    },
+    "h": {
+      "not": {
+        "anyOf": [
+          { "required": ["host"] },
+          { "required": ["runtime_host"] }
+        ]
+      }
+    },
+    "port": {
+      "not": {
+        "anyOf": [
+          { "required": ["runtime_port"] },
+          { "required": ["p"] }
+        ]
+      }
+    },
+    "runtime_port": {
+      "not": {
+        "anyOf": [
+          { "required": ["port"] },
+          { "required": ["p"] }
+        ]
+      }
+    },
+    "p": {
+      "not": {
+        "anyOf": [
+          { "required": ["port"] },
+          { "required": ["runtime_port"] }
+        ]
+      }
+    },
+    "relay_id": {
+      "not": { "required": ["network_id"] }
+    },
+    "network_id": {
+      "not": { "required": ["relay_id"] }
+    },
+    "relay_scope": {
+      "not": {
+        "anyOf": [
+          { "required": ["remote_scope"] },
+          { "required": ["route_scope"] },
+          { "required": ["rsc"] }
+        ]
+      }
+    },
+    "remote_scope": {
+      "not": {
+        "anyOf": [
+          { "required": ["relay_scope"] },
+          { "required": ["route_scope"] },
+          { "required": ["rsc"] }
+        ]
+      }
+    },
+    "route_scope": {
+      "not": {
+        "anyOf": [
+          { "required": ["relay_scope"] },
+          { "required": ["remote_scope"] },
+          { "required": ["rsc"] }
+        ]
+      }
+    },
+    "rsc": {
+      "not": {
+        "anyOf": [
+          { "required": ["relay_scope"] },
+          { "required": ["remote_scope"] },
+          { "required": ["route_scope"] }
+        ]
+      }
+    }
   },
   "additionalProperties": false,
   "$defs": {
@@ -635,8 +1046,15 @@
         }
       ]
     },
+    "pairingRelayHost": {
+      "description": "A relay host for QR pairing. Normal remote QR hosts use eligibleRelayHost. Loopback hosts are accepted only as explicit debug USB reverse route material when the payload also carries usb_reverse scope.",
+      "anyOf": [
+        { "$ref": "#/$defs/eligibleRelayHost" },
+        { "$ref": "#/$defs/loopbackRelayHost" }
+      ]
+    },
     "eligibleRelayHost": {
-      "description": "A relay host for remote QR pairing. Loopback, unspecified, mDNS-local, link-local, and multicast IP literals are rejected. CGNAT, private IPv4, and ULA IPv6 literals require explicit `relay_scope=private_overlay` in app/runtime policy because they only work when a user-managed VPN, tunnel, or private overlay makes the address reachable from both devices.",
+      "description": "A normal remote relay host for QR pairing. Loopback, unspecified, mDNS-local, link-local, and multicast IP literals are rejected here. CGNAT, private IPv4, and ULA IPv6 literals require explicit `relay_scope=private_overlay` in app/runtime policy because they only work when a user-managed VPN, tunnel, or private overlay makes the address reachable from both devices.",
       "allOf": [
         { "$ref": "#/$defs/nonEmptyString" },
         {
@@ -685,6 +1103,22 @@
         }
       ]
     },
+    "loopbackRelayHost": {
+      "description": "Loopback relay hosts are valid for decoded QR artifacts only when explicitly scoped to debug USB reverse route material.",
+      "anyOf": [
+        {
+          "enum": [
+            "localhost",
+            "127.0.0.1",
+            "::1",
+            "[::1]",
+            "0:0:0:0:0:0:0:1",
+            "[0:0:0:0:0:0:0:1]"
+          ]
+        },
+        { "pattern": "^127\\." }
+      ]
+    },
     "privateOverlayRelayHost": {
       "description": "Private IPv4, CGNAT, and ULA IPv6 relay literals are only valid when the QR explicitly marks a user-managed private overlay.",
       "anyOf": [
@@ -718,6 +1152,34 @@
         {
           "properties": {
             "rsc": { "const": "private_overlay" }
+          },
+          "required": ["rsc"]
+        }
+      ]
+    },
+    "usbReverseScopeRequired": {
+      "anyOf": [
+        {
+          "properties": {
+            "relay_scope": { "const": "usb_reverse" }
+          },
+          "required": ["relay_scope"]
+        },
+        {
+          "properties": {
+            "remote_scope": { "const": "usb_reverse" }
+          },
+          "required": ["remote_scope"]
+        },
+        {
+          "properties": {
+            "route_scope": { "const": "usb_reverse" }
+          },
+          "required": ["route_scope"]
+        },
+        {
+          "properties": {
+            "rsc": { "const": "usb_reverse" }
           },
           "required": ["rsc"]
         }

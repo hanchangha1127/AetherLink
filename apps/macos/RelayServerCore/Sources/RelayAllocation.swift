@@ -157,9 +157,7 @@ public struct RelayAllocation: Codable, Equatable, Sendable {
         relayExpiresAtEpochMillis: Int64,
         relayNonce: String
     ) throws {
-        guard !relayID.isEmpty,
-              relayID.rangeOfCharacter(from: .whitespacesAndNewlines) == nil
-        else {
+        guard isCanonicalRelayControlLineID(relayID) else {
             throw RelayAllocationError.invalidRelayID
         }
         guard !relaySecret.isEmpty,
@@ -392,8 +390,7 @@ private struct RelayAllocationTicket: Codable, Equatable, Sendable {
 
     var isLoadable: Bool {
         !hasUnexpectedMetadata &&
-            !relayID.isEmpty &&
-            relayID.rangeOfCharacter(from: .whitespacesAndNewlines) == nil &&
+            isCanonicalRelayControlLineID(relayID) &&
             relayExpiresAtEpochMillis > 0 &&
             !relayNonce.isEmpty &&
             relayNonce.rangeOfCharacter(from: .whitespacesAndNewlines) == nil

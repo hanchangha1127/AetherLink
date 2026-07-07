@@ -41,23 +41,92 @@ public struct RuntimeAdvertisementMetadata: Equatable, Sendable {
     }
 
     public var txtRecord: [String: String] {
-        var record = [
-            "version": version,
-            "app": app
-        ]
-        if let routeToken, !routeToken.isEmpty {
+        var record: [String: String] = [:]
+        if let version = Self.safeDiscoveryTXTValue(version) {
+            record["version"] = version
+        }
+        if let app = Self.safeDiscoveryTXTValue(app) {
+            record["app"] = app
+        }
+        if let routeToken = Self.safeDiscoveryTXTValue(
+            routeToken,
+            normalizesDisplayWhitespace: false,
+            rejectsWhitespace: true
+        ) {
             record["route_token"] = routeToken
-        }
-        if let deviceID, !deviceID.isEmpty {
-            record["device_id"] = deviceID
-        }
-        if let fingerprint, !fingerprint.isEmpty {
-            record["fingerprint"] = fingerprint
         }
         return record
     }
 
     public var txtRecordData: [String: Data] {
         txtRecord.mapValues { Data($0.utf8) }
+    }
+
+    private static func safeDiscoveryTXTValue(
+        _ rawValue: String?,
+        normalizesDisplayWhitespace: Bool = true,
+        rejectsWhitespace: Bool = false
+    ) -> String? {
+        guard let rawValue else {
+            return nil
+        }
+        let value = normalizesDisplayWhitespace
+            ? rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            : rawValue
+        guard !value.isEmpty, value.count <= 160 else {
+            return nil
+        }
+        if rejectsWhitespace,
+           value.rangeOfCharacter(from: .whitespacesAndNewlines) != nil {
+            return nil
+        }
+        guard value.rangeOfCharacter(from: .controlCharacters) == nil else {
+            return nil
+        }
+        guard !containsForbiddenDiscoveryMaterial(value) else {
+            return nil
+        }
+        return value
+    }
+
+    private static func containsForbiddenDiscoveryMaterial(_ value: String) -> Bool {
+        let lowercased = value.lowercased()
+        let forbiddenFragments = [
+            "http://",
+            "https://",
+            "ws://",
+            "wss://",
+            ":11434",
+            ":1234",
+            "/api/",
+            "/v1/",
+            "ollama",
+            "lm studio",
+            "backend_url",
+            "backend-url",
+            "provider_url",
+            "provider-url",
+            "requested_route_token",
+            "requested-route-token",
+            "route_secret",
+            "route-secret",
+            "relay_secret",
+            "relay-secret",
+            "pairing_secret",
+            "pairing-secret",
+            "api_key",
+            "api-key",
+            "authorization",
+            "bearer ",
+            "models.list",
+            "models.pull",
+            "chat.send",
+            "chat.cancel",
+            "memory.",
+            "prompt=",
+            "response=",
+            "file=",
+        ]
+        return forbiddenFragments.contains { lowercased.contains($0) }
     }
 }

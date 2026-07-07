@@ -34,6 +34,21 @@ public enum MessageType {
     public static let error = "error"
 }
 
+private struct DynamicCodingKey: CodingKey {
+    let stringValue: String
+    let intValue: Int?
+
+    init?(stringValue: String) {
+        self.stringValue = stringValue
+        intValue = nil
+    }
+
+    init?(intValue: Int) {
+        stringValue = String(intValue)
+        self.intValue = intValue
+    }
+}
+
 public struct ProtocolEnvelope: Codable, Equatable, Sendable {
     public var version: Int
     public var type: String
@@ -55,7 +70,32 @@ public struct ProtocolEnvelope: Codable, Equatable, Sendable {
         self.payload = payload
     }
 
-    enum CodingKeys: String, CodingKey {
+    public init(from decoder: Decoder) throws {
+        let dynamicContainer = try decoder.container(keyedBy: DynamicCodingKey.self)
+        let allowedKeys = Set(CodingKeys.allCases.map(\.stringValue))
+        if let unknownKey = dynamicContainer.allKeys
+            .map(\.stringValue)
+            .filter({ !allowedKeys.contains($0) })
+            .sorted()
+            .first,
+            let codingKey = DynamicCodingKey(stringValue: unknownKey)
+        {
+            throw DecodingError.dataCorruptedError(
+                forKey: codingKey,
+                in: dynamicContainer,
+                debugDescription: "Unknown envelope field '\(unknownKey)'"
+            )
+        }
+
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        version = try container.decode(Int.self, forKey: .version)
+        type = try container.decode(String.self, forKey: .type)
+        requestID = try container.decode(String.self, forKey: .requestID)
+        timestamp = try container.decode(Date.self, forKey: .timestamp)
+        payload = try container.decode([String: JSONValue].self, forKey: .payload)
+    }
+
+    enum CodingKeys: String, CodingKey, CaseIterable {
         case version
         case type
         case requestID = "request_id"

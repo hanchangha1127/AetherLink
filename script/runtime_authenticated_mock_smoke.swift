@@ -530,6 +530,23 @@ func rawPayloadEnvelope(_ type: String, requestID: String, payload: Any, version
     ]
 }
 
+func timestampOverrideEnvelope(
+    _ type: String,
+    requestID: String,
+    timestamp: Any?,
+    includeTimestamp: Bool = true,
+    payload: [String: Any] = [:],
+    version: Int = 1
+) -> [String: Any] {
+    var message = envelope(type, requestID: requestID, payload: payload, version: version)
+    if includeTimestamp {
+        message["timestamp"] = timestamp ?? NSNull()
+    } else {
+        message.removeValue(forKey: "timestamp")
+    }
+    return message
+}
+
 func runAndCapture(_ arguments: [String]) throws -> String {
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
@@ -1463,6 +1480,260 @@ func runPreAuthUnknownMetadataChecks(
         context: "unsupported envelope version"
     )
 
+    let malformedEnvelopeIdentityFields: [(
+        marker: String,
+        field: String,
+        value: Any?,
+        includeField: Bool,
+        context: String
+    )] = [
+        (
+            "smoke-missing-envelope-version",
+            "version",
+            nil,
+            false,
+            "missing envelope version"
+        ),
+        (
+            "smoke-invalid-envelope-version-type",
+            "version",
+            "1",
+            true,
+            "non-integer envelope version"
+        ),
+        (
+            "smoke-missing-envelope-request-id",
+            "request_id",
+            nil,
+            false,
+            "missing envelope request_id"
+        ),
+        (
+            "smoke-invalid-envelope-request-id-type",
+            "request_id",
+            7,
+            true,
+            "non-string envelope request_id"
+        ),
+    ]
+    for malformed in malformedEnvelopeIdentityFields {
+        var message = envelope(
+            "runtime.health",
+            requestID: malformed.marker,
+            payload: ["malformed_envelope_marker": malformed.marker]
+        )
+        if malformed.includeField {
+            message[malformed.field] = malformed.value ?? NSNull()
+        } else {
+            message.removeValue(forKey: malformed.field)
+        }
+        try client.send(message)
+        let response = try client.readEnvelope()
+        try assertNoBackendLeak(response, context: malformed.marker)
+        try requireDecodeErrorCode(
+            response,
+            "invalid_payload",
+            context: malformed.context
+        )
+
+        let healthRequestID = "\(malformed.marker)-survival-health"
+        let healthAfterDecodeError = try sendAndRead(
+            client,
+            type: "runtime.health",
+            requestID: healthRequestID
+        )
+        try requireErrorCode(
+            healthAfterDecodeError,
+            "authentication_required",
+            requestID: healthRequestID,
+            context: "\(malformed.context) connection survival"
+        )
+    }
+
+    let malformedTimestampEnvelopes: [(
+        requestID: String,
+        timestamp: Any?,
+        includeTimestamp: Bool,
+        context: String
+    )] = [
+        (
+            "smoke-missing-envelope-timestamp",
+            nil,
+            false,
+            "missing envelope timestamp"
+        ),
+        (
+            "smoke-invalid-envelope-timestamp-type",
+            1_789_000_000,
+            true,
+            "non-string envelope timestamp"
+        ),
+        (
+            "smoke-invalid-envelope-timestamp-format",
+            "not-a-date",
+            true,
+            "malformed envelope timestamp"
+        ),
+    ]
+    for malformed in malformedTimestampEnvelopes {
+        try client.send(timestampOverrideEnvelope(
+            "runtime.health",
+            requestID: malformed.requestID,
+            timestamp: malformed.timestamp,
+            includeTimestamp: malformed.includeTimestamp
+        ))
+        let response = try client.readEnvelope()
+        try assertNoBackendLeak(response, context: malformed.requestID)
+        try requireDecodeErrorCode(
+            response,
+            "invalid_payload",
+            context: malformed.context
+        )
+        if "\(response)".contains("not-a-date") {
+            throw SmokeFailure.message("\(malformed.context) decode error echoed the raw timestamp string: \(response)")
+        }
+
+        let healthRequestID = "\(malformed.requestID)-survival-health"
+        let healthAfterDecodeError = try sendAndRead(
+            client,
+            type: "runtime.health",
+            requestID: healthRequestID
+        )
+        try requireErrorCode(
+            healthAfterDecodeError,
+            "authentication_required",
+            requestID: healthRequestID,
+            context: "\(malformed.context) connection survival"
+        )
+    }
+
+    let malformedCoreEnvelopeFields: [(
+        requestID: String,
+        typeValue: Any?,
+        includeType: Bool,
+        payloadValue: Any?,
+        includePayload: Bool,
+        context: String
+    )] = [
+        (
+            "smoke-missing-envelope-type",
+            nil,
+            false,
+            [:],
+            true,
+            "missing envelope type"
+        ),
+        (
+            "smoke-invalid-envelope-type",
+            404,
+            true,
+            [:],
+            true,
+            "non-string envelope type"
+        ),
+        (
+            "smoke-missing-envelope-payload",
+            "runtime.health",
+            true,
+            nil,
+            false,
+            "missing envelope payload"
+        ),
+        (
+            "smoke-invalid-envelope-payload-array",
+            "runtime.health",
+            true,
+            [],
+            true,
+            "array envelope payload"
+        ),
+        (
+            "smoke-invalid-envelope-payload-string",
+            "runtime.health",
+            true,
+            "smoke-non-object-envelope-payload-string",
+            true,
+            "string envelope payload"
+        ),
+        (
+            "smoke-invalid-envelope-payload-null",
+            "runtime.health",
+            true,
+            nil,
+            true,
+            "null envelope payload"
+        ),
+    ]
+    for malformed in malformedCoreEnvelopeFields {
+        var message = envelope("runtime.health", requestID: malformed.requestID)
+        if malformed.includeType {
+            message["type"] = malformed.typeValue ?? NSNull()
+        } else {
+            message.removeValue(forKey: "type")
+        }
+        if malformed.includePayload {
+            message["payload"] = malformed.payloadValue ?? NSNull()
+        } else {
+            message.removeValue(forKey: "payload")
+        }
+        try client.send(message)
+        let response = try client.readEnvelope()
+        try assertNoBackendLeak(response, context: malformed.requestID)
+        try requireDecodeErrorCode(
+            response,
+            "invalid_payload",
+            context: malformed.context
+        )
+
+        let healthRequestID = "\(malformed.requestID)-survival-health"
+        let healthAfterDecodeError = try sendAndRead(
+            client,
+            type: "runtime.health",
+            requestID: healthRequestID
+        )
+        try requireErrorCode(
+            healthAfterDecodeError,
+            "authentication_required",
+            requestID: healthRequestID,
+            context: "\(malformed.context) connection survival"
+        )
+    }
+
+    var unknownTopLevelEnvelopeMetadata = envelope(
+        "runtime.health",
+        requestID: "smoke-envelope-unknown-top-level-metadata",
+        payload: ["malformed_envelope_marker": "smoke-envelope-unknown-top-level-metadata"]
+    )
+    unknownTopLevelEnvelopeMetadata["backend_url"] = smokeBackendURLCanary
+    unknownTopLevelEnvelopeMetadata["provider_url"] = "https://provider.example.invalid/v1"
+    unknownTopLevelEnvelopeMetadata["route_token"] = "future-route-token"
+    unknownTopLevelEnvelopeMetadata["relay_secret"] = "future-relay-secret"
+    unknownTopLevelEnvelopeMetadata["workspace_id"] = "workspace-1"
+    unknownTopLevelEnvelopeMetadata["permission_grant"] = "future permission grant"
+    try client.send(unknownTopLevelEnvelopeMetadata)
+    let unknownTopLevelMetadataResponse = try client.readEnvelope()
+    try assertNoBackendLeak(
+        unknownTopLevelMetadataResponse,
+        context: "smoke-envelope-unknown-top-level-metadata"
+    )
+    try requireDecodeErrorCode(
+        unknownTopLevelMetadataResponse,
+        "invalid_payload",
+        context: "unknown top-level envelope metadata"
+    )
+
+    let healthAfterUnknownTopLevelMetadata = try sendAndRead(
+        client,
+        type: "runtime.health",
+        requestID: "smoke-envelope-unknown-top-level-metadata-survival-health"
+    )
+    try requireErrorCode(
+        healthAfterUnknownTopLevelMetadata,
+        "authentication_required",
+        requestID: "smoke-envelope-unknown-top-level-metadata-survival-health",
+        context: "unknown top-level envelope metadata connection survival"
+    )
+
     let invalidHelloAllowedFields = try sendAndRead(
         client,
         type: "hello",
@@ -2248,6 +2519,22 @@ func relayPlaintextBoundaryMarkers() -> [String] {
         "authentication_required",
         "Could not authenticate this device.",
         "smoke-unsupported-version",
+        "smoke-missing-envelope-version",
+        "smoke-invalid-envelope-version-type",
+        "smoke-missing-envelope-request-id",
+        "smoke-invalid-envelope-request-id-type",
+        "smoke-missing-envelope-timestamp",
+        "smoke-invalid-envelope-timestamp-type",
+        "smoke-invalid-envelope-timestamp-format",
+        "smoke-missing-envelope-type",
+        "smoke-invalid-envelope-type",
+        "smoke-missing-envelope-payload",
+        "smoke-invalid-envelope-payload-array",
+        "smoke-invalid-envelope-payload-string",
+        "smoke-invalid-envelope-payload-null",
+        "smoke-non-object-envelope-payload-string",
+        "smoke-envelope-unknown-top-level-metadata",
+        "smoke-envelope-unknown-top-level-metadata-survival-health",
         "smoke-hello-invalid-allowed-types",
         "smoke-auth-invalid-allowed-types",
         "runtime.health",
@@ -2279,8 +2566,10 @@ func relayPlaintextBoundaryMarkers() -> [String] {
         "AETHERLINK_DEV_MEMORY_SUMMARY_MIN_MESSAGES",
         "smoke-memory-summary-drafts",
         "smoke-memory-summary-approve-invalid-content-type",
+        "smoke-memory-summary-approve-blank-content",
         "smoke-memory-summary-approve-invalid-enabled-type",
         "smoke-memory-summary-approve-invalid-expected-session-type",
+        "smoke-memory-summary-approve-blank-expected-session",
         "smoke-memory-summary-approve-invalid-expected-count-string",
         "smoke-memory-summary-approve-invalid-expected-count-fraction",
         "smoke-memory-summary-approve-blank-draft-id",
@@ -2290,6 +2579,7 @@ func relayPlaintextBoundaryMarkers() -> [String] {
         "smoke-memory-summary-memory-list",
         "smoke-memory-summary-delete",
         "smoke-memory-summary-dismiss-invalid-expected-session-type",
+        "smoke-memory-summary-dismiss-blank-expected-session",
         "smoke-memory-summary-dismiss-invalid-count-string",
         "smoke-memory-summary-dismiss-invalid-count-type",
         "smoke-memory-summary-dismiss-blank-draft-id",
@@ -3907,6 +4197,20 @@ func runAuthenticatedHistoryAndMemoryChecks(client: TCPClient, chatRequestAuditF
         requestID: "smoke-memory-list-invalid-query-type",
         context: "memory.list invalid query type"
     )
+    let excessiveMemoryListQuery = try sendAndRead(
+        client,
+        type: "memory.list",
+        requestID: "smoke-memory-list-query-resource-guard",
+        payload: [
+            "query": (1...17).map { "term\($0)" }.joined(separator: " ")
+        ]
+    )
+    try requireErrorCode(
+        excessiveMemoryListQuery,
+        "invalid_payload",
+        requestID: "smoke-memory-list-query-resource-guard",
+        context: "memory.list query resource guard"
+    )
 
     let memoryListResponse = try sendAndRead(client, type: "memory.list", requestID: "smoke-memory-list")
     try requireType(memoryListResponse, "memory.list", context: "memory.list")
@@ -4126,6 +4430,14 @@ func runAuthenticatedHistoryAndMemoryChecks(client: TCPClient, chatRequestAuditF
             "memory.summary.draft.approve invalid content type"
         ),
         (
+            "smoke-memory-summary-approve-blank-content",
+            [
+                "draft_id": summaryDraftID,
+                "content": "   \n\t"
+            ],
+            "memory.summary.draft.approve blank content"
+        ),
+        (
             "smoke-memory-summary-approve-invalid-enabled-type",
             [
                 "draft_id": summaryDraftID,
@@ -4140,6 +4452,14 @@ func runAuthenticatedHistoryAndMemoryChecks(client: TCPClient, chatRequestAuditF
                 "expected_session_id": 1
             ],
             "memory.summary.draft.approve invalid expected session type"
+        ),
+        (
+            "smoke-memory-summary-approve-blank-expected-session",
+            [
+                "draft_id": summaryDraftID,
+                "expected_session_id": "   \n\t"
+            ],
+            "memory.summary.draft.approve blank expected session"
         ),
         (
             "smoke-memory-summary-approve-invalid-expected-count-string",
@@ -4418,6 +4738,14 @@ func runAuthenticatedHistoryAndMemoryChecks(client: TCPClient, chatRequestAuditF
                 "expected_session_id": 1
             ],
             "memory.summary.draft.dismiss invalid expected session type"
+        ),
+        (
+            "smoke-memory-summary-dismiss-blank-expected-session",
+            [
+                "draft_id": dismissDraftID,
+                "expected_session_id": "   \n\t"
+            ],
+            "memory.summary.draft.dismiss blank expected session"
         ),
         (
             "smoke-memory-summary-dismiss-invalid-count-string",

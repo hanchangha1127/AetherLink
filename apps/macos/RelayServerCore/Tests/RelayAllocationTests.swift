@@ -229,6 +229,14 @@ final class RelayAllocationTests: XCTestCase {
         ) { error in
             XCTAssertEqual(error as? RelayAllocationError, .invalidRelayID)
         }
+        for relayID in nonCanonicalAllocationResponseRelayIDs {
+            XCTAssertThrowsError(
+                try RelayAllocation.parseResponseLine(allocationResponseLine(relayID: relayID)),
+                relayID
+            ) { error in
+                XCTAssertEqual(error as? RelayAllocationError, .invalidRelayID)
+            }
+        }
         XCTAssertThrowsError(
             try RelayAllocation.parseResponseLine(allocationResponseLine(relaySecret: "secret value"))
         ) { error in
@@ -418,6 +426,41 @@ final class RelayAllocationTests: XCTestCase {
                     "relay_nonce": "nonce-whitespace-relay"
                 ],
                 [
+                    "relay_id": "https://relay.example.test/room?route_token=secret",
+                    "relay_expires_at": 20_000,
+                    "relay_nonce": "nonce-url-relay"
+                ],
+                [
+                    "relay_id": "relay/id",
+                    "relay_expires_at": 20_000,
+                    "relay_nonce": "nonce-path-relay"
+                ],
+                [
+                    "relay_id": "relay?query",
+                    "relay_expires_at": 20_000,
+                    "relay_nonce": "nonce-query-relay"
+                ],
+                [
+                    "relay_id": "relay#fragment",
+                    "relay_expires_at": 20_000,
+                    "relay_nonce": "nonce-fragment-relay"
+                ],
+                [
+                    "relay_id": "user@relay-id",
+                    "relay_expires_at": 20_000,
+                    "relay_nonce": "nonce-userinfo-relay"
+                ],
+                [
+                    "relay_id": "relay.example.test:443",
+                    "relay_expires_at": 20_000,
+                    "relay_nonce": "nonce-host-port-relay"
+                ],
+                [
+                    "relay_id": String(repeating: "r", count: relayControlLineRelayIDMaxCharacters + 1),
+                    "relay_expires_at": 20_000,
+                    "relay_nonce": "nonce-oversized-relay"
+                ],
+                [
                     "relay_id": "relay-bad-expiration",
                     "relay_expires_at": 0,
                     "relay_nonce": "nonce-bad-expiration"
@@ -440,6 +483,19 @@ final class RelayAllocationTests: XCTestCase {
 
         XCTAssertEqual(registry.count(now: Date(timeIntervalSince1970: 10)), 1)
         XCTAssertTrue(registry.isValid(relayID: "relay-loadable", now: Date(timeIntervalSince1970: 10)))
+        XCTAssertFalse(registry.isValid(
+            relayID: "https://relay.example.test/room?route_token=secret",
+            now: Date(timeIntervalSince1970: 10)
+        ))
+        XCTAssertFalse(registry.isValid(relayID: "relay/id", now: Date(timeIntervalSince1970: 10)))
+        XCTAssertFalse(registry.isValid(relayID: "relay?query", now: Date(timeIntervalSince1970: 10)))
+        XCTAssertFalse(registry.isValid(relayID: "relay#fragment", now: Date(timeIntervalSince1970: 10)))
+        XCTAssertFalse(registry.isValid(relayID: "user@relay-id", now: Date(timeIntervalSince1970: 10)))
+        XCTAssertFalse(registry.isValid(relayID: "relay.example.test:443", now: Date(timeIntervalSince1970: 10)))
+        XCTAssertFalse(registry.isValid(
+            relayID: String(repeating: "r", count: relayControlLineRelayIDMaxCharacters + 1),
+            now: Date(timeIntervalSince1970: 10)
+        ))
         XCTAssertFalse(registry.isValid(relayID: "relay-bad-expiration", now: Date(timeIntervalSince1970: 10)))
         XCTAssertFalse(registry.isValid(relayID: "relay-bad-nonce", now: Date(timeIntervalSince1970: 10)))
     }
@@ -553,6 +609,22 @@ final class RelayAllocationTests: XCTestCase {
         """
         \(RelayAllocation.responsePrefix){"relay_id":"\(relayID)","relay_secret":"\(relaySecret)","relay_expires_at":\(relayExpiresAtEpochMillis),"relay_nonce":"\(relayNonce)"}
         """
+    }
+
+    private var nonCanonicalAllocationResponseRelayIDs: [String] {
+        [
+            "",
+            " relay-1",
+            "relay-1 ",
+            "relay 1",
+            "https://relay.example.test/room?route_token=secret",
+            "relay/id",
+            "relay?query",
+            "relay#fragment",
+            "user@relay-id",
+            "relay.example.test:443",
+            String(repeating: "r", count: relayControlLineRelayIDMaxCharacters + 1)
+        ]
     }
 
     private func writeAllocationTicketsJSON(_ tickets: [[String: Any]], to url: URL) throws {
